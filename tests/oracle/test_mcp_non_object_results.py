@@ -40,14 +40,12 @@ HANDLERS = KIT.to_layer(
     Obj.handler(lambda _, __: fx.succeed(Answer(answer="a"))),
     Untyped.handler(lambda _, __: fx.void),
 )
-SERVER: Any = layer.merge(
-    M.layer_http(
-        name="s",
-        version="1",
-        path="/mcp",
-        protocols=(P.v2026_07_28, P.v2025_11_25, P.v2025_06_18),
-    ),
-    M.toolkit(KIT),
+SERVER: Any = M.layer_http(
+    name="s",
+    version="1",
+    path="/mcp",
+    protocols=(P.v2026_07_28, P.v2025_11_25, P.v2025_06_18),
+    registrations=M.toolkit(KIT),
 ).pipe(layer.provide(HANDLERS))
 
 

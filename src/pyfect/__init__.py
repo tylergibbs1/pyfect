@@ -37,10 +37,11 @@ building blocks: ``fx.Stream`` (constructors in ``fx.stream``), ``fx.Sink``
 (``fx.take``); framers (NDJSON, JSON arrays, Server-Sent Events) in ``fx.encoding``;
 channels decoding and encoding chunks with a schema in ``fx.channel_schema``.
 Platform: ``fx.FileSystem`` (``fx.file_system``), ``fx.Path`` (``fx.path``),
-``fx.Stdio`` (``fx.stdio``), ``fx.Crypto`` (``fx.crypto``), ``fx.Terminal``
-(``fx.terminal``), child processes (``fx.process``: ``make``,
-``ChildProcessSpawner``), ``fx.PlatformError`` (``fx.platform_error``) and all
-six live services in ``fx.platform.layer``.
+``fx.Stdio`` (``fx.stdio``), ``fx.Terminal`` (``fx.terminal``), child processes
+(``fx.process``: ``make``, ``ChildProcessSpawner``), ``fx.PlatformError``
+(``fx.platform_error``) and all four live services in ``fx.platform.layer``.
+Cryptography in ``fx.crypto`` (``SecureRandom``, ``Digest``, ``Mac``, ``Aead``,
+``Signature`` and the other families, provided explicitly) and JOSE in ``fx.jose``.
 Command-line apps in ``fx.cli`` (``Command``, ``Flag``, ``Argument``, prompts,
 help and shell completions).
 HTTP clients in ``fx.http`` (``HttpClient``, requests, responses, headers,
@@ -87,7 +88,6 @@ from pyfect.clock import Clock, sleep
 from pyfect.config import Config, ConfigError
 from pyfect.config_provider import ConfigProvider, CurrentConfigProvider
 from pyfect.context import Context, MissingServiceError, Reference, Tag
-from pyfect.crypto import Crypto
 from pyfect.deferred import Deferred
 from pyfect.duration import Duration
 from pyfect.effect import (
@@ -448,7 +448,6 @@ __all__ = [
     "ConfigError",
     "ConfigProvider",
     "Context",
-    "Crypto",
     "CurrentConfigProvider",
     "CurrentLogAnnotations",
     "CurrentLogLevel",

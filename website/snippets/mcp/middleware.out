@@ -1,0 +1,2 @@
+guest [] Tool 'who_am_i' not found
+admin ['who_am_i'] {'type': 'text', 'text': 'admin'}

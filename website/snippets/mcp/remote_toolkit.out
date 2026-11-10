@@ -1,0 +1,3 @@
+capabilities {'logging': {}, 'completions': {}, 'tools': {'listChanged': True}}
+approval {'calc__add': False, 'calc__erase': True}
+model sees (TextPart(text='{"total":5}', options={}),)

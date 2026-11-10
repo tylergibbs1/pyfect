@@ -33,7 +33,6 @@ from pyfect.ai.openai._response import (
     item_metadata,
     mcp_call,
     mcp_result,
-    request_details,
     resolve_finish_reason,
     sources,
     timestamp,
@@ -151,7 +150,6 @@ class _Stream:
                 "id": response["id"],
                 "modelId": response["model"],
                 "timestamp": timestamp(response["created_at"]),
-                "request": request_details(self.response),
             }
         ]
 

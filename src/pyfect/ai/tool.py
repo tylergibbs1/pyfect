@@ -492,7 +492,8 @@ def get_strict_mode(tool: AnyTool) -> bool | None:
 
 # Secure JSON --------------------------------------------------------------------------
 
-_SUSPECT = re.compile(r'"(__proto__|constructor)"\s*:')
+# ``json.loads`` decodes Unicode escapes (``"\u005f_proto__"``), so any ``\u`` triggers the scan.
+_SUSPECT = re.compile(r'"(__proto__|constructor)"\s*:|\\u')
 
 
 def unsafe_secure_json_parse(text: str) -> object:

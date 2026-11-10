@@ -15,10 +15,9 @@ import pyfect as fx
 from pyfect import testing
 from pyfect.ai import ai_error as E
 from pyfect.ai.anthropic import _errors, client
-from pyfect.http.headers import CurrentRedactedNames
 from pyfect.redacted import make as redact
 
-from ._ai_http import MockHttp, mock_json
+from ._ai_http import MockHttp, mock_json, stringify_error
 
 _PAYLOAD: dict[str, Any] = {
     "model": "claude-sonnet-5-5",
@@ -101,15 +100,26 @@ def test_retry_after_header(header: str, expected: timedelta | None):
 
 
 @testing.effect
+def test_envelope_429_retry_after():
+    """maps a 429 Anthropic error envelope with a non-rate-limit type and preserves
+    retry-after"""
+    body = {**_envelope("api_error", "gateway message"), "request_id": "req-test"}
+    error = yield from _create_error(mock_json(body, status=429, headers={"retry-after": "3"}))
+    reason = error.reason
+    assert isinstance(reason, E.RateLimitError)
+    assert reason.retry_after == timedelta(seconds=3)
+    assert reason.http is not None
+    assert reason.http.get("response", {}).get("status") == 429
+
+
+@testing.effect
 def test_redacts_api_key():
     """redacts the API key in AI error context"""
     mock = mock_json(_envelope("invalid_request_error", "Bad request"), status=400)
-    error = yield from _create_error(mock).update_service(CurrentRedactedNames, lambda _: ())
-    reason = error.reason
-    assert isinstance(reason, E.InvalidRequestError)
-    assert reason.http is not None
+    error = yield from _create_error(mock)
+    assert isinstance(error.reason, E.InvalidRequestError)
     assert "/v1/messages" in mock.requests[0].url
-    assert reason.http["request"]["headers"]["x-api-key"] == "<redacted>"
+    assert "sk-test-key" not in stringify_error(error)
 
 
 @testing.effect
@@ -140,15 +150,9 @@ def test_fallback_body_truncated():
         headers={},
         message=None,
         metadata={"errorType": None, "requestId": None},
-        http={
-            "request": {
-                "method": "POST",
-                "url": "https://api.anthropic.com/v1/messages?beta=true",
-                "urlParams": [],
-                "headers": {},
-            },
-            "body": body,
-        },
+        method="POST",
+        url="https://api.anthropic.com/v1/messages?beta=true",
+        http={"body": body},
     )
     assert isinstance(reason, E.InvalidRequestError)
     assert reason.description == (

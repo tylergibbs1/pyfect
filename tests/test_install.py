@@ -28,23 +28,25 @@ _ROOT = Path(__file__).parent.parent
 _SOURCE = _ROOT / "src" / "pyfect"
 
 # The import name of each extra's libraries.
-_LIBRARIES: dict[str, Extra] = {
-    "opentelemetry": "otel",
-    "hypothesis": "hypothesis",
-    "pydantic": "pydantic",
-    "pydantic_core": "pydantic",
-    "msgspec": "msgspec",
-    "httpx": "httpx",
-    "websockets": "websockets",
-    "psycopg": "pg",
-    "asyncmy": "mysql",
-    "pytds": "mssql",
-    "OpenSSL": "mssql",
-    "uvicorn": "server",
-    "redis": "redis",
-    "cryptography": "eventlog",
-    "brotli": "brotli",
+_LIBRARIES: dict[str, frozenset[Extra]] = {
+    "opentelemetry": frozenset({"otel"}),
+    "hypothesis": frozenset({"hypothesis"}),
+    "pydantic": frozenset({"pydantic"}),
+    "pydantic_core": frozenset({"pydantic"}),
+    "msgspec": frozenset({"msgspec"}),
+    "httpx": frozenset({"httpx"}),
+    "websockets": frozenset({"websockets"}),
+    "psycopg": frozenset({"pg"}),
+    "asyncmy": frozenset({"mysql"}),
+    "pytds": frozenset({"mssql"}),
+    "OpenSSL": frozenset({"mssql"}),
+    "uvicorn": frozenset({"server"}),
+    "redis": frozenset({"redis"}),
+    "cryptography": frozenset({"eventlog", "crypto"}),
+    "nacl": frozenset({"crypto"}),
+    "brotli": frozenset({"brotli"}),
 }
+"""The extras that install each library; an import is guarded by any of them."""
 
 
 def _pyproject() -> dict[str, typing.Any]:
@@ -137,8 +139,8 @@ def _unguarded_imports(path: Path, gated: dict[str, Extra]) -> list[str]:
             case _:
                 roots = []
         for root in roots:
-            extra = _LIBRARIES.get(root)
-            if extra is not None and not type_checking and extra not in guards | {covered}:
+            extras = _LIBRARIES.get(root, frozenset[Extra]())
+            if extras and not type_checking and not extras & (guards | {covered}):
                 offenders.append(f"{path.relative_to(_ROOT)}:{node.lineno} imports {root}")  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
         for child in ast.iter_child_nodes(node):
             visit(child, guards, type_checking)
@@ -150,7 +152,7 @@ def _unguarded_imports(path: Path, gated: dict[str, Extra]) -> list[str]:
 def test_the_extras_are_the_ones_pyproject_declares():
     declared = set(_pyproject()["project"]["optional-dependencies"])
     assert set(typing.get_args(Extra.__value__)) == declared
-    assert set(_LIBRARIES.values()) <= declared
+    assert set[Extra]().union(*_LIBRARIES.values()) <= declared
 
 
 def test_the_distribution_is_pyfect_dev_and_imports_as_pyfect():

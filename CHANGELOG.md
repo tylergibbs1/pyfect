@@ -82,6 +82,71 @@
   error in RcMap finalizer") instead of being lost.
 - An atom build that releases a failed earlier build reports that build's finalizer error
   once the new build commits (it was raised in the middle of the rebuild).
+- AI, Effect 4.1.2: `ai_error.NetworkError` has `method: str`, `url: str` (without URL
+  parameters) and an optional `cause` instead of `request`. Read `err.method` / `err.url`
+  instead of `err.request["method"]` / `err.request["url"]`; build one with
+  `NetworkError(reason=..., method=..., url=...)`, or `NetworkError.from_http_client_error(error)`
+  to keep the HTTP client error as `cause`. `ai_error.HttpRequestDetails`,
+  `HTTP_REQUEST_DETAILS` and `HttpMethod` are removed and `HttpContext` has no `request`: read
+  `http["response"]` / `http["body"]`, and log the request yourself if you need it. Status
+  mappers of the providers take `method=` and `url=`.
+- AI: `response.ResponseMetadataPart` no longer has `request` (decoding ignores the key), and no
+  provider's response-metadata parts carry the request.
+- AI decisions: provider answers are plain dicts tagged by `_tag`:
+  `ProviderClassifyAnswer("x", probs)` becomes
+  `{"_tag": "Classify", "label": "x", "probabilities": probs}`; likewise `"Rate"` (`rating`),
+  `"Probability"` (`probability`), `"Locate"` (`box` as a `{left, top, right, bottom}` dict,
+  `confidence`) and `{"_tag": "Refusal"}`. `decision_model.ProviderBoundingBox` is new.
+- Anthropic: `tool.ComputerUse_20241022` is named `computer` on the wire (was `computer_use`).
+  `TextEditor_20250429` and `TextEditor_20250728` decode inserts as `InsertTextCommand`
+  (`params["insert_text"]`), not `InsertCommand` (`new_str`, kept for the older versions).
+  `ToolSearchRegex_20251119` takes `ToolSearchRegexParameters` (`pattern`, optional `limit`) and
+  `ToolSearchBM25_20251119` `ToolSearchBM25Parameters` (`query`, optional `limit`) instead of
+  `QueryParameters`. `language_model.Model` lists 4.1.2's model names (`claude-opus-4-1` is
+  gone); any string is still accepted.
+- MCP server: the registration layers `mcp_server.toolkit`, `resource`, `resource_template`,
+  `prompt` and `skill` require `McpServer`. Give them to the transport,
+  `layer_http(..., registrations=toolkit(...))` (also `layer_stdio`), or write
+  `registrations.pipe(layer.provide_merge(transport))`, instead of
+  `layer.merge(transport, toolkit(...))`.
+- MCP server: a defect in a handler or middleware answers `{"code": -32603, "message":
+  "Internal error"}` (was `Internal server error`); match on the code.
+- MCP server: a declared tool failure is sent through its schema's JSON codec, as in Effect
+  4.1.2: a `BigInt` is a string, and a `Redacted` field's value is sent. Keep secrets out of
+  declared failure fields, or declare them with `S.Redacted(..., disallow_json_encode=True)`
+  so encoding refuses them. A result that fails to encode is an `AiError` with a
+  `ToolResultEncodingError` reason. Resource and template listings always carry
+  `annotations`.
+- MCP client: `mcp_client.toolkit(..., failure_mode="return")` sends the model the encoded
+  `McpClientError` (`{"_tag": "McpClientError", "reason": {...}}`) and the result is the
+  `McpClientError`, not its text; tool failures have the `McpClientError` schema (was
+  `Unknown`). Read `result.reason` (a `ToolError`'s `result["content"]`), or reshape with
+  `transform_tool`. A resource link with an empty `title` reads `": <uri>"`, as in Effect.
+- Observability: OTLP/JSON writes `bytesValue` as base64 text. `otlp_resource.from_config`
+  trims `OTEL_RESOURCE_ATTRIBUTES` keys and values and keeps `key=` as `""`;
+  `otel.resource.layer_from_env` does too, percent-decodes keys and values, accepts a
+  structured config record, and drops the whole variable with a warning when its encoding is
+  malformed (write a literal `%` as `%25`).
+- `pyfect.crypto` is now Effect 4.1.2's `effect/crypto`, a package with one service per
+  family, and needs the `crypto` extra (`pip install "pyfect-dev[crypto]"`). The 4.0.6
+  `Crypto` service, `CryptoService`, `crypto.make`, `crypto.layer` and the module-level UUID
+  helpers are gone, and `fx.platform.layer` no longer provides crypto. Migrate:
+  - `Crypto().random_bytes(n)`, `random_uuid_v4()`, `random_uuid_v7()`, `random_ulid()` and
+    the shuffles: `SecureRandom()` from `pyfect.crypto.secure_random`, with `random_bytes(n)`,
+    `uuid_v4()`, `uuid_v7()`, `ulid()`, `int_between(...)` and `shuffle(...)`. UUIDs take
+    `format="string"` (was `"hex"`) or `"bytes"`.
+  - `Crypto().digest(algorithm, data)`: `Digest()` from `pyfect.crypto.digest`, with
+    `digest(digest.sha256, data)`.
+  - `Crypto().random()` and the other number draws: `fx.Random`.
+  - Provide `pyfect.crypto.native.layer` (or one family's `native.layer_*`) where
+    `platform.layer` provided `Crypto`. Failures are `CryptoError`, not `PlatformError`.
+- `testing.TestCrypto` is removed; Effect 4.1.2 has no seeded crypto service. Use
+  `fx.Random` with a seed for reproducible numbers, or `web_crypto.layer(fake)` to replace
+  the Web Crypto implementation under every `layer_web_crypto` service.
+- The `Model.UuidV7Insert` generator makes monotonic UUIDv7s from the `Clock`, as Effect's
+  `Uuid.v7Monotonic` does: ids made in the same millisecond increase strictly.
+- `Base64Url` decoding follows Effect 4.1.2: padded input must be a whole number of 4-character
+  groups, and the error messages name the padded or unpadded length rule.
 
 ### Added
 
@@ -123,10 +188,55 @@
 - `ignore(log="Unhandled")` / `ignore_cause(log="Unhandled")` log at the
   `UnhandledLogLevel`, and not at all when that is `None`.
 - `Fiber.interrupt_as(by, annotations)` adds annotations to the interruption.
-- `config.dict_of(..., trim=True, keep_empty_values=True)`.
 - `duration.to_micros`, `duration.format_iso` and `duration.from_iso` (ISO 8601 durations).
 - `byte_size`'s decimal units scale the shortest decimal form exactly, so
   `megabytes(2.01)` is 2,010,000 bytes (it failed on the float product).
+- MCP Skills (`io.modelcontextprotocol/skills`): `mcp_server.skill(uri, files)`, and on the
+  client `extensions={"skills": True}` with `list_skills`, `get_skill`,
+  `read_resource_directory` and `read_skill_resource` (digest-checked); client
+  `discovery_limits` and per-call `limits=`.
+- MCP server: `mcp_server.middleware`, `visibility`, `Middleware.layer` / `layer_global` /
+  `combine`, `cache_hints=` (2026-07-28 `ttlMs`), and `pyfect.ai.mcp_test.make_client`.
+- MCP client: `toolkit(tools=, result_mode="complete", failure_mode=, trust_annotations=,
+  timeout=, transform_tool=)`, `ToolDescriptor`, `RemoteTool`, schemas for `McpClientError`.
+- Anthropic: `tool.DeferLoading`; non-strict tools may have recursive parameters.
+- `config.dict_of(..., trim=, keep_empty_values=)`.
+- The crypto families of Effect 4.1.2: `secure_random`, `digest`, `mac`, `kdf` (HKDF, PBKDF2,
+  Argon2id), `aead` (AES-GCM, ChaCha20-Poly1305, XChaCha20-Poly1305), `cipher` (AES-CBC /
+  CTR), `signature` (Ed25519, ECDSA, RSA-PSS, RSASSA-PKCS1-v1_5), `key_agreement` (X25519,
+  ECDH), `key_wrap` (AES-KW, RSA-OAEP), `key_format` (SPKI, PKCS#8, PKCS#1, SEC1, JWK, PEM),
+  `web_crypto` and `native`, all on `cryptography` and PyNaCl.
+- `pyfect.crypto.schema`: Effect's crypto key schemas (`MacKeyFromBytes`,
+  `SignaturePublicKeyFromFormat`, ...).
+- `pyfect.jose` (`fx.jose`): `jwk`, `jwks`, `jws`, `jwe` and `jwt`, interoperable with Node's
+  `jose`.
+- Docs: [Cryptography and JOSE](/docs/crypto).
+
+## 0.3.1 (2026-11-09)
+
+### Added
+
+- `Semaphore.take_scoped(n)`, Effect 4.1.2's `takeScoped`: waits for `n` permits and holds
+  them until the current scope closes.
+
+### Fixed
+
+- A large write to a child's stdin no longer hangs on free-threaded CPython: the pipe's
+  writer thread kept a `memoryview` made on the fiber's thread, and 3.14t can release a
+  buffer whose views are made and freed on different threads, so about one 24 MB write in
+  twenty died with "operation forbidden on released memoryview object". The writer thread
+  now makes and releases its own views, and a writer thread that raises fails the write
+  (a defect) instead of leaving it waiting.
+- A write to a child's stdin made before pyfect has handled the child's exit fails with
+  `ECANCELED` every time, as in Effect 4.1.2 under Node; it sometimes failed with
+  `Premature close`. The exit now closes stdin in a task of the run's scheduler, as Node
+  does in a turn of its event loop, and a write first tries the pipe at once, as Node's
+  does, so a small write made then succeeds.
+- Docs that still read a bare number as seconds now give units: `set_idle_ttl` in the
+  atoms guide, `window` in the rate-limiting guide, `schedule.StepFn`'s `now` (epoch
+  milliseconds), the `schedule` module's examples and metadata, `session_idle_timeout`,
+  and the examples of `testing`, `layer_map`, `layer_ref`, `workflow`, `durable_clock`
+  and the rate limiter.
 
 ## 0.3.0 (2026-11-09)
 

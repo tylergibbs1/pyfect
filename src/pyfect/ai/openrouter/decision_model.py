@@ -63,11 +63,14 @@ def _answers(
     for key, answer in answers.items():
         match answer["type"]:
             case "noul":
-                found[key] = DM.ProviderProbabilityAnswer(answer["noul"])
+                found[key] = {"_tag": "Probability", "probability": answer["noul"]}
             case "choice":
-                found[key] = DM.ProviderClassifyAnswer(
-                    answer["choice"], answer.get("probabilities"), answer.get("confidence")
-                )
+                found[key] = {
+                    "_tag": "Classify",
+                    "label": answer["choice"],
+                    "probabilities": answer.get("probabilities"),
+                    "confidence": answer.get("confidence"),
+                }
             case "score":
                 by_index = answer.get("probabilities")
                 decision = decisions.get(key)
@@ -81,9 +84,12 @@ def _answers(
                         if str(index) in by_index
                     }
                 )
-                found[key] = DM.ProviderRateAnswer(
-                    answer["score"], probabilities, answer.get("confidence")
-                )
+                found[key] = {
+                    "_tag": "Rate",
+                    "rating": answer["score"],
+                    "probabilities": probabilities,
+                    "confidence": answer.get("confidence"),
+                }
     return found
 
 

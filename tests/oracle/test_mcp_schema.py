@@ -30,6 +30,20 @@ def test_round_trips_tool_schemas_with_object_or_boolean_properties():
         S.decode_unknown_sync(M.TOOL_JSON)({"type": "object", "properties": {"invalid": None}})
 
 
+def test_checks_the_digest_and_size_of_a_skill_resource():
+    """should check the digest and size of a skill resource"""
+    decode = S.decode_unknown_sync(M.SKILL_RESOURCE)
+    valid = {"uri": "skill://refunds/SKILL.md", "digest": f"sha256:{'0' * 64}", "size": 0}
+    assert decode(valid) == valid
+    for invalid in [
+        {**valid, "digest": f"sha256:{'A' * 64}"},
+        {**valid, "digest": "sha256:0"},
+        {**valid, "size": -1},
+    ]:
+        with pytest.raises(S.SchemaError):
+            decode(invalid)
+
+
 def test_preserves_custom_request_metadata():
     """should preserve custom metadata when a request is decoded and encoded"""
     progresses: list[dict[str, object]] = [

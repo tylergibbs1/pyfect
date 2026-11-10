@@ -360,7 +360,12 @@ def _http_server() -> AnyLayer:
 
 
 def _stdio_server() -> AnyLayer:
-    return M.layer_stdio(name="test-server", version="1.0.0", protocols=(_PROTOCOL,))
+    return M.layer_stdio(
+        name="test-server",
+        version="1.0.0",
+        protocols=(_PROTOCOL,),
+        registrations=M.toolkit(_TOOLS).pipe(L.provide(_handlers())),
+    )
 
 
 def _http_client() -> AnyLayer:
@@ -401,7 +406,10 @@ def _connected_process(server: AnyLayer) -> AnyLayer:
             return cast("stdio.Output", sink.for_each(write))
 
         stdio_layer = stdio.layer_test(stdin=stream.from_queue(to_server), stdout=output)
-        yield from server.pipe(L.provide(stdio_layer)).build()
+        # Built on a fiber of its own, as a process would be: the end of input
+        # interrupts the fiber that built ``layer_stdio``.
+        built = yield from server.pipe(L.provide(stdio_layer)).build().fork_scoped()
+        yield from built.join()
 
         def kill(**_options: object) -> fx.Effect[None]:
             return exit_code.succeed(0).as_void()
@@ -441,7 +449,7 @@ def _calls_add() -> AnyEffect:
 
 
 def _tool_app(server: AnyLayer) -> AnyLayer:
-    return L.merge(server, M.toolkit(_TOOLS)).pipe(L.provide(_handlers()))
+    return M.toolkit(_TOOLS).pipe(L.provide(_handlers())).pipe(L.provide_merge(server))
 
 
 def _over_http(app: AnyLayer, use: Callable[[], AnyEffect]) -> AnyEffect:
@@ -455,6 +463,21 @@ def _resource_text(uri: str, text: str) -> AnyEffect:
         client = yield from C.McpClient()
         result = yield from client.read_resource(uri)
         yield from _check(result["contents"] == [{"uri": uri, "text": text}], f"read {result}")
+
+    return run
+
+
+_SKILL = "skill://billing/refunds/SKILL.md"
+_SKILL_MD = "---\nname: refunds\ndescription: Process refunds\n---\n"
+
+
+def _skill_text() -> AnyEffect:
+    @fx.gen
+    def run():
+        client = yield from C.McpClient()
+        result = yield from client.read_resource(_SKILL)
+        [content] = result["contents"]
+        yield from _check(content.get("text") == _SKILL_MD, f"read {result}")
 
     return run
 
@@ -482,7 +505,9 @@ def _own_server_only(value: AnyLayer) -> AnyEffect:
         resources = yield from client.list_resources()
         yield from _check([r["uri"] for r in resources] == [uri], f"resources {resources}")
 
-    app = L.merge(_http_server(), M.resource(uri=uri, name="r", content=fx.succeed("r")))
+    app = M.resource(uri=uri, name="r", content=fx.succeed("r")).pipe(
+        L.provide_merge(_http_server())
+    )
     return _over_http(app.pipe(L.provide_merge(value)), lambda: listed)
 
 
@@ -511,20 +536,24 @@ _MCP_CASES: dict[str, Case] = {
     "pyfect.ai.mcp_server.layer_stdio": Case(
         layer=_stdio_server,
         run=lambda value: _calls_add().pipe(
-            fx.provide(_stdio_client().pipe(L.provide(_connected_process(_tool_app(value)))))
+            fx.provide(_stdio_client().pipe(L.provide(_connected_process(value))))
         ),
     ),
     "pyfect.ai.mcp_server.toolkit": Case(
         layer=lambda: M.toolkit(_TOOLS),
         run=lambda value: _over_http(
-            L.merge(_http_server(), value).pipe(L.provide(_handlers())), _calls_add
+            value.pipe(L.provide(_handlers())).pipe(L.provide_merge(_http_server())), _calls_add
         ),
     ),
     "pyfect.ai.mcp_server.resource": Case(
         layer=lambda: M.resource(uri=_GUIDE, name="guide", content=fx.succeed("Guide")),
         run=lambda value: _over_http(
-            L.merge(_http_server(), value), lambda: _resource_text(_GUIDE, "Guide")
+            value.pipe(L.provide_merge(_http_server())), lambda: _resource_text(_GUIDE, "Guide")
         ),
+    ),
+    "pyfect.ai.mcp_server.skill": Case(
+        layer=lambda: M.skill(_SKILL, {"SKILL.md": _SKILL_MD}),
+        run=lambda value: _over_http(value.pipe(L.provide_merge(_http_server())), _skill_text),
     ),
     "pyfect.ai.mcp_server.resource_template": Case(
         layer=lambda: M.resource_template(
@@ -533,12 +562,13 @@ _MCP_CASES: dict[str, Case] = {
             content=lambda _uri, name: fx.succeed(f"doc {name}"),
         ),
         run=lambda value: _over_http(
-            L.merge(_http_server(), value), lambda: _resource_text("demo://docs/a", "doc a")
+            value.pipe(L.provide_merge(_http_server())),
+            lambda: _resource_text("demo://docs/a", "doc a"),
         ),
     ),
     "pyfect.ai.mcp_server.prompt": Case(
         layer=lambda: M.prompt(name="explain", content=lambda _: fx.succeed("Explain")),
-        run=lambda value: _over_http(L.merge(_http_server(), value), _prompt_text),
+        run=lambda value: _over_http(value.pipe(L.provide_merge(_http_server())), _prompt_text),
     ),
     "pyfect.ai.mcp_client.layer_http": Case(
         layer=_http_client,
@@ -547,7 +577,7 @@ _MCP_CASES: dict[str, Case] = {
     ),
     "pyfect.ai.mcp_client.layer_stdio": Case(
         layer=_stdio_client,
-        needs=lambda: _connected_process(_tool_app(_stdio_server())),
+        needs=lambda: _connected_process(_stdio_server()),
         use=_calls_add,
     ),
 }

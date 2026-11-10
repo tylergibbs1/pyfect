@@ -8,13 +8,14 @@ may fail with ``E`` and need ``R``.
 Schedules are immutable values. Every run starts from fresh state, so one
 schedule can be shared freely::
 
-    eff.retry(schedule.exponential(0.1).up_to(times=5))
-    eff.repeat(schedule.spaced(1.0))
+    eff.retry(schedule.exponential("100 millis").up_to(times=5))
+    eff.repeat(schedule.spaced("1 second"))
 
-Each step sees ``Metadata``: the input, the attempt number, the start,
-current and elapsed times (wall clock, in seconds), and the step's output
-and delay. The effect being repeated or retried reads the metadata of the
-step that started it from ``CurrentMetadata``.
+Each step sees ``Metadata``: the input, the attempt number, the start and
+current times (wall-clock milliseconds since the epoch), the elapsed
+durations, and the step's output and delay. The effect being repeated or
+retried reads the metadata of the step that started it from
+``CurrentMetadata``.
 
 Run effects on a schedule with the ``Effect`` methods ``retry``,
 ``retry_or_else``, ``repeat``, ``repeat_or_else``, ``schedule`` and

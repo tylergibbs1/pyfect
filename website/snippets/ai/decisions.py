@@ -35,13 +35,17 @@ def answer(options: decision_model.ProviderOptions):
     return fx.succeed(
         decision_model.ProviderResponse(
             {
-                "team": decision_model.ProviderClassifyAnswer(
-                    "technical", probabilities={"billing": 0.2, "technical": 0.8}
-                ),
-                "severity": decision_model.ProviderRateAnswer(
-                    0.9, probabilities={"minor": 0.1, "major": 0.9}
-                ),
-                "urgent": decision_model.ProviderProbabilityAnswer(0.97),
+                "team": {
+                    "_tag": "Classify",
+                    "label": "technical",
+                    "probabilities": {"billing": 0.2, "technical": 0.8},
+                },
+                "severity": {
+                    "_tag": "Rate",
+                    "rating": 0.9,
+                    "probabilities": {"minor": 0.1, "major": 0.9},
+                },
+                "urgent": {"_tag": "Probability", "probability": 0.97},
             }
         )
     )

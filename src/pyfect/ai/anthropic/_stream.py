@@ -12,7 +12,6 @@ from pyfect.ai import _provider as P
 from pyfect.ai import language_model as lm
 from pyfect.ai.ai_error import AiError, ToolParameterValidationError
 from pyfect.ai.anthropic import _schema as W
-from pyfect.ai.anthropic._errors import SECRET_HEADERS
 from pyfect.ai.anthropic._response import (
     Gen,
     Part,
@@ -102,7 +101,6 @@ class _State:
                 "id": message["id"],
                 "modelId": message["model"],
                 "timestamp": timestamp,
-                "request": P.request_details(self.response.request, secret_headers=SECRET_HEADERS),
             }
         ]
         for block in message["content"]:

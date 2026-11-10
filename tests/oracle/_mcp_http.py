@@ -44,6 +44,7 @@ def server_layer(
     mode: Mode = "server",
     instructions: str | None = None,
     extensions: Json | None = None,
+    cache_hints: M.CacheHints | None = None,
 ) -> layer.Layer[Any, Any, Any]:
     """Effect's ``makeServerLayer`` (``https://allowed.example`` is the one
     allowed origin), with ``registrations`` run against its server."""
@@ -57,6 +58,7 @@ def server_layer(
             allowed_origins=(ALLOWED_ORIGIN,),
             instructions=instructions,
             extensions=extensions,
+            cache_hints=cache_hints,
         )
     else:
         served = M.layer_http(
@@ -68,6 +70,7 @@ def server_layer(
             allow_session_termination=allow_session_termination,
             instructions=instructions,
             extensions=extensions,
+            cache_hints=cache_hints,
         )
     if registrations is None:
         return served

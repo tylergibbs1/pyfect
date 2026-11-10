@@ -90,17 +90,21 @@ def _answers(
     answers: dict[str, DM.ProviderAnswer] = {}
     for answer in response["answers"]:
         name = answer["name"]
-        if isinstance(answers.get(name), DM.ProviderRefusalAnswer):
+        previous = answers.get(name)
+        if previous is not None and previous["_tag"] == "Refusal":
             continue
         match answer["type"]:
             case "refusal":
-                answers[name] = DM.ProviderRefusalAnswer()
+                answers[name] = {"_tag": "Refusal"}
             case "choice":
-                answers[name] = DM.ProviderClassifyAnswer(
-                    answer["choice"],
-                    {p["value"]: p["probability"] for p in answer["probabilities"]},
-                    answer["confidence"],
-                )
+                answers[name] = {
+                    "_tag": "Classify",
+                    "label": answer["choice"],
+                    "probabilities": {
+                        p["value"]: p["probability"] for p in answer["probabilities"]
+                    },
+                    "confidence": answer["confidence"],
+                }
             case "score":
                 decision = decisions.get(name)
                 levels = decision.criteria if isinstance(decision, D.Rate) else ()
@@ -109,11 +113,14 @@ def _answers(
                     for p in answer["probabilities"]
                     if 0 <= p["value"] < len(levels)
                 }
-                answers[name] = DM.ProviderRateAnswer(
-                    answer["score"], probabilities, answer["confidence"]
-                )
+                answers[name] = {
+                    "_tag": "Rate",
+                    "rating": answer["score"],
+                    "probabilities": probabilities,
+                    "confidence": answer["confidence"],
+                }
             case "predicate":
-                answers[name] = DM.ProviderProbabilityAnswer(answer["probability"])
+                answers[name] = {"_tag": "Probability", "probability": answer["probability"]}
     return answers
 
 

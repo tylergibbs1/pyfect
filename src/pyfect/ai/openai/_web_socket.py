@@ -28,7 +28,6 @@ from pyfect.ai import ai_error as E
 from pyfect.ai import response_id_tracker as RIT
 from pyfect.ai.ai_error import AiError
 from pyfect.ai.openai import _schema as W
-from pyfect.ai.openai._errors import OPENAI
 from pyfect.cause import Cause
 from pyfect.errors import Done
 from pyfect.exit import Exit
@@ -85,16 +84,15 @@ class _ErrorEvent(TypedDict):
 _decode_error_event = P.wire_parser_option(S.Struct(_ErrorEvent), _ErrorEvent)
 
 
-def _request_details(request: _Request) -> E.HttpRequestDetails:
-    return P.request_details(request, secret_headers=OPENAI.secret_headers)
-
-
 def _transport_error(request: _Request, description: str) -> AiError:
     return AiError(
         module="OpenAiClient",
         method="createResponseStream",
         reason=E.NetworkError(
-            reason="TransportError", request=_request_details(request), description=description
+            reason="TransportError",
+            method=request.method,
+            url=request.url,
+            description=description,
         ),
     )
 
@@ -117,9 +115,7 @@ def _read_message(
     return event
 
 
-def _event_error(
-    error: dict[str, Any], event: dict[str, Any], request: _Request
-) -> tuple[AiError, bool]:
+def _event_error(error: dict[str, Any], event: dict[str, Any]) -> tuple[AiError, bool]:
     """The ``AiError`` of an error event, and whether it says the previous
     response is gone (``LanguageModel`` retries those with the full prompt
     on the same connection)."""
@@ -144,7 +140,7 @@ def _event_error(
         status=status,
         description=body,
         metadata=error,
-        http={"body": body, "request": _request_details(request)},
+        http={"body": body},
     )
     return AiError(module="OpenAiClient", method="createResponseStream", reason=reason), not_found
 
@@ -171,7 +167,7 @@ class _Connection:
         if read is None:
             return
         if isinstance(read, tuple):
-            failure, not_found = _event_error(*read, self._request)
+            failure, not_found = _event_error(*read)
             # Other errors leave the turn current, so leaving it replaces
             # the connection.
             if not_found:

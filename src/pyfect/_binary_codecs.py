@@ -94,15 +94,25 @@ def base64_url_encode_padded(value: Binary) -> str:
 
 
 def base64_url_decode(text: str) -> Result[bytes, EncodingError]:
-    """CR and LF are ignored; the URL alphabet, padded or not."""
+    """CR and LF are ignored; the URL alphabet, unpadded or fully padded.
+    Non-zero trailing bits in the last character are ignored."""
     stripped = _strip_crlf(text)
     length = len(stripped)
-    if length % 4 == 1:
-        return _fail("Base64Url", stripped, f"Length should be a multiple of 4, but is {length}")
+    padded = stripped.endswith("=")
+    if padded and length % 4:
+        return _fail(
+            "Base64Url", stripped, f"Padded length should be a multiple of 4, but is {length}"
+        )
+    if not padded and length % 4 == 1:
+        return _fail(
+            "Base64Url",
+            stripped,
+            f"Unpadded length should not be 1 more than a multiple of 4, but is {length}",
+        )
     if not _BASE64_URL.fullmatch(stripped):
         return _fail("Base64Url", stripped, "Invalid input")
-    padded = stripped + {2: "==", 3: "="}.get(length % 4, "")
-    return base64_decode(padded.translate(_TO_STANDARD))
+    data = stripped.rstrip("=")
+    return Ok(binascii.a2b_base64(data.translate(_TO_STANDARD) + "=" * (-len(data) % 4)))
 
 
 # --- Hex ------------------------------------------------------------------------------

@@ -17,7 +17,9 @@ test_mcp_http_admission.py.
 from __future__ import annotations
 
 import json
-from typing import Any, TypedDict
+import math
+from datetime import UTC, datetime
+from typing import Any, NotRequired, TypedDict, cast
 
 import pytest
 
@@ -62,7 +64,42 @@ LogLevelTool = T.make("LogLevelTool", success=S.String)
 RequestMetadataTool = T.make(
     "RequestMetadataTool", success=S.String, dependencies=[MS.McpRequestContext]
 )
-_KIT = K.make(TestTool, StructuredTool, LogLevelTool, RequestMetadataTool)
+
+
+class _VoidField(TypedDict):
+    reply: None
+    version: float
+
+
+class _DateField(TypedDict):
+    at: datetime
+
+
+class _OptionalField(TypedDict):
+    note: NotRequired[str | None]
+
+
+class _NumberField(TypedDict):
+    value: float
+
+
+# Results whose schema-encoded value is not JSON; MCP carries their JSON-encoded form.
+VoidFieldTool = T.make(
+    "VoidFieldTool", success=S.Struct(_VoidField, reply=S.Void, version=S.Number)
+)
+DateFieldTool = T.make("DateFieldTool", success=S.Struct(_DateField, at=S.DateTimeUtc))
+OptionalFieldTool = T.make("OptionalFieldTool", success=S.Struct(_OptionalField))
+NaNFieldTool = T.make("NaNFieldTool", success=S.Struct(_NumberField))
+_KIT = K.make(
+    TestTool,
+    StructuredTool,
+    LogLevelTool,
+    RequestMetadataTool,
+    VoidFieldTool,
+    DateFieldTool,
+    OptionalFieldTool,
+    NaNFieldTool,
+)
 
 _JSON_SCHEMA_2020: Json = {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -100,6 +137,12 @@ def _features(invocations: list[str]) -> tuple[fx.Effect[None, Any, Any], ...]:
                         lambda context: json.dumps(context.request_metadata)
                     )
                 ),
+                VoidFieldTool.handler(lambda _, __: fx.succeed({"reply": None, "version": 1})),
+                DateFieldTool.handler(
+                    lambda _, __: fx.succeed({"at": datetime(1970, 1, 1, tzinfo=UTC)})
+                ),
+                OptionalFieldTool.handler(lambda _, __: fx.succeed({"note": None})),
+                NaNFieldTool.handler(lambda _, __: fx.succeed({"value": math.nan})),
             )
         )
     )
@@ -351,8 +394,7 @@ def test_must_keep_tool_execution_errors_distinct_from_protocol_errors(
 def test_should_not_expose_defects_or_internal_error_details(protocol: P.AnyProtocolAdapter):
     """Mcp Conformance / Tools / Calling Tools / SHOULD not expose defects or internal error details"""  # noqa: E501
     reply = yield from _call(protocol, "DefectTool")
-    assert reply["error"]["code"] == MS.INTERNAL_ERROR_CODE
-    assert reply["error"]["message"] == "Internal error"
+    assert reply["error"] == {"code": MS.INTERNAL_ERROR_CODE, "message": "Internal error"}
     assert "private defect details" not in json.dumps(reply)
 
 
@@ -396,6 +438,57 @@ def test_should_return_structured_content(protocol: P.AnyProtocolAdapter):
     """Mcp Conformance / Tools / Calling Tools / Structured content / should return structured content when a structured tool is called"""  # noqa: E501
     result = (yield from _call(protocol, "StructuredTool"))["result"]
     assert result["structuredContent"] == {"value": "structured"}
+
+
+_TYPES: dict[str, Any] = {"string": str, "number": int | float, "null": type(None)}
+
+
+def _matches(schema: Json, value: object) -> bool:
+    """``value`` against the JSON Schema keywords these output schemas use
+    (Effect checks them with Ajv)."""
+    if "anyOf" in schema:
+        return any(_matches(member, value) for member in schema["anyOf"])
+    if "enum" in schema and value not in schema["enum"]:
+        return False
+    if schema.get("type") != "object":
+        expected = _TYPES.get(schema.get("type", ""), object)
+        return isinstance(value, expected) and not isinstance(value, bool)
+    if not isinstance(value, dict):
+        return False
+    fields = cast("dict[str, Any]", value)
+    properties: Json = schema.get("properties", {})
+    return all(key in fields for key in schema.get("required", [])) and all(
+        _matches(properties[key], item) for key, item in fields.items() if key in properties
+    )
+
+
+NON_JSON_RESULTS: list[tuple[str, Json]] = [
+    ("VoidFieldTool", {"reply": None, "version": 1}),
+    ("DateFieldTool", {"at": "1970-01-01T00:00:00.000Z"}),
+    ("OptionalFieldTool", {"note": None}),
+    ("NaNFieldTool", {"value": "NaN"}),
+]
+
+
+@pytest.mark.parametrize("protocol", STRUCTURED, ids=_id)
+@pytest.mark.parametrize(("name", "structured"), NON_JSON_RESULTS)
+@testing.effect
+def test_should_return_json_structured_content_for_a_non_json_value(
+    protocol: P.AnyProtocolAdapter, name: str, structured: Json
+):
+    """Mcp Conformance / Tools / Calling Tools / Structured content / should return JSON structured content when ${name} encodes a non-JSON value"""  # noqa: E501
+    harness = yield from _server(protocol)
+    output_schema = next(t for t in (yield from _tools(harness)) if t["name"] == name)[
+        "outputSchema"
+    ]
+    reply = yield from harness.send_request("tools/call", {"name": name, "arguments": {}})
+    result = reply["result"]
+    assert result["isError"] is False
+    assert result["structuredContent"] == structured
+    assert result["content"] == [
+        {"type": "text", "text": json.dumps(structured, separators=(",", ":"))}
+    ]
+    assert _matches(output_schema, result["structuredContent"])
 
 
 @pytest.mark.parametrize("protocol", ALL, ids=_id)

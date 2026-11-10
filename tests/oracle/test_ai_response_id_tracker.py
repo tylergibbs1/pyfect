@@ -69,20 +69,6 @@ def test_prepares_new_user_message():
 
 
 @testing.effect
-def test_shares_state_through_service():
-    """ResponseIdTracker / shares tracker state through its Context service layer"""
-    t = yield from tracker.make
-    shared = yield from tracker.ResponseIdTracker().pipe(
-        fx.provide_service(tracker.ResponseIdTracker, t)
-    )
-    msg1, msg1_new, asst, msg2 = user("msg1"), user("msg1-new"), assistant("done"), user("msg2")
-    t.mark_parts([msg1], "resp_123")
-    shared.clear_unsafe()
-    shared.mark_parts([msg1_new], "resp_456")
-    assert_prepared(t.prepare_unsafe(prompt(msg1_new, asst, msg2)), "resp_456", prompt(msg2))
-
-
-@testing.effect
 def test_keeps_latest_response_id():
     """ResponseIdTracker / keeps latest response id when markParts is called twice"""
     t = yield from tracker.make

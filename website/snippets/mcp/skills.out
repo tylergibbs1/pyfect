@@ -1,0 +1,4 @@
+skill://billing/refunds/SKILL.md {'name': 'refunds', 'description': 'Process refunds'}
+['refunds', 'references']
+Refunds above CHF 500 need approval.
+

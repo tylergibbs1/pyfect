@@ -145,6 +145,7 @@ BLOCK_TYPES = frozenset(
         "server_tool_use",
         "web_search_tool_result",
         "web_fetch_tool_result",
+        "advisor_tool_result",
         "code_execution_tool_result",
         "bash_code_execution_tool_result",
         "text_editor_code_execution_tool_result",
@@ -154,6 +155,7 @@ BLOCK_TYPES = frozenset(
         "container_upload",
         "compaction",
         "fallback",
+        "mcp_tool_listing",
     }
 )
 """The content blocks Effect's ``BetaContentBlock`` knows; another fails

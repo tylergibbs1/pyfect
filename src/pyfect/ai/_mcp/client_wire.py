@@ -12,7 +12,7 @@ from typing import Any, cast
 
 from pyfect import _json_text
 from pyfect._core import Effect
-from pyfect._js import text_encode
+from pyfect._js import or_default, text_encode
 from pyfect._json_text import parse as parse_json_text
 from pyfect.ai.mcp_client_error import (
     AnyReason,
@@ -28,6 +28,7 @@ from pyfect.ai.mcp_schema import (
     CallToolResult,
     JsonObject,
     RequestId,
+    ResourceLink,
     Tool,
 )
 from pyfect.effect import fail, succeed
@@ -233,6 +234,14 @@ def routing_headers(
     return succeed(headers)
 
 
+def resource_link_text(link: ResourceLink) -> str:
+    """A resource link as a model reads it: its title (else name), URI and
+    description."""
+    label = or_default(link.get("title"), link["name"])
+    description = link.get("description")
+    return f"{label}: {link['uri']}" + ("" if description is None else f"\n{description}")
+
+
 def to_text(result: CallToolResult) -> Effect[str, McpClientError]:
     """What a model sees of a tool result: its text, resource links and
     text resources, or the JSON of ``structuredContent`` when it has none."""
@@ -249,11 +258,7 @@ def to_text(result: CallToolResult) -> Effect[str, McpClientError]:
         if block["type"] == "text":
             parts.append(block["text"])
         elif block["type"] == "resource_link":
-            label = block.get("title") or block["name"]
-            description = block.get("description")
-            parts.append(
-                f"{label}: {block['uri']}" + ("" if description is None else f"\n{description}")
-            )
+            parts.append(resource_link_text(block))
         elif block["type"] == "resource":
             resource = block["resource"]
             if "text" not in resource:

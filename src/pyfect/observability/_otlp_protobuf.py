@@ -180,7 +180,9 @@ def encode_traces_data(data: Message) -> bytes:
 
 
 def _times(point: Message) -> bytes:
-    return fixed64_field(2, int(point["startTimeUnixNano"])) + fixed64_field(
+    """A data point's start time (omitted when absent) and time."""
+    start = point.get("startTimeUnixNano")
+    return (b"" if start is None else fixed64_field(2, int(start))) + fixed64_field(
         3, int(point["timeUnixNano"])
     )
 

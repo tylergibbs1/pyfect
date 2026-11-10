@@ -306,7 +306,7 @@ def test_openai_secret_headers_are_redacted_in_response_metadata(streamed: bool)
         project_id=redact("proj-secret"),
     )
     [metadata] = [p for p in parts if isinstance(p, R.ResponseMetadataPart)]
-    shown = json.dumps(metadata.request, default=str)
+    shown = json.dumps(metadata.__dict__, default=str)
     assert "org-secret" not in shown
     assert "proj-secret" not in shown
     assert "sk-oa-secret" not in shown

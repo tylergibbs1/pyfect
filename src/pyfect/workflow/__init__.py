@@ -13,7 +13,7 @@
         charge_id = yield from activity.make(
             name="charge", success=S.String, execute=charge(order)
         ).pipe(Order.with_compensation(lambda charge_id, cause: refund(charge_id)))
-        yield from durable_clock.sleep(name="cool-off", duration=3600)
+        yield from durable_clock.sleep(name="cool-off", duration="1 hour")
         return charge_id
 
     OrderLive = Order.to_layer(fx.fn(run_order)).pipe(

@@ -19,6 +19,7 @@
     "transactions",
     "graph",
     "platform",
+    "crypto",
     "sql",
     "postgres",
     "mysql",

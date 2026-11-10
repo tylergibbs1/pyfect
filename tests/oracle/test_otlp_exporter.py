@@ -11,6 +11,7 @@ checks is a response whose body stream records that it was read.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, Literal
 
 import pytest
@@ -18,7 +19,7 @@ import pytest
 import pyfect as fx
 from pyfect import config_provider, layer, metric, stream, testing
 from pyfect._version import VERSION
-from pyfect.clock import current_time_millis
+from pyfect.clock import Clock, ClockService, current_time_millis
 from pyfect.duration import Duration, Seconds
 from pyfect.http import body as http_body
 from pyfect.http import client, response
@@ -27,6 +28,7 @@ from pyfect.http.client import HttpClient, HttpClientError, HttpClientService
 from pyfect.http.request import HttpClientRequest
 from pyfect.http.response import HttpClientResponse
 from pyfect.observability import (
+    otlp,
     otlp_exporter,
     otlp_logger,
     otlp_metrics,
@@ -195,6 +197,85 @@ def test_waits_for_each_periodic_export_before_starting_the_next_interval():
     yield from started[2].wait()
     yield from releases[2].succeed(None)
     yield from close_fiber.join()
+
+
+@dataclass
+class _CountingClock:
+    """The test clock, counting the sleeps still pending."""
+
+    inner: ClockService
+    pending: int = 0
+
+    def current_time_millis_unsafe(self) -> float:
+        return self.inner.current_time_millis_unsafe()
+
+    def monotonic_unsafe(self) -> float:
+        return self.inner.monotonic_unsafe()
+
+    def now_nanos_unsafe(self) -> int:
+        return self.inner.now_nanos_unsafe()
+
+    def monotonic_nanos_unsafe(self) -> int:
+        return self.inner.monotonic_nanos_unsafe()
+
+    def sleep(self, seconds: Seconds) -> fx.Effect[None]:
+        def start() -> fx.Effect[None]:
+            self.pending += 1
+            return self.inner.sleep(seconds).ensuring(fx.sync(self._done))
+
+        return fx.suspend(start)
+
+    def _done(self) -> None:
+        self.pending -= 1
+
+
+@testing.effect
+def test_keeps_an_export_timer_pending_only_while_telemetry_is_buffered():
+    """keeps an export timer pending only while telemetry is buffered"""
+    seen, http = with_status(200)
+    counting = _CountingClock((yield from Clock()))
+
+    @fx.gen
+    def program():
+        exporter = yield from _make_exporter_raw(10).pipe(fx.provide_service(Clock, counting))
+        flusher = yield from otlp_exporter.Flusher()
+        yield from _yield_now_n(3)
+        assert counting.pending == 0
+
+        exporter.push({"value": 1})
+        yield from _yield_now_n(3)
+        assert counting.pending == 1
+        yield from testing.adjust("1 hour")
+        assert len(seen.requests) == 1
+        assert counting.pending == 0
+
+        exporter.push({"value": 2})
+        yield from flusher.flush
+        yield from _yield_now_n(3)
+        assert len(seen.requests) == 2
+        assert counting.pending == 0
+
+    yield from _with_flusher(program, http)
+
+
+@testing.effect
+def test_exports_again_once_the_disabled_window_has_passed():
+    """exports again once the disabled window has passed"""
+    seen, http = with_status(400)
+
+    @fx.gen
+    def program():
+        exporter = yield from _make_exporter(http, export_interval="1 second", max_batch_size=10)
+        exporter.push({"value": 1})
+        yield from testing.adjust("1 second")
+        assert len(seen.requests) == 1
+
+        yield from testing.adjust("61 seconds")
+        exporter.push({"value": 2})
+        yield from testing.adjust("1 second")
+        assert len(seen.requests) == 2
+
+    yield from fx.scoped(program)
 
 
 @testing.effect
@@ -519,6 +600,39 @@ def test_shares_one_registry_across_traces_logs_and_metrics():
             "http://localhost:4318/v1/logs",
             "http://localhost:4318/v1/metrics",
             "http://localhost:4318/v1/traces",
+        ]
+
+    yield from program.pipe(layer.provide(signals))
+
+
+@testing.effect
+def test_otlp_layer_from_config_flushes_enabled_signals_when_one_is_disabled():
+    """flush Otlp.layerFromConfig flushes enabled signals when one is disabled"""
+    seen, http = with_status(200)
+    env = {
+        "OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4318",
+        "OTEL_LOGS_EXPORTER": "otlp",
+        "OTEL_METRICS_EXPORTER": "otlp",
+        "OTEL_TRACES_EXPORTER": "none",
+        "OTEL_BLRP_SCHEDULE_DELAY": "3600000",
+        "OTEL_METRIC_EXPORT_INTERVAL": "3600000",
+    }
+    signals = (
+        otlp.layer_from_config(resource={"service_name": "test"}, logger_merge_with_existing=False)
+        .pipe(layer.provide(otlp_serialization.layer_json))
+        .pipe(layer.provide(client_layer(http)))
+        .pipe(layer.provide(config_provider.layer(config_provider.from_env(env))))
+    )
+
+    @fx.gen
+    def program():
+        yield from fx.log("flush test")
+        yield from metric.counter("otlp_flush_test").update(1)
+        flusher = yield from otlp_exporter.Flusher()
+        yield from flusher.flush
+        assert sorted(seen.urls) == [
+            "http://localhost:4318/v1/logs",
+            "http://localhost:4318/v1/metrics",
         ]
 
     yield from program.pipe(layer.provide(signals))

@@ -257,7 +257,7 @@ make_with_rate_limiter: Effect[WithRateLimiter, Never, RateLimiter] = gen(_with_
 """The ``RateLimiter``'s ``with_rate_limiter`` function::
 
     with_rate_limiter = yield from rate_limiter.make_with_rate_limiter
-    yield from call_api.pipe(with_rate_limiter(key="api", limit=10, window=60))
+    yield from call_api.pipe(with_rate_limiter(key="api", limit=10, window="1 minute"))
 """
 
 

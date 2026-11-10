@@ -106,8 +106,89 @@ def test_rejects_the_standard_base64_alphabet_and_malformed_lengths() -> None:
 
 def test_rejects_malformed_padding() -> None:
     """rejects malformed padding"""
-    for text in ["SGVsbG8_=", "SGVsbG8_==", "AAAA=", "AAAA==", "AAA=="]:
+    for text in ["SGVsbG8_=", "SGVsbG8_==", "AAAA=", "AAAA==", "AAA==", "Zg="]:
         assert isinstance(base64_url.decode(text), Err), text
+
+
+def test_round_trips_every_byte_value_through_both_decoders() -> None:
+    """round trips every byte value through both decoders"""
+    data = bytes(range(256))
+    for length in range(7):
+        view = data[250 - length : 250]
+        for encoded in [base64_url.encode(view), base64_url.encode_padded(view)]:
+            assert ok(base64_url.decode(encoded)) == view, encoded
+    for encoded in [base64_url.encode(data), base64_url.encode_padded(data)]:
+        assert ok(base64_url.decode(encoded)) == data
+        assert ok(base64_url.decode_string(encoded)) == data.decode("utf-8", errors="replace")
+
+
+def test_base64_url_decodes_valid_input_with_both_decoders() -> None:
+    """decodes valid input with both decoders"""
+    vectors = [
+        ("", ""),
+        ("\r\n", ""),
+        ("Zg", "f"),
+        ("Zg==", "f"),
+        ("Zm8", "fo"),
+        ("Zm8=", "fo"),
+        ("Zm9v", "foo"),
+        ("Zm\r\n9v", "foo"),
+        ("Zm9v\r\n", "foo"),
+        ("Z\ng", "f"),
+        ("Zg=\r\n=", "f"),
+    ]
+    for text, expected in vectors:
+        assert ok(base64_url.decode(text)) == expected.encode(), text
+        assert ok(base64_url.decode_string(text)) == expected, text
+
+
+def test_rejects_partial_padding_but_accepts_unpadded_and_fully_padded_input() -> None:
+    """rejects partial padding but accepts unpadded and fully padded input"""
+    assert_url_failure("Zg=", "Zg=", "Padded length should be a multiple of 4, but is 3")
+    assert ok(base64_url.decode("Zg")) == bytes([102])
+    assert ok(base64_url.decode("Zg==")) == bytes([102])
+
+
+def test_ignores_non_zero_trailing_bits() -> None:
+    """ignores non-zero trailing bits"""
+    for text in ["Zh", "Zh==", "Zv"]:
+        assert ok(base64_url.decode(text)) == bytes([102]), text
+    for text in ["Zm9", "Zm9=", "Zm-", "Zm_"]:
+        assert ok(base64_url.decode(text)) == bytes([102, 111]), text
+
+
+def test_base64_url_rejects_invalid_input_with_both_decoders() -> None:
+    """rejects invalid input with both decoders"""
+
+    def padded(length: int) -> str:
+        return f"Padded length should be a multiple of 4, but is {length}"
+
+    def unpadded(length: int) -> str:
+        return f"Unpadded length should not be 1 more than a multiple of 4, but is {length}"
+
+    assert_url_failure("Zg\r\n=", "Zg=", padded(3))
+    assert_url_failure("Zg===", "Zg===", padded(5))
+    assert_url_failure("=", "=", padded(1))
+    assert_url_failure("==", "==", padded(2))
+    assert_url_failure("=====", "=====", padded(5))
+    assert_url_failure("a", "a", unpadded(1))
+    assert_url_failure("Zm9v\r\nZ", "Zm9vZ", unpadded(5))
+    assert_url_failure("Zm 9v", "Zm 9v", unpadded(5))
+    assert_url_failure("Zm\t9v", "Zm\t9v", unpadded(5))
+    for text in ["Zm+v", "Zm/v", "Zm9!", "Zm9{", "Zm9\u00e9", "Zm9\u0000", "Zm9\u2028", "Z=g="]:
+        assert_url_failure(text, text, "Invalid input")
+
+
+def assert_url_failure(raw: str, stripped: str, expected: str) -> None:
+    for result in [base64_url.decode(raw), base64_url.decode_string(raw)]:
+        assert isinstance(result, Err), raw
+        error = result.error
+        assert (error.kind, error.module, error.input, error.message) == (
+            "Decode",
+            "Base64Url",
+            stripped,
+            expected,
+        )
 
 
 # --- Hex -------------------------------------------------------------------------

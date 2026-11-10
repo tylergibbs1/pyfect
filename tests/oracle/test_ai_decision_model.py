@@ -24,7 +24,7 @@ import re
 import sys
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
-from typing import Any, NotRequired, TypedDict, TypeIs
+from typing import Any, NotRequired, TypedDict, TypeIs, cast
 
 import pytest
 
@@ -79,11 +79,19 @@ EXPECTED = {
 }
 
 TRIAGE_ANSWERS: dict[str, DM.ProviderAnswer] = {
-    "department": DM.ProviderClassifyAnswer(
-        "billing", {"billing": 0.8, "technical": 0.15, "sales": 0.05}, 0.8
-    ),
-    "frustration": DM.ProviderRateAnswer(1.4, {"calm": 0.1, "frustrated": 0.5, "angry": 0.4}, 0.5),
-    "urgent": DM.ProviderProbabilityAnswer(0.9),
+    "department": {
+        "_tag": "Classify",
+        "label": "billing",
+        "probabilities": {"billing": 0.8, "technical": 0.15, "sales": 0.05},
+        "confidence": 0.8,
+    },
+    "frustration": {
+        "_tag": "Rate",
+        "rating": 1.4,
+        "probabilities": {"calm": 0.1, "frustrated": 0.5, "angry": 0.4},
+        "confidence": 0.5,
+    },
+    "urgent": {"_tag": "Probability", "probability": 0.9},
 }
 
 type Decide = Callable[[DM.ProviderOptions], fx.Effect[DM.ProviderResponse, E.AiError]]
@@ -229,7 +237,13 @@ def test_rate_probability_key(key: str):
     response = yield from DM.decide(definition, input="Help").pipe(
         fx.provide(
             succeed_with(
-                {"intensity": DM.ProviderRateAnswer(1.1, {"low": 0.1, key: 0.7, "high": 0.2})}
+                {
+                    "intensity": {
+                        "_tag": "Rate",
+                        "rating": 1.1,
+                        "probabilities": {"low": 0.1, key: 0.7, "high": 0.2},
+                    }
+                }
             )
         )
     )
@@ -250,7 +264,7 @@ def test_answer_key(key: str):
     )
     definition = D.make(input=S.String, decisions={key: decision})
     response = yield from DM.decide(definition, input="Help").pipe(
-        fx.provide(succeed_with({key: DM.ProviderProbabilityAnswer(0.75)}))
+        fx.provide(succeed_with({key: {"_tag": "Probability", "probability": 0.75}}))
     )
     assert list(response.answers) == [key]
     assert response.answers[key] == D.ProbabilityAnswer(0.75)
@@ -269,7 +283,13 @@ def test_classification_probability_key(key: str):
     response = yield from DM.decide(definition, input="Help").pipe(
         fx.provide(
             succeed_with(
-                {"category": DM.ProviderClassifyAnswer(key, {key: 0.75, "ordinary": 0.25})}
+                {
+                    "category": {
+                        "_tag": "Classify",
+                        "label": key,
+                        "probabilities": {key: 0.75, "ordinary": 0.25},
+                    }
+                }
             )
         )
     )
@@ -337,11 +357,17 @@ def test_decide_returns_ids_and_metadata():
 def test_distributions_without_confidence():
     """DecisionModel / classify and rate retain distributions when the provider omits
     confidence"""
-    answers = {
-        "department": DM.ProviderClassifyAnswer(
-            "billing", {"billing": 0.8, "technical": 0.15, "sales": 0.05}
-        ),
-        "frustration": DM.ProviderRateAnswer(1.4, {"calm": 0.1, "frustrated": 0.5, "angry": 0.4}),
+    answers: dict[str, DM.ProviderAnswer] = {
+        "department": {
+            "_tag": "Classify",
+            "label": "billing",
+            "probabilities": {"billing": 0.8, "technical": 0.15, "sales": 0.05},
+        },
+        "frustration": {
+            "_tag": "Rate",
+            "rating": 1.4,
+            "probabilities": {"calm": 0.1, "frustrated": 0.5, "angry": 0.4},
+        },
         "urgent": TRIAGE_ANSWERS["urgent"],
     }
     response = yield from DM.decide(TRIAGE, input=ticket).pipe(fx.provide(succeed_with(answers)))
@@ -390,6 +416,13 @@ scene: Scene = {"photo": PNG, "frames": [{"frame": PNG}]}
 BOX = D.BoundingBox(0.44, 0.25, 0.84, 0.82)
 
 
+def _box(left: float, top: float, right: float, bottom: float) -> DM.ProviderBoundingBox:
+    return {"left": left, "top": top, "right": right, "bottom": bottom}
+
+
+PROVIDER_BOX = _box(0.44, 0.25, 0.84, 0.82)
+
+
 def locate_with(
     answer: DM.ProviderAnswer, calls: list[DM.ProviderOptions] | None = None
 ) -> fx.Layer[DM.DecisionModel]:
@@ -415,7 +448,9 @@ def test_replaces_images_with_references():
 
     def decide(options: DM.ProviderOptions) -> fx.Effect[DM.ProviderResponse, E.AiError]:
         calls.append(options)
-        return fx.succeed(DM.ProviderResponse({"urgent": DM.ProviderProbabilityAnswer(0.9)}))
+        return fx.succeed(
+            DM.ProviderResponse({"urgent": {"_tag": "Probability", "probability": 0.9}})
+        )
 
     value: Scene = {"photo": image_bytes, "frames": [{"frame": image_bytes}, {"frame": remote}]}
     yield from DM.decide(describe, input=value).pipe(
@@ -471,13 +506,20 @@ def test_forwards_locate_decisions():
     """DecisionModel / forwards locate decisions to a locate-capable provider and returns a copy
     of the box"""
     calls: list[DM.ProviderOptions] = []
-    provided = DM.ProviderLocateAnswer(BOX, 0.92)
+    provided = cast(
+        "DM.ProviderAnswer",
+        {
+            "_tag": "Locate",
+            "box": {**PROVIDER_BOX, "extra": 1},
+            "confidence": 0.92,
+            "extra": "discard",
+        },
+    )
     response = yield from DM.decide(FIND_MUG, input=scene).pipe(
         fx.provide(locate_with(provided, calls))
     )
     assert calls[0].decisions is FIND_MUG.decisions
     assert response.answers[mug] == D.LocateAnswer(BOX, 0.92)
-    assert response.answers[mug].box is not provided.box
 
 
 @pytest.mark.parametrize(
@@ -525,8 +567,13 @@ def test_string_state():
     )
     sentiment = D.make(input=S.String, decisions={"tone": tone})
     calls: list[DM.ProviderOptions] = []
-    answers = {
-        "tone": DM.ProviderClassifyAnswer("positive", {"positive": 0.95, "negative": 0.05}, 0.95)
+    answers: dict[str, DM.ProviderAnswer] = {
+        "tone": {
+            "_tag": "Classify",
+            "label": "positive",
+            "probabilities": {"positive": 0.95, "negative": 0.05},
+            "confidence": 0.95,
+        }
     }
     response = yield from DM.decide(sentiment, input="I love this").pipe(
         fx.provide(recording(calls, answers))
@@ -617,7 +664,7 @@ def test_encoding_services():
     calls: list[DM.ProviderOptions] = []
     yield from (
         DM.decide(redacted, input={"body": "call me at 555-0100"})
-        .pipe(fx.provide(recording(calls, {"urgent": DM.ProviderProbabilityAnswer(0.5)})))
+        .pipe(fx.provide(recording(calls, {"urgent": {"_tag": "Probability", "probability": 0.5}})))
         .pipe(
             fx.provide_service(Redactor, lambda value: re.sub(r"\d{3}-\d{4}", "[redacted]", value))
         )
@@ -656,7 +703,9 @@ def _decide_error(answers: Mapping[str, DM.ProviderAnswer]) -> fx.Effect[E.AiErr
 @testing.effect
 def test_missing_answer():
     """DecisionModel / decide fails with InvalidOutputError when an answer is missing"""
-    answers = {k: TRIAGE_ANSWERS[k] for k in ("department", "frustration")}
+    answers: dict[str, DM.ProviderAnswer] = {
+        k: TRIAGE_ANSWERS[k] for k in ("department", "frustration")
+    }
     error = yield from _decide_error(answers)
     assert isinstance(error.reason, E.InvalidOutputError)
 
@@ -665,7 +714,11 @@ def test_missing_answer():
 def test_unknown_label():
     """DecisionModel / decide fails with InvalidOutputError when a classify label is not a
     criteria key"""
-    answer = DM.ProviderClassifyAnswer("legal", {"billing": 0.8, "technical": 0.15, "sales": 0.05})
+    answer: DM.ProviderAnswer = {
+        "_tag": "Classify",
+        "label": "legal",
+        "probabilities": {"billing": 0.8, "technical": 0.15, "sales": 0.05},
+    }
     error = yield from _decide_error({**TRIAGE_ANSWERS, "department": answer})
     assert isinstance(error.reason, E.InvalidOutputError)
 
@@ -674,7 +727,12 @@ def test_unknown_label():
 def test_incomplete_classify_distribution():
     """DecisionModel / decide fails with InvalidOutputError when a classify distribution is
     incomplete"""
-    answer = DM.ProviderClassifyAnswer("billing", {"billing": 1}, 0.8)
+    answer: DM.ProviderAnswer = {
+        "_tag": "Classify",
+        "label": "billing",
+        "probabilities": {"billing": 1},
+        "confidence": 0.8,
+    }
     error = yield from _decide_error({**TRIAGE_ANSWERS, "department": answer})
     assert isinstance(error.reason, E.InvalidOutputError)
 
@@ -683,7 +741,12 @@ def test_incomplete_classify_distribution():
 def test_incomplete_rate_distribution():
     """DecisionModel / decide fails with InvalidOutputError when a rate distribution is
     incomplete"""
-    answer = DM.ProviderRateAnswer(1.4, {"calm": 0.5, "angry": 0.5}, 0.5)
+    answer: DM.ProviderAnswer = {
+        "_tag": "Rate",
+        "rating": 1.4,
+        "probabilities": {"calm": 0.5, "angry": 0.5},
+        "confidence": 0.5,
+    }
     error = yield from _decide_error({**TRIAGE_ANSWERS, "frustration": answer})
     assert isinstance(error.reason, E.InvalidOutputError)
 
@@ -692,7 +755,7 @@ def test_incomplete_rate_distribution():
 def test_probability_outside_unit():
     """DecisionModel / decide fails with InvalidOutputError when a probability is outside
     [0, 1]"""
-    answer = DM.ProviderProbabilityAnswer(1.5)
+    answer: DM.ProviderAnswer = {"_tag": "Probability", "probability": 1.5}
     error = yield from _decide_error({**TRIAGE_ANSWERS, "urgent": answer})
     assert isinstance(error.reason, E.InvalidOutputError)
 
@@ -700,8 +763,8 @@ def test_probability_outside_unit():
 @testing.effect
 def test_settled_keeps_valid_answers():
     """DecisionModel / decideSettled keeps valid answers beside refused and missing decisions"""
-    answers = {
-        "department": DM.ProviderRefusalAnswer(),
+    answers: dict[str, DM.ProviderAnswer] = {
+        "department": {"_tag": "Refusal"},
         "frustration": TRIAGE_ANSWERS["frustration"],
     }
     response = yield from DM.decide_settled(TRIAGE, input=ticket).pipe(
@@ -722,28 +785,28 @@ def test_settled_keeps_valid_answers():
     [
         pytest.param(
             "department",
-            DM.ProviderClassifyAnswer("legal"),
+            {"_tag": "Classify", "label": "legal"},
             "Invalid",
             'Provider returned an unknown label for decision "department"',
             id="an unknown label is Invalid even without probabilities",
         ),
         pytest.param(
             "department",
-            DM.ProviderClassifyAnswer("billing"),
+            {"_tag": "Classify", "label": "billing"},
             "NoDistribution",
             'Provider returned no probabilities for decision "department"',
             id="a classify answer without probabilities is NoDistribution",
         ),
         pytest.param(
             "frustration",
-            DM.ProviderRateAnswer(1),
+            {"_tag": "Rate", "rating": 1},
             "NoDistribution",
             'Provider returned no probabilities for decision "frustration"',
             id="a rate answer without probabilities is NoDistribution",
         ),
         pytest.param(
             "department",
-            DM.ProviderClassifyAnswer("billing", {"billing": 1}),
+            {"_tag": "Classify", "label": "billing", "probabilities": {"billing": 1}},
             "Invalid",
             'Provider returned no probability for label "technical" of decision "department"',
             id="an incomplete distribution is Invalid",
@@ -773,10 +836,12 @@ def test_refusal_before_invalid():
     error = yield from _decide_error(
         {
             **TRIAGE_ANSWERS,
-            "department": DM.ProviderClassifyAnswer(
-                "legal", {"billing": 0.8, "technical": 0.15, "sales": 0.05}
-            ),
-            "frustration": DM.ProviderRefusalAnswer(),
+            "department": {
+                "_tag": "Classify",
+                "label": "legal",
+                "probabilities": {"billing": 0.8, "technical": 0.15, "sales": 0.05},
+            },
+            "frustration": {"_tag": "Refusal"},
         }
     )
     assert isinstance(error.reason, E.ContentPolicyError)
@@ -822,7 +887,15 @@ def test_rate_structured_levels():
     definition = D.make(input=S.String, decisions={"severity": severity})
     response = yield from DM.decide(definition, input="Export fails").pipe(
         fx.provide(
-            succeed_with({"severity": DM.ProviderRateAnswer(0.9, {"low": 0.1, "high": 0.9})})
+            succeed_with(
+                {
+                    "severity": {
+                        "_tag": "Rate",
+                        "rating": 0.9,
+                        "probabilities": {"low": 0.1, "high": 0.9},
+                    }
+                }
+            )
         )
     )
     assert response.answers[severity].label == "high"
@@ -853,7 +926,12 @@ def test_rate_argmax_label():
 def test_rate_label_from_distribution(probabilities: dict[str, float], expected: str):
     """Decision validation contracts / rate ignores a conflicting provider label / rate breaks
     ties in criteria order"""
-    answer = DM.ProviderRateAnswer(1.4, probabilities, 0.5)
+    answer: DM.ProviderAnswer = {
+        "_tag": "Rate",
+        "rating": 1.4,
+        "probabilities": probabilities,
+        "confidence": 0.5,
+    }
     response = yield from DM.decide(TRIAGE, input=ticket).pipe(
         fx.provide(succeed_with({**TRIAGE_ANSWERS, "frustration": answer}))
     )
@@ -864,7 +942,11 @@ def test_rate_label_from_distribution(probabilities: dict[str, float], expected:
 def test_classify_keeps_provider_label():
     """Decision validation contracts / classify retains the provider label even when it is not
     the argmax"""
-    answer = DM.ProviderClassifyAnswer("sales", {"billing": 0.8, "technical": 0.15, "sales": 0.05})
+    answer: DM.ProviderAnswer = {
+        "_tag": "Classify",
+        "label": "sales",
+        "probabilities": {"billing": 0.8, "technical": 0.15, "sales": 0.05},
+    }
     response = yield from DM.decide(TRIAGE, input=ticket).pipe(
         fx.provide(succeed_with({**TRIAGE_ANSWERS, "department": answer}))
     )
@@ -875,9 +957,7 @@ EPSILON = sys.float_info.epsilon
 
 
 def _with(key: str, **changes: Any) -> dict[str, DM.ProviderAnswer]:
-    from dataclasses import replace
-
-    return {**TRIAGE_ANSWERS, key: replace(TRIAGE_ANSWERS[key], **changes)}
+    return {**TRIAGE_ANSWERS, key: cast("DM.ProviderAnswer", {**TRIAGE_ANSWERS[key], **changes})}
 
 
 @pytest.mark.parametrize("key", ["department", "frustration"])
@@ -975,13 +1055,19 @@ def test_extra_keys_never_leak():
     """Decision validation contracts / extra provider keys never leak into answers"""
     raw: dict[str, DM.ProviderAnswer] = {
         **TRIAGE_ANSWERS,
-        "extraDecision": DM.ProviderProbabilityAnswer(0.5),
-        "department": DM.ProviderClassifyAnswer(
-            "billing", {"billing": 0.8, "technical": 0.15, "sales": 0.05, "extra": 1}, 0.8
-        ),
-        "frustration": DM.ProviderRateAnswer(
-            1.4, {"calm": 0.1, "frustrated": 0.5, "angry": 0.4, "extra": 1}, 0.5
-        ),
+        "extraDecision": {"_tag": "Probability", "probability": 0.5},
+        "department": {
+            "_tag": "Classify",
+            "label": "billing",
+            "probabilities": {"billing": 0.8, "technical": 0.15, "sales": 0.05, "extra": 1},
+            "confidence": 0.8,
+        },
+        "frustration": {
+            "_tag": "Rate",
+            "rating": 1.4,
+            "probabilities": {"calm": 0.1, "frustrated": 0.5, "angry": 0.4, "extra": 1},
+            "confidence": 0.5,
+        },
     }
     response = yield from DM.decide(TRIAGE, input=ticket).pipe(fx.provide(succeed_with(raw)))
     assert dict(response.answers) == EXPECTED
@@ -1028,40 +1114,42 @@ def test_zero_distribution_rejected_at_any_precision():
 @pytest.mark.parametrize(
     "box",
     [
-        pytest.param(D.BoundingBox(0, 0, 1, 1), id="the full image"),
-        pytest.param(D.BoundingBox(0.5, 0.5, 0.5, 0.5), id="a zero-area box"),
+        pytest.param(_box(0, 0, 1, 1), id="the full image"),
+        pytest.param(_box(0.5, 0.5, 0.5, 0.5), id="a zero-area box"),
     ],
 )
 @testing.effect
-def test_locate_accepts(box: D.BoundingBox):
+def test_locate_accepts(box: DM.ProviderBoundingBox):
     """DecisionModel / locate accepts the full image / a zero-area box"""
     response = yield from DM.decide(FIND_MUG, input=scene).pipe(
-        fx.provide(locate_with(DM.ProviderLocateAnswer(box)))
+        fx.provide(locate_with({"_tag": "Locate", "box": box}))
     )
-    assert response.answers[mug] == D.LocateAnswer(box)
+    assert response.answers[mug] == D.LocateAnswer(D.BoundingBox(**box))
 
 
 @pytest.mark.parametrize(
     "answer",
     [
-        pytest.param(DM.ProviderLocateAnswer(None), id="a missing box"),
+        pytest.param({"_tag": "Locate"}, id="a missing box"),
         pytest.param(
-            DM.ProviderLocateAnswer(D.BoundingBox(0.44, 0.25, 1.01, 0.82)),
+            {"_tag": "Locate", "box": _box(0.44, 0.25, 1.01, 0.82)},
             id="an edge outside [0, 1]",
         ),
         pytest.param(
-            DM.ProviderLocateAnswer(D.BoundingBox(0.9, 0.25, 0.84, 0.82)),
+            {"_tag": "Locate", "box": _box(0.9, 0.25, 0.84, 0.82)},
             id="crossed horizontal edges",
         ),
         pytest.param(
-            DM.ProviderLocateAnswer(D.BoundingBox(0.44, 0.25, 0.84, 0.1)),
+            {"_tag": "Locate", "box": _box(0.44, 0.25, 0.84, 0.1)},
             id="crossed vertical edges",
         ),
-        pytest.param(DM.ProviderLocateAnswer(BOX, 2), id="confidence outside [0, 1]"),
+        pytest.param(
+            {"_tag": "Locate", "box": PROVIDER_BOX, "confidence": 2}, id="confidence outside [0, 1]"
+        ),
     ],
 )
 @testing.effect
-def test_locate_rejects(answer: DM.ProviderLocateAnswer):
+def test_locate_rejects(answer: DM.ProviderAnswer):
     """DecisionModel / locate rejects a missing box / an edge outside [0, 1] / crossed horizontal
     edges / crossed vertical edges / confidence outside [0, 1]"""
     error = yield from failure_of(DM.decide(FIND_MUG, input=scene)).pipe(
@@ -1076,8 +1164,8 @@ def test_settled_keeps_valid_box():
     spoon = D.locate(image="photo", instructions="the spoon")
     find_two = D.make(input=SCENE, decisions={"mug": mug, "spoon": spoon})
     answers: dict[str, DM.ProviderAnswer] = {
-        "mug": DM.ProviderLocateAnswer(BOX),
-        "spoon": DM.ProviderLocateAnswer(D.BoundingBox(0.9, 0.25, 0.84, 0.82)),
+        "mug": {"_tag": "Locate", "box": PROVIDER_BOX},
+        "spoon": {"_tag": "Locate", "box": _box(0.9, 0.25, 0.84, 0.82)},
     }
     layer = make_layer(
         lambda _: fx.succeed(DM.ProviderResponse(answers)),

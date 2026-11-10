@@ -12,7 +12,7 @@ from __future__ import annotations
 # pyright: reportUnknownMemberType=false, reportUnknownLambdaType=false
 import json
 from collections.abc import Sequence
-from typing import Any, TypedDict
+from typing import Any, NotRequired, TypedDict
 
 import pytest
 
@@ -34,7 +34,17 @@ from pyfect.redacted import make as redact
 from pyfect.result import Ok
 
 from ._ai import SCREENSHOT_PNG, screenshot_prompt
-from ._ai_http import MockHttp, json_response, meta, mock_json, mock_sse, recording_tracer
+from ._ai_http import (
+    MockHttp,
+    body_json,
+    json_response,
+    meta,
+    mock_json,
+    mock_sse,
+    recording_tracer,
+    sse_response,
+    unexpected,
+)
 from ._ai_http import span_named as _span
 
 _LEGACY = "claude-sonnet-4-20250514"
@@ -1119,3 +1129,382 @@ def test_stream_undeclared_calls_when_deferred():
     assert [(p.name, p.params) for p in parts if isinstance(p, R.ToolCallPart)] == [
         ("Write", {"path": "a"})
     ]
+
+
+@testing.effect
+def test_stream_thinking_delta_without_estimate():
+    """streamText / decodes thinking deltas without the beta token estimate"""
+    mock = mock_sse(
+        [
+            _start(
+                cache_creation=None,
+                cache_creation_input_tokens=None,
+                cache_read_input_tokens=None,
+                service_tier=None,
+            ),
+            {
+                "type": "content_block_start",
+                "index": 0,
+                "content_block": {"type": "thinking", "thinking": "", "signature": ""},
+            },
+            # The documented thinking delta, without `estimated_tokens` from the token-count beta
+            {
+                "type": "content_block_delta",
+                "index": 0,
+                "delta": {"type": "thinking_delta", "thinking": "Thinking..."},
+            },
+            {"type": "content_block_stop", "index": 0},
+            _delta(
+                cache_creation_input_tokens=None, cache_read_input_tokens=None, input_tokens=None
+            ),
+            _STOP,
+        ]
+    )
+    parts = yield from _provided(lm.stream_text("Hello").run_collect(), mock)
+    assert any(isinstance(p, R.ReasoningDeltaPart) and p.delta == "Thinking..." for p in parts)
+
+
+# recursive tool parameters --------------------------------------------------------------
+
+
+class Filter(TypedDict):
+    name: NotRequired[str | None]
+    OR: NotRequired[list[Filter]]
+
+
+class _ListContactsParams(TypedDict):
+    filter: Filter
+
+
+def _filter() -> Any:
+    return FilterSchema
+
+
+FilterSchema: Any = S.Struct(Filter, OR=S.List(S.suspend(_filter))).annotate(identifier="Filter")
+# An identified alias of an identified root produces a chain of root references
+RecursiveFilterTool = T.make(
+    "ListContacts",
+    parameters=S.suspend(
+        lambda: S.Struct(_ListContactsParams, filter=FilterSchema).annotate(
+            identifier="ListContactsParams"
+        )
+    ).annotate(identifier="Params"),
+)
+
+
+@testing.effect
+def test_generate_recursive_non_strict_tool():
+    """generateText / sends recursive parameters for a non-strict tool and returns nested tool call params"""  # noqa: E501
+    model = "claude-sonnet-4-5"
+    params = {"filter": {"name": None, "OR": [{"name": "Anna"}, {"name": "Ben"}]}}
+    mock = mock_json(
+        _message(
+            [{"type": "tool_use", "id": "toolu_test_1", "name": "ListContacts", "input": params}],
+            model=model,
+            stop_reason="tool_use",
+        )
+    )
+    response = yield from _provided(
+        lm.generate_text(
+            "Find the contacts named Anna or Ben",
+            toolkit=K.make(RecursiveFilterTool),
+            disable_tool_call_resolution=True,
+        ),
+        mock,
+        model,
+        {"strict_json_schema": False},
+    )
+    (body,) = mock.bodies
+    assert body["tools"][0]["strict"] is False
+    input_schema = body["tools"][0]["input_schema"]
+    assert input_schema["type"] == "object"
+    assert input_schema["properties"]["filter"] == {"$ref": "#/$defs/Filter"}
+    assert input_schema["$defs"]["Filter"]["properties"]["OR"]["items"] == {
+        "$ref": "#/$defs/Filter"
+    }
+    assert len(response.tool_calls) == 1
+    filter = response.tool_calls[0].params["filter"]
+    assert filter.get("name") is None
+    assert filter["OR"] == [{"name": "Anna"}, {"name": "Ben"}]
+
+
+@testing.effect
+def test_generate_recursive_strict_tool():
+    """generateText / rejects recursive parameters for a strict tool"""
+    error = yield from _provided(
+        lm.generate_text(
+            "Find the contacts named Anna or Ben",
+            toolkit=K.make(RecursiveFilterTool),
+            disable_tool_call_resolution=True,
+        ).flip(),
+        unexpected(),
+        "claude-sonnet-4-5",
+    )
+    assert isinstance(error.reason, E.UnsupportedSchemaError)
+    assert "Recursive schemas are not supported" in error.message
+
+
+# tool search ----------------------------------------------------------------------------
+# Anthropic tool search runs on the server: `server_tool_use` and its
+# `tool_search_tool_result` must replay in the assistant message as received,
+# while only client tool results belong in the following user message (#10268).
+
+
+class _Name(TypedDict):
+    name: str
+
+
+ListContacts = T.make("ListContacts", parameters=S.Struct(_Name), success=S.Array(S.String))
+_SEARCH_TOOLKIT = K.make(
+    ListContacts,
+    AT.ToolSearchRegex_20251119(),
+    AT.ToolSearchBM25_20251119(),
+    AT.WebSearch_20250305({}),
+)
+_SEARCH_LAYER = _SEARCH_TOOLKIT.to_layer(ListContacts.handler(lambda _, __: fx.succeed(())))
+_TOOL_REFERENCES = [{"type": "tool_reference", "tool_name": "ListContacts"}]
+_SEARCH_CONTENT: list[dict[str, Any]] = [
+    {
+        "type": "server_tool_use",
+        "id": "srvtoolu_1",
+        "name": "tool_search_tool_regex",
+        "input": {"pattern": "contacts", "limit": 5},
+    },
+    {
+        "type": "tool_search_tool_result",
+        "tool_use_id": "srvtoolu_1",
+        "content": {"type": "tool_search_tool_search_result", "tool_references": _TOOL_REFERENCES},
+    },
+    {
+        "type": "server_tool_use",
+        "id": "srvtoolu_2",
+        "name": "tool_search_tool_bm25",
+        "input": {"query": "contacts", "limit": 5},
+    },
+    {
+        "type": "tool_search_tool_result",
+        "tool_use_id": "srvtoolu_2",
+        "content": {
+            "type": "tool_search_tool_result_error",
+            "error_code": "unavailable",
+            "error_message": None,
+        },
+    },
+    {
+        "type": "server_tool_use",
+        "id": "srvtoolu_3",
+        "name": "web_search",
+        "input": {"query": "contacts"},
+    },
+    {
+        "type": "web_search_tool_result",
+        "tool_use_id": "srvtoolu_3",
+        "content": [
+            {
+                "type": "web_search_result",
+                "url": "https://example.com/contacts",
+                "title": "Contacts",
+                "encrypted_content": "encrypted",
+                "page_age": None,
+            }
+        ],
+    },
+    {"type": "tool_use", "id": "toolu_1", "name": "ListContacts", "input": {"name": "Anna"}},
+]
+
+
+def _search_events(content: Sequence[dict[str, Any]]) -> list[object]:
+    events: list[object] = [_start()]
+    for index, block in enumerate(content):
+        if "input" in block:
+            events += [
+                {
+                    "type": "content_block_start",
+                    "index": index,
+                    "content_block": {**block, "input": {}},
+                },
+                {
+                    "type": "content_block_delta",
+                    "index": index,
+                    "delta": {
+                        "type": "input_json_delta",
+                        "partial_json": json.dumps(block["input"]),
+                    },
+                },
+                {"type": "content_block_stop", "index": index},
+            ]
+        else:
+            events += [
+                {"type": "content_block_start", "index": index, "content_block": block},
+                {"type": "content_block_stop", "index": index},
+            ]
+    return [*events, _delta("tool_use"), _STOP]
+
+
+def _search_mock(first: Sequence[dict[str, Any]]) -> MockHttp:
+    """Answers the first request with ``first`` and every later one with text."""
+    mock: MockHttp
+
+    def handle(request: Any) -> fx.Effect[Any, Any]:
+        if len(mock.requests) > 1:
+            return fx.succeed(json_response(request, _done()))
+        if body_json(request).get("stream"):
+            return fx.succeed(sse_response(request, _search_events(first)))
+        return fx.succeed(json_response(request, _message(first, stop_reason="tool_use")))
+
+    mock = MockHttp(handle)
+    return mock
+
+
+@pytest.mark.parametrize("mode", ["generateText", "streamText"])
+@testing.effect
+def test_tool_search_replays_provider_executed_results(mode: str):
+    """tool search / replays provider-executed results in the assistant message (${mode})"""
+    mock = _search_mock(_SEARCH_CONTENT)
+    prompt = Pr.make("Which contacts are there?")
+
+    def first() -> Any:
+        if mode == "generateText":
+            response = yield from lm.generate_text(prompt, toolkit=_SEARCH_TOOLKIT)
+            return list(response.content)
+        return list((yield from lm.stream_text(prompt, toolkit=_SEARCH_TOOLKIT).run_collect()))
+
+    def program() -> Any:
+        first_parts = yield from fx.gen(first)
+        # The public success result stays the bare array of tool references
+        search = next(
+            p
+            for p in first_parts
+            if isinstance(p, R.ToolResultSuccess | R.ToolResultFailure) and p.id == "srvtoolu_1"
+        )
+        assert list(search.result) == _TOOL_REFERENCES
+        yield from lm.generate_text(
+            prompt.concat(Pr.from_response_parts(first_parts)),
+            toolkit=_SEARCH_TOOLKIT,
+            disable_tool_call_resolution=True,
+        )
+
+    yield from _provided(fx.gen(program), mock, _LEGACY, None, _SEARCH_LAYER)
+    body = mock.bodies[1]
+    assert [m["role"] for m in body["messages"]] == ["user", "assistant", "user"]
+    assert body["messages"][1]["content"] == _SEARCH_CONTENT
+    assert [b["tool_use_id"] for b in body["messages"][2]["content"]] == ["toolu_1"]
+
+
+class _Host(TypedDict):
+    host: str
+
+
+@testing.effect
+def test_tool_search_defer_loading():
+    """tool search / sends defer_loading only for tools that opt in"""
+    mock = _search_mock([{"type": "text", "text": "Done"}])
+    yield from _provided(
+        lm.generate_text(
+            "Which contacts are there?",
+            toolkit=K.make(
+                ListContacts.annotate(AT.DeferLoading, True),
+                T.make("Ping", parameters=S.Struct(_Host)),
+                AT.ToolSearchRegex_20251119(),
+            ),
+            disable_tool_call_resolution=True,
+        ),
+        mock,
+    )
+    assert [(t["name"], t.get("defer_loading")) for t in mock.bodies[0]["tools"]] == [
+        ("ListContacts", True),
+        ("Ping", None),
+        ("tool_search_tool_regex", None),
+    ]
+
+
+# Text editor tool -----------------------------------------------------------------------
+
+
+def test_text_editor_insert_text():
+    """Text editor tool / decodes insert_text for the insert command"""
+    input = {"command": "insert", "path": "notes.md", "insert_line": 0, "insert_text": "# Notes\n"}
+    schema: Any = AT.TextEditor_20250728({}).parameters_schema
+    assert S.decode_unknown_sync(schema)(input) == input
+
+
+def test_text_editor_legacy_insert():
+    """Text editor tool / decodes new_str for the legacy insert command"""
+    input = {"command": "insert", "path": "notes.md", "insert_line": 0, "new_str": "# Notes\n"}
+    schema: Any = AT.TextEditor_20250124({}).parameters_schema
+    assert S.decode_unknown_sync(schema)(input) == input
+    assert S.decode_unknown_sync(S.Struct(AT.InsertCommand))(input) == input
+
+
+# provider tool names --------------------------------------------------------------------
+
+_NAMED_TOOLKIT = K.make(AT.Memory_20250818({}), AT.ComputerUse_20241022(_DISPLAY))
+
+
+def _named(
+    prompt: Pr.RawInput,
+    tool_choice: lm.ToolChoice = "auto",
+    content: Sequence[object] = ({"type": "text", "text": "Done"},),
+) -> Any:
+    mock = mock_json(_message(content))
+    response = yield from _provided(
+        lm.generate_text(
+            prompt,
+            toolkit=_NAMED_TOOLKIT,
+            tool_choice=tool_choice,
+            disable_tool_call_resolution=True,
+        ),
+        mock,
+    )
+    return mock.bodies[0], response
+
+
+@testing.effect
+def test_provider_names_tool_choice_and_replay():
+    """provider tool names / sends provider names for an explicit tool choice and replayed tool calls"""  # noqa: E501
+    body, _ = yield from _named(
+        Pr.make(
+            [
+                {"role": "user", "content": "what do you remember?"},
+                {
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "tool-call",
+                            "id": "toolu_mem_1",
+                            "name": "AnthropicMemory",
+                            "params": {"command": "view", "path": "/memories"},
+                            "providerExecuted": False,
+                        }
+                    ],
+                },
+            ]
+        ),
+        {"tool": "AnthropicMemory"},
+    )
+    assert body["tool_choice"] == {"type": "tool", "name": "memory"}
+    assert body["messages"][1]["content"][0]["name"] == "memory"
+
+
+@testing.effect
+def test_provider_names_one_of():
+    """provider tool names / keeps provider tools selected by a oneOf tool choice"""
+    body, _ = yield from _named("remember this", {"one_of": ["AnthropicMemory"]})
+    assert [t["name"] for t in body["tools"]] == ["memory"]
+
+
+@testing.effect
+def test_provider_names_computer_use_20241022():
+    """provider tool names / decodes ComputerUse_20241022 calls named computer"""
+    _, response = yield from _named(
+        "take a screenshot",
+        content=[
+            {
+                "type": "tool_use",
+                "id": "toolu_cu_1",
+                "name": "computer",
+                "input": {"action": "screenshot"},
+            }
+        ],
+    )
+    assert response.tool_calls[0].name == "AnthropicComputerUse"

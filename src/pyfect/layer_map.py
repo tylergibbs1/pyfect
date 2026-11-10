@@ -184,7 +184,7 @@ class LayerMapService[K: Hashable, I, E = Never](Tag[LayerMap[K, I, E]], base=Tr
 
     class Tenants(LayerMapService[str, Database]): ...
 
-    TenantsLive = Tenants.layer(tenant_database, idle_time_to_live=60)
+    TenantsLive = Tenants.layer(tenant_database, idle_time_to_live="1 minute")
     """
 
     @overload

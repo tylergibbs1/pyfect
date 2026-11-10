@@ -18,6 +18,7 @@ from typing import Any, Literal, NotRequired, TypedDict
 
 from pyfect import schema as S
 from pyfect.ai import tool as T
+from pyfect.context import Reference
 
 _BLOCK = S.Record(S.String, S.Unknown)
 """A JSON block Anthropic returns, kept whole."""
@@ -259,7 +260,7 @@ _COMPUTER_20251124: S.Codec[ComputerUse_20251124_Action, Any, Any, Any] = S.Unio
 ComputerUse_20241022 = T.provider_defined(
     id="anthropic.computer_use_20241022",
     custom_name="AnthropicComputerUse",
-    provider_name="computer_use",
+    provider_name="computer",
     requires_handler=True,
     args=S.Struct(ComputerUseArgs),
     parameters=_COMPUTER_20241022,
@@ -361,10 +362,23 @@ class CreateCommand(TypedDict):
 
 
 class InsertCommand(TypedDict):
+    """The insert command of ``text_editor_20241022`` and
+    ``text_editor_20250124``; later versions send ``InsertTextCommand``."""
+
     command: Literal["insert"]
     path: str
     insert_line: int
     new_str: str
+
+
+class InsertTextCommand(TypedDict):
+    """The insert command of ``text_editor_20250429`` and
+    ``text_editor_20250728``."""
+
+    command: Literal["insert"]
+    path: str
+    insert_line: int
+    insert_text: str
 
 
 class UndoEditCommand(TypedDict):
@@ -376,19 +390,20 @@ class TextEditorArgs(TypedDict):
     max_characters: NotRequired[int]
 
 
-type StrReplaceBasedEditCommand = ViewCommand | CreateCommand | StrReplaceCommand | InsertCommand
-type StrReplaceEditorCommand = StrReplaceBasedEditCommand | UndoEditCommand
+type StrReplaceBasedEditCommand = (
+    ViewCommand | CreateCommand | StrReplaceCommand | InsertTextCommand
+)
+type StrReplaceEditorCommand = (
+    ViewCommand | CreateCommand | StrReplaceCommand | InsertCommand | UndoEditCommand
+)
 
-_BASED_EDIT = (
-    S.Struct(ViewCommand),
-    S.Struct(CreateCommand),
-    S.Struct(StrReplaceCommand),
-    S.Struct(InsertCommand),
-)
+_EDIT = (S.Struct(ViewCommand), S.Struct(CreateCommand), S.Struct(StrReplaceCommand))
 _STR_REPLACE_EDITOR: S.Codec[StrReplaceEditorCommand, Any, Any, Any] = S.Union(
-    *_BASED_EDIT, S.Struct(UndoEditCommand)
+    *_EDIT, S.Struct(InsertCommand), S.Struct(UndoEditCommand)
 )
-_STR_REPLACE_BASED_EDIT: S.Codec[StrReplaceBasedEditCommand, Any, Any, Any] = S.Union(*_BASED_EDIT)
+_STR_REPLACE_BASED_EDIT: S.Codec[StrReplaceBasedEditCommand, Any, Any, Any] = S.Union(
+    *_EDIT, S.Struct(InsertTextCommand)
+)
 
 TextEditor_20241022 = T.provider_defined(
     id="anthropic.text_editor_20241022",
@@ -483,11 +498,45 @@ WebFetch_20250910 = T.provider_defined(
     success=_BLOCK,
     failure=_BLOCK,
 )
+
+
+class ToolSearchRegexParameters(TypedDict):
+    """A Python ``re.search`` pattern of at most 200 characters; ``limit``
+    caps the tools returned (1 to 10,000, default 5)."""
+
+    pattern: str
+    limit: NotRequired[int]
+
+
+class ToolSearchBM25Parameters(TypedDict):
+    """A natural-language query over tool names, descriptions and
+    arguments; ``limit`` caps the tools returned (1 to 10,000, default 5)."""
+
+    query: str
+    limit: NotRequired[int]
+
+
+class DeferLoading(Reference[bool], key="@effect/ai-anthropic/AnthropicTool/DeferLoading"):
+    """Annotate a user-defined tool with ``True`` to send it with
+    ``defer_loading``: Claude only sees it once tool search finds it.
+    Anthropic needs at least one tool not deferred (normally the tool
+    search tool); provider-defined tools ignore it::
+
+        kit = toolkit.make(
+            list_contacts.annotate(tool.DeferLoading, True), tool.ToolSearchBM25_20251119()
+        )
+    """
+
+    @classmethod
+    def default(cls) -> bool:
+        return False
+
+
 ToolSearchRegex_20251119 = T.provider_defined(
     id="anthropic.tool_search_tool_regex_20251119",
     custom_name="AnthropicToolSearchRegex",
     provider_name="tool_search_tool_regex",
-    parameters=S.Struct(QueryParameters),
+    parameters=S.Struct(ToolSearchRegexParameters),
     success=S.Array(_BLOCK),
     failure=_BLOCK,
 )
@@ -495,7 +544,7 @@ ToolSearchBM25_20251119 = T.provider_defined(
     id="anthropic.tool_search_tool_bm25_20251119",
     custom_name="AnthropicToolSearchBM25",
     provider_name="tool_search_tool_bm25",
-    parameters=S.Struct(QueryParameters),
+    parameters=S.Struct(ToolSearchBM25Parameters),
     success=S.Array(_BLOCK),
     failure=_BLOCK,
 )
@@ -522,9 +571,11 @@ __all__ = [
     "ComputerUse_20251124_Args",
     "Coordinate",
     "CreateCommand",
+    "DeferLoading",
     "DoubleClickAction",
     "HoldKeyAction",
     "InsertCommand",
+    "InsertTextCommand",
     "KeyAction",
     "LeftClickAction",
     "LeftClickDragAction",
@@ -551,7 +602,9 @@ __all__ = [
     "TextEditor_20250124",
     "TextEditor_20250429",
     "TextEditor_20250728",
+    "ToolSearchBM25Parameters",
     "ToolSearchBM25_20251119",
+    "ToolSearchRegexParameters",
     "ToolSearchRegex_20251119",
     "TripleClickAction",
     "TypeAction",

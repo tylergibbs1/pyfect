@@ -8,9 +8,6 @@ names (``"INFO"``).
 
 Adapted, with the reason:
 
-- "adds SDK resource defaults when the resource comes only from the
-  environment": the environment is ``os.environ`` (pytest's
-  ``monkeypatch``), as pyfect has no ``ConfigProvider`` yet.
 - "keeps event time separate from observed time and uses wall-clock span
   time": a pyfect log's date comes from the clock's nanoseconds (Effect's
   from its milliseconds), so the port checks the record's time is that
@@ -47,7 +44,7 @@ from opentelemetry.trace import (
 )
 
 import pyfect as fx
-from pyfect import layer, otel, testing
+from pyfect import config_provider, layer, otel, testing
 from pyfect.cause import Cause, Fail
 from pyfect.clock import Clock
 from pyfect.context import Context
@@ -83,12 +80,8 @@ def _attributes(record: ReadableLogRecord) -> dict[str, Any]:
 
 
 @testing.effect
-def test_adds_sdk_resource_defaults_when_the_resource_comes_only_from_the_environment(
-    monkeypatch: pytest.MonkeyPatch,
-):
+def test_adds_sdk_resource_defaults_when_the_resource_comes_only_from_the_environment():
     """adds SDK resource defaults when the resource comes only from the environment"""
-    monkeypatch.setenv("OTEL_SERVICE_NAME", "env-service")
-    monkeypatch.delenv("OTEL_RESOURCE_ATTRIBUTES", raising=False)
     exporter = InMemoryLogRecordExporter()
     config = otel.sdk.Configuration(log_record_processor=[SimpleLogRecordProcessor(exporter)])
 
@@ -106,7 +99,10 @@ def test_adds_sdk_resource_defaults_when_the_resource_comes_only_from_the_enviro
             "telemetry.sdk.version": PYFECT_VERSION,
         }
 
-    yield from program.pipe(fx.provide(otel.sdk.layer(lambda: config)))
+    provider = config_provider.from_env({"OTEL_SERVICE_NAME": "env-service"})
+    yield from program.pipe(fx.provide(otel.sdk.layer(lambda: config))).pipe(
+        fx.provide_service(config_provider.CurrentConfigProvider, provider)
+    )
 
 
 @testing.effect

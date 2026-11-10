@@ -25,6 +25,7 @@ from pyfect import (
     crypto,
     execution_plan,
     graphql,
+    jose,
     layer,
     logger,
     optic,
@@ -3855,6 +3856,10 @@ def check_config_schema() -> None:
     # A collection reads its items with a config or with a schema.
     assert_type(config.list_of(S.Finite, "PORTS"), fx.Config[list[float]])
     assert_type(config.dict_of(S.Int, "W"), fx.Config[dict[str, int]])
+    assert_type(
+        config.dict_of(S.String, "W", trim=True, keep_empty_values=True),
+        fx.Config[dict[str, str]],
+    )
     config.schema(config.integer(), "PORT")  # pyright: ignore[reportArgumentType]
     config.schema(S.Int, 1)  # pyright: ignore[reportArgumentType]
 
@@ -4182,8 +4187,6 @@ def check_schema_checks(unknown: object) -> None:
     assert_type(S.is_greater_than_date(datetime.now()), S.Filter[datetime])
     assert_type(S.is_int32(), S.FilterGroup[float])
     assert_type(S.is_property_names(S.String), S.Filter[Mapping[Any, object]])
-    assert_type(S.is_ascii(), S.Filter[str])
-    S.Number.check(S.is_ascii())  # pyright: ignore[reportArgumentType]
     assert_type(S.decode_sync(S.DurationFromIsoString)("PT1H"), timedelta)
     S.String.check(S.is_greater_than(1))  # pyright: ignore[reportArgumentType]
     S.Number.check(S.is_trimmed())  # pyright: ignore[reportArgumentType]
@@ -4237,6 +4240,11 @@ def check_schema_checks(unknown: object) -> None:
     S.String.pipe(S.from_brand(small))  # pyright: ignore[reportArgumentType]
     assert_type(S.resolve_annotations(S.String), S.ast.Annotations | None)
     _ = ones
+
+
+def check_schema_is_ascii() -> None:
+    assert_type(S.is_ascii(), S.Filter[str])
+    S.Number.check(S.is_ascii())  # pyright: ignore[reportArgumentType]
 
 
 def check_brands_and_decoding_defaults() -> None:
@@ -7243,7 +7251,10 @@ def check_mcp() -> None:
         mcp_m.register_toolkit(kit),
         fx.Effect[None, Never, mcp_m.McpServer | ai_toolkit.Handlers[Literal["Weather"]]],
     )
-    assert_type(mcp_m.toolkit(kit), fx.Layer[Never, Never, ai_toolkit.Handlers[Literal["Weather"]]])
+    assert_type(
+        mcp_m.toolkit(kit),
+        fx.Layer[Never, Never, mcp_m.McpServer | ai_toolkit.Handlers[Literal["Weather"]]],
+    )
     assert_type(
         mcp_m.run_stdio(name="s", version="1", protocols=(mcp_p.v2025_11_25,)),
         fx.Effect[None, Illegal | PlatformErr, mcp_m.McpServer | mcp_stdio.Stdio],
@@ -7372,6 +7383,26 @@ def check_mcp_client_calls(
         mcp_client_module.toolkit(service, "docs__", failure_mode="return"),
         fx.Effect[ai_toolkit.WithHandler[Any, Any, Never, Never], McpErr],
     )
+    # Effect 4.1's toolkit options: result modes, snapshots and transformTool.
+    assert_type(
+        mcp_client_module.toolkit(service, tools=[tool], result_mode="complete", timeout=5),
+        fx.Effect[ai_toolkit.WithHandler[Any, Any, McpErr, Never], McpErr],
+    )
+
+    def approve(
+        remote: mcp_client_module.RemoteTool[mcp_schema_module.CallToolResult, Never],
+        _: mcp_schema_module.Tool,
+    ) -> mcp_client_module.RemoteTool[mcp_schema_module.CallToolResult, Never, Port]:
+        return remote.set_needs_approval(True).add_dependency(Port)
+
+    assert_type(
+        mcp_client_module.toolkit(
+            service, result_mode="complete", failure_mode="return", transform_tool=approve
+        ),
+        fx.Effect[ai_toolkit.WithHandler[Any, Any, Never, Port], McpErr],
+    )
+    # A transform must keep the result mode: a text tool is not a complete one.
+    mcp_client_module.toolkit(service, failure_mode="return", transform_tool=approve)  # pyright: ignore[reportCallIssue, reportArgumentType]
 
 
 def check_ai_providers() -> None:
@@ -9068,17 +9099,15 @@ def check_catch_reasons_any_number(
 
 
 def collections_and_crypto(
-    service: crypto.CryptoService,
+    service: crypto.secure_random.SecureRandomService,
     hm: HashMap[str, int],
     trie: Trie[int],
     version: semver.SemVer,
 ) -> None:
-    from pyfect.platform_error import PlatformError as _PlatformError
-
-    assert_type(crypto.layer, layer.Layer[crypto.Crypto])
-    assert_type(service.random_bytes(8), fx.Effect[bytes, _PlatformError])
-    assert_type(service.random_uuid_v4(), fx.Effect[str, _PlatformError])
-    assert_type(service.random_uuid_v7(format="bytes"), fx.Effect[bytes, _PlatformError])
+    assert_type(crypto.native.layer, layer.Layer[crypto.native.Services])
+    assert_type(service.random_bytes(8), fx.Effect[bytes])
+    assert_type(service.uuid_v4(), fx.Effect[str])
+    assert_type(service.uuid_v7(format="bytes"), fx.Effect[bytes])
     assert_type(HashMap.make(("a", 1), ("b", 2)), HashMap[str, int])
     assert_type(hm.get("a"), fx.option.Option[int])
     assert_type(hm.set("c", 3), HashMap[str, int])
@@ -9165,11 +9194,59 @@ def check_effectable() -> None:
     del wide, Wrong
 
 
-def check_test_crypto() -> None:
-    from pyfect.crypto import Crypto, CryptoService
+def check_crypto_keys(
+    agreement: crypto.key_agreement.KeyAgreementService,
+    p256: crypto.key_agreement.KeyPair[crypto.key_agreement.Ecdh[Literal["P-256"]]],
+    p384: crypto.key_agreement.PublicKey[crypto.key_agreement.Ecdh[Literal["P-384"]]],
+) -> None:
+    from pyfect.crypto import aead, key_format, mac, signature
+    from pyfect.crypto import schema as CS
+    from pyfect.crypto.crypto_error import CryptoError
 
-    assert_type(fx.testing.TestCrypto.make("seed"), fx.Effect[CryptoService, Never, Crypto])
-    assert_type(fx.testing.TestCrypto.layer(1), fx.Layer[Crypto, Never, Crypto])
+    assert_type(
+        aead.key(aead.aes256_gcm, b""),
+        fx.Effect[aead.Key[aead.AesGcm], CryptoError],
+    )
+    assert_type(
+        key_format.decode_public(key_format.spki, signature.ed25519, b""),
+        fx.Effect[signature.PublicKey[signature.Ed25519], CryptoError],
+    )
+    assert_type(
+        key_format.pem(key_format.spki),
+        key_format.Format[Literal["public"], Literal["decode", "encode"], str],
+    )
+    # PEM formats read text, and keys of two curves do not meet in one call.
+    key_format.decode_public(key_format.pem(key_format.spki), signature.ed25519, b"")  # pyright: ignore[reportCallIssue, reportArgumentType]
+    agreement.derive_shared_secret(p256.private_key, p384)  # pyright: ignore[reportArgumentType]
+    assert_type(
+        CS.MacKeyFromBytes(mac.hmac_sha256),
+        S.DecodeToSchema[mac.Key[mac.Algorithm], bytes],
+    )
+    assert_type(
+        CS.SignaturePublicKeyFromFormat(key_format.pem(key_format.spki), signature.ed25519),
+        S.DecodeToSchema[signature.PublicKey[signature.Ed25519], str],
+    )
+
+
+def check_jose(
+    hmac_key: jose.jwk.HmacKey,
+    private_key: jose.jwk.PrivateKey,
+    public_key: jose.jwk.PublicKey,
+    dir_key: jose.jwk.DirKey,
+    secret: fx.Redacted[jose.jwk.SecretJwk],
+) -> None:
+    from pyfect.crypto.mac import Mac
+    from pyfect.crypto.signature import Signature
+    from pyfect.http.client import HttpClient
+    from pyfect.jose import jwk, jwks, jws
+    from pyfect.jose.jose_error import JoseError
+
+    assert_type(jws.sign(b"", hmac_key), fx.Effect[fx.Redacted[str], JoseError, Mac])
+    assert_type(jws.sign(b"", private_key), fx.Effect[fx.Redacted[str], JoseError, Signature])
+    assert_type(jws.verify("", public_key), fx.Effect[jws.Verified, JoseError, Signature])
+    assert_type(jwk.import_dir(secret), fx.Effect[jwk.DirKey, JoseError])
+    assert_type(jwks.layer_remote(""), fx.Layer[jwks.Jwks, JoseError, HttpClient])
+    jws.sign(b"", dir_key)  # pyright: ignore[reportCallIssue, reportArgumentType]
 
 
 def check_graph() -> None:
@@ -9893,3 +9970,163 @@ def url_pins() -> None:
     assert_type(http_url.from_string("x"), fx.Result[fx.Url, fx.IllegalArgumentError])
     url.hash = "x"  # pyright: ignore[reportAttributeAccessIssue]
     http_url.set_hash("https://example.com", "x")  # pyright: ignore[reportArgumentType]
+
+
+def anthropic_tool_pins() -> None:
+    from pyfect.ai.anthropic import tool as anthropic_tool
+
+    # The 20250429 and 20250728 editors insert with `insert_text`, the older ones with `new_str`.
+    assert_type(
+        anthropic_tool.TextEditor_20250728({}),
+        ai_tool.ProviderDefined[
+            Literal["AnthropicTextEditor"],
+            anthropic_tool.StrReplaceBasedEditCommand,
+            str,
+            Never,
+            Never,
+            Never,
+        ],
+    )
+    assert_type(
+        anthropic_tool.TextEditor_20250124({}),
+        ai_tool.ProviderDefined[
+            Literal["AnthropicTextEditor"],
+            anthropic_tool.StrReplaceEditorCommand,
+            str,
+            Never,
+            Never,
+            Never,
+        ],
+    )
+    assert_type(
+        anthropic_tool.ToolSearchRegex_20251119(),
+        ai_tool.ProviderDefined[
+            Literal["AnthropicToolSearchRegex"],
+            anthropic_tool.ToolSearchRegexParameters,
+            tuple[dict[str, object], ...],
+            dict[str, object],
+            dict[str, object],
+            Never,
+        ],
+    )
+    # Annotating keeps the tool's type.
+    assert_type(
+        ai_tool.make("ListContacts").annotate(anthropic_tool.DeferLoading, True),
+        ai_tool.Tool[Literal["ListContacts"], dict[str, Never], None, Never, Never, Never],
+    )
+
+
+def ai_provider_answer_pins(
+    error: ai_error_module.NetworkError, platform_error: HttpClientError
+) -> None:
+    # A NetworkError keeps the method, the url and the HttpClientError it came from.
+    assert_type(error.method, str)
+    assert_type(error.url, str)
+    assert_type(error.cause, object)
+    assert_type(
+        ai_error_module.NetworkError.from_http_client_error(platform_error),
+        ai_error_module.NetworkError,
+    )
+    # Provider answers are plain dicts tagged by ``_tag``; each kind needs its own keys.
+    answers: dict[str, ai_dm.ProviderAnswer] = {
+        "urgent": {"_tag": "Probability", "probability": 0.5}
+    }
+    assert_type(answers["urgent"], ai_dm.ProviderAnswer)
+    _missing: ai_dm.ProviderAnswer = {"_tag": "Classify"}  # pyright: ignore[reportAssignmentType]
+    _box: ai_dm.ProviderAnswer = {"_tag": "Locate", "box": {"left": 0}}  # pyright: ignore[reportAssignmentType]
+
+
+def mcp_skills_pins(
+    client: mcp_client_module.McpClientService, skill: mcp_schema_module.Skill
+) -> None:
+    from pyfect.ai import mcp_server as mcp_m
+    from pyfect.ai.mcp_client_error import McpClientError as McpErr
+    from pyfect.errors import IllegalArgumentError as Illegal
+
+    # Registering a skill fails only on the skill's own rules, and needs the server.
+    assert_type(
+        mcp_m.skill("skill://refunds/SKILL.md", {"SKILL.md": b"---\n"}),
+        fx.Layer[Never, Illegal, mcp_m.McpServer],
+    )
+    assert_type(
+        mcp_m.register_skill("skill://refunds/SKILL.md", {"SKILL.md": mcp_m.SkillFile("x")}),
+        fx.Effect[None, Illegal, mcp_m.McpServer],
+    )
+    mcp_m.skill("skill://refunds/SKILL.md", {"SKILL.md": 1})  # pyright: ignore[reportArgumentType]
+    # The client's skill methods fail only with McpClientError.
+    assert_type(client.list_skills(), fx.Effect[list[mcp_schema_module.Skill], McpErr])
+    assert_type(client.get_skill(skill["uri"]), fx.Effect[mcp_schema_module.Skill, McpErr])
+    assert_type(
+        client.read_resource_directory("skill://refunds"),
+        fx.Effect[list[mcp_schema_module.Resource], McpErr],
+    )
+    assert_type(
+        client.read_skill_resource(skill, skill["uri"]),
+        fx.Effect[mcp_schema_module.ReadResourceResult, McpErr],
+    )
+    # A listing is either a manifest or "dynamic".
+    _resources: mcp_schema_module.Skill = {"uri": "", "frontmatter": {}, "resources": "static"}  # pyright: ignore[reportAssignmentType]
+    client.list_tools(limits={"max_page": 1})  # pyright: ignore[reportArgumentType]
+
+
+def mcp_middleware_pins() -> None:
+    from pyfect.ai import mcp_protocol as mcp_p
+    from pyfect.ai import mcp_server as mcp_m
+    from pyfect.ai import mcp_test
+    from pyfect.context import Tag
+    from pyfect.errors import IllegalArgumentError as Illegal
+    from pyfect.http.router import HttpRouter as Router
+    from pyfect.scope import Scope
+
+    class User(Tag[str], key="pins/McpUser"):
+        pass
+
+    class Tenant(Tag[str], key="pins/McpTenant"):
+        pass
+
+    auth = mcp_m.middleware(
+        lambda effect, _: effect.pipe(fx.provide_service(User, "u")), provides=User
+    )
+    audit = mcp_m.middleware(lambda effect, _: effect)
+    admin_only = mcp_m.visibility(lambda _: User().map(lambda user: user == "admin"))
+    # A middleware provides what it declares; a visibility needs what it reads.
+    assert_type(auth, mcp_m.Middleware[User])
+    assert_type(admin_only, mcp_m.Middleware[Never, User])
+    assert_type(auth.layer, fx.Layer[User, Never, Never])
+    assert_type(admin_only.layer_global, fx.Layer[Never, Never, User | mcp_m.McpServer])
+    # Combining discharges what the outer middleware provides exactly.
+    assert_type(admin_only.combine(auth), mcp_m.Middleware[User])
+    assert_type(audit.combine(auth), mcp_m.Middleware[User])
+
+    def check(_: object) -> fx.Effect[bool, Never, User | Tenant]:
+        return fx.succeed(True)
+
+    # Only an exact match is discharged: the rest is still needed.
+    assert_type(mcp_m.visibility(check).combine(auth), mcp_m.Middleware[User, User | Tenant])
+    mcp_m.middleware(lambda _, __: fx.fail(ValueError()))  # pyright: ignore[reportArgumentType, reportCallIssue, reportUnknownLambdaType]
+
+    registrations = mcp_m.resource(uri="test://r", name="r", content=fx.succeed("r"))
+    assert_type(registrations, fx.Layer[Never, Never, mcp_m.McpServer])
+    # A transport and the test client build the registrations with their server.
+    assert_type(
+        mcp_m.layer_http(
+            name="s",
+            version="1",
+            path="/mcp",
+            protocols=(mcp_p.v2025_11_25,),
+            registrations=registrations,
+        ),
+        fx.Layer[mcp_m.McpServer, Illegal, Router],
+    )
+    assert_type(
+        mcp_test.make_client(registrations, protocols=(mcp_p.v2025_11_25,)),
+        fx.Effect[mcp_test.McpTestClient, Illegal, Scope],
+    )
+    # Only "private" scope exists.
+    mcp_m.layer_http(
+        name="s",
+        version="1",
+        path="/mcp",
+        protocols=(mcp_p.v2025_11_25,),
+        cache_hints={"tools": {"ttl": "1 minute", "cache_scope": "public"}},  # pyright: ignore[reportArgumentType]
+    )

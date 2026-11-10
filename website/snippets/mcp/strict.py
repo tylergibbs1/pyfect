@@ -19,11 +19,12 @@ Greet = tool.make("greet", parameters=S.Struct(Greeting), success=S.String).anno
 Greeter = toolkit.make(Greet)
 Handlers = Greeter.to_layer(Greet.handler(lambda params, _: fx.succeed(f"hi {params['name']}")))
 
-Server = layer.merge(
-    mcp_server.layer_http(
-        name="greeter", version="1.0.0", path="/mcp", protocols=(mcp_protocol.v2025_11_25,)
-    ),
-    mcp_server.toolkit(Greeter).pipe(layer.provide(Handlers)),
+Server = mcp_server.layer_http(
+    name="greeter",
+    version="1.0.0",
+    path="/mcp",
+    protocols=(mcp_protocol.v2025_11_25,),
+    registrations=mcp_server.toolkit(Greeter).pipe(layer.provide(Handlers)),
 )
 Served = router.serve(Server, disable_logger=True, disable_listen_log=True)
 

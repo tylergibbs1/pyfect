@@ -7,7 +7,10 @@ description: "Generate text and objects, call tools and stream responses through
 text, a decoded object or a stream, and a provider's layer supplies the service. So the
 same program runs on Claude, on any OpenAI-compatible API, or on a scripted model in a
 test. Failures are an `AiError` whose `reason` says what went wrong (a rate limit, an
-invalid request, output that does not match its schema).
+invalid request, output that does not match its schema). A request that never reached the
+provider is a `NetworkError` with its `method` and `url`; its `cause` is the
+`HttpClientError` it failed with. Errors carry the response and its body, never the
+request's headers.
 
 ## Language models and providers
 
@@ -30,6 +33,26 @@ the [`HttpClient`](/docs/platform) service, so they need no vendor SDK: provide
 <include lang="text">../../snippets/ai/generate.out</include>
 
 </CodeOutput>
+
+### Anthropic
+
+`pyfect.ai.anthropic.tool` has Anthropic's tools. Anthropic runs web search, web fetch, code
+execution and tool search, so they need no handler; bash, the text editor, computer use and
+memory are run by your handler. To keep a large toolkit out of a request's context, annotate
+its tools with `tool.DeferLoading`: they are sent with `defer_loading`, and Claude sees one
+only once tool search finds it.
+
+<CodeOutput>
+
+<include meta='title="anthropic_tools.py"'>../../snippets/ai/anthropic_tools.py</include>
+
+<include lang="text">../../snippets/ai/anthropic_tools.out</include>
+
+</CodeOutput>
+
+Tools are strict by default on models with structured outputs, and a strict tool's
+parameters can't be recursive. Set `"strict_json_schema": False` in `config`, or annotate
+the tool with `pyfect.ai.tool.Strict` set to `False`, to send such a schema as it is.
 
 ### OpenAI
 
@@ -222,7 +245,8 @@ supports both; OpenAI and Cloudflare take images but not locate.
 `pyfect.ai.openai.decision_model`, `pyfect.ai.openrouter.decision_model`,
 `pyfect.ai.cloudflare.decision_model` and `pyfect.ai.typesafe.decision_model` provide one.
 `decision_model.make(decide=...)` builds one from a function of a call's `ProviderOptions`,
-as a test does:
+as a test does. Its answers are plain dicts tagged by `_tag` (`"Classify"`, `"Rate"`,
+`"Probability"`, `"Locate"` or `"Refusal"`), as in Effect:
 
 <CodeOutput>
 

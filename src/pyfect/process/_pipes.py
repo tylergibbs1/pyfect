@@ -3,9 +3,11 @@
 A ``Reader`` has a thread that reads only while a fiber waits for data, so
 an unread pipe fills up and the child waits for it, as a Node stream's
 backpressure makes it. Chunks it has read wait in the reader until taken,
-so an interrupted pull loses nothing. A ``Writer`` has a thread, started
-by its first write, that writes in short waits on a non-blocking
-descriptor, so an interrupted write stops within one of those waits. Each
+so an interrupted pull loses nothing. A ``Writer`` writes what the pipe
+takes at once, as Node does, and leaves the rest to a thread, started by
+the first write that needs it, which writes in short waits on a
+non-blocking descriptor, so an interrupted write stops within one of those
+waits. Each
 pipe has threads of its own, never a shared pool, so a pipe waiting on its
 child never holds up another pipe. Both close their descriptor themselves,
 once no thread is using it.
@@ -25,9 +27,10 @@ from pyfect import sink as sink_
 from pyfect import stream as stream_
 from pyfect._core import Effect
 from pyfect._os_wait import Cancel, Resume, os_wait
-from pyfect.effect import fail, succeed, suspend, sync
+from pyfect.effect import die, fail, succeed, suspend, sync
 from pyfect.errors import Done
 from pyfect.platform_error import PREMATURE_CLOSE, WRITE_AFTER_END, PlatformError, StreamError
+from pyfect.scheduler import Scheduler
 from pyfect.sink import Sink
 from pyfect.stream import Stream
 
@@ -179,12 +182,17 @@ class Reader:
 
 
 class _Write:
-    """One write waiting for, or held by, a writer's thread."""
+    """One write waiting for, or held by, a writer's thread. It holds the
+    bytes, never a view of them: the writer's thread makes its own views and
+    releases them before it resumes the write (free-threaded CPython's
+    ``memoryview`` is not safe to share between threads)."""
 
-    __slots__ = ("cancelled", "resume", "view")
+    __slots__ = ("cancelled", "data", "resume", "start")
 
-    def __init__(self, data: bytes, resume: Resume[None, PlatformError]) -> None:
-        self.view = memoryview(data)
+    def __init__(self, data: bytes, start: int, resume: Resume[None, PlatformError]) -> None:
+        self.data = data
+        self.start = start
+        """How much of ``data`` was written before the thread took it."""
         self.resume = resume
         self.cancelled = False
 
@@ -217,33 +225,65 @@ class Writer:
         return write.ensuring(sync(self.end)) if end_on_done else write
 
     def write(self, data: bytes) -> Effect[None, PlatformError]:
+        """Write ``data``. As Node's stream, a write first tries the pipe at once and leaves
+        what it could not write to the thread."""
+
         def register(resume: Resume[None, PlatformError]) -> Cancel | None:
-            request = _Write(data, resume)
+            request: _Write | None = None
+            written: int | OSError = 0
             with self._cond:
                 closed = self._closed
-                if not closed:
-                    self._queue.append(request)
-                    self._start()
-                    self._cond.notify()
+                if closed is None:
+                    written = self._write_now(data) if not self._queue else 0
+                    if isinstance(written, int) and written < len(data):
+                        request = _Write(data, written, resume)
+                        self._queue.append(request)
+                        self._start()
+                        self._cond.notify()
             if closed is not None:
                 resume(fail(self._on_error(StreamError(*closed))))
                 return None
-            return request.cancel
+            if request is not None:
+                return request.cancel
+            resume(succeed(None) if isinstance(written, int) else fail(self._on_error(written)))
+            return None
 
         return os_wait(register, waits_for="work")
+
+    def _write_now(self, data: bytes) -> int | OSError:
+        """What the pipe takes of ``data`` without waiting: the bytes written, or the
+        error."""
+        if os.name == "nt":
+            return 0  # A blocking pipe: only the thread writes.
+        try:
+            return os.write(self._fd, data)
+        except BlockingIOError:
+            return 0
+        except OSError as error:
+            return error
 
     def end(self) -> None:
         """End the pipe, as Node's ``end``: later writes fail with ``write after end``."""
         self._close(WRITE_AFTER_END)
 
     def destroy(self) -> None:
-        """Close the pipe as Node destroys a child's ``stdin`` when the child exits: later
-        writes fail with ``Premature close``. A pipe already ended stays ended."""
+        """Close the pipe as Node destroys a child's ``stdin`` when the child exits: writes
+        made before fail with ``ECANCELED``, later ones with ``Premature close``. A pipe
+        already ended stays ended."""
         self._close(PREMATURE_CLOSE)
 
+    def destroy_soon(self, scheduler: Scheduler) -> None:
+        """``destroy`` in a task of ``scheduler``, as Node destroys ``stdin`` in a turn of
+        its event loop: a write a fiber makes before the task runs fails with
+        ``ECANCELED``, not ``Premature close``. The lock orders the task after the resume
+        of a write the thread has finished."""
+        with self._cond:
+            scheduler.schedule(self.destroy)
+
     def _close(self, why: tuple[str, str]) -> None:
-        """A write in progress stops and fails with ``ECANCELED`` (as a Node
-        stream's destroy fails it), queued ones fail as later writes do."""
+        """A write in progress or queued stops and fails with ``ECANCELED``
+        (as a Node stream's destroy fails it); after ``end`` queued writes
+        fail as later writes do."""
         with self._cond:
             if self._closed is not None:
                 return
@@ -273,30 +313,40 @@ class Writer:
             if closed is None:
                 return self._queue[0]
             queued, self._queue = list(self._queue), deque()
+        error = _cancelled() if closed == PREMATURE_CLOSE else StreamError(*closed)
         for request in queued:
-            request.resume(fail(self._on_error(StreamError(*closed))))
+            request.resume(fail(self._on_error(error)))
         return None
 
     def _serve(self, request: _Write) -> None:
-        result = self._write_out(request)
+        try:
+            result = self._write_out(request)
+        except Exception as error:  # A dead thread would leave every write waiting.
+            result = die(error)
         with self._cond:
             self._queue.popleft()
-        request.resume(result)
+            request.resume(result)
 
     def _write_out(self, request: _Write) -> Effect[None, PlatformError]:
         """Write ``request`` in short waits until one of the outcomes below
-        decides its result."""
-        while True:
-            if not request.view:
-                return succeed(None)
-            if request.cancelled:
-                return succeed(None)  # Interrupted: nobody takes the result.
-            if self._closed is not None:
-                return fail(self._on_error(OSError(errno.ECANCELED, "write ECANCELED")))
-            try:
-                if _ready(self._fd, write=True):
-                    request.view = request.view[os.write(self._fd, request.view) :]
-            except BlockingIOError:
-                continue
-            except OSError as error:
-                return fail(self._on_error(error))
+        decides its result. The view is this thread's alone."""
+        with memoryview(request.data) as data:
+            written = request.start
+            while True:
+                if written == len(data):
+                    return succeed(None)
+                if request.cancelled:
+                    return succeed(None)  # Interrupted: nobody takes the result.
+                if self._closed is not None:
+                    return fail(self._on_error(_cancelled()))
+                try:
+                    if _ready(self._fd, write=True):
+                        written += os.write(self._fd, data[written:])
+                except BlockingIOError:
+                    continue
+                except OSError as error:
+                    return fail(self._on_error(error))
+
+
+def _cancelled() -> OSError:
+    return OSError(errno.ECANCELED, "write ECANCELED")

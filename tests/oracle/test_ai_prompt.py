@@ -9,12 +9,14 @@ Each test's docstring is the Effect test title (with its ``describe``).
 
 from __future__ import annotations
 
-from typing import Never
+from typing import Never, cast
 
 import pyfect as fx
 from pyfect import schema as S
 from pyfect.ai import prompt as P
 from pyfect.ai import response as R
+from pyfect.encoding import schema_binary
+from pyfect.http import url
 
 
 def test_preserves_text_parts():
@@ -103,6 +105,28 @@ def _result(
         preliminary=preliminary,
         provider_executed=provider_executed,
     )
+
+
+def test_binary_round_trips_file_data_forms():
+    """binary codecs / round trips file data forms"""
+    codec = schema_binary.to_codec(P.FilePart)
+    for data in ("aGVsbG8=", b"\x01\x02\x03", url.parse("https://example.com/image.png")):
+        part = P.FilePart(media_type="image/png", data=data)
+        assert S.decode_sync(codec)(S.encode_sync(codec)(part)) == part
+
+
+def test_keeps_tagged_json_encoding_for_file_data():
+    """binary codecs / keeps the tagged JSON encoding for byte and URL file data"""
+
+    def encode(data: bytes | url.Url) -> object:
+        encoded = S.encode_sync(P.FilePart)(P.FilePart(media_type="image/png", data=data))
+        return cast("dict[str, object]", encoded)["data"]
+
+    assert encode(b"\x01\x02\x03") == {"_tag": "Uint8Array", "base64": "AQID"}
+    assert encode(url.parse("https://example.com/image.png")) == {
+        "_tag": "URL",
+        "href": "https://example.com/image.png",
+    }
 
 
 def test_keeps_text_before_interleaved_tool_call():

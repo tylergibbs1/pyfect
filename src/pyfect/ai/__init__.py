@@ -1,7 +1,7 @@
 """AI services (Effect's ``effect/ai``): prompts, responses, tools and
 toolkits, the provider-neutral ``LanguageModel`` and ``EmbeddingModel``
 services, ``decision`` and the ``DecisionModel`` service (``decision_model``),
-the Model Context Protocol (``mcp_server``, ``mcp_client``), and
+the Model Context Protocol (``mcp_server``, ``mcp_client``, ``mcp_test``), and
 each provider's structured-output codec (``anthropic_structured_output``,
 ``openai_structured_output``).
 
@@ -24,6 +24,7 @@ from pyfect.ai import (
     mcp_protocol,
     mcp_schema,
     mcp_server,
+    mcp_test,
     model,
     openai_structured_output,
     prompt,
@@ -62,6 +63,7 @@ __all__ = [
     "mcp_protocol",
     "mcp_schema",
     "mcp_server",
+    "mcp_test",
     "model",
     "openai_structured_output",
     "prompt",

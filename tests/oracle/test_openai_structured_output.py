@@ -140,6 +140,26 @@ _STARTS_WITH_A: JsonSchema = {
 }
 
 
+def test_resolves_root_alias_of_identified_schema():
+    """Suspend / resolves a root alias of an identified schema"""
+    nr = S.Struct(_A).annotate(identifier="NR")
+    params = S.suspend(lambda: nr).annotate(identifier="Params")
+    body: JsonSchema = {
+        "type": "object",
+        "properties": {"a": {"type": "string"}},
+        "required": ["a"],
+        "additionalProperties": False,
+    }
+    _check(params, {**body, "$defs": {"NR": body, "Params": {"$ref": "#/$defs/NR"}}})
+
+
+def test_rejects_root_reference_cycle():
+    """Suspend / rejects a root reference cycle"""
+    a: Any = S.suspend(lambda: b).annotate(identifier="A")
+    b: Any = S.suspend(lambda: a).annotate(identifier="B")
+    _error(a, 'Circular reference "#/$defs/A"')
+
+
 def test_no_transformation_recursive_schema():
     """Suspend / no-transformation recursive schema"""
 
