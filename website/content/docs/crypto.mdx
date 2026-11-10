@@ -1,0 +1,78 @@
+---
+title: Cryptography and JOSE
+description: "Random ids, digests, authenticated encryption, signatures and key formats as services, and signed or encrypted tokens on top of them."
+---
+
+`pyfect.crypto` gives each family of operations its own service: `SecureRandom`,
+`Digest`, `Mac`, `Kdf`, `Aead`, `Cipher`, `Signature`, `KeyAgreement` and `KeyWrap`.
+Nothing is hand-rolled: the primitives come from `hashlib`, `hmac`, the `cryptography`
+package and PyNaCl, installed with the `crypto` extra.
+
+<InstallCommand
+  uv='uv add "pyfect-dev[crypto]"'
+  pip='pip install "pyfect-dev[crypto]"'
+/>
+
+## Services
+
+Provide `native.layer` for every family on the host's libraries, or one of its parts
+(`native.layer_aead`, `native.layer_signature`, ...). Each module also has
+`layer_web_crypto`, which runs on the `WebCrypto` reference: swap that reference, with
+`web_crypto.layer(crypto)`, to run every family on another implementation of the Web
+Crypto API, as tests do with a fake that fails on purpose.
+
+Keys belong to one algorithm and are typed by it, so a P-256 key cannot reach an
+operation on P-384 and an AES-GCM key cannot reach HMAC. They display redacted, compare
+by identity, and refuse to be pickled. A failure is a `CryptoError` whose `reason` says
+what went wrong: `InvalidKey`, `InvalidArgument`, `DecryptionFailed`, `NotExtractable` or
+`Unsupported`. A tampered message, a wrong nonce or the wrong key all give the same
+`DecryptionFailed`, and MAC tags are compared in constant time.
+
+<CodeOutput>
+
+<include meta='title="services.py"'>../../snippets/crypto/services.py</include>
+
+<include lang="text">../../snippets/crypto/services.out</include>
+
+</CodeOutput>
+
+AEAD nonces must never repeat under one key. Draw them from `SecureRandom` for AES-GCM,
+or use `xchacha20_poly1305`, whose 24-byte nonces are safe to draw at random for any
+number of messages. Feed a `KeyAgreement` shared secret to `Kdf` (HKDF) before using it
+as a key, and store passwords with `kdf.argon2id()`.
+
+## Key formats and schemas
+
+`key_format` reads and writes keys as SPKI, PKCS#8, PKCS#1, SEC1, JWK and PEM. The
+format's type says which keys it holds and which way it goes: `pkcs1` and `sec1` only
+read, and PEM formats take text where DER formats take bytes. `pyfect.crypto.schema`
+turns keys into schemas: `CS.MacKeyFromBytes(mac.hmac_sha256)` reads raw bytes (base64
+under `config.schema`), and `CS.SignaturePublicKeyFromFormat(format, algorithm)` reads a
+format. Secret and private keys are written back only with `allow_encode=True`, and keys
+never have a JSON form.
+
+<CodeOutput>
+
+<include meta='title="keys.py"'>../../snippets/crypto/keys.py</include>
+
+<include lang="text">../../snippets/crypto/keys.out</include>
+
+</CodeOutput>
+
+## Tokens
+
+`pyfect.jose` builds JSON Web Signatures, Encryption and Tokens on these services.
+`jwk` generates, imports and exports keys and computes thumbprints; `jws` signs with
+`HS*`, `RS*`, `PS*`, `ES*` and `EdDSA`; `jwe` encrypts with a shared key; `jwt` signs or
+encrypts claims described by a schema and checks them against a policy (`subject`,
+`issuer`, `audience`, clock tolerance, ...). `jwks.layer_remote(url)` resolves a token's
+key from an issuer's key set, cached and refreshed once for an unknown `kid`. Every
+failure is a `JoseError`, and tokens are `Redacted`.
+
+<CodeOutput>
+
+<include meta='title="tokens.py"'>../../snippets/crypto/tokens.py</include>
+
+<include lang="text">../../snippets/crypto/tokens.out</include>
+
+</CodeOutput>

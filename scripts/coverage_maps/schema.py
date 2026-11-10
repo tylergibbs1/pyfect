@@ -19,6 +19,22 @@ DATE = "`Schema.Date`, `DateFromString`, `DateFromMillis`"
 WEB = "`Schema.File`, `FormData`, `URLSearchParams`"
 FIELDS_ASSIGN = "`Schema.fieldsAssign`"
 HTTP = "pyfect.http.schema"
+_CRYPTO_KEYS = tuple(
+    f"{family}{suffix}"
+    for family, suffixes in (
+        ("MacKey", ("", "FromBytes", "FromFormat")),
+        ("AeadKey", ("", "FromBytes", "FromFormat")),
+        ("CipherKey", ("", "FromBytes", "FromFormat")),
+        ("SignaturePublicKey", ("", "FromBytes", "FromFormat")),
+        ("SignaturePrivateKey", ("", "FromBytes", "FromFormat")),
+        ("KeyAgreementPublicKey", ("", "FromBytes", "FromFormat")),
+        ("KeyAgreementPrivateKey", ("", "FromBytes", "FromFormat")),
+        ("KeyWrapKey", ("", "FromBytes", "FromFormat")),
+        ("KeyWrapPublicKey", ("", "FromFormat")),
+        ("KeyWrapPrivateKey", ("", "FromFormat")),
+    )
+    for suffix in suffixes
+)
 
 _UNDEFINED_NAMES = ("Symbol", "UniqueSymbol")
 
@@ -50,6 +66,7 @@ SCHEMA = Module(
                 "RecordFromUrlParams",
             )
         },
+        **{name: f"pyfect.crypto.schema.{name}" for name in _CRYPTO_KEYS},
     },
     pythonic={
         "isSchemaError": (ISINSTANCE, "`isinstance(x, SchemaError)`"),

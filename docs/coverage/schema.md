@@ -5,7 +5,7 @@ Coverage counts ported, renamed and §4 exports.
 
 | Module | Exports | Ported | Renamed | §4 | Missing | Coverage |
 |---|---|---|---|---|---|---|
-| Schema | 407 | 314 | 18 | 45 | 30 | 92% |
+| Schema | 407 | 314 | 46 | 45 | 2 | 99% |
 | SchemaAST | 133 | 58 | 8 | 67 | 0 | 100% |
 | SchemaGetter | 53 | 48 | 0 | 5 | 0 | 100% |
 | SchemaTransformation | 50 | 37 | 5 | 8 | 0 | 100% |
@@ -13,7 +13,7 @@ Coverage counts ported, renamed and §4 exports.
 | SchemaParser | 34 | 25 | 0 | 8 | 1 | 97% |
 | SchemaRepresentation | 101 | 88 | 4 | 8 | 1 | 99% |
 | JsonSchema | 16 | 7 | 7 | 0 | 2 | 87% |
-| **All** | 815 | | | | 34 | 95% |
+| **All** | 815 | | | | 6 | 99% |
 
 ## Schema
 
@@ -343,34 +343,34 @@ Coverage counts ported, renamed and §4 exports.
 | `DnsTlsaRecord` | ported | `pyfect.schema.DnsTlsaRecord` |
 | `DnsTxtRecord` | ported | `pyfect.schema.DnsTxtRecord` |
 | `DnsRecord` | ported | `pyfect.schema.DnsRecord` |
-| `MacKey` | missing |  |
-| `MacKeyFromBytes` | missing |  |
-| `MacKeyFromFormat` | missing |  |
-| `AeadKey` | missing |  |
-| `AeadKeyFromBytes` | missing |  |
-| `AeadKeyFromFormat` | missing |  |
-| `CipherKey` | missing |  |
-| `CipherKeyFromBytes` | missing |  |
-| `CipherKeyFromFormat` | missing |  |
-| `SignaturePublicKey` | missing |  |
-| `SignaturePublicKeyFromBytes` | missing |  |
-| `SignaturePublicKeyFromFormat` | missing |  |
-| `SignaturePrivateKey` | missing |  |
-| `SignaturePrivateKeyFromBytes` | missing |  |
-| `SignaturePrivateKeyFromFormat` | missing |  |
-| `KeyAgreementPublicKey` | missing |  |
-| `KeyAgreementPublicKeyFromBytes` | missing |  |
-| `KeyAgreementPublicKeyFromFormat` | missing |  |
-| `KeyAgreementPrivateKey` | missing |  |
-| `KeyAgreementPrivateKeyFromBytes` | missing |  |
-| `KeyAgreementPrivateKeyFromFormat` | missing |  |
-| `KeyWrapKey` | missing |  |
-| `KeyWrapKeyFromBytes` | missing |  |
-| `KeyWrapKeyFromFormat` | missing |  |
-| `KeyWrapPublicKey` | missing |  |
-| `KeyWrapPublicKeyFromFormat` | missing |  |
-| `KeyWrapPrivateKey` | missing |  |
-| `KeyWrapPrivateKeyFromFormat` | missing |  |
+| `MacKey` | renamed | `pyfect.crypto.schema.MacKey` |
+| `MacKeyFromBytes` | renamed | `pyfect.crypto.schema.MacKeyFromBytes` |
+| `MacKeyFromFormat` | renamed | `pyfect.crypto.schema.MacKeyFromFormat` |
+| `AeadKey` | renamed | `pyfect.crypto.schema.AeadKey` |
+| `AeadKeyFromBytes` | renamed | `pyfect.crypto.schema.AeadKeyFromBytes` |
+| `AeadKeyFromFormat` | renamed | `pyfect.crypto.schema.AeadKeyFromFormat` |
+| `CipherKey` | renamed | `pyfect.crypto.schema.CipherKey` |
+| `CipherKeyFromBytes` | renamed | `pyfect.crypto.schema.CipherKeyFromBytes` |
+| `CipherKeyFromFormat` | renamed | `pyfect.crypto.schema.CipherKeyFromFormat` |
+| `SignaturePublicKey` | renamed | `pyfect.crypto.schema.SignaturePublicKey` |
+| `SignaturePublicKeyFromBytes` | renamed | `pyfect.crypto.schema.SignaturePublicKeyFromBytes` |
+| `SignaturePublicKeyFromFormat` | renamed | `pyfect.crypto.schema.SignaturePublicKeyFromFormat` |
+| `SignaturePrivateKey` | renamed | `pyfect.crypto.schema.SignaturePrivateKey` |
+| `SignaturePrivateKeyFromBytes` | renamed | `pyfect.crypto.schema.SignaturePrivateKeyFromBytes` |
+| `SignaturePrivateKeyFromFormat` | renamed | `pyfect.crypto.schema.SignaturePrivateKeyFromFormat` |
+| `KeyAgreementPublicKey` | renamed | `pyfect.crypto.schema.KeyAgreementPublicKey` |
+| `KeyAgreementPublicKeyFromBytes` | renamed | `pyfect.crypto.schema.KeyAgreementPublicKeyFromBytes` |
+| `KeyAgreementPublicKeyFromFormat` | renamed | `pyfect.crypto.schema.KeyAgreementPublicKeyFromFormat` |
+| `KeyAgreementPrivateKey` | renamed | `pyfect.crypto.schema.KeyAgreementPrivateKey` |
+| `KeyAgreementPrivateKeyFromBytes` | renamed | `pyfect.crypto.schema.KeyAgreementPrivateKeyFromBytes` |
+| `KeyAgreementPrivateKeyFromFormat` | renamed | `pyfect.crypto.schema.KeyAgreementPrivateKeyFromFormat` |
+| `KeyWrapKey` | renamed | `pyfect.crypto.schema.KeyWrapKey` |
+| `KeyWrapKeyFromBytes` | renamed | `pyfect.crypto.schema.KeyWrapKeyFromBytes` |
+| `KeyWrapKeyFromFormat` | renamed | `pyfect.crypto.schema.KeyWrapKeyFromFormat` |
+| `KeyWrapPublicKey` | renamed | `pyfect.crypto.schema.KeyWrapPublicKey` |
+| `KeyWrapPublicKeyFromFormat` | renamed | `pyfect.crypto.schema.KeyWrapPublicKeyFromFormat` |
+| `KeyWrapPrivateKey` | renamed | `pyfect.crypto.schema.KeyWrapPrivateKey` |
+| `KeyWrapPrivateKeyFromFormat` | renamed | `pyfect.crypto.schema.KeyWrapPrivateKeyFromFormat` |
 | `Exit` | ported | `pyfect.schema.Exit` |
 | `Graph` | ported | `pyfect.schema.Graph` |
 | `HashMap` | §4 | `S.Map` (§4: `ReadonlySet` / `HashSet`, `ReadonlyMap` / `HashMap`, `Chunk`) |

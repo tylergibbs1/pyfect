@@ -14,7 +14,10 @@ from pyfect.exit import Failure, Success
     [
         ("Zm9v", "foo"),
         ("Zm8", "fo"),
-        ("Zg=", "f"),
+        ("Zg==", "f"),
+        # Effect 4.1.2 requires padded input to be whole 4-character groups
+        # (``Base64Url.test.ts``, "rejects malformed padding").
+        ("Zg=", None),
         ("Zm9v\n", "foo"),
         ("Zm9v\r\nZm9v", "foofoo"),
         ("-_8", "��"),
@@ -28,8 +31,8 @@ from pyfect.exit import Failure, Success
     ],
 )
 def test_base64_url_decoding_follows_effect(text: str, decoded: str | None):
-    """``Base64Url.decode``: CR / LF dropped, a length (padding included)
-    of 1 mod 4 rejected, then padded to a multiple of 4."""
+    """``Base64Url.decode``: CR / LF dropped; unpadded text of length 1 mod 4
+    and padded text that is not a multiple of 4 rejected."""
     exit = S.decode_unknown_exit(S.StringFromBase64Url)(text)
     if decoded is None:
         assert isinstance(exit, Failure)

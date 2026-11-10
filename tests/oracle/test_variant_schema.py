@@ -163,6 +163,17 @@ def test_boolean_sqlite_encodes_database_bits_and_json_booleans_across_variants(
 
 
 @testing.effect
+def test_uuid_v7_insert_generates_strictly_increasing_ids():
+    """UuidV7Insert generates strictly increasing ids"""
+    insert = Model.extract(Model.Struct({"id": Model.UuidV7Insert(S.String)}), "insert")
+    ids: list[object] = []
+    for _ in range(2000):
+        ids.append((yield from insert.make_effect({}))["id"])  # noqa: PERF401
+    assert all(isinstance(id, str) for id in ids)
+    assert all(i == 0 or str(ids[i - 1]) < str(id) for i, id in enumerate(ids))
+
+
+@testing.effect
 def test_overrideable_defaults_are_constructor_only_and_accept_explicit_overrides():
     """Model / Overrideable defaults are constructor-only and accept explicit overrides"""
     user = Model.Struct({"createdAt": Model.DateTimeInsertFromNumber})

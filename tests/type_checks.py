@@ -25,6 +25,7 @@ from pyfect import (
     crypto,
     execution_plan,
     graphql,
+    jose,
     layer,
     logger,
     optic,
@@ -9040,17 +9041,15 @@ def check_catch_reasons_any_number(
 
 
 def collections_and_crypto(
-    service: crypto.CryptoService,
+    service: crypto.secure_random.SecureRandomService,
     hm: HashMap[str, int],
     trie: Trie[int],
     version: semver.SemVer,
 ) -> None:
-    from pyfect.platform_error import PlatformError as _PlatformError
-
-    assert_type(crypto.layer, layer.Layer[crypto.Crypto])
-    assert_type(service.random_bytes(8), fx.Effect[bytes, _PlatformError])
-    assert_type(service.random_uuid_v4(), fx.Effect[str, _PlatformError])
-    assert_type(service.random_uuid_v7(format="bytes"), fx.Effect[bytes, _PlatformError])
+    assert_type(crypto.native.layer, layer.Layer[crypto.native.Services])
+    assert_type(service.random_bytes(8), fx.Effect[bytes])
+    assert_type(service.uuid_v4(), fx.Effect[str])
+    assert_type(service.uuid_v7(format="bytes"), fx.Effect[bytes])
     assert_type(HashMap.make(("a", 1), ("b", 2)), HashMap[str, int])
     assert_type(hm.get("a"), fx.option.Option[int])
     assert_type(hm.set("c", 3), HashMap[str, int])
@@ -9137,11 +9136,59 @@ def check_effectable() -> None:
     del wide, Wrong
 
 
-def check_test_crypto() -> None:
-    from pyfect.crypto import Crypto, CryptoService
+def check_crypto_keys(
+    agreement: crypto.key_agreement.KeyAgreementService,
+    p256: crypto.key_agreement.KeyPair[crypto.key_agreement.Ecdh[Literal["P-256"]]],
+    p384: crypto.key_agreement.PublicKey[crypto.key_agreement.Ecdh[Literal["P-384"]]],
+) -> None:
+    from pyfect.crypto import aead, key_format, mac, signature
+    from pyfect.crypto import schema as CS
+    from pyfect.crypto.crypto_error import CryptoError
 
-    assert_type(fx.testing.TestCrypto.make("seed"), fx.Effect[CryptoService, Never, Crypto])
-    assert_type(fx.testing.TestCrypto.layer(1), fx.Layer[Crypto, Never, Crypto])
+    assert_type(
+        aead.key(aead.aes256_gcm, b""),
+        fx.Effect[aead.Key[aead.AesGcm], CryptoError],
+    )
+    assert_type(
+        key_format.decode_public(key_format.spki, signature.ed25519, b""),
+        fx.Effect[signature.PublicKey[signature.Ed25519], CryptoError],
+    )
+    assert_type(
+        key_format.pem(key_format.spki),
+        key_format.Format[Literal["public"], Literal["decode", "encode"], str],
+    )
+    # PEM formats read text, and keys of two curves do not meet in one call.
+    key_format.decode_public(key_format.pem(key_format.spki), signature.ed25519, b"")  # pyright: ignore[reportCallIssue, reportArgumentType]
+    agreement.derive_shared_secret(p256.private_key, p384)  # pyright: ignore[reportArgumentType]
+    assert_type(
+        CS.MacKeyFromBytes(mac.hmac_sha256),
+        S.DecodeToSchema[mac.Key[mac.Algorithm], bytes],
+    )
+    assert_type(
+        CS.SignaturePublicKeyFromFormat(key_format.pem(key_format.spki), signature.ed25519),
+        S.DecodeToSchema[signature.PublicKey[signature.Ed25519], str],
+    )
+
+
+def check_jose(
+    hmac_key: jose.jwk.HmacKey,
+    private_key: jose.jwk.PrivateKey,
+    public_key: jose.jwk.PublicKey,
+    dir_key: jose.jwk.DirKey,
+    secret: fx.Redacted[jose.jwk.SecretJwk],
+) -> None:
+    from pyfect.crypto.mac import Mac
+    from pyfect.crypto.signature import Signature
+    from pyfect.http.client import HttpClient
+    from pyfect.jose import jwk, jwks, jws
+    from pyfect.jose.jose_error import JoseError
+
+    assert_type(jws.sign(b"", hmac_key), fx.Effect[fx.Redacted[str], JoseError, Mac])
+    assert_type(jws.sign(b"", private_key), fx.Effect[fx.Redacted[str], JoseError, Signature])
+    assert_type(jws.verify("", public_key), fx.Effect[jws.Verified, JoseError, Signature])
+    assert_type(jwk.import_dir(secret), fx.Effect[jwk.DirKey, JoseError])
+    assert_type(jwks.layer_remote(""), fx.Layer[jwks.Jwks, JoseError, HttpClient])
+    jws.sign(b"", dir_key)  # pyright: ignore[reportCallIssue, reportArgumentType]
 
 
 def check_graph() -> None:

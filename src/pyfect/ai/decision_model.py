@@ -24,6 +24,7 @@ from typing import Any, Generic, Literal, TypeVar, overload
 import pyfect as fx
 from pyfect import schema as S
 from pyfect._core import Effect
+from pyfect._ids import stringify, v4_bytes
 from pyfect._json_value import JsonValue
 from pyfect._url import Url
 from pyfect._wire_codec import key, wire_codec
@@ -40,7 +41,6 @@ from pyfect.ai._decision_answers import (
 )
 from pyfect.ai._decision_image import Image
 from pyfect.context import Tag
-from pyfect.crypto import uuid_string, uuid_v4_bytes
 from pyfect.http import url as url_
 from pyfect.random import Random, RandomService
 from pyfect.result import Ok
@@ -176,7 +176,7 @@ def _format_path(path: Path) -> str:
 
 def _random_uuid(random: RandomService) -> str:
     data = bytes(math.floor(random.next_double_unsafe() * 256) for _ in range(16))
-    return uuid_string(uuid_v4_bytes(data))
+    return stringify(v4_bytes(data))
 
 
 @dataclass(frozen=True)
