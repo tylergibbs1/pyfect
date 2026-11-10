@@ -62,6 +62,12 @@ def _bounded[A, E, R](effect: fx.Effect[A, E, R]) -> fx.Effect[A, Any, R]:
     return effect.timeout("2 seconds")
 
 
+def _until(done: Callable[[], bool]) -> None:
+    deadline = time.monotonic() + 2
+    while not done() and time.monotonic() < deadline:
+        time.sleep(0.001)
+
+
 _answer = Parameter[int]("answer", TYPES.Int)
 _get_answer = procedure.make("get_answer").output_param(_answer)
 
@@ -339,11 +345,15 @@ def test_replaces_a_connection_that_ends_without_error_after_query_cancellation(
         connection = fake.connections[0]
         query = yield from client.unsafe("SELECT pending").fork_scoped()
         yield from _bounded(fx.blocking(lambda: fake.pending_started.wait(2)))
-        yield from _bounded(query.interrupt())
+        fake.acknowledge_cancel = False
+        interrupted = yield from query.interrupt().fork_scoped()
+        yield from _bounded(fx.blocking(lambda: _until(lambda: connection.cancellations == 1)))
         assert connection.cancellations == 1
+        # Interruption waits for the server to acknowledge the cancel.
+        assert interrupted.poll_unsafe() is None
         # The cancel timed out: the connection ends, without an error.
         connection.close()
-        yield from fx.yield_now()
+        yield from _bounded(interrupted.join())
         rows = yield from _bounded(client.unsafe("SELECT recovered"))
         assert rows == [{"value": 42}]
         assert len(fake.connections) == 2
@@ -384,6 +394,45 @@ def test_handles_an_error_immediately_after_the_connect_callback(
 
 
 # --- the driver on SQL Server -----------------------------------------------------
+
+
+@testing.live
+def test_can_query_after_interrupting_a_request_in_a_single_connection_pool(
+    mssql_server: MssqlServer,
+):
+    """can query after interrupting a request in a single-connection pool
+
+    ``sql-mssql/test/Cancellation.integration.test.ts``"""
+
+    def body():
+        client = yield from SqlClient()
+        # Start the request before interrupting it; do not wait for the server
+        # delay or give the cancellation acknowledgement time to arrive.
+        pending = yield from client("WAITFOR DELAY '00:00:10'").fork_scoped(start_immediately=True)
+        yield from pending.interrupt()
+        rows = yield from client("SELECT 42 AS value")
+        assert rows == [{"value": 42}]
+
+    yield from _on_server(mssql_server, body, min_connections=1, max_connections=1)
+
+
+@testing.live
+def test_runs_the_next_statement_on_a_connection_whose_running_statement_was_interrupted(
+    mssql_server: MssqlServer,
+):
+    """runs the next statement on a connection whose running statement was interrupted
+
+    ``sql-mssql/test/Client.integration.test.ts``"""
+
+    def body():
+        sql = yield from SqlClient()
+        running = yield from sql("WAITFOR DELAY '00:00:05'").fork()
+        yield from fx.sleep("200 millis")
+        yield from running.interrupt()
+        rows = yield from sql("SELECT 1 AS n")
+        assert rows == [{"n": 1}]
+
+    yield from _on_server(mssql_server, body, max_connections=1)
 
 
 @testing.live

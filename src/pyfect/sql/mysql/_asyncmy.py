@@ -124,6 +124,13 @@ def end_unbuffered_result(conn: RawConnection) -> None:
         result.unbuffered_active = False
 
 
+def result_settled(conn: RawConnection) -> bool:
+    """Whether the server is done with the statement whose unbuffered result
+    ``conn`` is reading: every row read, and no further result set to come."""
+    result: Any = getattr(conn, "_result", None)
+    return result is None or (not result.unbuffered_active and not result.has_next)
+
+
 _CONVERSIONS: dict[Any, Any] = {
     **cast("dict[Any, Any]", conversions),
     FIELD_TYPE.JSON: json_text.parse,
@@ -163,6 +170,7 @@ __all__ = [
     "end_unbuffered_result",
     "is_server_error",
     "kill",
+    "result_settled",
     "stream_cursor",
     "text_cursor",
 ]

@@ -31,6 +31,7 @@ from pyfect.exit import Failure, Success
 from pyfect.exit import fail as exit_fail
 from pyfect.schema import Array, Codec, SchemaError, decode_unknown_effect, encode_effect
 from pyfect.sql.client import SqlClient, TransactionLevel
+from pyfect.sql.client._transaction import CurrentTransactionService
 from pyfect.sql.error import ResultLengthMismatch
 
 
@@ -84,13 +85,26 @@ def _request(payload: object, resolver: SqlResolver[Any, Any, Any, Any]) -> Effe
 
 
 def _transaction_key(entry: Entry[Any]) -> Hashable:
-    """The transaction the request was made in (by identity), or ``None``."""
+    """The transaction the request was made in (by identity), or ``None``:
+    that of the request's ``SqlClient`` and the innermost one started with
+    ``make_with_transaction`` by any client."""
     context = entry.context
+    client_level: TransactionLevel | None = None
     found, client = context.lookup(SqlClient)
-    if not found:
-        return None
-    found, level = context.lookup(client.transaction_service)
-    return cast("TransactionLevel", level) if found else None
+    if found:
+        found, level = context.lookup(client.transaction_service)
+        client_level = cast("TransactionLevel", level) if found else None
+    current_level: TransactionLevel | None = None
+    current_service = context.get_unsafe(CurrentTransactionService)
+    if current_service is not None:
+        found, level = context.lookup(current_service)
+        current_level = level if found else None
+    if client_level is None or client_level is current_level:
+        return current_level
+    if current_level is None:
+        return client_level
+    # Two different transactions are active, so neither identifies the request alone.
+    return (client_level, current_level)
 
 
 type _Entries = Sequence[Entry[SqlRequest[Any, Any, Any, Any]]]

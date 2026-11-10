@@ -11,7 +11,7 @@ pytest.importorskip("asyncmy")
 from pyfect.sql.mysql._bind import PlaceholderMismatch, bind
 
 
-def _literal(value: object) -> str:
+def _literal(value: object, _assigns: bool) -> str:
     return f"<{value}>"
 
 
@@ -89,3 +89,40 @@ def test_the_server_runs_what_is_inside_a_version_comment(sql: str, bound: str):
 def test_counts_placeholders_with_the_mode_in_force():
     with pytest.raises(PlaceholderMismatch):
         _bind(r"SELECT 'a\', ?", 1)
+
+
+def _assigns(sql: str, *params: object) -> str:
+    def literal(value: object, assigns: bool) -> str:
+        return "<pairs>" if assigns else "<value>"
+
+    return bind(sql, params, literal, no_backslash_escapes=False)
+
+
+@pytest.mark.parametrize(
+    ("sql", "bound"),
+    [
+        # mysql2's sql-escaper expands an object only where an assignment can start.
+        ("UPDATE t SET ? WHERE id = ?", "UPDATE t SET <pairs> WHERE id = <value>"),
+        ("UPDATE t SET a = 1, ?", "UPDATE t SET a = 1, <pairs>"),
+        ("INSERT INTO t SET ?", "INSERT INTO t SET <pairs>"),
+        (
+            "INSERT INTO t (a) VALUES (1) ON DUPLICATE KEY UPDATE ?",
+            "INSERT INTO t (a) VALUES (1) ON DUPLICATE KEY UPDATE <pairs>",
+        ),
+        ("SELECT ?", "SELECT <value>"),
+        ("UPDATE t SET a = ?", "UPDATE t SET a = <value>"),
+        ("UPDATE t SET a = 1 WHERE ?", "UPDATE t SET a = 1 WHERE <value>"),
+        ("SELECT 1 FROM t WHERE (SET), ?", "SELECT 1 FROM t WHERE (SET), <value>"),
+        ("UPDATE t SET a = 1 LIMIT 1, ?", "UPDATE t SET a = 1 LIMIT 1, <value>"),
+        ("UPDATE t SET a = (1, ?)", "UPDATE t SET a = (1, <value>)"),
+        ("UPDATE t SET a = 1; SELECT ?", "UPDATE t SET a = 1; SELECT <value>"),
+        ("SELECT 'SET' ?", "SELECT 'SET' <value>"),
+        ("SELECT `set`, ?", "SELECT `set`, <value>"),
+    ],
+)
+def test_a_dict_is_assignments_only_where_mysql2_expands_it(sql: str, bound: str):
+    assert _assigns(sql, *({"a": 1} for _ in range(sql.count("?")))) == bound
+
+
+def test_only_dicts_ask_for_assignments():
+    assert _assigns("UPDATE t SET ?", [1]) == "UPDATE t SET <value>"

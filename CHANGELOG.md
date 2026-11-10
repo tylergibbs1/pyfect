@@ -37,7 +37,25 @@
   error reasons. `AtomRpc` queries that fail with an `RpcClientError` are now kept by
   `hydration.dehydrate`. A worker error reason without a `cause` encodes without the key (it
   was `null`), as Effect's.
+- `process.make(..., shell=True)` with arguments fails with `BadArgument` when spawned, as
+  in Effect 4.1.2: the command is the whole script. pyfect used to quote each argument onto
+  the shell line; build the script with `process.command_line.join([...])` (or `quote`) and
+  pass it alone, or drop `shell`. `make`'s command and arguments are positional-only
+  (`make("ls", ["-l"])`; `args=` is gone), because `make` also takes a template now
+  (`make(["git commit -m ", ""], message)`, or a t-string on 3.14). Errors name a command
+  through `command_line.display`: arguments are shell-quoted, `Redacted` ones masked and
+  control characters escaped (`echo 'a b'`, not `echo a b`). `ChildProcessHandle.stdin` is a
+  `Sink[None, bytes | str, ...]` (text is encoded with `StdinConfig.encoding`), so a
+  hand-built handle's `stdin` must accept `str` too.
 
+- `key_value_store.make` and `make_string_only` take a required `keys` (an effect giving a
+  snapshot of the keys, Effect 4.1.2's `keys`) and an optional `clear_prefix`, which is
+  derived from `keys` and `remove` when omitted; a hand-built store must pass `keys`. Every
+  store has `keys` and `clear_prefix(prefix)`. A prefixed view (`store.prefix(p)`) now
+  scopes `keys`, `size`, `is_empty` and `clear` to its prefix, as in 4.1.2: `clear` on a
+  view removes only its own keys (it cleared the whole store), so
+  `persistence.layer_backing_kvs` stores clear only their own entries. The file-system
+  store's `remove` succeeds for a missing key (it failed with `NotFound`).
 - `encoding.toml.parse` returns a `Result` (`Ok(dict)` or `Err(EncodingError)` with module
   `"Toml"` and Effect's message) instead of raising `ValueError`, as Effect 4.1.2's
   `Toml.parse` does: replace `toml.parse(text)` with `toml.parse(text).get_or_raise()` to
@@ -249,6 +267,38 @@
 - A socket reader's pull returns at most `chunk_size` chunks (4096 by default, `math.inf` for
   no limit), as Effect 4.1.2's `NodeSocket` does; it returned everything buffered. Pass
   `chunk_size=math.inf` to `make_net` / `make_tls` / `from_socket` to keep the old batching.
+- SQL, Effect 4.1.2: `migrator.from_file_system` moved to the new module
+  `pyfect.sql.migrator_file_system` (`from pyfect.sql.migrator_file_system import
+  from_file_system`), so `pyfect.sql.migrator` no longer imports the file-system loader; the
+  driver migrators (`pyfect.sql.sqlite.migrator.from_file_system` and the others) still
+  re-export it.
+- SQL: a transaction's `BEGIN`, `COMMIT`, `ROLLBACK`, `SAVEPOINT`, `RELEASE SAVEPOINT` and
+  `ROLLBACK TO SAVEPOINT` are client spans under its `sql.transaction` span (named `COMMIT`
+  or `COMMIT <db.namespace>`, with `db.operation.name`), as in 4.1.2, instead of events on
+  it; a tracer that read those events must read the child spans. The connection wait
+  (`db.client.connection.wait_time_ms`) is recorded on the transaction span only with
+  `SpanPropagationEnabled` and `TracerTimingEnabled`. Rollbacks and savepoint releases of
+  cleanup always run unprepared.
+- libsql: `LibsqlSdk` has a required `protocol` (`"http"`, `"ws"` or `"file"`); a hand-built
+  SDK (a test fake) must set it. Remote statements (`http`/`ws`) no longer wait for each
+  other or for an open transaction, as in 4.1.2; local ones still run one at a time.
+- ClickHouse: the migrator writes its ledger (the table and the inserts) with
+  `ClientMethod` `"command"` and runs migrations as queries, as in 4.1.2's
+  `Migrator.make({ transformWrites })` (new: `migrator.make(transform_writes=...)`); the
+  `INSERT ... SELECT ... UNION ALL` workaround is gone.
+- MySQL: a text-protocol statement (`disable_prepared_statements=True`, and every stream)
+  writes a list parameter as `1, 2` (a nested list as `(1, 2), (3, 4)`) and a dict in a `SET`
+  / `ON DUPLICATE KEY UPDATE` list as `` `key` = value `` pairs, as mysql2 does; both were
+  JSON text. Prepared statements still bind them as JSON. To keep sending JSON over the text
+  protocol, pass `json.dumps(value)`.
+- MySQL: a `mysql://` URL's query is read as mysql2 reads it: `ssl` (a JSON object such as
+  `?ssl={"rejectUnauthorized":false}`) and `connectTimeout`; other options are refused when
+  the config is made (all query parameters were).
+- PostgreSQL: `PgClientService(...)` takes a required `pool_stats` (a hand-built client must
+  pass one), and a pin released inside an aborted transaction it did not open closes its
+  session instead of handing it back to the pool. A prepared statement the backend lost
+  (`26000`, a transaction pooler moved the session) or whose plan went stale (`0A000`) is
+  parsed again and the statement retried once, unless the transaction is already aborted.
 
 ### Added
 
@@ -299,6 +349,9 @@
   content as a stream; `body.File.content` is typed `body.FileContent`.
 
 - `Pool.stats()` returns a `PoolStats` (idle, used, pending, `min`, `max`).
+- SQL: `PgClient.pool_stats` and `PgPool.stats` (a `make_client` client reports its one
+  session as leased), `migrator.TransformWrites` and `migrator.make(transform_writes=)`.
+- MySQL: TLS from a URL (`?ssl={...}` as mysql2's `ssl` object).
 - `stream.ignore`, `ignore_cause` and the channel ones take `log="Unhandled"` to log at the
   fiber's `UnhandledLogLevel` (nothing when it is `None`).
 - `cron.DstOverlapPolicy` (`"earlier"`, `"later"`, `"both"`).

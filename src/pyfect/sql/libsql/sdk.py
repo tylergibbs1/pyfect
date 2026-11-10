@@ -22,6 +22,11 @@ type TransactionMode = Literal["write", "read", "deferred"]
 TRANSACTION READONLY`` (a libSQL server's), ``deferred`` with ``BEGIN
 DEFERRED``."""
 
+type SdkProtocol = Literal["http", "ws", "file"]
+"""How a client reaches its database (``@libsql/client``'s ``protocol``):
+remote transports run each statement and transaction on a stream of its
+own; a ``file`` client may have a single connection."""
+
 _BEGIN: dict[TransactionMode, str] = {
     "write": "BEGIN IMMEDIATE",
     "read": "BEGIN TRANSACTION READONLY",
@@ -100,6 +105,9 @@ class LibsqlSdkTransaction(Protocol):
 class LibsqlSdk(Protocol):
     """A libSQL database client (``@libsql/client``'s ``Client``)."""
 
+    @property
+    def protocol(self) -> SdkProtocol: ...
+
     async def execute(self, sql: str, args: Sequence[object], /) -> ResultSet: ...
 
     async def transaction(self, mode: TransactionMode, /) -> LibsqlSdkTransaction: ...
@@ -117,6 +125,7 @@ __all__ = [
     "LibsqlSdkTransaction",
     "ManagedSdk",
     "ResultSet",
+    "SdkProtocol",
     "TransactionMode",
     "Value",
     "begin_statement",

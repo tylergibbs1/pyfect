@@ -1,0 +1,6 @@
+fix: a | b; $HOME
+two  words
+UnsupportedSyntax - The glob character "*" needs a shell in template part 0
+printf '%s|' 'a b' 'it'\''s'
+a b|it's|
+curl -H <redacted> 'https://example.com/a b'

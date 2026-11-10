@@ -165,6 +165,7 @@ from pyfect.persistence import persisted_queue as pq
 from pyfect.persistence import persistence as persistence_module
 from pyfect.persistence import rate_limiter as rl
 from pyfect.persistence import redis as redis_module
+from pyfect.pool import PoolStats
 from pyfect.pool._state import Strategy
 from pyfect.pubsub import Atomic, BackPressureStrategy, SlidingStrategy, Subscription
 from pyfect.pubsub import Strategy as PubSubStrategy
@@ -187,6 +188,7 @@ from pyfect.sql import d1 as sql_d1
 from pyfect.sql import error as sql_error
 from pyfect.sql import libsql as sql_libsql
 from pyfect.sql import migrator as sql_migrator
+from pyfect.sql import migrator_file_system as sql_migrator_file_system
 from pyfect.sql import model as sql_model
 from pyfect.sql import mssql as sql_mssql
 from pyfect.sql import mysql as sql_mysql
@@ -5134,17 +5136,34 @@ def check_process(
     )
     assert_type(handle.exit_code, fx.Effect[ExitCode, fx.PlatformError, Never])
     assert_type(handle.stdout, fx.Stream[bytes, fx.PlatformError, Never])
-    assert_type(handle.stdin, fx.Sink[None, bytes, Never, fx.PlatformError, Never])
+    assert_type(handle.stdin, fx.Sink[None, bytes | str, Never, fx.PlatformError, Never])
     assert_type(handle.kill(force_kill_after=1), fx.Effect[None, fx.PlatformError, Never])
     assert_type(handle.unref, fx.Effect[fx.Effect[None, fx.PlatformError], fx.PlatformError, Never])
     assert_type(spawner.string(command), fx.Effect[str, fx.PlatformError, Never])
     assert_type(spawner.lines(command), fx.Effect[list[str], fx.PlatformError, Never])
     assert_type(spawner.stream_lines(command), fx.Stream[str, fx.PlatformError, Never])
     assert_type(process.layer, fx.Layer[ChildProcessSpawner, Never, fx.FileSystem | fx.Path])
-    process.make("echo", stdin="closed")  # pyright: ignore[reportArgumentType]
-    process.make("echo", stdout=stream.make(b"x"))  # pyright: ignore[reportArgumentType]
+    process.make("echo", stdin="closed")  # pyright: ignore[reportArgumentType, reportCallIssue]
+    process.make("echo", stdout=stream.make(b"x"))  # pyright: ignore[reportArgumentType, reportCallIssue]
     command.pipe_to(command, from_="stdin")  # pyright: ignore[reportArgumentType]
     handle.kill(kill_signal="SIGKILL")  # pyright: ignore[reportArgumentType]
+    secret = fx.redacted.make("token")
+    assert_type(process.make(["git commit -m ", ""], "msg"), process.StandardCommand)
+    assert_type(process.make("curl", ["-H", secret], env={"T": secret}), process.StandardCommand)
+    assert_type(command.args, tuple[str | fx.Redacted[str], ...])
+    assert_type(command.prefix(["time"]), process.Command)
+    assert_type(
+        process.command_line.template(["ls ", ""], ["a", 1]),
+        fx.Result[list[str | fx.Redacted[str]], process.CommandLineError],
+    )
+    assert_type(process.command_line.join(["a", secret]), fx.Result[str, process.CommandLineError])
+    assert_type(process.command_line.display(["a", secret]), str)
+    process.make(
+        "echo", stdout=process.StdoutConfig("ignore"), stdin=process.StdinConfig(encoding="hex")
+    )
+    process.StdinConfig(encoding="utf-32")  # pyright: ignore[reportArgumentType]
+    process.make("echo", ["a"], ["b"])  # pyright: ignore[reportArgumentType]
+    process.command_line.quote("x", format="cmd")  # pyright: ignore[reportArgumentType]
 
 
 def check_http_client(service: fx.http.HttpClientService[fx.http.HttpClientError]) -> None:
@@ -5372,6 +5391,17 @@ def sql_statements(
         ],
     )
 
+    def as_written[A, E, R](effect: fx.Effect[A, E, R]) -> fx.Effect[A, E, R]:
+        return effect
+
+    sql_migrator.make(transform_writes=as_written)
+    # A transform must keep the write's value, errors and requirements.
+    sql_migrator.make(transform_writes=lambda effect: effect.as_void())  # pyright: ignore[reportArgumentType]
+    assert_type(
+        sql_migrator_file_system.from_file_system("migrations"),
+        sql_migrator.Loader[fx.FileSystem | fx.Path],
+    )
+
 
 def sql_pg_driver(
     pg_sql: sql_pg.PgClientService,
@@ -5387,6 +5417,8 @@ def sql_pg_driver(
         fx.Effect[Dequeue[sql_pg.Notification, SqlError], SqlError, fx.Scope],
     )
     assert_type(pg_sql.notify("events", "hi"), fx.Effect[None, SqlError])
+    assert_type(pg_sql.pool_stats, fx.Effect[PoolStats])
+    assert_type(pool.stats, fx.Effect[PoolStats])
     assert_type(conn.query("SELECT 1"), fx.Effect[sql_pg.Result, SqlError])
     assert_type(conn.pin, fx.Effect[sql_pg.PgConnection, Never, fx.Scope])
     assert_type(pool.get, fx.Effect[sql_pg.PgConnection, SqlError, fx.Scope])
@@ -6699,6 +6731,8 @@ def check_persistence(
     assert_type(kv.get("k"), fx.Effect[str | None, kvs.KeyValueStoreError])
     assert_type(kv.get_bytes("k"), fx.Effect[bytes | None, kvs.KeyValueStoreError])
     assert_type(kv.prefix("p/"), kvs.KeyValueStoreService)
+    assert_type(kv.keys, fx.Effect[list[str], kvs.KeyValueStoreError])
+    assert_type(kv.clear_prefix("p/"), fx.Effect[None, kvs.KeyValueStoreError])
     users_store = kv.to_schema_store(PersistedUser)
     assert_type(
         users_store.get("k"),

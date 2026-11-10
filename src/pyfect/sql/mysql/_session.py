@@ -13,7 +13,7 @@ import asyncio
 import contextlib
 import logging
 from collections import OrderedDict
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, cast
 
@@ -60,10 +60,55 @@ def _parameters(params: Sequence[object]) -> tuple[object, ...]:
     return tuple(_parameter(value) for value in params)
 
 
+def _identifier(name: str) -> str:
+    """sql-escaper's ``escapeId``: a dot qualifies the name, unless it holds a
+    JSON operator (``->``)."""
+    quoted = name.replace("`", "``")
+    if "->" not in name:
+        quoted = quoted.replace(".", "`.`")
+    return f"`{quoted}`"
+
+
+def _text_literal(escape: Callable[[object], str]) -> Callable[[object, bool], str]:
+    r"""A parameter's literal in a text-protocol statement, as mysql2 (sql-escaper)
+    writes it: a list is ``a, b``, a list in it ``(a, b)``, and a dict in a ``SET``
+    assignment list is ``\`key\` = value`` pairs. Elsewhere a dict is its JSON
+    text, where mysql2 writes JavaScript's ``'[object Object]'``."""
+
+    def value(item: object) -> str:
+        # sql-escaper's ``escape(item, stringifyObjects=true)``.
+        if isinstance(item, list):
+            return listed(cast("list[object]", item))
+        return escape(_parameter(item))
+
+    def listed(items: list[object]) -> str:
+        return ", ".join(
+            f"({listed(cast('list[object]', item))})" if isinstance(item, list) else value(item)
+            for item in items
+        )
+
+    def literal(param: object, assigns: bool) -> str:
+        if assigns and isinstance(param, dict):
+            pairs = cast("dict[object, object]", param).items()
+            return ", ".join(f"{_identifier(str(key))} = {value(item)}" for key, item in pairs)
+        return value(param)
+
+    return literal
+
+
 class Session:
     """A connection and its prepared statements."""
 
-    __slots__ = ("_killing", "_lock", "_options", "_running", "_statements", "broken", "raw")
+    __slots__ = (
+        "_killing",
+        "_lock",
+        "_options",
+        "_running",
+        "_statements",
+        "_stream",
+        "broken",
+        "raw",
+    )
 
     def __init__(self, raw: RawConnection, options: Mapping[str, Any]) -> None:
         self.raw = raw
@@ -74,6 +119,8 @@ class Session:
         """The task whose statement is on the wire."""
         self._killing: asyncio.Event | None = None
         """Set once the ``KILL QUERY`` of an interrupted statement has been tried."""
+        self._stream: Cursor | None = None
+        """The open stream holding the turn, until its statement settles."""
         self.broken = False
 
     @staticmethod
@@ -123,7 +170,10 @@ class Session:
         # connection's ``escape`` follows the same flag.
         no_backslash_escapes = bool(self.raw.server_status & _NO_BACKSLASH_ESCAPES)
         return bind(
-            sql, _parameters(params), self.raw.escape, no_backslash_escapes=no_backslash_escapes
+            sql,
+            params,
+            _text_literal(self.raw.escape),
+            no_backslash_escapes=no_backslash_escapes,
         )
 
     async def _query(self, sql: str, params: Sequence[object], as_tuples: bool) -> list[ResultSet]:
@@ -193,12 +243,24 @@ class Session:
             self._lock.release()
             raise
         await self._settled()
+        self._stream = cursor
+        self._end_stream_if_settled(cursor)
         return cursor
+
+    def _end_stream_if_settled(self, cursor: Cursor) -> None:
+        """Give the turn back as soon as the streamed statement has settled, since the
+        stream's consumer may run its own statements on this connection before the stream
+        ends (Effect's stream ``permit``)."""
+        if self._stream is cursor and _asyncmy.result_settled(self.raw):
+            self._stream = None
+            self._lock.release()
 
     async def next_rows(self, cursor: Cursor) -> list[Row]:
         """Up to a chunk of rows; ``[]`` at the end."""
+        if self._stream is not cursor:
+            return []
         try:
-            return list(await cursor.fetchmany(_STREAM_CHUNK))
+            rows = list(await cursor.fetchmany(_STREAM_CHUNK))
         except asyncio.CancelledError:
             self._cut_short()
             raise
@@ -207,16 +269,23 @@ class Session:
                 _asyncmy.end_unbuffered_result(self.raw)
             else:
                 self._cut_short()
+            self._end_stream_if_settled(cursor)
             raise
+        self._end_stream_if_settled(cursor)
+        return rows
 
     async def close_stream(self, cursor: Cursor) -> None:
         """End the stream, then give the turn back: what it left unread is read past, and a
         statement still sending rows after a moment is killed, as it may send for hours.
-        Only the statement: a transaction goes on, if the connection stays in step."""
+        Only the statement: a transaction goes on, if the connection stays in step. A stream
+        whose statement settled gave the turn back already."""
+        if self._stream is not cursor:
+            return
         try:
             if self.usable:
                 await self._read_past(cursor)
         finally:
+            self._stream = None
             self._lock.release()
 
     async def _read_past(self, cursor: Cursor) -> None:

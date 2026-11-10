@@ -17,7 +17,14 @@ from concurrent.futures import ThreadPoolExecutor
 
 from pyfect.sql.libsql._targets import LocalTarget
 from pyfect.sql.libsql._values import to_values
-from pyfect.sql.libsql.sdk import LibsqlError, ResultSet, TransactionMode, Value, begin_statement
+from pyfect.sql.libsql.sdk import (
+    LibsqlError,
+    ResultSet,
+    SdkProtocol,
+    TransactionMode,
+    Value,
+    begin_statement,
+)
 
 _PRIMARY_CODES = {
     1: "SQLITE_ERROR",
@@ -144,6 +151,8 @@ class LocalClient:
     """A local database (``ManagedSdk``)."""
 
     __slots__ = ("_closed", "_idle", "_in_transaction", "_target")
+
+    protocol: SdkProtocol = "file"
 
     def __init__(self, target: LocalTarget, first: _Connection) -> None:
         self._target = target

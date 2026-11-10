@@ -17,7 +17,10 @@ DATABASE_URL=mysql://user:password@localhost:3306/app python connect.py
 
 `MysqlClientConfig` holds the URL (a `Redacted`, so it never shows up in logs) or the
 separate `host`, `port`, `database`, `username` and `password`, and the pool's size and
-connection lifetime. `connect_options` passes anything else to the driver. To read the
+connection lifetime. `connect_options` passes anything else to the driver; with a URL it is
+ignored, as in Effect, and the URL's query takes mysql2's `ssl` object
+(`?ssl={"rejectUnauthorized":true}`, with `ca`, `cert` and `key` as PEM text) and
+`connectTimeout` in milliseconds. To read the
 settings from the environment, use `mysql.layer_config({"url": fx.config.redacted("DATABASE_URL")})`.
 
 Statements are prepared on the server and cached per connection. Set

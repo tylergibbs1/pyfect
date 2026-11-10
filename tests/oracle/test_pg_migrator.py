@@ -117,11 +117,11 @@ def _make_migrator(config: pg.PgPoolConfig):
 
 
 def _dump_connection(command: StandardCommand) -> dict[str, Any]:
-    [dbname] = [arg for arg in command.args if arg.startswith("--dbname=")]
+    [dbname] = [arg for arg in command.args if isinstance(arg, str) and arg.startswith("--dbname=")]
     return conninfo_to_dict(dbname.removeprefix("--dbname="))
 
 
-def _env(command: StandardCommand) -> dict[str, str | None]:
+def _env(command: StandardCommand) -> dict[str, object]:
     return dict(command.options.env or {})
 
 
@@ -186,7 +186,7 @@ def test_dumps_through_the_connection_resolved_from_the_url_and_explicit_fields(
             "sslmode": "verify-full",
         }
         assert {key: connection.get(key) for key in expected} == expected
-        assert not any("s3cret" in arg for arg in command.args)
+        assert not any(isinstance(arg, str) and "s3cret" in arg for arg in command.args)
         assert command.options.extend_env is False
         assert _env(command) == {"PATH": os.environ.get("PATH"), "PGPASSWORD": "s3cret"}
 

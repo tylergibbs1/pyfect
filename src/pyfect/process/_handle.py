@@ -44,7 +44,8 @@ class ChildProcessHandle:
 
     - ``exit_code``: waits for the exit; fails if a signal ended the
       process, or with the error of a stream feeding one of its inputs.
-    - ``stdin``: a sink writing standard input.
+    - ``stdin``: a sink writing standard input; text is encoded with the
+      command's ``StdinConfig.encoding``.
     - ``stdout``, ``stderr``: byte streams of its output; ``all`` both,
       interleaved. Reading one alongside ``all`` splits the output between
       them.
@@ -58,7 +59,7 @@ class ChildProcessHandle:
     exit_code: Effect[ExitCode, PlatformError]
     is_running: Effect[bool, PlatformError]
     kill: Kill
-    stdin: Sink[None, bytes, Never, PlatformError]
+    stdin: Sink[None, bytes | str, Never, PlatformError]
     stdout: Stream[bytes, PlatformError]
     stderr: Stream[bytes, PlatformError]
     all: Stream[bytes, PlatformError]

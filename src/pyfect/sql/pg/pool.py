@@ -26,7 +26,7 @@ from pyfect.context import Context, Tag
 from pyfect.duration import Seconds, to_seconds
 from pyfect.effect import fail, provide_service, succeed, sync
 from pyfect.exit import Failure, Success
-from pyfect.pool import Pool
+from pyfect.pool import Pool, PoolStats
 from pyfect.scope import CloseableScope, Scope, add_finalizer, scoped
 from pyfect.sql.error import SqlError
 from pyfect.sql.pg.config import PgPoolConfig
@@ -48,6 +48,9 @@ class PgPoolService:
       and listeners)
     - ``use(f)``: a session for as long as ``f``'s effect runs
     - ``invalidate(connection)``: replace a session
+    - ``stats``: a snapshot of session occupancy (sessions, not statements;
+      a session that has just failed can show as idle until the pool
+      removes it)
     """
 
     __slots__ = ("_check_out", "_hand_out", "_pool", "_slow_use", "config")
@@ -86,6 +89,10 @@ class PgPoolService:
 
     def invalidate(self, connection: PgConnection) -> Effect[None]:
         return self._pool.invalidate(connection.base)
+
+    @property
+    def stats(self) -> Effect[PoolStats]:
+        return self._pool.stats()
 
 
 class PgPool(Tag[PgPoolService], key="@effect/sql-pg/PgPool"):

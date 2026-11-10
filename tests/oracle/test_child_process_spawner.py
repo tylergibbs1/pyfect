@@ -2,14 +2,13 @@
 platform's spawner runs) and ``NodeChildProcessSpawner.test.ts``, against
 ``process.layer``.
 
-Each test's docstring is the Effect test title. Template literals are the
-list form (``make("echo", ["hello"])``); a ``${array}`` interpolation is
-spread into the arguments. ``TestClock.withLive`` blocks are ``live`` tests
-or ``testing.with_live``. The bash fixtures are Effect's; the process-group
-and buffered-input fixtures are Python versions of Effect's TypeScript
-ones. Fixture scripts the supervision tests count with ``ps`` are copied
-under a unique name first, so another test run on the machine cannot
-change the counts.
+Each test's docstring is the Effect test title. A tagged template is its
+text parts and values (``make(["echo hello ", ""], name)``).
+``TestClock.withLive`` blocks are ``live`` tests or ``testing.with_live``.
+The bash fixtures are Effect's; the process-group and buffered-input
+fixtures are Python versions of Effect's TypeScript ones. Fixture scripts
+the supervision tests count with ``ps`` are copied under a unique name
+first, so another test run on the machine cannot change the counts.
 
 Omitted, with the reason:
 
@@ -29,22 +28,30 @@ import subprocess
 import sys
 import time
 import uuid
+from collections.abc import Callable
 from pathlib import Path as FsPath
 from typing import Any, Never
 
 import pytest
 
 import pyfect as fx
-from pyfect import file_system, path, process, sink, stream, testing
+from pyfect import file_system, path, process, redacted, sink, stream, testing
 from pyfect.duration import Seconds
 from pyfect.file_system import FileSystem
 from pyfect.layer import Layer, merge, provide_merge
 from pyfect.path import Path
-from pyfect.platform_error import PermissionDenied, PlatformError, system_error
+from pyfect.platform_error import (
+    BadArgument,
+    NotFound,
+    PermissionDenied,
+    PlatformError,
+    system_error,
+)
 from pyfect.process import (
     ChildProcessHandle,
     ChildProcessSpawner,
     CommandOptions,
+    DuplexFd,
     ExitCode,
     InputFd,
     OutputFd,
@@ -128,7 +135,7 @@ def test_should_spawn_echo_command(node_services: Services[Platform]):
 @testing.effect
 def test_should_spawn_with_template_literal(node_services: Services[Platform]):
     """should spawn with template literal"""
-    handle = yield from make("echo", ["spawned"])
+    handle = yield from make(["echo spawned"])
     output = yield from decode(handle.stdout)
     assert (yield from handle.exit_code) == 0
     assert output == "spawned"
@@ -149,7 +156,7 @@ def test_should_handle_command_with_working_directory(node_services: Services[Pl
 @testing.effect
 def test_should_use_cwd_with_template_literal_form(node_services: Services[Platform]):
     """should use cwd with template literal form"""
-    handle = yield from make("pwd", cwd="/tmp")
+    handle = yield from make(["pwd"], cwd="/tmp")
     output = yield from decode(handle.stdout)
     assert (yield from handle.exit_code) == 0
     assert "tmp" in output
@@ -181,6 +188,36 @@ def test_should_handle_multiple_environment_variables(node_services: Services[Pl
     output = yield from decode(handle.stdout)
     assert (yield from handle.exit_code) == 0
     assert output == "one-two-three"
+
+
+@testing.effect
+def test_should_use_only_env_by_default(node_services: Services[Platform]):
+    """should use only env by default"""
+    handle = yield from make(
+        "/bin/sh", ["-c", "echo $TEST_VAR-${HOME-unset}"], env={"TEST_VAR": "test_value"}
+    )
+    assert (yield from decode(handle.stdout)) == "test_value-unset"
+
+
+@testing.effect
+def test_should_remove_variables_set_to_undefined(node_services: Services[Platform]):
+    """should remove variables set to undefined"""
+    handle = yield from make(
+        "sh", ["-c", "echo ${HOME-unset}"], env={"HOME": None}, extend_env=True
+    )
+    assert (yield from decode(handle.stdout)) == "unset"
+
+
+@testing.effect
+def test_should_pass_redacted_arguments_and_environment_values(node_services: Services[Platform]):
+    """should pass Redacted arguments and environment values"""
+    handle = yield from make(
+        "sh",
+        ["-c", "echo $1-$SECRET", "sh", redacted.make("arg")],
+        env={"SECRET": redacted.make("env")},
+        extend_env=True,
+    )
+    assert (yield from decode(handle.stdout)) == "arg-env"
 
 
 @testing.effect
@@ -222,6 +259,20 @@ def test_should_not_expand_variables_without_shell(node_services: Services[Platf
 
 
 @testing.effect
+def test_should_run_the_command_as_a_shell_script(node_services: Services[Platform]):
+    """should run the command as a shell script"""
+    handle = yield from make("echo hello | tr a-z A-Z", shell=True)
+    assert (yield from decode(handle.stdout)) == "HELLO"
+
+
+@testing.effect
+def test_should_reject_arguments_together_with_shell(node_services: Services[Platform]):
+    """should reject arguments together with shell"""
+    error = yield from make("echo", ["a b"], shell=True).flip()
+    assert isinstance(error.reason, BadArgument)
+
+
+@testing.effect
 def test_should_allow_piping_with_shell(node_services: Services[Platform]):
     """should allow piping with shell"""
     handle = yield from make("sh", ["-c", "echo hello | tr a-z A-Z"])
@@ -234,9 +285,17 @@ def test_should_allow_piping_with_shell(node_services: Services[Platform]):
 
 
 @testing.effect
+def test_should_group_quoted_words(node_services: Services[Platform]):
+    """should group quoted words"""
+    handle = yield from make(['printf %s- "a  b" ', ""], "c d")
+    output = yield from decode(handle.stdout)
+    assert output == "a  b-c d-"
+
+
+@testing.effect
 def test_should_work_with_template_literal_form(node_services: Services[Platform]):
     """should work with template literal form"""
-    handle = yield from make("echo", ["hello"])
+    handle = yield from make(["echo hello"])
     output = yield from decode(handle.stdout)
     assert (yield from handle.exit_code) == 0
     assert output == "hello"
@@ -246,7 +305,7 @@ def test_should_work_with_template_literal_form(node_services: Services[Platform
 def test_should_handle_string_interpolation(node_services: Services[Platform]):
     """should handle string interpolation"""
     name = "world"
-    handle = yield from make("echo", ["hello", name])
+    handle = yield from make(["echo hello ", ""], name)
     output = yield from decode(handle.stdout)
     assert (yield from handle.exit_code) == 0
     assert output == "hello world"
@@ -256,7 +315,7 @@ def test_should_handle_string_interpolation(node_services: Services[Platform]):
 def test_should_handle_number_interpolation(node_services: Services[Platform]):
     """should handle number interpolation"""
     count = 42
-    handle = yield from make("echo", ["count", "is", str(count)])
+    handle = yield from make(["echo count is ", ""], count)
     output = yield from decode(handle.stdout)
     assert (yield from handle.exit_code) == 0
     assert output == "count is 42"
@@ -270,7 +329,7 @@ def test_should_handle_array_interpolation(node_services: Services[Platform]):
     directory = yield from fs.make_temp_directory_scoped()
     yield from fs.write_file(p.join(directory, "array-interpolation.txt"), b"test")
     args = ["-l", "-a"]
-    handle = yield from make("ls", [*args, directory])
+    handle = yield from make(["ls ", " ", ""], args, directory)
     output = yield from decode(handle.stdout)
     assert (yield from handle.exit_code) == 0
     assert "array-interpolation.txt" in output
@@ -280,7 +339,7 @@ def test_should_handle_array_interpolation(node_services: Services[Platform]):
 def test_should_handle_multiple_interpolations(node_services: Services[Platform]):
     """should handle multiple interpolations"""
     greeting, target = "hello", "world"
-    handle = yield from make("echo", [greeting, target])
+    handle = yield from make(["echo ", " ", ""], greeting, target)
     output = yield from decode(handle.stdout)
     assert (yield from handle.exit_code) == 0
     assert output == "hello world"
@@ -290,7 +349,7 @@ def test_should_handle_multiple_interpolations(node_services: Services[Platform]
 def test_should_handle_options_with_template_literal(node_services: Services[Platform]):
     """should handle options with template literal"""
     filename = "test.txt"
-    handle = yield from make("echo", [filename], cwd="/tmp")
+    handle = yield from make(["echo ", ""], filename, cwd="/tmp")
     output = yield from decode(handle.stdout)
     assert (yield from handle.exit_code) == 0
     assert output == "test.txt"
@@ -686,6 +745,23 @@ def test_should_fail_for_invalid_command(node_services: Services[Platform]):
 
 
 @testing.effect
+def test_should_not_expose_redacted_values_in_errors(node_services: Services[Platform]):
+    """should not expose Redacted values in errors"""
+    secret = redacted.make("hunter2\0")
+    commands: list[tuple[Callable[[], process.Command], type[object]]] = [
+        (lambda: make("nonexistent-command-12345", [redacted.make("hunter2")]), NotFound),
+        (lambda: make("echo", [secret]), BadArgument),
+        (lambda: make(["echo ", ""], secret), BadArgument),
+        (lambda: make("echo", env={"SECRET": secret}), BadArgument),
+    ]
+    for command, reason in commands:
+        error = yield from fx.scoped(fx.suspend(command)).flip()
+        assert isinstance(error.reason, reason)
+        shown = repr(error) + str(error) + repr(error.reason) + repr(error.cause) + str(error.cause)
+        assert "hunter2" not in shown
+
+
+@testing.effect
 def test_should_handle_spawn_error_with_invalid_cwd(node_services: Services[Platform]):
     """should handle spawn error with invalid cwd"""
     exit = yield from make("echo", ["test"], cwd="/nonexistent/directory/path").exit()
@@ -850,6 +926,49 @@ def test_should_work_alongside_normal_stdin_stdout_stderr(node_services: Service
     )
     assert (yield from handle.exit_code) == 0
     assert outputs == ("stdout", "stderr", "fd3")
+
+
+@testing.effect
+def test_should_read_a_reply_on_the_same_fd_after_pipe_to_ends_its_input(
+    node_services: Services[Platform],
+):
+    """should read a reply on the same fd after pipeTo ends its input"""
+    # The child replies on fd3 only after reading EOF from it.
+    handle = yield from make("echo", ["ping"]).pipe_to(
+        make(
+            "sh",
+            ["-c", 'req=$(cat <&3); echo "pong:$req" >&3'],
+            additional_fds={3: DuplexFd()},
+        ),
+        to=3,
+    )
+    response = yield from decode(handle.get_output_fd(3))
+    assert response == "pong:ping"
+    assert (yield from handle.exit_code) == ExitCode(0)
+
+
+@testing.effect
+def test_should_report_a_write_failure_to_a_later_reader_without_an_uncaught_error(
+    node_services: Services[Platform],
+):
+    """should report a write failure to a later reader without an uncaught error
+
+    Adapted: Python has no uncaught-exception hook to watch; the read failing
+    with a ``PlatformError`` rather than hanging or ending cleanly is the
+    check."""
+    # The child closes fd3 before signalling readiness on stdout.
+    handle = yield from make(
+        "sh", ["-c", "exec 3>&-; echo ready; exec sleep 10"], additional_fds={3: DuplexFd()}
+    )
+    yield from handle.stdout.take(1).run_drain()
+    # Write before anyone reads fd3, and start reading only later.
+    write_error = yield from stream.make(b"request").run(handle.get_input_fd(3)).flip()
+    yield from testing.with_live(fx.sleep("100 millis"))
+    read_error = yield from testing.with_live(
+        handle.get_output_fd(3).run_drain().timeout("2 seconds")
+    ).flip()
+    assert isinstance(write_error, PlatformError)
+    assert isinstance(read_error, PlatformError)
 
 
 # --- process supervision ------------------------------------------------------------
@@ -1088,6 +1207,19 @@ def test_child_process_string_should_not_deadlock_on_large_stderr_output(
     service = yield from spawner()
     command = make("sh", ["-c", "seq 1 100000 >&2; printf done"])
     assert (yield from service.string(command)) == "done"
+
+
+# --- NodeChildProcessSpawner.test.ts: error descriptions ------------------------------
+
+
+@testing.effect
+def test_quote_arguments_and_escape_control_characters(node_services: Services[Platform]):
+    """quote arguments and escape control characters"""
+    error = yield from make("nonexistent-command-12345", ["a b", "it's", "\x1b[2J"]).flip()
+    assert isinstance(error.reason, NotFound)
+    assert (
+        error.reason.path_or_descriptor == "nonexistent-command-12345 'a b' 'it'\\''s' '\\u001b[2J'"
+    )
 
 
 # --- NodeChildProcessSpawner.test.ts: exit cleanup ------------------------------------

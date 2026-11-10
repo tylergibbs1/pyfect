@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Generator
 from typing import Any, Final, Never
 
@@ -10,7 +11,7 @@ from pyfect._js import text_decoder, text_encode
 from pyfect.effect import fail, gen, succeed
 from pyfect.layer import Layer
 from pyfect.layer import effect as layer_effect
-from pyfect.persistence._columns import column_bytes, column_int
+from pyfect.persistence._columns import column_bytes, column_int, column_text
 from pyfect.persistence._sql_keys import MSSQL_KEY, MYSQL_KEY, key_equals, mssql_match
 from pyfect.persistence.key_value_store._store import (
     KeyValueStore,
@@ -63,6 +64,7 @@ def _build(table_name: str) -> Generator[Effect[Any, Any, SqlClient], Any, KeyVa
         ),
     ).or_die()
     upsert = _upsert(sql, table)
+    delete_by_prefix = _delete_by_prefix(sql, table)
 
     def failed(
         method: str, key: str | None, message: str
@@ -134,7 +136,76 @@ def _build(table_name: str) -> Generator[Effect[Any, Any, SqlClient], Any, KeyVa
         .map_error(failed("size", None, "Unable to get size"))
         .map(lambda rows: column_int(rows[0]["count"]) if rows else 0)
     )
-    return make(get=get, get_bytes=get_bytes, set=set_value, remove=remove, clear=clear, size=size)
+    keys = (
+        sql("SELECT id FROM {}", table)
+        .map_error(failed("keys", None, "Unable to get keys"))
+        .map(lambda rows: [column_text(row["id"]) for row in rows])
+    )
+
+    def clear_prefix(prefix: str) -> Effect[None, KeyValueStoreError]:
+        return (
+            delete_by_prefix(prefix)
+            .map_error(
+                failed("clear_prefix", prefix, f"Unable to clear items with prefix {prefix}")
+            )
+            .as_void()
+        )
+
+    return make(
+        get=get,
+        get_bytes=get_bytes,
+        set=set_value,
+        remove=remove,
+        clear=clear,
+        clear_prefix=clear_prefix,
+        size=size,
+        keys=keys,
+    )
+
+
+def _escape_like(prefix: str) -> str:
+    """``prefix`` as a ``LIKE ... ESCAPE '!'`` pattern matching the keys
+    starting with it."""
+    return re.sub(r"[!%_\[\]]", lambda match: "!" + match.group(), prefix) + "%"
+
+
+def _delete_by_prefix(
+    sql: SqlClientService, table: Identifier
+) -> Callable[[str], Effect[object, SqlError]]:
+    # The first LIKE uses the primary key index. On MySQL and SQL Server it
+    # follows the column's collation, which may ignore case or accents (a
+    # table made before, or by hand), so a second binary LIKE keeps only
+    # exact prefix matches. SQLite's LIKE ignores case: compare the leading
+    # characters instead.
+    def sqlite() -> Callable[[str], Effect[object, SqlError]]:
+        return lambda prefix: sql(
+            "DELETE FROM {} WHERE substr(id, 1, length({})) = {}", table, prefix, prefix
+        )
+
+    def pg() -> Callable[[str], Effect[object, SqlError]]:
+        return lambda prefix: sql(
+            "DELETE FROM {} WHERE id LIKE {} ESCAPE '!'", table, _escape_like(prefix)
+        )
+
+    def mysql() -> Callable[[str], Effect[object, SqlError]]:
+        return lambda prefix: sql(
+            "DELETE FROM {} WHERE id LIKE {} ESCAPE '!' AND CONVERT(id USING utf8mb4) "
+            "COLLATE utf8mb4_bin LIKE {} ESCAPE '!'",
+            table,
+            _escape_like(prefix),
+            _escape_like(prefix),
+        )
+
+    def mssql() -> Callable[[str], Effect[object, SqlError]]:
+        return lambda prefix: sql(
+            "DELETE FROM {} WHERE id LIKE {} ESCAPE '!' AND id COLLATE Latin1_General_100_BIN2 "
+            "LIKE {} ESCAPE '!'",
+            table,
+            _escape_like(prefix),
+            _escape_like(prefix),
+        )
+
+    return sql.on_dialect_or_else(pg=pg, mysql=mysql, mssql=mssql, or_else=sqlite)
 
 
 type _Upsert = Callable[[str, bytes, int], Effect[object, SqlError]]

@@ -25,7 +25,14 @@ except ImportError as error:  # pragma: no cover - depends on the environment
 
 from pyfect.sql.libsql._targets import RemoteTarget
 from pyfect.sql.libsql._values import to_values
-from pyfect.sql.libsql.sdk import LibsqlError, ResultSet, TransactionMode, Value, begin_statement
+from pyfect.sql.libsql.sdk import (
+    LibsqlError,
+    ResultSet,
+    SdkProtocol,
+    TransactionMode,
+    Value,
+    begin_statement,
+)
 
 type _Json = dict[str, Any]
 
@@ -194,6 +201,9 @@ class RemoteClient:
     """A remote server (``ManagedSdk``)."""
 
     __slots__ = ("_http", "headers", "target")
+
+    # ``ws:`` and ``wss:`` URLs are served over HTTP too.
+    protocol: SdkProtocol = "http"
 
     def __init__(self, target: RemoteTarget) -> None:
         self.target = target

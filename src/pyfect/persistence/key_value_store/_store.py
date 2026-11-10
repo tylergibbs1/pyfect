@@ -8,6 +8,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from pyfect._concurrency import for_each
 from pyfect._core import Effect
 from pyfect._effect_args import require_effect
 from pyfect._js import text_encode
@@ -47,7 +48,11 @@ class KeyValueStoreService:
     set: Callable[[str, Value], Effect[None, KeyValueStoreError]]
     remove: Callable[[str], Effect[None, KeyValueStoreError]]
     clear: Effect[None, KeyValueStoreError]
+    clear_prefix: Callable[[str], Effect[None, KeyValueStoreError]]
+    """Remove every entry whose key starts with the prefix."""
     size: Effect[int, KeyValueStoreError]
+    keys: Effect[list[str], KeyValueStoreError]
+    """A snapshot of the keys, in no particular order."""
     modify: Callable[[str, Callable[[str], str]], Effect[str | None, KeyValueStoreError]]
     """Replace a present value with ``f(value)`` and return it; ``None``
     (and nothing written) when missing."""
@@ -58,12 +63,14 @@ class KeyValueStoreService:
     is_empty: Effect[bool, KeyValueStoreError]
 
     def __post_init__(self) -> None:
-        for name in ("clear", "size", "is_empty"):
+        for name in ("clear", "size", "keys", "is_empty"):
             require_effect(getattr(self, name), name)
 
     def prefix(self, prefix: str) -> KeyValueStoreService:
-        """This store with ``prefix`` put before every key (``clear``,
-        ``size`` and ``is_empty`` still see the whole store)."""
+        """This store with ``prefix`` put before every key. ``keys`` (without
+        the prefix), ``size``, ``is_empty`` and ``clear`` see only the keys
+        starting with ``prefix``: the first three list every key of this
+        store and filter them, ``clear`` is ``clear_prefix(prefix)``."""
         return _prefixed(self, prefix)
 
     def to_schema_store[T, RD, RE](self, schema: Codec[T, Any, RD, RE]) -> SchemaStore[T, RD, RE]:
@@ -85,6 +92,8 @@ def make(
     remove: Callable[[str], Effect[None, KeyValueStoreError]],
     clear: Effect[None, KeyValueStoreError],
     size: Effect[int, KeyValueStoreError],
+    keys: Effect[list[str], KeyValueStoreError],
+    clear_prefix: Callable[[str], Effect[None, KeyValueStoreError]] | None = None,
     has: Callable[[str], Effect[bool, KeyValueStoreError]] | None = None,
     is_empty: Effect[bool, KeyValueStoreError] | None = None,
     modify: Callable[[str, Callable[[str], str]], Effect[str | None, KeyValueStoreError]]
@@ -95,11 +104,21 @@ def make(
     | None = None,
 ) -> KeyValueStoreService:
     """A store from its backend's operations; ``has``, ``is_empty``,
-    ``modify`` and ``modify_bytes`` are derived unless given."""
+    ``clear_prefix``, ``modify`` and ``modify_bytes`` are derived unless
+    given. The derived ``clear_prefix`` is ``clear`` for ``""``, else it
+    removes each of ``keys`` starting with the prefix."""
     require_effect(clear, "clear")
     require_effect(size, "size")
+    require_effect(keys, "keys")
     if is_empty is not None:
         require_effect(is_empty, "is_empty")
+
+    def derived_clear_prefix(prefix: str) -> Effect[None, KeyValueStoreError]:
+        if not prefix:
+            return clear
+        return keys.flat_map(
+            lambda found: for_each([key for key in found if key.startswith(prefix)], remove)
+        ).as_void()
 
     def derived_has(key: str) -> Effect[bool, KeyValueStoreError]:
         return get(key).map(lambda value: value is not None)
@@ -130,7 +149,9 @@ def make(
         set=set,
         remove=remove,
         clear=clear,
+        clear_prefix=clear_prefix or derived_clear_prefix,
         size=size,
+        keys=keys,
         has=has or derived_has,
         is_empty=is_empty or size.map(lambda n: n == 0),
         modify=modify or derived_modify,
@@ -145,16 +166,14 @@ def make_string_only(
     remove: Callable[[str], Effect[None, KeyValueStoreError]],
     clear: Effect[None, KeyValueStoreError],
     size: Effect[int, KeyValueStoreError],
+    keys: Effect[list[str], KeyValueStoreError],
+    clear_prefix: Callable[[str], Effect[None, KeyValueStoreError]] | None = None,
     has: Callable[[str], Effect[bool, KeyValueStoreError]] | None = None,
     is_empty: Effect[bool, KeyValueStoreError] | None = None,
 ) -> KeyValueStoreService:
     """A store over a backend that holds only text: bytes are written as
     Base64, and ``get_bytes`` reads a value that is valid Base64 as the
     bytes it encodes, any other as its UTF-8."""
-    require_effect(clear, "clear")
-    require_effect(size, "size")
-    if is_empty is not None:
-        require_effect(is_empty, "is_empty")
 
     def get_bytes(key: str) -> Effect[bytes | None, KeyValueStoreError]:
         return get(key).map(lambda value: None if value is None else _text_to_bytes(value))
@@ -171,6 +190,8 @@ def make_string_only(
         remove=remove,
         clear=clear,
         size=size,
+        keys=keys,
+        clear_prefix=clear_prefix,
         has=has,
         is_empty=is_empty,
     )
@@ -198,15 +219,20 @@ def _text_to_bytes(text: str) -> bytes:
 
 
 def _prefixed(store: KeyValueStoreService, prefix: str) -> KeyValueStoreService:
+    keys = store.keys.map(
+        lambda found: [key[len(prefix) :] for key in found if key.startswith(prefix)]
+    )
     return KeyValueStoreService(
         get=lambda key: store.get(prefix + key),
         get_bytes=lambda key: store.get_bytes(prefix + key),
         set=lambda key, value: store.set(prefix + key, value),
         remove=lambda key: store.remove(prefix + key),
-        clear=store.clear,
-        size=store.size,
+        clear=store.clear_prefix(prefix),
+        clear_prefix=lambda key: store.clear_prefix(prefix + key),
+        size=keys.map(len),
+        keys=keys,
         modify=lambda key, f: store.modify(prefix + key, f),
         modify_bytes=lambda key, f: store.modify_bytes(prefix + key, f),
         has=lambda key: store.has(prefix + key),
-        is_empty=store.is_empty,
+        is_empty=keys.map(lambda found: not found),
     )

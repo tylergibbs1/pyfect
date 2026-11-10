@@ -71,6 +71,12 @@ def test_preserves_an_explicit_nullable_parameter_type_and_null_value():
     _run(body)
 
 
+def test_binds_plain_objects_shaped_like_clickhouse_params_as_string_parameters():
+    """binds plain objects shaped like ClickHouse params as String parameters"""
+    param_like = {"_tag": "Custom", "kind": "ClickhouseParam", "paramA": "Int32", "paramB": 1}
+    assert sql("SELECT {}", param_like).compile() == ("SELECT {p1: String}", (param_like,))
+
+
 def test_preserves_fractional_javascript_numbers_in_inferred_parameters():
     """preserves fractional JavaScript numbers in inferred parameters"""
     assert sql("SELECT {}", 1.5).compile()[0] == "SELECT {p1: Float64}"
@@ -173,37 +179,48 @@ def test_passes_column_selection_to_insert_query():
     _run(body)
 
 
-def test_creates_the_ledger_without_sqlite_ddl_or_begin():
-    """creates the ledger without sqlite ddl or BEGIN"""
+def test_writes_the_ledger_with_commands_and_runs_migrations_as_queries():
+    """writes the ledger with commands and runs migrations as queries"""
     fake = FakeClickhouse()
 
     def body():
         client = yield from _make(fake)
-        applied = yield from migrator.run(loader=migrator.from_record({"1_init": fx.void})).pipe(
-            fx.provide_service(SqlClient, client)
+        applied = yield from migrator.run(
+            loader=migrator.from_record({"1_init": client("CREATE TABLE init")})
+        ).pipe(fx.provide_service(SqlClient, client))
+        select = (
+            'SELECT migration_id, name, created_at FROM "effect_sql_migrations" '
+            "ORDER BY migration_id DESC"
         )
         assert applied == [(1, "init")]
-        queries = [call.sql for call in fake.calls if call.format is not None]
-        assert "ENGINE = MergeTree" in queries[0]
-        assert not any("PRIMARY KEY NOT NULL" in q or "BEGIN" in q for q in queries)
+        queries = [
+            call.sql.removesuffix(f"FORMAT {call.format}").strip()
+            for call in fake.calls
+            if call.format is not None
+        ]
+        assert queries == [select, "CREATE TABLE init", select]
+        assert len(fake.commands) == 2
+        assert "ENGINE = MergeTree" in fake.commands[0].sql
+        assert fake.commands[1].sql.startswith('INSERT INTO "effect_sql_migrations"')
 
     _run(body)
 
 
 def test_retries_a_failed_migration_and_the_ones_after_it_on_the_next_run():
     """retries a failed migration and the ones after it on the next run"""
-    ledger: list[dict[str, object]] = []
 
     def query(call: Call) -> fx.Effect[Any, Any]:
-        if call.sql.startswith('INSERT INTO "effect_sql_migrations"'):
-            params = list(call.params.values())
-            for i in range(0, len(params), 2):
-                row: dict[str, object] = {
-                    "migration_id": int(params[i]),
-                    "name": params[i + 1],
-                    "created_at": None,
-                }
-                ledger.insert(0, row)
+        ledger: list[dict[str, object]] = []
+        for command in fake.commands:
+            if command.sql.startswith('INSERT INTO "effect_sql_migrations"'):
+                params = list(command.params.values())
+                for i in range(0, len(params), 2):
+                    row: dict[str, object] = {
+                        "migration_id": int(params[i]),
+                        "name": params[i + 1],
+                        "created_at": None,
+                    }
+                    ledger.insert(0, row)
         data = ledger if call.sql.startswith("SELECT migration_id") else []
         return call.answer(json.dumps({"data": data}))
 

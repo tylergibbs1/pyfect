@@ -14,12 +14,12 @@ in kills it when it closes (see ``_child``).
 from __future__ import annotations
 
 import os
-import shlex
 import signal
+import socket
 import subprocess
 import sys
-from collections.abc import Callable, Generator, Mapping
-from dataclasses import dataclass
+from collections.abc import Callable, Generator
+from dataclasses import dataclass, replace
 from typing import Any, Never
 
 from pyfect import sink as sink_
@@ -27,36 +27,48 @@ from pyfect import stream as stream_
 from pyfect._core import Effect
 from pyfect.deferred import Deferred
 from pyfect.duration import Duration, to_seconds
-from pyfect.effect import gen, succeed, sync, try_blocking
+from pyfect.effect import fail, gen, succeed, sync, try_blocking
 from pyfect.file_system import FileSystem, FileSystemService
 from pyfect.layer import Layer
 from pyfect.layer import effect as layer_effect
 from pyfect.path import Path, PathService
-from pyfect.platform_error import PlatformError, StreamError, from_exception, system_error, tag_of
+from pyfect.platform_error import (
+    PlatformError,
+    StreamError,
+    bad_argument,
+    from_exception,
+    system_error,
+    tag_of,
+)
 from pyfect.process._child import Child, command_line
 from pyfect.process._command import (
     AdditionalFd,
     Command,
     CommandOptions,
+    DuplexFd,
     InputFd,
     OutputFd,
     PipedCommand,
     PipeFrom,
     StandardCommand,
-    StdinConfig,
     StdioKind,
     flatten_command,
     with_options,
 )
+from pyfect.process._encoding import encode
 from pyfect.process._handle import ChildProcessHandle, ExitCode, ProcessId, Reref
 from pyfect.process._pipes import Reader, Writer
 from pyfect.process._spawner import ChildProcessSpawner, ChildProcessSpawnerService
+from pyfect.process.command_line import Word
+from pyfect.redacted import Redacted
+from pyfect.redacted import value as reveal
 from pyfect.scheduler import CurrentScheduler, Scheduler
 from pyfect.scope import Scope, acquire_release
 from pyfect.sink import Sink
 from pyfect.stream import Stream
 
 type _InputSink = Sink[None, bytes, Never, PlatformError]
+type _StdinSink = Sink[None, bytes | str, Never, PlatformError]
 type _Output = Stream[bytes, PlatformError]
 
 
@@ -81,37 +93,56 @@ def _platform() -> str:
     return "win32" if os.name == "nt" else sys.platform
 
 
+def _unwrap(word: Word) -> str:
+    return reveal(word) if isinstance(word, Redacted) else word
+
+
 def _argv(command: StandardCommand, shell: bool | str) -> list[str]:
-    """Node's ``shell`` option: the command is a line of shell, run by the
-    shell. Unlike Node (which joins them unquoted, DEP0190), each argument
-    is quoted, so it reaches the command as one literal word."""
+    """Node's ``shell`` option: the command is the whole script, run by the
+    shell (a command with arguments never gets here, see ``_invalid``)."""
     if shell is False:
-        return [command.command, *command.args]
+        return [command.command, *map(_unwrap, command.args)]
     if os.name == "nt":
-        line = " ".join((command.command, *(_cmd_quote(arg) for arg in command.args)))
         return [
             shell if isinstance(shell, str) else os.environ.get("COMSPEC", "cmd.exe"),
             "/d",
             "/s",
             "/c",
-            f'"{line}"',
+            f'"{command.command}"',
         ]
-    line = " ".join((command.command, *(shlex.quote(arg) for arg in command.args)))
-    return [shell if isinstance(shell, str) else "/bin/sh", "-c", line]
+    return [shell if isinstance(shell, str) else "/bin/sh", "-c", command.command]
 
 
-def _cmd_quote(arg: str) -> str:
-    """``arg`` as one quoted word of a ``cmd.exe`` line."""
-    return '"' + arg.replace('"', '""') + '"'
+def _invalid(command: StandardCommand) -> str | None:
+    """Why the command cannot be spawned, as Effect's spawner checks first:
+    ``shell`` with arguments, or a NUL character (refused here, as Node's
+    own error would show the value)."""
+    if command.options.shell is not False and command.args:
+        return (
+            "The shell option cannot be combined with arguments;"
+            " pass the whole script as the command"
+        )
+    if "\0" in command.command:
+        return "The command contains a NUL character"
+    for index, arg in enumerate(command.args):
+        if "\0" in _unwrap(arg):
+            return f"Argument {index + 1} contains a NUL character"
+    for name, value in (command.options.env or {}).items():
+        if value is not None and "\0" in _unwrap(value):
+            return f"The environment variable {name} contains a NUL character"
+    return None
 
 
 def _environment(options: CommandOptions) -> dict[str, str] | None:
     if options.env is None:
         return None
-    merged: Mapping[str, str | None] = (
-        {**os.environ, **options.env} if options.extend_env else options.env
-    )
-    return {name: value for name, value in merged.items() if value is not None}
+    env: dict[str, str] = dict(os.environ) if options.extend_env else {}
+    for name, value in options.env.items():
+        if value is None:
+            env.pop(name, None)
+        else:
+            env[name] = _unwrap(value)
+    return env
 
 
 class _Pipes:
@@ -174,6 +205,22 @@ class _Pipes:
         self.outputs[fd] = Reader(read, self._error(fd, "from_readable", "read"))
         return write
 
+    def duplex(self, fd: int) -> int:
+        """A socket pair: the parent reads and writes its end, and ending
+        the writer shuts down only its write side."""
+        parent, child = socket.socketpair()
+        parent_fd, child_fd = parent.detach(), child.detach()
+        self.child_fds.append(child_fd)
+        reader = Reader(os.dup(parent_fd), self._error(fd, "from_readable", "read"))
+        self.outputs[fd] = reader
+        self.inputs[fd] = Writer(
+            parent_fd,
+            self._error(fd, "from_writable", "write"),
+            half_close=True,
+            on_failed=reader.fail,
+        )
+        return child_fd
+
     @classmethod
     def open(cls, options: CommandOptions, line: str) -> _Pipes:
         pipes = cls(line)
@@ -182,7 +229,13 @@ class _Pipes:
         pipes.stderr = _stdio(_kind(options.stderr), lambda: pipes.output(2))
         floor = max(options.additional_fds, default=2) + 1
         for fd, config in sorted(options.additional_fds.items()):
-            child_end = pipes.input(fd) if isinstance(config, InputFd) else pipes.output(fd)
+            match config:
+                case InputFd():
+                    child_end = pipes.input(fd)
+                case OutputFd():
+                    child_end = pipes.output(fd)
+                case DuplexFd():
+                    child_end = pipes.duplex(fd)
             moved = _above(child_end, floor)
             pipes.child_fds[pipes.child_fds.index(child_end)] = moved
             pipes.extra[fd] = moved
@@ -295,8 +348,13 @@ def _wire(
         return stream.tap_error(input_failure.fail).run(sink).ignore().fork_scoped()
 
     writer = pipes.inputs.get(0)
-    stdin: _InputSink = (
-        sink_.drain if writer is None else writer.sink(end_on_done=options.stdin.end_on_done)
+    encoding = options.stdin.encoding
+    stdin: _StdinSink = (
+        sink_.drain
+        if writer is None
+        else writer.text_sink(
+            lambda text: encode(text, encoding), end_on_done=options.stdin.end_on_done
+        )
     )
     if not isinstance(options.stdin.stream, str):
         yield from feed(options.stdin.stream, stdin)
@@ -313,6 +371,11 @@ def _wire(
                     yield from feed(config.stream, input_sinks[fd])
             case OutputFd():
                 output_streams[fd] = _output_stream(pipes.outputs[fd], config.sink or "pipe")
+            case DuplexFd():
+                output_streams[fd] = _output_stream(pipes.outputs[fd], config.sink or "pipe")
+                input_sinks[fd] = pipes.inputs[fd].sink(end_on_done=True)
+                if config.stream is not None:
+                    yield from feed(config.stream, input_sinks[fd])
 
     def exit_code(code: int) -> Effect[ExitCode, PlatformError]:
         # A failed input stream cut the child's input short, so its failure
@@ -374,6 +437,13 @@ class _Spawner:
     def _standard(
         self, command: StandardCommand
     ) -> Generator[Effect[Any, PlatformError, Scope], Any, ChildProcessHandle]:
+        invalid = _invalid(command)
+        if invalid is not None:
+            return (
+                yield from fail(
+                    bad_argument(module="ChildProcess", method="spawn", description=invalid)
+                )
+            )
         cwd = yield from self._cwd(command.options)
         line = command_line((command,))
         pipes = yield from acquire_release(
@@ -400,11 +470,16 @@ class _Spawner:
         for next_command, pipe in zip(rest, flat.pipe_options, strict=True):
             source = _source(handles[-1], pipe.from_)
             if pipe.to == "stdin":
-                stdin = StdinConfig(source, next_command.options.stdin.end_on_done)
+                stdin = replace(next_command.options.stdin, stream=source)
                 wired = with_options(next_command, stdin=stdin)
             else:
                 fds: dict[int, AdditionalFd] = {**next_command.options.additional_fds}
-                fds[pipe.to] = InputFd(source)
+                existing = fds.get(pipe.to)
+                fds[pipe.to] = (
+                    DuplexFd(source, existing.sink)
+                    if isinstance(existing, DuplexFd)
+                    else InputFd(source)
+                )
                 wired = with_options(next_command, additional_fds=fds)
             handles.append((yield from self.spawn(wired)))
         last = handles[-1]

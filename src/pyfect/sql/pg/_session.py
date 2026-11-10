@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import re
 from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, LiteralString, cast
@@ -25,6 +26,7 @@ from psycopg import AsyncRawCursor, pq
 from psycopg.rows import dict_row, tuple_row
 
 from pyfect._digits import parse_digits
+from pyfect._js import text_encode
 from pyfect._subscriber_queue import FellBehind
 
 if TYPE_CHECKING:
@@ -35,6 +37,29 @@ _DRAIN_TIMEOUT = 5.0
 _QUERY_CANCELED = "57014"
 _STREAM_CHUNK = 128
 _ACTIVE = pq.TransactionStatus.ACTIVE
+_STALE_PREPARED = frozenset(("26000", "0A000"))
+_STATEMENT_NAME = re.compile(r'"([^"]+)"')
+
+
+def _forget_prepared(conn: psycopg.AsyncConnection[Any], error: psycopg.Error) -> bool:
+    """Drop the prepared statement ``error`` reports stale from psycopg's cache,
+    so the next execution parses it again; whether one was dropped. ``26000``
+    names the statement; ``0A000`` does not, so it forgets them all (psycopg
+    then deallocates them after the next statement that succeeds)."""
+    # psycopg exposes no eviction; its cache maps each query to its name.
+    manager: Any = conn._prepared
+    names: dict[Any, bytes] = manager._names
+    if error.sqlstate == "0A000":
+        return bool(manager.clear())
+    found = _STATEMENT_NAME.search(error.diag.message_primary or "")
+    if found is None:
+        return False
+    name = text_encode(found.group(1))
+    for key, prepared in list(names.items()):
+        if prepared == name:
+            del names[key]
+            return True
+    return False
 
 
 def _text(sql: str) -> LiteralString:
@@ -178,6 +203,17 @@ class Session:
     def closed(self) -> bool:
         return self.conn.closed
 
+    @property
+    def idle(self) -> bool:
+        """No transaction is open (the latest ``ReadyForQuery`` said so)."""
+        return self.conn.pgconn.transaction_status == pq.TransactionStatus.IDLE
+
+    @property
+    def aborted(self) -> bool:
+        """A failed transaction is open: every statement but ``ROLLBACK``
+        fails."""
+        return self.conn.pgconn.transaction_status == pq.TransactionStatus.INERROR
+
     # --- statements -----------------------------------------------------------
 
     async def _exclusive[A](self, run: Callable[[], Awaitable[A]]) -> A:
@@ -208,7 +244,7 @@ class Session:
                 fields = tuple(Field(c.name, c.type_code) for c in cursor.description or ())
                 return Result(command, count, oid, rows, fields)
 
-        return await self._exclusive(run)
+        return await self._exclusive(lambda: self._reparsing_stale(run))
 
     async def query_values(
         self, sql: str, params: Sequence[object], prepare: bool
@@ -218,7 +254,21 @@ class Session:
                 await cursor.execute(_text(sql), params, prepare=prepare and self.prepare)
                 return await cursor.fetchall() if cursor.description is not None else []
 
-        return await self._exclusive(run)
+        return await self._exclusive(lambda: self._reparsing_stale(run))
+
+    async def _reparsing_stale[A](self, run: Callable[[], Awaitable[A]]) -> A:
+        """``run()``; a prepared statement the backend no longer holds (a pooler
+        moved the session, ``26000``) or whose plan no longer fits (``0A000``) is
+        forgotten, and run again unless that would be in an aborted transaction,
+        where it would only hide the error behind ``25P02``."""
+        try:
+            return await run()
+        except psycopg.Error as error:
+            if error.sqlstate not in _STALE_PREPARED or not _forget_prepared(self.conn, error):
+                raise
+            if self.aborted:
+                raise
+        return await run()
 
     async def cancel_query(self, task: asyncio.Task[Any]) -> None:
         """Stop a running statement: send PostgreSQL a cancel request and

@@ -353,6 +353,7 @@ def _delayed_store(storage: dict[str, str]) -> fx.Layer[KeyValueStore]:
             remove=remove,
             clear=fx.sync(storage.clear),
             size=fx.sync(lambda: len(storage)),
+            keys=fx.sync(lambda: list(storage)),
         ),
     )
 

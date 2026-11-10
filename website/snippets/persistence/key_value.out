@@ -1,4 +1,6 @@
 hello
 None
 True
+['1']
+['greeting']
 Some(value=Settings(theme='dark', font_size=16))

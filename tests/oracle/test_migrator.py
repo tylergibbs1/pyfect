@@ -2,7 +2,7 @@
 
 Each test's docstring is the Effect test title.
 
-Adapted: ``from_file_system`` loads ``<id>_<name>.py`` modules, where
+Adapted: ``migrator_file_system.from_file_system`` loads ``<id>_<name>.py`` modules, where
 Effect loads ``.js`` / ``.ts`` / ``.mjs`` / ``.mts`` ones. Python imports a
 module from its path, so there is no file URL step: the two file URL tests
 check that the module is imported from the path the platform's ``Path``
@@ -23,7 +23,7 @@ from pyfect import _path_win32, testing
 from pyfect import path as fx_path
 from pyfect.file_system import FileSystem, NoopFileSystem
 from pyfect.path import Path, PathService
-from pyfect.sql import migrator
+from pyfect.sql import migrator, migrator_file_system
 from pyfect.sql.migrator import ResolvedMigration
 
 _FIXTURE = FsPath(__file__).parent / "fixtures" / "migrator" / "0001_first.py"
@@ -62,11 +62,18 @@ def _names(migrations: list[ResolvedMigration]) -> list[tuple[int, str]]:
 
 def _load(directory: str, fs: NoopFileSystem, path: PathService):
     return (
-        migrator.from_file_system(directory)
+        migrator_file_system.from_file_system(directory)
         .map(list)
         .pipe(fx.provide_service(FileSystem, fs))
         .pipe(fx.provide_service(Path, path))
     )
+
+
+@testing.effect
+def test_from_record_loads_migrations_without_filesystem_services():
+    """fromRecord loads migrations without filesystem services"""
+    migrations = yield from migrator.from_record({"0002_second": fx.void, "0001_first": fx.void})
+    assert _names(list(migrations)) == [(1, "first"), (2, "second")]
 
 
 @testing.effect

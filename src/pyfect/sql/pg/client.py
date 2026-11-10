@@ -22,6 +22,7 @@ from pyfect.context import Context, Tag
 from pyfect.effect import fail, succeed, void
 from pyfect.layer import Layer, provide
 from pyfect.layer import effect_context as layer_effect_context
+from pyfect.pool import PoolStats
 from pyfect.queue import Dequeue
 from pyfect.reactivity import Reactivity
 from pyfect.reactivity import layer as reactivity_layer
@@ -117,6 +118,18 @@ class PgSqlConnection:
         return rows.map_array(lambda chunk: tuple(transform(chunk)))
 
 
+_LEASED = PoolStats(idle=0, used=1, pending=0, min=1, max=1)
+
+
+def _on_commit_failure(conn: Connection) -> Effect[None, SqlError]:
+    """Rolls back a transaction left open by a ``COMMIT`` the backend
+    rejected before running it (outside a transaction ``ROLLBACK`` only
+    warns). Its own failure is ignored so the ``COMMIT`` error is the one
+    reported; a session it leaves aborted is closed when its pin is
+    released."""
+    return conn.execute_unprepared("ROLLBACK", (), None).ignore()
+
+
 def _commit(conn: Connection) -> Effect[None, SqlError]:
     """PostgreSQL answers ``ROLLBACK`` to the ``COMMIT`` of an aborted
     transaction."""
@@ -140,20 +153,26 @@ class PgClientService(SqlClientService):
     """A PostgreSQL client: an ``SqlClientService`` with ``json`` values
     and ``LISTEN`` / ``NOTIFY``."""
 
-    __slots__ = ("_listen_acquirer", "config")
+    __slots__ = ("_listen_acquirer", "config", "pool_stats")
 
     config: PgClientConfig
+    pool_stats: Effect[PoolStats]
+    """A snapshot of the pool's session occupancy. A ``make_client`` client
+    has one session leased for its lifetime, so it always reports
+    ``PoolStats(idle=0, used=1, pending=0, min=1, max=1)``."""
 
     def __init__(
         self,
         *,
         config: PgClientConfig,
         listen_acquirer: Effect[PgConnection, SqlError, Scope],
+        pool_stats: Effect[PoolStats],
         **fields: Unpack[ClientFields],
     ) -> None:
         super().__init__(**fields)
         self.config = config
         self._listen_acquirer = listen_acquirer
+        self.pool_stats = pool_stats
 
     @staticmethod
     def json(value: object) -> Fragment:
@@ -249,6 +268,7 @@ def _make_impl(
     transaction_acquirer: Acquirer,
     listen_acquirer: Effect[PgConnection, SqlError, Scope],
     config: PgClientConfig,
+    pool_stats: Effect[PoolStats],
 ) -> Effect[PgClientService, Never, Reactivity]:
     def with_context(fiber: Any) -> Effect[PgClientService, Never, Reactivity]:
         captured: Context[Any] = fiber._context
@@ -293,6 +313,7 @@ def _make_impl(
             borrower=borrow,
             prepare_transaction_controls=True,
             commit=_commit,
+            on_commit_failure=_on_commit_failure,
             release_savepoint=lambda name: f"RELEASE SAVEPOINT {name}",
             transaction_acquirer=transact,
             compiler=compiler,
@@ -300,7 +321,9 @@ def _make_impl(
             transform_rows=transform_rows,
         )
         return client.map(
-            lambda c: PgClientService(config=config, listen_acquirer=listen, **c.fields())
+            lambda c: PgClientService(
+                config=config, listen_acquirer=listen, pool_stats=pool_stats, **c.fields()
+            )
         )
 
     return _WithFiber(with_context)
@@ -325,6 +348,7 @@ def make(config: PgPoolConfig) -> Effect[PgClientService, SqlError, Scope | Reac
             transaction_acquirer=pool.reserve.map(_wrap),
             listen_acquirer=pool.reserve,
             config=config,
+            pool_stats=pool.stats,
         )
 
     return pg_pool.make(config).flat_map(build)
@@ -344,6 +368,8 @@ def make_client(
             transaction_acquirer=connection.pin.map(_wrap),
             listen_acquirer=side if side is not None else connection.pin,
             config=config,
+            # The one session is leased for the client's lifetime.
+            pool_stats=succeed(_LEASED),
         )
 
     return make_connection(config).flat_map(build)

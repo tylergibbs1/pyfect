@@ -16,7 +16,6 @@ returns ``[]``.
 
 from __future__ import annotations
 
-import importlib.util
 import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -25,9 +24,7 @@ from typing import Any, Literal, Never, Protocol, cast
 from pyfect import schema as S
 from pyfect._core import Effect, _MatchCause, _Suspend
 from pyfect.effect import fail, succeed, void
-from pyfect.file_system import FileSystem
 from pyfect.logger._log import log_debug, log_info
-from pyfect.path import Path
 from pyfect.sql.client import SqlClient, SqlClientService
 from pyfect.sql.error import ConstraintError, SqlError, UniqueViolation
 from pyfect.sql.statement import Fragment
@@ -68,6 +65,16 @@ type DumpSchema[RD] = Callable[[str, str], Effect[None, MigrationError, RD]]
 """Writes the schema to a path, given the migrations table."""
 
 
+class TransformWrites(Protocol):
+    """Transforms the effects that write the migrations table."""
+
+    def __call__[A, E, R](self, effect: Effect[A, E, R], /) -> Effect[A, E, R]: ...
+
+
+def _identity[A, E, R](effect: Effect[A, E, R], /) -> Effect[A, E, R]:
+    return effect
+
+
 class Runner[RD](Protocol):
     """Runs the new migrations of ``loader``; succeeds with their ids and
     names."""
@@ -86,7 +93,7 @@ def _nstring(text: str) -> Fragment:
     return Fragment((literal_unsafe("N'" + text.replace("'", "''") + "'"),))
 
 
-def _ensure_table(sql: SqlClientService, table: str) -> Effect[object, SqlError]:
+def _create_table(sql: SqlClientService, table: str) -> Effect[object, SqlError]:
     name = sql.identifier(table)
     return sql.on_dialect_or_else(
         mssql=lambda: sql(
@@ -118,7 +125,14 @@ def _ensure_table(sql: SqlClientService, table: str) -> Effect[object, SqlError]
             "ORDER BY migration_id",
             name,
         ),
-        pg=lambda: _ensure_table_pg(sql, table),
+        pg=lambda: sql(
+            "CREATE TABLE {} (\n"
+            "  migration_id integer primary key,\n"
+            "  created_at timestamp with time zone not null default now(),\n"
+            "  name text not null\n"
+            ")",
+            name,
+        ),
         or_else=lambda: sql(
             "CREATE TABLE IF NOT EXISTS {} (\n"
             "  migration_id integer PRIMARY KEY NOT NULL,\n"
@@ -137,16 +151,18 @@ def _table_exists(sql: SqlClientService, table: str) -> Effect[bool, SqlError]:
     return found.map(lambda rows: len(rows) > 0)
 
 
-def _ensure_table_pg(sql: SqlClientService, table: str) -> Effect[object, SqlError]:
-    create = sql(
-        "CREATE TABLE {} (\n"
-        "  migration_id integer primary key,\n"
-        "  created_at timestamp with time zone not null default now(),\n"
-        "  name text not null\n"
-        ")",
-        sql.identifier(table),
+def _ensure_table(
+    sql: SqlClientService, table: str, transform_writes: TransformWrites
+) -> Effect[object, SqlError]:
+    create = transform_writes(_create_table(sql, table))
+    return sql.on_dialect_or_else(
+        pg=lambda: _ensure_table_pg(sql, table, create), or_else=lambda: create
     )
 
+
+def _ensure_table_pg(
+    sql: SqlClientService, table: str, create: Effect[object, SqlError]
+) -> Effect[object, SqlError]:
     def retry_check(error: SqlError) -> Effect[None, SqlError]:
         return _table_exists(sql, table).flat_map(lambda exists: void if exists else fail(error))
 
@@ -194,11 +210,17 @@ def _load_migration(resolved: ResolvedMigration) -> Effect[Migration, MigrationE
     return cast("Effect[Migration, MigrationError]", loaded)
 
 
-def make[RD = Never](dump_schema: DumpSchema[RD] | None = None) -> Runner[RD]:
+def make[RD = Never](
+    dump_schema: DumpSchema[RD] | None = None, transform_writes: TransformWrites = _identity
+) -> Runner[RD]:
     """The migration runner: ``run(loader=, schema_directory=None,
     table="effect_sql_migrations")`` runs the new migrations and succeeds
     with their ids and names. With ``schema_directory`` and migrations run,
-    ``dump_schema`` writes ``<schema_directory>/_schema.sql``."""
+    ``dump_schema`` writes ``<schema_directory>/_schema.sql``.
+
+    ``transform_writes`` transforms only the effects that create the
+    migrations table and insert into it, for clients such as ClickHouse
+    that run row-less statements differently from queries."""
 
     def run[R2 = Never](
         *,
@@ -207,15 +229,16 @@ def make[RD = Never](dump_schema: DumpSchema[RD] | None = None) -> Runner[RD]:
         table: str = "effect_sql_migrations",
     ) -> Effect[list[tuple[int, str]], MigrationError | SqlError, SqlClient | RD | R2]:
         return SqlClient().flat_map(
-            lambda sql: _run(sql, dump_schema, loader, schema_directory, table)
+            lambda sql: _run(sql, dump_schema, transform_writes, loader, schema_directory, table)
         )
 
     return run
 
 
-def _run(
+def _run(  # noqa: PLR0917 (the runner's options, passed on once)
     sql: SqlClientService,
     dump_schema: DumpSchema[Any] | None,
+    transform_writes: TransformWrites,
     loader: Loader[Any],
     schema_directory: str | None,
     table: str,
@@ -224,17 +247,9 @@ def _run(
 
     def insert_migrations(rows: Sequence[tuple[int, str]]) -> Effect[object, SqlError]:
         values = [{"migration_id": id_, "name": n} for id_, n in rows]
-        # A ClickHouse statement runs as a query, ``FORMAT JSON`` appended,
-        # which ``INSERT ... VALUES`` reads as data; ``INSERT ... SELECT``
-        # takes it (Effect's ``VALUES`` fails on a server).
-        return sql.on_dialect_or_else(
-            clickhouse=lambda: sql(
-                "INSERT INTO {} (migration_id, name) {}",
-                name,
-                sql.join(" UNION ALL ", False)([sql("SELECT {}, {}", id_, n) for id_, n in rows]),
-            ),
-            or_else=lambda: sql("INSERT INTO {} {}", name, sql.insert(values)),
-        ).without_transform
+        return transform_writes(
+            sql("INSERT INTO {} {}", name, sql.insert(values)).without_transform
+        )
 
     def to_record(rows: Sequence[Mapping[str, object]]) -> MigrationRecord | None:
         if not rows:
@@ -357,11 +372,10 @@ def _run(
             lambda _: void,
         ).as_(done)
 
-    return _ensure_table(sql, table).and_then(completed).flat_map(dump)
+    return _ensure_table(sql, table, transform_writes).and_then(completed).flat_map(dump)
 
 
 _RECORD_KEY = re.compile(r"([0-9]+)_(.+)")
-_FILE_NAME = re.compile(r"^(?:.*/)?([0-9]+)_([^.]+)\.py$")
 
 
 def _sorted(migrations: list[ResolvedMigration]) -> list[ResolvedMigration]:
@@ -379,46 +393,6 @@ def from_record(migrations: Mapping[str, Migration]) -> Loader:
     return succeed(_sorted(found))
 
 
-def _import(path: str, module_name: str) -> object:
-    spec = importlib.util.spec_from_file_location(module_name, path)
-    if spec is None or spec.loader is None:
-        raise ImportError(f"cannot import {path}")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-def from_file_system(directory: str) -> Loader[FileSystem | Path]:
-    """The ``<id>_<name>.py`` modules of ``directory``; each migration is
-    the module's ``default``."""
-
-    def read(fs: Any, path: Any) -> Loader:
-        def failed(cause: object) -> MigrationError:
-            return MigrationError(
-                kind="Failed", cause=cause, message="Failed to read migrations directory"
-            )
-
-        def resolve(files: Sequence[str]) -> list[ResolvedMigration]:
-            found: list[ResolvedMigration] = []
-            for file in files:
-                match = _FILE_NAME.match(file)
-                if match is None:
-                    continue
-                basename = match[0].rsplit("/", 1)[-1]
-                full = path.join(directory, basename)
-                module_name = f"pyfect_migration_{match[1]}_{match[2]}"
-                load: Effect[object] = _Suspend(
-                    lambda full=full, module_name=module_name: succeed(_import(full, module_name))
-                )
-                found.append((int(match[1]), match[2], load))
-            return _sorted(found)
-
-        listed: Effect[Sequence[str], Any] = fs.read_directory(directory)
-        return listed.map_error(failed).map(resolve)
-
-    return FileSystem().flat_map(lambda fs: Path().flat_map(lambda path: read(fs, path)))
-
-
 __all__ = [
     "DumpSchema",
     "Loader",
@@ -428,7 +402,7 @@ __all__ = [
     "MigrationRecord",
     "ResolvedMigration",
     "Runner",
-    "from_file_system",
+    "TransformWrites",
     "from_record",
     "make",
 ]

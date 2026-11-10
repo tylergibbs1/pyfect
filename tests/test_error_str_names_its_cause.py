@@ -17,6 +17,7 @@ from pyfect.errors import TaggedError, UnknownError
 from pyfect.eventlog.event_log_session_auth import EventLogSessionAuthError
 from pyfect.http import error as http_error
 from pyfect.http.multipart import MultipartError, MultipartErrorReason
+from pyfect.process import command_line
 from pyfect.rpc.client_error import RpcClientDefect, RpcClientError
 from pyfect.socket._errors import SocketOpenError
 from pyfect.socket.server import SocketServerError, SocketServerOpenError
@@ -108,6 +109,8 @@ _OWN_STR_WITH_A_TEST = {
     http_error.HttpClientError,  # test_http_client_error_messages
     SocketOpenError,  # its message says the cause: test_socket_open_errors
     UnknownError,  # test_a_raised_cause_shows_in_a_plain_tagged_error
+    # ``reason`` is a tag and ``message`` says why: test_command_line.py checks both.
+    command_line.CommandLineError,
 }
 
 

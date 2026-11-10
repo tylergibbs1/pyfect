@@ -6,6 +6,8 @@ record their queries and answer ``[{"value": 42}]``.
 - ``complete_requests = False`` or the query ``SELECT pending`` leaves a
   request pending until it is cancelled (``pending_started`` is set once one
   is waiting)
+- ``acknowledge_cancel = False``: a cancelled request stays pending (the
+  server never acknowledges the cancel) until its connection closes
 - ``request_causes``: errors the next requests raise, in turn
 - ``connect_cause``: the error connecting raises
 - ``hold_connect``: an event connecting waits for (``connect_started`` tells
@@ -77,6 +79,8 @@ class FakeConnection:
                 self._pending = pending
             fake.pending_started.set()
             pending.wait()
+            if self.closed:
+                raise ServerError(message="Connection closed before request completed.")
             raise ServerError(message="Canceled.")
         return [[("value", 42)]]
 
@@ -110,27 +114,34 @@ class FakeConnection:
         # Count only an actual in-flight cancellation in ``cancellations``.
         with self._lock:
             self._fake.cancel_calls += 1
-            pending, self._pending = self._pending, None
-            if pending is None:
+            if self._pending is None:
                 self._cancel_next = True
             else:
                 self.cancellations += 1
-                pending.set()
+                if self._fake.acknowledge_cancel:
+                    # Like tedious, the request ends once the server acknowledges.
+                    pending, self._pending = self._pending, None
+                    pending.set()
 
     def forget_cancel(self) -> None:
         with self._lock:
             self._cancel_next = False
 
     def close(self) -> None:
+        with self._lock:
+            pending, self._pending = self._pending, None
         if not self.closed:
             self.closed = True
             self.end()
+        if pending is not None:
+            pending.set()
         self.closed_signal.set()
 
 
 class Fake:
     def __init__(self) -> None:
         self.cancel_calls = 0
+        self.acknowledge_cancel = True
         self.complete_requests = True
         self.connections: list[FakeConnection] = []
         self.pending_started = threading.Event()

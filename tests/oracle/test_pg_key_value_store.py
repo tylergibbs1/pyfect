@@ -69,3 +69,16 @@ def test_remove(pg_server: PgServer, table: str) -> None:
 def test_clear(pg_server: PgServer, table: str) -> None:
     """clear"""
     suite.run(_layer(pg_server, table), suite.clear)
+
+
+@_TABLES
+def test_keys(pg_server: PgServer, table: str) -> None:
+    """keys"""
+    suite.run(_layer(pg_server, table), suite.keys)
+
+
+@_TABLES
+@pytest.mark.parametrize("title", list(suite.CLEAR_PREFIX_SUITE))
+def test_clear_prefix_suite(pg_server: PgServer, table: str, title: str) -> None:
+    """KeyValueStore clearPrefix: each title of clearPrefixSuite"""
+    suite.run(_layer(pg_server, table), suite.CLEAR_PREFIX_SUITE[title])
