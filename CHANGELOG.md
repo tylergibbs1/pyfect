@@ -1,6 +1,13 @@
 # Changelog
 
-## 0.4.0 (unreleased)
+## 0.4.0 (2026-11-10)
+
+pyfect now follows Effect 4.1.2 (it followed 4.0.6). Every test title Effect 4.1.2 added is
+ported or listed with its reason in `docs/PARITY.md`. New in this release: the `crypto` and
+`jose` modules (the `crypto` extra), MCP Skills and server middleware, HTTP `ProblemDetails`,
+`Glob`, the CSV, JSON5 and JSONC encodings, `process.command_line`, the persistence
+`CircuitBreaker`, and the encrypted event log's compaction protocol. Many changes follow
+Effect 4.1.2 and break code written against 0.3; each is below with how to migrate.
 
 ### Breaking
 
