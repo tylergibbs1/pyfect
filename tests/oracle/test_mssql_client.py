@@ -748,14 +748,14 @@ def test_a_timeout_of_0_is_the_driver_s_default(
     so the number 0 leaves tedious's default"""
     fake = _mssql_fake.install(monkeypatch)
     fx.run_blocking_exit(_build_client(**{field: 0}))
-    assert getattr(fake.options[0], field) == default
+    assert getattr(fake.options[0], field) == fx.duration.seconds(default)
 
 
 def test_a_timeout_of_nan_is_the_driver_s_default(monkeypatch: pytest.MonkeyPatch):
     """(pyfect) ``NaN`` is falsy in ``options.x ? ... : undefined``, so it is unset too"""
     fake = _mssql_fake.install(monkeypatch)
     fx.run_blocking_exit(_build_client(cancel_timeout=float("nan")))
-    assert fake.options[0].cancel_timeout == 5.0
+    assert fake.options[0].cancel_timeout == fx.duration.seconds(5)
 
 
 def test_a_timeout_of_a_zero_duration_reaches_the_driver(monkeypatch: pytest.MonkeyPatch):
@@ -765,7 +765,7 @@ def test_a_timeout_of_a_zero_duration_reaches_the_driver(monkeypatch: pytest.Mon
 
     fake = _mssql_fake.install(monkeypatch)
     fx.run_blocking_exit(_build_client(cancel_timeout=timedelta(0)))
-    assert fake.options[0].cancel_timeout == 0
+    assert fake.options[0].cancel_timeout == fx.duration.zero
 
 
 def test_interrupting_a_connection_while_it_opens_returns_at_once(

@@ -87,11 +87,11 @@ class Dialect:
             or_else=lambda: sql("datetime({}, '{} seconds')", self.now, s),
         )
 
-    def seconds_ago(self, seconds: float) -> Fragment:
-        return self.seconds_offset(-max(math.ceil(seconds), 0))
+    def seconds_ago(self, duration: Duration) -> Fragment:
+        return self.seconds_offset(-max(math.ceil(duration.to_seconds()), 0))
 
-    def seconds_from_now(self, seconds: float) -> Fragment:
-        return self.seconds_offset(max(math.ceil(seconds), 0))
+    def seconds_from_now(self, duration: Duration) -> Fragment:
+        return self.seconds_offset(max(math.ceil(duration.to_seconds()), 0))
 
     def delayed_visible_at(self, delay: Duration) -> Fragment:
         """When a delayed offer becomes visible, never before ``delay``
@@ -99,7 +99,7 @@ class Dialect:
         at the transaction's start); MySQL and SQLite clocks drop the
         current second's fraction, so they get a whole second more."""
         sql = self.sql
-        seconds = math.ceil(delay)
+        seconds = math.ceil(delay.to_seconds())
         return sql.on_dialect_or_else(
             pg=lambda: sql("clock_timestamp() + INTERVAL '{} seconds'", sql.unsafe(str(seconds))),
             mssql=lambda: self.seconds_offset(seconds),
@@ -109,7 +109,7 @@ class Dialect:
 
 type OfferStatement = Callable[[str, str, str, Fragment], Effect[object, SqlError]]
 type PollStatement = Callable[[str, int, int, Fragment], Effect[Sequence[Row], SqlError]]
-type CleanupBatch = Callable[[str, float], Effect[int, SqlError]]
+type CleanupBatch = Callable[[str, Duration], Effect[int, SqlError]]
 
 
 def offer_statement(dialect: Dialect, table_name: str) -> OfferStatement:
@@ -317,7 +317,7 @@ def cleanup_statement(dialect: Dialect, table_name: str) -> CleanupBatch:
         ).map(lambda rows: column_int(rows[0]["count"]))
 
     def mysql() -> CleanupBatch:
-        def run(state: str, seconds: float) -> Effect[int, SqlError]:
+        def run(state: str, seconds: Duration) -> Effect[int, SqlError]:
             statement, params = sql(
                 "DELETE FROM {} WHERE state = {} AND updated_at <= {} LIMIT {}",
                 table,

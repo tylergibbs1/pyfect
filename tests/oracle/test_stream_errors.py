@@ -483,13 +483,13 @@ def test_retry_schedule_current_metadata():
     def meta(attempt: int, now: float, since: float, delay: float) -> Metadata[object, object]:
         return Metadata(
             input=None if attempt == 0 else 1,
-            output=None if attempt == 0 else delay,
-            duration=fx.duration.Duration(delay),
+            output=None if attempt == 0 else fx.duration.seconds(delay),
+            duration=fx.duration.seconds(delay),
             attempt=attempt,
             start=0.0,
             now=now * 1000,
-            elapsed=fx.duration.Duration(now),
-            elapsed_since_previous=fx.duration.Duration(since),
+            elapsed=fx.duration.seconds(now),
+            elapsed_since_previous=fx.duration.seconds(since),
         )
 
     assert seen == [meta(0, 0, 0, 0), meta(1, 0, 0, 1), meta(2, 1, 1, 2), meta(3, 3, 2, 4)]

@@ -27,7 +27,7 @@ def free_port() -> int:
         return probe.getsockname()[1]
 
 
-def runner(database: Path, termination_timeout: float, started: Latch, log: list[str]):
+def runner(database: Path, termination_timeout: fx.duration.Input, started: Latch, log: list[str]):
     def run(_: object) -> fx.Effect[str]:
         work = fx.sync(started.open_unsafe).and_then(
             fx.sleep("500 millis")
@@ -41,7 +41,7 @@ def runner(database: Path, termination_timeout: float, started: Latch, log: list
             config,
             runner_address=runner_address.make("127.0.0.1", port),
             # How long a stopping runner waits for its entities (15 s by default).
-            entity_termination_timeout=fx.duration.Duration(termination_timeout),
+            entity_termination_timeout=fx.duration.from_input_unsafe(termination_timeout),
         )
 
     sql = fx.layer.effect(
@@ -55,7 +55,7 @@ def runner(database: Path, termination_timeout: float, started: Latch, log: list
 
 
 @fx.fn
-def stop_during_a_job(database: Path, termination_timeout: float):
+def stop_during_a_job(database: Path, termination_timeout: fx.duration.Input):
     log: list[str] = []
     started = Latch()
     scope = yield from fx.scope.make()
@@ -73,7 +73,7 @@ def stop_during_a_job(database: Path, termination_timeout: float):
 @fx.fn
 def program(directory: Path):
     # The runner drains: the job finishes here before the shard is handed over.
-    drained = yield from stop_during_a_job(directory / "drain.db", 5)
+    drained = yield from stop_during_a_job(directory / "drain.db", "5 seconds")
     assert drained == ["job finished", "runner stopped"]
     # With 0 it hands over at once: the job stops here, and its persisted
     # request runs again on the runner that takes the shard.

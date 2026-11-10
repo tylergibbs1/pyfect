@@ -62,4 +62,4 @@ def test_reads_connect_timeout_in_milliseconds_and_skips_the_urls_own_keys():
     assert parts.options.connect_timeout == millis(2500)
     assert (parts.host, parts.username) == ("h", "u")
     config = mysql.MysqlClientConfig(url=redacted.make("mysql://h/db?connectTimeout=2500"))
-    assert mysql.client.connect_options(config)["connect_timeout"] == millis(2500)
+    assert mysql.client.connect_options(config)["connect_timeout"] == 2.5

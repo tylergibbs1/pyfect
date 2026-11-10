@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Literal, Never
 from pyfect._catch import catch_tag
 from pyfect._core import Effect
 from pyfect.clock import sleep
-from pyfect.duration import from_millis
+from pyfect.duration import millis
 from pyfect.effect import die, gen, succeed
 from pyfect.eventlog import _remote_compaction
 from pyfect.eventlog._batches import MAX_BATCH_ENTRIES
@@ -235,7 +235,7 @@ class LogCompaction:
             low, high = _DELAY_MILLIS
             return (
                 next_int_between(low, high)
-                .flat_map(lambda millis: sleep(from_millis(millis)))
+                .flat_map(lambda delay: sleep(millis(delay)))
                 .and_then(self.run(remote.id, compaction))
                 .flat_map(lambda result: log_debug(f"Remote compaction finished: {result}"))
                 .catch_cause(log_warning)

@@ -1,6 +1,6 @@
 """Effect's millisecond ``Duration`` arithmetic, in whole nanoseconds as
-Effect's is, and ``SECONDS_FROM_MILLIS``: a duration in ``Seconds``
-written as milliseconds (Effect's ``Schema.DurationFromMillis``)."""
+Effect's is, and ``SECONDS_FROM_MILLIS``: a ``Duration`` written as
+milliseconds (Effect's ``Schema.DurationFromMillis``)."""
 
 from __future__ import annotations
 
@@ -9,11 +9,11 @@ from typing import TypeIs
 
 from pyfect import _js as js
 from pyfect import schema as S
-from pyfect.duration import Duration, to_millis
+from pyfect.duration import Duration, millis, to_millis
 from pyfect.schema import transformation as T
 
 
-def _is_seconds(value: object) -> TypeIs[Duration]:
+def _is_duration(value: object) -> TypeIs[Duration]:
     return isinstance(value, Duration)
 
 
@@ -27,14 +27,6 @@ def whole_nanos(millis: float) -> float:
     if not math.isfinite(millis) or float(millis).is_integer():
         return millis
     return _round_away(millis * 1_000_000) / 1_000_000
-
-
-def millis(value: float) -> Duration:
-    """``Seconds`` of ``value`` milliseconds in whole nanoseconds (Effect's
-    ``Duration.millis``); NaN is zero."""
-    if not math.isfinite(value) or float(value).is_integer():
-        return Duration(value / 1000)
-    return Duration(_round_away(value * 1_000_000) / 1_000_000_000)
 
 
 def divide_millis(millis: float, by: float) -> float:
@@ -62,7 +54,7 @@ def divide_millis(millis: float, by: float) -> float:
 
 SECONDS_FROM_MILLIS = S.Finite.pipe(
     S.decode_to(
-        S.declare(_is_seconds, expected="Seconds"),
+        S.declare(_is_duration, expected="Duration"),
         T.transform(decode=millis, encode=to_millis),
     )
 )

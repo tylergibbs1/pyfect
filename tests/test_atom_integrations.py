@@ -319,7 +319,7 @@ def test_http_api_query_of_is_query_with_its_parts_checked_by_the_endpoint():
         reactivity_keys=["items"],
         time_to_live="1 minute",
     )
-    assert item.idle_ttl == 60
+    assert item.idle_ttl == fx.duration.minutes(1)
     response_only = client.query_of(_ITEMS, _RENAME, response_mode="response-only")
     assert response_only(params={"id": 3}, payload="p") is client.query(
         _ITEMS, _RENAME, params={"id": 3}, payload="p", response_mode="response-only"

@@ -261,16 +261,16 @@ def test_query_creates_a_serializable_atom_with_reactivity_and_retention_that_en
         time_to_live="1 minute",
         serialization_key="1:2",
     )
-    assert (query.idle_ttl, atom.is_serializable(query)) == (60, True)
+    assert (query.idle_ttl, atom.is_serializable(query)) == (fx.duration.minutes(1), True)
     assert (
         client.query(_API_GROUP, _GET, params={"id": 2}, query={"page": 3}, time_to_live=0).idle_ttl
-        == 0
+        == fx.duration.zero
     )
     assert (
         client.query(
             _API_GROUP, _GET, params={"id": 3}, query={"page": 4}, time_to_live=0.0
         ).idle_ttl
-        == 0
+        == fx.duration.zero
     )
     keep_alive = client.query(
         _API_GROUP,

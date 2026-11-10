@@ -31,7 +31,7 @@ pytest.importorskip("redis")
 
 import pyfect as fx
 from pyfect import testing
-from pyfect.duration import Duration, zero
+from pyfect.duration import zero
 from pyfect.exit import Failure, Success
 from pyfect.persistence import circuit_breaker as cb
 from pyfect.persistence import persistence, redis_py
@@ -122,7 +122,7 @@ class TestRateLimiterRedis(rl_suite.RateLimiterSuite):
 
 
 def _live(seconds: float) -> fx.Effect[None]:
-    return testing.with_live(fx.sleep(Duration(seconds)))
+    return testing.with_live(fx.sleep(fx.duration.seconds(seconds)))
 
 
 def _circuit_breaker_run(
@@ -351,7 +351,7 @@ def test_a_duration_redis_cannot_represent_is_rejected_before_the_script_writes_
 
     def body():
         redis = yield from Redis()
-        unrepresentable = Duration(1e17)
+        unrepresentable = fx.duration.seconds(1e17)
 
         # admit never creates the key.
         idle_store = yield from _store_on(redis, idle_time_to_live=unrepresentable)
@@ -439,7 +439,7 @@ def test_does_not_restore_capacity_early_after_a_fractional_token_cost() -> None
         elapsed = time.time() * 1000 - refill_at
         assert 2_500 <= elapsed < 4_000
 
-        yield from fx.sleep(Duration((4_100 - elapsed) / 1000))
+        yield from fx.sleep(fx.duration.seconds((4_100 - elapsed) / 1000))
         assert (yield from memory.token_bucket(**opts, tokens=0))[0] == 5
         assert (yield from store.token_bucket(**opts, tokens=0))[0] == 5
         assert before_refill == {

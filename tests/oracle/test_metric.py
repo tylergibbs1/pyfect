@@ -861,7 +861,7 @@ def test_track_duration_uses_monotonic_time_when_wall_time_moves_backward():
 def test_track_duration_with_tracks_execution_duration():
     """trackDurationWith > tracks execution duration"""
     gauge = metric.gauge(_next_id())
-    fiber = yield from fx.sleep("1 hour").track_duration(gauge, lambda d: d / 60).fork()
+    fiber = yield from fx.sleep("1 hour").track_duration(gauge, lambda d: d.to_minutes()).fork()
     yield from testing.adjust("1 hour")
     yield from fiber.join()
     assert (yield from gauge.value()) == metric.GaugeState(60)

@@ -17,7 +17,7 @@ from typing import Any
 import pytest
 
 from pyfect._wake_tracking import Tracking
-from pyfect.duration import Duration, nanos_or_infinite
+from pyfect.duration import Duration, nanos_or_infinite, seconds
 from pyfect.reactivity import _time, atom_registry
 from pyfect.reactivity.atom_registry import AtomRegistryService, InitialValue
 from pyfect.scheduler import Cancel, Task
@@ -83,8 +83,8 @@ class FakeTimers(Tracking):
         return atom_registry.make(
             initial_values=initial_values,
             scheduler=self,
-            default_idle_ttl=None if default_idle_ttl is None else Duration(default_idle_ttl),
-            timeout_resolution=None if timeout_resolution is None else Duration(timeout_resolution),
+            default_idle_ttl=None if default_idle_ttl is None else seconds(default_idle_ttl),
+            timeout_resolution=None if timeout_resolution is None else seconds(timeout_resolution),
         )
 
 

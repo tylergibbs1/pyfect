@@ -32,7 +32,7 @@ from pyfect.cluster.runner_storage import RunnerStorage
 from pyfect.cluster.sharding import Sharding
 from pyfect.cluster.sharding import layer as sharding_layer_of
 from pyfect.cluster.snowflake import Snowflake
-from pyfect.duration import Duration, millis
+from pyfect.duration import millis
 from pyfect.rpc import make as make_rpc
 from pyfect.schema import ast
 from pyfect.scope import CloseableScope, Scope
@@ -1757,7 +1757,7 @@ def _poll_and_adjust_until_done(fiber: Any, step: float, message: str) -> Any:
         if fiber.poll_unsafe() is not None:
             break
         yield from sharding.poll_storage
-        yield from testing.adjust(Duration(step))
+        yield from testing.adjust(fx.duration.seconds(step))
     assert fiber.poll_unsafe() is not None, message
 
 
@@ -2187,8 +2187,8 @@ def test_bounds_a_durable_clock_notification_when_its_workflow_is_absent_after_r
     removed = workflow.make("RemovedWorkflow", payload=W.EMPTY, idempotency_key=lambda _: "one")
     storage, driver = yield from W.make_shared_memory()
     storage_layer = W.storage_layer_of(storage)
-    overrides = {"entity_registration_timeout": Duration(registration_timeout)}
-    clock = durable_clock.make(name="wait", duration=Duration(clock_duration))
+    overrides = {"entity_registration_timeout": fx.duration.seconds(registration_timeout)}
+    clock = durable_clock.make(name="wait", duration=fx.duration.seconds(clock_duration))
 
     @fx.gen
     def first():
@@ -2200,7 +2200,7 @@ def test_bounds_a_durable_clock_notification_when_its_workflow_is_absent_after_r
         fx.provide(
             removed.to_layer(
                 lambda _, __: durable_clock.sleep(
-                    name="wait", duration=Duration(clock_duration), in_memory_threshold=0
+                    name="wait", duration=fx.duration.seconds(clock_duration), in_memory_threshold=0
                 )
             ).pipe(
                 fx.layer.provide_merge(
@@ -2224,7 +2224,7 @@ def test_bounds_a_durable_clock_notification_when_its_workflow_is_absent_after_r
     @fx.gen
     def second():
         # Fire the persisted timer before the registration-start deadline.
-        yield from testing.adjust(Duration(clock_duration))
+        yield from testing.adjust(fx.duration.seconds(clock_duration))
         # The completion ClockEntity emits when the persisted timer fires.
         # Calling it directly isolates the registration wait from storage claims.
         fiber = yield from clock.deferred.done(
@@ -2232,7 +2232,7 @@ def test_bounds_a_durable_clock_notification_when_its_workflow_is_absent_after_r
         ).fork_daemon(start_immediately=True)
         yield from fx.yield_now()
         assert fiber.poll_unsafe() is None
-        yield from testing.adjust(Duration(registration_timeout - clock_duration))
+        yield from testing.adjust(fx.duration.seconds(registration_timeout - clock_duration))
         exit_ = fiber.poll_unsafe()
         assert exit_ is not None, "the notifyLocal registration wait must be bounded"
         defect = exit_.cause.defects[0] if isinstance(exit_, fx.Failure) else None

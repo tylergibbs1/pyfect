@@ -21,8 +21,9 @@ from typing import TYPE_CHECKING
 from urllib.parse import parse_qsl, unquote, urlsplit
 
 from pyfect._js import text_encode
-from pyfect.duration import Duration, from_input_unsafe, from_millis, millis
+from pyfect.duration import Duration, from_input_unsafe
 from pyfect.duration import Input as DurationInput
+from pyfect.duration import millis as duration_millis
 from pyfect.redacted import Redacted
 from pyfect.redacted import make as redacted
 from pyfect.redacted import value as redacted_value
@@ -33,7 +34,7 @@ if TYPE_CHECKING:
     from pyfect.http.error import HttpClientError
 
 DEFAULT_URL = "http://localhost:8123"
-DEFAULT_REQUEST_TIMEOUT = millis(30_000)
+DEFAULT_REQUEST_TIMEOUT = duration_millis(30_000)
 
 _SETTING_PREFIXES = ("clickhouse_setting_", "ch_")
 _HEADER_PREFIX = "http_header_"
@@ -91,7 +92,7 @@ def _timeout(value: str) -> Duration:
         raise ValueError(f'"request_timeout" has invalid numeric value: {text}')
     if millis < 0:
         raise ValueError(f'"request_timeout" value {text} is less than min allowed 0')
-    return from_millis(millis)
+    return duration_millis(millis)
 
 
 def _query(query: str, found: _FromUrl) -> None:

@@ -35,7 +35,7 @@ from pyfect.cluster.sharding import Sharding
 from pyfect.cluster.sharding_config import ShardingConfigService
 from pyfect.context import Tag
 from pyfect.date_time import now
-from pyfect.duration import Duration, millis
+from pyfect.duration import millis
 from pyfect.rpc import make as make_rpc
 from pyfect.rpc._rpc import exit_schema
 from pyfect.scope import Scope
@@ -138,7 +138,7 @@ def advance_until(
     for _ in range(rounds):
         if ready():
             break
-        yield from testing.adjust(Duration(step))
+        yield from testing.adjust(fx.duration.seconds(step))
     assert ready(), message
 
 

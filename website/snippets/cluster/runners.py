@@ -45,8 +45,8 @@ def runner(database: Path, port: int):
         return replace(
             config,
             runner_address=runner_address.make("127.0.0.1", port),
-            refresh_assignments_interval=fx.duration.Duration(0.2),
-            entity_termination_timeout=fx.duration.Duration(0),
+            refresh_assignments_interval=fx.duration.millis(200),
+            entity_termination_timeout=fx.duration.zero,
         )
 
     sql = fx.layer.effect(

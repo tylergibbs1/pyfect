@@ -61,7 +61,7 @@ from pyfect.cluster.sharding_registration_event import EntityRegistered, Singlet
 from pyfect.cluster.snowflake import Snowflake
 from pyfect.context import Context, Tag
 from pyfect.deferred import Deferred
-from pyfect.duration import Duration, millis
+from pyfect.duration import millis
 from pyfect.logger import LogLevel
 from pyfect.queue import Queue
 from pyfect.rpc import make as make_rpc
@@ -742,7 +742,9 @@ def _late_env(
 ) -> fx.Layer[Any, Never, Any]:
     entity = test_entity_no_state
     if delay is not None:
-        entity = entity.pipe(fx.layer.provide(fx.layer.effect_discard(fx.sleep(Duration(delay)))))
+        entity = entity.pipe(
+            fx.layer.provide(fx.layer.effect_discard(fx.sleep(fx.duration.seconds(delay))))
+        )
     built = (
         entity.pipe(fx.layer.provide_merge(sharding.layer))
         .pipe(fx.layer.provide(runner_storage.layer_memory))

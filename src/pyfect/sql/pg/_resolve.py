@@ -14,7 +14,8 @@ from urllib.parse import unquote
 from pyfect._core import Effect
 from pyfect._digits import parse_digits
 from pyfect._url import Url
-from pyfect.duration import Duration, from_input_unsafe
+from pyfect.duration import Duration, from_input_unsafe, infinity
+from pyfect.duration import seconds as duration_seconds
 from pyfect.effect import fail, succeed
 from pyfect.redacted import Redacted, make
 from pyfect.redacted import value as redacted_value
@@ -22,7 +23,7 @@ from pyfect.sql.error import SqlError
 from pyfect.sql.pg.config import Password, PgConnectionConfig
 from pyfect.sql.pg.error import connection_error
 
-_DEFAULT_TIMEOUT = 5.0
+_DEFAULT_TIMEOUT = duration_seconds(5)
 _MAX_KEEP_ALIVE = 0x7FFFFFFF
 _RESERVED = frozenset(("user", "database", "replication", "options"))
 _SOCKET_FILE = re.compile(r"^(.*)/\.s\.PGSQL\.([0-9]+)$")
@@ -108,7 +109,7 @@ def _query(url: _Url, key: str, value: str) -> None:
             seconds = parse_digits(value)
             if seconds is None:
                 raise _Invalid(f'Invalid connect_timeout in URL: "{value}"')
-            url.connect_timeout = Duration(math.inf if seconds == 0 else seconds)
+            url.connect_timeout = infinity if seconds == 0 else duration_seconds(seconds)
         case "sslmode":
             if value not in _SSLMODES:
                 raise _Invalid(f'Unrecognized sslmode in URL: "{value}"')
@@ -147,8 +148,8 @@ def _parse_url(raw: str) -> _Url:
 def _keep_alive(config: PgConnectionConfig) -> int | None:
     if config.keep_alive is None:
         return None
-    seconds = from_input_unsafe(config.keep_alive)
-    whole = math.floor(seconds) if math.isfinite(seconds) else 0
+    keep_alive = from_input_unsafe(config.keep_alive)
+    whole = math.floor(keep_alive.to_seconds()) if keep_alive.is_finite() else 0
     if not 1 <= whole <= _MAX_KEEP_ALIVE:
         raise _Invalid("keep_alive must be between 1 and 2147483647 seconds")
     return whole
@@ -246,7 +247,7 @@ def _resolve(config: PgConnectionConfig) -> ResolvedConfig:
     timeout = (
         from_input_unsafe(config.connect_timeout)
         if config.connect_timeout is not None
-        else url.connect_timeout or Duration(_DEFAULT_TIMEOUT)
+        else url.connect_timeout or _DEFAULT_TIMEOUT
     )
     return ResolvedConfig(resolved, password, timeout, host, port)
 

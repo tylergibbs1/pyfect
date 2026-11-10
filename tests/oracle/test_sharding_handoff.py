@@ -43,7 +43,7 @@ from pyfect.cluster.shard_id import ShardId
 from pyfect.cluster.shard_id import make as shard
 from pyfect.context import Context
 from pyfect.deferred import Deferred
-from pyfect.duration import Duration, millis
+from pyfect.duration import millis
 from pyfect.latch import Latch
 from pyfect.layer import Layer
 from pyfect.logger import LogLevel, format_json
@@ -257,7 +257,9 @@ def test_warns_about_pending_entities_and_singletons_and_reacquires_only_after_t
         # The entity stops, so the next warning names only the singleton.
         yield from entity_gate.open()
         yield from testing.adjust(
-            Duration((first_warnings[0][0] + 29_999 - clock.current_time_millis_unsafe()) / 1000)
+            fx.duration.seconds(
+                (first_warnings[0][0] + 29_999 - clock.current_time_millis_unsafe()) / 1000
+            )
         )
         warnings_before_repeat = list(warnings)
         assert_still_blocked()
@@ -373,7 +375,7 @@ def test_warns_immediately_on_release_failure_and_throttles_retries_to_one_warni
         first_warning_at = warnings[0][0]
         first_attempts = len(state.release_calls)
         yield from testing.adjust(
-            Duration((first_warning_at + 29_999 - (yield from _now_millis())) / 1000)
+            fx.duration.seconds((first_warning_at + 29_999 - (yield from _now_millis())) / 1000)
         )
         assert len(warnings) == 1, "retries inside the throttle window must not warn"
         assert len(state.release_calls) > first_attempts, "storage retries must continue"

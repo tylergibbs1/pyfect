@@ -8,12 +8,11 @@ from typing import Literal
 
 from pyfect._core import Effect
 from pyfect.clock import ClockService, clock_with
-from pyfect.duration import Duration, to_millis
+from pyfect.duration import Duration, millis, to_millis
 from pyfect.duration import Input as DurationInput
 from pyfect.effect import fail, succeed
 from pyfect.layer import Layer
 from pyfect.layer import sync as layer_sync
-from pyfect.persistence._seconds import millis
 from pyfect.persistence.circuit_breaker._errors import (
     CircuitBreakerError,
     CircuitHalfOpen,

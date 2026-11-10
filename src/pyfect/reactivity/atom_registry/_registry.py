@@ -23,8 +23,8 @@ from pyfect._effect_args import require_effect
 from pyfect._root import ambient_run, new_root, start_root
 from pyfect._wake_tracking import Tracking
 from pyfect.context import Context
-from pyfect.duration import Duration, from_input_unsafe, to_millis
 from pyfect.duration import Input as DurationInput
+from pyfect.duration import from_input_unsafe, millis, to_millis
 from pyfect.reactivity._hydration import should_hydrate
 from pyfect.reactivity._time import now_millis
 from pyfect.reactivity.atom_registry._batch import run_all
@@ -208,7 +208,7 @@ class AtomRegistryService:
     # --- nodes ----------------------------------------------------------
 
     def atom_has_ttl(self, atom: Atom[Any]) -> bool:
-        if atom.kept_alive or atom.idle_ttl == 0:
+        if atom.kept_alive or (atom.idle_ttl is not None and atom.idle_ttl.is_zero()):
             return False
         return atom.idle_ttl is not None or self.default_idle_ttl is not None
 
@@ -306,7 +306,7 @@ class AtomRegistryService:
         bucket = timestamp - (timestamp % resolution) + resolution
         entry = self.timeout_buckets.get(bucket)
         if entry is None:
-            delay = Duration((bucket - now_millis()) / 1000)
+            delay = millis(bucket - now_millis())
             nodes: dict[Node[Any], None] = {}
             entry = (nodes, self.scheduler.call_later(delay, lambda: self.sweep_bucket(bucket)))
             self.timeout_buckets[bucket] = entry

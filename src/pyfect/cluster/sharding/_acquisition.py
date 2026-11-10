@@ -18,7 +18,7 @@ from pyfect.clock import sleep
 from pyfect.cluster import cluster_metrics
 from pyfect.cluster.runner_address import RunnerAddress
 from pyfect.cluster.shard_id import ShardId
-from pyfect.duration import Duration, millis
+from pyfect.duration import Duration, millis, seconds
 from pyfect.effect import gen, succeed, suspend, sync
 from pyfect.fiber_map import FiberMap
 from pyfect.logger import log_error, log_info, log_warning
@@ -228,7 +228,7 @@ class ShardAcquisition:
                 return _VOID
             self._forced_release_running = True
             shard_ids = tuple(state.force_releasing_shards)
-            interval = Duration(max(state.config.shard_lock_expiration, 30))
+            interval = max(state.config.shard_lock_expiration, seconds(30))
 
             @gen
             def run():

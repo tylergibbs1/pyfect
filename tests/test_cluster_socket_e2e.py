@@ -93,11 +93,11 @@ def _settings(port: int):
             config,
             runner_address=runner_address.make(HOST, port),
             shards_per_group=SHARDS,
-            entity_message_poll_interval=fx.duration.Duration(0.5),
-            refresh_assignments_interval=fx.duration.Duration(0.15),
-            shard_lock_expiration=fx.duration.Duration(1.75),
-            shard_lock_refresh_interval=fx.duration.Duration(0.5),
-            entity_termination_timeout=fx.duration.Duration(0),
+            entity_message_poll_interval=fx.duration.seconds(0.5),
+            refresh_assignments_interval=fx.duration.seconds(0.15),
+            shard_lock_expiration=fx.duration.seconds(1.75),
+            shard_lock_refresh_interval=fx.duration.seconds(0.5),
+            entity_termination_timeout=fx.duration.seconds(0),
         )
 
     return update

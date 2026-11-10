@@ -47,21 +47,21 @@ def sleep(
     *, name: str, duration: DurationInput, in_memory_threshold: DurationInput | None = None
 ) -> Effect[None, Never, WorkflowEngine | WorkflowInstance]:
     """Wait ``duration`` inside a workflow. A zero duration does nothing."""
-    seconds = from_input_unsafe(duration)
+    parsed = from_input_unsafe(duration)
     threshold = (
         DEFAULT_IN_MEMORY_THRESHOLD
         if in_memory_threshold is None
         else from_input_unsafe(in_memory_threshold)
     )
-    if seconds == 0:
+    if parsed.is_zero():
         return succeed(None)
-    if seconds <= threshold:
-        return make_activity(name=f"DurableClock/{name}", execute=clock_sleep(seconds))
+    if parsed <= threshold:
+        return make_activity(name=f"DurableClock/{name}", execute=clock_sleep(parsed))
 
     def body():
         engine = yield from WorkflowEngine()
         instance = yield from WorkflowInstance()
-        clock = make(name=name, duration=seconds)
+        clock = make(name=name, duration=parsed)
         yield from engine.schedule_clock(
             instance.workflow, execution_id=instance.execution_id, clock=clock
         )

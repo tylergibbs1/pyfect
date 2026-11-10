@@ -11,7 +11,6 @@ from typing import Any, LiteralString
 
 import pyfect as fx
 from pyfect import schedule, testing
-from pyfect.duration import Duration
 from pyfect.persistence import persistence
 from pyfect.persistence.persistence import BackingPersistence
 from pyfect.sql import SqlClient
@@ -151,8 +150,8 @@ def wait_for_count(
     holds, for at most 30 seconds (``SqlCleanupTest.waitForCount``)."""
     return testing.with_live(
         effect.repeat(
-            until=predicate, schedule=schedule.spaced(Duration(CLEANUP_BATCH_DELAY))
-        ).timeout(Duration(TEST_TIMEOUT))
+            until=predicate, schedule=schedule.spaced(fx.duration.seconds(CLEANUP_BATCH_DELAY))
+        ).timeout(fx.duration.seconds(TEST_TIMEOUT))
     )
 
 

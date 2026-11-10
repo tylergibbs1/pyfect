@@ -10,12 +10,11 @@ from pyfect._core import Effect
 from pyfect.clock import sleep
 from pyfect.config import Config, ConfigError
 from pyfect.config._config import unwrap
-from pyfect.duration import Duration, to_millis
+from pyfect.duration import Duration, millis, to_millis
 from pyfect.duration import Input as DurationInput
 from pyfect.effect import fail, gen
 from pyfect.layer import Layer
 from pyfect.layer import effect as layer_effect
-from pyfect.persistence._seconds import millis
 from pyfect.persistence.circuit_breaker._breaker import recovering
 from pyfect.persistence.circuit_breaker._errors import (
     CircuitBreakerError,

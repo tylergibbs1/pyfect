@@ -254,7 +254,7 @@ def test_idle_time_to_live_reuses_and_releases_resources():
 class _RecordingClock:
     def __init__(self, inner: fx.clock.ClockService) -> None:
         self.inner = inner
-        self.sleeps: list[float] = []
+        self.sleeps: list[Duration] = []
 
     def current_time_millis_unsafe(self) -> float:
         return self.inner.current_time_millis_unsafe()
@@ -268,9 +268,9 @@ class _RecordingClock:
     def monotonic_nanos_unsafe(self) -> int:
         return self.inner.monotonic_nanos_unsafe()
 
-    def sleep(self, seconds: Duration) -> fx.Effect[None]:
-        self.sleeps.append(seconds)
-        return self.inner.sleep(seconds)
+    def sleep(self, duration: Duration) -> fx.Effect[None]:
+        self.sleeps.append(duration)
+        return self.inner.sleep(duration)
 
 
 @testing.effect
@@ -283,7 +283,7 @@ def test_idle_time_to_live_0_releases_resources_after_a_zero_duration_sleep():
     )
 
     yield from fx.scoped(ref.get())
-    assert clock.sleeps == [0]
+    assert clock.sleeps == [fx.duration.zero]
     assert counter.released == 1
 
 

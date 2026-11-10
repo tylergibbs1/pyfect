@@ -19,7 +19,7 @@ from typing import Any, ClassVar, TypedDict
 import pyfect as fx
 from pyfect import schedule, testing
 from pyfect import schema as S
-from pyfect.duration import Duration, millis
+from pyfect.duration import millis
 from pyfect.latch import Latch
 from pyfect.persistence import persisted_queue as pq
 
@@ -50,7 +50,7 @@ def run(layer: fx.Layer[Any, Any, Any], body: Body) -> None:
 
 
 def live_sleep(seconds: float) -> fx.Effect[None]:
-    return testing.with_live(fx.sleep(Duration(seconds)))
+    return testing.with_live(fx.sleep(fx.duration.seconds(seconds)))
 
 
 class PersistedQueueSuite:

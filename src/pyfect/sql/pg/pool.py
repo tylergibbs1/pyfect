@@ -230,7 +230,7 @@ def _make(config: PgPoolConfig, connects: _Connects) -> Effect[PgPoolService, Sq
         if connection not in checked_out:
             checked_out.add(connection)
             return False
-        return now - opened_at.get(connection, now) >= ttl
+        return now - opened_at.get(connection, now) >= ttl.to_seconds()
 
     def check_out() -> Effect[PgConnection, SqlError, Scope]:
         pool = holder[0]

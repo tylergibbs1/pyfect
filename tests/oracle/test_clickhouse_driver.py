@@ -374,7 +374,7 @@ def test_the_url_sets_credentials_settings_and_headers():
     assert connection.http_headers == {"X-Y": "z"}
     assert (connection.application, connection.session_id) == ("app", "s")
     assert connection.role == ("r1", "r2")
-    assert connection.request_timeout == 1.5
+    assert connection.request_timeout == fx.duration.millis(1500)
     token = clickhouse.ClickhouseClientConfig(access_token=redacted.make("jwt"))
     assert redacted.value(token.connection.authorization) == "Bearer jwt"
     with pytest.raises(ValueError, match="Unknown URL parameters: nope"):

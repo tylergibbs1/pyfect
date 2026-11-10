@@ -16,7 +16,7 @@ from oracle import _redis
 import pyfect as fx
 from pyfect import schedule
 from pyfect import schema as S
-from pyfect.duration import Duration, millis
+from pyfect.duration import millis
 from pyfect.latch import Latch
 from pyfect.persistence import persisted_queue as pq
 from pyfect.sql import sqlite
@@ -173,7 +173,7 @@ def test_retry_delays_replay_the_schedule_on_simulated_time() -> None:
         yield from take_fail
         for delay in (1, 2, 2):
             fiber = yield from take_fail.fork_scoped()
-            yield from fx.testing.adjust(Duration(delay - 0.1))
+            yield from fx.testing.adjust(fx.duration.seconds(delay - 0.1))
             early = fiber.poll_unsafe() is not None
             yield from fx.testing.adjust("100 millis")
             on_time = fiber.poll_unsafe() is not None

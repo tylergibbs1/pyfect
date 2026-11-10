@@ -6,7 +6,6 @@ from typing import Any
 import pytest
 
 import pyfect as fx
-from pyfect.duration import Duration
 from pyfect.reactivity import async_result, atom
 from pyfect.reactivity.async_result import AsyncResult, Failure, Initial, Success
 from pyfect.reactivity.atom_registry import AtomRegistryService
@@ -341,7 +340,9 @@ def _remount(
     r = timers.registry()
     runs = [0]
     base = atom.make(_runs_effect(runs)).keep_alive()
-    swr = base.swr(stale_time=Duration(stale_time), revalidate_on_mount=revalidate_on_mount)
+    swr = base.swr(
+        stale_time=fx.duration.seconds(stale_time), revalidate_on_mount=revalidate_on_mount
+    )
     unmount1 = r.mount(swr)
     _value(r.get(swr), 1)
     assert runs[0] == 1

@@ -12,7 +12,6 @@ from collections.abc import Callable
 
 import pyfect as fx
 from pyfect import clock, schedule, sink, stream, testing
-from pyfect.duration import Duration
 from pyfect.testing import BusyFiberWarning
 
 _MS = 1_000_000
@@ -68,7 +67,7 @@ def test_throttle_shape_releases_a_delayed_chunk_when_its_tokens_are_due():
     times: list[tuple[int, object]] = []
     s = (
         stream.from_iterable([(0.01, (2,)), (0.0, (4, 3, 1))])
-        .map_effect(lambda e: fx.sleep(Duration(e[0])).as_(e[1]))
+        .map_effect(lambda e: fx.sleep(fx.duration.seconds(e[0])).as_(e[1]))
         .flatten_array()
         .throttle(cost=len, units=2, duration="100 millis", burst=2)
         .map_effect(_stamp(times))

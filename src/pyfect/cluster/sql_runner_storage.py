@@ -124,7 +124,7 @@ class _Storage:
             or_else=lambda: sql.literal("CURRENT_TIMESTAMP"),
         )
         self.pg_lock_order = sql.literal('ORDER BY shard_id COLLATE "C"')
-        seconds = sql.unsafe(str(math.ceil(config.shard_lock_expiration)))
+        seconds = sql.unsafe(str(math.ceil(config.shard_lock_expiration.to_seconds())))
         self.expires_seconds = seconds
         now = self.now
         self.lock_expires_at: Fragment = sql.on_dialect_or_else(
@@ -749,9 +749,11 @@ def _acquire_lock_conn(
     along with releasing its locks, even when the setup fails."""
     deadline = effective_interval(config)
     idle_session_timeout = min(
-        math.ceil(config.shard_lock_expiration * 1000), _PG_MAX_IDLE_SESSION_TIMEOUT
+        math.ceil(config.shard_lock_expiration.to_millis()), _PG_MAX_IDLE_SESSION_TIMEOUT
     )
-    wait_timeout = min(max(1, math.ceil(config.shard_lock_expiration)), _MYSQL_MAX_WAIT_TIMEOUT)
+    wait_timeout = min(
+        max(1, math.ceil(config.shard_lock_expiration.to_seconds())), _MYSQL_MAX_WAIT_TIMEOUT
+    )
 
     def on_close(scope: CloseableScope, cleanup: Effect[Any, SqlError]) -> Effect[None]:
         def finalizer(_: Exit[Any, Any]) -> Effect[None]:
