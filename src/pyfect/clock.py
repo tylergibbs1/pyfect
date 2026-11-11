@@ -27,7 +27,8 @@ from pyfect.effect import never
 class ClockService(Protocol):
     def current_time_millis_unsafe(self) -> float:
         """Wall-clock time, milliseconds since the epoch (Effect's
-        ``currentTimeMillisUnsafe``)."""
+        ``currentTimeMillisUnsafe``), always a ``float``: whole on the live
+        clock, as ``Date.now()``."""
         ...
 
     def monotonic_unsafe(self) -> float:
@@ -54,7 +55,7 @@ class LiveClock:
     sleep never wakes and holds no timer (as Effect's)."""
 
     def current_time_millis_unsafe(self) -> float:
-        return time.time_ns() // _NANOS_PER_MILLI
+        return float(time.time_ns() // _NANOS_PER_MILLI)
 
     def monotonic_unsafe(self) -> float:
         return time.monotonic_ns() / _NANOS
@@ -95,7 +96,7 @@ def sleep(duration: DurationInput) -> Effect[None]:
 
 def current_time_millis() -> Effect[float]:
     """Wall-clock time, milliseconds since the epoch (Effect's
-    ``currentTimeMillis``)."""
+    ``currentTimeMillis``), a ``float`` on every clock."""
     return Clock().map(lambda c: c.current_time_millis_unsafe())
 
 

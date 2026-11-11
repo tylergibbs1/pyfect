@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.5.5 (unreleased)
+
+### Changed
+
+- `config.duration(...)` returns a `config.DurationConfig`, a `Config[Duration]` whose
+  `with_default` also takes a duration input: `with_default("1 second")` is a
+  `Config[Duration]` (it was `Config[Duration | str]` and gave the string), and an invalid one
+  raises when it is given. `nested` keeps it a `DurationConfig`.
+- `clock.current_time_millis()` is a `float` on the live clock too (whole milliseconds, as
+  `Date.now()`); it was an `int` there and a `float` under the `TestClock`.
+
+### Added
+
+- HTTP server guide: serving WebSockets with `request.upgrade`, and Effect's rules for them: the
+  socket opens only when its reader is taken (a handler that only writes hangs), a write after
+  the reader's scope closes waits forever, and a normal close fails `reader.pull` and
+  `to_stream` with code 1000.
+- Streams guide: `throttle` (the bucket starts at `units`; `"enforce"` keeps or drops whole
+  chunks), `group_by` / `group_by_key` (one slow group stalls every key), `broadcast`,
+  `broadcast_n` and `share` (capacity counts chunks), with checked examples; no operator
+  reports its drops, as in Effect; `ndjson.decode` fails the whole stream at a bad line.
+
 ## 0.5.3 (2026-11-10)
 
 ### Changed

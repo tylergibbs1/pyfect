@@ -106,6 +106,23 @@ def test_duration_rejects_other_spellings(text: str):
     )
 
 
+def test_a_duration_default_is_a_duration_parsed_when_given():
+    """A duration config's default may be any duration input (dogfood sluice:
+    ``with_default("1 second")`` read as the string); a bad one raises at once."""
+    timeout = config.duration("a")
+    absent = cp.from_unknown({})
+    second = fx.duration.seconds(1)
+    assert _parse(timeout.with_default("1 second"), absent) == fx.Ok(second)
+    assert _parse(timeout.with_default(fx.duration.millis(1000)), absent) == fx.Ok(second)
+    assert _parse(timeout.nested("b").with_default("1 second"), absent) == fx.Ok(second)
+    assert _parse(timeout.with_default(None), absent) == fx.Ok(None)
+    assert _parse(timeout.with_default("1 second"), _at_a("2 seconds")) == fx.Ok(
+        fx.duration.seconds(2)
+    )
+    with pytest.raises(ValueError, match="Invalid Input"):
+        timeout.with_default("1 secnd")
+
+
 @pytest.mark.parametrize(
     ("text", "size"),
     [

@@ -60,7 +60,63 @@ filling memory.
 <Diagram name="stream-pipeline" title="The pipeline's stages from byte chunks to the sink, which pulls from upstream" />
 
 `fx.encoding` has framers for NDJSON, JSON arrays and Server-Sent Events, and channels for CSV,
-XML, zip and tar, below.
+XML, zip and tar, below. As in Effect, `ndjson.decode()` fails the whole stream at the first
+line that isn't JSON; to skip bad lines, read text lines (`decode_text().split_lines()`) and
+parse each one yourself.
+
+## Keys, rates and fan-out
+
+Each operator below matches Effect's, including the rules that are easy to miss.
+
+**Rates.** `throttle(cost=..., units=n, duration=...)` spends tokens from a bucket that refills
+`n` per `duration` and holds up to `units + burst`. It starts with `units` tokens, not the
+full `units + burst`. `"shape"` delays a chunk until it can pay; `"enforce"` drops it, so a
+whole chunk is kept or dropped, never part of one.
+
+<CodeOutput>
+
+<include meta='title="throttle.py"'>../../snippets/streams/throttle.py</include>
+
+<include lang="text">../../snippets/streams/throttle.out</include>
+
+</CodeOutput>
+
+**Keys.** `group_by_key(f)` writes `(key, group)` the first time a key appears, with `group`
+the stream of that key's items (`group_by` does the same with an effect that gives a key and
+a value). Run the groups concurrently, with `flat_map(..., concurrency="unbounded")`. Each
+group buffers up to `buffer_size` items (4096 by default), and while one is full the upstream
+waits. So one slow group stalls every key. A `buffer` with a `"dropping"` or `"sliding"`
+strategy on the slow group keeps the others moving.
+
+<CodeOutput>
+
+<include meta='title="groups.py"'>../../snippets/streams/groups.py</include>
+
+<include lang="text">../../snippets/streams/groups.out</include>
+
+</CodeOutput>
+
+**Fan-out.** `broadcast_n(n, capacity=...)` gives `n` streams of the same items, subscribed
+before the upstream starts. `broadcast(capacity=...)` gives one stream that many readers can
+run, each from the moment it starts (plus the last `replay` chunks). `share(...)` is a
+`broadcast` that starts the upstream with its first reader and stops it after its last
+(`idle_time_to_live` keeps it running for a later one). All three run in the current scope,
+and `capacity` counts chunks, not items. With `"suspend"` (the default) the upstream stays at
+most `capacity` chunks ahead of the slowest reader; `"dropping"` and `"sliding"` drop chunks
+for a slow reader instead.
+
+<CodeOutput>
+
+<include meta='title="fanout.py"'>../../snippets/streams/fanout.py</include>
+
+<include lang="text">../../snippets/streams/fanout.out</include>
+
+</CodeOutput>
+
+None of these operators reports what it drops (the `"enforce"` throttle, a dropping or sliding
+`buffer` or broadcast, a sliding `Queue`), and Effect has no hook for it either. To count drops,
+compare counts before and after the stage, or use a dropping `Queue`, whose `offer_all` returns
+the items it refused.
 
 ## CSV
 
