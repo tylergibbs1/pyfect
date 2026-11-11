@@ -9,6 +9,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
 import pytest
+from _threads import live_threads
 
 import pyfect as fx
 from pyfect import testing
@@ -131,9 +132,8 @@ def test_httpx_interrupt_closes_the_connection(hanging_server: str) -> None:
 
 
 def _wait_for_loop_threads() -> None:
-    for thread in threading.enumerate():
-        if thread.name == "pyfect-httpx":
-            thread.join(2)
+    for thread in live_threads("pyfect-httpx"):
+        thread.join(2)
 
 
 def test_httpx_unread_response_after_the_layer_closed(hanging_server: str) -> None:
