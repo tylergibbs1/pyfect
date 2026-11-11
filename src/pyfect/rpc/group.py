@@ -21,7 +21,18 @@ from __future__ import annotations
 
 import types
 from collections.abc import Callable, Mapping
-from typing import Any, ClassVar, Never, Protocol, Self, cast, get_args, get_origin, overload
+from typing import (
+    Any,
+    ClassVar,
+    Generic,
+    Never,
+    Self,
+    TypeVar,
+    cast,
+    get_args,
+    get_origin,
+    overload,
+)
 
 from pyfect._core import Effect
 from pyfect._effect_args import require_effect
@@ -33,6 +44,7 @@ from pyfect.layer import Layer
 from pyfect.layer import effect_context as layer_effect_context
 from pyfect.queue import Dequeue
 from pyfect.rpc._rpc import AnyRpc, HandlerEntry, Rpc, RpcRequest, StreamRpc, handler_tag
+from pyfect.rpc._tags import Tags_contra, check_listed_tags
 from pyfect.rpc.middleware import RpcMiddleware
 from pyfect.scope import Scope
 from pyfect.stream import Stream
@@ -49,14 +61,29 @@ class HandlersFor[G](ServiceMarker):
 
 type HandlerFn = Callable[[RpcRequest[Any]], Any]
 
+G_co = TypeVar("G_co", covariant=True)
+R_co = TypeVar("R_co", covariant=True, default=Never)
+H = TypeVar("H", default=Never)
+X_co = TypeVar("X_co", covariant=True)
+S_contra = TypeVar("S_contra", contravariant=True)
+A_contra = TypeVar("A_contra", contravariant=True)
+E = TypeVar("E")
+E_contra = TypeVar("E_contra", contravariant=True)
+MP_contra = TypeVar("MP_contra", contravariant=True)
+K = TypeVar("K")
+RR_co = TypeVar("RR_co", covariant=True)
+GM_co = TypeVar("GM_co", covariant=True)
 
-class Handlers[G, R = Never]:
-    """The handlers of the group ``G`` so far, needing ``R``. Immutable:
+
+class Handlers(Generic[G_co, R_co, H]):
+    """The handlers of the group ``G`` so far, needing ``R``; ``H`` is the
+    tags of the RPCs still without one, for a group that lists its tags
+    (``Never`` once all have one, and for a group that does not). Immutable:
     ``handle`` gives a new one."""
 
     __slots__ = ("_by_tag", "group")
 
-    def __init__(self, group: type[RpcGroup], by_tag: Mapping[str, HandlerFn]) -> None:
+    def __init__(self, group: type[RpcGroup[Any]], by_tag: Mapping[str, HandlerFn]) -> None:
         self.group = group
         self._by_tag = dict(by_tag)
 
@@ -65,84 +92,207 @@ class Handlers[G, R = Never]:
         return self._by_tag
 
     @overload
-    def handle[P, S, E](
-        self, rpc: Rpc[P, S, E, Never], /
-    ) -> Bound[G, RpcRequest[P], S, E, Never, R]: ...
+    def handle[P, S, E1, T: str](
+        self, rpc: Rpc[P, S, E1, Never, Never, T], /
+    ) -> Bound[G_co, RpcRequest[P], S, E1, Never, R_co, T, H]: ...
     @overload
-    def handle[P, S, E, MP, ME, MT](
-        self, rpc: Rpc[P, S, E, RpcMiddleware[MP, ME, Any], MT], /
-    ) -> Bound[G, RpcRequest[P], S, E | ME, MP, R | MT]: ...
+    def handle[P, S, E1, MP, ME, MT, T: str](
+        self, rpc: Rpc[P, S, E1, RpcMiddleware[MP, ME, Any], MT, T], /
+    ) -> Bound[G_co, RpcRequest[P], S, E1 | ME, MP, R_co | MT, T, H]: ...
     @overload
-    def handle[P, A, E](
-        self, rpc: StreamRpc[P, A, E, Never], /
-    ) -> StreamBound[G, RpcRequest[P], A, E, Never, R]: ...
+    def handle[P, A, E1, T: str](
+        self, rpc: StreamRpc[P, A, E1, Never, Never, T], /
+    ) -> StreamBound[G_co, RpcRequest[P], A, E1, Never, R_co, T, H]: ...
     @overload
-    def handle[P, A, E, MP, ME, MT](
-        self, rpc: StreamRpc[P, A, E, RpcMiddleware[MP, ME, Any], MT], /
-    ) -> StreamBound[G, RpcRequest[P], A, E | ME, MP, R | MT]: ...
+    def handle[P, A, E1, MP, ME, MT, T: str](
+        self, rpc: StreamRpc[P, A, E1, RpcMiddleware[MP, ME, Any], MT, T], /
+    ) -> StreamBound[G_co, RpcRequest[P], A, E1 | ME, MP, R_co | MT, T, H]: ...
     def handle(self, rpc: AnyRpc, /) -> Any:
         """The slot of ``rpc``'s handler: call it with the handler, which
         gets the request (payload, headers, client, ...) and returns the
         effect to run (for a stream RPC, a stream or a scoped queue). The
         services ``rpc``'s middleware provides are removed from the
-        handler's requirements, and the middleware is required instead."""
+        handler's requirements, and the middleware is required instead.
+        In a group that lists its tags, giving a handler to an RPC that
+        already has one, or is not in the group, is a pyright error."""
         if self.group.rpcs.get(rpc.tag) is not rpc:
             raise ValueError(f"{rpc.tag!r} is not an RPC of {self.group.__name__}")
-        return _Slot(self, rpc)
+        slot: type[_Slot] = StreamBound if rpc.is_stream else Bound
+        return cast("Any", slot(self, rpc))
 
-    def _register(self, rpc: AnyRpc, handler: HandlerFn) -> Handlers[Any, Any]:
+    def _register(self, rpc: AnyRpc, handler: HandlerFn) -> Handlers[Any, Any, Any]:
         return Handlers(self.group, {**self._by_tag, rpc.tag: handler})
 
 
 class _Slot:
-    __slots__ = ("handlers", "rpc")
+    """Registers the handler it is called with (``Bound`` / ``StreamBound``)."""
 
-    def __init__(self, handlers: Handlers[Any, Any], rpc: AnyRpc) -> None:
-        self.handlers = handlers
-        self.rpc = rpc
+    __slots__ = ("_handlers", "_rpc")
 
-    def __call__(self, handler: HandlerFn, /) -> Handlers[Any, Any]:
-        return self.handlers._register(self.rpc, handler)  # pyright: ignore[reportPrivateUsage]
+    def __init__(self, handlers: Handlers[Any, Any, Any], rpc: AnyRpc) -> None:
+        self._handlers = handlers
+        self._rpc = rpc
+
+    def __call__(self, handler: HandlerFn, /) -> Any:
+        return self._handlers._register(self._rpc, handler)  # pyright: ignore[reportPrivateUsage]
 
 
-class Bound[G, X, S, E, MP, RR](Protocol):
+# Each slot's overloads come in three pairs, by the tags ``H`` still without a
+# handler: ``K`` alone (the last), ``K`` among others (pyright solves ``Rest``
+# as the others), or ``Never`` (all handled, or a group not listing its tags).
+# An RPC already handled matches none. In each pair the first solves a handler
+# needing only ``MP``; the second alone would leave ``R1`` Unknown.
+
+
+class Bound(_Slot, Generic[G_co, X_co, S_contra, E, MP_contra, RR_co, K, H]):
     """The handler slot of a unary RPC: request ``X``, success ``S``,
-    errors ``E``; its middleware provides ``MP``; ``RR`` is what the
-    handlers need so far. They are fixed by ``handle``, before the handler
-    is seen (in one call ``MP`` would be solved from the handler too)."""
+    errors ``E``; its middleware provides ``MP``; ``R`` is what the
+    handlers need so far; ``K`` is the RPC's tag and ``H`` the tags still
+    without a handler. They are fixed by ``handle``, before the handler is
+    seen (in one call ``MP`` would be solved from the handler too)."""
+
+    __slots__ = ()
 
     @overload
     def __call__(
-        self, handler: Callable[[X], Effect[S | Deferred[S, E], E, MP]], /
-    ) -> Handlers[G, RR]: ...
+        self: Bound[G_co, X_co, S_contra, E, MP_contra, RR_co, K, K],
+        handler: Callable[[X_co], Effect[S_contra | Deferred[S_contra, E], E, MP_contra]],
+        /,
+    ) -> Handlers[G_co, RR_co]: ...
     @overload
     def __call__[R1](
-        self, handler: Callable[[X], Effect[S | Deferred[S, E], E, R1 | MP]], /
-    ) -> Handlers[G, RR | R1]: ...
+        self: Bound[G_co, X_co, S_contra, E, MP_contra, RR_co, K, K],
+        handler: Callable[[X_co], Effect[S_contra | Deferred[S_contra, E], E, R1 | MP_contra]],
+        /,
+    ) -> Handlers[G_co, RR_co | R1]: ...
+    @overload
+    def __call__[Rest](
+        self: Bound[G_co, X_co, S_contra, E, MP_contra, RR_co, K, K | Rest],
+        handler: Callable[[X_co], Effect[S_contra | Deferred[S_contra, E], E, MP_contra]],
+        /,
+    ) -> Handlers[G_co, RR_co, Rest]: ...
+    @overload
+    def __call__[R1, Rest](
+        self: Bound[G_co, X_co, S_contra, E, MP_contra, RR_co, K, K | Rest],
+        handler: Callable[[X_co], Effect[S_contra | Deferred[S_contra, E], E, R1 | MP_contra]],
+        /,
+    ) -> Handlers[G_co, RR_co | R1, Rest]: ...
+    @overload
+    def __call__(
+        self: Bound[G_co, X_co, S_contra, E, MP_contra, RR_co, K, Never],
+        handler: Callable[[X_co], Effect[S_contra | Deferred[S_contra, E], E, MP_contra]],
+        /,
+    ) -> Handlers[G_co, RR_co]: ...
+    @overload
+    def __call__[R1](
+        self: Bound[G_co, X_co, S_contra, E, MP_contra, RR_co, K, Never],
+        handler: Callable[[X_co], Effect[S_contra | Deferred[S_contra, E], E, R1 | MP_contra]],
+        /,
+    ) -> Handlers[G_co, RR_co | R1]: ...
+    def __call__(self: Bound[Any, Any, Any, Any, Any, Any, Any, Any], handler: Any, /) -> Any:
+        return _Slot.__call__(self, handler)
 
 
-class StreamBound[G, X, A, E, MP, RR](Protocol):
+class StreamBound(_Slot, Generic[G_co, X_co, A_contra, E_contra, MP_contra, RR_co, K, H]):
     """The handler slot of a stream RPC (see ``Bound``): the handler gives
     a stream, or a scoped queue that ends with ``Done``."""
 
-    @overload
-    def __call__(self, handler: Callable[[X], Stream[A, E, MP]], /) -> Handlers[G, RR]: ...
-    @overload
-    def __call__[R1](
-        self, handler: Callable[[X], Stream[A, E, R1 | MP]], /
-    ) -> Handlers[G, RR | R1]: ...
+    __slots__ = ()
+
     @overload
     def __call__(
-        self, handler: Callable[[X], Effect[Dequeue[A, E | Done], E, MP | Scope]], /
-    ) -> Handlers[G, RR]: ...
+        self: StreamBound[G_co, X_co, A_contra, E_contra, MP_contra, RR_co, K, K],
+        handler: Callable[[X_co], Stream[A_contra, E_contra, MP_contra]],
+        /,
+    ) -> Handlers[G_co, RR_co]: ...
     @overload
     def __call__[R1](
-        self, handler: Callable[[X], Effect[Dequeue[A, E | Done], E, R1 | MP | Scope]], /
-    ) -> Handlers[G, RR | R1]: ...
+        self: StreamBound[G_co, X_co, A_contra, E_contra, MP_contra, RR_co, K, K],
+        handler: Callable[[X_co], Stream[A_contra, E_contra, R1 | MP_contra]],
+        /,
+    ) -> Handlers[G_co, RR_co | R1]: ...
+    @overload
+    def __call__(
+        self: StreamBound[G_co, X_co, A_contra, E_contra, MP_contra, RR_co, K, K],
+        handler: Callable[
+            [X_co], Effect[Dequeue[A_contra, E_contra | Done], E_contra, MP_contra | Scope]
+        ],
+        /,
+    ) -> Handlers[G_co, RR_co]: ...
+    @overload
+    def __call__[R1](
+        self: StreamBound[G_co, X_co, A_contra, E_contra, MP_contra, RR_co, K, K],
+        handler: Callable[
+            [X_co], Effect[Dequeue[A_contra, E_contra | Done], E_contra, R1 | MP_contra | Scope]
+        ],
+        /,
+    ) -> Handlers[G_co, RR_co | R1]: ...
+    @overload
+    def __call__[Rest](
+        self: StreamBound[G_co, X_co, A_contra, E_contra, MP_contra, RR_co, K, K | Rest],
+        handler: Callable[[X_co], Stream[A_contra, E_contra, MP_contra]],
+        /,
+    ) -> Handlers[G_co, RR_co, Rest]: ...
+    @overload
+    def __call__[R1, Rest](
+        self: StreamBound[G_co, X_co, A_contra, E_contra, MP_contra, RR_co, K, K | Rest],
+        handler: Callable[[X_co], Stream[A_contra, E_contra, R1 | MP_contra]],
+        /,
+    ) -> Handlers[G_co, RR_co | R1, Rest]: ...
+    @overload
+    def __call__[Rest](
+        self: StreamBound[G_co, X_co, A_contra, E_contra, MP_contra, RR_co, K, K | Rest],
+        handler: Callable[
+            [X_co], Effect[Dequeue[A_contra, E_contra | Done], E_contra, MP_contra | Scope]
+        ],
+        /,
+    ) -> Handlers[G_co, RR_co, Rest]: ...
+    @overload
+    def __call__[R1, Rest](
+        self: StreamBound[G_co, X_co, A_contra, E_contra, MP_contra, RR_co, K, K | Rest],
+        handler: Callable[
+            [X_co], Effect[Dequeue[A_contra, E_contra | Done], E_contra, R1 | MP_contra | Scope]
+        ],
+        /,
+    ) -> Handlers[G_co, RR_co | R1, Rest]: ...
+    @overload
+    def __call__(
+        self: StreamBound[G_co, X_co, A_contra, E_contra, MP_contra, RR_co, K, Never],
+        handler: Callable[[X_co], Stream[A_contra, E_contra, MP_contra]],
+        /,
+    ) -> Handlers[G_co, RR_co]: ...
+    @overload
+    def __call__[R1](
+        self: StreamBound[G_co, X_co, A_contra, E_contra, MP_contra, RR_co, K, Never],
+        handler: Callable[[X_co], Stream[A_contra, E_contra, R1 | MP_contra]],
+        /,
+    ) -> Handlers[G_co, RR_co | R1]: ...
+    @overload
+    def __call__(
+        self: StreamBound[G_co, X_co, A_contra, E_contra, MP_contra, RR_co, K, Never],
+        handler: Callable[
+            [X_co], Effect[Dequeue[A_contra, E_contra | Done], E_contra, MP_contra | Scope]
+        ],
+        /,
+    ) -> Handlers[G_co, RR_co]: ...
+    @overload
+    def __call__[R1](
+        self: StreamBound[G_co, X_co, A_contra, E_contra, MP_contra, RR_co, K, Never],
+        handler: Callable[
+            [X_co], Effect[Dequeue[A_contra, E_contra | Done], E_contra, R1 | MP_contra | Scope]
+        ],
+        /,
+    ) -> Handlers[G_co, RR_co | R1]: ...
+    def __call__(self: StreamBound[Any, Any, Any, Any, Any, Any, Any, Any], handler: Any, /) -> Any:
+        return _Slot.__call__(self, handler)
 
 
-class RpcGroup:
-    """A group of RPCs: subclass it with the RPCs as attributes."""
+class RpcGroup(Generic[Tags_contra]):
+    """A group of RPCs: subclass it with the RPCs as attributes. A group
+    listing its RPCs' tags, ``class Users(RpcGroup[Literal["GetUser",
+    "Users"]])``, has its handlers checked by pyright: ``to_layer`` rejects
+    them while an RPC has none (Effect's ``toLayer``). The class is checked
+    against the list when it is defined."""
 
     rpcs: ClassVar[Mapping[str, AnyRpc]] = {}
     _wraps_rpcs: ClassVar[bool] = False
@@ -160,18 +310,21 @@ class RpcGroup:
                 if isinstance(value, AnyRpc):
                     found[value.tag] = value
         cls.rpcs = found
+        check_listed_tags(cls, RpcGroup, found)
 
     @classmethod
-    def handlers(cls) -> Handlers[Self]:
+    def handlers(cls) -> Handlers[Self, Never, Tags_contra]:
         """No handlers yet: add one per RPC with ``handle``."""
         return Handlers(cls, {})
 
     @classmethod
-    def to_layer[R](cls, handlers: Handlers[Self, R], /) -> Layer[HandlersFor[Self], Never, R]:
+    def to_layer[R](
+        cls, handlers: Handlers[Self, R, Never], /
+    ) -> Layer[HandlersFor[Self], Never, R]:
         """The layer of the group's handlers (Effect's ``toLayer``). Each
         handler runs with the services of the layer's context. An RPC left
-        without a handler is a ``ValueError`` here (Effect rejects it at
-        compile time; pyright cannot name the RPCs not yet handled)."""
+        without a handler is a pyright error when the group lists its tags
+        (``RpcGroup[Literal[...]]``), and a ``ValueError`` here either way."""
         message = cls._missing_handlers(handlers)
         if message is not None:
             raise ValueError(message)
@@ -190,7 +343,7 @@ class RpcGroup:
 
     @classmethod
     def to_layer_effect[EX, RR = Never](
-        cls, handlers: Effect[Handlers[Self, RR], EX, RR], /
+        cls, handlers: Effect[Handlers[Self, RR, Never], EX, RR], /
     ) -> Layer[HandlersFor[Self], EX, RR]:
         """``to_layer`` with the handlers made by an effect."""
         require_effect(handlers, "handlers")
@@ -271,7 +424,7 @@ def _add_middleware(group: type[RpcGroup], middleware: Any) -> None:
             setattr(group, name, value.with_middleware(middleware))
 
 
-class RpcGroupWith[GM](RpcGroup):
+class RpcGroupWith(RpcGroup[Tags_contra], Generic[GM_co, Tags_contra]):
     """A group whose RPCs are all wrapped by ``GM`` (Effect's
     ``RpcGroup.middleware``)::
 

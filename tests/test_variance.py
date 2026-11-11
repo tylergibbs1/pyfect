@@ -51,16 +51,6 @@ ROOT = Path(__file__).parent.parent
 PROBE = Path(__file__).parent / "_variance_probe.py"
 IGNORE = "  # pyright: ignore[reportReturnType]"
 
-# Writable attributes of classes with declared variance, which the protocol check
-# reads as properties. They become ``Final`` in 0.6.0: making them read-only in a
-# patch release would reject code that assigns them.
-WRITABLE_UNTIL_0_6 = frozenset(
-    {
-        "pyfect.reactivity.atom._types.Atom.read",
-        "pyfect.reactivity.atom._types.Writable.write",
-    }
-)
-
 type Param = TypeVar | ParamSpec | TypeVarTuple
 type Direction = Literal["out", "in"]
 
@@ -378,8 +368,7 @@ def _fields_protocol(i: int, generic: GenericClass) -> str | None:
         own = names if attribute.owner is generic.cls else {}
         hidden = {p.__name__: _arg(p) for p in _own_params(attribute.owner)}
         spelled = _qualify(attribute.annotation, attribute.module, {**hidden, **own})
-        key = f"{attribute.module.__name__}.{attribute.owner.__qualname__}.{name}"
-        if attribute.read_only or key in WRITABLE_UNTIL_0_6:
+        if attribute.read_only:
             lines += ["    @property", f"    def {name}(self) -> {spelled}: ..."]
         else:
             lines.append(f"    {name}: {spelled}")
@@ -510,6 +499,29 @@ def test_the_probe_is_generated_from_the_table():
     if os.environ.get("UPDATE_VARIANCE_PROBE"):
         PROBE.write_text(text)
     assert PROBE.read_text() == text, "run UPDATE_VARIANCE_PROBE=1 pytest tests/test_variance.py"
+
+
+def _slots(cls: type) -> set[str]:
+    slots = vars(cls).get("__slots__", ())
+    return {slots} if isinstance(slots, str) else set(slots)
+
+
+def test_no_final_public_slot_in_a_class_with_inferred_variance():
+    """Pyright reads a slot as a writable descriptor, so ``self.x: Final`` on a slot keeps
+    the PEP 695 parameters ``x`` uses invariant. A read-only attribute of such a class is a
+    private slot behind a ``@property`` (Effect's ``readonly``)."""
+    offenders = [
+        f"{generic.path}.{node.target.attr}"
+        for generic in public_generic_classes()
+        if all(getattr(p, "__infer_variance__", False) for p in generic.params)
+        for node in ast.walk(_class_node(generic.cls)[0])
+        if isinstance(node, ast.AnnAssign)
+        and isinstance(node.target, ast.Attribute)
+        and node.target.attr in _slots(generic.cls)
+        and not node.target.attr.startswith("_")
+        and _unwrap(node.annotation)[1]
+    ]
+    assert not offenders
 
 
 if __name__ == "__main__":

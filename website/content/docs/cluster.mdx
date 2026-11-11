@@ -18,6 +18,10 @@ running, holding its state, until it has been idle for `max_idle_time`. An entit
 one message at a time unless `to_layer` is given a `concurrency`. `Counter.client()` is an
 effect giving a function from an entity id to a client whose methods are the RPCs, with
 payload, result and error typed from their schemas; it works the same from any runner.
+`class Counter(Entity[Literal["Increment", "Get"]])` lists its RPCs' tags, so pyright rejects
+`Counter.to_layer(handlers)` while one has no handler, as with an
+[RPC group](/docs/rpc#define-serve-and-call-a-group); unlisted, `to_layer` raises a
+`ValueError` for it.
 
 <CodeOutput>
 

@@ -86,7 +86,7 @@ class DurableQueue[P, A = None, E = Never]:
     """A queue of ``P`` items whose workers succeed with ``A`` or fail with
     ``E``. Make one with ``make``."""
 
-    __slots__ = ("deferred", "idempotency_key", "name", "payload_schema")
+    __slots__ = ("_deferred", "_idempotency_key", "_name", "_payload_schema")
 
     def __init__(
         self,
@@ -96,10 +96,30 @@ class DurableQueue[P, A = None, E = Never]:
         idempotency_key: Callable[[P], str],
         deferred: DurableDeferred[A, E],
     ) -> None:
-        self.name = name
-        self.payload_schema = payload_schema
-        self.idempotency_key = idempotency_key
-        self.deferred = deferred
+        self._name = name
+        self._payload_schema = payload_schema
+        self._idempotency_key = idempotency_key
+        self._deferred = deferred
+
+    @property
+    def name(self) -> str:
+        """The queue's name."""
+        return self._name
+
+    @property
+    def payload_schema(self) -> Codec[P, Any, Never, Never]:
+        """The schema of the queued items."""
+        return self._payload_schema
+
+    @property
+    def idempotency_key(self) -> Callable[[P], str]:
+        """The key that identifies an item, so offering it twice queues it once."""
+        return self._idempotency_key
+
+    @property
+    def deferred(self) -> DurableDeferred[A, E]:
+        """The deferred a worker answers an item through."""
+        return self._deferred
 
     def __repr__(self) -> str:
         return f"DurableQueue({self.name!r})"
@@ -110,7 +130,9 @@ class DurableQueue[P, A = None, E = Never]:
             name, success=self.deferred.success_schema, error=self.deferred.error_schema
         )
 
-    def _item_done(self, token: Token, exit: Exit[A, E]) -> Effect[None, Never, WorkflowEngine]:
+    def _item_done[A2, E2](
+        self: DurableQueue[P, A2, E2], token: Token, exit: Exit[A2, E2]
+    ) -> Effect[None, Never, WorkflowEngine]:
         """Answer the item ``token`` names, through its own deferred (a
         deferred refuses a token naming another one)."""
         return self._item_deferred(TokenParsed.from_string(token).deferred_name).done(
@@ -174,9 +196,9 @@ class DurableQueue[P, A = None, E = Never]:
 
         return gen(body)
 
-    def make_worker[R = Never](
-        self,
-        f: Callable[[P], Effect[A, E, R]],
+    def make_worker[A2, E2, R = Never](
+        self: DurableQueue[P, A2, E2],
+        f: Callable[[P], Effect[A2, E2, R]],
         *,
         concurrency: int = 1,
     ) -> Effect[Never, Never, WorkflowEngine | PersistedQueueFactory | R]:
@@ -226,8 +248,8 @@ class DurableQueue[P, A = None, E = Never]:
 
         return gen(body)
 
-    def worker[R = Never](
-        self, f: Callable[[P], Effect[A, E, R]], *, concurrency: int = 1
+    def worker[A2, E2, R = Never](
+        self: DurableQueue[P, A2, E2], f: Callable[[P], Effect[A2, E2, R]], *, concurrency: int = 1
     ) -> Layer[Never, Never, WorkflowEngine | PersistedQueueFactory | R]:
         """A layer running ``make_worker`` in the background."""
         started: Effect[object, Never, Any] = self.make_worker(
