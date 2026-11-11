@@ -37,6 +37,7 @@
 - `router.add_all([...])` takes a list mixing routes of different error or requirement types:
   `Route` is now covariant (pyright inferred a frozen dataclass's parameters as invariant), so
   such a list matched no overload.
+
 ## 0.5.4 (2026-11-10)
 
 ### Fixed
