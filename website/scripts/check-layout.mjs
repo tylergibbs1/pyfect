@@ -6,6 +6,7 @@
 // Runs against the production build (`bun run build` first). Uses the installed
 // Google Chrome, so no browser download is needed (GitHub's Ubuntu runners have it).
 import { spawn } from 'node:child_process';
+import { createServer } from 'node:http';
 import { chromium } from 'playwright-core';
 
 const PORT = 3199;
@@ -18,6 +19,14 @@ const PAGES = {
 const WIDTHS = [1512, 1280, 1024, 390];
 /** How late the fonts arrive in the late-font pass, in ms: well after the first paint. */
 const FONT_DELAY = 1000;
+/**
+ * The streamed pass sends each page's HTML in chunks this size with a pause between them, so
+ * the browser paints it part-parsed, as it does on a slow connection. These pages are large
+ * (up to a few MB), and something laid out by an element that comes later in the document
+ * moves when that element arrives; without the pauses that happened only on some runs.
+ */
+const STREAM_CHUNK = 32 * 1024;
+const STREAM_PAUSE = 40;
 
 /** Positions that must match across page types. */
 function measure() {
@@ -70,6 +79,31 @@ async function startServer() {
   throw new Error('next start did not come up; run `bun run build` first');
 }
 
+/** A proxy to the site that streams HTML documents slowly (see STREAM_CHUNK). */
+async function startStreamingProxy() {
+  const proxy = createServer(async (req, res) => {
+    const headers = { ...req.headers };
+    delete headers.host;
+    delete headers['accept-encoding'];
+    const upstream = await fetch(BASE + req.url, { headers });
+    const type = upstream.headers.get('content-type') ?? '';
+    const body = Buffer.from(await upstream.arrayBuffer());
+    res.writeHead(upstream.status, { 'content-type': type, 'cache-control': 'no-store' });
+    // only the page itself; the router's prefetches and assets come at full speed
+    if (req.headers['sec-fetch-dest'] !== 'document') {
+      res.end(body);
+      return;
+    }
+    for (let at = 0; at < body.length; at += STREAM_CHUNK) {
+      res.write(body.subarray(at, at + STREAM_CHUNK));
+      await new Promise((r) => setTimeout(r, STREAM_PAUSE));
+    }
+    res.end();
+  });
+  await new Promise((r) => proxy.listen(0, r));
+  return { proxy, base: `http://localhost:${proxy.address().port}` };
+}
+
 const failures = [];
 const same = (what, a, b) => {
   if (JSON.stringify(a) !== JSON.stringify(b)) {
@@ -78,6 +112,7 @@ const same = (what, a, b) => {
 };
 
 const server = await startServer();
+const { proxy, base: STREAMED_BASE } = await startStreamingProxy();
 const browser = await chromium.launch({ channel: 'chrome' });
 try {
   for (const width of WIDTHS) {
@@ -153,9 +188,25 @@ try {
       }
     }
     await late.close();
+
+    // Each page painted while its HTML is still arriving: nothing already painted may move.
+    const streamed = await browser.newContext({ viewport: { width, height: 900 } });
+    await streamed.addInitScript(recordShifts);
+    const streamedPage = await streamed.newPage();
+    for (const path of Object.values(PAGES)) {
+      await streamedPage.goto(STREAMED_BASE + path, { waitUntil: 'networkidle' });
+      await streamedPage.evaluate(() => document.fonts.ready);
+      await settle(streamedPage);
+      const shifts = await streamedPage.evaluate(() => window.__shifts);
+      if (shifts.length > 0) {
+        failures.push(`${width}px ${path}: layout shift while the page streams in ${JSON.stringify(shifts)}`);
+      }
+    }
+    await streamed.close();
   }
 } finally {
   await browser.close();
+  proxy.close();
   server.kill();
 }
 
