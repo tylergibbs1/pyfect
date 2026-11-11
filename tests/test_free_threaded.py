@@ -59,6 +59,38 @@ def test_the_cross_thread_stress_passes_without_the_gil(tmp_path: Path):
     assert done.returncode == 0, done.stdout + done.stderr[-4000:]
 
 
+ADJUST_WARNING = Path(__file__).parent / "free_threaded" / "adjust_warning.py"
+
+
+@pytest.mark.parametrize("which", ["free-threaded", "this interpreter"])
+def test_adjust_warns_in_the_callers_context(tmp_path: Path, which: str):
+    """Warning filters are per context without the GIL: `adjust` must warn in its fiber's."""
+    if which == "this interpreter":
+        python = sys.executable
+        env = dict(os.environ)
+    else:
+        found = _free_threaded_python()
+        if found is None:
+            if os.environ.get("PYFECT_REQUIRE_FREE_THREADED"):
+                pytest.fail("PYFECT_REQUIRE_FREE_THREADED is set but uv finds no CPython 3.14t")
+            pytest.skip("no free-threaded CPython 3.14t (uv python install 3.14t)")
+        python = found
+        import typing_extensions
+
+        shutil.copy(typing_extensions.__file__, tmp_path)
+        path = os.pathsep.join([str(ROOT / "src"), str(tmp_path)])
+        env = {**os.environ, "PYTHONPATH": path, "PYTHON_GIL": "0", "PYTHONDONTWRITEBYTECODE": "1"}
+    done = subprocess.run(
+        [python, "-B", str(ADJUST_WARNING)],
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=120,
+        check=False,
+    )
+    assert done.returncode == 0, done.stdout + done.stderr[-4000:]
+
+
 def test_the_stress_also_passes_here():
     """The same invariants on this interpreter (normally with the GIL)."""
     done = subprocess.run(

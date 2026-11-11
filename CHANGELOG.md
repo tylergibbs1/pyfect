@@ -36,6 +36,12 @@
 
 ### Fixed
 
+- The `TestClock`'s warnings reach a `warnings.catch_warnings()` or `pytest.warns` around the
+  code that caused them again on free-threaded Python, where warning filters are per context
+  (a 0.5.4 regression): `adjust`'s `BusyFiberWarning` is raised by the adjusting fiber, and
+  the not-advancing warning in the context of the sleep that armed it, as Effect's warning
+  fiber inherits it. A timer callback that warns in its own context is a test failure
+  (`tests/test_timer_warnings.py`).
 - `sql.model.make_repository(...).insert` works on SQL Server: the insert asks the statement
   compiler for its row (`sql.insert(row).returning("*")`, as Effect's `SqlModel` does), which
   SQL Server writes as `OUTPUT INSERTED.*`, where the model sent its own `returning *`.

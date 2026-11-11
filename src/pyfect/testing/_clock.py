@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import contextvars
 import heapq
 import itertools
 import math
@@ -102,9 +103,13 @@ class _NotAdvanced:
         if self._done or self._cancel is not None:
             return
 
+        # Warn in the context of the fiber whose sleep armed it, as Effect's warning fiber
+        # inherits it: without the GIL warning filters are per context.
+        context = contextvars.copy_context()
+
         def warn() -> None:
             self._done = True
-            warnings.warn(_NOT_ADVANCED_WARNING, ClockNotAdvancedWarning, stacklevel=1)
+            context.run(warnings.warn, _NOT_ADVANCED_WARNING, ClockNotAdvancedWarning, stacklevel=1)
 
         self._cancel = scheduler.call_later(delay, warn, daemon=True)
 
@@ -290,8 +295,9 @@ class TestClock:
 
             def give_up() -> None:
                 disarm()
-                warnings.warn(message, BusyFiberWarning, stacklevel=1)
-                resume(_Succeed(None))
+                # Warn from the fiber, in its context: without the GIL warning filters are
+                # per context, and this timer's is not the caller's.
+                resume(_Sync(lambda: warnings.warn(message, BusyFiberWarning, stacklevel=1)))
 
             cancel_timer = scheduler.call_later(self._warning_delay, give_up)
             disarm = arm(finish)
