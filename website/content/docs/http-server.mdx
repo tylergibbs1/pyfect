@@ -54,7 +54,8 @@ middleware, provided to the route layers it should wrap with `layer.provide(m.la
 `router.middleware(f, global_=True)` a layer that wraps every request. `router.cors(...)`
 answers preflight requests and adds the CORS headers. Each request is logged unless
 `disable_logger=True`. `routes.pipe(router.provide_request(services))` builds `services` once
-and gives them to every request of those routes, as Effect's `HttpRouter.provideRequest` (see [Adopting in an asyncio app](/docs/asyncio-apps#routes-mounted-in-the-app)).
+and gives them to every request of those routes, removing their `Requires[...]`, as Effect's
+`HttpRouter.provideRequest` (see [Adopting in an asyncio app](/docs/asyncio-apps#routes-mounted-in-the-app)).
 
 <Callout title="serve(middleware=...) can't change the response">
 

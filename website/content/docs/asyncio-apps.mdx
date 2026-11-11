@@ -86,14 +86,18 @@ once:
 
 `router.to_asgi(routes)` is an ASGI app, so pyfect routes can be mounted inside the existing
 app while the rest of it stays as it is. A route's handler can ask for services; the layer's
-type then holds `Requires[Service]`, and the layer `to_asgi` builds must build them, since
-its requests run with that layer's services alone.
+type then holds `Requires[Service]`, and `to_asgi` only accepts routes whose requirements its
+layer builds, so a missing service is a pyright error rather than a 500 on every request.
 
 `routes.pipe(router.provide_request(services))` builds `services` once, when the app starts,
 and gives them to every request of those routes, as Effect's `HttpRouter.provideRequest`.
 `layer.provide(services)` builds them only for the routes' layer, not for its requests, so
-each request would fail with a 500. `layer.provide_merge(services)` works too, since the requests run with
+`to_asgi` refuses it. `layer.provide_merge(services)` works too, since the requests run with
 the services the layer builds.
+Pyright removes a `Requires` only when it can see that the layer builds that service: in a
+helper generic in its services' type, such as `def app_routes[RO](services: Layer[RO])`, it
+can't, and the `Requires` stay. Type such a helper with the services it is given, or apply
+`provide_request` where the layer's type is known.
 
 A server sends no lifespan to a mounted app: give the host app
 `lifespan=lambda _app: pyfect_app.lifespan()`, or the mounted app's layers are built by the

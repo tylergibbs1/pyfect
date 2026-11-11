@@ -4,6 +4,17 @@
 
 ### Changed
 
+- `router.provide_request(services)` is typed as Effect's `HttpRouter.provideRequest`: the
+  result drops each `Requires[S]` that `services` builds and adds `services`' own errors and
+  requirements (it was `Layer[Any, Any, Any]`, so even `provide_request(layer.empty)` passed).
+- `router.to_asgi` takes only routes whose requirements its layer builds, as Effect's
+  `toWebHandler` needs them built by the app layer when there is no request context: a missing
+  service, or `layer.provide(services)` where `provide_request(services)` belongs, is a pyright
+  error instead of a 500 on every request. A routes layer still needing a service to build is
+  refused too, as is a `middleware=` needing one. Runtime behaviour is unchanged. A helper
+  generic in its services' type (`def app_routes[RO](services: Layer[RO])`) keeps its routes'
+  `Requires`, since pyright can't see which ones `RO` builds (TypeScript resolves Effect's
+  `Exclude` at each call): type the helper with its layer, or apply `provide_request` outside it.
 - `fx.blocking` / `fx.try_blocking` run on daemon threads that exit after 10 seconds idle,
   where a `ThreadPoolExecutor` kept every thread for the process's life and joined them at
   exit. Effect has no thread pool (Node runs such work on libuv's), so this follows Python's
