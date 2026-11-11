@@ -77,9 +77,10 @@ def _require_postgres() -> None:
 # Python's own SIGINT handler, even if the test process ignores SIGINT (a
 # child inherits that).
 _CHILD = """
-import signal, time
+import signal, sys, time
 signal.signal(signal.SIGINT, signal.default_int_handler)
-from tests.oracle import _postgres
+sys.path.insert(0, "tests")  # as pytest imports it, beside the shared test helpers
+from oracle import _postgres
 server = _postgres.server()
 watchdog = getattr(_postgres._Shared, "watchdog", None)
 print(server.data_dir, watchdog.pid if watchdog else 0, flush=True)

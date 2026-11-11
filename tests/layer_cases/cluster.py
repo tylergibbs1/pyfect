@@ -10,12 +10,13 @@ a cron run."""
 from __future__ import annotations
 
 import json
-import socket
 import threading
 from collections.abc import Callable
 from dataclasses import replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Never, TypedDict, cast
+
+import _ports
 
 import pyfect as fx
 from layer_cases._case import AnyEffect, AnyLayer, Case
@@ -207,12 +208,6 @@ def _sql_messages(value: AnyLayer) -> AnyLayer:
 # --- a runner and a sender on loopback ---------------------------------------------------
 
 
-def _free_port() -> int:
-    with socket.socket() as probe:
-        probe.bind((HOST, 0))
-        return probe.getsockname()[1]
-
-
 def _config(port: int | None) -> AnyLayer:
     address = None if port is None else runner_address.make(HOST, port)
     return sharding_config.layer(replace(_FAST, runner_address=address))
@@ -252,7 +247,7 @@ def _pair_case(
     """The layer under test in a runner on a fresh port, or in its sender."""
 
     def run(value: AnyLayer) -> AnyEffect:
-        return fx.suspend(lambda: _pair(runner(value, _free_port()), sender(value)))
+        return fx.suspend(lambda: _pair(runner(value, _ports.reserved_port(HOST)), sender(value)))
 
     return Case(layer=layer, run=run, timeout=30)
 
@@ -263,7 +258,7 @@ def _whole_runner_case(make: Callable[[int], AnyLayer], sender: Callable[[], Any
     ports: list[int] = []
 
     def layer() -> AnyLayer:
-        ports.append(_free_port())
+        ports.append(_ports.reserved_port(HOST))
         return make(ports[-1])
 
     # The port is part of the layer's settings: two runs at once cannot

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import socket
 
+import _ports
 import pytest
 
 import pyfect as fx
@@ -23,12 +24,6 @@ from pyfect.socket import (
 )
 
 pytest.importorskip("websockets")
-
-
-def _free_port() -> int:
-    with socket.socket() as probe:
-        probe.bind(("127.0.0.1", 0))
-        return probe.getsockname()[1]
 
 
 def _open_failure(make: fx.Effect[SocketService] | SocketService) -> SocketError:
@@ -50,7 +45,7 @@ def _reason(error: SocketError) -> SocketOpenError:
 
 
 def test_a_refused_web_socket_keeps_the_url_and_the_refusal() -> None:
-    url = f"ws://127.0.0.1:{_free_port()}/rpc"
+    url = f"ws://127.0.0.1:{_ports.refused_tcp_port()}/rpc"
     error = _open_failure(Socket().pipe(fx.provide(ws.layer_web_socket(url))))
     assert error.message == "An error occurred during Open"
     assert str(error) == error.message
@@ -58,7 +53,7 @@ def test_a_refused_web_socket_keeps_the_url_and_the_refusal() -> None:
 
 
 def test_a_refused_tcp_socket_keeps_the_address_and_the_refusal() -> None:
-    port = _free_port()
+    port = _ports.refused_tcp_port()
     reason = _reason(_open_failure(make_net(port, "127.0.0.1")))
     assert reason.target == f"127.0.0.1:{port}"
     assert isinstance(reason.cause, ConnectionRefusedError)
@@ -72,9 +67,9 @@ def test_an_open_timeout_keeps_the_target() -> None:
         url = f"ws://127.0.0.1:{silent.getsockname()[1]}/rpc"
         layer = ws.layer_web_socket(url, open_timeout="200 millis")
         error = _open_failure(Socket().pipe(fx.provide(layer)))
-    assert _reason(error).kind == "Timeout"
-    assert error.message == 'timeout waiting for "open"'
-    assert _reason(error).target == url
+        assert _reason(error).kind == "Timeout"
+        assert error.message == 'timeout waiting for "open"'
+        assert _reason(error).target == url
 
 
 def test_the_message_is_effects_whatever_the_target_and_cause() -> None:
@@ -89,19 +84,19 @@ def test_the_message_is_effects_whatever_the_target_and_cause() -> None:
 
 
 def _refused_url() -> str:
-    return f"ws://127.0.0.1:{_free_port()}/rpc"
+    return f"ws://127.0.0.1:{_ports.refused_tcp_port()}/rpc"
 
 
 type _Client = tuple[fx.Effect[SocketService] | SocketService, str]
 
 
 def _net() -> _Client:
-    port = _free_port()
+    port = _ports.refused_tcp_port()
     return make_net(port, "127.0.0.1"), f"127.0.0.1:{port}"
 
 
 def _tls() -> _Client:
-    port = _free_port()
+    port = _ports.refused_tcp_port()
     return make_tls(port, "127.0.0.1"), f"127.0.0.1:{port}"
 
 
