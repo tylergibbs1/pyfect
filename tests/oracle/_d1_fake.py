@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import weakref
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -62,6 +63,10 @@ class FakeD1:
     )
     requests: list[HttpClientRequest] = field(default_factory=list[HttpClientRequest])
     bodies: list[Any] = field(default_factory=list[Any])
+
+    def __post_init__(self) -> None:
+        # The database lives as long as the fake.
+        weakref.finalize(self, self.db.close)
 
     def _run(self, sql: str, params: list[object]) -> dict[str, Any]:
         before = self.db.total_changes
