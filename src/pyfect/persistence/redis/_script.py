@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Any, overload
+from typing import Any, Generic, ParamSpec, TypeVar, overload
 
 from pyfect._js import js_number
 
@@ -14,8 +14,12 @@ reply is a ``str``, an integer an ``int``, nil ``None``, an array a
 ``list``."""
 
 
+P = ParamSpec("P")
+A_co = TypeVar("A_co", covariant=True)
+
+
 @dataclass(frozen=True, eq=False, slots=True)
-class Script[**P, A]:
+class Script(Generic[P, A_co]):
     """A Lua script called with ``P``: ``params(*args)`` gives its keys
     then its arguments, ``number_of_keys(*args)`` how many of them are
     keys, and ``decode`` reads its reply. Scripts are cached by identity,
@@ -24,7 +28,7 @@ class Script[**P, A]:
     lua: str
     params: Callable[P, Sequence[str | float]]
     number_of_keys: Callable[P, int]
-    decode: Callable[[RedisReply], A]
+    decode: Callable[[RedisReply], A_co]
 
     def arguments(self, *args: P.args, **kwargs: P.kwargs) -> list[str]:
         """``EVALSHA``'s arguments after the hash: the key count, the keys

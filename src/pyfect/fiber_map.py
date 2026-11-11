@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Hashable, Iterator
-from typing import Any, Never
+from typing import Any, Generic, Never, TypeVar
 
 from pyfect._core import (
     Effect,
@@ -67,36 +67,42 @@ class _Open[K, A, E]:
         self.owned: dict[Fiber[A, E], None] = {}
 
 
-class FiberMap[K: Hashable, A = object, E = object]:
+K = TypeVar("K", bound=Hashable)
+A_co = TypeVar("A_co", covariant=True, default=object)
+E_co = TypeVar("E_co", covariant=True, default=object)
+
+
+class FiberMap(Generic[K, A_co, E_co]):
     """Make one with ``FiberMap[K, A, E].make()`` inside a scope."""
 
     __slots__ = ("_state", "deferred")
 
     def __init__(self) -> None:
-        self._state: _Open[K, A, E] | None = _Open()  # None once the scope has closed
+        self._state: _Open[K, A_co, E_co] | None = _Open()  # None once the scope has closed
         # Completed by the first reported failure, or when the scope closes.
-        self.deferred: Deferred[None, E] = Deferred()
+        # Typed as Effect's ``Deferred<void, unknown>``, so the class stays covariant.
+        self.deferred: Deferred[None, Any] = Deferred()
 
     @classmethod
-    def make(cls) -> Effect[FiberMap[K, A, E], Never, Scope]:
+    def make(cls) -> Effect[FiberMap[K, A_co, E_co], Never, Scope]:
         """A map whose fibers are interrupted when the current scope closes."""
         return acquire_release(_Sync(cls), lambda m, _: m._close())
 
     @classmethod
-    def make_runtime[R = Never](
-        cls, *tags: TagLike[Any, R]
-    ) -> Effect[FiberMapRuntime[K, A, E, R], Never, Scope | R]:
+    def make_runtime[XA, XE, R = Never](
+        cls: type[FiberMap[K, XA, XE]], *tags: TagLike[Any, R]
+    ) -> Effect[FiberMapRuntime[K, XA, XE, R], Never, Scope | R]:
         """``make`` and ``runtime`` in one."""
         return cls.make().flat_map(lambda m: m.runtime(*tags))
 
     @classmethod
-    def make_runtime_async[R = Never](
-        cls, *tags: TagLike[Any, R]
-    ) -> Effect[FiberMapAsyncRuntime[K, A, E, R], Never, Scope | R]:
+    def make_runtime_async[XA, XE, R = Never](
+        cls: type[FiberMap[K, XA, XE]], *tags: TagLike[Any, R]
+    ) -> Effect[FiberMapAsyncRuntime[K, XA, XE, R], Never, Scope | R]:
         """``make`` and ``runtime_async`` in one."""
         return cls.make().flat_map(lambda m: m.runtime_async(*tags))
 
-    def __iter__(self) -> Iterator[tuple[K, Fiber[A, E]]]:
+    def __iter__(self) -> Iterator[tuple[K, Fiber[A_co, E_co]]]:
         if self._state is None:
             return iter(())
         return iter([(key, entry.fiber) for key, entry in self._state.by_key.items()])
@@ -106,10 +112,10 @@ class FiberMap[K: Hashable, A = object, E = object]:
             return "FiberMap(closed)"
         return f"FiberMap(size={len(self._state.by_key)})"
 
-    def set_unsafe(
-        self,
+    def set_unsafe[XA, XE](
+        self: FiberMap[K, XA, XE],
         key: K,
-        fiber: Fiber[A, E],
+        fiber: Fiber[XA, XE],
         *,
         only_if_missing: bool = False,
         propagate_interruption: bool = False,
@@ -137,7 +143,7 @@ class FiberMap[K: Hashable, A = object, E = object]:
             previous, entry.fiber = entry.fiber, fiber
             previous.interrupt_as_unsafe(INTERNAL_FIBER_ID)
 
-        def observer(ex: Exit[A, E]) -> None:
+        def observer(ex: Exit[XA, XE]) -> None:
             state = self._state
             if state is None:
                 return
@@ -150,10 +156,10 @@ class FiberMap[K: Hashable, A = object, E = object]:
 
         fiber.add_observer_unsafe(observer)
 
-    def set(
-        self,
+    def set[XA, XE](
+        self: FiberMap[K, XA, XE],
         key: K,
-        fiber: Fiber[A, E],
+        fiber: Fiber[XA, XE],
         *,
         only_if_missing: bool = False,
         propagate_interruption: bool = False,
@@ -167,11 +173,11 @@ class FiberMap[K: Hashable, A = object, E = object]:
             )
         )
 
-    def get_unsafe(self, key: K) -> Fiber[A, E] | None:
+    def get_unsafe(self, key: K) -> Fiber[A_co, E_co] | None:
         entry = None if self._state is None else self._state.by_key.get(key)
         return None if entry is None else entry.fiber
 
-    def get(self, key: K) -> Effect[Fiber[A, E] | None]:
+    def get(self, key: K) -> Effect[Fiber[A_co, E_co] | None]:
         return _Sync(lambda: self.get_unsafe(key))
 
     def has_unsafe(self, key: K) -> bool:
@@ -202,27 +208,29 @@ class FiberMap[K: Hashable, A = object, E = object]:
 
         return _Suspend(body)
 
-    def run[R = Never](
-        self,
+    def run[XA, XE, R = Never](
+        self: FiberMap[K, XA, XE],
         key: K,
-        eff: Effect[A, E, R],
+        eff: Effect[XA, XE, R],
         *,
         only_if_missing: bool = False,
         propagate_interruption: bool = False,
         start_immediately: bool = True,
-    ) -> Effect[Fiber[A, E], Never, R]:
+    ) -> Effect[Fiber[XA, XE], Never, R]:
         """Fork ``eff`` under ``key``. It starts at once unless
         ``start_immediately=False``. With ``only_if_missing`` and a fiber
         already there, gives back an interrupted fiber that never runs
         ``eff``. Running into a closed map interrupts the caller."""
         require_effect(eff, "eff")
 
-        def body(parent: Fiber[Any, Any]) -> Effect[Fiber[A, E]]:
+        def body(parent: Fiber[Any, Any]) -> Effect[Fiber[XA, XE]]:
             if self._state is None:
                 return interrupt_closed("FiberMap")
             if only_if_missing and self.has_unsafe(key):
                 return _Succeed(interrupted_fiber(parent._run_scheduler, parent._context))
-            fiber: Fiber[A, E] = parent._fork(eff, daemon=True, start_immediately=start_immediately)
+            fiber: Fiber[XA, XE] = parent._fork(
+                eff, daemon=True, start_immediately=start_immediately
+            )
             self.set_unsafe(
                 key,
                 fiber,
@@ -233,16 +241,16 @@ class FiberMap[K: Hashable, A = object, E = object]:
 
         return _WithFiber(body)
 
-    def runtime[R = Never](
-        self, *tags: TagLike[Any, R]
-    ) -> Effect[FiberMapRuntime[K, A, E, R], Never, R]:
+    def runtime[XA, XE, R = Never](
+        self: FiberMap[K, XA, XE], *tags: TagLike[Any, R]
+    ) -> Effect[FiberMapRuntime[K, XA, XE, R], Never, R]:
         """A runner that forks effects needing ``tags`` into the map, with
         the services of the fiber calling this."""
         return _WithFiber(lambda fiber: _Succeed(FiberMapRuntime(self, CapturedRuntime(fiber))))
 
-    def runtime_async[R = Never](
-        self, *tags: TagLike[Any, R]
-    ) -> Effect[FiberMapAsyncRuntime[K, A, E, R], Never, R]:
+    def runtime_async[XA, XE, R = Never](
+        self: FiberMap[K, XA, XE], *tags: TagLike[Any, R]
+    ) -> Effect[FiberMapAsyncRuntime[K, XA, XE, R], Never, R]:
         """``runtime``, but the runner returns a future of the value (needs
         a running asyncio loop when called)."""
         return self.runtime(*tags).map(FiberMapAsyncRuntime)
@@ -250,7 +258,7 @@ class FiberMap[K: Hashable, A = object, E = object]:
     def size(self) -> Effect[int]:
         return _Sync(lambda: 0 if self._state is None else len(self._state.by_key))
 
-    def join(self) -> Effect[None, E]:
+    def join(self) -> Effect[None, E_co]:
         """Wait for the first reported failure and fail with it; succeed
         when the scope closes."""
         return self.deferred.wait()

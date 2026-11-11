@@ -6,7 +6,7 @@ from __future__ import annotations
 import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Literal, TypeIs, cast
+from typing import Generic, Literal, TypeIs, TypeVar, cast
 
 from pyfect.json_pointer import parse_uri_fragment
 
@@ -24,21 +24,24 @@ type Type = Literal["string", "number", "boolean", "array", "object", "null", "i
 """The JSON Schema ``type`` names."""
 
 
+D_co = TypeVar("D_co", bound=Dialect, covariant=True)
+
+
 @dataclass(frozen=True, slots=True)
-class Document[D: Dialect]:
+class Document(Generic[D_co]):
     """A root schema (without its definitions) and the definitions it
     references, in one dialect."""
 
-    dialect: D
+    dialect: D_co
     schema: JsonSchema
     definitions: Definitions
 
 
 @dataclass(frozen=True, slots=True)
-class MultiDocument[D: Dialect]:
+class MultiDocument(Generic[D_co]):
     """Several root schemas sharing one set of definitions."""
 
-    dialect: D
+    dialect: D_co
     schemas: tuple[JsonSchema, ...]
     definitions: Definitions
 

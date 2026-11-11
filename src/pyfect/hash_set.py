@@ -44,7 +44,7 @@ class HashSet[A = Unsubscripted]:
     def make[B](cls: type[HashSet[Unsubscripted]], *values: B) -> HashSet[B]: ...
     @overload
     @classmethod
-    def make(cls, *values: A) -> HashSet[A]: ...
+    def make[B](cls: type[HashSet[B]], *values: B) -> HashSet[B]: ...
     @classmethod
     def make[B](cls, *values: B) -> HashSet[B]:
         return HashSet.from_iterable(values)
@@ -54,7 +54,7 @@ class HashSet[A = Unsubscripted]:
     def from_iterable[B](cls: type[HashSet[Unsubscripted]], values: Iterable[B]) -> HashSet[B]: ...
     @overload
     @classmethod
-    def from_iterable(cls, values: Iterable[A]) -> HashSet[A]: ...
+    def from_iterable[B](cls: type[HashSet[B]], values: Iterable[B]) -> HashSet[B]: ...
     @classmethod
     def from_iterable[B](cls, values: Iterable[B]) -> HashSet[B]:
         """The set of ``values``; the first of equal values is kept."""
@@ -94,11 +94,11 @@ class HashSet[A = Unsubscripted]:
     def has(self, value: object) -> bool:
         return self._has_ident(equal_key(value))
 
-    def add(self, value: A) -> HashSet[A]:
+    def add[B](self: HashSet[B], value: B) -> HashSet[B]:
         """The set with ``value``; the same set when it has it already."""
         return self._added((value,))
 
-    def remove(self, value: A) -> HashSet[A]:
+    def remove[B](self: HashSet[B], value: B) -> HashSet[B]:
         """The set without ``value``; the same set when it lacks it."""
         ident = equal_key(value)
         root = _hamt.remove(self._root, _hamt.hash_of(ident), ident)

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
-from typing import Any, Literal, TypedDict, TypeIs
+from typing import Any, Generic, Literal, TypedDict, TypeIs, TypeVar
 
 from pyfect import exit as exit_
 from pyfect import schema as S
@@ -27,34 +27,37 @@ from pyfect.rpc._rpc import exit_schema
 from pyfect.rpc.schema import get_stream_schemas
 from pyfect.rpc.serialization import CodecFor
 
+A_co = TypeVar("A_co", covariant=True, default=Any)
+E_co = TypeVar("E_co", covariant=True, default=Any)
+
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class WithExit[A = Any, E = Any]:
+class WithExit(Generic[A_co, E_co]):
     """The last reply of ``request_id``."""
 
     request_id: Snowflake
     id: Snowflake
-    exit: Exit[A, E]
+    exit: Exit[A_co, E_co]
 
-    def with_request_id(self, request_id: Snowflake) -> WithExit[A, E]:
+    def with_request_id(self, request_id: Snowflake) -> WithExit[A_co, E_co]:
         return replace(self, request_id=request_id)
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class Chunk[A = Any]:
+class Chunk(Generic[A_co]):
     """Items ``values`` of the streamed reply to ``request_id``, the
     ``sequence``-th chunk."""
 
     request_id: Snowflake
     id: Snowflake
     sequence: int
-    values: tuple[A, ...]
+    values: tuple[A_co, ...]
 
     @staticmethod
     def empty_from(request_id: Snowflake) -> Chunk[None]:
         return Chunk(request_id=request_id, id=Snowflake(0), sequence=0, values=(None,))
 
-    def with_request_id(self, request_id: Snowflake) -> Chunk[A]:
+    def with_request_id(self, request_id: Snowflake) -> Chunk[A_co]:
         return replace(self, request_id=request_id)
 
 
@@ -90,10 +93,10 @@ _never_rpc = make_rpc("Never", success=S.Never)
 
 
 @dataclass(frozen=True, slots=True)
-class ReplyWithContext[A = Any, E = Any]:
+class ReplyWithContext(Generic[A_co, E_co]):
     """A reply with the services its schemas need and its RPC."""
 
-    reply: Reply[A, E]
+    reply: Reply[A_co, E_co]
     context: Context[Any] = field(default_factory=Context.empty)
     rpc: AnyRpc = _never_rpc
 

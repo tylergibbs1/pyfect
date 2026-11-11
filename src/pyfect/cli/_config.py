@@ -12,25 +12,27 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from dataclasses import dataclass
-from typing import Any, ClassVar, Self, cast, overload
+from typing import Any, ClassVar, Generic, Self, TypeVar, cast, overload
 
 from pyfect.cli import param as p
 from pyfect.cli.argument import Argument
 from pyfect.cli.flag import Flag
 
+C_co = TypeVar("C_co", bound="Config", covariant=True)
+
 
 @dataclass(frozen=True, eq=False, slots=True)
-class Nested[C: Config]:
+class Nested(Generic[C_co]):
     """A group of params from another config class, read as an instance of
     it (``database = nested(Database)``)."""
 
-    config: type[C]
+    config: type[C_co]
 
     @overload
     def __get__(self, instance: None, owner: type[object]) -> Self: ...
     @overload
-    def __get__(self, instance: object, owner: type[object]) -> C: ...
-    def __get__(self, instance: object, owner: type[object]) -> Self | C:
+    def __get__(self, instance: object, owner: type[object]) -> C_co: ...
+    def __get__(self, instance: object, owner: type[object]) -> Self | C_co:
         if instance is None:
             return self
         raise AttributeError(f"{owner.__name__} has no parsed value for this group")

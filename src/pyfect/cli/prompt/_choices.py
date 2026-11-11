@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Generic, TypeVar
 
 from pyfect.cli import _ansi as ansi
 from pyfect.cli.prompt._core import (
@@ -17,15 +17,17 @@ from pyfect.cli.prompt._core import (
     submitted_symbols,
 )
 
+A_co = TypeVar("A_co", covariant=True)
+
 
 @dataclass(frozen=True, slots=True)
-class Choice[A]:
+class Choice(Generic[A_co]):
     """One option: its ``title``, the ``value`` it gives, an optional
     ``description`` shown while it is highlighted, whether it is
     ``disabled``, and whether it starts ``selected``."""
 
     title: str
-    value: A
+    value: A_co
     description: str | None = None
     disabled: bool = False
     selected: bool = False

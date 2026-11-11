@@ -13,6 +13,31 @@
   `Create`. When inotify began watching the directory between the file's creation and its
   first write, the first event for the file was an `Update`.
 
+### Added
+
+- 68 generic classes that were invariant only because of how they were declared now have
+  Effect's variance, so a narrower one is accepted where a wider one is expected
+  (`FiberSet[int, E]` as a `FiberSet[object, E]`, a list mixing two RPCs). Pyright made
+  every frozen dataclass and `NamedTuple` with PEP 695 parameters invariant; these classes
+  now declare their variance:
+  - covariant: `HashMap`, `HashSet`, `HashMapSchema`, `HashSetSchema`, `FiberHandle`,
+    `FiberSet`, `FiberMap` (value and error; keys stay invariant), `Cache` / `ScopedCache`
+    (requirements), `rpc.Rpc` / `StreamRpc` (success and error),
+    `workflow_proxy.WorkflowRpcs`, `effectable.Class`, `cluster` replies and
+    `EntityResource`, the `cli.param` classes, `cli.prompt.Choice`, `cli.Nested`, `jose.jwt`
+    results, `json_schema` documents, `http_api.schema` wrappers, `ai.decision.Level` /
+    `Rate`, `ai.mcp_schema` classes, `persistence.redis.Script` and
+    `graphql.client.NodesConnection`;
+  - contravariant: `cli.Command`'s input (Effect's `in Input`), `sql.model.Repository` /
+    `Resolvers` inputs, `sql.stream.Emit`, `ai.tool.HandlerContext`.
+
+  Methods that take a value (`HashMap.set`, `HashSet.add`, `FiberSet.add`,
+  `Command.with_handler`, ...) bind it through `self`, so `HashMap[str, int].set("b", "x")`
+  is still an error. `FiberHandle` / `FiberMap` / `FiberSet` `.deferred` is typed
+  `Deferred[None, Any]`, as Effect's `Deferred<void, unknown>`. `tests/test_variance.py`
+  pins every public generic class's variance; a change that makes one stricter fails the
+  pyright run.
+
 ## 0.5.5 (2026-11-10)
 
 ### Changed

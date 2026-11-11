@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any, Generic, Protocol, TypeVar
 
 from pyfect._core import Effect, _Suspend, _Sync, _WithFiber
 from pyfect.cause import fail
@@ -27,14 +27,18 @@ class PauseResume(Protocol):
     def on_resume(self) -> None: ...
 
 
+A_contra = TypeVar("A_contra", contravariant=True)
+E_contra = TypeVar("E_contra", contravariant=True)
+
+
 @dataclass(frozen=True, slots=True)
-class Emit[A, E]:
+class Emit(Generic[A_contra, E_contra]):
     """What the source calls to push rows, fail or end. Call it on the
     stream's scheduler thread."""
 
-    single: Callable[[A], None]
-    array: Callable[[Sequence[A]], None]
-    fail: Callable[[E], None]
+    single: Callable[[A_contra], None]
+    array: Callable[[Sequence[A_contra]], None]
+    fail: Callable[[E_contra], None]
     end: Callable[[], None]
 
 

@@ -17,7 +17,7 @@ entity's RPCs, which Python cannot)::
 
 from __future__ import annotations
 
-from typing import Any, NamedTuple, TypedDict
+from typing import Any, Generic, NamedTuple, TypedDict, TypeVar
 
 from pyfect import schema as S
 from pyfect.cluster.cluster_error import (
@@ -99,11 +99,16 @@ type RequestError = ClientError | EntityNotAssignedToRunner
 """What ``REQUEST_ERRORS`` decode to."""
 
 
-class EntityEndpoints[P, A, E](NamedTuple):
+P_co = TypeVar("P_co", covariant=True)
+A = TypeVar("A")
+E = TypeVar("E")
+
+
+class EntityEndpoints(NamedTuple, Generic[P_co, A, E]):
     """The two HTTP endpoints of one entity RPC (``http_endpoints``)."""
 
-    call: HttpApiEndpoint[EntityIdParams, None, P, P, None, A, A, E | RequestError]
-    discard: HttpApiEndpoint[EntityIdParams, None, P, P, None, None, None, ClientError]
+    call: HttpApiEndpoint[EntityIdParams, None, P_co, P_co, None, A, A, E | RequestError]
+    discard: HttpApiEndpoint[EntityIdParams, None, P_co, P_co, None, None, None, ClientError]
 
 
 def http_endpoints[P, A, E](rpc: Rpc[P, A, E, Any, Any]) -> EntityEndpoints[P, A, E]:

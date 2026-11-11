@@ -16,7 +16,7 @@ import math
 import threading
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
 from pyfect._core import Effect
 from pyfect._effect_args import require_effect
@@ -37,14 +37,17 @@ if TYPE_CHECKING:
     from pyfect.reactivity.atom._types import Atom, Writable
 
 
+A_co = TypeVar("A_co", covariant=True)
+
+
 @dataclass(frozen=True, slots=True)
-class InitialValue[A]:
+class InitialValue(Generic[A_co]):
     """A value a registry starts ``atom`` with (``atom.initial_value``).
     With ``skip_initial_run``, an atom backed by an effect keeps it without
     running the effect until it is refreshed."""
 
-    atom: Atom[A]
-    value: A
+    atom: Atom[A_co]
+    value: A_co
     skip_initial_run: bool = False
 
 

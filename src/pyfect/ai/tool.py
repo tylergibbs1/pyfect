@@ -74,13 +74,16 @@ class NeedsApprovalContext:
 type NeedsApproval = bool | Callable[[Any, NeedsApprovalContext], bool | Effect[bool]]
 
 
+SS_contra = TypeVar("SS_contra", contravariant=True)
+
+
 @dataclass(frozen=True)
-class HandlerContext[SS]:
+class HandlerContext(Generic[SS_contra]):
     """What a handler gets besides its parameters: the call's id and
     ``preliminary``, which streams a progress value before the result."""
 
     tool_call_id: str | None
-    preliminary: Callable[[SS], Effect[None]]
+    preliminary: Callable[[SS_contra], Effect[None]]
 
 
 @dataclass(frozen=True)

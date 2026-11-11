@@ -13,7 +13,7 @@ it as a key.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, ClassVar, Literal, Never, Protocol, final
+from typing import Any, ClassVar, Generic, Literal, Never, Protocol, TypeVar, final
 
 from pyfect._core import Effect
 from pyfect.context import Tag
@@ -35,10 +35,13 @@ class X25519:
     tag: ClassVar[Literal["X25519"]] = "X25519"
 
 
+C_co = TypeVar("C_co", bound=Curve, covariant=True, default=Curve)
+
+
 @dataclass(frozen=True, kw_only=True)
-class Ecdh[C: Curve = Curve]:
+class Ecdh(Generic[C_co]):
     name: Literal["ecdhP256", "ecdhP384", "ecdhP521"]
-    named_curve: C
+    named_curve: C_co
 
     tag: ClassVar[Literal["Ecdh"]] = "Ecdh"
 

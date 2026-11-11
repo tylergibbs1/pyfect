@@ -16,7 +16,7 @@ from __future__ import annotations
 import operator
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
-from typing import Any, NamedTuple, cast
+from typing import Any, Generic, NamedTuple, TypeVar, cast
 
 from pyfect.ai import _structured_output_checks as C
 from pyfect.json_schema import JsonSchema
@@ -44,12 +44,17 @@ _TUPLE_TAIL_DESCRIPTION = (
 )
 
 
-class StructuredOutputCodec[T, RD, RE](NamedTuple):
+T_co = TypeVar("T_co", covariant=True)
+RD_co = TypeVar("RD_co", covariant=True)
+RE_co = TypeVar("RE_co", covariant=True)
+
+
+class StructuredOutputCodec(NamedTuple, Generic[T_co, RD_co, RE_co]):
     """What a provider's structured-output transformer gives: the codec
     decoding the model's output into ``T`` and the JSON Schema to send. The
     codec stays the authority: the JSON Schema may accept more than it."""
 
-    codec: Codec[T, object, RD, RE]
+    codec: Codec[T_co, object, RD_co, RE_co]
     json_schema: JsonSchema
 
 

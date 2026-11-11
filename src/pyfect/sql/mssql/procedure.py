@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, overload
+from typing import Any, Generic, TypeVar, overload
 
 from pyfect.sql.connection import Row
 from pyfect.sql.mssql.parameter import Bound, Parameter
@@ -32,19 +32,22 @@ def _with(
     return (*kept, parameter)
 
 
+A_co = TypeVar("A_co", covariant=True, default=Row)
+
+
 @dataclass(frozen=True, slots=True)
-class Procedure[A = Row]:
+class Procedure(Generic[A_co]):
     """A stored procedure whose rows are ``A``s."""
 
     name: str
     params: tuple[Parameter[Any], ...] = ()
     output_params: tuple[Parameter[Any], ...] = ()
 
-    def param(self, parameter: Parameter[Any]) -> Procedure[A]:
+    def param(self, parameter: Parameter[Any]) -> Procedure[A_co]:
         """With the input ``parameter``."""
         return Procedure(self.name, _with(self.params, parameter), self.output_params)
 
-    def output_param(self, parameter: Parameter[Any]) -> Procedure[A]:
+    def output_param(self, parameter: Parameter[Any]) -> Procedure[A_co]:
         """With the output ``parameter``."""
         return Procedure(self.name, self.params, _with(self.output_params, parameter))
 
@@ -52,7 +55,7 @@ class Procedure[A = Row]:
         """Its rows typed as ``row`` (Effect's ``withRows<A>()``)."""
         return Procedure(self.name, self.params, self.output_params)
 
-    def compile(self, *values: Bound[Any]) -> ProcedureWithValues[A]:
+    def compile(self, *values: Bound[Any]) -> ProcedureWithValues[A_co]:
         """This procedure with a value for each input; ``ValueError`` when one
         is missing, repeated or not an input of it."""
         bound: dict[str, object] = {}
@@ -71,10 +74,10 @@ class Procedure[A = Row]:
 
 
 @dataclass(frozen=True, slots=True)
-class ProcedureWithValues[A = Row]:
+class ProcedureWithValues(Generic[A_co]):
     """A procedure and the values of its inputs, ready to ``call``."""
 
-    procedure: Procedure[A]
+    procedure: Procedure[A_co]
     values: Mapping[str, object]
 
 
@@ -104,11 +107,11 @@ class Outputs(Mapping[str, object]):
 
 
 @dataclass(frozen=True, slots=True)
-class Result[A = Row]:
+class Result(Generic[A_co]):
     """What a call returns: its output parameters and its rows."""
 
     output: Outputs
-    rows: Sequence[A]
+    rows: Sequence[A_co]
 
 
 def make(name: str) -> Procedure:

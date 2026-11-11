@@ -18,7 +18,7 @@ import string
 import sys
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
-from typing import Any, LiteralString, Self, TypeIs, cast, overload
+from typing import Any, Generic, LiteralString, Self, TypeIs, TypeVar, cast, overload
 
 from pyfect._digits import parse_digits
 
@@ -179,14 +179,20 @@ def record_update_helper_single(
     return RecordUpdateHelperSingle(value, _names(omit))
 
 
+K_co = TypeVar("K_co", bound=str, covariant=True, default=str)
+A_co = TypeVar("A_co", covariant=True, default=None)
+B_co = TypeVar("B_co", covariant=True, default=None)
+C_co = TypeVar("C_co", covariant=True, default=None)
+
+
 @dataclass(frozen=True, slots=True)
-class Custom[K: str = str, A = None, B = None, C = None]:
+class Custom(Generic[K_co, A_co, B_co, C_co]):
     """A segment of kind ``kind`` that the compiler's ``on_custom`` renders."""
 
-    kind: K
-    param_a: A
-    param_b: B
-    param_c: C
+    kind: K_co
+    param_a: A_co
+    param_b: B_co
+    param_c: C_co
 
 
 def custom[K: str, A, B, C](kind: K) -> Callable[[A, B, C], Custom[K, A, B, C]]:

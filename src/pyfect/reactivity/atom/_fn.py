@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Final, Never, cast, overload
+from typing import TYPE_CHECKING, Any, Final, Generic, Never, TypeVar, cast, overload
 
 from pyfect import cause as cause_
 from pyfect._core import Effect, _Succeed, _WithFiber
@@ -230,13 +230,16 @@ def fn_sync(
 # --- pull --------------------------------------------------------------------
 
 
+A_co = TypeVar("A_co", covariant=True)
+
+
 @dataclass(frozen=True, slots=True)
-class PullChunk[A]:
+class PullChunk(Generic[A_co]):
     """What a pull atom holds: the items so far (or the last chunk's, with
     ``disable_accumulation``) and whether the stream ended."""
 
     done: bool
-    items: tuple[A, ...]
+    items: tuple[A_co, ...]
 
 
 type PullResult[A, E = Never] = AsyncResult[PullChunk[A], E | NoSuchElementException]

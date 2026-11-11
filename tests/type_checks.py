@@ -4636,10 +4636,9 @@ def check_schema_classes_are_covariant() -> None:
         _14: S.CauseSchema[object, object, Db, object] = cause_
         _15: S.ExitSchema[object, object, object, object, Db, object] = exit_
         _16: S.RedactedSchema[object, object, Db, object] = secret
-        # HashSet and HashMap take items (``add`` / ``set``): invariant in them.
-        _17: S.HashSetSchema[str, str, Db, object] = hash_set
-        _18: S.HashMapSchema[str, int, str, int, Db, object] = hash_map
-        _19: S.HashSetSchema[object, object, Never, Never] = hash_set  # pyright: ignore[reportAssignmentType]
+        _17: S.HashSetSchema[object, object, Db, object] = hash_set
+        _18: S.HashMapSchema[object, object, object, object, Db, object] = hash_map
+        _19: S.HashSetSchema[int, int, Never, Never] = hash_set  # pyright: ignore[reportAssignmentType]
 
     _ = pins
 
@@ -10646,3 +10645,43 @@ assert_type(
     mcp_server_module.visibility(mcp_visible, global_=True),
     fx.Layer[Never, Never, McpUser | mcp_server_module.McpServer],
 )
+
+
+def check_read_only_classes_are_covariant() -> None:
+    """Classes that only give their values out are covariant, as Effect's
+    ``out`` parameters are; methods taking a value bind it through ``self``, so
+    a narrow collection still rejects a wrong item."""
+    from pyfect import cli
+    from pyfect.fiber_handle import FiberHandle
+    from pyfect.fiber_map import FiberMap
+    from pyfect.fiber_set import FiberSet
+    from pyfect.hash_map import HashMap
+    from pyfect.hash_set import HashSet
+    from pyfect.rpc import Rpc
+
+    def pins(
+        *,
+        hash_map: HashMap[str, int],
+        hash_set: HashSet[bool],
+        handle: FiberHandle[int, NotFound],
+        fiber_map: FiberMap[str, int, NotFound],
+        fiber_set: FiberSet[int, NotFound],
+        command: cli.Command[object, cli.Config],
+        unary: Rpc[str, int, NotFound],
+    ) -> None:
+        _1: HashMap[str, object] = hash_map
+        _2: HashSet[int] = hash_set
+        _3: FiberHandle[object, Exception] = handle
+        _4: FiberMap[str, object, Exception] = fiber_map
+        _5: FiberSet[object, Exception] = fiber_set
+        # A command taking any config takes a narrower one (Effect's ``in Input``).
+        _6: cli.Command[cli.Config, cli.Config] = command
+        _7: Rpc[str, object, Exception] = unary
+        # Keys stay checked: a FiberMap's keys are looked up, so invariant.
+        _9: FiberMap[object, int, NotFound] = fiber_map  # pyright: ignore[reportAssignmentType]
+        assert_type(hash_map.set("b", 2), HashMap[str, int])
+        assert_type(hash_set.add(True), HashSet[bool])
+        hash_map.set("b", "x")  # pyright: ignore[reportArgumentType]
+        hash_set.add(1.5)  # pyright: ignore[reportArgumentType]
+
+    _ = pins

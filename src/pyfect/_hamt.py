@@ -13,7 +13,7 @@ iterate in Effect's order.
 from __future__ import annotations
 
 from collections.abc import Hashable, Iterator
-from typing import NamedTuple
+from typing import Generic, NamedTuple, TypeVar
 
 from pyfect._effect_hash import effect_hash
 from pyfect._js import same_value
@@ -22,11 +22,15 @@ _BITS = 5
 _MASK = (1 << _BITS) - 1
 
 
-class Entry[K, V](NamedTuple):
+K_co = TypeVar("K_co", covariant=True)
+V_co = TypeVar("V_co", covariant=True)
+
+
+class Entry(NamedTuple, Generic[K_co, V_co]):
     hash: int
     ident: Hashable
-    key: K
-    value: V
+    key: K_co
+    value: V_co
 
 
 class _Bitmap:

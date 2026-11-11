@@ -36,8 +36,8 @@ if TYPE_CHECKING:
     from pyfect.rpc.middleware import AnyMiddleware, RpcMiddleware
 
 P_co = TypeVar("P_co", covariant=True)
-S_ = TypeVar("S_")
-E = TypeVar("E")
+S_co = TypeVar("S_co", covariant=True)
+E_co = TypeVar("E_co", covariant=True)
 M_co = TypeVar("M_co", covariant=True, default=Never)
 MT_co = TypeVar("MT_co", covariant=True, default=M_co)
 A_co = TypeVar("A_co", covariant=True)
@@ -137,7 +137,7 @@ class AnyRpc:
 
 
 @dataclass(frozen=True, slots=True, eq=False)
-class Rpc(AnyRpc, Generic[P_co, S_, E, M_co, MT_co]):
+class Rpc(AnyRpc, Generic[P_co, S_co, E_co, M_co, MT_co]):
     """An RPC with a payload ``P``, succeeding with ``S`` or failing with
     ``E``, wrapped by the middleware ``M`` (``MT`` repeats it, so handlers
     can read both what it provides and its tag)."""
@@ -145,38 +145,38 @@ class Rpc(AnyRpc, Generic[P_co, S_, E, M_co, MT_co]):
     @overload
     def __get__[GM](
         self, instance: None, owner: type[RpcGroupWith[GM]], /
-    ) -> Rpc[P_co, S_, E, M_co | GM, MT_co | GM]: ...
+    ) -> Rpc[P_co, S_co, E_co, M_co | GM, MT_co | GM]: ...
     @overload
     def __get__(self, instance: None, owner: type[object], /) -> Self: ...
     @overload
     def __get__[ME](
-        self: Rpc[P_co, S_, E, Never],
+        self: Rpc[P_co, S_co, E_co, Never],
         instance: RpcGroupWith[RpcMiddleware[Any, ME, Any]],
         owner: type[object],
         /,
-    ) -> UnaryMethod[P_co, S_, E | ME]: ...
+    ) -> UnaryMethod[P_co, S_co, E_co | ME]: ...
     @overload
     def __get__[TE](
-        self: Rpc[P_co, S_, E, Never], instance: ClientErrors[TE], owner: type[object], /
-    ) -> UnaryMethod[P_co, S_, E, TE]: ...
+        self: Rpc[P_co, S_co, E_co, Never], instance: ClientErrors[TE], owner: type[object], /
+    ) -> UnaryMethod[P_co, S_co, E_co, TE]: ...
     @overload
     def __get__[ME, TE](
-        self: Rpc[P_co, S_, E, RpcMiddleware[Any, ME, Any]],
+        self: Rpc[P_co, S_co, E_co, RpcMiddleware[Any, ME, Any]],
         instance: ClientErrors[TE],
         owner: type[object],
         /,
-    ) -> UnaryMethod[P_co, S_, E | ME, TE]: ...
+    ) -> UnaryMethod[P_co, S_co, E_co | ME, TE]: ...
     @overload
     def __get__(
-        self: Rpc[P_co, S_, E, Never], instance: RpcGroup, owner: type[object], /
-    ) -> UnaryMethod[P_co, S_, E]: ...
+        self: Rpc[P_co, S_co, E_co, Never], instance: RpcGroup, owner: type[object], /
+    ) -> UnaryMethod[P_co, S_co, E_co]: ...
     @overload
     def __get__[ME](
-        self: Rpc[P_co, S_, E, RpcMiddleware[Any, ME, Any]],
+        self: Rpc[P_co, S_co, E_co, RpcMiddleware[Any, ME, Any]],
         instance: RpcGroup,
         owner: type[object],
         /,
-    ) -> UnaryMethod[P_co, S_, E | ME]: ...
+    ) -> UnaryMethod[P_co, S_co, E_co | ME]: ...
     @overload
     def __get__(self, instance: object, owner: type[object], /) -> Self: ...
     def __get__(self, instance: object, owner: type[object], /) -> Any:
@@ -184,7 +184,7 @@ class Rpc(AnyRpc, Generic[P_co, S_, E, M_co, MT_co]):
 
     def middleware[T: RpcMiddleware[Any, Any, Any]](
         self, middleware: type[T], /
-    ) -> Rpc[P_co, S_, E, M_co | T, MT_co | T]:
+    ) -> Rpc[P_co, S_co, E_co, M_co | T, MT_co | T]:
         """This RPC wrapped by ``middleware``: its handler may fail with the
         middleware's error and needs what it provides; a client may fail
         with it too."""
@@ -192,56 +192,56 @@ class Rpc(AnyRpc, Generic[P_co, S_, E, M_co, MT_co]):
 
     def set_success[S1](
         self, schema: Codec[S1, Any, Never, Never], /
-    ) -> Rpc[P_co, S1, E, M_co, MT_co]:
+    ) -> Rpc[P_co, S1, E_co, M_co, MT_co]:
         return replace(self, success_schema=schema.__codec__())  # pyright: ignore[reportReturnType]
 
     def set_error[E1](
         self, schema: Codec[E1, Any, Never, Never], /
-    ) -> Rpc[P_co, S_, E1, M_co, MT_co]:
+    ) -> Rpc[P_co, S_co, E1, M_co, MT_co]:
         return replace(self, error_schema=schema.__codec__())  # pyright: ignore[reportReturnType]
 
     def set_payload[P1](
         self, schema: Codec[P1, Any, Never, Never], /
-    ) -> Rpc[P1, S_, E, M_co, MT_co]:
+    ) -> Rpc[P1, S_co, E_co, M_co, MT_co]:
         return replace(self, payload_schema=schema.__codec__())  # pyright: ignore[reportReturnType]
 
 
 @dataclass(frozen=True, slots=True, eq=False)
-class StreamRpc(AnyRpc, Generic[P_co, A_co, E, M_co, MT_co]):
+class StreamRpc(AnyRpc, Generic[P_co, A_co, E_co, M_co, MT_co]):
     """An RPC with a payload ``P`` succeeding with a stream of ``A`` items
     that fails with ``E``."""
 
     @overload
     def __get__[GM](
         self, instance: None, owner: type[RpcGroupWith[GM]], /
-    ) -> StreamRpc[P_co, A_co, E, M_co | GM, MT_co | GM]: ...
+    ) -> StreamRpc[P_co, A_co, E_co, M_co | GM, MT_co | GM]: ...
     @overload
     def __get__(self, instance: None, owner: type[object], /) -> Self: ...
     @overload
     def __get__[TE](
-        self: StreamRpc[P_co, A_co, E, Never],
+        self: StreamRpc[P_co, A_co, E_co, Never],
         instance: ClientErrors[TE],
         owner: type[object],
         /,
-    ) -> StreamMethod[P_co, A_co, E, TE]: ...
+    ) -> StreamMethod[P_co, A_co, E_co, TE]: ...
     @overload
     def __get__[ME, TE](
-        self: StreamRpc[P_co, A_co, E, RpcMiddleware[Any, ME, Any]],
+        self: StreamRpc[P_co, A_co, E_co, RpcMiddleware[Any, ME, Any]],
         instance: ClientErrors[TE],
         owner: type[object],
         /,
-    ) -> StreamMethod[P_co, A_co, E | ME, TE]: ...
+    ) -> StreamMethod[P_co, A_co, E_co | ME, TE]: ...
     @overload
     def __get__(
-        self: StreamRpc[P_co, A_co, E, Never], instance: RpcGroup, owner: type[object], /
-    ) -> StreamMethod[P_co, A_co, E]: ...
+        self: StreamRpc[P_co, A_co, E_co, Never], instance: RpcGroup, owner: type[object], /
+    ) -> StreamMethod[P_co, A_co, E_co]: ...
     @overload
     def __get__[ME](
-        self: StreamRpc[P_co, A_co, E, RpcMiddleware[Any, ME, Any]],
+        self: StreamRpc[P_co, A_co, E_co, RpcMiddleware[Any, ME, Any]],
         instance: RpcGroup,
         owner: type[object],
         /,
-    ) -> StreamMethod[P_co, A_co, E | ME]: ...
+    ) -> StreamMethod[P_co, A_co, E_co | ME]: ...
     @overload
     def __get__(self, instance: object, owner: type[object], /) -> Self: ...
     def __get__(self, instance: object, owner: type[object], /) -> Any:
@@ -249,13 +249,13 @@ class StreamRpc(AnyRpc, Generic[P_co, A_co, E, M_co, MT_co]):
 
     def middleware[T: RpcMiddleware[Any, Any, Any]](
         self, middleware: type[T], /
-    ) -> StreamRpc[P_co, A_co, E, M_co | T, MT_co | T]:
+    ) -> StreamRpc[P_co, A_co, E_co, M_co | T, MT_co | T]:
         """This RPC wrapped by ``middleware`` (see ``Rpc.middleware``)."""
         return self.with_middleware(middleware)
 
     def set_payload[P1](
         self, schema: Codec[P1, Any, Never, Never], /
-    ) -> StreamRpc[P1, A_co, E, M_co, MT_co]:
+    ) -> StreamRpc[P1, A_co, E_co, M_co, MT_co]:
         return replace(self, payload_schema=schema.__codec__())  # pyright: ignore[reportReturnType]
 
 

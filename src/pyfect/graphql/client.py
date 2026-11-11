@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Never, Protocol, ReadOnly, TypedDict, cast
+from typing import Any, Generic, Never, Protocol, ReadOnly, TypedDict, TypeVar, cast
 
 from pyfect import effect as fx
 from pyfect import stream
@@ -254,10 +254,13 @@ class Connection(TypedDict):
     pageInfo: ReadOnly[PageInfo]
 
 
-class NodesConnection[N](Connection):
+N_co = TypeVar("N_co", covariant=True)
+
+
+class NodesConnection(Connection, Generic[N_co]):
     """A connection with ``nodes``."""
 
-    nodes: ReadOnly[Sequence[N] | None]
+    nodes: ReadOnly[Sequence[N_co] | None]
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

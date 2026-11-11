@@ -15,7 +15,7 @@ from plain code, as Effect's ``FiberHandle.runtime``.
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Never
+from typing import Any, Generic, Never, TypeVar
 
 from pyfect._core import (
     Effect,
@@ -54,33 +54,38 @@ class _Open[A, E]:
         self.owned: dict[Fiber[A, E], None] = {}
 
 
-class FiberHandle[A = object, E = object]:
+A_co = TypeVar("A_co", covariant=True, default=object)
+E_co = TypeVar("E_co", covariant=True, default=object)
+
+
+class FiberHandle(Generic[A_co, E_co]):
     """Make one with ``FiberHandle[A, E].make()`` inside a scope."""
 
     __slots__ = ("_state", "deferred")
 
     def __init__(self) -> None:
-        self._state: _Open[A, E] | None = _Open()  # None once the scope has closed
+        self._state: _Open[A_co, E_co] | None = _Open()  # None once the scope has closed
         # Completed by the first reported failure, or when the scope closes.
-        self.deferred: Deferred[None, E] = Deferred()
+        # Typed as Effect's ``Deferred<void, unknown>``, so the class stays covariant.
+        self.deferred: Deferred[None, Any] = Deferred()
 
     @classmethod
-    def make(cls) -> Effect[FiberHandle[A, E], Never, Scope]:
+    def make(cls) -> Effect[FiberHandle[A_co, E_co], Never, Scope]:
         """A handle whose fibers are interrupted when the current scope
         closes."""
         return acquire_release(_Sync(cls), lambda h, _: h._close())
 
     @classmethod
-    def make_runtime[R = Never](
-        cls, *tags: TagLike[Any, R]
-    ) -> Effect[FiberHandleRuntime[A, E, R], Never, Scope | R]:
+    def make_runtime[XA, XE, R = Never](
+        cls: type[FiberHandle[XA, XE]], *tags: TagLike[Any, R]
+    ) -> Effect[FiberHandleRuntime[XA, XE, R], Never, Scope | R]:
         """``make`` and ``runtime`` in one."""
         return cls.make().flat_map(lambda h: h.runtime(*tags))
 
     @classmethod
-    def make_runtime_async[R = Never](
-        cls, *tags: TagLike[Any, R]
-    ) -> Effect[FiberHandleAsyncRuntime[A, E, R], Never, Scope | R]:
+    def make_runtime_async[XA, XE, R = Never](
+        cls: type[FiberHandle[XA, XE]], *tags: TagLike[Any, R]
+    ) -> Effect[FiberHandleAsyncRuntime[XA, XE, R], Never, Scope | R]:
         """``make`` and ``runtime_async`` in one."""
         return cls.make().flat_map(lambda h: h.runtime_async(*tags))
 
@@ -89,9 +94,9 @@ class FiberHandle[A = object, E = object]:
             return "FiberHandle(closed)"
         return f"FiberHandle({self._state.current!r})"
 
-    def set_unsafe(
-        self,
-        fiber: Fiber[A, E],
+    def set_unsafe[XA, XE](
+        self: FiberHandle[XA, XE],
+        fiber: Fiber[XA, XE],
         *,
         only_if_missing: bool = False,
         propagate_interruption: bool = False,
@@ -117,7 +122,7 @@ class FiberHandle[A = object, E = object]:
         if previous is not None:
             previous.interrupt_as_unsafe(INTERNAL_FIBER_ID)
 
-        def observer(ex: Exit[A, E]) -> None:
+        def observer(ex: Exit[XA, XE]) -> None:
             state = self._state
             if state is not None:
                 state.owned.pop(fiber, None)
@@ -128,9 +133,9 @@ class FiberHandle[A = object, E = object]:
 
         fiber.add_observer_unsafe(observer)
 
-    def set(
-        self,
-        fiber: Fiber[A, E],
+    def set[XA, XE](
+        self: FiberHandle[XA, XE],
+        fiber: Fiber[XA, XE],
         *,
         only_if_missing: bool = False,
         propagate_interruption: bool = False,
@@ -143,10 +148,10 @@ class FiberHandle[A = object, E = object]:
             )
         )
 
-    def get_unsafe(self) -> Fiber[A, E] | None:
+    def get_unsafe(self) -> Fiber[A_co, E_co] | None:
         return None if self._state is None else self._state.current
 
-    def get(self) -> Effect[Fiber[A, E] | None]:
+    def get(self) -> Effect[Fiber[A_co, E_co] | None]:
         return _Sync(self.get_unsafe)
 
     def clear(self) -> Effect[None]:
@@ -166,27 +171,29 @@ class FiberHandle[A = object, E = object]:
 
         return uninterruptible_mask(body)
 
-    def run[R = Never](
-        self,
-        eff: Effect[A, E, R],
+    def run[XA, XE, R = Never](
+        self: FiberHandle[XA, XE],
+        eff: Effect[XA, XE, R],
         *,
         only_if_missing: bool = False,
         propagate_interruption: bool = False,
         start_immediately: bool = True,
-    ) -> Effect[Fiber[A, E], Never, R]:
+    ) -> Effect[Fiber[XA, XE], Never, R]:
         """Fork ``eff`` as the current fiber. It starts at once unless
         ``start_immediately=False``. With ``only_if_missing`` and a current
         fiber, gives back an interrupted fiber that never runs ``eff``.
         Running into a closed handle interrupts the caller."""
         require_effect(eff, "eff")
 
-        def body(parent: Fiber[Any, Any]) -> Effect[Fiber[A, E]]:
+        def body(parent: Fiber[Any, Any]) -> Effect[Fiber[XA, XE]]:
             state = self._state
             if state is None:
                 return interrupt_closed("FiberHandle")
             if only_if_missing and state.current is not None:
                 return _Succeed(interrupted_fiber(parent._run_scheduler, parent._context))
-            fiber: Fiber[A, E] = parent._fork(eff, daemon=True, start_immediately=start_immediately)
+            fiber: Fiber[XA, XE] = parent._fork(
+                eff, daemon=True, start_immediately=start_immediately
+            )
             self.set_unsafe(
                 fiber,
                 only_if_missing=only_if_missing,
@@ -196,21 +203,21 @@ class FiberHandle[A = object, E = object]:
 
         return _WithFiber(body)
 
-    def runtime[R = Never](
-        self, *tags: TagLike[Any, R]
-    ) -> Effect[FiberHandleRuntime[A, E, R], Never, R]:
+    def runtime[XA, XE, R = Never](
+        self: FiberHandle[XA, XE], *tags: TagLike[Any, R]
+    ) -> Effect[FiberHandleRuntime[XA, XE, R], Never, R]:
         """A runner that forks effects needing ``tags`` into the handle,
         with the services of the fiber calling this."""
         return _WithFiber(lambda fiber: _Succeed(FiberHandleRuntime(self, CapturedRuntime(fiber))))
 
-    def runtime_async[R = Never](
-        self, *tags: TagLike[Any, R]
-    ) -> Effect[FiberHandleAsyncRuntime[A, E, R], Never, R]:
+    def runtime_async[XA, XE, R = Never](
+        self: FiberHandle[XA, XE], *tags: TagLike[Any, R]
+    ) -> Effect[FiberHandleAsyncRuntime[XA, XE, R], Never, R]:
         """``runtime``, but the runner returns a future of the value (needs
         a running asyncio loop when called)."""
         return self.runtime(*tags).map(FiberHandleAsyncRuntime)
 
-    def join(self) -> Effect[None, E]:
+    def join(self) -> Effect[None, E_co]:
         """Wait for the first reported failure and fail with it; succeed
         when the scope closes."""
         return self.deferred.wait()

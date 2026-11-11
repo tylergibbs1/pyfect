@@ -5,7 +5,7 @@ released when closed or idle."""
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Never, overload
+from typing import Any, Generic, Never, TypeVar, overload
 
 from pyfect._core import Effect
 from pyfect._effect_args import require_effect
@@ -23,12 +23,16 @@ from pyfect.scope import CloseableScope, Scope, add_finalizer, scoped
 _VOID: Effect[None] = succeed(None)
 
 
+A_co = TypeVar("A_co", covariant=True)
+E_co = TypeVar("E_co", covariant=True, default=Never)
+
+
 @dataclass(frozen=True, slots=True)
-class EntityResource[A, E = Never]:
+class EntityResource(Generic[A_co, E_co]):
     """``get`` holds the resource for the current scope; ``close``
     releases it, so the next ``get`` acquires it again."""
 
-    get: Effect[A, E, Scope]
+    get: Effect[A_co, E_co, Scope]
     close: Effect[None]
 
 

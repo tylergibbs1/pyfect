@@ -120,14 +120,14 @@ class ScopedCache[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never, R =
     ) -> Effect[ScopedCache[K, A, E], Never, Scope]: ...
     @overload
     @classmethod
-    def make(
-        cls,
-        lookup: Callable[[K], Effect[A, E, Scope | R]],
+    def make[RR](
+        cls: type[ScopedCache[K, A, E, RR]],
+        lookup: Callable[[K], Effect[A, E, Scope | RR]],
         *,
         capacity: int | None,
         time_to_live: TimeToLive[K, A, E] | None = None,
         require_services_at: Literal["lookup"],
-    ) -> Effect[ScopedCache[K, A, E, R], Never, Scope]: ...
+    ) -> Effect[ScopedCache[K, A, E, RR], Never, Scope]: ...
     @classmethod
     def make(
         cls,

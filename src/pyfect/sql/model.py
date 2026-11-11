@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Hashable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Never, Protocol, TypeVar, cast
+from typing import Any, Generic, Never, Protocol, TypeVar, cast
 
 from pyfect._concurrency import for_each
 from pyfect._core import Effect
@@ -51,26 +51,35 @@ class ModelType(Protocol[A_co, I_co, U_co]):
     def __model_variants__(self) -> ModelVariants[A_co, I_co, U_co]: ...
 
 
+In_contra = TypeVar("In_contra", contravariant=True)
+Up_contra = TypeVar("Up_contra", contravariant=True)
+
+
 @dataclass(frozen=True, slots=True)
-class Repository[A, In, Up]:
+class Repository(Generic[A_co, In_contra, Up_contra]):
     """A model's table operations (Effect's ``makeRepository`` result)."""
 
-    insert: Callable[[In], Effect[A, SchemaError | SqlError]]
-    insert_void: Callable[[In], Effect[None, SchemaError | SqlError]]
-    update: Callable[[Up], Effect[A, SchemaError | SqlError]]
-    update_void: Callable[[Up], Effect[None, SchemaError | SqlError]]
-    find_by_id: Callable[[object], Effect[A, NoSuchElementException | SchemaError | SqlError]]
+    insert: Callable[[In_contra], Effect[A_co, SchemaError | SqlError]]
+    insert_void: Callable[[In_contra], Effect[None, SchemaError | SqlError]]
+    update: Callable[[Up_contra], Effect[A_co, SchemaError | SqlError]]
+    update_void: Callable[[Up_contra], Effect[None, SchemaError | SqlError]]
+    find_by_id: Callable[[object], Effect[A_co, NoSuchElementException | SchemaError | SqlError]]
     delete: Callable[[object], Effect[None, SchemaError | SqlError]]
 
 
+A_contra = TypeVar("A_contra", contravariant=True)
+
+
 @dataclass(frozen=True, slots=True)
-class Resolvers[A, In]:
+class Resolvers(Generic[A_contra, In_contra]):
     """A model's table operations as batched resolvers (Effect's
     ``makeResolvers`` result); run one with ``sql.resolver.request``."""
 
-    insert: SqlResolver[In, A, ResultLengthMismatch | SchemaError | SqlError, Any]
-    insert_void: SqlResolver[In, None, SchemaError | SqlError, Any]
-    find_by_id: SqlResolver[Hashable, A, NoSuchElementException | SchemaError | SqlError, Any]
+    insert: SqlResolver[In_contra, A_contra, ResultLengthMismatch | SchemaError | SqlError, Any]
+    insert_void: SqlResolver[In_contra, None, SchemaError | SqlError, Any]
+    find_by_id: SqlResolver[
+        Hashable, A_contra, NoSuchElementException | SchemaError | SqlError, Any
+    ]
     delete: SqlResolver[Hashable, None, SchemaError | SqlError, Any]
 
 
