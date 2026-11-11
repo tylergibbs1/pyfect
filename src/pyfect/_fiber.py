@@ -520,9 +520,10 @@ class Fiber(Generic[A_co, E_co]):
         # Steps are counted as Effect's ``currentOpCount``: the run pauses
         # before the step that reaches ``MaxOpsBeforeYield`` (Effect's
         # ``shouldYield``), but always takes its first step, so a budget
-        # of 1 or 2 still makes progress.
+        # of 1 or 2 still makes progress. An ``EffectScheduler`` is asked
+        # before every step, the first too, as in Effect.
         ops, self._ops_on_resume = self._ops_on_resume, 0
-        first = ops + 1
+        first = ops + 1 if self._should_yield is None else 0
         # Whether ``cur`` is the exit a step (or a frame that ``claims``)
         # just returned: a result it decided (a taken item, an applied
         # update) reaches its continuation with no pause in between, where
