@@ -112,12 +112,20 @@ def test_stdin_is_a_sink(process_services: Services[Platform]):
     assert (yield from _text(handle.stdout)) == "ab"
 
 
+def _exits_while_a_grandchild_holds_stdin(seconds: str) -> process.StandardCommand:
+    """``sh`` that exits at once, leaving a ``sleep`` that holds its stdin and never reads.
+
+    A background job's stdin is /dev/null before its own redirections (POSIX; dash does
+    this, bash skips it when the job redirects stdin), so the pipe goes through fd 3."""
+    return make("sh", ["-c", f"exec 3<&0; sleep {seconds} <&3 & exit 0"])
+
+
 @testing.live(timeout="10 seconds")
 def test_a_write_cut_short_by_the_child_exiting_fails(process_services: Services[Platform]):
     # Checked against Effect under Node: the child's exit destroys stdin, so
     # a write still in progress (a grandchild holds the pipe and never
     # reads) fails with ECANCELED instead of reporting it was written.
-    handle = yield from make("sh", ["-c", "sleep 1 <&0 & exit 0"])
+    handle = yield from _exits_while_a_grandchild_holds_stdin("1")
     error = yield from stream.make(b"x" * 5_000_000).run(handle.stdin).flip()
     reason = error.reason
     assert isinstance(reason, Unknown)
@@ -161,7 +169,7 @@ def test_a_write_made_before_the_childs_exit_is_handled_fails_with_ecanceled(
     # Effect 4.1.2 under Node: the exit destroys stdin in a later turn of the
     # event loop, so a write made in the turn that saw the child go (here after
     # a blocking wait) is in flight and fails with ECANCELED, every time.
-    handle = yield from make("sh", ["-c", "sleep 3 <&0 & exit 0"])
+    handle = yield from _exits_while_a_grandchild_holds_stdin("3")
     yield from fx.sync(lambda: _wait_until_gone(handle.pid))
     error = yield from stream.make(b"x" * 8_000_000).run(handle.stdin).flip()
     assert isinstance(error.cause, OSError), error
@@ -174,7 +182,7 @@ def test_a_write_the_pipe_takes_at_once_succeeds_before_the_childs_exit_is_handl
 ):
     # Effect 4.1.2 under Node: a write tries the pipe at once, so one byte made
     # in the turn that saw the child go is written, and stdin ends cleanly.
-    handle = yield from make("sh", ["-c", "sleep 3 <&0 & exit 0"])
+    handle = yield from _exits_while_a_grandchild_holds_stdin("3")
     yield from fx.sync(lambda: _wait_until_gone(handle.pid))
     yield from stream.make(b"x").run(handle.stdin)
 

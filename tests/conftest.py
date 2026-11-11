@@ -1,6 +1,7 @@
 """Shared fixtures."""
 
 import gc
+import os
 from collections.abc import Iterator
 
 import pytest
@@ -8,6 +9,13 @@ import pytest
 from pyfect.schema.compiler import _registry
 
 pytest_plugins = ["pytester", "_timeout", "_asyncio_reports"]
+
+# pytest imports readline before this file loads, and GNU readline (Linux) exports COLUMNS and
+# LINES into the C environment behind os.environ's back; children would inherit an 80-column
+# terminal (``ps aux`` cuts its lines there). tests/test_session_environment.py pins this.
+for _name in ("COLUMNS", "LINES"):
+    if _name not in os.environ:
+        os.unsetenv(_name)
 
 _COMPILER_LEFT = (
     "a schema compiler installed (pyfect.schema.compiler: set, install, enable, or an "

@@ -41,3 +41,18 @@ def test_a_release_needs_ci_and_the_docs():
     assert re.search(r"needs: \[ci, docs\]", _job("release.yml", "build")), release
     for workflow in ("ci.yml", "docs.yml"):
         assert "workflow_call:" in (WORKFLOWS / workflow).read_text(encoding="utf-8")
+
+
+def test_the_check_runs_on_every_python_pyproject_lists():
+    """CI once ran only the Python uv picked (3.14, from .python-version), so a 3.13-only
+    failure could pass it."""
+    pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    listed = re.findall(r'"Programming Language :: Python :: (3\.\d+)"', pyproject)
+    minimum = re.search(r'requires-python = ">=(3\.\d+)"', pyproject)
+    assert minimum and listed and listed[0] == minimum.group(1), "classifiers start at the minimum"
+    job = _job("ci.yml", "check")
+    matrix = re.search(r"(?m)^\s+python: \[(.*)\]$", job)
+    assert matrix, "ci.yml's check job has no python matrix"
+    assert re.findall(r'"(3\.\d+)"', matrix.group(1)) == listed
+    assert "UV_PYTHON: ${{ matrix.python }}" in job
+    assert "uv sync --locked --python ${{ matrix.python }}" in job

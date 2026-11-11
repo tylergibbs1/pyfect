@@ -15,9 +15,16 @@ jobs:
     # The project's full check (CLAUDE.md): formatting, lint, pyright strict and every test,
     # against the Effect 4.1.2 checkout the oracle tests read. Server-backed tests start their
     # databases in Docker.
+    # Every Python pyproject.toml lists (classifiers); tests/test_ci_workflows.py keeps them equal.
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.13", "3.14"]
     runs-on: ubuntu-latest
     timeout-minutes: 150
     env:
+      # Every uv command below uses the matrix Python, not .python-version's.
+      UV_PYTHON: ${{ matrix.python }}
       EFFECT_COMMIT: 506eef143bcc1750ce58920aac1e45da7265d103 # Effect 4.1.2, as ../pyfect-ref/effect
       PYFECT_EFFECT_REF: ${{ github.workspace }}/.effect
       PYFECT_REF: ${{ github.workspace }}/.effect
@@ -37,7 +44,9 @@ jobs:
           git -C .effect checkout -q FETCH_HEAD
 
       - name: Install
-        run: uv sync --locked
+        run: |
+          uv sync --locked --python ${{ matrix.python }}
+          uv run python -c "import sys; assert f'{sys.version_info.major}.{sys.version_info.minor}' == '${{ matrix.python }}', sys.version"
 
       - name: Format
         run: uv run ruff format --check .
