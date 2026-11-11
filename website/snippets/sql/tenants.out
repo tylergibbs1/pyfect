@@ -1,0 +1,2 @@
+shared: ['tenant a', 'tenant a']
+per tenant: ['tenant a', 'tenant b']

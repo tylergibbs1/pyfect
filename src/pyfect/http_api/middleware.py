@@ -89,7 +89,9 @@ class HttpApiMiddleware(
     Tag[MiddlewareService[P_co, E_co, R_co]], Generic[P_co, E_co, R_co], base=True
 ):
     """A middleware tag providing ``P`` to the handlers, failing with ``E``
-    (encoded by ``error``) and needing ``R``. The class keyword
+    (encoded by ``error``: a schema, or a tuple of them, each sent with its
+    own status; an ``S.Union`` is one schema, sent with the union's status,
+    500 by default) and needing ``R``. The class keyword
     ``security`` makes it a security middleware; ``required_for_client``
     makes a client of its endpoints use its client layer
     (``layer_client``)."""

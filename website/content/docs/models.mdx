@@ -45,8 +45,9 @@ the `select` variant leaves out is assigned as it is, without an annotation or `
 
 `sql_model.make_repository(Model, table_name=..., id_column=..., span_prefix=...)` needs a
 [`SqlClient`](/docs/sql) and gives a typed `Repository`: `insert` takes the `insert`
-variant and returns the row the database stored (`RETURNING *`), `update` takes the
-`update` variant, `find_by_id` fails with `NoSuchElementException` when there is no row,
+variant and returns the row the database stored (`RETURNING *`, `OUTPUT INSERTED.*` on SQL
+Server, a second `SELECT` on MySQL), `update` takes the `update` variant and returns the row
+too, `find_by_id` fails with `NoSuchElementException` when there is no row,
 and `delete` removes one. `insert_void` and `update_void` skip reading the row back. Each
 call runs in a span named `<span_prefix>.insert`, `<span_prefix>.findById` and so on. With
 `soft_delete_column="deleted_at"`, `delete` sets that column to `CURRENT_TIMESTAMP` and
@@ -66,9 +67,25 @@ called with an id outside `update`, naming the keys `update` has.
 
 </CodeOutput>
 
+As in Effect, `update` appends `returning *` itself rather than through the statement
+compiler, so on SQL Server and ClickHouse it fails with a syntax error: use `update_void`,
+then `find_by_id` if you need the row.
+
 `sql_model.make_resolvers(...)` gives the same operations as
-[batching resolvers](/docs/sql#a-resolver-that-batches-lookups): `insert`, `find_by_id`
-and `delete` requests made together run as one statement.
+[batching resolvers](/docs/sql#a-resolver-that-batches-lookups): `insert`, `insert_void`,
+`find_by_id` and `delete`. `R.request(resolvers.insert)` (from `pyfect.sql.resolver`) makes a
+function from one request to its effect, and the requests made together run as one
+statement. The resolvers run on the `SqlClient` that `make_resolvers` ran with, whatever
+client a request provides, so with a database per tenant make them per tenant (see
+[One resolver per tenant](/docs/sql#one-resolver-per-tenant)).
+
+<CodeOutput>
+
+<include meta='title="resolvers.py"'>../../snippets/models/resolvers.py</include>
+
+<include lang="text">../../snippets/models/resolvers.out</include>
+
+</CodeOutput>
 
 `S.variant_schema.make(variants=..., default_variant=...)` builds a toolkit like `Model`'s
 for any other set of variants, with `Struct`, `Field`, `Union`, `extract` and a `Class`

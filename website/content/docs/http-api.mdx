@@ -82,7 +82,11 @@ has the plain RFC 9457 schema for problems from other servers.
 A middleware runs around the handlers of the endpoints it is added to. Declare one as a
 class over what it gives the handlers and how it fails:
 `HttpApiMiddleware[Caller, Unauthorized]` provides a `Caller` and may fail with
-`Unauthorized`, whose schema is the class's `error`. With
+`Unauthorized`, whose schema is the class's `error`. For several errors give a tuple,
+`error = (Unauthorized, Forbidden)`, as for an endpoint's `error`: each member answers with
+its own `http_api_status`. `S.Union(Unauthorized, Forbidden)` is one schema with no status of
+its own, so either error answers 500 (with its body), unless the union itself is annotated, as
+in Effect. With
 `security={"bearer": security.bearer}` it reads a bearer token; `security.basic` and
 `security.api_key(key=..., in_="header")` read the other kinds. A group declared
 `HttpApiGroup[Authorization]` puts every one of its endpoints behind it, and

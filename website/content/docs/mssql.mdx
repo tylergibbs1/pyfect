@@ -28,7 +28,9 @@ Each statement runs through `sp_executesql` with typed parameters: `str` as `NVA
 type of your choice. A few things work differently than on PostgreSQL:
 
 - `returning(...)` on the `insert` and `update` helpers becomes an `OUTPUT INSERTED.*`
-  clause, so a statement that changes rows gives them back.
+  clause, so a statement that changes rows gives them back. A [model](/docs/models)
+  repository's `insert` uses it; its `update` appends `returning *` itself, as Effect's does,
+  which SQL Server refuses, so use `update_void` and `find_by_id` there.
 - A failure's `reason` comes from SQL Server's error number: `UniqueViolation` (with the
   constraint or index name as `constraint`), `DeadlockError`, `LockTimeoutError`,
   `AuthenticationError`, ... A login that fails when the layer is built (a wrong password)
@@ -61,6 +63,29 @@ value for each input, and `sql.call(...)` runs it. The result's `output` is read
 `sql.with_transaction` begins a transaction at `READ COMMITTED`, and nested calls use
 savepoints (`SAVE TRANSACTION`). SQL Server has no statement to release a savepoint, so a
 nested transaction that succeeds leaves its savepoint until the outer one ends.
+
+### Errors that end the transaction
+
+Some errors make SQL Server roll the whole transaction back before the client hears of
+them: anything raised while `XACT_ABORT` is `ON`, a deadlock, and a few severe errors.
+`with_transaction` then sends its own `ROLLBACK`, which fails with error 3903 ("no
+corresponding BEGIN TRANSACTION"). A failed rollback is a defect, so the transaction dies
+with both errors, and `catch_tag(SqlError)` or `catch_reason` never sees them. Effect's SQL
+Server client does the same.
+
+A stored procedure that rejects a request with `THROW` under `SET XACT_ABORT ON` is the
+common case. Either let the procedure own its transaction and call it outside
+`with_transaction`, where the `THROW` is an ordinary `SqlError`, or recover the defect with
+`catch_cause` (or `sandbox`). Either way the reason is an `UnknownError` for a number of your
+own, and `mssql.error.error_number(error.reason.cause)` reads it.
+
+<CodeOutput>
+
+<include meta='title="xact_abort.py"'>../../snippets/mssql/xact_abort.py</include>
+
+<include lang="text">../../snippets/mssql/xact_abort.out</include>
+
+</CodeOutput>
 
 ## Migrations
 

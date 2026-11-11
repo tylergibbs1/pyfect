@@ -14,9 +14,10 @@ is checked there). With ``soft_delete_column``, ``delete`` sets that
 column to ``CURRENT_TIMESTAMP`` and the reads skip rows where it is set.
 ``make_resolvers`` gives the same operations as batched resolvers.
 
-Requests run against the dialect's SQL: ``INSERT ... RETURNING *`` (and
-``UPDATE ... RETURNING *``), or for MySQL the statement followed by a
-``SELECT`` of the row.
+``insert`` returns the row through the compiler's ``returning`` (``RETURNING
+*``, ``OUTPUT INSERTED.*`` on SQL Server); ``update`` appends ``returning *``,
+as Effect does, so on SQL Server and ClickHouse only ``update_void`` works.
+On MySQL both run the statement followed by a ``SELECT`` of the row.
 """
 
 from __future__ import annotations
@@ -165,15 +166,12 @@ def make_repository[A, In, Up](
     return SqlClient().map(build)
 
 
-def _returning_one(t: _Table, statement: Fragment, select_where: Fragment) -> Effect[Any, SqlError]:
-    """The statement's row: ``RETURNING *``, or a second ``SELECT`` on MySQL."""
+def _then_select(t: _Table, statement: Fragment, select_where: Fragment) -> Effect[Any, SqlError]:
+    """MySQL's stand-in for ``RETURNING``: the statement, then a ``SELECT``
+    of the row."""
     sql = t.sql
-
-    def mysql() -> Effect[Any, SqlError]:
-        both = sql("{}; select * from {} where {};", statement, t.name, t.live(select_where))
-        return both.unprepared.map(lambda results: results[1])
-
-    return sql.on_dialect_or_else(mysql=mysql, or_else=lambda: sql("{} returning *", statement))
+    both = sql("{};\nselect * from {} where {};", statement, t.name, t.live(select_where))
+    return both.unprepared.map(lambda results: results[1])
 
 
 def _repository[A, In, Up](
@@ -192,18 +190,32 @@ def _repository[A, In, Up](
     def by_id(id: object) -> Fragment:
         return t.live(sql("{} = {}", t.id, id))
 
+    def insert_returning(row: Mapping[str, object]) -> Effect[Any, SqlError]:
+        return sql.on_dialect_or_else(
+            mysql=lambda: _then_select(
+                t, insert_statement(row), sql("{} = LAST_INSERT_ID()", t.id)
+            ),
+            or_else=lambda: sql("insert into {} {}", t.name, sql.insert(row).returning("*")),
+        )
+
+    def update_returning(row: Mapping[str, object]) -> Effect[Any, SqlError]:
+        # Effect writes ``returning *`` itself here, not through the compiler,
+        # so an update with its row fails on SQL Server and ClickHouse there too.
+        return sql.on_dialect_or_else(
+            mysql=lambda: _then_select(
+                t, update_statement(row), sql("{} = {}", t.id, row[t.id_column])
+            ),
+            or_else=lambda: sql("{} returning *", update_statement(row)),
+        )
+
     insert_one = sql_schema.find_one(
-        request=variants.insert,
-        result=model,
-        execute=lambda row: _returning_one(
-            t, insert_statement(row), sql("{} = LAST_INSERT_ID()", t.id)
-        ),
+        request=variants.insert, result=model, execute=insert_returning
     )
     insert_void = sql_schema.void(request=variants.insert, execute=insert_statement)
     update_one = sql_schema.find_one(
         request=variants.update,
         result=model,
-        execute=lambda row: _returning_one(t, update_statement(row), by_id(row[t.id_column])),
+        execute=update_returning,
     )
     update_void = sql_schema.void(request=variants.update, execute=update_statement)
     find_one = sql_schema.find_one(
@@ -276,7 +288,7 @@ def _resolvers[A, In](
             def one(row: Mapping[str, object]) -> Effect[object, SqlError]:
                 statement = sql("insert into {} {}", t.name, sql.insert(row))
                 where = sql("{} = LAST_INSERT_ID()", t.id)
-                return _returning_one(t, statement, where).map(lambda rows: rows[0])
+                return _then_select(t, statement, where).map(lambda rows: rows[0])
 
             return for_each(rows, one, concurrency=10)
 

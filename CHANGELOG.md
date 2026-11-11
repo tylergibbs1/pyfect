@@ -39,6 +39,32 @@
   `RuntimeError("ManagedRuntime disposed")`, as every other entry point and Effect's
   `runPromise` do, instead of failing with an interruption. The effect starts at once, up to its
   first wait, as Effect's `runPromise` evaluates it.
+## 0.5.5 (unreleased)
+
+### Added
+
+- Docs: two multi-tenant warnings, both matching Effect. A SQL resolver shared by tenants
+  batches their requests onto the first request's client (make one per tenant: SQL guide), and
+  a `LayerMapService` lookup that reuses a module-level layer constant gives every key built
+  while it is held the first key's build (make per-key layers in the lookup: Resources guide).
+  Also: a `THROW` under `XACT_ABORT ON` inside `with_transaction` dies with error 3903 beside
+  it, and `mssql.error.error_number` reads a custom error's number (SQL Server guide);
+  branded values with `S.refine` and `S.from_brand` (Schema guide); calling `make_resolvers`'
+  resolvers (Models guide); `LayerMapService[K, I, E]`'s lookup error parameter; a middleware's
+  several errors as a tuple, since an `S.Union` is one schema answering with the union's status
+  (500 unless annotated), as in Effect (HttpApi guide, pinned by
+  `tests/test_http_api_union_errors.py`).
+
+### Fixed
+
+- `sql.model.make_repository(...).insert` works on SQL Server: the insert asks the statement
+  compiler for its row (`sql.insert(row).returning("*")`, as Effect's `SqlModel` does), which
+  SQL Server writes as `OUTPUT INSERTED.*`, where the model sent its own `returning *`.
+  `update` still appends `returning *`, as Effect's does, so on SQL Server and ClickHouse
+  only `update_void` works (in Effect too). On MySQL an update's follow-up `SELECT` no longer
+  repeats the soft-delete filter. Every statement the repositories and resolvers send is
+  pinned against Effect's on each dialect's compiler.
+
 ## 0.5.3 (2026-11-10)
 
 ### Changed
