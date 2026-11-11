@@ -66,13 +66,16 @@ An effect reads its caller's `contextvars`, as Effect's runs follow Node's `Asyn
 so a request id set by the app's middleware reaches pyfect code, however many requests run at
 once:
 
-- `run_async` runs the effect in a copy of the caller's context. A variable the effect sets
-  stays inside the run.
+- `run_async` and `run_fork` run the effect in a copy of the caller's context. A variable the
+  effect sets stays inside the run.
 - A forked fiber starts in a copy of its parent's context.
 - A coroutine awaited with `from_async` or `try_async` runs in a copy of the fiber's context,
   as an asyncio task does.
-- `run_sync` and `run_blocking` run in the caller's own context, so a variable set by the
-  effect is still set after it.
+- `fx.run_sync` and `fx.run_blocking` run in the caller's own context, so a variable set by
+  the effect is still set after it. A `ManagedRuntime`'s `run_sync` and `run_blocking` run in
+  a copy, as its `run_async` does: callers on several threads share its scheduler, and driving
+  it from each one's own context would deadlock runs across threads. Effect has no such
+  difference, since Node has one thread.
 
 <CodeOutput>
 
