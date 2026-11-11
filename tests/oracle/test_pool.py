@@ -1056,15 +1056,22 @@ class _Resource:
 
 def _collected(references: list[weakref.ref[Any]]) -> fx.Effect[bool]:
     """Whether every referent is gone, collecting across scheduler turns as
-    Effect's ``collectGarbage`` collects across jobs: a turn's tasks stay
-    referenced until it ends."""
+    Effect's ``collectGarbage`` collects across jobs (up to 8): a turn's tasks
+    stay referenced until it ends. It stops once they are gone: late in a full
+    run a collection walks about 800k objects (0.26 s on CPython 3.14.4 here,
+    slower on a CI runner), and 8 of them timed these tests out on Linux CI."""
+
+    def gone() -> bool:
+        return all(reference() is None for reference in references)
 
     @fx.gen
     def body():
         for _ in range(8):
             yield from fx.yield_now()
             gc.collect()
-        return all(reference() is None for reference in references)
+            if gone():
+                return True
+        return False
 
     return body
 
