@@ -265,14 +265,23 @@ class LayerMapService[K: Hashable, I, E = Never](Tag[LayerMap[K, I, E]], base=Tr
 
     @classmethod
     def context_effect(cls, key: K) -> Effect[Context[I], E, Scope | Self]:
+        """The services for ``key`` from this tag's ``LayerMap``, built if
+        needed and held until the current scope closes. Fails with ``E``
+        when building them does."""
         return cls._service().flat_map(lambda m: m.context_effect(key))
 
     @classmethod
     def context_effect_option(cls, key: K) -> Effect[Option[Context[I]], E, Scope | Self]:
+        """The services for ``key`` from this tag's ``LayerMap`` if they are
+        cached (or being built), held until the current scope closes;
+        ``None`` otherwise, without building anything. Fails with ``E``
+        when a build it waits for does."""
         return cls._service().flat_map(lambda m: m.context_effect_option(key))
 
     @classmethod
     def invalidate(cls, key: K) -> Effect[None, Never, Self]:
+        """Forgets ``key``'s services in this tag's ``LayerMap``, so the
+        next use rebuilds them. Never fails."""
         return cls._service().flat_map(lambda m: m.invalidate(key))
 
 

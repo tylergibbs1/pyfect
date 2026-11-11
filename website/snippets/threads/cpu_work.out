@@ -1,0 +1,2 @@
+inline: 0 ticks
+fx.blocking: more than 5 ticks: True

@@ -245,6 +245,8 @@ class RegistryService:
         )
 
     def register_handler_unsafe(self, event: str, handler: HandlerItem) -> None:
+        """Makes ``handler`` the handler of the event tagged ``event`` at
+        once, replacing any earlier one."""
         self.handlers[event] = handler
 
     def register_compaction(
@@ -296,6 +298,9 @@ class RegistryService:
         ).as_void()
 
     def register_reactivity(self, keys: Mapping[str, Sequence[str]]) -> Effect[None, Never, Scope]:
+        """Adds ``keys``: the reactivity keys to invalidate when an event of
+        each tag is written (replacing a tag's earlier keys). They stay
+        registered after the ``Scope`` closes, as in Effect. Never fails."""
         return sync(lambda: self.reactivity_keys.update(keys))
 
 

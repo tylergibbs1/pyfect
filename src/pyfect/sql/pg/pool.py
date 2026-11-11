@@ -71,15 +71,27 @@ class PgPoolService:
 
     @property
     def get(self) -> Effect[PgConnection, SqlError, Scope]:
+        """Checks out a session until the current scope closes, replacing
+        one past its ``connection_ttl``. Fails with an ``SqlError`` when no
+        session can be connected or ``acquire_timeout`` passes first."""
         return self._check_out
 
     @property
     def reserve(self) -> Effect[PgConnection, SqlError, Scope]:
+        """``get``, pinned: the session is reserved for the connection
+        given until the current scope closes (for transactions and
+        listeners). Fails as ``get`` does."""
         return self._check_out.flat_map(lambda connection: connection.pin)
 
     def use[A, E, R](
         self, f: Callable[[PgConnection], Effect[A, E, R]]
     ) -> Effect[A, E | SqlError, R]:
+        """Lends a session to ``f`` for as long as its effect runs and
+        takes it back on any exit, without opening a scope; a lease that
+        must outlive the effect (a stream, a transaction) takes ``get`` or
+        ``reserve``. Fails with ``f``'s errors, or an ``SqlError`` as
+        ``get`` does."""
+
         def body() -> Effect[A, E | SqlError, R]:
             if self._slow_use():
                 return scoped(self._check_out.flat_map(f))
@@ -88,10 +100,16 @@ class PgPoolService:
         return _Suspend(body)
 
     def invalidate(self, connection: PgConnection) -> Effect[None]:
+        """Removes ``connection``'s session so the pool can replace it;
+        never fails. Fatal protocol and socket errors invalidate sessions
+        on their own."""
         return self._pool.invalidate(connection.base)
 
     @property
     def stats(self) -> Effect[PoolStats]:
+        """A snapshot of session occupancy; never fails. It counts
+        sessions, not statements, and a session that has just failed can
+        show as idle until the pool removes it."""
         return self._pool.stats()
 
 

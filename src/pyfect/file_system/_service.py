@@ -105,13 +105,17 @@ class FileSystemService(ABC):
         that exist at the destination are kept."""
 
     @abstractmethod
-    def copy_file(self, from_path: str, to_path: str) -> Effect[None, PlatformError]: ...
+    def copy_file(self, from_path: str, to_path: str) -> Effect[None, PlatformError]:
+        """Copy the file ``from_path`` (its contents and permissions) to
+        ``to_path``, replacing a file there."""
 
     @abstractmethod
-    def chmod(self, path: str, mode: int) -> Effect[None, PlatformError]: ...
+    def chmod(self, path: str, mode: int) -> Effect[None, PlatformError]:
+        """Set the permissions of ``path`` to ``mode`` (``0o644``, say)."""
 
     @abstractmethod
-    def chown(self, path: str, uid: int, gid: int) -> Effect[None, PlatformError]: ...
+    def chown(self, path: str, uid: int, gid: int) -> Effect[None, PlatformError]:
+        """Set the owner of ``path`` to user ``uid`` and group ``gid``."""
 
     @abstractmethod
     def link(self, from_path: str, to_path: str) -> Effect[None, PlatformError]:
@@ -131,7 +135,10 @@ class FileSystemService(ABC):
     @abstractmethod
     def make_temp_directory(
         self, *, directory: str | None = None, prefix: str = ""
-    ) -> Effect[str, PlatformError]: ...
+    ) -> Effect[str, PlatformError]:
+        """Make a new directory named with ``prefix`` in ``directory`` (the
+        system's temporary directory by default) and give its path. Nothing
+        removes it; ``make_temp_directory_scoped`` does."""
 
     @abstractmethod
     def make_temp_directory_scoped(
@@ -181,10 +188,13 @@ class FileSystemService(ABC):
         right directory."""
 
     @abstractmethod
-    def read_file(self, path: str) -> Effect[bytes, PlatformError]: ...
+    def read_file(self, path: str) -> Effect[bytes, PlatformError]:
+        """The contents of the file ``path``."""
 
     @abstractmethod
-    def read_link(self, path: str) -> Effect[str, PlatformError]: ...
+    def read_link(self, path: str) -> Effect[str, PlatformError]:
+        """Where the symbolic link ``path`` points, as written in the
+        link."""
 
     @abstractmethod
     def real_path(self, path: str) -> Effect[str, PlatformError]:
@@ -198,17 +208,22 @@ class FileSystemService(ABC):
         a missing path is no error."""
 
     @abstractmethod
-    def rename(self, old_path: str, new_path: str) -> Effect[None, PlatformError]: ...
+    def rename(self, old_path: str, new_path: str) -> Effect[None, PlatformError]:
+        """Move the file or directory ``old_path`` to ``new_path``."""
 
     @abstractmethod
-    def stat(self, path: str) -> Effect[FileInfo, PlatformError]: ...
+    def stat(self, path: str) -> Effect[FileInfo, PlatformError]:
+        """What is known about ``path`` (a symbolic link is followed; see
+        ``lstat``)."""
 
     @abstractmethod
     def symlink(self, from_path: str, to_path: str) -> Effect[None, PlatformError]:
         """Make ``to_path`` a symbolic link pointing at ``from_path``."""
 
     @abstractmethod
-    def truncate(self, path: str, length: int = 0) -> Effect[None, PlatformError]: ...
+    def truncate(self, path: str, length: int = 0) -> Effect[None, PlatformError]:
+        """Cut the file ``path`` to ``length`` bytes (empty by default),
+        or extend it with zero bytes."""
 
     @abstractmethod
     def utimes(
@@ -227,7 +242,10 @@ class FileSystemService(ABC):
     @abstractmethod
     def write_file(
         self, path: str, data: bytes, *, flag: OpenFlag = "w", mode: int = 0o666
-    ) -> Effect[None, PlatformError]: ...
+    ) -> Effect[None, PlatformError]:
+        """Write ``data`` to the file ``path``, opened with ``flag`` (made
+        or truncated by default; ``"a"`` appends). A file it makes gets
+        ``mode`` (less the umask)."""
 
     # --- derived -------------------------------------------------------------
 

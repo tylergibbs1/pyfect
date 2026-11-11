@@ -89,9 +89,17 @@ class Service:
     _embed_many: EmbedMany
 
     def embed(self, input: str) -> Effect[EmbedResponse, E.AiError]:
+        """The vector of ``input``. Concurrent calls (with the same
+        ``batch_key``) share one provider call; fails with the provider's
+        ``AiError``, or an ``InvalidOutputError`` one when the provider
+        returns another number of vectors than it was given inputs."""
         return _request(EmbeddingRequest(input), self.resolver).with_span("EmbeddingModel.embed")
 
     def embed_many(self, inputs: Sequence[str]) -> Effect[EmbedManyResponse, E.AiError]:
+        """The vectors of ``inputs`` in order, with the provider's token
+        usage, from one provider call (none for no inputs). Fails with the
+        provider's ``AiError``, or an ``InvalidOutputError`` one when the
+        provider returns another number of vectors."""
         inputs = tuple(inputs)
         if not inputs:
             return fx.succeed(EmbedManyResponse(())).with_span("EmbeddingModel.embedMany")

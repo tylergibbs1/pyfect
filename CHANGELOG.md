@@ -37,6 +37,21 @@
   `Deferred[None, Any]`, as Effect's `Deferred<void, unknown>`. `tests/test_variance.py`
   pins every public generic class's variance; a change that makes one stricter fails the
   pyright run.
+- Docstrings for every method and property of the public services that already had them as
+  methods, so `help()` and the API reference describe them: `HttpClient`, `FileSystem`, `Path`,
+  `Clock.sleep`, `Sharding`, `Runners`, `MessageStorage`, `AtomRegistry`, `LayerMap`,
+  `LayerRef`, the SQL clients (`dialect`, `join`, `load_extension`) and `PgPool`, the eventlog
+  storages, encryption and server services, `McpServer`, `McpClient`, `EmbeddingModel`,
+  `Tokenizer` and more, each checked against Effect 4.1.2. `tests/test_service_docs.py` (which
+  replaces the crypto-only check) fails for any public service method or property without one.
+
+### Docs
+
+- A "Threads and throughput" guide, linked from the streams and asyncio guides: all of a run's
+  fibers share one thread, free-threaded 3.14t speeds up only work on other threads
+  (`fx.blocking`, sockets, workers), CPU-heavy work belongs in `fx.blocking` or other
+  processes, the throughput `benchmarks/streams.py` measures, rechunking items that arrive one
+  at a time before `group_by`, and how to spot a saturated run.
 
 ## 0.5.5 (2026-11-10)
 

@@ -96,6 +96,10 @@ class SqliteClientService(SqlClientService):
         return scoped(self.reserve.flat_map(lambda _: conn.backup(destination)))
 
     def load_extension(self, path: str) -> Effect[None, SqlError]:
+        """Loads the SQLite extension at ``path`` into the connection,
+        with extension loading enabled only while it loads. Fails with an
+        ``SqlError`` when the extension cannot be loaded, or Python's
+        ``sqlite3`` was built without extension loading."""
         conn = self.connection
         return scoped(self.reserve.flat_map(lambda _: conn.load_extension(path)))
 

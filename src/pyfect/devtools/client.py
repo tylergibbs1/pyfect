@@ -62,6 +62,9 @@ class DevToolsClientService:
         self._requests = requests
 
     def send_unsafe(self, request: D.Span | D.SpanEvent) -> None:
+        """Queues ``request`` (a span snapshot or a span event) for the
+        DevTools connection, at once and without blocking; it is dropped
+        once the client is closing."""
         self._requests.offer_unsafe(request)
 
 

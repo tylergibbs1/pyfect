@@ -33,7 +33,9 @@ class StorageService(ABC):
 
     @property
     @abstractmethod
-    def get_id(self) -> Effect[RemoteId]: ...
+    def get_id(self) -> Effect[RemoteId]:
+        """The storage's remote id, which the server sends clients in its
+        hello. Never fails."""
 
     @abstractmethod
     def get_or_create_session_auth_binding(

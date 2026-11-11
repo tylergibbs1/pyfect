@@ -185,31 +185,52 @@ class MessageStorageService:
     def save_request(
         self, message: OutgoingRequest, /
     ) -> Effect[SaveResult, PersistenceError | MalformedMessage]:
+        """Saves the request ``message``, or gives ``SaveDuplicate`` (with
+        the original's id and its last reply) when a request of the same
+        primary key is already stored. Fails with ``PersistenceError``
+        when the storage cannot be written, ``MalformedMessage`` when the
+        message (or the stored reply) does not encode (or decode)."""
         return self.base.save_request(message)
 
     def save_envelope(
         self, message: OutgoingEnvelope, /
     ) -> Effect[None, PersistenceError | MalformedMessage]:
+        """Saves the envelope ``message`` (an ``AckChunk`` or an
+        ``Interrupt``). Fails with ``PersistenceError`` when the storage
+        cannot be written, ``MalformedMessage`` when it does not encode."""
         return self.base.save_envelope(message)
 
     def clear_replies(
         self, request_id: Snowflake, /, *, expected_reply_id: Snowflake | None = None
     ) -> Effect[None, PersistenceError]:
+        """Deletes the replies of ``request_id``; with
+        ``expected_reply_id``, only while that is still its latest reply
+        (so a stale resume cannot clear a newer one). Fails with
+        ``PersistenceError`` when the storage cannot be written."""
         return self.base.clear_replies(request_id, expected_reply_id=expected_reply_id)
 
     def replies_for(
         self, requests: Iterable[OutgoingRequest], /
     ) -> Effect[list[Reply], PersistenceError | MalformedMessage]:
+        """The stored replies of ``requests`` that are still to be
+        delivered: their unacknowledged chunks and their ``WithExit``.
+        Fails with ``PersistenceError`` when the storage cannot be read,
+        ``MalformedMessage`` when a reply does not decode."""
         return self.base.replies_for(requests)
 
     def replies_for_unfiltered(
         self, request_ids: Iterable[Snowflake], /
     ) -> Effect[list[Any], PersistenceError | MalformedMessage]:
+        """Every stored reply of ``request_ids``, encoded. Fails with
+        ``PersistenceError`` when the storage cannot be read."""
         return self.base.replies_for_unfiltered(request_ids)
 
     def request_id_for_primary_key(
         self, *, address: EntityAddress, tag: str, id: str
     ) -> Effect[Snowflake | None, PersistenceError]:
+        """The id of the stored request to ``address`` with RPC ``tag``
+        and primary key ``id``, ``None`` when there is none. Fails with
+        ``PersistenceError`` when the storage cannot be read."""
         return self.base.request_id_for_primary_key(address=address, tag=tag, id=id)
 
     def unprocessed_messages(
@@ -220,6 +241,14 @@ class MessageStorageService:
         limit: int | None = None,
         addresses: Sequence[EntityAddress] | None = None,
     ) -> Effect[list[Incoming], PersistenceError]:
+        """Claims, for ten minutes, the unprocessed messages of
+        ``shard_ids`` and gives them: requests without a ``WithExit`` or
+        with unacknowledged chunks, the latest ``AckChunk`` and the
+        ``Interrupt`` envelopes of unprocessed requests. ``limit`` bounds
+        how many one read gives, ``addresses`` restricts it to those
+        entities. A message that does not decode gets a defect reply
+        instead. Fails with ``PersistenceError`` when the storage cannot
+        be read."""
         return self.base.unprocessed_messages(
             shard_ids, responder=self, limit=limit, addresses=addresses
         )
@@ -227,23 +256,38 @@ class MessageStorageService:
     def unprocessed_messages_by_id(
         self, message_ids: Iterable[Snowflake], /
     ) -> Effect[list[Incoming], PersistenceError]:
+        """The unprocessed messages among ``message_ids``, claimed as
+        ``unprocessed_messages`` claims them. Fails with
+        ``PersistenceError`` when the storage cannot be read."""
         return self.base.unprocessed_messages_by_id(message_ids, responder=self)
 
     def reset_shards(self, shard_ids: Iterable[ShardId], /) -> Effect[None, PersistenceError]:
+        """Releases the claims on the messages of ``shard_ids``, so the
+        next read gives them again. Fails with ``PersistenceError`` when
+        the storage cannot be written."""
         return self.base.reset_shards(shard_ids)
 
     def reset_address(self, address: EntityAddress, /) -> Effect[None, PersistenceError]:
+        """Releases the claims on the messages to ``address``. Fails with
+        ``PersistenceError`` when the storage cannot be written."""
         return self.base.reset_address(address)
 
     def reset_requests(self, request_ids: Sequence[Snowflake], /) -> Effect[None, PersistenceError]:
+        """Releases the claims on ``request_ids``, leaving their replies
+        and processed state as they are. Fails with ``PersistenceError``
+        when the storage cannot be written."""
         return self.base.reset_requests(request_ids)
 
     def reset_addresses(
         self, addresses: Sequence[EntityAddress], /
     ) -> Effect[None, PersistenceError]:
+        """Releases the claims on the messages to ``addresses``. Fails
+        with ``PersistenceError`` when the storage cannot be written."""
         return self.base.reset_addresses(addresses)
 
     def clear_address(self, address: EntityAddress, /) -> Effect[None, PersistenceError]:
+        """Deletes every message to ``address`` and their replies. Fails
+        with ``PersistenceError`` when the storage cannot be written."""
         return self.base.clear_address(address)
 
     def with_transaction[A, E, R](self, effect: Effect[A, E, R], /) -> Effect[A, E, R]:

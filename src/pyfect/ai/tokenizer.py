@@ -19,6 +19,9 @@ class Service:
     _tokenize: Tokenize
 
     def tokenize(self, input: P.RawInput) -> Effect[Sequence[int], AiError]:
+        """The token ids of ``input`` (a string, messages or a ``Prompt``,
+        made into a ``Prompt`` first); fails with the tokenizer's
+        ``AiError``."""
         return fx.suspend(lambda: self._tokenize(P.make(input)))
 
     def truncate(self, input: P.RawInput, tokens: int) -> Effect[P.Prompt, AiError]:

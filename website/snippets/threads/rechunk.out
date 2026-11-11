@@ -1,0 +1,4 @@
+chunks as they arrive: 1000
+after rechunk(64): 16
+items grouped: 1000 1000
+grouped_within(64, ...): 16

@@ -374,6 +374,9 @@ class Constructor:
 
     @property
     def dialect(self) -> Dialect:
+        """The SQL dialect the client compiles statements for
+        (``"sqlite"``, ``"pg"``, ``"mysql"``, ``"mssql"`` or
+        ``"clickhouse"``)."""
         return self.compiler.dialect
 
     def _statement(self, segments: Sequence[Segment]) -> Statement[Row]:
@@ -457,6 +460,9 @@ class Constructor:
     def join(
         separator: LiteralString, add_parens: bool = True, fallback: LiteralString = ""
     ) -> Callable[[Sequence[LiteralString | Fragment]], Fragment]:
+        """A function joining clauses with ``separator``: several in
+        parentheses (unless ``add_parens=False``), one as it is, none as
+        ``fallback``."""
         return join(separator, add_parens, fallback)
 
     def on_dialect[T](

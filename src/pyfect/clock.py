@@ -43,7 +43,10 @@ class ClockService(Protocol):
         """Monotonic time in whole nanoseconds."""
         ...
 
-    def sleep(self, duration: Duration, /) -> Effect[None]: ...
+    def sleep(self, duration: Duration, /) -> Effect[None]:
+        """Waits for ``duration`` on this clock (a ``TestClock`` waits for
+        its time to be adjusted past it). Never fails."""
+        ...
 
 
 _NANOS = 1_000_000_000

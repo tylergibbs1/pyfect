@@ -83,7 +83,10 @@ class EventLogEncryptionService(ABC):
     @abstractmethod
     def encrypt(
         self, identity: IdentityService, store_id: str, entries: Sequence[Entry], /
-    ) -> Effect[list[EncryptedBatch]]: ...
+    ) -> Effect[list[EncryptedBatch]]:
+        """``entries`` in order, packed into batches and each batch sealed
+        with ``identity``'s key, bound to ``store_id`` and its entry ids.
+        Never fails; a crypto failure is a defect."""
 
     @abstractmethod
     def decrypt(
@@ -93,7 +96,8 @@ class EventLogEncryptionService(ABC):
         decrypt or its entries are not its entry ids."""
 
     @abstractmethod
-    def sha256(self, data: bytes, /) -> Effect[bytes]: ...
+    def sha256(self, data: bytes, /) -> Effect[bytes]:
+        """The SHA-256 digest of ``data``. Never fails."""
 
     @property
     @abstractmethod

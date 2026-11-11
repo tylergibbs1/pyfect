@@ -194,14 +194,21 @@ class LayerRefService[I, E = Never](Tag[LayerRef[I, E]], base=True):
 
     @classmethod
     def context_effect(cls) -> Effect[Context[I], E, Scope | Self]:
+        """The services of this tag's ``LayerRef``, built if needed and held
+        until the current scope closes. Fails with ``E`` when building them
+        does."""
         return cls._service().flat_map(lambda ref: ref.context_effect())
 
     @classmethod
     def invalidate(cls) -> Effect[None, Never, Self]:
+        """Forgets the build of this tag's ``LayerRef``, so the next use
+        rebuilds the layer. Never fails."""
         return cls._service().flat_map(lambda ref: ref.invalidate())
 
     @classmethod
     def refresh(cls) -> Effect[None, E, Self]:
+        """Forgets the build of this tag's ``LayerRef`` and builds the layer
+        again now. Fails with ``E`` when the build does."""
         return cls._service().flat_map(lambda ref: ref.refresh())
 
 

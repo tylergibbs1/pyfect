@@ -117,12 +117,18 @@ class EventLogServerAuthorizationService(ABC):
     @abstractmethod
     def authorize_write(
         self, *, public_key: str, store_id: StoreId, entries: Sequence[Entry]
-    ) -> Effect[None, EventLogServerAuthError]: ...
+    ) -> Effect[None, EventLogServerAuthError]:
+        """Succeeds when ``public_key`` may write ``entries`` to the
+        (resolved) store ``store_id``; fails with
+        ``EventLogServerAuthError`` to refuse the write."""
 
     @abstractmethod
     def authorize_read(
         self, *, public_key: str, store_id: StoreId
-    ) -> Effect[None, EventLogServerAuthError]: ...
+    ) -> Effect[None, EventLogServerAuthError]:
+        """Succeeds when ``public_key`` may read the (resolved) store
+        ``store_id``'s changes; fails with ``EventLogServerAuthError`` to
+        refuse."""
 
     @abstractmethod
     def authorize_identity(
@@ -149,12 +155,18 @@ class StoreMappingService(ABC):
     @abstractmethod
     def resolve(
         self, *, public_key: str, store_id: StoreId
-    ) -> Effect[StoreId, EventLogServerStoreError]: ...
+    ) -> Effect[StoreId, EventLogServerStoreError]:
+        """The store the server keeps ``public_key``'s ``store_id`` in;
+        fails with ``EventLogServerStoreError`` (``NotFound``) when there
+        is none."""
 
     @abstractmethod
     def has_store(
         self, *, public_key: str, store_id: StoreId
-    ) -> Effect[bool, EventLogServerStoreError]: ...
+    ) -> Effect[bool, EventLogServerStoreError]:
+        """Whether ``public_key``'s ``store_id`` maps to a store; fails
+        with ``EventLogServerStoreError`` when the mapping cannot be
+        read."""
 
 
 class StoreMapping(
@@ -201,12 +213,17 @@ class StorageService(ABC):
 
     @property
     @abstractmethod
-    def get_id(self) -> Effect[RemoteId]: ...
+    def get_id(self) -> Effect[RemoteId]:
+        """The storage's remote id, which the server sends clients in its
+        hello. Never fails."""
 
     @abstractmethod
     def get_or_create_session_auth_binding(
         self, public_key: str, signing_public_key: bytes, /
-    ) -> Effect[bytes]: ...
+    ) -> Effect[bytes]:
+        """The signing key bound to ``public_key``, binding the given one
+        on first use. The server passes only verified keys, and rejects one
+        that differs from the returned binding. Never fails."""
 
     @abstractmethod
     def entries_after(
@@ -216,9 +233,10 @@ class StorageService(ABC):
         those it repeats or shares an event and primary key with."""
 
     @abstractmethod
-    def write(
-        self, store_id: StoreId, entries: Sequence[Entry], /
-    ) -> Effect[list[RemoteEntry]]: ...
+    def write(self, store_id: StoreId, entries: Sequence[Entry], /) -> Effect[list[RemoteEntry]]:
+        """Appends ``entries`` to ``store_id``, each at the next sequence,
+        publishes them to its ``changes``, and gives them with their
+        sequences. Never fails; an entry already stored is a defect."""
 
     @abstractmethod
     def changes(
@@ -227,7 +245,10 @@ class StorageService(ABC):
         start_sequence: int,
         compactors: Mapping[str, RegisteredCompactor],
         /,
-    ) -> Stream[RemoteEntry]: ...
+    ) -> Stream[RemoteEntry]:
+        """The entries of ``store_id`` from ``start_sequence`` on, the
+        backlog compacted by ``compactors``, then each new one as it is
+        written. Never fails."""
 
     @abstractmethod
     def latest_sequence(self, store_id: StoreId, /) -> Effect[int | None]:
@@ -689,6 +710,12 @@ class EventLogServerUnencryptedService:
         self._handler = handler
 
     def make_write(self, schema: EventLogSchema[EventGroup[AnyEvent]]) -> ServerWrite:
+        """The server's own ``write(store_id=, event=, payload=)`` for the
+        events of ``schema``: it runs the event's handler as the server's
+        identity for the store, stores the entry in one transaction with
+        it, and gives the handler's success. It fails as the handler does,
+        or with ``EventLogServerStoreError`` when the payload does not
+        encode; an event not in ``schema`` is a defect."""
         events: dict[str, AnyEvent] = {}
         for group in schema.groups:
             events.update(group.events)

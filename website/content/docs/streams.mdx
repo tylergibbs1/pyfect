@@ -59,6 +59,11 @@ filling memory.
 
 <Diagram name="stream-pipeline" title="The pipeline's stages from byte chunks to the sink, which pulls from upstream" />
 
+Every stage runs on the run's one thread, so a pipeline's throughput is one core's: millions of
+items a second for chunked operators, a few hundred thousand for per-item effects, on either
+CPython build. [Threads and throughput](/docs/threads) has the numbers, where CPU-heavy steps
+belong and how to spot a saturated run.
+
 `fx.encoding` has framers for NDJSON, JSON arrays and Server-Sent Events, and channels for CSV,
 XML, zip and tar, below. As in Effect, `ndjson.decode()` fails the whole stream at the first
 line that isn't JSON; to skip bad lines, read text lines (`decode_text().split_lines()`) and
