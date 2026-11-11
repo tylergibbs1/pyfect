@@ -64,7 +64,13 @@ function DocsPage({
   const neighbours = findNeighbour(source.getPageTree(), page.url);
 
   return (
-    <div data-slot="docs" className="flex scroll-mt-24 items-stretch pb-8 text-[1.05rem] sm:text-[15px] xl:w-full">
+    // At xl a grid, not flex: the rail's column exists before the rail is parsed. These pages
+    // are large, the browser paints them while parsing, and a flex column first filled the
+    // rail's place too, so the article jumped sideways when the rail arrived.
+    <div
+      data-slot="docs"
+      className="flex scroll-mt-24 items-stretch pb-8 text-[1.05rem] sm:text-[15px] xl:grid xl:w-full xl:grid-cols-[minmax(0,1fr)_var(--sidebar-width)]"
+    >
       <div className="flex min-w-0 flex-1 flex-col">
         <div className="h-(--top-spacing) shrink-0" />
         <div
@@ -128,7 +134,7 @@ function DocsPage({
       </div>
       <div
         data-docs-toc-rail=""
-        className="sticky top-[calc(var(--header-height)+1px)] z-30 ml-auto hidden h-[90svh] w-(--sidebar-width) flex-col gap-4 overflow-hidden overscroll-none pb-8 xl:flex"
+        className="sticky top-[calc(var(--header-height)+1px)] z-30 hidden h-[90svh] w-(--sidebar-width) flex-col gap-4 overflow-hidden overscroll-none pb-8 xl:flex"
       >
         <div className="h-(--top-spacing) shrink-0" />
         {toc.length > 0 ? (

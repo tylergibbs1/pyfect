@@ -108,6 +108,12 @@
   round for the next request. A shutdown starting just after a client got its response no
   longer waits out `graceful_shutdown_timeout` for that connection.
 
+### Docs
+
+- On a wide screen the page no longer jumps sideways while it loads. The browser draws these
+  long pages before it has read all of them, and until it reached the table of contents on the
+  right, the article was centred as if the table of contents took no space.
+
 ## 0.5.7 (2026-11-11)
 
 ### Added
