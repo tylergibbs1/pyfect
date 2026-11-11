@@ -71,7 +71,7 @@ def run_sync_exit(eff: Effect[Any, Any, Any], *, context: Context = _EMPTY) -> E
     require_effect(eff, "eff")
     scheduler = SyncOnlyScheduler()
     fiber: Fiber[Any, Any] = new_root(scheduler, context)
-    fiber._start(eff)
+    fiber._start(eff, caller_drives=True)
     return flush_exit(scheduler, fiber)
 
 
@@ -102,7 +102,7 @@ def run_blocking_exit(eff: Effect[Any, Any, Any], *, context: Context = _EMPTY) 
     require_effect(eff, "eff")
     scheduler = SyncScheduler()
     fiber: Fiber[Any, Any] = new_root(scheduler, context)
-    fiber._start(eff)
+    fiber._start(eff, caller_drives=True)
     return drive(scheduler, fiber)
 
 
