@@ -34,8 +34,9 @@ from pyfect.net.net_address import InetAddressV4
 from pyfect.scope import scoped
 
 GRACEFUL_SECONDS = 2.0
-SLACK_SECONDS = 0.5
-"""Beyond what Effect takes: scheduling, and uvicorn polls its connections every 0.1 s."""
+SLACK_SECONDS = 1.0
+"""Beyond what Effect takes: scheduling on a busy runner, and uvicorn polls its connections
+every 0.1 s."""
 
 
 @dataclass(frozen=True)

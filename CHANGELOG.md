@@ -12,6 +12,10 @@
   do, so idle connections close at once, as Effect's `NodeHttpServer` closes them. A test
   times each adapter's shutdown, cleartext and TLS, HTTP/1.1 and HTTP/2, and fails when a new
   server module is left out of it.
+- `live_server` counts a connection as idle once its request is read and its response
+  finished, as Node's `closeIdleConnections` does, instead of once the serving fiber came back
+  round for the next request. A shutdown starting just after a client got its response no
+  longer waits out `graceful_shutdown_timeout` for that connection.
 
 ## 0.5.7 (2026-11-11)
 

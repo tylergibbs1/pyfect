@@ -231,7 +231,7 @@ class Exchange:
                 return self._failed(response, die_cause(defect))
             self.headers_sent = True
             if without_body or omits_body_status(wire.status):
-                return self._write(head).map(self._done)
+                return self._write_last(head)
             declared = None if chunked else _declared_length(headers)
             return self._send(response, head, wire.body, chunked, declared)
 
@@ -246,16 +246,32 @@ class Exchange:
         declared: int | None,
     ) -> Effect[None, Any]:
         if body is None:
-            return self._write(head).map(self._done)
+            return self._write_last(head)
         if isinstance(body, bytes):
             if declared is not None and declared != len(body):
                 # As Node: the head is never flushed, the connection is aborted.
                 return self._failed(response, die_cause(ContentLengthMismatch(declared)))
-            return self._write(head, body).map(self._done)
+            return self._write_last(head, body)
         return self._write(head).flat_map(lambda _: self._stream(response, body, chunked, declared))
 
     def _done(self, _: object = None) -> None:
         self.finished = True
+
+    def _write_last(self, *chunks: bytes) -> Effect[None]:
+        """The response's last bytes: it is finished once they are queued, before the
+        client can have them, as Node's ``res.finished`` is set by ``end()``."""
+
+        def step() -> Effect[None]:
+            self._done()
+            return self._write(*chunks)
+
+        return suspend(step)
+
+    @property
+    def idle(self) -> bool:
+        """As a connection Node's ``closeIdleConnections`` closes: the request is read
+        and the response finished."""
+        return self.finished and self.body.complete
 
     def _stream(
         self,
@@ -283,7 +299,10 @@ class Exchange:
         def end(_: object) -> Effect[None, Any]:
             if mismatch is not None and left:
                 return self._failed(response, mismatch)
-            return (self._write(b"0\r\n\r\n") if chunked else void).map(self._done)
+            if chunked:
+                return self._write_last(b"0\r\n\r\n")
+            self._done()
+            return void
 
         # Effect writes the body ``Stream.orDie``: its failure is a defect.
         written: Effect[None, Any] = body.or_die().run_for_each_array(write).interruptible()
