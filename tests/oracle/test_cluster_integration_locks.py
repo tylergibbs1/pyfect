@@ -6,6 +6,14 @@ They run on the throwaway PostgreSQL server only: the faults act on the
 runner storage's reserved lock connection, which SQLite does not have (its
 shard locks are rows written through the shared client). Effect runs them on
 PostgreSQL and MySQL.
+
+"converges after repeated lock-connection rebuilds and a hung release" is
+stale at Effect 4.1.2 on PostgreSQL, where it fails under Node: it expects a
+runner to keep its shards while its lock connection is rebuilt, but an
+advisory refresh confirms only the locks the current session holds, so a
+rebuilt session drops them. "drops shards on lock-connection rebuilds and
+converges after a hung release" asserts that drop, then the rest of
+Effect's test.
 """
 
 from __future__ import annotations
@@ -173,16 +181,10 @@ def test_keeps_peers_progressing_when_a_lock_query_is_permanently_stuck(
 
 
 @testing.live(timeout="90 seconds")
-def test_converges_after_repeated_lock_connection_rebuilds_and_a_hung_release(
-    cluster_db: ClusterDatabase, request: pytest.FixtureRequest
+def test_drops_shards_on_lock_connection_rebuilds_and_converges_after_a_hung_release(
+    cluster_db: ClusterDatabase,
 ):
-    """converges after repeated lock-connection rebuilds and a hung release"""
-    if cluster_db.backend == "pg":
-        # Effect 4.1.2's advisory refresh confirms only the locks the current
-        # session holds, so a rebuilt lock connection loses the shards. Effect's
-        # own test fails the same way under Node at 4.1.2.
-        reason = "stale in Effect 4.1.2: a rebuilt lock session no longer reacquires"
-        request.applymarker(pytest.mark.xfail(strict=True, reason=reason))
+    """drops shards on lock-connection rebuilds and converges after a hung release"""
 
     def body() -> Body:
         cluster = yield from make(cluster_db, entities=fx.layer.empty, config=CONFIG)
@@ -190,21 +192,14 @@ def test_converges_after_repeated_lock_connection_rebuilds_and_a_hung_release(
         yield from cluster.wait_for_stable_assignments()
         faulted_address = address_of(faulted)
 
-        yield from cluster.fault_lock(faulted, "fail")
-        healthy_polls = [0]
-
         @fx.gen
-        def kept_shards():
+        def lost_a_shard():
             yield from cluster.fault_lock(faulted, "fail")
-            assignments = list(cluster.assignment_map().values())
-            assert all(owners == [faulted_address] for owners in assignments), (
-                "The runner lost a shard during lock-connection rebuild"
-            )
-            healthy_polls[0] += 1
-            return healthy_polls[0] >= 10
+            assignments = cluster.assignment_map().values()
+            return any(faulted_address not in owners for owners in assignments)
 
         yield from cluster.wait_until(
-            "The runner lost shards while rebuilding failed lock connections", kept_shards
+            "The runner kept shards that a rebuilt lock connection does not hold", lost_a_shard
         )
 
         yield from cluster.fault_lock(faulted, "hangRelease")

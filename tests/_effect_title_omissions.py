@@ -184,6 +184,21 @@ OMISSIONS: tuple[Omission, ...] = (
         "`Unsupported`); `tests/oracle/test_dns_system.py` ports the PTR and reverse titles",
         r"every record type|TLSA|TXT record|no record can be represented|refused",
     ),
+    _some(
+        "platform/node/test/cluster-integration/Entity.test.ts",
+        "section 4 row of these two titles: out of date at Effect 4.1.2, which ends a frozen "
+        "lock session after `shard_lock_expiration` (it times out under Node); "
+        "`test_releases_frozen_advisory_locks_after_the_lock_expiration` asserts 4.1.2",
+        r"retains frozen advisory locks until the session closes",
+    ),
+    _some(
+        "platform/node/test/cluster-integration/Locks.test.ts",
+        "section 4 row of these two titles: out of date at Effect 4.1.2, whose rebuilt lock "
+        "session drops the shards it does not hold (it fails under Node on pg); "
+        "`test_drops_shards_on_lock_connection_rebuilds_and_converges_after_a_hung_release` "
+        "asserts 4.1.2",
+        r"converges after repeated lock-connection rebuilds and a hung release",
+    ),
     *_whole(NOT_PORTED_HTTP2, "platform/node-shared/test/HttpServerHttp2.test-utils.ts"),
     _some(
         "effect/test/http/FetchHttpClient.test.ts",
