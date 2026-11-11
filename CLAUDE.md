@@ -74,3 +74,9 @@ only if they pass (`tests/test_ci_workflows.py`). After a deliberate speed chang
   bare-number timestamp (`set_time`, `current_time_millis`, a schedule step's `now`); write
   units (`"5 seconds"`), which `tests/test_duration_literals.py` enforces everywhere but the
   parse's own tests.
+
+## Releases
+
+Patch releases only fix, add, deprecate, speed up or document; behaviour a working program
+could rely on, removals and stricter types wait for the next minor release
+(`docs/VERSIONING.md`, enforced by `tests/test_changelog.py`).

@@ -31,3 +31,35 @@ def test_versions_are_unique_and_newest_first():
 def test_only_the_top_section_is_unreleased():
     unreleased = [i for i, (_, when) in enumerate(_sections()) if when == "unreleased"]
     assert unreleased in ([], [0])
+
+
+# docs/VERSIONING.md: a patch release only fixes, adds, deprecates, speeds up or documents.
+PATCH_HEADINGS = {"Fixed", "Added", "Deprecated", "Performance", "Docs"}
+POLICY_SINCE = (0, 5, 5)
+
+
+def _headings_by_version() -> dict[tuple[int, int, int], list[str]]:
+    text = CHANGELOG.read_text(encoding="utf-8")
+    found: dict[tuple[int, int, int], list[str]] = {}
+    version: tuple[int, int, int] | None = None
+    for line in text.splitlines():
+        heading = HEADING.match(line)
+        if heading:
+            a, b, c, _ = heading.groups()
+            version = (int(a), int(b), int(c))
+            found[version] = []
+        elif line.startswith("### ") and version is not None:
+            found[version].append(line[4:].strip())
+    return found
+
+
+def test_patch_releases_only_fix_add_deprecate_or_document():
+    offenders = {
+        ".".join(map(str, version)): sorted(set(headings) - PATCH_HEADINGS)
+        for version, headings in _headings_by_version().items()
+        if version > POLICY_SINCE and version[2] != 0 and set(headings) - PATCH_HEADINGS
+    }
+    assert not offenders, (
+        "these patch sections need a minor release (docs/VERSIONING.md), "
+        f"or the entries belong under Fixed / Added / Deprecated: {offenders}"
+    )
