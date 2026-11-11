@@ -8,7 +8,8 @@ a client (``socket_runner.layer_client_only`` with a workflow engine) and
 none of its runners yet. ``start`` adds runners, ``stop`` closes one
 gracefully, ``kill`` closes one without unregistering or releasing its
 locks, ``freeze`` stops its heartbeats and lock refreshes while its sockets
-stay open, ``fault_lock`` breaks its reserved lock connection (PostgreSQL),
+stay open (and, pyfect-only, its message storage waits too, as a paused
+process's would), ``fault_lock`` breaks its reserved lock connection (PostgreSQL),
 and ``cut_socket`` closes one connection between two members. The
 ``wait_*`` helpers poll with a deadline and report the cluster's state when
 it passes.
@@ -53,7 +54,7 @@ from pyfect.cluster import (
 from pyfect.cluster import sharding_config as sharding_config_
 from pyfect.cluster.entity import Entity
 from pyfect.cluster.entity_id import EntityId
-from pyfect.cluster.message_storage import MessageStorage, MessageStorageService
+from pyfect.cluster.message_storage import MessageStorage, MessageStorageService, StorageBase
 from pyfect.cluster.runner_address import RunnerAddress
 from pyfect.cluster.runner_storage import RunnerStorage, RunnerStorageService
 from pyfect.cluster.runners import RpcClientProtocol, RpcClientProtocolService
@@ -368,28 +369,47 @@ def address_key(address: RunnerAddress) -> str:
 CLIENT_PEER = "client"
 
 
-def _reads_nothing_once_killed(
+_CLAIMS = frozenset({"unprocessed_messages", "unprocessed_messages_by_id"})
+
+
+class _ControlledStorageBase:
+    """A runner's message storage, as its controller's mode allows. A
+    frozen runner stands for a paused process: every operation waits until
+    it resumes or is killed. Its lock refresh never returns, so neither
+    the fence nor a lost-lock check would give back a message it claimed
+    after its lock moved, and the claim lasts ten minutes (pyfect-only).
+    A killed runner's process is gone, but here its scope is still closing
+    while a gated handler runs, and its read loop lives on: its claims
+    give nothing, or a read after the replacement's ``reset_shards`` would
+    strand a message the same way."""
+
+    def __init__(self, base: StorageBase, controller: _RunnerStorageController) -> None:
+        self._base = base
+        self._controller = controller
+
+    def __getattr__(self, name: str) -> Callable[..., fx.Effect[Any, Any]]:
+        operation: Callable[..., fx.Effect[Any, Any]] = getattr(self._base, name)
+        controller = self._controller
+        claims = name in _CLAIMS
+
+        def run(*args: Any, **kwargs: Any) -> fx.Effect[Any, Any]:
+            def start() -> fx.Effect[Any, Any]:
+                if controller.mode == "frozen":
+                    return controller.gate.wait().uninterruptible().and_then(fx.suspend(start))
+                if controller.mode == "killed" and claims:
+                    return fx.succeed([])
+                return operation(*args, **kwargs)
+
+            return fx.suspend(start)
+
+        return run
+
+
+def _controlled_message_storage(
     storage: MessageStorageService, controller: _RunnerStorageController
 ) -> MessageStorageService:
-    """A killed runner's process is gone, but here its scope is still closing while a gated
-    handler runs, and its read loop lives on. A read after the replacement's ``reset_shards``
-    claims a message for ten minutes (``last_read``), and nothing would deliver it."""
-
-    def unprocessed_messages(shard_ids: Any, /, **options: Any) -> fx.Effect[Any, Any]:
-        return fx.suspend(
-            lambda: (
-                fx.succeed([])
-                if controller.mode == "killed"
-                else storage.unprocessed_messages(shard_ids, **options)
-            )
-        )
-
-    cls = type(
-        "KilledRunnerStorage",
-        (MessageStorageService,),
-        {"unprocessed_messages": staticmethod(unprocessed_messages)},
-    )
-    return cls(storage.base, storage._handlers, storage._handlers_by_shard)  # pyright: ignore[reportPrivateUsage]
+    base = cast(StorageBase, _ControlledStorageBase(storage.base, controller))
+    return replace(storage, base=base)
 
 
 @dataclass
@@ -595,7 +615,7 @@ class Cluster:
             yield from scope.add_finalizer(lambda _: lock_fault.set("clear"))
             controller = _RunnerStorageController(raw_storage.get_unsafe(RunnerStorage))
             storage = Context.make(RunnerStorage, controller.controlled)
-            messages = _reads_nothing_once_killed(
+            messages = _controlled_message_storage(
                 self.shared.get_unsafe(MessageStorage), controller
             )
             built = (
@@ -680,8 +700,8 @@ class Cluster:
         return kill_
 
     def freeze(self, runner: ClusterRunner) -> fx.Effect[None]:
-        """Stops ``runner``'s heartbeats and lock refreshes; its sockets and
-        lock connection stay open."""
+        """Stops ``runner``'s heartbeats, lock refreshes and message storage
+        operations; its sockets and lock connection stay open."""
 
         @fx.gen
         def freeze_():
