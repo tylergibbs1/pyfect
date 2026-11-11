@@ -304,7 +304,8 @@ class Fiber(Generic[A_co, E_co]):
         self._yielded: _Yielded | None = None
         self._phase: _Phase = "pending"
         # The ``contextvars`` context the fiber parked or paused in, which
-        # it resumes in (Effect's captured async context).
+        # it resumes in (Effect's captured async context), or that started
+        # it, when its first run is scheduled (see _start).
         self._async_context: contextvars.Context | None = None
         self._set_context(context)
         if self._runtime_metrics is not None:
@@ -484,7 +485,17 @@ class Fiber(Generic[A_co, E_co]):
         frame = self._stack_frame
         return None if frame is None else Context.make(InterruptorStackTrace, frame)
 
-    def _start(self, effect: Effect[Any, Any, Any]) -> None:
+    def _start(self, effect: Effect[Any, Any, Any], *, caller_drives: bool = False) -> None:
+        """Schedule the fiber's first run, in a copy of the caller's
+        ``contextvars``, not in the context of whatever drains the scheduler
+        then: a scheduler is shared by other callers' runs (a
+        ``ManagedRuntime``'s, a loop's), and one request's ContextVars must
+        not leak into another's. With ``caller_drives`` (``run_sync``,
+        ``run_blocking``) the caller drives the scheduler itself before it
+        returns, so the run is in the caller's own context, as Effect's
+        synchronous start is."""
+        if not caller_drives:
+            self._async_context = contextvars.copy_context()
         self._scheduler.schedule(lambda: self._drive(effect))
 
     def _push(self, frame: Frame) -> None:

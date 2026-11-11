@@ -26,6 +26,9 @@ Where runs go:
   running loop, else the runtime's own scheduler (they then make progress
   while a sync run or ``dispose`` drives it).
 
+Each run reads its caller's ``contextvars`` (a request id set before the
+call), however many callers share the runtime.
+
 ``dispose`` (and a sync ``with``) blocks, so it raises inside a fiber or a
 running asyncio loop, whose fibers it could never see finish: use
 ``dispose_effect`` or ``dispose_async`` (``async with``) there.
@@ -249,7 +252,9 @@ class ManagedRuntime(Generic[R_contra, ER_co]):
         """Run on the running loop. Cancelling the awaiting task interrupts
         the effect and waits for its finalizers."""
         require_effect(eff, "eff")
-        return await await_fiber(self._start(self._loop_scheduler(), eff))
+        # Started now, as Effect's ``runPromise`` evaluates it: after dispose
+        # it dies before joining the closed fiber scope would interrupt it.
+        return await await_fiber(self._start(self._loop_scheduler(), eff, now=True))
 
     async def run_async[A](
         self: ManagedRuntime[R_contra, Never], eff: Effect[A, Never, R_contra]

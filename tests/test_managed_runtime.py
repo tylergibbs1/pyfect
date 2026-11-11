@@ -5,7 +5,7 @@ import asyncio
 import sys
 import threading
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Awaitable, Callable, Iterator
 from dataclasses import dataclass
 from typing import Never
 
@@ -296,3 +296,82 @@ def test_first_runs_racing_on_a_loop_and_a_sync_thread_build_the_layer_once():
     on_loop.join()
     runtime.dispose()
     assert (builds, results) == (["build"], ["svc", "svc"])
+
+
+def _died_disposed(ex: fx.Exit[object, object]) -> bool:
+    """Effect 4.1.2 under Node, after ``dispose()``: ``runPromiseExit``,
+    ``runSyncExit``, ``runFork`` and ``runCallback`` all exit with one
+    ``Die("ManagedRuntime disposed")``; ``runPromise`` rejects and
+    ``runSync`` throws with it (as does ``context()``)."""
+    if not isinstance(ex, fx.Failure):
+        return False
+    [reason] = ex.cause.reasons
+    return isinstance(reason, fx.cause.Die) and str(reason.defect) == "ManagedRuntime disposed"
+
+
+def _disposed() -> fx.ManagedRuntime[Name]:
+    runtime = fx.ManagedRuntime.make(layer.succeed(Name, "x"))
+    runtime.run_blocking(fx.void)
+    runtime.dispose()
+    return runtime
+
+
+def _exit_of_fork_in_a_fiber(runtime: fx.ManagedRuntime[Name]) -> fx.Exit[object, object]:
+    return fx.run_blocking(fx.suspend(lambda: runtime.run_fork(Name()).await_exit()))
+
+
+def _exit_of_callback(runtime: fx.ManagedRuntime[Name]) -> fx.Exit[object, object]:
+    exits: list[fx.Exit[object, object]] = []
+    runtime.run_callback(Name(), on_exit=exits.append)
+    runtime.run_blocking_exit(fx.void)  # drives the runtime's scheduler
+    return exits[0]
+
+
+async def _on_a_loop[T](f: Callable[[fx.ManagedRuntime[Name]], Awaitable[T]]) -> T:
+    runtime = fx.ManagedRuntime.make(layer.succeed(Name, "x"))
+    await runtime.run_async(fx.void)
+    await runtime.dispose_async()
+    return await f(runtime)
+
+
+async def _awaited_fork(runtime: fx.ManagedRuntime[Name]) -> fx.Exit[object, object]:
+    return await fx.run_async(runtime.run_fork(Name()).await_exit())
+
+
+async def _awaited_callback(runtime: fx.ManagedRuntime[Name]) -> fx.Exit[object, object]:
+    exits: list[fx.Exit[object, object]] = []
+    runtime.run_callback(Name(), on_exit=exits.append)
+    while not exits:
+        await asyncio.sleep(0.001)
+    return exits[0]
+
+
+AFTER_DISPOSE_EXITS: dict[str, Callable[[], fx.Exit[object, object]]] = {
+    "run_sync_exit": lambda: _disposed().run_sync_exit(Name()),
+    "run_blocking_exit": lambda: _disposed().run_blocking_exit(Name()),
+    "run_async_exit": lambda: asyncio.run(_on_a_loop(lambda r: r.run_async_exit(Name()))),
+    "run_fork from a thread": lambda: _exit_of_callback(_disposed()),
+    "run_fork in a fiber": lambda: _exit_of_fork_in_a_fiber(_disposed()),
+    "run_fork on a loop": lambda: asyncio.run(_on_a_loop(_awaited_fork)),
+    "run_callback on a loop": lambda: asyncio.run(_on_a_loop(_awaited_callback)),
+}
+
+
+@pytest.mark.parametrize("entry", list(AFTER_DISPOSE_EXITS))
+def test_every_run_after_dispose_dies_with_managed_runtime_disposed(entry: str) -> None:
+    ex = AFTER_DISPOSE_EXITS[entry]()
+    assert _died_disposed(ex), ex
+
+
+AFTER_DISPOSE_RAISES: dict[str, Callable[[], object]] = {
+    "run_sync": lambda: _disposed().run_sync(Name()),
+    "run_blocking": lambda: _disposed().run_blocking(Name()),
+    "run_async": lambda: asyncio.run(_on_a_loop(lambda r: r.run_async(Name()))),
+    "context": lambda: asyncio.run(_on_a_loop(lambda r: r.context())),
+}
+
+
+@pytest.mark.parametrize("entry", list(AFTER_DISPOSE_RAISES))
+def test_every_raising_run_after_dispose_raises_managed_runtime_disposed(entry: str) -> None:
+    with pytest.raises(RuntimeError, match=r"^ManagedRuntime disposed$"):
+        AFTER_DISPOSE_RAISES[entry]()
