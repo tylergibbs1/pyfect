@@ -16,6 +16,7 @@ from pyfect._core import Effect
 from pyfect.duration import Duration, millis
 from pyfect.effect import gen, suspend, sync
 from pyfect.exit import Success
+from pyfect.http.live_server._exchange import Exchange
 from pyfect.http.live_server._timers import timeout_option
 from pyfect.net.net_address import (
     SocketAddress,
@@ -36,13 +37,19 @@ aborted."""
 
 
 class ConnectionState:
-    """A connection the server tracks: ``idle`` between requests."""
+    """A connection the server tracks: ``waiting`` between requests, else serving
+    ``exchange``."""
 
-    __slots__ = ("conn", "idle")
+    __slots__ = ("conn", "exchange", "waiting")
 
     def __init__(self, conn: Connection) -> None:
         self.conn = conn
-        self.idle = True
+        self.waiting = True
+        self.exchange: Exchange | None = None
+
+    @property
+    def idle(self) -> bool:
+        return self.waiting or (self.exchange is not None and self.exchange.idle)
 
 
 class Listener:

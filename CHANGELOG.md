@@ -95,6 +95,18 @@
   there, as in Effect. A new test builds every resource that forks a background fiber (pools,
   `RcRef`, `RcMap`, `ScopedCache`, `LayerMap`, fiber sets, maps and handles, shared and
   broadcast streams, `fork_scoped`) inside an acquire and checks its scope closes.
+- An idle keep-alive connection no longer holds a TLS server's shutdown. asyncio kept a closed
+  TLS connection open until the client sent its `close_notify`, up to 30 seconds, so
+  `hypercorn_server` took 30 seconds to stop (HTTP/1.1 and HTTP/2) whatever
+  `graceful_shutdown_timeout` said, and `uvicorn_server` waited out the whole timeout. Their TLS
+  connections now close once their own `close_notify` is sent, as Node's and `live_server`'s
+  do, so idle connections close at once, as Effect's `NodeHttpServer` closes them. A test
+  times each adapter's shutdown, cleartext and TLS, HTTP/1.1 and HTTP/2, and fails when a new
+  server module is left out of it.
+- `live_server` counts a connection as idle once its request is read and its response
+  finished, as Node's `closeIdleConnections` does, instead of once the serving fiber came back
+  round for the next request. A shutdown starting just after a client got its response no
+  longer waits out `graceful_shutdown_timeout` for that connection.
 
 ## 0.5.7 (2026-11-11)
 

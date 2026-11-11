@@ -205,12 +205,13 @@ def serve_connection(
         # serving keep-alive requests until it is idle for the keep-alive
         # timeout (or the graceful shutdown timeout ends).
         while True:
-            state.idle = True
+            state.waiting = True
+            state.exchange = None
             inbound.deadline = None
             data = yield from next_head(first)
             inbound.deadline = time.monotonic() + timeouts.request.to_seconds()
             first = False
-            state.idle = False
+            state.waiting = False
             head = parsed(data)
             if head is None:
                 return
@@ -218,6 +219,7 @@ def serve_connection(
                 yield from _reject(conn, head)
                 return
             exchange = Exchange(conn, inbound, head, int(timeouts.keep_alive.to_seconds()))
+            state.exchange = exchange
             request = _request(exchange, protocol, remote_address, websocket)
             yield from _run_request(exchange, handle(request, exchange))
             if not (yield from after(exchange)):
