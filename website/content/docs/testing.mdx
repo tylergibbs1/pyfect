@@ -57,9 +57,12 @@ process, with no socket, so time stays virtual. A streamed response body is not 
 reads each chunk as the handler writes it and pulls the next only when asked, so a test can read
 server-sent events while the handler is still running. A reader that stops early closes the
 handler's request scope, and a body never read closes with the test's scope.
-`router.layer_in_memory_client(routes)` provides it as the `HttpClient` service instead. An error the
-routes leave unhandled is a defect of the request, as in Effect's `HttpApiTest`, unless a server would
-answer it with a response: a route not found gives 404.
+`router.layer_in_memory_client(routes)` provides it as the `HttpClient` service instead. As in
+Effect's `HttpApiTest`, every failure is a defect of the request, even one a server answers with a
+response: a route not found dies with its `HttpServerError`, a payload or path parameters failing
+their schema with the schema error, so a test reads them with `.exit()`. A response's cookies are in
+its `.cookies`, not in `set-cookie` headers, as in Effect, which hands the server response over
+without writing it to the wire.
 
 <include meta='title="test_streaming_http.py"'>../../snippets/testing/test_streaming_http.py</include>
 

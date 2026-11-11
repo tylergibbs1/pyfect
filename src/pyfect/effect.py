@@ -58,6 +58,7 @@ from pyfect.scheduler import SyncOnlyScheduler
 
 
 def succeed[A](value: A) -> Effect[A]:
+    """Succeed with ``value``."""
     return _Succeed(value)
 
 
@@ -66,6 +67,7 @@ succeed_none: Effect[None] = _Succeed(None)
 
 
 def succeed_some[A](value: A) -> Effect[Some[A]]:
+    """Succeed with ``Some(value)``."""
     return _Succeed(Some(value))
 
 
@@ -82,18 +84,22 @@ def with_fiber_succeed[A](f: Callable[[Fiber[Any, Any]], A]) -> Effect[A]:
 
 
 def fail[E](error: E) -> Effect[Never, E]:
+    """Fail with ``error``, a recoverable failure in the error channel."""
     return _FailCause(fail_cause_of(error))
 
 
 def fail_cause[E](cause: Cause[E]) -> Effect[Never, E]:
+    """Fail with ``cause`` as it is."""
     return _FailCause(cause)
 
 
 def die(defect: object) -> Effect[Never]:
+    """Die with ``defect``, an unrecoverable failure outside the error channel."""
     return _FailCause(die_cause(defect))
 
 
 def from_exit[A, E](ex: Exit[A, E]) -> Effect[A, E]:
+    """Succeed with the exit's value, or fail with its cause."""
     return _FromExit(ex)
 
 
@@ -433,10 +439,12 @@ def interrupt() -> Effect[Never]:
 
 
 def fiber_id() -> Effect[int]:
+    """The running fiber's id."""
     return _WithFiber(lambda f: _Succeed(f.id))
 
 
 def current_fiber() -> Effect[Fiber[Any, Any]]:
+    """The running fiber."""
     return _WithFiber(_Succeed)
 
 

@@ -126,6 +126,12 @@ def test_the_in_memory_client_bounds_a_body_read(body: str) -> None:
     @fx.fn
     def program():
         http = yield from router.in_memory_client(app)
-        return (yield from http.post("http://localhost/", body=sent)).status
+        return (yield from http.post("http://localhost/", body=sent).exit())
 
-    assert fx.run_blocking(fx.scoped(program()).or_die()) == 413
+    # A server answers 413; in memory the failure is a defect, as in Effect's HttpApiTest.
+    exit_ = fx.run_blocking(fx.scoped(program()))
+    assert isinstance(exit_, Failure)
+    defect = exit_.cause.squash()
+    assert isinstance(defect, HttpServerError)
+    assert isinstance(defect.reason, RequestParseError)
+    assert defect.reason.kind == "BodyTooLarge"

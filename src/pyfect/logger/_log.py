@@ -65,26 +65,32 @@ def log(*message: object) -> Effect[None]:
 
 
 def log_fatal(*message: object) -> Effect[None]:
+    """Log ``message`` at ``FATAL``."""
     return log_with_level(LogLevel.FATAL, *message)
 
 
 def log_error(*message: object) -> Effect[None]:
+    """Log ``message`` at ``ERROR``."""
     return log_with_level(LogLevel.ERROR, *message)
 
 
 def log_warning(*message: object) -> Effect[None]:
+    """Log ``message`` at ``WARN``."""
     return log_with_level(LogLevel.WARN, *message)
 
 
 def log_info(*message: object) -> Effect[None]:
+    """Log ``message`` at ``INFO``."""
     return log_with_level(LogLevel.INFO, *message)
 
 
 def log_debug(*message: object) -> Effect[None]:
+    """Log ``message`` at ``DEBUG``."""
     return log_with_level(LogLevel.DEBUG, *message)
 
 
 def log_trace(*message: object) -> Effect[None]:
+    """Log ``message`` at ``TRACE``."""
     return log_with_level(LogLevel.TRACE, *message)
 
 

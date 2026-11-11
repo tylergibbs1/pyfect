@@ -41,6 +41,38 @@ or use `xchacha20_poly1305`, whose 24-byte nonces are safe to draw at random for
 number of messages. Feed a `KeyAgreement` shared secret to `Kdf` (HKDF) before using it
 as a key, and store passwords with `kdf.argon2id()`.
 
+## Envelope encryption
+
+Seal each message under its own data key and store only that key wrapped under a
+key-encryption key: `KeyWrap` with `aes256_kw` (RFC 3394) wraps any secret key and
+`unwrap` gives it back as a key of the algorithm you name, so changing the outer key
+rewraps a few bytes and leaves the ciphertext alone. Here the outer key comes from a
+passphrase through `Kdf` with `kdf.argon2id()` (RFC 9106's second recommended setting,
+which needs `native.layer`); a wrong passphrase fails to unwrap with `DecryptionFailed`.
+
+<CodeOutput>
+
+<include meta='title="envelope.py"'>../../snippets/crypto/envelope.py</include>
+
+<include lang="text">../../snippets/crypto/envelope.out</include>
+
+</CodeOutput>
+
+## Sealing to a public key
+
+To encrypt for someone who holds an X25519 key pair, agree on a secret with a fresh pair of
+your own and send its public half along. `derive_shared_secret` gives raw bytes, which go
+through HKDF (`kdf.hkdf_sha256`, with an `info` naming the purpose) before they become an
+`aead.key`; the recipient repeats the agreement with their private key and gets the same key.
+
+<CodeOutput>
+
+<include meta='title="sealing.py"'>../../snippets/crypto/sealing.py</include>
+
+<include lang="text">../../snippets/crypto/sealing.out</include>
+
+</CodeOutput>
+
 ## Key formats and schemas
 
 `key_format` reads and writes keys as SPKI, PKCS#8, PKCS#1, SEC1, JWK and PEM. The
@@ -74,5 +106,38 @@ failure is a `JoseError`, and tokens are `Redacted`.
 <include meta='title="tokens.py"'>../../snippets/crypto/tokens.py</include>
 
 <include lang="text">../../snippets/crypto/tokens.out</include>
+
+</CodeOutput>
+
+### Expiring tokens
+
+`jwt.sign` signs exactly the claims you give it, so an expiring token carries `iat` and
+`exp` itself, as NumericDates in whole seconds, and its claims schema lists them. `verify`
+always checks `exp` and `nbf` against the `Clock`; `required_claims=["iat", "exp"]` also
+refuses a token without them. To use RFC 7638's thumbprint as the `kid`, compute it from the
+generated public JWK and set it on the imported keys with `dataclasses.replace` (they are
+frozen dataclasses): `sign` puts it in the header, and `jwk.export_public` writes it into the
+JWK you serve.
+
+<CodeOutput>
+
+<include meta='title="expiring_tokens.py"'>../../snippets/crypto/expiring_tokens.py</include>
+
+<include lang="text">../../snippets/crypto/expiring_tokens.out</include>
+
+</CodeOutput>
+
+### Key sets that change
+
+`jwks.layer_local(key_set)` reads its key set once. When keys are added or revoked while the
+app runs, build the service for each request with `jwks.make_local(key_set)`, or write your own
+`JwksService(resolve=...)`: `resolve` gets the token's `Selection` (algorithm, `kid`, header) and
+returns the key or fails, here with `KeyNotFound` for a revoked `kid`.
+
+<CodeOutput>
+
+<include meta='title="key_sets.py"'>../../snippets/crypto/key_sets.py</include>
+
+<include lang="text">../../snippets/crypto/key_sets.out</include>
 
 </CodeOutput>

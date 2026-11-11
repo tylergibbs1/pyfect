@@ -55,15 +55,22 @@ def is_key(u: object) -> bool:
 
 
 class CipherService(Protocol):
-    def generate_key[A: Algorithm](self, algorithm: A) -> Effect[Key[A], CryptoError]: ...
+    def generate_key[A: Algorithm](self, algorithm: A) -> Effect[Key[A], CryptoError]:
+        """A key of random bytes from ``SecureRandom``."""
+        ...
 
     def encrypt(
         self, key: Key[Any], plaintext: Binary, *, iv: Binary
-    ) -> Effect[bytes, CryptoError]: ...
+    ) -> Effect[bytes, CryptoError]:
+        """The ciphertext of ``plaintext`` under ``key`` and the 16-byte ``iv``."""
+        ...
 
     def decrypt(
         self, key: Key[Any], ciphertext: Binary, *, iv: Binary
-    ) -> Effect[bytes, CryptoError]: ...
+    ) -> Effect[bytes, CryptoError]:
+        """The plaintext; AES-CBC fails a bad padding or length with
+        ``DecryptionFailed``, AES-CTR never fails."""
+        ...
 
 
 class Cipher(Tag[CipherService], key="effect/crypto/Cipher"):

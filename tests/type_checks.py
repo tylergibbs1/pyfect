@@ -794,6 +794,25 @@ def check_merge_of_layers_building_nothing() -> None:
     )
 
 
+def check_merge_of_any_number_of_layers() -> None:
+    # Effect's `mergeAll` is variadic: past five layers the outputs, errors and
+    # requirements still join (FINDINGS-vault 5).
+    startup = layer.effect_discard(fx.log_info("starting"))
+    failing = layer.effect_discard(fx.fail(Invalid("bad")))
+    needs_port = layer.effect_discard(Port())
+    replica = layer.succeed(Replica, GoodDb())
+    assert_type(
+        layer.merge(port_live, replica, startup, startup, startup, failing),
+        layer.Layer[Port | Replica, Invalid, Never],
+    )
+    assert_type(
+        layer.merge(startup, startup, startup, startup, startup, startup, needs_port),
+        layer.Layer[Never, Never, Port],
+    )
+    assert_type(layer.merge(replica), layer.Layer[Replica, Never, Never])
+    layer.merge(port_live, replica, startup, startup, startup, "not a layer")  # pyright: ignore[reportArgumentType]
+
+
 def check_layer_dependencies() -> None:
     needs_port = layer.effect(Replica, Port().map(lambda _: GoodDb()))
     assert_type(needs_port, layer.Layer[Replica, Never, Port])
@@ -5743,6 +5762,8 @@ def cli_read(config: CliDeploy) -> None:
     assert_type(CliDeploy.branch, Flag[str])
     assert_type(Flag.literals("format", ("text", "json")), Flag[Literal["text", "json"]])
     assert_type(Argument.literals("env", ("dev", "prod")), Argument[Literal["dev", "prod"]])
+    # A list widens to `str` (Python has no `const` type parameter; cli.mdx says so).
+    assert_type(Flag.literals("role", ["member", "admin"]), Flag[str])
 
 
 def check_cli_defaults_keep_literals(models: tuple[Literal["haiku", "sonnet"], ...]) -> None:
@@ -5979,8 +6000,15 @@ assert_type(
     http_router.layer_in_memory_client(http_router.add("GET", "/", fx.fail(RouteNotAllowed()))),
     fx.Layer[fx.http.HttpClient, Never, Never],
 )
-# A route needing services has no `HttpClient` layer: its client needs them.
-http_router.layer_in_memory_client(route_app)  # pyright: ignore[reportArgumentType]
+# As an `HttpClient` layer, the routes' services are the layer's, as with `serve`.
+assert_type(
+    http_router.layer_in_memory_client(route_app),
+    fx.Layer[fx.http.HttpClient, Never, RouteDb | RouteCache],
+)
+assert_type(
+    http_router.layer_in_memory_client(route_app).pipe(layer.provide(layer.succeed(RouteDb, "db"))),
+    fx.Layer[fx.http.HttpClient, Never, RouteCache],
+)
 
 
 # The routes layer's other requirements pass through `serve` and `to_http_effect`
@@ -9460,6 +9488,15 @@ def check_crypto_keys(
     # PEM formats read text, and keys of two curves do not meet in one call.
     key_format.decode_public(key_format.pem(key_format.spki), signature.ed25519, b"")  # pyright: ignore[reportCallIssue, reportArgumentType]
     agreement.derive_shared_secret(p256.private_key, p384)  # pyright: ignore[reportArgumentType]
+    # Mac keeps the algorithm's type, as Aead and KeyWrap do (Effect's `Key<A>`).
+    hmac_sha256: mac.Algorithm = mac.hmac_sha256
+
+    def generated(service: mac.MacService) -> None:
+        assert_type(
+            service.generate_key(hmac_sha256), fx.Effect[mac.Key[mac.Algorithm], CryptoError]
+        )
+
+    del generated
     assert_type(
         CS.MacKeyFromBytes(mac.hmac_sha256),
         S.DecodeToSchema[mac.Key[mac.Algorithm], bytes],
@@ -9489,6 +9526,40 @@ def check_jose(
     assert_type(jwk.import_dir(secret), fx.Effect[jwk.DirKey, JoseError])
     assert_type(jwks.layer_remote(""), fx.Layer[jwks.Jwks, JoseError, HttpClient])
     jws.sign(b"", dir_key)  # pyright: ignore[reportCallIssue, reportArgumentType]
+
+    # Claims have the schema's Type (Effect's `S["Type"]`), so they cannot widen it.
+    from pyfect.crypto.aead import Aead
+    from pyfect.crypto.secure_random import SecureRandom
+    from pyfect.jose import jwt
+
+    claims = S.Struct(JwtSubject)
+    assert_type(
+        jwt.sign(claims, {"sub": "ada"}, hmac_key),
+        fx.Effect[fx.Redacted[str], jwt.JwtError, Mac],
+    )
+    assert_type(
+        jwt.sign(claims, {"sub": "ada"}, private_key),
+        fx.Effect[fx.Redacted[str], jwt.JwtError, Signature],
+    )
+    assert_type(
+        jwt.encrypt(claims, {"sub": "ada"}, dir_key),
+        fx.Effect[fx.Redacted[str], jwt.JwtError, Aead | SecureRandom],
+    )
+    jwt.sign(claims, {"sub": 1}, hmac_key)  # pyright: ignore[reportCallIssue, reportArgumentType]
+    jwt.sign(claims, {"sub": 1}, private_key)  # pyright: ignore[reportCallIssue, reportArgumentType]
+    jwt.encrypt(claims, {"sub": 1}, dir_key)  # pyright: ignore[reportArgumentType]
+    jwt.sign(S.String, 1, hmac_key)  # pyright: ignore[reportCallIssue, reportArgumentType]
+
+
+class JwtSubject(TypedDict):
+    sub: str
+
+
+def check_field_default_has_the_schemas_type() -> None:
+    # A default is checked against the schema's Type, which it cannot widen.
+    assert_type(S.field(S.String, default="x"), str)
+    wide: object = S.field(S.String, default=1)  # pyright: ignore[reportArgumentType]
+    del wide
 
 
 def check_graph() -> None:

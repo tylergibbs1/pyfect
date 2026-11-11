@@ -122,15 +122,23 @@ def _invalid_peer(description: str, cause: object = None) -> CryptoError:
 
 
 class KeyAgreementService(Protocol):
-    def generate_key_pair[A: Algorithm](self, algorithm: A) -> Effect[KeyPair[A], CryptoError]: ...
+    def generate_key_pair[A: Algorithm](self, algorithm: A) -> Effect[KeyPair[A], CryptoError]:
+        """A new key pair for ``algorithm``."""
+        ...
 
     def derive_shared_secret[A: Algorithm](
         self, private_key: PrivateKey[A], public_key: PublicKey[A]
-    ) -> Effect[bytes, CryptoError]: ...
+    ) -> Effect[bytes, CryptoError]:
+        """The secret shared with the holder of ``public_key``, as raw
+        bytes for ``kdf``; ``InvalidKey`` for a peer key off the curve or a
+        low-order X25519 key."""
+        ...
 
     def public_key_of[A: Algorithm](
         self, private_key: PrivateKey[A]
-    ) -> Effect[PublicKey[A], CryptoError]: ...
+    ) -> Effect[PublicKey[A], CryptoError]:
+        """The public key of ``private_key``."""
+        ...
 
 
 class KeyAgreement(Tag[KeyAgreementService], key="effect/crypto/KeyAgreement"):

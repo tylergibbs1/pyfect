@@ -14,7 +14,7 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Literal, final
 
 from pyfect._core import Effect
 from pyfect.context import Tag
@@ -54,10 +54,30 @@ def name_suffix(hash: Algorithm) -> str:
     return hash.name[0] + hash.name[1:].lower().replace("-", "")
 
 
-@dataclass(frozen=True, slots=True, kw_only=True)
+@final
 class DigestService:
-    digest: Callable[[Algorithm, Binary], Effect[bytes]]
-    digest_hex: Callable[[Algorithm, Binary], Effect[str]]
+    """The ``Digest`` service: ``layer_web_crypto`` and ``native`` build it,
+    and ``DigestService(digest=..., digest_hex=...)`` makes one of two
+    functions."""
+
+    __slots__ = ("_digest", "_digest_hex")
+
+    def __init__(
+        self,
+        *,
+        digest: Callable[[Algorithm, Binary], Effect[bytes]],
+        digest_hex: Callable[[Algorithm, Binary], Effect[str]],
+    ) -> None:
+        self._digest = digest
+        self._digest_hex = digest_hex
+
+    def digest(self, algorithm: Algorithm, data: Binary) -> Effect[bytes]:
+        """``algorithm``'s digest of ``data``."""
+        return self._digest(algorithm, data)
+
+    def digest_hex(self, algorithm: Algorithm, data: Binary) -> Effect[str]:
+        """``algorithm``'s digest of ``data``, as lowercase hex."""
+        return self._digest_hex(algorithm, data)
 
 
 class Digest(Tag[DigestService], key="effect/crypto/Digest"):

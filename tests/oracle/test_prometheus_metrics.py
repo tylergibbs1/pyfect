@@ -12,7 +12,9 @@ import re
 
 import pyfect as fx
 from pyfect import metric, testing
+from pyfect.exit import Failure
 from pyfect.http import prometheus, router
+from pyfect.http.server_error import HttpServerError
 
 
 def _format(
@@ -348,7 +350,9 @@ def test_layer_http_takes_a_path_and_the_format_options():
         path="/internal/metrics", prefix="app", metric_name_mapper=str.upper
     )
     client = yield from router.in_memory_client(routes)
-    moved = yield from client.get("http://localhost/metrics")
-    assert moved.status == 404
+    # In memory a route not found is a defect, as in Effect's HttpApiTest.
+    moved = yield from client.get("http://localhost/metrics").exit()
+    assert isinstance(moved, Failure)
+    assert isinstance(moved.cause.squash(), HttpServerError)
     response = yield from client.get("http://localhost/internal/metrics")
     assert "app_DEPTH 1\n" in (yield from response.text)

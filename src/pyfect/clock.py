@@ -88,6 +88,7 @@ class Clock(Reference[ClockService]):
 
 
 def sleep(duration: DurationInput) -> Effect[None]:
+    """Wait for ``duration`` on the ``Clock`` (a duration such as ``"5 seconds"``)."""
     parsed = from_input_unsafe(duration)
     return Clock().flat_map(lambda c: c.sleep(parsed))
 

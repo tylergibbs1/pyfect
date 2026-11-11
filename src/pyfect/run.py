@@ -66,6 +66,8 @@ def run_sync_exit[A, E](eff: Effect[A, E, Never]) -> Exit[A, E]: ...
 @overload
 def run_sync_exit[A, E, R](eff: Effect[A, E, R], *, context: Context[R]) -> Exit[A, E]: ...
 def run_sync_exit(eff: Effect[Any, Any, Any], *, context: Context = _EMPTY) -> Exit[Any, Any]:
+    """The effect's ``Exit``, run on this thread without waiting (Effect's
+    ``runSyncExit``): an effect that waits dies with ``AsyncFiberError``."""
     require_effect(eff, "eff")
     scheduler = SyncOnlyScheduler()
     fiber: Fiber[Any, Any] = new_root(scheduler, context)
@@ -84,6 +86,9 @@ def run_sync[A](eff: Effect[A, Never, Never]) -> A: ...
 @overload
 def run_sync[A, R](eff: Effect[A, Never, R], *, context: Context[R]) -> A: ...
 def run_sync(eff: Effect[Any, Never, Any], *, context: Context = _EMPTY) -> Any:
+    """The effect's value, run on this thread without waiting (Effect's
+    ``runSync``); a defect or interruption is raised, and an effect that
+    waits dies with ``AsyncFiberError``."""
     return unwrap(run_sync_exit(eff, context=context))
 
 
@@ -92,6 +97,8 @@ def run_blocking_exit[A, E](eff: Effect[A, E, Never]) -> Exit[A, E]: ...
 @overload
 def run_blocking_exit[A, E, R](eff: Effect[A, E, R], *, context: Context[R]) -> Exit[A, E]: ...
 def run_blocking_exit(eff: Effect[Any, Any, Any], *, context: Context = _EMPTY) -> Exit[Any, Any]:
+    """The effect's ``Exit``, blocking this thread until it is done; sleeps,
+    forks and ``blocking`` work, ``from_async`` does not (no asyncio loop)."""
     require_effect(eff, "eff")
     scheduler = SyncScheduler()
     fiber: Fiber[Any, Any] = new_root(scheduler, context)
@@ -104,6 +111,10 @@ def run_blocking[A](eff: Effect[A, Never, Never]) -> A: ...
 @overload
 def run_blocking[A, R](eff: Effect[A, Never, R], *, context: Context[R]) -> A: ...
 def run_blocking(eff: Effect[Any, Never, Any], *, context: Context = _EMPTY) -> Any:
+    """The effect's value, blocking this thread until it is done; a defect or
+    interruption is raised. Sleeps, forks and ``blocking`` work,
+    ``from_async`` does not (no asyncio loop). Use ``run_blocking_exit``
+    for an effect that can fail, ``run_async`` inside a coroutine."""
     return unwrap(run_blocking_exit(eff, context=context))
 
 
@@ -129,6 +140,8 @@ async def run_async_exit[A, E, R](eff: Effect[A, E, R], *, context: Context[R]) 
 async def run_async_exit(
     eff: Effect[Any, Any, Any], *, context: Context = _EMPTY
 ) -> Exit[Any, Any]:
+    """The effect's ``Exit``, run on the running asyncio loop; cancelling the
+    awaiting task interrupts the fiber and waits for its finalizers."""
     require_effect(eff, "eff")
     fiber: Fiber[Any, Any] = new_root(AsyncioScheduler.current(), context)
     fiber._start(eff)
@@ -140,6 +153,9 @@ async def run_async[A](eff: Effect[A, Never, Never]) -> A: ...
 @overload
 async def run_async[A, R](eff: Effect[A, Never, R], *, context: Context[R]) -> A: ...
 async def run_async(eff: Effect[Any, Never, Any], *, context: Context = _EMPTY) -> Any:
+    """The effect's value, run on the running asyncio loop (Effect's
+    ``runPromise``); a defect or interruption is raised, and cancelling the
+    awaiting task interrupts the fiber and waits for its finalizers."""
     return unwrap(await run_async_exit(eff, context=context))
 
 

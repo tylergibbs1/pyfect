@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.5.3 (unreleased)
+
+### Added
+
+- Cryptography guide: envelope encryption (`KeyWrap` with a key from Argon2id through `Kdf`), sealing
+  to an X25519 public key with HKDF, expiring EdDSA tokens (`iat` / `exp` with
+  `required_claims`), the JWK thumbprint as `kid`, and key sets that change (`jwks.make_local`
+  per request, `JwksService(resolve=...)` refusing a revoked `kid`).
+- Testing: in-memory responses carry cookies in `.cookies`, not `set-cookie` headers, as in
+  Effect. CLI: `literals` keeps its literal type for a tuple of choices.
+
+### Changed
+
+- `router.in_memory_client` and `router.layer_in_memory_client` make every failure of the
+  routes a defect of the request, as Effect's `HttpApiTest` client does (`Effect.orDie`): a
+  route not found dies with its `HttpServerError` (`RouteNotFound`) and a body over the limit
+  with `RequestParseError`, where they used to come back as 404 and 413 responses. Payloads and
+  path parameters failing their schema were already defects. A test reads them with `.exit()`.
+  `http_api.test.groups` now builds on `router.in_memory_client`, so the two cannot drift.
+- `layer.merge` takes any number of layers (Effect's `mergeAll` is variadic); past five, the
+  outputs, errors and requirements still join.
+- `MacService`, `DigestService` and `JwksService` keep their constructors but hold their
+  operations as documented methods, so `help()` and `inspect.signature` show them; every crypto
+  service's operations have docstrings, as do `fx.run_blocking`, the other run functions and
+  every other function `pyfect` exports.
+
+### Fixed
+
+- `jwt.sign` and `jwt.encrypt` check `claims` against the schema's Type, as Effect's
+  `S["Type"]` does: `{"sub": 1}` for `sub: str` is a type error (it used to widen the Type).
+  `S.field(schema, default=...)` checks the default the same way.
+- `Mac.generate_key` returns `Key[A]` for the algorithm's type `A`, as `Aead` and `KeyWrap` do
+  (it returned `Key[Any]`).
+- `router.layer_in_memory_client` takes routes that need services (`Requires[...]`): they become
+  the layer's requirements, as with `serve`, and a service the request provides itself comes
+  first.
+
 ## 0.5.2 (2026-11-10)
 
 ### Added

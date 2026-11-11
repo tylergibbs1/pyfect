@@ -53,6 +53,7 @@ from pyfect.jose.jwk import (
 from pyfect.jose.jwks import Jwks
 from pyfect.redacted import Redacted
 from pyfect.schema import SchemaError
+from pyfect.schema._exact import Exact, as_codec
 
 
 class RegisteredClaims(TypedDict):
@@ -278,12 +279,10 @@ _decode_claims_json = S.decode_unknown_effect(
 )
 
 
-def _encode_claims[A, R](
-    schema: S.Codec[A, Any, Any, R], claims: A
-) -> Effect[bytes, SchemaError, R]:
+def _encode_claims[A, R](schema: Exact[A, Any, R], claims: A) -> Effect[bytes, SchemaError, R]:
     @gen
     def body():
-        encoded = yield from S.encode_effect(schema)(claims)
+        encoded = yield from S.encode_effect(as_codec(schema))(claims)
         json = yield from _decode_claims_json(encoded)
         return utf8(stringify(cast("Json", json)))
 
@@ -292,21 +291,22 @@ def _encode_claims[A, R](
 
 @overload
 def sign[A, R](
-    schema: S.Codec[A, Any, Any, R], claims: A, key: HmacKey, header: Header | None = None
+    schema: Exact[A, Any, R], claims: A, key: HmacKey, header: Header | None = None
 ) -> Effect[Redacted[str], JwtError, R | Mac]: ...
 @overload
 def sign[A, R](
-    schema: S.Codec[A, Any, Any, R], claims: A, key: PrivateKey, header: Header | None = None
+    schema: Exact[A, Any, R], claims: A, key: PrivateKey, header: Header | None = None
 ) -> Effect[Redacted[str], JwtError, R | Signature]: ...
 @overload
 def sign[A, R](
-    schema: S.Codec[A, Any, Any, R], claims: A, key: SigningKey, header: Header | None = None
+    schema: Exact[A, Any, R], claims: A, key: SigningKey, header: Header | None = None
 ) -> Effect[Redacted[str], JwtError, R | Mac | Signature]: ...
 def sign(
-    schema: S.Codec[Any, Any, Any, Any], claims: Any, key: SigningKey, header: Header | None = None
+    schema: Exact[Any, Any, Any], claims: Any, key: SigningKey, header: Header | None = None
 ) -> Effect[Redacted[str], JwtError, Any]:
-    """The claims, encoded by ``schema``, as a signed JWT. The encoded
-    claims must be a JSON object whose registered claims have their types."""
+    """The claims, encoded by ``schema``, as a signed JWT. ``claims`` has the
+    schema's Type, and their encoding must be a JSON object whose registered
+    claims have their types."""
     return _encode_claims(schema, claims).flat_map(lambda payload: jws.sign(payload, key, header))
 
 
@@ -375,9 +375,10 @@ def verify_with_key_set[A, R](
 
 
 def encrypt[A, R](
-    schema: S.Codec[A, Any, Any, R], claims: A, key: DirKey, header: Header | None = None
+    schema: Exact[A, Any, R], claims: A, key: DirKey, header: Header | None = None
 ) -> Effect[Redacted[str], JwtError, R | Aead | SecureRandom]:
-    """The claims, encoded by ``schema``, as an encrypted JWT."""
+    """The claims, encoded by ``schema``, as an encrypted JWT. ``claims`` has
+    the schema's Type."""
     return _encode_claims(schema, claims).flat_map(
         lambda payload: jwe.encrypt(payload, key, header)
     )

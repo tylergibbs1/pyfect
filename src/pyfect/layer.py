@@ -281,9 +281,14 @@ def merge[O1, O2, O3, O4, O5, EE = Never, RR = Never](
     l5: Layer[O5, EE, RR],
     /,
 ) -> Layer[O1 | O2 | O3 | O4 | O5, EE, RR]: ...
+@overload
+def merge[O, EE = Never, RR = Never](
+    first: _Builds[O, EE, RR], /, *rest: _Builds[O, EE, RR]
+) -> Layer[O, EE, RR]: ...
 def merge(*layers: _Builds[Any, Any, Any] | Layer[Any, Any, Any]) -> Layer[Any, Any, Any]:
-    """Build all layers, concurrently, and provide everything they build.
-    Their resources are released concurrently too."""
+    """Build all layers, concurrently, and provide everything they build
+    (Effect's ``mergeAll``, which takes any number of layers). Their
+    resources are released concurrently too."""
     require_layers(layers, "layers")
     built_layers = cast("tuple[Layer[Any, Any, Any], ...]", layers)
 

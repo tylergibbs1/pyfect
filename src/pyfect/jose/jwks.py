@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Never, NotRequired, TypedDict, cast
+from typing import TYPE_CHECKING, Never, NotRequired, TypedDict, cast, final
 
 from pyfect import schema as S
 from pyfect._catch import catch_tag
@@ -104,9 +104,22 @@ class Selection:
     protected_header: ProtectedHeader | None = None
 
 
-@dataclass(frozen=True, slots=True)
+@final
 class JwksService:
-    resolve: Callable[[Selection], Effect[PublicKey, JoseError]]
+    """The ``Jwks`` service: ``make_local`` and ``layer_remote`` build it,
+    and ``JwksService(resolve=...)`` makes one of a function (to refuse a
+    revoked ``kid``, say)."""
+
+    __slots__ = ("_resolve",)
+
+    def __init__(self, resolve: Callable[[Selection], Effect[PublicKey, JoseError]]) -> None:
+        self._resolve = resolve
+
+    def resolve(self, selection: Selection) -> Effect[PublicKey, JoseError]:
+        """The public key that verifies a token with ``selection``'s
+        algorithm, ``kid`` and header; ``KeyNotFound`` or ``AmbiguousKey``
+        when no single key matches."""
+        return self._resolve(selection)
 
 
 class Jwks(Tag[JwksService], key="effect/jose/Jwks"):

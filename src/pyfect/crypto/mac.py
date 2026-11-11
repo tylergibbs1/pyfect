@@ -15,7 +15,7 @@ from __future__ import annotations
 import hmac as std_hmac
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, ClassVar, Literal, Never, final
+from typing import Any, ClassVar, Literal, Never, cast, final
 
 from pyfect._core import Effect
 from pyfect.context import Tag
@@ -66,11 +66,38 @@ _BLOCK_SIZES: dict[DigestName, int] = {
 }
 
 
-@dataclass(frozen=True, slots=True, kw_only=True)
+@final
 class MacService:
-    generate_key: Callable[[Algorithm], Effect[Key[Any], CryptoError]]
-    sign: Callable[[Key[Any], Binary], Effect[bytes, CryptoError]]
-    verify: Callable[[Key[Any], Binary, Binary], Effect[bool, CryptoError]]
+    """The ``Mac`` service: ``layer_web_crypto`` builds it, and
+    ``MacService(generate_key=..., sign=..., verify=...)`` makes one of
+    three functions (a test double, say)."""
+
+    __slots__ = ("_generate_key", "_sign", "_verify")
+
+    def __init__(
+        self,
+        *,
+        generate_key: Callable[[Algorithm], Effect[Key[Any], CryptoError]],
+        sign: Callable[[Key[Any], Binary], Effect[bytes, CryptoError]],
+        verify: Callable[[Key[Any], Binary, Binary], Effect[bool, CryptoError]],
+    ) -> None:
+        self._generate_key = generate_key
+        self._sign = sign
+        self._verify = verify
+
+    def generate_key[A: Algorithm](self, algorithm: A) -> Effect[Key[A], CryptoError]:
+        """A key of random bytes from ``SecureRandom``, as long as the
+        hash's block size (as Web Crypto generates them)."""
+        return cast("Effect[Key[A], CryptoError]", self._generate_key(algorithm))
+
+    def sign(self, key: Key[Any], data: Binary) -> Effect[bytes, CryptoError]:
+        """The HMAC tag of ``data`` under ``key``."""
+        return self._sign(key, data)
+
+    def verify(self, key: Key[Any], tag: Binary, data: Binary) -> Effect[bool, CryptoError]:
+        """Whether ``tag`` is the HMAC tag of ``data`` under ``key``,
+        compared in constant time; ``False`` for a tag of another length."""
+        return self._verify(key, tag, data)
 
 
 class Mac(Tag[MacService], key="effect/crypto/Mac"):

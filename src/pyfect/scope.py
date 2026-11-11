@@ -274,6 +274,7 @@ def scoped_with[A, E = Never, R = Never](
 def add_finalizer[R = Never](
     f: Callable[[Exit[Any, Any]], Effect[object, Never, R]],
 ) -> Effect[None, Never, Scope | R]:
+    """Run ``f`` with the exit of the current ``Scope`` when it closes."""
     return Scope().flat_map(lambda scope: scope.add_finalizer(f))
 
 

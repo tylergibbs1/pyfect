@@ -3,14 +3,18 @@ bodies streamed to the client as the handler writes them."""
 
 from __future__ import annotations
 
-from typing import Any, Never
+from typing import Any, Never, TypedDict
 
 import pyfect as fx
 from pyfect import layer, stream, testing
+from pyfect import schema as S
 from pyfect.deferred import Deferred
 from pyfect.errors import Done
-from pyfect.http import router, server_response
+from pyfect.http import body, router, server_response
 from pyfect.http.client import HttpClient
+from pyfect.http.server_error import HttpServerError, RouteNotFound
+from pyfect.http_api import HttpApi, HttpApiGroup, HttpApiRequest, builder, endpoint
+from pyfect.http_api.error import HttpApiSchemaError
 from pyfect.queue import Queue
 from pyfect.scope import add_finalizer
 
@@ -89,11 +93,62 @@ def test_an_unhandled_handler_error_is_a_defect_of_the_request():
     assert isinstance(exit_.cause.squash(), ValueError)
 
 
+def _defect_of(exit_: fx.exit.Exit[object, object]) -> object:
+    assert isinstance(exit_, fx.exit.Failure)
+    return exit_.cause.squash()
+
+
 @testing.effect
-def test_a_failure_a_server_answers_is_that_response():
+def test_a_route_not_found_is_a_defect_of_the_request():
+    # Effect's HttpApiTest client pipes the router through `Effect.orDie`, so a
+    # route not found dies with its HttpServerError where a server answers 404.
     routes = router.add("GET", "/hello", server_response.text("hello"))
     client = yield from router.in_memory_client(routes)
-    assert (yield from client.get("http://localhost/nope")).status == 404
+    defect = _defect_of((yield from client.get("http://localhost/nope").exit()))
+    assert isinstance(defect, HttpServerError) and isinstance(defect.reason, RouteNotFound)
+
+
+class _Payload(TypedDict):
+    n: int
+
+
+class _Params(TypedDict):
+    id: int
+
+
+class _Things(HttpApiGroup, identifier="things"):
+    create = endpoint.post("create", "/things", payload=S.Struct(_Payload), success=S.Int)
+
+
+_api = HttpApi.make("in-memory").add(_Things)
+
+
+def _create(request: HttpApiRequest[None, None, _Payload, None]) -> fx.Effect[int]:
+    return fx.succeed(request.payload["n"])
+
+
+@testing.effect
+def test_a_payload_failing_its_schema_is_a_defect_of_the_request():
+    # HttpApiBuilder dies with the HttpApiSchemaError (a server answers it with
+    # 400); in memory it stays a defect, as in Effect's HttpApiTest.
+    routes = builder.layer(_api).pipe(
+        layer.provide(builder.group(_api, _Things, lambda h: h.handle(_Things.create)(_create)))
+    )
+    client = yield from router.in_memory_client(routes)
+    request = client.post("http://localhost/things", body=body.json_unsafe({"n": "x"}))
+    assert isinstance(_defect_of((yield from request.exit())), HttpApiSchemaError)
+
+
+@testing.effect
+def test_path_params_failing_their_schema_are_a_defect_of_the_request():
+    @fx.gen
+    def plain():
+        params = yield from router.schema_path_params(S.Struct(_Params))
+        return server_response.text(str(params["id"]))
+
+    client = yield from router.in_memory_client(router.add("GET", "/plain/:id", plain))
+    defect = _defect_of((yield from client.get("http://localhost/plain/abc").exit()))
+    assert isinstance(defect, S.SchemaError)
 
 
 @testing.effect
@@ -122,3 +177,21 @@ def test_a_routes_services_come_from_the_requests_context():
         fx.provide_service(Greeting, "hi")
     )
     assert (yield from response.text) == "hi"
+
+
+@testing.effect
+def test_layer_in_memory_client_gives_routes_the_services_of_its_layer():
+    routes = router.add("GET", "/hello", Greeting().map(server_response.text))
+    client = router.layer_in_memory_client(routes).pipe(
+        layer.provide(layer.succeed(Greeting, "from the layer"))
+    )
+
+    @fx.gen
+    def get():
+        response = yield from (yield from HttpClient()).get("http://localhost/hello")
+        return (yield from response.text)
+
+    assert (yield from get.pipe(fx.provide(client))) == "from the layer"
+    # A service the request itself provides comes first, as before.
+    overridden = get.pipe(fx.provide_service(Greeting, "from the request"))
+    assert (yield from overridden.pipe(fx.provide(client))) == "from the request"

@@ -15,7 +15,10 @@ runs the handler that matches them, with `--help`, `--version`, `--completions`,
 `Flag.string`, `integer`, `finite` (a float; `nan` and `inf` are refused), `boolean`, `literals`, `file`, `date`, ... make flags, and
 methods refine them: `with_alias`, `with_default`, `optional`, `with_description`,
 `with_fallback_config` (read a [config](/docs/config) value when the flag is missing).
-`Argument` does the same for positional arguments.
+`Argument` does the same for positional arguments. Pass `literals` its choices as a tuple,
+`Flag.literals("format", ("text", "json"))`, to get a `Flag[Literal["text", "json"]]`: pyright
+widens a list's strings to `str`, and Python has no counterpart of the `const` type parameter that
+keeps Effect's array literal.
 
 `with_subcommands` turns a command into a group. Flags every subcommand accepts go in the
 parent's config with `with_shared_flags`, and a handler reads them by yielding the parent

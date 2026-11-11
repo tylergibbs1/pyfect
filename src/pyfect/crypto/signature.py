@@ -237,17 +237,26 @@ def _check_salt_length(algorithm: Algorithm, crypto_key: CryptoKey) -> None:
 
 
 class SignatureService(Protocol):
-    def generate_key_pair[A: Algorithm](self, algorithm: A) -> Effect[KeyPair[A], CryptoError]: ...
+    def generate_key_pair[A: Algorithm](self, algorithm: A) -> Effect[KeyPair[A], CryptoError]:
+        """A new key pair for ``algorithm``."""
+        ...
 
-    def sign(self, private_key: PrivateKey[Any], data: Binary) -> Effect[bytes, CryptoError]: ...
+    def sign(self, private_key: PrivateKey[Any], data: Binary) -> Effect[bytes, CryptoError]:
+        """The signature of ``data`` (ECDSA in raw ``r‖s`` form)."""
+        ...
 
     def verify(
         self, public_key: PublicKey[Any], signature: Binary, data: Binary
-    ) -> Effect[bool, CryptoError]: ...
+    ) -> Effect[bool, CryptoError]:
+        """Whether ``signature`` signs ``data``; ``False`` for any problem
+        with the signature bytes."""
+        ...
 
     def public_key_of[A: Algorithm](
         self, private_key: PrivateKey[A]
-    ) -> Effect[PublicKey[A], CryptoError]: ...
+    ) -> Effect[PublicKey[A], CryptoError]:
+        """The public key of ``private_key``."""
+        ...
 
 
 class Signature(Tag[SignatureService], key="effect/crypto/Signature"):

@@ -194,11 +194,18 @@ def _check_kw_length(length: int, overhead: int) -> None:
 
 
 class KeyWrapService(Protocol):
-    def generate_key[A: AesKw](self, algorithm: A) -> Effect[Key[A], CryptoError]: ...
+    def generate_key[A: AesKw](self, algorithm: A) -> Effect[Key[A], CryptoError]:
+        """An AES-KW key of random bytes from ``SecureRandom``."""
+        ...
 
-    def generate_key_pair[A: RsaOaep](self, algorithm: A) -> Effect[KeyPair[A], CryptoError]: ...
+    def generate_key_pair[A: RsaOaep](self, algorithm: A) -> Effect[KeyPair[A], CryptoError]:
+        """A new RSA-OAEP key pair."""
+        ...
 
-    def wrap(self, wrap_key: WrapKey, key: SecretKey) -> Effect[bytes, CryptoError]: ...
+    def wrap(self, wrap_key: WrapKey, key: SecretKey) -> Effect[bytes, CryptoError]:
+        """``key`` wrapped under ``wrap_key`` (an AES-KW key, or an RSA-OAEP
+        public key)."""
+        ...
 
     @overload
     def unwrap[A: aead.Algorithm](
