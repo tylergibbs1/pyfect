@@ -10,7 +10,7 @@ import asyncio
 from collections.abc import Callable, Coroutine, Generator, Hashable, Mapping, Sequence, Sized
 from contextlib import AbstractAsyncContextManager, AbstractContextManager
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from types import CoroutineType
 from typing import Any, Literal, Never, NotRequired, Protocol, TypedDict, TypeIs, assert_type
 
@@ -3872,7 +3872,7 @@ def check_config_constructors() -> None:
     assert_type(config.integer("A"), fx.Config[int])
     assert_type(config.port("A"), fx.Config[int])
     assert_type(config.boolean("A"), fx.Config[bool])
-    assert_type(config.duration("A"), fx.Config[Duration])
+    assert_type(config.duration("A"), config.DurationConfig)
     assert_type(config.byte_size("A"), fx.Config[ByteSize])
     assert_type(config.date_time("A"), fx.Config[datetime])
     assert_type(config.url("A"), fx.Config[Url])
@@ -3937,6 +3937,14 @@ def check_config_combinators(port: fx.Config[int], host: fx.Config[str]) -> None
     assert_type(config.all_dict({}).with_default("x"), fx.Config[dict[Never, Never] | str])
     assert_type(port.or_else(lambda _e: host), fx.Config[int | str])
     assert_type(port.nested("server"), fx.Config[int])
+    # A duration config takes a duration input as its default, parsed now (dogfood sluice);
+    # Effect's withDefault(Duration.seconds(1)) on Config.Duration is a Config<Duration>.
+    timeout = config.duration("TIMEOUT")
+    assert_type(timeout.with_default("1 second"), fx.Config[fx.Duration])
+    assert_type(timeout.with_default(fx.duration.seconds(1)), fx.Config[fx.Duration])
+    assert_type(timeout.with_default(timedelta(seconds=1)), fx.Config[fx.Duration])
+    assert_type(timeout.with_default(None), fx.Config[fx.Duration | None])
+    assert_type(timeout.nested("http").with_default("1 second"), fx.Config[fx.Duration])
     assert_type(port.map_effect(lambda p: fx.succeed(p + 1)), fx.Config[int])
     port.map_effect(lambda p: fx.fail(NotFound("x")))  # pyright: ignore[reportArgumentType]
     assert_type(port.flat_map(lambda p: host if p == 80 else config.succeed("dev")), fx.Config[str])

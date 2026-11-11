@@ -4,8 +4,8 @@ none."""
 
 from __future__ import annotations
 
-from datetime import datetime
-from typing import Any, overload
+from datetime import datetime, timedelta
+from typing import Any, final, overload, override
 
 from pyfect._one_or_many import one_or_many
 from pyfect._url import Url
@@ -14,7 +14,8 @@ from pyfect.config import _scalars
 from pyfect.config._config import Config
 from pyfect.config._leaf import scalar_config
 from pyfect.config._scalars import LiteralValue
-from pyfect.duration import Duration
+from pyfect.duration import Duration, from_input_unsafe
+from pyfect.duration import Input as DurationInput
 from pyfect.logger import LogLevel
 from pyfect.redacted import Redacted
 
@@ -77,10 +78,40 @@ def log_level(name: str | None = None) -> Config[LogLevel]:
     return scalar_config(_scalars.log_level, name)
 
 
-def duration(name: str | None = None) -> Config[Duration]:
+# The runtime types of ``duration.Input``.
+_DURATION_INPUTS = (Duration, int, float, str, tuple, dict, timedelta)
+
+
+@final
+class DurationConfig(Config[Duration]):
+    """A ``duration`` config, whose ``with_default`` also takes a duration
+    input (``"1 second"``), parsed when it is given."""
+
+    __slots__ = ()
+
+    @overload
+    def with_default(self, default: DurationInput) -> Config[Duration]: ...
+    @overload
+    def with_default[B](self, default: B) -> Config[Duration | B]: ...
+    @override
+    def with_default[B](self, default: DurationInput | B) -> Config[Duration | B]:  # pyright: ignore[reportIncompatibleMethodOverride]
+        """``default`` when the value is absent; a duration input is parsed
+        now (an invalid one raises ``ValueError``). Invalid data and source
+        errors still fail."""
+        if isinstance(default, _DURATION_INPUTS):
+            return super().with_default(from_input_unsafe(default))  # pyright: ignore[reportArgumentType]
+        return super().with_default(default)
+
+    @override
+    def nested(self, name: str) -> DurationConfig:
+        return DurationConfig(super().nested(name)._evaluate)
+
+
+def duration(name: str | None = None) -> DurationConfig:
     """A duration such as ``"10 seconds"`` or ``"500 millis"`` (``nanos``
-    to ``weeks``, singular or plural), or ``"Infinity"`` / ``"-Infinity"``."""
-    return scalar_config(_scalars.duration, name)
+    to ``weeks``, singular or plural), or ``"Infinity"`` / ``"-Infinity"``.
+    Its default may be a duration input: ``.with_default("1 second")``."""
+    return DurationConfig(scalar_config(_scalars.duration, name)._evaluate)  # pyright: ignore[reportPrivateUsage]
 
 
 def byte_size(name: str | None = None) -> Config[ByteSize]:

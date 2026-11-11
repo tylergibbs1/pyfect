@@ -27,6 +27,7 @@ from pyfect.config._config import Config, gen, option, unwrap
 from pyfect.config._config import fail_config as fail
 from pyfect.config._config import succeed_config as succeed
 from pyfect.config._constructors import (
+    DurationConfig,
     boolean,
     byte_size,
     date_time,
@@ -58,6 +59,7 @@ __all__ = [
     "Composite",
     "Config",
     "ConfigError",
+    "DurationConfig",
     "Forbidden",
     "InvalidType",
     "InvalidValue",

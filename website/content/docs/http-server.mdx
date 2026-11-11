@@ -95,6 +95,30 @@ shutdown.
 `asgi.from_asgi(app)` goes the other way: it mounts an ASGI application, such as a FastAPI or
 Starlette one, as a route.
 
+## WebSockets
+
+A handler serves a WebSocket by upgrading its request: `request.upgrade` gives a socket
+(`request.upgrade_with(headers=...)` adds response headers to the `101`, for protocols other
+than `websocket`). The socket opens only when its `reader` is taken, in a scope that closes
+it: the `101` is sent then, and until then every `writer.write` waits. So a handler that only
+sends must still take the reader, or it hangs on its first write. The client's socket from
+`pyfect.socket.make_web_socket(url)` works the same way. All of this is as in Effect.
+
+<CodeOutput>
+
+<include meta='title="websocket.py"'>../../snippets/http_server/websocket.py</include>
+
+<include lang="text">../../snippets/http_server/websocket.out</include>
+
+</CodeOutput>
+
+Two more rules, also Effect's:
+
+- Once the reader's scope closes, the socket is gone and a write waits forever: it does not
+  fail. Keep the reader's scope open for as long as the handler writes, as `shout` does.
+- `reader.pull` and `so.to_stream` fail with a `SocketError` when the socket closes, even with
+  code 1000 (a normal close). `catch_if(so.is_clean_close, ...)` ends the stream instead.
+
 ## Security defaults
 
 The server refuses unsafe input without any setting, and each limit can be changed where an

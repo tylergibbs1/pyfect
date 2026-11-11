@@ -50,10 +50,14 @@ _DURATION_MODULE = SRC / "duration.py"
 
 @dataclass
 class _Slots:
-    """Where a callable of some name takes a `Duration`."""
+    """Where a callable of some name takes a `Duration`. A method whose name other callables
+    share without taking one (`DurationConfig.with_default`, not `Config.with_default`) has
+    `receivers` when a function returns its class: it counts only on a receiver built by
+    one of those (`config.duration("T").with_default(5)`)."""
 
     positions: set[int] = field(default_factory=set[int])
     keywords: set[str] = field(default_factory=set[str])
+    receivers: frozenset[str] | None = None
 
 
 def _is_duration(annotation: ast.expr | None, pattern: re.Pattern[str] = _DURATION) -> bool:
@@ -114,25 +118,59 @@ def _class_slots(cls: ast.ClassDef, pattern: re.Pattern[str]) -> _Slots:
 
 def _duration_slots() -> dict[str, _Slots]:
     found: dict[str, _Slots] = defaultdict(_Slots)
+    free: set[str] = set()  # functions and classes taking a Duration
+    owners: dict[str, set[str]] = defaultdict(set)  # method -> classes where it takes one
+    plain: set[str] = set()  # callables taking none
+    makers: dict[str, set[str]] = defaultdict(set)  # class -> functions returning it
 
-    def visit(node: ast.AST, in_class: bool, pattern: re.Pattern[str]) -> None:
+    def visit(node: ast.AST, owner: str | None, pattern: re.Pattern[str]) -> None:
         for child in ast.iter_child_nodes(node):
             if isinstance(child, ast.FunctionDef | ast.AsyncFunctionDef):
-                slots = _function_slots(child, in_class, pattern)
+                slots = _function_slots(child, owner is not None, pattern)
                 found[child.name].positions |= slots.positions
                 found[child.name].keywords |= slots.keywords
-                visit(child, False, pattern)
+                if not (slots.positions or slots.keywords):
+                    plain.add(child.name)
+                elif owner is None:
+                    free.add(child.name)
+                else:
+                    owners[child.name].add(owner)
+                if owner is None and isinstance(child.returns, ast.Name):
+                    makers[child.returns.id].add(child.name)
+                visit(child, None, pattern)
             elif isinstance(child, ast.ClassDef):
                 slots = _class_slots(child, pattern)
                 found[child.name].positions |= slots.positions
                 found[child.name].keywords |= slots.keywords
-                visit(child, True, pattern)
+                if slots.positions or slots.keywords:
+                    free.add(child.name)
+                visit(child, child.name, pattern)
             else:
-                visit(child, in_class, pattern)
+                visit(child, owner, pattern)
 
     for path in _sources(SRC):
-        visit(_parse(path), False, _OWN_INPUT if path == _DURATION_MODULE else _DURATION)
+        visit(_parse(path), None, _OWN_INPUT if path == _DURATION_MODULE else _DURATION)
+    for name, classes in owners.items():
+        receivers = frozenset(m for c in classes for m in makers[c])
+        if name in plain and name not in free and receivers:
+            found[name].receivers = receivers
     return {name: slots for name, slots in found.items() if slots.positions or slots.keywords}
+
+
+def _receiver_calls(call: ast.Call) -> set[str]:
+    """The names called along the receiver of ``call``: ``{"duration", "nested"}`` for
+    ``config.duration("T").nested("a").with_default(5)``, not counting arguments."""
+    names: set[str] = set()
+    node = call.func.value if isinstance(call.func, ast.Attribute) else None
+    while isinstance(node, ast.Attribute | ast.Call):
+        if isinstance(node, ast.Call):
+            name = _callee_name(node)
+            if name is not None:
+                names.add(name)
+            node = node.func
+        else:
+            node = node.value
+    return names
 
 
 def _callee_name(call: ast.Call) -> str | None:
@@ -230,6 +268,8 @@ def _call_violations(
         if _is_foreign(node, foreign):
             continue
         where = slots[name]
+        if where.receivers is not None and not (where.receivers & _receiver_calls(node)):
+            continue
         given = [
             *((arg, f"`{ast.unparse(arg)}` passed to `{name}`") for arg in node.args),
             *((kw.value, f"`{kw.arg}={ast.unparse(kw.value)}`") for kw in node.keywords),
@@ -399,6 +439,19 @@ def test_the_guard_finds_duration_slots_and_bare_numbers() -> None:
     constants = frozenset(_numeric_constants(tree))
     found = _call_violations(tree, slots, constants) + _default_violations(tree)
     assert sorted(line for line, _ in found) == [1, 2, 4, 5, 7, 15]
+
+
+def test_a_shared_method_name_counts_only_on_its_own_receiver() -> None:
+    """``with_default`` takes a duration only on ``config.duration(...)``."""
+    slots = _duration_slots()
+    assert slots["with_default"].receivers == {"duration"}
+    tree = ast.parse(
+        "config.duration('T').with_default(5)\nconfig.port('P').with_default(8080)\n"
+        "config.duration('T').nested('a').with_default(5)\n"
+        "config.all(config.duration('T')).with_default(5)\n"
+        "config.duration('T').with_default('5 seconds')\n"
+    )
+    assert sorted(line for line, _ in _call_violations(tree, slots)) == [1, 3]
 
 
 def test_only_parameters_that_parse_an_input_are_duration_slots() -> None:

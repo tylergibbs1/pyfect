@@ -35,6 +35,8 @@ see [URLs](/docs/platform#urls).
 `date_time` reads text as JavaScript's `Date` does, V8's forms included (`2024-01-15`,
 `2024-01-15T10:00`, `Jan 15 2024 10:00 PM EST`, `1/15/2024`), and gives a UTC `datetime`.
 A date alone is UTC; a time that names no zone is local time, as in Effect.
+A `duration` config's default may be written as text: `config.duration("TIMEOUT").with_default("5 seconds")`
+is a `Config[Duration]`, and a default that isn't a duration raises when it is given.
 
 Reference: [`pyfect.config`](/docs/reference/config),
 [`pyfect.config_provider`](/docs/reference/config_provider),
