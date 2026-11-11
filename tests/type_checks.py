@@ -8210,6 +8210,53 @@ def check_graphql_resolver_items(
     graphql.resolver.ordered(nodes, variables=ids)  # pyright: ignore[reportCallIssue]
 
 
+class GqlOwner(TypedDict):
+    owner: str
+
+
+class GqlLoginPage(TypedDict):
+    pageInfo: graphql.client.PageInfo
+    nodes: Sequence[GqlLogin | None] | None
+
+
+def check_graphql_variables_follow_the_schema(
+    page: graphql.operation.Method[GqlOwner, GqlLoginPage, Never, Never],
+) -> None:
+    # Dogfood 0.5.6: ``{"owner": 1}`` for a ``String`` variable is rejected
+    # wherever variables are passed (the dogfood test went through an
+    # operation typed ``Any``, which hides it).
+    by_owner = graphql.query(
+        "ByOwner",
+        document="query ByOwner($owner:String!){viewer{login}}",
+        variables=S.Struct(GqlOwner),
+        result=S.Struct(GqlViewer),
+    )
+    watch = graphql.subscription(
+        "Watch",
+        document="subscription Watch($owner:String!){viewer{login}}",
+        variables=S.Struct(GqlOwner),
+        result=S.Struct(GqlViewer),
+    )
+
+    class Api(graphql.GraphQLGroup):
+        by_owner_op = by_owner
+        watch_op = watch
+
+    def failure_of(call: Callable[[Api], fx.Effect[Any, Any, Any]]) -> None: ...
+
+    def use(api: Api, untyped: dict[str, int]) -> None:
+        api.by_owner_op({"owner": 1})  # pyright: ignore[reportArgumentType]
+        api.by_owner_op({"owner": 1}, partial=True)  # pyright: ignore[reportCallIssue, reportArgumentType]
+        api.by_owner_op(untyped)  # pyright: ignore[reportArgumentType]
+        api.by_owner_op({"owner": "x", "extra": 1})  # pyright: ignore[reportArgumentType]
+        api.watch_op({"owner": 1})  # pyright: ignore[reportArgumentType]
+        failure_of(lambda g: g.by_owner_op({"owner": 1}))  # pyright: ignore[reportArgumentType]
+        graphql.client.pages(page, variables={"owner": 1}, connection=lambda data: data)  # pyright: ignore[reportArgumentType]
+        graphql.client.items(page, variables={"owner": 1}, connection=lambda data: data)  # pyright: ignore[reportArgumentType]
+
+    del use
+
+
 class GqlIssueId(TypedDict):
     id: str
 
