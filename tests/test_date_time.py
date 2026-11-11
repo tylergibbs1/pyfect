@@ -223,3 +223,11 @@ def test_start_end_and_nearest_of_calendar_units_in_a_zone(
     assert utc_minute(date_time.end_of(at, unit)) == end
     assert date_time.end_of(at, unit).microsecond == 999_000
     assert utc_minute(date_time.nearest(at, unit)) == nearest
+
+
+def test_iso_strings_pad_years_below_1000_to_four_digits():
+    # As JavaScript's toISOString; glibc's strftime("%Y") wrote "999" on Python 3.13, so on
+    # Linux an encoded DateTime.Utc before year 1000 did not decode.
+    early = datetime(999, 12, 31, 23, 59, 59, 999_000, tzinfo=UTC)
+    assert date_time.format_iso(early) == "0999-12-31T23:59:59.999Z"
+    assert date_time.format_iso(datetime(1, 1, 1, tzinfo=UTC)) == "0001-01-01T00:00:00.000Z"

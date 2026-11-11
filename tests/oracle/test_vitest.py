@@ -389,12 +389,12 @@ def resource(name):
 def test_timeout_finalizers(pytester: pytest.Pytester, mode: str) -> None:
     """timeout.test.ts "it.${mode} timeout finalizers > times out while holding a resource"
     and "... > awaits the finalizer before starting the next test"."""
-    pytester.makepyfile(resource=RESOURCE)
+    pytester.makepyfile(held_resource=RESOURCE)
     pytester.makepyfile(
         f"""
         import pyfect as fx
         from pyfect import testing
-        from resource import events, resource
+        from held_resource import events, resource
 
         @testing.{mode}(timeout="75 millis")
         def test_times_out_while_holding_a_resource():
@@ -436,12 +436,12 @@ def test_layer_timeout_finalizers(pytester: pytest.Pytester) -> None:
     """timeout.test.ts "it.layer timeout finalizers > times out in the last test using the
     layer" and "... > awaits both test and layer finalizers before starting the next
     test"."""
-    pytester.makepyfile(resource=RESOURCE)
+    pytester.makepyfile(held_resource=RESOURCE)
     pytester.makepyfile(
         test_a="""
         import pyfect as fx
         from pyfect import layer, testing
-        from resource import resource
+        from held_resource import resource
 
         class Held(fx.Tag[None]): ...
 
@@ -453,7 +453,7 @@ def test_layer_timeout_finalizers(pytester: pytest.Pytester) -> None:
             return (yield from fx.never)
         """,
         test_b="""
-        from resource import events
+        from held_resource import events
 
         def test_awaits_both_test_and_layer_finalizers_before_starting_the_next_test():
             events.append("next:start")

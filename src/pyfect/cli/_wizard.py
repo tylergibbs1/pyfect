@@ -6,11 +6,10 @@ from __future__ import annotations
 import math
 import re
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from typing import Any, Never
 
 from pyfect import console, redacted
-from pyfect._js import js_number
+from pyfect._js import js_number, to_iso_string
 from pyfect.cli import _ansi as ansi
 from pyfect.cli import prompt
 from pyfect.cli._command import Command
@@ -179,11 +178,6 @@ def _prompt_param(param: Param[Any]) -> Effect[list[Arg], CliError | QuitError, 
     return gen(body)
 
 
-def _iso(value: datetime) -> str:
-    utc = value.astimezone(UTC)
-    return utc.strftime("%Y-%m-%dT%H:%M:%S.") + f"{utc.microsecond // 1000:03d}Z"
-
-
 def _js_bool(value: bool) -> str:
     return "true" if value else "false"
 
@@ -206,7 +200,7 @@ def _prompt_single(single: Single[Any]) -> Effect[Arg, QuitError, Environment]: 
             choices = [prompt.Choice(key, key) for key in keys]
             return prompt.run(prompt.select(choices, message=message)).map(_arg)
         case "Date":
-            return prompt.run(prompt.date(message)).map(lambda value: _arg(_iso(value)))
+            return prompt.run(prompt.date(message)).map(lambda value: _arg(to_iso_string(value)))
         case "Finite":
             return prompt.run(prompt.number(message)).map(lambda value: _arg(js_number(value)))
         case "Int":

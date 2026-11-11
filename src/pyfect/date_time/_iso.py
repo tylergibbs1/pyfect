@@ -5,10 +5,11 @@ part is read as JavaScript's ``Date`` reads it (``_js_date``)."""
 from __future__ import annotations
 
 import re
-from datetime import UTC, datetime, timedelta, tzinfo
+from datetime import datetime, timedelta, tzinfo
 from zoneinfo import ZoneInfo
 
 from pyfect import _js_date as js_date
+from pyfect._js import to_iso_string
 from pyfect.date_time._zones import parse_offset, zone_from_string, zone_of, zone_offset
 
 _ZONED = re.compile(r"^(.{17,35})\[(.+)\]$")
@@ -17,8 +18,7 @@ _ZONED = re.compile(r"^(.{17,35})\[(.+)\]$")
 def format_iso(dt: datetime) -> str:
     """``dt`` in UTC to the millisecond, as JavaScript's ``toISOString``
     (Effect's ``DateTime.formatIso``): ``2024-01-01T00:00:00.000Z``."""
-    utc = dt.astimezone(UTC)
-    return utc.strftime("%Y-%m-%dT%H:%M:%S.") + f"{utc.microsecond // 1000:03d}Z"
+    return to_iso_string(dt)
 
 
 def utc_to_string(dt: datetime) -> str:

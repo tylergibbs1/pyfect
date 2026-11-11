@@ -11,6 +11,7 @@ from __future__ import annotations
 import codecs
 import math
 import re
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import cast
 
@@ -83,6 +84,13 @@ def int_text(value: int) -> str:
     half = int(value.bit_length() * 0.30102999566398) // 2  # log10(2): digits / 2
     high, low = divmod(value, 10**half)
     return int_text(high) + int_text(low).rjust(half, "0")
+
+
+def to_iso_string(when: datetime) -> str:
+    """JavaScript's ``Date.prototype.toISOString``: UTC to the millisecond, a four-digit year,
+    ``Z`` (``0999-12-31T23:59:59.999Z``). Not ``strftime``: glibc's ``%Y`` does not pad."""
+    utc = when.astimezone(UTC).replace(tzinfo=None)
+    return utc.isoformat(timespec="milliseconds") + "Z"
 
 
 def js_number(value: float) -> str:

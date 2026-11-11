@@ -15,11 +15,11 @@ import inspect
 import math
 import re
 from collections.abc import Callable, Iterable, Mapping
-from datetime import UTC, date, datetime
+from datetime import date, datetime
 from typing import Any, cast
 
 from pyfect import _json_text as _json
-from pyfect._js import js_number, js_string
+from pyfect._js import js_number, js_string, to_iso_string
 from pyfect._stack import with_fresh_stack
 from pyfect.logger._model import LogSpan
 
@@ -74,10 +74,7 @@ def json_quote_line(value: str) -> str:
     return _RAW_LINE_BREAK.sub(lambda m: f"\\u{ord(m[0]):04x}", json_quote(value))
 
 
-def iso_millis(when: datetime) -> str:
-    """JavaScript's ``Date.toISOString``: UTC, milliseconds, ``Z``."""
-    utc = when.astimezone(UTC)
-    return utc.strftime("%Y-%m-%dT%H:%M:%S.") + f"{utc.microsecond // 1000:03d}Z"
+iso_millis = to_iso_string
 
 
 def _is_function(value: object) -> bool:

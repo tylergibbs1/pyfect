@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.6 (unreleased)
+
+### Fixed
+
+- ISO strings for years before 1000 have four digits, as JavaScript's `toISOString`
+  (`0999-12-31T23:59:59.999Z`). On Linux with Python 3.13 they came from glibc's
+  `strftime("%Y")`, which wrote `999-12-31T...`: `date_time.format_iso`, the `DateTimeUtc`
+  schemas' encodings (which then did not decode), log timestamps, date bound annotations and
+  the CLI wizard's dates.
+
 ## 0.5.5 (2026-11-10)
 
 ### Changed
