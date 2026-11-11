@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.5.5 (unreleased)
+
+### Fixed
+
+- `sql.model.make_repository(...).insert` works on SQL Server: the insert asks the statement
+  compiler for its row (`sql.insert(row).returning("*")`, as Effect's `SqlModel` does), which
+  SQL Server writes as `OUTPUT INSERTED.*`, where the model sent its own `returning *`.
+  `update` still appends `returning *`, as Effect's does, so on SQL Server and ClickHouse
+  only `update_void` works (in Effect too). On MySQL an update's follow-up `SELECT` no longer
+  repeats the soft-delete filter. Every statement the repositories and resolvers send is
+  pinned against Effect's on each dialect's compiler.
+
 ## 0.5.3 (2026-11-10)
 
 ### Changed

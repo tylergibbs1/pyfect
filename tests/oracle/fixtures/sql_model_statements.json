@@ -1,0 +1,314 @@
+{
+  "clickhouse": {
+    "plain.delete": [
+      "delete from \"accounts\" where \"id\" = {p1: Float64}"
+    ],
+    "plain.findById": [
+      "select * from \"accounts\" where \"id\" = {p1: Float64}"
+    ],
+    "plain.insert": [
+      "insert into \"accounts\" (\"code\",\"name\") VALUES ({p1: String},{p2: String}) RETURNING *"
+    ],
+    "plain.insertVoid": [
+      "insert into \"accounts\" (\"code\",\"name\") VALUES ({p1: String},{p2: String})"
+    ],
+    "plain.resolvers.delete": [
+      "delete from \"accounts\" where \"id\" IN ({p1: Float64},{p2: Float64})"
+    ],
+    "plain.resolvers.findById": [
+      "select * from \"accounts\" where \"id\" IN ({p1: Float64},{p2: Float64})"
+    ],
+    "plain.resolvers.insert": [
+      "insert into \"accounts\" (\"code\",\"name\") VALUES ({p1: String},{p2: String}),({p3: String},{p4: String}) RETURNING *"
+    ],
+    "plain.resolvers.insertVoid": [
+      "insert into \"accounts\" (\"code\",\"name\") VALUES ({p1: String},{p2: String}),({p3: String},{p4: String})"
+    ],
+    "plain.update": [
+      "update \"accounts\" set \"code\" = {p1: String}, \"name\" = {p2: String} where \"id\" = {p3: Float64} returning *"
+    ],
+    "plain.updateVoid": [
+      "update \"accounts\" set \"code\" = {p1: String}, \"name\" = {p2: String} where \"id\" = {p3: Float64}"
+    ],
+    "soft.delete": [
+      "update \"softs\" set \"deleted_at\" = CURRENT_TIMESTAMP where (\"id\" = {p1: Float64} AND \"deleted_at\" is null)"
+    ],
+    "soft.findById": [
+      "select * from \"softs\" where (\"id\" = {p1: Float64} AND \"deleted_at\" is null)"
+    ],
+    "soft.insert": [
+      "insert into \"softs\" (\"code\") VALUES ({p1: String}) RETURNING *"
+    ],
+    "soft.insertVoid": [
+      "insert into \"softs\" (\"code\") VALUES ({p1: String})"
+    ],
+    "soft.resolvers.delete": [
+      "update \"softs\" set \"deleted_at\" = CURRENT_TIMESTAMP where (\"id\" IN ({p1: Float64},{p2: Float64}) AND \"deleted_at\" is null)"
+    ],
+    "soft.resolvers.findById": [
+      "select * from \"softs\" where (\"id\" IN ({p1: Float64},{p2: Float64}) AND \"deleted_at\" is null)"
+    ],
+    "soft.resolvers.insert": [
+      "insert into \"softs\" (\"code\") VALUES ({p1: String}),({p2: String}) RETURNING *"
+    ],
+    "soft.resolvers.insertVoid": [
+      "insert into \"softs\" (\"code\") VALUES ({p1: String}),({p2: String})"
+    ],
+    "soft.update": [
+      "update \"softs\" set \"code\" = {p1: String}, \"deleted_at\" = {p2: String} where (\"id\" = {p3: Float64} AND \"deleted_at\" is null) returning *"
+    ],
+    "soft.updateVoid": [
+      "update \"softs\" set \"code\" = {p1: String}, \"deleted_at\" = {p2: String} where (\"id\" = {p3: Float64} AND \"deleted_at\" is null)"
+    ]
+  },
+  "mssql": {
+    "plain.delete": [
+      "delete from [accounts] where [id] = @1"
+    ],
+    "plain.findById": [
+      "select * from [accounts] where [id] = @1"
+    ],
+    "plain.insert": [
+      "insert into [accounts] ([code],[name]) OUTPUT INSERTED.* VALUES (@1,@2)"
+    ],
+    "plain.insertVoid": [
+      "insert into [accounts] ([code],[name]) VALUES (@1,@2)"
+    ],
+    "plain.resolvers.delete": [
+      "delete from [accounts] where [id] IN (@1,@2)"
+    ],
+    "plain.resolvers.findById": [
+      "select * from [accounts] where [id] IN (@1,@2)"
+    ],
+    "plain.resolvers.insert": [
+      "insert into [accounts] ([code],[name]) OUTPUT INSERTED.* VALUES (@1,@2),(@3,@4)"
+    ],
+    "plain.resolvers.insertVoid": [
+      "insert into [accounts] ([code],[name]) VALUES (@1,@2),(@3,@4)"
+    ],
+    "plain.update": [
+      "update [accounts] set [code] = @1, [name] = @2 where [id] = @3 returning *"
+    ],
+    "plain.updateVoid": [
+      "update [accounts] set [code] = @1, [name] = @2 where [id] = @3"
+    ],
+    "soft.delete": [
+      "update [softs] set [deleted_at] = CURRENT_TIMESTAMP where ([id] = @1 AND [deleted_at] is null)"
+    ],
+    "soft.findById": [
+      "select * from [softs] where ([id] = @1 AND [deleted_at] is null)"
+    ],
+    "soft.insert": [
+      "insert into [softs] ([code]) OUTPUT INSERTED.* VALUES (@1)"
+    ],
+    "soft.insertVoid": [
+      "insert into [softs] ([code]) VALUES (@1)"
+    ],
+    "soft.resolvers.delete": [
+      "update [softs] set [deleted_at] = CURRENT_TIMESTAMP where ([id] IN (@1,@2) AND [deleted_at] is null)"
+    ],
+    "soft.resolvers.findById": [
+      "select * from [softs] where ([id] IN (@1,@2) AND [deleted_at] is null)"
+    ],
+    "soft.resolvers.insert": [
+      "insert into [softs] ([code]) OUTPUT INSERTED.* VALUES (@1),(@2)"
+    ],
+    "soft.resolvers.insertVoid": [
+      "insert into [softs] ([code]) VALUES (@1),(@2)"
+    ],
+    "soft.update": [
+      "update [softs] set [code] = @1, [deleted_at] = @2 where ([id] = @3 AND [deleted_at] is null) returning *"
+    ],
+    "soft.updateVoid": [
+      "update [softs] set [code] = @1, [deleted_at] = @2 where ([id] = @3 AND [deleted_at] is null)"
+    ]
+  },
+  "mysql": {
+    "plain.delete": [
+      "delete from `accounts` where `id` = ?"
+    ],
+    "plain.findById": [
+      "select * from `accounts` where `id` = ?"
+    ],
+    "plain.insert": [
+      "insert into `accounts` (`code`,`name`) VALUES (?,?);\nselect * from `accounts` where `id` = LAST_INSERT_ID();"
+    ],
+    "plain.insertVoid": [
+      "insert into `accounts` (`code`,`name`) VALUES (?,?)"
+    ],
+    "plain.resolvers.delete": [
+      "delete from `accounts` where `id` IN (?,?)"
+    ],
+    "plain.resolvers.findById": [
+      "select * from `accounts` where `id` IN (?,?)"
+    ],
+    "plain.resolvers.insert": [
+      "insert into `accounts` (`code`,`name`) VALUES (?,?);\nselect * from `accounts` where `id` = LAST_INSERT_ID();",
+      "insert into `accounts` (`code`,`name`) VALUES (?,?);\nselect * from `accounts` where `id` = LAST_INSERT_ID();"
+    ],
+    "plain.resolvers.insertVoid": [
+      "insert into `accounts` (`code`,`name`) VALUES (?,?),(?,?)"
+    ],
+    "plain.update": [
+      "update `accounts` set `code` = ?, `name` = ? where `id` = ?;\nselect * from `accounts` where `id` = ?;"
+    ],
+    "plain.updateVoid": [
+      "update `accounts` set `code` = ?, `name` = ? where `id` = ?"
+    ],
+    "soft.delete": [
+      "update `softs` set `deleted_at` = CURRENT_TIMESTAMP where (`id` = ? AND `deleted_at` is null)"
+    ],
+    "soft.findById": [
+      "select * from `softs` where (`id` = ? AND `deleted_at` is null)"
+    ],
+    "soft.insert": [
+      "insert into `softs` (`code`) VALUES (?);\nselect * from `softs` where (`id` = LAST_INSERT_ID() AND `deleted_at` is null);"
+    ],
+    "soft.insertVoid": [
+      "insert into `softs` (`code`) VALUES (?)"
+    ],
+    "soft.resolvers.delete": [
+      "update `softs` set `deleted_at` = CURRENT_TIMESTAMP where (`id` IN (?,?) AND `deleted_at` is null)"
+    ],
+    "soft.resolvers.findById": [
+      "select * from `softs` where (`id` IN (?,?) AND `deleted_at` is null)"
+    ],
+    "soft.resolvers.insert": [
+      "insert into `softs` (`code`) VALUES (?);\nselect * from `softs` where (`id` = LAST_INSERT_ID() AND `deleted_at` is null);",
+      "insert into `softs` (`code`) VALUES (?);\nselect * from `softs` where (`id` = LAST_INSERT_ID() AND `deleted_at` is null);"
+    ],
+    "soft.resolvers.insertVoid": [
+      "insert into `softs` (`code`) VALUES (?),(?)"
+    ],
+    "soft.update": [
+      "update `softs` set `code` = ?, `deleted_at` = ? where (`id` = ? AND `deleted_at` is null);\nselect * from `softs` where (`id` = ? AND `deleted_at` is null);"
+    ],
+    "soft.updateVoid": [
+      "update `softs` set `code` = ?, `deleted_at` = ? where (`id` = ? AND `deleted_at` is null)"
+    ]
+  },
+  "pg": {
+    "plain.delete": [
+      "delete from \"accounts\" where \"id\" = $1"
+    ],
+    "plain.findById": [
+      "select * from \"accounts\" where \"id\" = $1"
+    ],
+    "plain.insert": [
+      "insert into \"accounts\" (\"code\",\"name\") VALUES ($1,$2) RETURNING *"
+    ],
+    "plain.insertVoid": [
+      "insert into \"accounts\" (\"code\",\"name\") VALUES ($1,$2)"
+    ],
+    "plain.resolvers.delete": [
+      "delete from \"accounts\" where \"id\" IN ($1,$2)"
+    ],
+    "plain.resolvers.findById": [
+      "select * from \"accounts\" where \"id\" IN ($1,$2)"
+    ],
+    "plain.resolvers.insert": [
+      "insert into \"accounts\" (\"code\",\"name\") VALUES ($1,$2),($3,$4) RETURNING *"
+    ],
+    "plain.resolvers.insertVoid": [
+      "insert into \"accounts\" (\"code\",\"name\") VALUES ($1,$2),($3,$4)"
+    ],
+    "plain.update": [
+      "update \"accounts\" set \"code\" = $1, \"name\" = $2 where \"id\" = $3 returning *"
+    ],
+    "plain.updateVoid": [
+      "update \"accounts\" set \"code\" = $1, \"name\" = $2 where \"id\" = $3"
+    ],
+    "soft.delete": [
+      "update \"softs\" set \"deleted_at\" = CURRENT_TIMESTAMP where (\"id\" = $1 AND \"deleted_at\" is null)"
+    ],
+    "soft.findById": [
+      "select * from \"softs\" where (\"id\" = $1 AND \"deleted_at\" is null)"
+    ],
+    "soft.insert": [
+      "insert into \"softs\" (\"code\") VALUES ($1) RETURNING *"
+    ],
+    "soft.insertVoid": [
+      "insert into \"softs\" (\"code\") VALUES ($1)"
+    ],
+    "soft.resolvers.delete": [
+      "update \"softs\" set \"deleted_at\" = CURRENT_TIMESTAMP where (\"id\" IN ($1,$2) AND \"deleted_at\" is null)"
+    ],
+    "soft.resolvers.findById": [
+      "select * from \"softs\" where (\"id\" IN ($1,$2) AND \"deleted_at\" is null)"
+    ],
+    "soft.resolvers.insert": [
+      "insert into \"softs\" (\"code\") VALUES ($1),($2) RETURNING *"
+    ],
+    "soft.resolvers.insertVoid": [
+      "insert into \"softs\" (\"code\") VALUES ($1),($2)"
+    ],
+    "soft.update": [
+      "update \"softs\" set \"code\" = $1, \"deleted_at\" = $2 where (\"id\" = $3 AND \"deleted_at\" is null) returning *"
+    ],
+    "soft.updateVoid": [
+      "update \"softs\" set \"code\" = $1, \"deleted_at\" = $2 where (\"id\" = $3 AND \"deleted_at\" is null)"
+    ]
+  },
+  "sqlite": {
+    "plain.delete": [
+      "delete from \"accounts\" where \"id\" = ?"
+    ],
+    "plain.findById": [
+      "select * from \"accounts\" where \"id\" = ?"
+    ],
+    "plain.insert": [
+      "insert into \"accounts\" (\"code\",\"name\") VALUES (?,?) RETURNING *"
+    ],
+    "plain.insertVoid": [
+      "insert into \"accounts\" (\"code\",\"name\") VALUES (?,?)"
+    ],
+    "plain.resolvers.delete": [
+      "delete from \"accounts\" where \"id\" IN (?,?)"
+    ],
+    "plain.resolvers.findById": [
+      "select * from \"accounts\" where \"id\" IN (?,?)"
+    ],
+    "plain.resolvers.insert": [
+      "insert into \"accounts\" (\"code\",\"name\") VALUES (?,?),(?,?) RETURNING *"
+    ],
+    "plain.resolvers.insertVoid": [
+      "insert into \"accounts\" (\"code\",\"name\") VALUES (?,?),(?,?)"
+    ],
+    "plain.update": [
+      "update \"accounts\" set \"code\" = ?, \"name\" = ? where \"id\" = ? returning *"
+    ],
+    "plain.updateVoid": [
+      "update \"accounts\" set \"code\" = ?, \"name\" = ? where \"id\" = ?"
+    ],
+    "soft.delete": [
+      "update \"softs\" set \"deleted_at\" = CURRENT_TIMESTAMP where (\"id\" = ? AND \"deleted_at\" is null)"
+    ],
+    "soft.findById": [
+      "select * from \"softs\" where (\"id\" = ? AND \"deleted_at\" is null)"
+    ],
+    "soft.insert": [
+      "insert into \"softs\" (\"code\") VALUES (?) RETURNING *"
+    ],
+    "soft.insertVoid": [
+      "insert into \"softs\" (\"code\") VALUES (?)"
+    ],
+    "soft.resolvers.delete": [
+      "update \"softs\" set \"deleted_at\" = CURRENT_TIMESTAMP where (\"id\" IN (?,?) AND \"deleted_at\" is null)"
+    ],
+    "soft.resolvers.findById": [
+      "select * from \"softs\" where (\"id\" IN (?,?) AND \"deleted_at\" is null)"
+    ],
+    "soft.resolvers.insert": [
+      "insert into \"softs\" (\"code\") VALUES (?),(?) RETURNING *"
+    ],
+    "soft.resolvers.insertVoid": [
+      "insert into \"softs\" (\"code\") VALUES (?),(?)"
+    ],
+    "soft.update": [
+      "update \"softs\" set \"code\" = ?, \"deleted_at\" = ? where (\"id\" = ? AND \"deleted_at\" is null) returning *"
+    ],
+    "soft.updateVoid": [
+      "update \"softs\" set \"code\" = ?, \"deleted_at\" = ? where (\"id\" = ? AND \"deleted_at\" is null)"
+    ]
+  }
+}
