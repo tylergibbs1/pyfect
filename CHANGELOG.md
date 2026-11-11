@@ -22,27 +22,6 @@
   chunks), `group_by` / `group_by_key` (one slow group stalls every key), `broadcast`,
   `broadcast_n` and `share` (capacity counts chunks), with checked examples; no operator
   reports its drops, as in Effect; `ndjson.decode` fails the whole stream at a bad line.
-
-## 0.5.4 (2026-11-10)
-
-### Fixed
-
-- Concurrent runs no longer see each other's `contextvars`. A fiber whose first run was
-  scheduled ran in the context of whatever drained the scheduler: concurrent
-  `ManagedRuntime.run_async` calls on one loop all read the first caller's request id, a
-  `ManagedRuntime.run_blocking` / `run_sync` / `run_fork` from one thread could run in the context
-  of another thread driving the runtime, and so could `fx.run_fork(eff, scheduler=...)`, a
-  `FiberSet` runner and a forked child that is not started immediately (in an ASGI app too). A
-  scheduled first run now takes a copy of its starter's context, as Effect's runs follow Node's
-  `AsyncLocalStorage`; `run_sync` and `run_blocking` still run in the caller's own context.
-- `ManagedRuntime.run_async` / `run_async_exit` after `dispose` die with
-  `RuntimeError("ManagedRuntime disposed")`, as every other entry point and Effect's
-  `runPromise` do, instead of failing with an interruption. The effect starts at once, up to its
-  first wait, as Effect's `runPromise` evaluates it.
-## 0.5.5 (unreleased)
-
-### Added
-
 - Docs: two multi-tenant warnings, both matching Effect. A SQL resolver shared by tenants
   batches their requests onto the first request's client (make one per tenant: SQL guide), and
   a `LayerMapService` lookup that reuses a module-level layer constant gives every key built
@@ -64,6 +43,26 @@
   only `update_void` works (in Effect too). On MySQL an update's follow-up `SELECT` no longer
   repeats the soft-delete filter. Every statement the repositories and resolvers send is
   pinned against Effect's on each dialect's compiler.
+
+## 0.5.4 (2026-11-10)
+
+### Fixed
+
+- Concurrent runs no longer see each other's `contextvars`. A fiber whose first run was
+  scheduled ran in the context of whatever drained the scheduler: concurrent
+  `ManagedRuntime.run_async` calls on one loop all read the first caller's request id, a
+  `ManagedRuntime.run_blocking` / `run_sync` / `run_fork` from one thread could run in the context
+  of another thread driving the runtime, and so could `fx.run_fork(eff, scheduler=...)`, a
+  `FiberSet` runner and a forked child that is not started immediately (in an ASGI app too). A
+  scheduled first run now takes a copy of its starter's context, as Effect's runs follow Node's
+  `AsyncLocalStorage`. `fx.run_sync` and `fx.run_blocking` still run in the caller's own context;
+  `ManagedRuntime.run_sync` / `run_blocking` run in a copy, so a `ContextVar` the effect sets
+  is not the caller's afterwards (Effect's `runSync` shows it; matching it would deadlock runs
+  that wait on each other across threads).
+- `ManagedRuntime.run_async` / `run_async_exit` after `dispose` die with
+  `RuntimeError("ManagedRuntime disposed")`, as every other entry point and Effect's
+  `runPromise` do, instead of failing with an interruption. The effect starts at once, up to its
+  first wait, as Effect's `runPromise` evaluates it.
 
 ## 0.5.3 (2026-11-10)
 
