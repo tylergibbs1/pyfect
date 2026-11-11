@@ -2,6 +2,20 @@
 
 ## 0.5.5 (unreleased)
 
+### Added
+
+- Docs: two multi-tenant warnings, both matching Effect. A SQL resolver shared by tenants
+  batches their requests onto the first request's client (make one per tenant: SQL guide), and
+  a `LayerMapService` lookup that reuses a module-level layer constant gives every key built
+  while it is held the first key's build (make per-key layers in the lookup: Resources guide).
+  Also: a `THROW` under `XACT_ABORT ON` inside `with_transaction` dies with error 3903 beside
+  it, and `mssql.error.error_number` reads a custom error's number (SQL Server guide);
+  branded values with `S.refine` and `S.from_brand` (Schema guide); calling `make_resolvers`'
+  resolvers (Models guide); `LayerMapService[K, I, E]`'s lookup error parameter; a middleware's
+  several errors as a tuple, since an `S.Union` is one schema answering with the union's status
+  (500 unless annotated), as in Effect (HttpApi guide, pinned by
+  `tests/test_http_api_union_errors.py`).
+
 ### Fixed
 
 - `sql.model.make_repository(...).insert` works on SQL Server: the insert asks the statement

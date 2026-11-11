@@ -1,0 +1,2 @@
+unsafe: ('ledger on acme.db', 'ledger on acme.db', 'no initech')
+per key: ('ledger on acme.db', 'ledger on globex.db', 'no initech')

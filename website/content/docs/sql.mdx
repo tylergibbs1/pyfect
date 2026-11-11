@@ -58,6 +58,33 @@ Requests and results are decoded with [schemas](/docs/schema), so a row of the w
 fails with a `SchemaError`. Requests made inside a transaction are batched with requests from
 the same transaction only.
 
+### One resolver per tenant
+
+<Callout title="A shared resolver can answer from another tenant's database">
+
+Only the transaction separates batches. Requests made together outside a transaction share
+one batch even when each provides a different `SqlClient`, and the batch runs on the first
+request's client. A resolver shared by tenants with their own databases gives one tenant
+another's rows. Effect's `SqlResolver` does the same and says so.
+
+</Callout>
+
+`execute` runs once for the whole batch, with the services of the request that came first, so
+a `SqlClient()` read inside it is that request's client. Give each tenant its own resolver
+over its own client, made once with the tenant's client (in the tenant's
+[layer](/docs/resources#sharing-by-key), for example) so its requests still batch. When the
+tenants share one database, put the tenant in the request instead and filter on it in
+`execute`. `RequestResolver.grouped` is no way out: its key replaces the transaction key, so
+it would batch requests of different transactions together.
+
+<CodeOutput>
+
+<include meta='title="tenants.py"'>../../snippets/sql/tenants.py</include>
+
+<include lang="text">../../snippets/sql/tenants.out</include>
+
+</CodeOutput>
+
 ## Transactions
 
 `sql.with_transaction(effect)` runs every statement of `effect` on one connection. It

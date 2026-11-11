@@ -1,0 +1,4 @@
+acme
+Err(error=SchemaError('Expected a tenant slug'))
+{'account': 'cash', 'amount': 100}
+bank

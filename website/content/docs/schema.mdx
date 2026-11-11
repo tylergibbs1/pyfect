@@ -90,6 +90,24 @@ tries its members in order.
 
 </CodeOutput>
 
+## Branded values
+
+A slug and an account code are both strings, but a function taking one should refuse the
+other. Declare each as a `typing.NewType`: pyright tells them apart and at run time they are
+plain strings. `S.refine(guard)` takes a guard returning `TypeIs[Brand]` and narrows the
+schema's type to the brand, failing with `Expected <expected>` when the guard says no; it is
+Effect's `refine` with a refinement. `S.from_brand(brand)` runs the checks of a
+[`Brand`](/docs/reference/brand) instead, so the schema and the brand's constructor check the
+same things. A TypedDict field of the branded type then takes that schema as its keyword.
+
+<CodeOutput>
+
+<include meta='title="branded.py"'>../../snippets/schema/branded.py</include>
+
+<include lang="text">../../snippets/schema/branded.out</include>
+
+</CodeOutput>
+
 ## Transformations
 
 A codec decodes one type from another: `NumberFromString`, `Trim`, `DateTimeUtcFromString`,

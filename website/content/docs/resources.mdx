@@ -64,6 +64,29 @@ they are in use. It suits a service per tenant, or per model.
 
 <include meta='title="layer_map.py"'>../../snippets/resources/layer_map.py</include>
 
+`LayerMapService[K, I, E]` takes a third type parameter, what a lookup's layer can fail
+with; `get(key)` is then a layer failing with it. It defaults to `Never`.
+
+<Callout title="Make a per-key layer in the lookup, not in a constant">
+
+A `LayerMap` builds every key's layer with one shared memo map, as Effect's does, so a layer
+object is built once while any key holds it. A [module-level layer
+constant](/docs/services) used inside the lookup is one object: with `idle_time_to_live`,
+the keys built while the first one is held all get its build, so tenant `globex` reads
+`acme`'s database. Without a time-to-live it only shows when two keys are in use at once.
+Make anything that depends on the key inside the lookup function, so each key gets its own
+layer.
+
+</Callout>
+
+<CodeOutput>
+
+<include meta='title="layer_map_tenants.py"'>../../snippets/resources/layer_map_tenants.py</include>
+
+<include lang="text">../../snippets/resources/layer_map_tenants.out</include>
+
+</CodeOutput>
+
 ## Swapping and refreshing
 
 `fx.ScopedRef.from_acquire(acquire)` holds a value with resources. `set(acquire)` acquires
