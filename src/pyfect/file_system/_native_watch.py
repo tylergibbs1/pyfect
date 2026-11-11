@@ -100,23 +100,24 @@ class _Translation:
         kinds: dict[str, set[int]] = {}
         for kind, path in changes:
             kinds.setdefault(self._relative(path), set()).add(kind)
+        if self._recursive and _SCANS_NEW_DIRECTORIES:
+            # What is inside a new directory is new, even when inotify, watching it late,
+            # saw only a write to it.
+            for name, found in list(kinds.items()):
+                full = os.path.join(self._directory, name)
+                if (_ADDED in found or _DELETED in found) and os.path.isdir(full):
+                    for child in _descendants(full):
+                        kinds.setdefault(os.path.join(name, child), set()).add(_ADDED)
         gone: list[tuple[str, list[WatchEvent]]] = []
         present: list[tuple[float, str, list[WatchEvent]]] = []
-        for name, found in list(kinds.items()):
+        for name, found in kinds.items():
             renamed = _ADDED in found or _DELETED in found
             updated = [Update(name)] if _MODIFIED in found else []
-            full = os.path.join(self._directory, name)
-            born = _born(full)
+            born = _born(os.path.join(self._directory, name))
             if born is None:
                 gone.append((name, [*updated, *([Remove(name)] if renamed else [])]))
                 continue
             present.append((born, name, [*([Create(name)] if renamed else []), *updated]))
-            if renamed and self._recursive and _SCANS_NEW_DIRECTORIES and os.path.isdir(full):
-                for child in _descendants(full):
-                    child_name = os.path.join(name, child)
-                    if child_name not in kinds:
-                        kinds[child_name] = {_ADDED}
-                        present.append((born, child_name, [Create(child_name)]))
         # A batch is unordered. Removals come first, children before their
         # directories; then what exists, oldest first where creation times
         # are recorded (FSEvents can report a change made just before the

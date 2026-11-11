@@ -23,7 +23,7 @@ import pytest
 
 import pyfect as fx
 from pyfect import file_system
-from pyfect.file_system import Create, FileSystem, Remove, WatchEvent
+from pyfect.file_system import Create, FileSystem, Remove, Update, WatchEvent, _native_watch
 from pyfect.platform_error import PlatformError
 
 _TIMEOUT = "10 seconds"
@@ -124,6 +124,24 @@ def test_a_recursive_watch_reports_a_file_made_with_its_new_directory(tmp_path: 
     )
     assert Create("m") in events
     assert events[-1] == Create(os.path.join("m", "y.txt"))
+
+
+def test_a_file_in_a_new_directory_is_created_even_if_only_its_write_was_seen(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    # Linux CI: inotify watched ``m`` after ``y.txt`` was opened but before it was
+    # written, so the batch held ``m`` added and ``y.txt`` only modified, and the
+    # first event for it was an Update. Anything inside a new directory is new.
+    monkeypatch.setattr(_native_watch, "_SCANS_NEW_DIRECTORIES", True)
+    (tmp_path / "m").mkdir()
+    (tmp_path / "m" / "y.txt").write_text("x")
+    translation = _native_watch._Translation(str(tmp_path), recursive=True)  # pyright: ignore[reportPrivateUsage]
+    changes = {(1, str(tmp_path / "m")), (2, str(tmp_path / "m" / "y.txt"))}
+    assert translation.events(changes) == [
+        Create("m"),
+        Create(os.path.join("m", "y.txt")),
+        Update(os.path.join("m", "y.txt")),
+    ]
 
 
 def test_the_watcher_runs_on_its_own_thread_and_interrupting_stops_it(tmp_path: Path):

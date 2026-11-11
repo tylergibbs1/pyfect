@@ -9,6 +9,9 @@
   `strftime("%Y")`, which wrote `999-12-31T...`: `date_time.format_iso`, the `DateTimeUtc`
   schemas' encodings (which then did not decode), log timestamps, date bound annotations and
   the CLI wizard's dates.
+- A recursive `FileSystem.watch` on Linux reports a file made in a new directory with
+  `Create`. When inotify began watching the directory between the file's creation and its
+  first write, the first event for the file was an `Update`.
 
 ## 0.5.5 (2026-11-10)
 
