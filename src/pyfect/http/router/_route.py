@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, replace
-from typing import Any, Literal, Never, Self, cast, overload
+from typing import Any, Generic, Literal, Never, Self, TypeVar, cast, overload
 
 from pyfect._core import Effect
 from pyfect.effect import succeed
@@ -15,15 +15,22 @@ from pyfect.http.server_response import HttpServerResponse
 type Method = Literal["*", "GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "QUERY", "HEAD"]
 
 
+# Declared covariant: pyright infers a frozen dataclass's type parameters as
+# invariant on 3.13+ (its synthesized ``__replace__`` takes the fields), which
+# made ``add_all([a_route, a_failing_route])`` match no overload.
+E_co = TypeVar("E_co", covariant=True, default=Never)
+R_co = TypeVar("R_co", covariant=True, default=Never)
+
+
 @dataclass(frozen=True, slots=True)
-class Route[E = Never, R = Never]:
+class Route(Generic[E_co, R_co]):
     """``method`` ``"*"`` matches every method, and a ``path`` ending in
     ``/*`` matches its prefix too. ``prefix`` is the mount point removed
     from the request URL before the handler runs."""
 
     method: Method
     path: str
-    handler: Effect[HttpServerResponse, E, R]
+    handler: Effect[HttpServerResponse, E_co, R_co]
     uninterruptible: bool = False
     prefix: str | None = None
 

@@ -29,6 +29,7 @@
     "clickhouse",
     "cli",
     "http-server",
+    "asyncio-apps",
     "http-api",
     "rpc",
     "persistence",

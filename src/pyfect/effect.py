@@ -11,9 +11,10 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable, Generator
-from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import Future
 from typing import Any, Never, cast, overload
 
+from pyfect._blocking_pool import pool as blocking_pool
 from pyfect._catch import catch_all, catch_if, catch_tag
 from pyfect._catch_reason import catch_reason, catch_reasons, unwrap_reason
 from pyfect._context_effects import (
@@ -375,20 +376,11 @@ def _cancel_task(task: asyncio.Task[Any]) -> Effect[None]:
     return _Callback(register)
 
 
-_executor: ThreadPoolExecutor | None = None
-
-
-def _pool() -> ThreadPoolExecutor:
-    global _executor  # noqa: PLW0603 - one lazily-created pool per process
-    if _executor is None:
-        _executor = ThreadPoolExecutor(thread_name_prefix="pyfect-blocking")
-    return _executor
-
-
 def blocking[A](thunk: Callable[[], A]) -> Effect[A]:
     """Run blocking code on a worker thread without blocking other fibers.
     Raised exceptions are defects. A running thread cannot be stopped, so
-    interruption abandons it and does not wait."""
+    interruption abandons it and does not wait. The threads are daemons that
+    exit after 10 seconds idle: abandoned work does not hold the process open."""
     return _blocking(thunk, None)
 
 
@@ -411,7 +403,7 @@ def _blocking[A, E](thunk: Callable[[], A], catch: Callable[[Exception], E] | No
             exc = fut.exception()
             resume(_Succeed(fut.result()) if exc is None else _failure_of(catch, exc))
 
-        _pool().submit(thunk).add_done_callback(done)
+        blocking_pool().submit(thunk).add_done_callback(done)
 
     return os_wait(register, waits_for="work")
 

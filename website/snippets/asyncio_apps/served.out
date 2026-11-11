@@ -1,0 +1,4 @@
+Sent HTTP response GET /users/7 200
+200 {"id":"7"}
+Sent HTTP response GET /healthz 200
+200 legacy /healthz

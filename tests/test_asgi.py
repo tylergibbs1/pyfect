@@ -266,6 +266,23 @@ def test_routes_are_served_by_router_to_asgi() -> None:
     assert events == ["acquired", "released"]
 
 
+def test_provide_request_gives_its_services_to_every_request_of_to_asgi() -> None:
+    events: list[str] = []
+    routes = router.add("GET", "/hello", _app(_greet)).pipe(
+        router.provide_request(_greeting_layer(events))
+    )
+    app = router.to_asgi(routes, disable_logger=True)
+
+    async def main() -> list[tuple[int, bytes]]:
+        async with app.lifespan():
+            sent = [await _request(app, _scope("/hello")) for _ in range(2)]
+        return [(peer.status(), peer.body()) for peer in sent]
+
+    assert asyncio.run(main()) == [(200, b"hello"), (200, b"hello")]
+    # Built once, for the server's life.
+    assert events == ["acquired", "released"]
+
+
 # --- WebSocket scopes ----------------------------------------------------------------
 
 

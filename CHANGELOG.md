@@ -1,6 +1,5 @@
 # Changelog
 
-
 ## 0.5.5 (unreleased)
 
 ### Changed
@@ -11,6 +10,22 @@
   raises when it is given. `nested` keeps it a `DurationConfig`.
 - `clock.current_time_millis()` is a `float` on the live clock too (whole milliseconds, as
   `Date.now()`); it was an `int` there and a `float` under the `TestClock`.
+- `router.provide_request(services)` is typed as Effect's `HttpRouter.provideRequest`: the
+  result drops each `Requires[S]` that `services` builds and adds `services`' own errors and
+  requirements (it was `Layer[Any, Any, Any]`, so even `provide_request(layer.empty)` passed).
+- `router.to_asgi` takes only routes whose requirements its layer builds, as Effect's
+  `toWebHandler` needs them built by the app layer when there is no request context: a missing
+  service, or `layer.provide(services)` where `provide_request(services)` belongs, is a pyright
+  error instead of a 500 on every request. A routes layer still needing a service to build is
+  refused too, as is a `middleware=` needing one. Runtime behaviour is unchanged. A helper
+  generic in its services' type (`def app_routes[RO](services: Layer[RO])`) keeps its routes'
+  `Requires`, since pyright can't see which ones `RO` builds (TypeScript resolves Effect's
+  `Exclude` at each call): type the helper with its layer, or apply `provide_request` outside it.
+- `fx.blocking` / `fx.try_blocking` run on daemon threads that exit after 10 seconds idle,
+  where a `ThreadPoolExecutor` kept every thread for the process's life and joined them at
+  exit. Effect has no thread pool (Node runs such work on libuv's), so this follows Python's
+  norm for work a program may abandon: a process whose blocking work was interrupted, and is
+  still running, now exits at once instead of waiting for it.
 
 ### Added
 
@@ -33,6 +48,11 @@
   several errors as a tuple, since an `S.Union` is one schema answering with the union's status
   (500 unless annotated), as in Effect (HttpApi guide, pinned by
   `tests/test_http_api_union_errors.py`).
+- Guide: [Adopting in an asyncio app](/docs/asyncio-apps): a `ManagedRuntime` in the app's
+  lifespan, mapping typed errors at the seam (`run_async` takes only `Never` errors), sharing
+  layers between runtimes with `memo_map`, which `contextvars` cross `run_async`, `from_async`
+  and a fork, `router.provide_request`, routes mounted with `to_asgi`, and `hypercorn_server`
+  with the legacy app mounted through `from_asgi`. HTTP server links to it.
 
 ### Fixed
 
@@ -49,6 +69,12 @@
   only `update_void` works (in Effect too). On MySQL an update's follow-up `SELECT` no longer
   repeats the soft-delete filter. Every statement the repositories and resolvers send is
   pinned against Effect's on each dialect's compiler.
+- `hypercorn_server` no longer prints hypercorn's own "Running on" line: the listen log is
+  `serve`'s alone, so `disable_listen_log=True` leaves out every startup line, as with Effect's
+  `NodeHttpServer`, which logs nothing itself.
+- `router.add_all([...])` takes a list mixing routes of different error or requirement types:
+  `Route` is now covariant (pyright inferred a frozen dataclass's parameters as invariant), so
+  such a list matched no overload.
 
 ## 0.5.4 (2026-11-10)
 

@@ -3,9 +3,11 @@
 # pyright: reportUnusedExpression=false
 
 import pyfect as fx
-from pyfect import duration, metric
+from pyfect import duration, layer, metric
 from pyfect import schema as S
 
+# asyncio-apps.mdx
+layer.MemoMap()
 # cluster.mdx
 fx.yield_now()
 # observability.mdx

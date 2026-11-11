@@ -53,7 +53,9 @@ A middleware is a function of the handler it wraps. `router.middleware(f)` makes
 middleware, provided to the route layers it should wrap with `layer.provide(m.layer)`, and
 `router.middleware(f, global_=True)` a layer that wraps every request. `router.cors(...)`
 answers preflight requests and adds the CORS headers. Each request is logged unless
-`disable_logger=True`.
+`disable_logger=True`. `routes.pipe(router.provide_request(services))` builds `services` once
+and gives them to every request of those routes, removing their `Requires[...]`, as Effect's
+`HttpRouter.provideRequest` (see [Adopting in an asyncio app](/docs/asyncio-apps#routes-mounted-in-the-app)).
 
 <Callout title="serve(middleware=...) can't change the response">
 
@@ -88,12 +90,15 @@ is, so one open server-sent events response holds shutdown for the full 20 secon
 `disable_preemptive_shutdown=True` interrupts the requests in flight at once.
 `router.to_asgi(routes)` is the same app as an ASGI application, for `uvicorn main:app` or
 any other ASGI server; its layers are built at the server's startup and released at its
-shutdown.
+shutdown, and its requests run with their services, so whatever the routes need its layer must
+build. `hypercorn_server.layer(port=...)` serves on hypercorn instead, with HTTP/2 (the
+`pyfect-dev[http2]` extra).
 
 <include meta='title="main.py"'>../../snippets/http_server/main.py</include>
 
 `asgi.from_asgi(app)` goes the other way: it mounts an ASGI application, such as a FastAPI or
-Starlette one, as a route.
+Starlette one, as a route. [Adopting in an asyncio app](/docs/asyncio-apps) moves such an
+app to pyfect step by step.
 
 ## WebSockets
 

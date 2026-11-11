@@ -1,0 +1,5 @@
+users opened
+/users/1 200 {"name":"Ada"}
+/users/2 200 {"name":"unknown"}
+/nowhere 404 
+users closed

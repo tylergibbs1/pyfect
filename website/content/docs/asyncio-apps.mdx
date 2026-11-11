@@ -1,0 +1,143 @@
+---
+title: Adopting in an asyncio app
+description: "Moving an existing asyncio service, such as a FastAPI app, to pyfect one function at a time."
+---
+
+An existing asyncio app doesn't have to move to pyfect all at once. Its handlers can stay
+coroutines that run effects through one `ManagedRuntime`, then its routes can move to pyfect's
+router mounted inside the app, and at the end pyfect can serve the app, with whatever hasn't
+moved yet mounted as an ASGI app.
+
+## One runtime for the app's life
+
+`fx.ManagedRuntime.make(layer)` builds the layer once and runs effects with its services. Make
+it in the app's lifespan, so the layer is built at startup and released at shutdown, and run
+each handler's effect with `await runtime.run_async(...)`. Effects keep calling the app's own
+coroutines through `fx.from_async` (or `fx.try_async`, which turns a raise into a typed error).
+
+<CodeOutput>
+
+<include meta='title="lifespan.py"'>../../snippets/asyncio_apps/lifespan.py</include>
+
+<include lang="text">../../snippets/asyncio_apps/lifespan.out</include>
+
+</CodeOutput>
+
+## Errors at the seam
+
+`run_async` takes only an effect with no typed errors left (`Effect[A, Never, ...]`), and the
+runtime's layer must not fail either, so pyright flags a handler that forgets an error. Recover
+each typed error where the effect meets the app: into a value with `catch_tag`, or run with
+`run_async_exit` and turn the error into what the app raises, such as FastAPI's
+`HTTPException`. `pyfect.run.unwrap(exit)` gives the value, or raises a defect or an
+interruption as an exception.
+
+<CodeOutput>
+
+<include meta='title="seam_errors.py"'>../../snippets/asyncio_apps/seam_errors.py</include>
+
+<include lang="text">../../snippets/asyncio_apps/seam_errors.out</include>
+
+</CodeOutput>
+
+A request decoded with a [pydantic model](/docs/pydantic-msgspec) (`from_model`) fails with the
+first problem it finds, as every Effect schema does by default (`errors: "first"`). Decode with
+`errors="all"` to report every problem, as FastAPI's own validation does.
+
+## Sharing layers between runtimes
+
+Runtimes made with one `layer.MemoMap()` share the layers they have in common: such a layer is
+built by the first runtime that needs it and released when the last runtime using it is
+disposed, as with Effect's `ManagedRuntime.make(layer, { memoMap })`. `router.to_asgi` takes
+one too (`memo_map=`), so routes mounted in the app use the same database pool as the handlers
+that still run effects themselves.
+
+<CodeOutput>
+
+<include meta='title="memo_map.py"'>../../snippets/asyncio_apps/memo_map.py</include>
+
+<include lang="text">../../snippets/asyncio_apps/memo_map.out</include>
+
+</CodeOutput>
+
+## Context variables
+
+An effect reads its caller's `contextvars`, as Effect's runs follow Node's `AsyncLocalStorage`,
+so a request id set by the app's middleware reaches pyfect code, however many requests run at
+once:
+
+- `run_async` and `run_fork` run the effect in a copy of the caller's context. A variable the
+  effect sets stays inside the run.
+- A forked fiber starts in a copy of its parent's context.
+- A coroutine awaited with `from_async` or `try_async` runs in a copy of the fiber's context,
+  as an asyncio task does.
+- `fx.run_sync` and `fx.run_blocking` run in the caller's own context, so a variable set by
+  the effect is still set after it. A `ManagedRuntime`'s `run_sync` and `run_blocking` run in
+  a copy, as its `run_async` does: callers on several threads share its scheduler, and driving
+  it from each one's own context would deadlock runs across threads. Effect has no such
+  difference, since Node has one thread.
+
+<CodeOutput>
+
+<include meta='title="contextvars_seam.py"'>../../snippets/asyncio_apps/contextvars_seam.py</include>
+
+<include lang="text">../../snippets/asyncio_apps/contextvars_seam.out</include>
+
+</CodeOutput>
+
+## Routes mounted in the app
+
+`router.to_asgi(routes)` is an ASGI app, so pyfect routes can be mounted inside the existing
+app while the rest of it stays as it is. A route's handler can ask for services; the layer's
+type then holds `Requires[Service]`, and `to_asgi` only accepts routes whose requirements its
+layer builds, so a missing service is a pyright error rather than a 500 on every request.
+
+`routes.pipe(router.provide_request(services))` builds `services` once, when the app starts,
+and gives them to every request of those routes, as Effect's `HttpRouter.provideRequest`.
+`layer.provide(services)` builds them only for the routes' layer, not for its requests, so
+`to_asgi` refuses it. `layer.provide_merge(services)` works too, since the requests run with
+the services the layer builds.
+Pyright removes a `Requires` only when it can see that the layer builds that service: in a
+helper generic in its services' type, such as `def app_routes[RO](services: Layer[RO])`, it
+can't, and the `Requires` stay. Type such a helper with the services it is given, or apply
+`provide_request` where the layer's type is known.
+
+A server sends no lifespan to a mounted app: give the host app
+`lifespan=lambda _app: pyfect_app.lifespan()`, or the mounted app's layers are built by the
+first request and never released.
+
+<CodeOutput>
+
+<include meta='title="mounted.py"'>../../snippets/asyncio_apps/mounted.py</include>
+
+<include lang="text">../../snippets/asyncio_apps/mounted.out</include>
+
+</CodeOutput>
+
+## Serving with hypercorn
+
+Once most routes have moved, pyfect can serve the app and mount the rest:
+`asgi.from_asgi(legacy_app)` as a `"*"` route on `"/*"` answers every path the router doesn't
+have. `hypercorn_server.layer(host=..., port=...)` serves on hypercorn (the `pyfect-dev[http2]`
+extra), which speaks HTTP/2 in cleartext as well as HTTP/1.1, and with TLS when `config` gives
+`certfile` and `keyfile`; `uvicorn_server.layer` is the same on uvicorn. hypercorn logs no
+startup line of its own: the "Listening on" line is `serve`'s, which `disable_listen_log=True`
+leaves out.
+
+Each request is logged by `serve`, unless `disable_logger=True`, with the loggers of the context
+requests run in, as in Effect, where both use `HttpMiddleware.logger`. For `serve`, that is
+what the server's layer is provided with, as `logger.layer(...)` below; for `to_asgi`, it is
+the layer `to_asgi` builds, so provide the loggers to that layer.
+
+<CodeOutput>
+
+<include meta='title="served.py"'>../../snippets/asyncio_apps/served.py</include>
+
+<include lang="text">../../snippets/asyncio_apps/served.out</include>
+
+</CodeOutput>
+
+Reference: [`pyfect.managed_runtime`](/docs/reference/managed_runtime),
+[`pyfect.http.router`](/docs/reference/http/router),
+[`pyfect.http.asgi`](/docs/reference/http/asgi),
+[`pyfect.http.hypercorn_server`](/docs/reference/http/hypercorn_server).
