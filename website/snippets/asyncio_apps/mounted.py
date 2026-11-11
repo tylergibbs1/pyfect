@@ -29,7 +29,7 @@ def get_user():
 
 # The route needs Users for each request (Requires[Users]); provide_request builds UsersLive
 # once and gives it to every request. layer.provide would build it for the route's layer
-# only, and to_asgi rejects that: pyright reports the Requires[Users] left over.
+# only, and every request would fail with a 500.
 Routes = router.add("GET", "/users/:id", get_user()).pipe(router.provide_request(UsersLive))
 
 pyfect_app = router.to_asgi(Routes, disable_logger=True)

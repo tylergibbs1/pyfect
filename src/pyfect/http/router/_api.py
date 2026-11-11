@@ -448,29 +448,17 @@ def to_web_handler(
     )
 
 
-# ``A`` is bounded above by what the layer builds (its output is
-# contravariant) and below by what the routes and middleware need, so a
-# requirement the layer does not build is a type error, as with Effect's
-# ``toWebHandler`` (``Exclude<Requires, A>`` must be empty without a context).
-def to_asgi[A, LE, E = Never, GE = Never](
-    app_layer: Layer[
-        A, LE, HttpRouter | Requires[A] | Raises[E] | GlobalRequires[A] | GlobalRaises[GE]
-    ],
+def to_asgi(
+    app_layer: Layer[Any, Any, Any],
     *,
-    middleware: Callable[
-        [_Routed[E | GE, A]], Effect[HttpServerResponse, Any, A | HttpServerRequest | Scope]
-    ]
-    | None = None,
+    middleware: Callable[[Any], Effect[HttpServerResponse, Any, Any]] | None = None,
     router_config: find_my_way.RouterConfig | None = None,
     disable_logger: bool = False,
     memo_map: MemoMap | None = None,
 ) -> AsgiApp:
     """An ASGI 3 application for the routes ``app_layer`` adds
     (``asgi.to_asgi_with``): the layer is built at the server's lifespan
-    startup and released at its shutdown. The routes' requests run with the
-    layer's services, so whatever they need (``Requires[...]``) the layer
-    must build: give it with ``provide_request`` or ``layer.provide_merge``
-    (``layer.provide`` builds a service only for the layer it feeds)."""
+    startup and released at its shutdown."""
     require_layer(app_layer, "app_layer")
     return to_asgi_with(
         _with_router(app_layer, router_config),

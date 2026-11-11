@@ -10,7 +10,7 @@ from typing import Any, Literal, Never, TypedDict, Unpack, cast, overload
 from pyfect._core import Effect, _WithFiber
 from pyfect._fiber import Fiber
 from pyfect._layer_core import CurrentMemoMap, Layer, effect_context, fork_or_create, require_layer
-from pyfect.context import Context, ServiceMarker, Tag
+from pyfect.context import Context
 from pyfect.effect import succeed
 from pyfect.http import middleware as http_middleware
 from pyfect.http.middleware._cors import AllowedOrigins
@@ -167,45 +167,15 @@ disable_logger: Layer[Never, Never, Requires[Never] | Raises[Never]] = Middlewar
 """Route middleware turning off the request log for the routes it wraps."""
 
 
-type _NotRequires = Tag[Any] | ServiceMarker | Raises[Any] | GlobalRequires[Any] | GlobalRaises[Any]
-
-
-class _ProvideRequest[A2, E2, R2]:
-    """Removes the ``Requires`` a layer builds (``A2``) from a routes layer's
-    requirements, as Effect's ``Exclude<R, Request.From<"Requires", A2>>``."""
-
-    __slots__ = ("_provide",)
-
-    def __init__(self, provide: Callable[[Layer[Any, Any, Any]], Layer[Any, Any, Any]]) -> None:
-        self._provide = provide
-
-    # Every ``Requires`` built: ``Q`` lies between what the routes need and
-    # ``A2`` (``self`` is contravariant in it), as in ``router.to_asgi``.
-    @overload
-    def __call__[Q, A, E = Never, X: _NotRequires = Never](
-        self: _ProvideRequest[Q, E2, R2], target: Layer[A, E, Requires[Q] | X], /
-    ) -> Layer[A, E | E2, X | R2]: ...
-    # Some built: pyright removes one matching ``Requires`` from the union.
-    @overload
-    def __call__[A, E = Never, R = Never](
-        self, target: Layer[A, E, Requires[A2] | R], /
-    ) -> Layer[A, E | E2, R | R2]: ...
-    def __call__(self, target: Layer[Any, Any, Any], /) -> Layer[Any, Any, Any]:
-        require_layer(target, "target")
-        return self._provide(target)
-
-
-def provide_request[A2, E2 = Never, R2 = Never](
+def provide_request[A2, E2, R2](
     services: Layer[A2, E2, R2],
-) -> _ProvideRequest[A2, E2, R2]:
+) -> Callable[[Layer[Any, Any, Any]], Layer[Any, Any, Any]]:
     """Build ``services`` once and provide them to every request of the
-    route layers this wraps: a route's ``Requires[S]`` goes when ``services``
-    builds ``S``, and ``services``' own errors and requirements take its
-    place. Use with ``.pipe``."""
+    route layers this wraps. Use with ``.pipe``."""
     require_layer(services, "services")
 
     def fn(context: Context[Any]) -> Callable[[_In], Effect[HttpServerResponse, Unhandled]]:
         return lambda eff: eff.pipe(provide(context))
 
     made: Effect[Any, Any, Any] = services.build().map(fn)
-    return _ProvideRequest(provide(Middleware(_fn_layer(made)).layer))
+    return provide(Middleware(_fn_layer(made)).layer)
