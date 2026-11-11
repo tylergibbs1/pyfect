@@ -39,6 +39,7 @@ from pyfect.http._asgi_listener import (
     engine_backstop_seconds,
     make_listener,
 )
+from pyfect.http._tls_close import close_without_waiting
 from pyfect.http.client import HttpClient
 from pyfect.http.etag import Generator
 from pyfect.http.httpx_client import layer as httpx_layer
@@ -71,6 +72,13 @@ class _Server(uvicorn.Server):
         yield
 
 
+class _Config(uvicorn.Config):
+    def load(self) -> None:
+        super().load()
+        if self.ssl is not None:
+            close_without_waiting(self.ssl)
+
+
 def _uvicorn(dispatch: Dispatch, options: Options) -> uvicorn.Server:
     config: dict[str, Any] = {
         "log_config": None,
@@ -82,7 +90,7 @@ def _uvicorn(dispatch: Dispatch, options: Options) -> uvicorn.Server:
     # the requests first: its cancel is logged with a traceback.
     backstop = engine_backstop_seconds(options)
     config.update(app=dispatch, lifespan="off", timeout_graceful_shutdown=backstop)
-    return _Server(uvicorn.Config(**config))
+    return _Server(_Config(**config))
 
 
 def make(**options: Unpack[Options]) -> Effect[HttpServerService, SocketServerError, ScopeTag]:

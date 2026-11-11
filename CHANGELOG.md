@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.6.0 (unreleased)
+
+### Fixed
+
+- An idle keep-alive connection no longer holds a TLS server's shutdown. asyncio kept a closed
+  TLS connection open until the client sent its `close_notify`, up to 30 seconds, so
+  `hypercorn_server` took 30 seconds to stop (HTTP/1.1 and HTTP/2) whatever
+  `graceful_shutdown_timeout` said, and `uvicorn_server` waited out the whole timeout. Their TLS
+  connections now close once their own `close_notify` is sent, as Node's and `live_server`'s
+  do, so idle connections close at once, as Effect's `NodeHttpServer` closes them. A test
+  times each adapter's shutdown, cleartext and TLS, HTTP/1.1 and HTTP/2, and fails when a new
+  server module is left out of it.
+
 ## 0.5.7 (2026-11-11)
 
 ### Added

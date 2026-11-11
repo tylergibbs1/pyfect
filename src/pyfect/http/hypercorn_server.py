@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import socket
+import ssl
 from collections.abc import Mapping
 from typing import Any, NotRequired, Unpack, cast
 
@@ -33,6 +34,7 @@ from pyfect.http._asgi_listener import (
     engine_backstop_seconds,
     make_listener,
 )
+from pyfect.http._tls_close import close_without_waiting
 from pyfect.http.client import HttpClient
 from pyfect.http.etag import Generator
 from pyfect.http.httpx_client import layer as httpx_layer
@@ -62,12 +64,18 @@ class _EngineLogger(Logger):
             await super().info(message, *args, **kwargs)
 
 
+class _Config(Config):
+    def create_ssl_context(self) -> ssl.SSLContext | None:
+        context = super().create_ssl_context()
+        return None if context is None else close_without_waiting(context)
+
+
 class _Hypercorn:
     """hypercorn as an ``Engine``: it takes its sockets and a trigger to stop."""
 
     def __init__(self, dispatch: Dispatch, options: Options) -> None:
         self.dispatch = dispatch
-        self.config = Config()
+        self.config = _Config()
         self.config.graceful_timeout = engine_backstop_seconds(options)
         self.config.logger_class = _EngineLogger
         for name, value in options.get("config", {}).items():
