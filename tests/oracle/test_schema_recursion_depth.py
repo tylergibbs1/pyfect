@@ -18,6 +18,7 @@ from collections.abc import Sequence
 from typing import Any, TypedDict, cast
 
 import pytest
+from _subclasses import subclasses
 
 import pyfect as fx
 from pyfect import schema as S
@@ -128,24 +129,13 @@ def test_formatter_and_equivalence_take_a_deep_self_referencing_class():
     assert not S.to_equivalence(Tree)(tree, _deep_tree(499))
 
 
-def _ast_classes() -> set[type[ast.AST]]:
-    found: set[type[ast.AST]] = set()
-    todo: list[type[ast.AST]] = [ast.AST]
-    while todo:
-        for sub in todo.pop().__subclasses__():
-            if sub not in found:
-                found.add(sub)
-                todo.append(sub)
-    return found
-
-
 def test_only_nodes_resolved_on_first_use_can_recur_and_they_move_to_a_fresh_stack():
     """The guard: a schema refers back to itself only through a node whose
     child is made on first use (a thunk, a class's fields). Each of those
     goes through ``with_fresh_stack``, so a walk is as deep as its input."""
     lazy = {
         cls
-        for cls in _ast_classes()
+        for cls in subclasses(ast.AST)
         for f in dataclasses.fields(cls)
         if "Callable[[], AST]" in str(f.type) or "ClassShape" in str(f.type)
     }

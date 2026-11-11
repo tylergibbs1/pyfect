@@ -7,6 +7,8 @@ twice) get in."""
 import ast
 from pathlib import Path
 
+from _subclasses import subclasses
+
 from pyfect._effect_base import Frame
 
 SRC = Path(__file__).parent.parent / "src" / "pyfect"
@@ -15,13 +17,7 @@ LOOP_METHODS = {"_run", "_loop", "_continue", "_with_interrupt", "_deliver_inter
 
 def _frame_class_names() -> set[str]:
     """Every primitive and continuation frame, wherever it is defined."""
-    found: set[str] = set()
-    pending: list[type] = [Frame]
-    while pending:
-        cls = pending.pop()
-        found.add(cls.__name__)
-        pending.extend(cls.__subclasses__())
-    return found
+    return {cls.__name__ for cls in (Frame, *subclasses(Frame))}
 
 
 def test_the_frame_scan_sees_primitives_in_every_module():
@@ -77,8 +73,8 @@ def test_every_effect_method_group_is_only_used_through_effect():
     from pyfect._core import Effect
     from pyfect._effect_base import EffectBase
 
-    base: type = EffectBase
-    groups = base.__subclasses__()
+    base: type[object] = EffectBase
+    groups = subclasses(base, recursive=False)
     assert all(cls.__bases__ == (EffectBase,) for cls in groups)
-    users: set[type] = {sub for group in groups for sub in group.__subclasses__()}
+    users: set[type[object]] = {sub for group in groups for sub in subclasses(group, recursive=False)}
     assert users == {Effect}

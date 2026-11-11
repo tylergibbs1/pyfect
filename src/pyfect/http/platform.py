@@ -10,6 +10,7 @@ the ``brotli`` extra.
 
 from __future__ import annotations
 
+import importlib
 import zlib
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
@@ -192,7 +193,7 @@ def make_compression_stream(
 
 def _zstd_available() -> bool:
     try:
-        import compression.zstd  # pyright: ignore[reportMissingTypeStubs, reportUnusedImport] # noqa: F401
+        importlib.import_module("compression.zstd")
     except ImportError:
         return False
     return True
@@ -229,9 +230,9 @@ class _Zstd:
     __slots__ = ("_zstd",)
 
     def __init__(self, level: int | None) -> None:
-        from compression import zstd  # pyright: ignore[reportMissingTypeStubs]
-
-        self._zstd: Any = zstd.ZstdCompressor(level=level)  # pyright: ignore[reportUnknownMemberType]
+        # By name: Python 3.13 has no ``compression``, and pyright checks on 3.13 and 3.14.
+        zstd: Any = importlib.import_module("compression.zstd")
+        self._zstd: Any = zstd.ZstdCompressor(level=level)
 
     def chunk(self, data: bytes) -> bytes:
         return self._zstd.compress(data, self._zstd.FLUSH_BLOCK)

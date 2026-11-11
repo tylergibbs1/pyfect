@@ -13,6 +13,7 @@ from typing import Any
 
 import pytest
 from _pyfect_modules import modules
+from _subclasses import subclasses
 from oracle._live_http import exchange, port, run_live
 
 import pyfect as fx
@@ -242,9 +243,6 @@ def test_every_server_request_upgrade_checks_the_origin() -> None:
 
     for _ in modules():
         pass
-
-    def subclasses(cls: type[Base]) -> list[type[Base]]:
-        return [c for sub in cls.__subclasses__() for c in (sub, *subclasses(sub))]
 
     unchecked = [
         cls.__qualname__

@@ -8,6 +8,7 @@ import weakref
 from collections.abc import Callable
 
 import pytest
+from _subclasses import subclasses
 
 from pyfect import byte_size
 from pyfect.http import request as req
@@ -38,13 +39,13 @@ _MAKE: dict[str, Callable[[], HttpClientResponse]] = {
 }
 
 
-def _classes(cls: type[HttpClientResponse]) -> set[type[HttpClientResponse]]:
-    return {cls} | {c for sub in cls.__subclasses__() for c in _classes(sub)}
-
-
 def test_every_response_class_is_checked() -> None:
     """Only pyfect's classes: a test may subclass a response for itself."""
-    pyfect_classes = {c for c in _classes(HttpClientResponse) if c.__module__.startswith("pyfect.")}
+    pyfect_classes = {
+        c
+        for c in {HttpClientResponse, *subclasses(HttpClientResponse)}
+        if c.__module__.startswith("pyfect.")
+    }
     assert {cls.__name__ for cls in pyfect_classes} == set(_MAKE)
 
 

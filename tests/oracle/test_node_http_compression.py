@@ -9,6 +9,7 @@ extra, which the dev environment installs.
 from __future__ import annotations
 
 import asyncio
+import importlib
 import threading
 import zlib
 from collections.abc import Callable
@@ -187,14 +188,14 @@ def test_compresses_with_deflate() -> None:
 @pytest.mark.skipif(not ZSTD, reason="compression.zstd needs Python 3.14")
 def test_compresses_with_zstd_when_opted_in() -> None:
     """compresses with zstd when opted in"""
-    from compression import zstd  # pyright: ignore[reportMissingTypeStubs]
+    zstd: Any = importlib.import_module("compression.zstd")
 
     response, body = _get(
         _big_json_app(), {"algorithms": ["zstd", "gzip"]}, {"accept-encoding": "zstd"}
     )
     assert response.get("content-encoding") == "zstd"
     assert response.get("content-length") == str(len(body))
-    assert zstd.decompress(body).decode() == BIG_JSON  # pyright: ignore[reportUnknownMemberType]
+    assert zstd.decompress(body).decode() == BIG_JSON
 
 
 def test_excludes_zstd_unless_opted_in() -> None:
