@@ -48,6 +48,11 @@ Every run function needs the service type to be `Never`, so a missing service is
 the call site. `run_sync`, `run_blocking` and `run_async` also need the error type to be `Never`; their `_exit`
 variants and `run_main` take an effect that can fail and hand you (or log) the failure.
 
+An effect reads its caller's `contextvars`, as Effect's runs follow Node's `AsyncLocalStorage`:
+a request id set by a web request's handler before `await runtime.run_async(...)` is the one the
+effect, its forked fibers and its coroutines see, however many requests run at once. A fiber
+resumes in the context it waited in, whoever wakes it.
+
 <include meta='title="running.py"'>../../snippets/effects/running.py</include>
 
 `fx.from_async` and `fx.try_async` wrap coroutines; `fx.blocking` and `fx.try_blocking` move
