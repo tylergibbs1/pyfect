@@ -78,6 +78,14 @@ class AddressResolverService:
     def resolve(
         self, target: SocketAddress | HostPortInput, *, family: IpFamily | None = None
     ) -> Effect[tuple[SocketAddress, ...], ResolveError]:
+        """The socket addresses to connect to for ``target``, in the order
+        found: an IP literal (a scoped IPv6 one with its zone looked up)
+        directly, a domain name through ``Dns`` (link-local IPv6 results
+        dropped, their scope unknown), a socket address as it is. With
+        ``family``, a name is looked up in that family only. Fails with
+        ``NetAddressError`` for a malformed target, a literal or inet
+        address of another family, or only link-local results, and with
+        ``DnsError`` when the lookup does."""
         if isinstance(target, UnixPathAddress):
             return succeed((target,))
         if isinstance(target, (InetAddressV4, InetAddressV6)):

@@ -15,6 +15,10 @@ it in the app's lifespan, so the layer is built at startup and released at shutd
 each handler's effect with `await runtime.run_async(...)`. Effects keep calling the app's own
 coroutines through `fx.from_async` (or `fx.try_async`, which turns a raise into a typed error).
 
+The effects' fibers run on the event loop's thread, between the app's own tasks, so a fiber
+that computes for a while holds up the whole app as a blocking coroutine would. Put CPU-heavy
+work in `fx.blocking` or another process; [Threads and throughput](/docs/threads) explains.
+
 <CodeOutput>
 
 <include meta='title="lifespan.py"'>../../snippets/asyncio_apps/lifespan.py</include>

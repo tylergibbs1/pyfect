@@ -1,0 +1,2 @@
+idle: under 50 ms late: True
+saturated: over 100 ms late: True

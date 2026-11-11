@@ -42,17 +42,38 @@ class RunnersService(Protocol):
     message is waiting. ``send_local`` and ``notify_local`` deliver to this
     runner's entities, through storage when the message is persisted."""
 
-    def ping(self, address: RunnerAddress, /) -> Effect[None, RunnerUnavailable]: ...
+    def ping(self, address: RunnerAddress, /) -> Effect[None, RunnerUnavailable]:
+        """Checks that the runner at ``address`` answers; fails with
+        ``RunnerUnavailable`` when it cannot be reached."""
+        ...
 
     def send_local(
         self, message: Outgoing, /, *, send: SendLocalFn, simulate_remote_serialization: bool
-    ) -> Effect[None, LocalSendError | PersistenceError]: ...
+    ) -> Effect[None, LocalSendError | PersistenceError]:
+        """Delivers ``message`` to an entity of this runner through
+        ``send``, first encoding and decoding it as a remote send would
+        when ``simulate_remote_serialization`` is set (a message that does
+        not survive that gets a defect reply). Fails as ``send`` does:
+        ``EntityNotAssignedToRunner``, ``MailboxFull`` or
+        ``AlreadyProcessingMessage``."""
+        ...
 
-    def send(self, address: RunnerAddress, message: Outgoing, /) -> Effect[None, SendError]: ...
+    def send(self, address: RunnerAddress, message: Outgoing, /) -> Effect[None, SendError]:
+        """Sends ``message`` to the runner at ``address``, its replies
+        going to the message's ``respond``. Fails with a ``SendError``:
+        ``RunnerUnavailable`` when the runner cannot be reached, or the
+        error the remote runner gave."""
+        ...
 
     def notify(
         self, address: RunnerAddress | None, message: Outgoing, /, *, discard: bool
-    ) -> Effect[None, SendError]: ...
+    ) -> Effect[None, SendError]:
+        """Tells the runner at ``address`` (``None``: not known) that
+        ``message`` is waiting, saving it to ``MessageStorage`` first when
+        it is persisted; unless ``discard``, a request's replies are then
+        recovered from storage. Fails with a ``SendError``
+        (``PersistenceError`` when saving fails)."""
+        ...
 
     def notify_local(
         self,
@@ -62,9 +83,19 @@ class RunnersService(Protocol):
         notify: NotifyLocalFn,
         discard: bool,
         storage_only: bool = False,
-    ) -> Effect[None, PersistenceError]: ...
+    ) -> Effect[None, PersistenceError]:
+        """Tells an entity of this runner through ``notify`` that
+        ``message`` is waiting (ignoring ``EntityNotAssignedToRunner``),
+        saving it to ``MessageStorage`` first when it is persisted; unless
+        ``discard``, a request's replies then come back through storage
+        (with ``storage_only``, only by polling it). Fails with
+        ``PersistenceError`` when saving fails."""
+        ...
 
-    def on_runner_unavailable(self, address: RunnerAddress, /) -> Effect[None]: ...
+    def on_runner_unavailable(self, address: RunnerAddress, /) -> Effect[None]:
+        """Marks the runner at ``address`` unavailable, dropping its
+        connection; never fails."""
+        ...
 
 
 class Runners(Tag[RunnersService], key="effect/cluster/Runners"):

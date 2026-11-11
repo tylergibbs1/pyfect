@@ -15,9 +15,15 @@ if TYPE_CHECKING:
 class FiberRuntimeMetricsService(Protocol):
     """Told when each fiber starts and ends, with the fiber's context."""
 
-    def record_fiber_start(self, context: Context) -> None: ...
+    def record_fiber_start(self, context: Context) -> None:
+        """Called synchronously as a fiber is made, with the fiber's
+        ``context``."""
+        ...
 
-    def record_fiber_end(self, context: Context, exit: Exit[Any, Any]) -> None: ...
+    def record_fiber_end(self, context: Context, exit: Exit[Any, Any]) -> None:
+        """Called synchronously as a fiber completes with ``exit`` (after
+        its children are interrupted), with its ``context``."""
+        ...
 
 
 class FiberRuntimeMetrics(Reference[FiberRuntimeMetricsService | None]):

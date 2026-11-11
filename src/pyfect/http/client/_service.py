@@ -62,58 +62,85 @@ class HttpClientService[E, R = Never]:
 
     @property
     def preprocess(self) -> Callable[[HttpClientRequest], Effect[HttpClientRequest, Any, Any]]:
+        """The function turning each request into the request to send
+        (adding headers, a base URL and so on); ``execute`` runs it before
+        ``postprocess``."""
         return self._preprocess
 
     @property
     def postprocess(
         self,
     ) -> Callable[[Effect[HttpClientRequest, Any, Any]], Effect[HttpClientResponse, E, R]]:
+        """The function sending the preprocessed request (an effect
+        producing it) and giving the response, failing with ``E``."""
         return self._postprocess
 
     def pipe[B](self, f: Callable[[HttpClientService[E, R]], B], /) -> B:
+        """``f(self)``: applies a curried combinator such as
+        ``catch_tag`` or ``transform_response``."""
         return f(self)
 
     def execute(self, request: HttpClientRequest) -> Effect[HttpClientResponse, E, R]:
+        """Sends ``request`` through ``preprocess`` and ``postprocess``
+        and succeeds with the response, whatever its status (filter it with
+        ``filter_status_ok``). Fails with ``E`` (``HttpClientError`` for the
+        ``HttpClient`` service) when the request cannot be built or sent."""
         return self._postprocess(self._preprocess(request))
 
     def get(
         self, url: UrlInput, **options: Unpack[RequestOptions]
     ) -> Effect[HttpClientResponse, E, R]:
+        """``execute`` of a ``GET`` request to ``url``, built with
+        ``options`` (headers, URL params, body, ...)."""
         return self.execute(_request.get(url, **options))
 
     def post(
         self, url: UrlInput, **options: Unpack[RequestOptions]
     ) -> Effect[HttpClientResponse, E, R]:
+        """``execute`` of a ``POST`` request to ``url``, built with
+        ``options`` (headers, URL params, body, ...)."""
         return self.execute(_request.post(url, **options))
 
     def put(
         self, url: UrlInput, **options: Unpack[RequestOptions]
     ) -> Effect[HttpClientResponse, E, R]:
+        """``execute`` of a ``PUT`` request to ``url``, built with
+        ``options`` (headers, URL params, body, ...)."""
         return self.execute(_request.put(url, **options))
 
     def patch(
         self, url: UrlInput, **options: Unpack[RequestOptions]
     ) -> Effect[HttpClientResponse, E, R]:
+        """``execute`` of a ``PATCH`` request to ``url``, built with
+        ``options`` (headers, URL params, body, ...)."""
         return self.execute(_request.patch(url, **options))
 
     def delete(
         self, url: UrlInput, **options: Unpack[RequestOptions]
     ) -> Effect[HttpClientResponse, E, R]:
+        """``execute`` of a ``DELETE`` request to ``url``, built with
+        ``options`` (headers, URL params, body, ...)."""
         return self.execute(_request.delete(url, **options))
 
     def head(
         self, url: UrlInput, **options: Unpack[RequestOptions]
     ) -> Effect[HttpClientResponse, E, R]:
+        """``execute`` of a ``HEAD`` request to ``url``, built with
+        ``options`` (headers, URL params, body, ...)."""
         return self.execute(_request.head(url, **options))
 
     def options(
         self, url: UrlInput, **options: Unpack[RequestOptions]
     ) -> Effect[HttpClientResponse, E, R]:
+        """``execute`` of a ``OPTIONS`` request to ``url``, built with
+        ``options`` (headers, URL params, body, ...)."""
         return self.execute(_request.options(url, **options))
 
     def query(
         self, url: UrlInput, **options: Unpack[RequestOptions]
     ) -> Effect[HttpClientResponse, E, R]:
+        """``execute`` of a ``QUERY`` request to ``url``, built with
+        ``options`` (headers, URL params, body, ...)."""
         return self.execute(_request.query(url, **options))
 
     def transform[E1 = Never, R1 = Never](
@@ -141,6 +168,8 @@ class HttpClientService[E, R = Never]:
         predicate: Callable[[HttpClientResponse], bool],
         or_else: Callable[[HttpClientResponse], Effect[HttpClientResponse, E2, R2]],
     ) -> HttpClientService[E | E2, R | R2]:
+        """This client, replacing each response that fails
+        ``predicate`` with the effect ``or_else(response)``."""
         return self._on_response(lambda eff: eff.filter_or_else(predicate, or_else))
 
     def filter_or_fail[E2](
@@ -148,6 +177,8 @@ class HttpClientService[E, R = Never]:
         predicate: Callable[[HttpClientResponse], bool],
         or_fail_with: Callable[[HttpClientResponse], E2],
     ) -> HttpClientService[E | E2, R]:
+        """This client, failing with ``or_fail_with(response)`` for each
+        response that fails ``predicate``."""
         return self._on_response(lambda eff: eff.filter_or_fail(predicate, or_fail_with))
 
     def filter_status(self, f: Callable[[int], bool]) -> HttpClientService[E | HttpClientError, R]:
@@ -169,6 +200,8 @@ class HttpClientService[E, R = Never]:
     def map_request_effect[E2 = Never, R2 = Never](
         self, f: Callable[[HttpClientRequest], Effect[HttpClientRequest, E2, R2]]
     ) -> HttpClientService[E | E2, R | R2]:
+        """Change each request with the effect ``f`` after the client's
+        own preprocessing; ``f``'s failure fails the request."""
         pre = self._preprocess
         post: Any = self._postprocess
         return HttpClientService(post, lambda request: pre(request).flat_map(f))
@@ -183,6 +216,8 @@ class HttpClientService[E, R = Never]:
     def map_request_input_effect[E2 = Never, R2 = Never](
         self, f: Callable[[HttpClientRequest], Effect[HttpClientRequest, E2, R2]]
     ) -> HttpClientService[E | E2, R | R2]:
+        """Change each request with the effect ``f`` before the
+        client's own preprocessing; ``f``'s failure fails the request."""
         pre = self._preprocess
         post: Any = self._postprocess
         return HttpClientService(post, lambda request: f(request).flat_map(pre))
@@ -190,6 +225,8 @@ class HttpClientService[E, R = Never]:
     def tap_request[E2 = Never, R2 = Never](
         self, f: Callable[[HttpClientRequest], Effect[object, E2, R2]]
     ) -> HttpClientService[E | E2, R | R2]:
+        """Run ``f`` on each preprocessed request before it is sent,
+        keeping the request; ``f``'s failure fails the request."""
         pre = self._preprocess
         post: Any = self._postprocess
         return HttpClientService(post, lambda request: pre(request).tap(f))
@@ -197,11 +234,15 @@ class HttpClientService[E, R = Never]:
     def tap[E2 = Never, R2 = Never](
         self, f: Callable[[HttpClientResponse], Effect[object, E2, R2]]
     ) -> HttpClientService[E | E2, R | R2]:
+        """Run ``f`` on each response, keeping the response; ``f``'s
+        failure fails the request."""
         return self._on_response(lambda eff: eff.tap(f))
 
     def tap_error[E2 = Never, R2 = Never](
         self, f: Callable[[E], Effect[object, E2, R2]]
     ) -> HttpClientService[E | E2, R | R2]:
+        """Run ``f`` on each typed failure, keeping the failure;
+        ``f``'s own failure replaces it."""
         return self._on_response(lambda eff: eff.tap_error(f))
 
     def catch_all[E2 = Never, R2 = Never](

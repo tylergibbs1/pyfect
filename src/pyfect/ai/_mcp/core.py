@@ -237,18 +237,24 @@ class McpServerService:
 
     @property
     def tools(self) -> tuple[ToolEntry, ...]:
+        """Every registered tool, in registration order, hidden or not."""
         return tuple(self._tools.values())
 
     @property
     def resources(self) -> tuple[ResourceEntry, ...]:
+        """Every registered resource (skill files included), in registration
+        order, hidden or not."""
         return tuple(self._resources.values())
 
     @property
     def resource_templates(self) -> tuple[ResourceTemplateEntry, ...]:
+        """Every registered resource template, in registration order, hidden
+        or not."""
         return tuple(self._templates.values())
 
     @property
     def prompts(self) -> tuple[PromptEntry, ...]:
+        """Every registered prompt, in registration order, hidden or not."""
         return tuple(self._prompts.values())
 
     def _invoke(self, kind: str, key: str, services: Context[Any] | None) -> Invoke:
@@ -365,11 +371,17 @@ class McpServerService:
     def list_tools(
         self, context: RequestContext
     ) -> Effect[list[Tool], RequestRejected, McpRequestContext]:
+        """The tools a ``tools/list`` request from ``context`` sees: those
+        ``EnabledWhen`` enables for its client and no visibility middleware
+        hides, in order. Fails with ``RequestRejected`` when middleware
+        rejects the list."""
         return self._listed("tools/list", "tool", self._tools, lambda e: e.tool, context)
 
     def list_resources(
         self, context: RequestContext
     ) -> Effect[list[Resource], RequestRejected, McpRequestContext]:
+        """The resources a ``resources/list`` request from ``context`` sees,
+        filtered and failing as in ``list_tools``."""
         return self._listed(
             "resources/list", "resource", self._resources, lambda e: e.resource, context
         )
@@ -377,6 +389,8 @@ class McpServerService:
     def list_resource_templates(
         self, context: RequestContext
     ) -> Effect[list[ResourceTemplate], RequestRejected, McpRequestContext]:
+        """The resource templates a ``resources/templates/list`` request from
+        ``context`` sees, filtered and failing as in ``list_tools``."""
         return self._listed(
             "resources/templates/list", "template", self._templates, lambda e: e.template, context
         )
@@ -384,9 +398,14 @@ class McpServerService:
     def list_prompts(
         self, context: RequestContext
     ) -> Effect[list[Prompt], RequestRejected, McpRequestContext]:
+        """The prompts a ``prompts/list`` request from ``context`` sees,
+        filtered and failing as in ``list_tools``."""
         return self._listed("prompts/list", "prompt", self._prompts, lambda e: e.prompt, context)
 
     def find_tool(self, name: str, context: RequestContext) -> ToolEntry | None:
+        """The tool called ``name`` when ``EnabledWhen`` enables it for
+        ``context`` 's client, else ``None`` (visibility middleware is not
+        consulted)."""
         entry = self._tools.get(name)
         return entry if entry is not None and _visible(entry.annotations, context) else None
 
@@ -441,6 +460,10 @@ class McpServerService:
     def get_prompt_for(
         self, name: str, arguments: Mapping[str, str], context: RequestContext
     ) -> Effect[GetPromptResult | InputRequired, McpError | RequestRejected, RequestServices]:
+        """The prompt ``name`` filled with ``arguments`` for ``context``, or
+        an ``InputRequired`` asking the client for more. An unknown, disabled
+        or hidden prompt fails with ``InvalidParams``; a handler fails with
+        its ``McpError``, rejecting middleware with ``RequestRejected``."""
         entry = self._prompts.get(name)
         not_found = InvalidParams(f"Prompt '{name}' not found")
         if entry is None or not _visible(entry.annotations, context):
@@ -466,6 +489,11 @@ class McpServerService:
     def complete_for(
         self, params: CompleteParams
     ) -> Effect[CompleteResult, InvalidParams | InternalError | RequestRejected, RequestServices]:
+        """The completions of ``params`` 's prompt or template argument, at
+        most 100 (``hasMore`` set when cut). An unknown reference or
+        argument, or a hidden one, fails with ``InvalidParams``; a failing
+        handler with its ``InternalError``, rejecting middleware with
+        ``RequestRejected``."""
         ref = params["ref"]
         argument = params["argument"]
         key = (
@@ -529,12 +557,17 @@ class McpServerService:
     # --- notifications -----------------------------------------------------------------
 
     def connect(self, peer: Peer) -> None:
+        """Register a transport's connected client, so notifications reach
+        it (replacing one with its ``client_id``)."""
         self._peers[peer.client_id] = peer
 
     def next_client_id(self) -> int:
+        """A new client id: 1, 2, 3, ... for this server."""
         return next(self._ids)
 
     def disconnect(self, client_id: int) -> None:
+        """Stop sending notifications to client ``client_id`` (a no-op when
+        it is not connected)."""
         self._peers.pop(client_id, None)
 
     @property

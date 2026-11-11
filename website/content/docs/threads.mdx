@@ -1,0 +1,112 @@
+---
+title: Threads and throughput
+description: "All of a run's fibers share one thread: what that means for CPU-heavy work, free-threaded Python and the throughput to expect."
+---
+
+Fibers are cheap and many of them can be waiting at once, but they don't run in parallel. Every
+fiber of a run executes on that run's thread: the thread that called `fx.run_blocking`, or the
+asyncio event loop's thread for `run_async` and a `ManagedRuntime` used from an asyncio app.
+A fiber runs until it waits (a sleep, a queue, a socket, `fx.blocking`) or uses up its step
+budget, then the next one runs, as in Effect on Node's single thread.
+
+<CodeOutput>
+
+<include meta='title="one_thread.py"'>../../snippets/threads/one_thread.py</include>
+
+<include lang="text">../../snippets/threads/one_thread.out</include>
+
+</CodeOutput>
+
+## Free-threaded Python
+
+Free-threaded CPython (3.14t) removes the GIL, but it doesn't make fibers faster: they still
+take turns on one thread. What it speeds up is work pyfect hands to other threads:
+`fx.blocking` and `fx.try_blocking` calls, the live sockets' event loop (one per process, on a
+thread of its own), DNS lookups and `ThreadWorker`s, each of which runs a runtime of its own. On
+the GIL build, Python code on those threads takes turns holding the GIL with the run's thread
+(waiting on I/O or in C code that releases the GIL doesn't); on 3.14t it runs at the same time.
+
+## CPU-heavy work
+
+A fiber that computes for 200 ms holds up every other fiber of the run for 200 ms: timers fire
+late, sockets aren't read, subscribers fall behind. In an asyncio app it also holds up the
+app's own coroutines, since they share the loop's thread. Move such work off the run's thread:
+
+- `fx.blocking(f)` (or `fx.try_blocking`) runs `f` on a pool of daemon threads, up to
+  `min(32, cpus + 4)` of them, and the fiber waits without blocking the others. Pure-Python work
+  there still takes turns with the run's thread on the GIL build, but the run keeps serving its
+  fibers between turns; on 3.14t it runs in parallel. Interrupting the fiber abandons the thread,
+  it doesn't stop it.
+- Separate processes give real parallelism on either build: a `ProcessWorker` from
+  [workers](/docs/workers), or several copies of the program behind a load balancer.
+
+<CodeOutput>
+
+<include meta='title="cpu_work.py"'>../../snippets/threads/cpu_work.py</include>
+
+<include lang="text">../../snippets/threads/cpu_work.out</include>
+
+</CodeOutput>
+
+## What throughput to expect
+
+Every fiber step is several Python calls, about 15 times what the same step costs in Effect
+under V8. `benchmarks/streams.py` in the repository runs the pipelines below; these are its
+best-of-five numbers on CPython 3.14, with free-threaded 3.14t in brackets and Effect 4.1.2
+under Node 24 on the same machine (from `docs/PARITY.md`):
+
+| Pipeline | pyfect | Effect |
+| --- | --- | --- |
+| `map` + `filter`, chunks of 4096 | 16.5M items/s | 122M |
+| `group_by_key` + `flat_map`, chunks of 256 | 3.68M (3.63M) | 7.3M |
+| the same, each group cut by `grouped_within(100, "1 second")` | 1.97M (1.71M) | 3.9M |
+| `group_by_key` + `flat_map`, chunks of one | 285k (290k) | 1.18M |
+| the same with `grouped_within` | 195k (206k) | 1.02M |
+| `Queue` offer and take, one item at a time | 528k (387k) | 5.7M |
+| forking 20k fibers that yield once | 175k forks/s (220k) | 2.5M |
+
+So plan for millions of items a second where operators work on whole chunks, and a few hundred
+thousand where each item is its own effect, queue hop or fiber, per run and per core. The
+free-threaded build is no faster here. To go past one core, split the work across processes.
+
+### Rechunk before grouping
+
+Most of what `group_by` and `group_by_key` cost is paid per chunk, not per item, so items that
+arrive in chunks of one pay it for every item. A dogfood app's ingest
+pipeline measured about 59k items/s with one-item chunks, 238k/s at 5 items a chunk and about
+1M/s at 64. Rechunk items that arrive one at a time before grouping them: `rechunk(n)` holds
+items until it has `n`, and `grouped_within(n, duration)` followed by `flatten_iterable()` also
+lets a partial batch go once `duration` has passed, for a live source that may trickle.
+
+<CodeOutput>
+
+<include meta='title="rechunk.py"'>../../snippets/threads/rechunk.py</include>
+
+<include lang="text">../../snippets/threads/rechunk.out</include>
+
+</CodeOutput>
+
+## Spotting saturation
+
+A run is saturated when its one thread is busy all the time: the process shows one core at
+100% while the others idle, whatever the build. The signs inside the program:
+
+- Subscribers with a `"sliding"` or `"dropping"` strategy miss items: a load run of a dogfood
+  app pushing windows to 300 clients lost about 62% of them at fast subscribers, with one core
+  saturated, and none at 30 clients. Count what a strategy drops, as in
+  [Publishing to every subscriber](/docs/concurrency#publishing-to-every-subscriber), or look
+  for gaps in sequence numbers.
+- Bounded queues stay full and producers spend their time waiting to offer.
+- Timers fire late. A probe fiber that sleeps and measures how late it woke is a cheap gauge
+  to export as a metric:
+
+<CodeOutput>
+
+<include meta='title="lag.py"'>../../snippets/threads/lag.py</include>
+
+<include lang="text">../../snippets/threads/lag.out</include>
+
+</CodeOutput>
+
+When a run is saturated, profile for work to batch (chunked operators instead of per-item
+effects), move CPU-heavy steps to `fx.blocking` or a worker process, or run more processes.

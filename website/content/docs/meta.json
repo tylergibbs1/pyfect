@@ -12,6 +12,7 @@
     "resources",
     "schedules",
     "streams",
+    "threads",
     "config",
     "schema",
     "pydantic-msgspec",

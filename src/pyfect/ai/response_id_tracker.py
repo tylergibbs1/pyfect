@@ -26,15 +26,22 @@ class PrepareResult:
 
 
 class Service:
+    """The in-memory tracker ``make`` builds; mutable, so ``make`` gives a
+    fresh one each run."""
+
     __slots__ = ("_sent",)
 
     def __init__(self) -> None:
         self._sent: dict[int, tuple[object, str]] = {}
 
     def clear_unsafe(self) -> None:
+        """Forget every message marked so far."""
         self._sent.clear()
 
     def mark_parts(self, parts: Sequence[object], response_id: str) -> None:
+        """Remember that the messages ``parts`` (by identity) were sent with
+        the response ``response_id``; a message marked again takes the new
+        id."""
         for part in parts:
             self._sent[id(part)] = (part, response_id)
 
@@ -43,6 +50,10 @@ class Service:
         return entry[1] if entry is not None and entry[0] is message else None
 
     def prepare_unsafe(self, prompt: P.Prompt) -> PrepareResult | None:
+        """The previous response id and the messages after ``prompt``'s last
+        assistant message, when every message before that assistant message
+        was marked (the id is the last of theirs) and some message follows
+        it. Otherwise ``None``, and everything marked is forgotten."""
         messages = prompt.content
         result = self._prepare(messages)
         if result is None:

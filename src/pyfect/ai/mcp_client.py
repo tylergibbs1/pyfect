@@ -180,11 +180,17 @@ class McpClientService:
     def list_prompts(
         self, *, timeout: DurationInput | None = None, limits: DiscoveryLimitsOptions | None = None
     ) -> Effect[list[Prompt], McpClientError]:
+        """Every prompt the server lists, with the bounds of ``list_tools``;
+        none when it does not advertise prompts. Fails with an
+        ``McpClientError``: a ``ConfigurationError`` for invalid limits, a
+        limit or timeout error past the bounds, or the request's error."""
         return self._list("prompts", LIST_PROMPTS.success_schema, timeout, limits)
 
     def list_resources(
         self, *, timeout: DurationInput | None = None, limits: DiscoveryLimitsOptions | None = None
     ) -> Effect[list[Resource], McpClientError]:
+        """Every resource the server lists, with the bounds and errors of
+        ``list_prompts``; none when it does not advertise resources."""
         return self._list("resources", LIST_RESOURCES.success_schema, timeout, limits)
 
     def list_skills(
@@ -237,6 +243,10 @@ class McpClientService:
         *,
         timeout: DurationInput | None = None,
     ) -> Effect[GetPromptResult, McpClientError]:
+        """The messages of ``prompt`` filled with ``arguments``. Fails with
+        an ``UnsupportedError`` when the server does not advertise prompts,
+        a ``ValidationError`` for an invalid result, or the request's
+        ``McpClientError``. Unbounded unless given a ``timeout``."""
         params: JsonObject = {"name": prompt["name"]}
         if arguments is not None:
             params["arguments"] = dict(arguments)
@@ -248,6 +258,10 @@ class McpClientService:
     def read_resource(
         self, uri: str, *, timeout: DurationInput | None = None
     ) -> Effect[ReadResourceResult, McpClientError]:
+        """The contents of the resource at ``uri``. Fails with an
+        ``UnsupportedError`` when the server does not advertise resources, a
+        ``ValidationError`` for an invalid result, or the request's
+        ``McpClientError``. Unbounded unless given a ``timeout``."""
         read = (
             self._call("resources", "resources/read", {"uri": uri})
             .tap(self._check_cacheable)

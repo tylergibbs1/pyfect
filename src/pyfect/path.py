@@ -78,6 +78,8 @@ class PathService:
 
     @property
     def sep(self) -> str:
+        """The separator between a path's parts (``/``, or ``\\`` on
+        Windows)."""
         return self._rules.sep
 
     @property
@@ -91,6 +93,8 @@ class PathService:
         return self._rules.basename(path, suffix)
 
     def dirname(self, path: str) -> str:
+        """``path`` without its last part (``"."`` when nothing is left,
+        the root for the root)."""
         return self._rules.dirname(path)
 
     def extname(self, path: str) -> str:
@@ -132,15 +136,24 @@ class PathService:
         return succeed(_windows_path(host, decoded) if self._windows else decoded)
 
     def is_absolute(self, path: str) -> bool:
+        """Whether ``path`` starts at a root (on Windows, a drive root, a
+        separator or a share), not at the working directory."""
         return self._rules.is_absolute(path)
 
     def join(self, *paths: str) -> str:
+        """The non-empty ``paths`` joined with the separator and normalized
+        (``"."`` when there are none)."""
         return self._rules.join(*paths)
 
     def normalize(self, path: str) -> str:
+        """``path`` with ``.`` and ``..`` parts resolved and repeated
+        separators merged, a trailing separator kept (``"."`` for an empty
+        path)."""
         return self._rules.normalize(path)
 
     def parse(self, path: str) -> Parsed:
+        """The parts of ``path``: its root, directory, base, name and
+        extension."""
         return Parsed(*self._rules.parse(path))
 
     def relative(self, from_: str, to: str) -> str:

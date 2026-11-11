@@ -32,15 +32,21 @@ class CollectorService:
         self._values: list[object] = []
 
     def add_all_unsafe(self, values: Iterable[object]) -> None:
+        """Adds ``values`` to the collection, now."""
         self._values.extend(values)
 
     def add_all(self, values: Iterable[object]) -> Effect[None]:
+        """Adds ``values`` to the collection. Never fails."""
         return sync(lambda: self.add_all_unsafe(values))
 
     def read_unsafe(self) -> list[object]:
+        """The values collected so far, now: the collector's own list, not
+        a copy."""
         return self._values
 
     def read(self) -> Effect[list[object]]:
+        """The values collected so far (the collector's own list). Never
+        fails."""
         return sync(self.read_unsafe)
 
     def clear_unsafe(self) -> list[object]:
@@ -49,6 +55,8 @@ class CollectorService:
         return previous
 
     def clear(self) -> Effect[list[object]]:
+        """The values collected so far, leaving the collector empty. Never
+        fails."""
         return sync(self.clear_unsafe)
 
 

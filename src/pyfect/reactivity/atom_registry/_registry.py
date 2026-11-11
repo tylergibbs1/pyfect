@@ -146,9 +146,16 @@ class AtomRegistryService:
         return self.nodes
 
     def get[A](self, atom: Atom[A]) -> A:
+        """``atom``'s value, building its node (and reading the atom) if
+        needed; a raise from the atom's read propagates.
+        Raises ``RegistryThreadError`` off the scheduler's thread and
+        ``RegistryDisposedError`` for a new node once disposed."""
         return self.ensure_node(atom).value()
 
     def set[W](self, atom: Writable[Any, W], value: W) -> None:
+        """Writes ``value`` through ``atom``'s write function.
+        Raises ``RegistryThreadError`` off the scheduler's thread and
+        ``RegistryDisposedError`` for a new node once disposed."""
         atom.write(self.ensure_node(atom).write_context, value)
 
     def set_serializable(self, key: str, encoded: object) -> None:
@@ -158,16 +165,27 @@ class AtomRegistryService:
         self.preloaded_serializable[key] = encoded
 
     def modify[R, W, A](self, atom: Writable[R, W], f: Callable[[R], tuple[A, W]]) -> A:
+        """Calls ``f`` with ``atom``'s value, writes the second item it
+        gives and returns the first.
+        Raises ``RegistryThreadError`` off the scheduler's thread and
+        ``RegistryDisposedError`` for a new node once disposed."""
         node = self.ensure_node(atom)
         result, next_value = f(node.value())
         atom.write(node.write_context, next_value)
         return result
 
     def update[R, W](self, atom: Writable[R, W], f: Callable[[R], W]) -> None:
+        """Writes ``f`` of ``atom``'s value.
+        Raises ``RegistryThreadError`` off the scheduler's thread and
+        ``RegistryDisposedError`` for a new node once disposed."""
         node = self.ensure_node(atom)
         atom.write(node.write_context, f(node.value()))
 
     def refresh(self, atom: Atom[Any]) -> None:
+        """Runs ``atom``'s own refresh when it has one, else invalidates it
+        (``invalidate_atom``), so it is read again.
+        Raises ``RegistryThreadError`` off the scheduler's thread and
+        ``RegistryDisposedError`` for a new node once disposed."""
         self.check_thread()
         if atom.refresh is not None:
             atom.refresh(self.refresh)
@@ -208,11 +226,19 @@ class AtomRegistryService:
     # --- nodes ----------------------------------------------------------
 
     def atom_has_ttl(self, atom: Atom[Any]) -> bool:
+        """Whether an unused node of ``atom`` lingers for an idle TTL (the
+        atom's, else the registry's default) before it is removed;
+        ``False`` for a kept-alive atom or a zero TTL."""
         if atom.kept_alive or (atom.idle_ttl is not None and atom.idle_ttl.is_zero()):
             return False
         return atom.idle_ttl is not None or self.default_idle_ttl is not None
 
     def ensure_node[A](self, atom: Atom[A]) -> Node[A]:
+        """``atom``'s node, made (and reported to ``on_node_added``) if
+        missing; a found node's idle timeout is cancelled. A preloaded
+        serializable value for the atom is decoded into it.
+        Raises ``RegistryThreadError`` off the scheduler's thread and
+        ``RegistryDisposedError`` for a new node once disposed."""
         self.check_thread()
         key = _key(atom)
         node = self.nodes.get(key)
@@ -242,6 +268,9 @@ class AtomRegistryService:
             target_node.set_initial_value(decoded, info.skip_initial_run)
 
     def create_node[A](self, atom: Atom[A]) -> Node[A]:
+        """A new node for ``atom``, not yet registered; unless the atom is
+        kept alive, a removal check is scheduled for it. Raises
+        ``RegistryDisposedError`` once the registry is disposed."""
         if self.disposed:
             raise RegistryDisposedError(f"Cannot access Atom {atom}: registry is disposed")
         if not atom.kept_alive:
@@ -249,11 +278,19 @@ class AtomRegistryService:
         return Node(self, atom)
 
     def invalidate_atom(self, atom: Atom[Any]) -> None:
+        """Marks ``atom``'s node stale, releasing its current build, so the
+        next read rebuilds it (and runs an effect skipped for an initial
+        value); its dependents are invalidated too.
+        Raises ``RegistryThreadError`` off the scheduler's thread and
+        ``RegistryDisposedError`` for a new node once disposed."""
         node = self.ensure_node(atom)
         node.skip_initial_run = False
         node.invalidate()
 
     def schedule_atom_removal(self, atom: Atom[Any]) -> None:
+        """On the scheduler's next turn, removes ``atom``'s node
+        (``remove_node``) if nothing uses it then."""
+
         def remove() -> None:
             node = self.nodes.get(_key(atom))
             if node is not None and node.can_be_removed:
@@ -262,6 +299,9 @@ class AtomRegistryService:
         self.scheduler.schedule(remove)
 
     def schedule_node_removal(self, node: Node[Any]) -> None:
+        """On the scheduler's next turn, removes ``node`` (``remove_node``)
+        if nothing uses it then."""
+
         def remove() -> None:
             if node.can_be_removed:
                 self.remove_node(node)
@@ -269,6 +309,9 @@ class AtomRegistryService:
         self.scheduler.schedule(remove)
 
     def remove_node(self, node: Node[Any]) -> None:
+        """Removes ``node`` now, running its finalizers and reporting it to
+        ``on_node_removed``, or, when its atom has an idle TTL, starts its
+        timeout (``set_node_timeout``)."""
         if self.atom_has_ttl(node.atom):
             self.set_node_timeout(node)
         else:
@@ -289,6 +332,10 @@ class AtomRegistryService:
         return self.default_idle_ttl
 
     def set_node_timeout(self, node: Node[Any]) -> None:
+        """Schedules ``node``'s removal once its idle TTL, rounded up to the
+        timeout resolution, has passed (nodes due together share a timer).
+        Nothing happens if it already has a timeout. During a sweep, the
+        time already waited counts, so a node due by then is removed now."""
         if node in self.node_timeout_bucket:
             return
         idle_ttl = self._idle_ttl_millis(node.atom)
@@ -314,6 +361,8 @@ class AtomRegistryService:
         self.node_timeout_bucket[node] = bucket
 
     def remove_node_timeout(self, node: Node[Any]) -> None:
+        """Cancels ``node``'s idle timeout, if it has one, and schedules a
+        removal check (``schedule_node_removal``) in its place."""
         bucket = self.node_timeout_bucket.pop(node, None)
         if bucket is None:
             return
@@ -325,10 +374,15 @@ class AtomRegistryService:
             del self.timeout_buckets[bucket]
 
     def sweep_bucket(self, bucket: float) -> None:
+        """Removes the idle nodes whose timeouts end at ``bucket`` (the
+        timer's millisecond timestamp), each with ``remove_idle_node``."""
         nodes = self.timeout_buckets.pop(bucket)[0]
         run_all(list(nodes), self.remove_idle_node)
 
     def remove_idle_node(self, node: Node[Any]) -> None:
+        """Removes ``node`` after its idle timeout, running its finalizers
+        and reporting it to ``on_node_removed``, unless it is in use
+        again."""
         self.node_timeout_bucket.pop(node, None)
         if not node.can_be_removed:
             return
@@ -357,6 +411,8 @@ class AtomRegistryService:
         run_all(nodes, self.destroy_node)
 
     def destroy_node(self, node: Node[Any]) -> None:
+        """Removes ``node`` now, running its finalizers, and reports it to
+        ``on_node_removed`` (as ``reset`` does for every node)."""
         node.remove()
         if self.on_node_removed is not None:
             self.on_node_removed(node)

@@ -85,6 +85,12 @@ class SocketServerService:
         self._accepted = accepted
 
     def run[E, R = Never](self, handler: Handler[E, R]) -> Effect[Never, SocketServerError, R]:
+        """Hands every accepted connection, as a ``Socket``, to ``handler``
+        in a fiber of its own until interrupted; interrupting it interrupts
+        the handlers still running. A handler's failure is logged
+        ("Unhandled error in SocketServer"), not propagated. Never ends;
+        pyfect's servers never fail it either (opening the server, where
+        ``SocketServerError`` comes from, is the layer's work)."""
         accepted = self._accepted
 
         def serve(scope: CloseableScope) -> Effect[Never, Never, R]:

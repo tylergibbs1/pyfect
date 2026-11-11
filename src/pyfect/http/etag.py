@@ -66,9 +66,16 @@ class GeneratorService:
         return Weak(value) if self.weak else Strong(value)
 
     def from_file_info(self, info: FileInfo) -> Effect[Etag]:
+        """The tag of a file from its ``stat``: its size and modification
+        time in milliseconds, in hex (``<size>-<mtime>``, mtime ``0`` when
+        unknown); weak or strong as the generator makes them. Never
+        fails."""
         return sync(lambda: self._make(value_from_file_info(info)))
 
     def from_file_web(self, file: FileLike) -> Effect[Etag]:
+        """The tag of a file-like value: its ``size`` and
+        ``last_modified`` in milliseconds, in hex (``<size>-<mtime>``);
+        weak or strong as the generator makes them. Never fails."""
         return sync(lambda: self._make(value_from_file_web(file)))
 
 
