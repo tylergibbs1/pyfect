@@ -5,12 +5,12 @@ fresh-stack threads until the process cannot start another (it used to:
 import threading
 
 import pytest
+from _threads import live_threads
 
 from pyfect._stack import MAX_FRESH_STACKS, with_fresh_stack
 
 
 def test_an_endless_walk_raises_recursion_error_after_a_bounded_number_of_stacks() -> None:
-    threads_before = threading.active_count()
     stacks: set[int] = set()
 
     def walk() -> None:
@@ -20,7 +20,7 @@ def test_an_endless_walk_raises_recursion_error_after_a_bounded_number_of_stacks
     with pytest.raises(RecursionError):
         walk()
     assert len(stacks) == MAX_FRESH_STACKS + 1
-    assert threading.active_count() == threads_before
+    assert live_threads("pyfect-deep-stack") == []  # every fresh stack was joined
 
 
 def test_a_cyclic_value_has_no_equal_key() -> None:

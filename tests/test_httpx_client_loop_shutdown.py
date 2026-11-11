@@ -21,6 +21,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 import pytest
+from _threads import live_threads
 
 import pyfect as fx
 from pyfect.exit import Exit, Success
@@ -71,9 +72,8 @@ def test_a_released_client_closes_the_bodies_it_left_open(
         with ThreadPoolExecutor(2) as pool:
             exits = list(pool.map(_read_part, [url, url]))
         assert all(isinstance(exit_, Success) for exit_ in exits), exits
-    for thread in threading.enumerate():
-        if thread.name == "pyfect-httpx":
-            thread.join(5)
+    for thread in live_threads("pyfect-httpx"):
+        thread.join(5)
     gc.collect()
     lost = [r.getMessage() for r in caplog.records if r.levelno >= logging.ERROR]
     assert lost == []
