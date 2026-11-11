@@ -562,7 +562,7 @@ def tool_result_part_schema(
     wires = (_wire_branch(name, results[0], False), _wire_branch(name, results[1], True))
 
     def is_part(u: object) -> bool:
-        return isinstance(u, ToolResultSuccess | ToolResultFailure) and (
+        return isinstance(u, (ToolResultSuccess, ToolResultFailure)) and (
             name is None or cast("Any", u).name == name
         )
 

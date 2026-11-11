@@ -96,7 +96,7 @@ TimeZoneOffset: Bottom[timezone] = instance_of(
 
 
 def _is_zone(value: object) -> TypeIs[tzinfo]:
-    return isinstance(value, ZoneInfo | timezone)
+    return isinstance(value, (ZoneInfo, timezone))
 
 
 TimeZone: Bottom[tzinfo] = declare(

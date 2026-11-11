@@ -104,7 +104,7 @@ def _between_payload(
 
 
 def _finite_payload(bound: object) -> object:
-    return _finite(bound) if isinstance(bound, int | float) else bound
+    return _finite(bound) if isinstance(bound, (int, float)) else bound
 
 
 is_between: Between[float] = make_is_between(

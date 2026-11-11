@@ -155,7 +155,7 @@ def _details(value: object) -> ReasoningDetails | None:
 def _first_reasoning_details(content: Sequence[Pr.AssistantMessagePart]) -> ReasoningDetails | None:
     """A tool call's details (complete), else a reasoning part's."""
     for part in content:
-        if isinstance(part, Pr.ToolCallPart | Pr.ReasoningPart):
+        if isinstance(part, (Pr.ToolCallPart, Pr.ReasoningPart)):
             details = _details(options(part).get("reasoningDetails"))
             if details is not None:
                 return details

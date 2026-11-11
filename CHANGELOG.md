@@ -15,6 +15,19 @@
   exit. Effect has no thread pool (Node runs such work on libuv's), so this follows Python's
   norm for work a program may abandon: a process whose blocking work was interrupted, and is
   still running, now exits at once instead of waiting for it.
+- Faster streams and fibers, with the same results. `group_by_key` serves each key of a chunk
+  whose group is open and has room in one step (Effect's `RcMap.touch` and `Queue.offerAll`,
+  without their effects), `forever` is one loop frame (Effect's `whileLoop`), `on_exit` (and
+  `ensuring`, `on_error` and every channel's per-pull error handler) is one primitive (Effect's
+  `OnExit`), `Queue.offer` adds an item that fits in its own step as Effect's `offer` does, and
+  `isinstance` checks take tuples (`A | B` built a union on every call, once per fiber step).
+  On CPython 3.14, `group_by_key` + `flat_map` runs about 3.7M items/s in chunks of 256 (was
+  520k) and 285k/s in chunks of one (was 84k); with a `grouped_within` per group, 2.0M (was
+  350k) and 195k/s (was 69k). `benchmarks/streams.py` measures these.
+- A fiber pauses for its step budget where Effect does: before the step that reaches
+  `MaxOpsBeforeYield`, the resumed run counting the pause's continuation. A producer that never
+  waits now offers 1023 items between a waiting consumer's turns, as in Effect (it was 683),
+  and a full bounded queue of 1024 no longer hands over one item per fiber switch.
 
 ### Added
 

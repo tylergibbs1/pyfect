@@ -24,7 +24,7 @@ def _pem(value: PemInput) -> str:
 
 
 def _pems(value: PemInput | Sequence[PemInput]) -> list[str]:
-    if isinstance(value, str | bytes):
+    if isinstance(value, (str, bytes)):
         return [_pem(value)]
     return [_pem(v) for v in value]
 

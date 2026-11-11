@@ -190,7 +190,7 @@ type AnyTool = Tool[Any, Any, Any, Any, Any, Any]
 
 
 def is_user_defined(u: object) -> bool:
-    return isinstance(u, Tool) and not isinstance(u, ProviderDefined | Dynamic)
+    return isinstance(u, Tool) and not isinstance(u, (ProviderDefined, Dynamic))
 
 
 def is_provider_defined(u: object) -> bool:

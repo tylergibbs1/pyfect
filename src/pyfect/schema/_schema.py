@@ -159,6 +159,6 @@ def is_schema(value: object) -> TypeIs[Top]:
     Standard Schema."""
     from pyfect.schema._standard_schema import StandardSchemaV1
 
-    return isinstance(value, Bottom | StandardSchemaV1) or (
+    return isinstance(value, (Bottom, StandardSchemaV1)) or (
         isinstance(value, type) and hasattr(value, "__codec__")
     )

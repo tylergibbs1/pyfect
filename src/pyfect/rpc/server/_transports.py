@@ -62,7 +62,7 @@ def _with_headers(message: Message, headers: RequestHeaders) -> Message:
 
 
 def _is_pair(pair: object) -> bool:
-    return isinstance(pair, list | tuple) and len(cast("tuple[object, ...]", pair)) == 2
+    return isinstance(pair, (list, tuple)) and len(cast("tuple[object, ...]", pair)) == 2
 
 
 # --- sockets ---------------------------------------------------------------------------

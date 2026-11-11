@@ -38,7 +38,7 @@ def _is_fixed_width_only(node: ast.AST) -> bool:
     """The binary layer enforces a fixed-width check on its own, so the node
     is exact when no other check rides along."""
     return (
-        isinstance(node, ast.Number | ast.BigInt)
+        isinstance(node, (ast.Number, ast.BigInt))
         and len(node.checks or ()) == 1
         and fixed_width_kind(node) is not None
     )
@@ -466,7 +466,7 @@ class _Compiler:
                 if not any(ast.same_literal(v, member.literal) for v in values):
                     values.append(member.literal)
                 continue
-            if isinstance(member, ast.Objects | ast.Arrays):
+            if isinstance(member, (ast.Objects, ast.Arrays)):
                 found = collect_sentinels(member)
                 if found:
                     variant_members.append((member, found))

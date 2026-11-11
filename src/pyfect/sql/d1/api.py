@@ -94,7 +94,7 @@ def bind(value: object) -> Param:
     blobs)."""
     if isinstance(value, bool):
         return int(value)
-    if value is None or isinstance(value, int | float | str):
+    if value is None or isinstance(value, (int, float, str)):
         return value
     raise TypeError(f"D1's HTTP API cannot bind a value of type {type(value).__name__}")
 
@@ -124,7 +124,7 @@ def _meta(value: object) -> D1Meta:
         changes=_int(meta, "changes"),
         last_row_id=_int(meta, "last_row_id"),
         changed_db=meta.get("changed_db") is True,
-        duration=float(duration) if isinstance(duration, int | float) else 0.0,
+        duration=float(duration) if isinstance(duration, (int, float)) else 0.0,
         rows_read=_int(meta, "rows_read"),
         rows_written=_int(meta, "rows_written"),
         size_after=size_after if isinstance(size_after, int) else None,

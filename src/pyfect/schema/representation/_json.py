@@ -81,7 +81,7 @@ def _prune(annotations: R.Annotations | None) -> dict[str, Json] | None:
 
 
 def _plain(value: object) -> Json:
-    if isinstance(value, list | tuple):
+    if isinstance(value, (list, tuple)):
         return [_plain(v) for v in cast("Sequence[object]", value)]
     if isinstance(value, Mapping):
         return {k: _plain(v) for k, v in cast("Mapping[str, object]", value).items()}
@@ -248,7 +248,7 @@ def _object(value: object, path: Path) -> _Object:
 
 
 def _array(value: object, path: Path) -> Sequence[object]:
-    if not isinstance(value, list | tuple):
+    if not isinstance(value, (list, tuple)):
         raise error_with_path("Expected array", path)
     return cast("Sequence[object]", value)
 

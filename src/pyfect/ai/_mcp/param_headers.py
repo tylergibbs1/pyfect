@@ -27,7 +27,7 @@ def _header_matches(header: str | None, argument: object) -> bool:  # noqa: PLR0
         return decoded == argument
     if isinstance(argument, bool):
         return decoded == ("true" if argument else "false")
-    if isinstance(argument, int | float):
+    if isinstance(argument, (int, float)):
         safe = abs(argument) <= _MAX_SAFE_INTEGER and float(argument).is_integer()
         if not safe or not trim(decoded):
             return False

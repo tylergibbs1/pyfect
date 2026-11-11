@@ -176,11 +176,11 @@ def _octets_or_segments(value: Sequence[int]) -> Result[IpAddress, NetAddressErr
 
 def ip_from_input(value: IpAddressInput) -> Result[IpAddress, NetAddressError]:
     """An address, its text, 4 octets, 8 segments, or 4 or 16 bytes."""
-    if isinstance(value, IPv4Address | IPv6Address):
+    if isinstance(value, (IPv4Address, IPv6Address)):
         return Ok(value)
     if isinstance(value, str):
         return ip_from_string(value)
-    if isinstance(value, bytes | bytearray | memoryview):
+    if isinstance(value, (bytes, bytearray, memoryview)):
         if len(value) == 4:
             return Ok(ipv4_from_bytes_unsafe(value))
         if len(value) == 16:
@@ -204,7 +204,7 @@ def ipv4_from_input(value: Ipv4AddressInput) -> Result[IPv4Address, NetAddressEr
     if isinstance(value, str):
         return ipv4_from_string(value)
     if len(value) == 4:
-        if isinstance(value, bytes | bytearray | memoryview):
+        if isinstance(value, (bytes, bytearray, memoryview)):
             return Ok(ipv4_from_bytes_unsafe(value))
         return ipv4_from_octets(value)
     return address_error(value, "expected an IPv4 address, string, 4 octets, or 4 bytes")
@@ -215,7 +215,7 @@ def ipv6_from_input(value: Ipv6AddressInput) -> Result[IPv6Address, NetAddressEr
         return Ok(value)
     if isinstance(value, str):
         return ipv6_from_string(value)
-    if isinstance(value, bytes | bytearray | memoryview):
+    if isinstance(value, (bytes, bytearray, memoryview)):
         if len(value) == 16:
             return Ok(ipv6_from_bytes_unsafe(value))
     elif len(value) == 8:

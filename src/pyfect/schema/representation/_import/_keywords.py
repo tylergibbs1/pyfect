@@ -136,11 +136,11 @@ def is_object(value: object) -> TypeIs[Mapping[str, object]]:
 
 
 def is_array(value: object) -> TypeIs[list[object] | tuple[object, ...]]:
-    return isinstance(value, list | tuple)
+    return isinstance(value, (list, tuple))
 
 
 def is_number(value: object) -> TypeIs[int | float]:
-    return isinstance(value, int | float) and not isinstance(value, bool)
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
 def is_type_name(value: object) -> TypeIs[str]:
@@ -156,7 +156,7 @@ def json_literal(value: object, path: Path) -> N.Node | None:
     JSON (no constraint)."""
     if value is None:
         return N.Null()
-    if isinstance(value, str | int | float):
+    if isinstance(value, (str, int, float)):
         return N.Literal(literal=value)
     if is_object(value) or is_array(value):
         raise error_with_path('Only primitive values are supported in "const" and "enum".', path)

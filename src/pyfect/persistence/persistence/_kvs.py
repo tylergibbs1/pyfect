@@ -54,7 +54,7 @@ def _store(
             items = cast("list[object]", parsed)
             value = items[0] if items else None
             expires = items[1] if len(items) > 1 else None
-            if isinstance(expires, int | float) and expires <= now_millis(clock):
+            if isinstance(expires, (int, float)) and expires <= now_millis(clock):
                 return store.remove(key).ignore().as_(None)
             return succeed(value)
 

@@ -297,7 +297,7 @@ def _tool_result(part: Pr.ToolResultPart, names: NameMapper, mcp_ids: set[str]) 
     block_type = _SERVER_RESULTS.get(tool_name)
     if block_type is None:
         return None
-    if block_type == "tool_search_tool_result" and isinstance(result, list | tuple):
+    if block_type == "tool_search_tool_result" and isinstance(result, (list, tuple)):
         # The response part carries the bare tool references
         references = list(cast("Sequence[object]", result))
         result = {"type": "tool_search_tool_search_result", "tool_references": references}
@@ -331,7 +331,7 @@ def _assistant_content(group: Group, names: NameMapper, is_last_group: bool) -> 
         is_last_message = j == len(group.messages) - 1
         message_start = len(content)
         for k, part in enumerate(message.content):
-            if isinstance(part, Pr.FilePart | Pr.ToolApprovalRequestPart):
+            if isinstance(part, (Pr.FilePart, Pr.ToolApprovalRequestPart)):
                 continue
             part_start = len(content)
             trim = is_last_group and is_last_message and k == len(message.content) - 1

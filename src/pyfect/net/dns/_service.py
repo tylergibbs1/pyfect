@@ -228,7 +228,7 @@ def make_static(
         def answer() -> Sequence[IpAddress]:
             found = entries.get(_zone_key(host))
             direct = [] if found is None else found.addresses
-            return [*direct, *(r.address for r in records_at(host) if isinstance(r, A | Aaaa))]
+            return [*direct, *(r.address for r in records_at(host) if isinstance(r, (A, Aaaa)))]
 
         return sync(answer)
 
@@ -268,7 +268,7 @@ def name_server_from_input(
     (port 53)."""
     if isinstance(value, str):
         return name_server_from_string(value)
-    if isinstance(value, Mapping | InetAddressV4 | InetAddressV6):
+    if isinstance(value, (Mapping, InetAddressV4, InetAddressV6)):
         return inet_address_from_input(value)
     return ip_from_input(value).map(lambda address: inet_address_unsafe(address, 53))
 

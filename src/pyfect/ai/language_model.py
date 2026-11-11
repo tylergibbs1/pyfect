@@ -170,7 +170,7 @@ class GenerateTextResponse(Generic[_NN_co, _RP_co]):
         return [
             cast("_RP_co", part)
             for part in self.content
-            if isinstance(part, R.ToolResultSuccess | R.ToolResultFailure)
+            if isinstance(part, (R.ToolResultSuccess, R.ToolResultFailure))
         ]
 
     @property

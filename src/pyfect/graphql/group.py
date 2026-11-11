@@ -117,7 +117,7 @@ def operations_of(group: type[GraphQLGroup[Any, Any]]) -> list[AnyOperation]:
         attributes.update(vars(cls))
     by_name: dict[str, AnyOperation] = {}
     for value in attributes.values():
-        if not isinstance(value, Operation | Subscription):
+        if not isinstance(value, (Operation, Subscription)):
             continue
         operation: AnyOperation = cast("OperationInfo", value)
         existing = by_name.get(operation.name)

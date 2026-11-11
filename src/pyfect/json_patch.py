@@ -54,7 +54,7 @@ type _Object = Mapping[str, JsonValue]
 
 
 def _is_array(value: object) -> bool:
-    return isinstance(value, list | tuple)
+    return isinstance(value, (list, tuple))
 
 
 def _is_object(value: object) -> bool:
@@ -69,7 +69,7 @@ def _same(a: JsonValue, b: JsonValue) -> bool:
         return True
     if isinstance(a, bool) or isinstance(b, bool):
         return type(a) is type(b) and a == b
-    if isinstance(a, int | float) and isinstance(b, int | float):
+    if isinstance(a, (int, float)) and isinstance(b, (int, float)):
         return a == b and math.copysign(1, a) == math.copysign(1, b)
     if isinstance(a, str) and isinstance(b, str):
         return a == b

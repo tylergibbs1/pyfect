@@ -65,7 +65,7 @@ _UNSUPPORTED: Final = _Facts(supported=False, output_free=False, make_safe=False
 def _blocks(ast: AST) -> bool:
     """A node no fast path goes through: a transformation, a declaration, a
     suspension or a class."""
-    return ast.encoding is not None or isinstance(ast, Declaration | Suspend | Class)
+    return ast.encoding is not None or isinstance(ast, (Declaration, Suspend, Class))
 
 
 def _children(ast: AST) -> list[AST] | None:
@@ -89,7 +89,7 @@ def _children(ast: AST) -> list[AST] | None:
 
 def _make_safe_node(ast: AST) -> bool:
     return (
-        not isinstance(ast, Union | Declaration | Suspend | Class)
+        not isinstance(ast, (Union, Declaration, Suspend, Class))
         and not (isinstance(ast, Objects) and ast.index_signatures)
         and ast.encoding is None
         and ast.constructor_default is None
@@ -123,7 +123,7 @@ def _facts_of(  # noqa: PLR0911 - one exit per budget or support outcome
     for child in children:
         if _blocks(child):
             return _stop(ast)
-        if isinstance(child, Arrays | Objects | Union):
+        if isinstance(child, (Arrays, Objects, Union)):
             sub = _facts_of(child, depth + 1, budget)
             if sub is None:
                 return None
@@ -140,7 +140,7 @@ def _facts_of(  # noqa: PLR0911 - one exit per budget or support outcome
             facts.make_safe = facts.make_safe and _make_safe_node(child)
             facts.nodes += 1
             facts.height = max(facts.height, 1)
-    if isinstance(ast, Arrays | Objects | Union):
+    if isinstance(ast, (Arrays, Objects, Union)):
         facts.output_free = ast.checks is None and facts.output_free
     facts.make_safe = facts.make_safe and _make_safe_node(ast)
     ast.compiler_facts.append(facts)
@@ -154,7 +154,7 @@ def _stop(ast: AST) -> _Facts:
 
 def emission(ast: AST, local: bool = False) -> Literal["unsupported", "decode", "is"]:
     """Which fast paths ``ast`` can have (``local``: ignoring its encoding)."""
-    if (not local and ast.encoding is not None) or isinstance(ast, Declaration | Suspend | Class):
+    if (not local and ast.encoding is not None) or isinstance(ast, (Declaration, Suspend, Class)):
         return "unsupported"
     facts = _facts_of(ast)
     if facts is None or not facts.supported:
@@ -169,7 +169,7 @@ def should_compile_parser(ast: AST) -> bool:
         return True
     if isinstance(ast, Class) and ast.side == "type":
         return True
-    return isinstance(ast, Arrays | Objects | Union) or ast.tag == "TemplateLiteral"
+    return isinstance(ast, (Arrays, Objects, Union)) or ast.tag == "TemplateLiteral"
 
 
 def _make_safe(ast: AST) -> bool:
@@ -222,7 +222,7 @@ class _Emitter:
 
 def _literal_source(value: object) -> str | None:
     """A literal key or value as Python source, when its ``repr`` is one."""
-    if value is None or isinstance(value, bool | int | str):
+    if value is None or isinstance(value, (bool, int, str)):
         return repr(value)
     if isinstance(value, float):
         return f"float({str(value)!r})"
@@ -280,7 +280,7 @@ def _type_test(ast: AST, v: str) -> str | None:  # noqa: PLR0911, PLR0912 - one 
 
 
 def _emit_base(ast: AST, v: str, path: str, e: _Emitter) -> tuple[list[str], str]:
-    if isinstance(ast, Arrays | Objects | Union):
+    if isinstance(ast, (Arrays, Objects, Union)):
         if isinstance(ast, Objects) and not ast.properties and not ast.index_signatures:
             return [f"if {v} is None or isinstance({v}, R.NotAnObject): {e.fail}"], v
         helper = _helper(ast, path, e)
@@ -327,7 +327,7 @@ def _indent(lines: list[str], by: int = 1) -> list[str]:
 
 
 def _key(name: object, path: str, e: _Emitter) -> str:
-    source = _literal_source(name) if isinstance(name, str | int) else None
+    source = _literal_source(name) if isinstance(name, (str, int)) else None
     return source if source is not None else e.constant(path)
 
 
@@ -434,7 +434,7 @@ def _arrays(ast: Arrays, path: str, e: _Emitter) -> list[str]:
 def _member(ast: AST, path: str, e: _Emitter) -> str:
     """A helper function parsing one union member."""
     if (
-        isinstance(ast, Arrays | Objects | Union)
+        isinstance(ast, (Arrays, Objects, Union))
         and not (isinstance(ast, Objects) and not ast.properties and not ast.index_signatures)
         and ast.checks is None
         and ast.encoding_checks is None

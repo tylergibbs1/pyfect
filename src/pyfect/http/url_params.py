@@ -118,7 +118,7 @@ class UrlParams:
     def redact(self, key: Pattern | Sequence[Pattern]) -> list[tuple[str, Value]]:
         """The pairs, with plain values of the names matching ``key`` hidden
         in ``Redacted``."""
-        patterns: Sequence[Pattern] = (key,) if isinstance(key, str | re.Pattern) else key
+        patterns: Sequence[Pattern] = (key,) if isinstance(key, (str, re.Pattern)) else key
         return [
             (
                 name,
@@ -144,7 +144,7 @@ def make(params: Iterable[Param]) -> UrlParams:
 
 
 def _coerce(value: Coercible) -> Value:
-    if isinstance(value, Redacted | str):
+    if isinstance(value, (Redacted, str)):
         return value
     if value is None:
         return "null"
@@ -170,7 +170,7 @@ def _nested(
     )
     out: list[tuple[str | list[str], Value]] = []
     for key, value in entries:
-        if isinstance(value, list | tuple):
+        if isinstance(value, (list, tuple)):
             out.extend((key, _coerce(item)) for item in cast("Sequence[Coercible]", value))
         elif isinstance(value, Mapping):
             for k, v in _nested(cast("CoercibleRecord", value)):

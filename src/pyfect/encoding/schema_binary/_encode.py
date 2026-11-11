@@ -808,7 +808,7 @@ def _struct(ctx: _Context, layout: L.StructLayout, value: object, w: W.Writer) -
 
 
 def _array(ctx: _Context, layout: L.ArrayLayout, value: object, w: W.Writer) -> None:
-    if not isinstance(value, list | tuple):
+    if not isinstance(value, (list, tuple)):
         raise ctx.fail("an array", value)
     _encode_array(ctx, layout, cast("Sequence[object]", value), w)
 

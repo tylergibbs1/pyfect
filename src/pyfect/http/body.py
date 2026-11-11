@@ -308,7 +308,7 @@ def form_data_record(entries: FormDataInput) -> FormData:
     for key, value in entries.items():
         values = (
             cast("Sequence[FormDataCoercible]", value)
-            if isinstance(value, list | tuple)
+            if isinstance(value, (list, tuple))
             else (cast("FormDataCoercible", value),)
         )
         out.extend((key, _form_value(v)) for v in values if v is not None)
@@ -427,7 +427,7 @@ def file(
 def update_headers(headers: Headers, body: HttpBody) -> Headers:
     """``headers`` with ``content-type`` / ``content-length`` matching
     ``body`` (removed for ``Empty`` and ``FormData``)."""
-    if isinstance(body, Empty | FormData):
+    if isinstance(body, (Empty, FormData)):
         return headers.remove_many(("content-type", "content-length"))
     headers = (
         headers.remove("content-type")
@@ -440,7 +440,7 @@ def update_headers(headers: Headers, body: HttpBody) -> Headers:
 def update_content_length(headers: Headers, body: HttpBody) -> Headers:
     """``headers`` with ``content-length`` matching ``body`` (removed for
     ``Empty``, ``FormData`` and a body of unknown length)."""
-    length = None if isinstance(body, Empty | FormData) else body.content_length
+    length = None if isinstance(body, (Empty, FormData)) else body.content_length
     if length is None:
         return headers.remove("content-length")
     return headers.set("content-length", str(length))

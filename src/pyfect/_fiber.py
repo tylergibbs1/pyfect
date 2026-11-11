@@ -101,6 +101,8 @@ _INLINE_STEPS = 32
 # innermost one to finish, so the Python stack stays bounded.
 _MAX_NESTED_RUNS = 16
 
+_EXITS = (Success, Failure)
+
 _fiber_ids = itertools.count(1)
 _resume_lock = threading.Lock()
 
@@ -227,10 +229,12 @@ class _Yielded:
     An interrupt takes it over (``Fiber._deliver_interrupt``); the queued
     task then finds it gone and does nothing."""
 
-    __slots__ = ("step",)
+    __slots__ = ("ops", "step")
 
-    def __init__(self, step: Step) -> None:
+    def __init__(self, step: Step, ops: int = 0) -> None:
         self.step = step
+        # The steps the resumed run starts with spent (see ``Fiber._pause``).
+        self.ops = ops
 
 
 class _ReturnExit(Frame):
@@ -262,6 +266,7 @@ class Fiber(Generic[A_co, E_co]):
         "_interrupts_after_resume",
         "_observers",
         "_ops_budget",
+        "_ops_on_resume",
         "_parent",
         "_phase",
         "_run_scheduler",
@@ -302,6 +307,7 @@ class Fiber(Generic[A_co, E_co]):
         self._exit: Exit[Any, Any] | None = None
         self._waiting: _Wait | None = None
         self._yielded: _Yielded | None = None
+        self._ops_on_resume = 0
         self._phase: _Phase = "pending"
         # The ``contextvars`` context the fiber parked or paused in, which
         # it resumes in (Effect's captured async context), or that started
@@ -522,7 +528,13 @@ class Fiber(Generic[A_co, E_co]):
 
     def _loop(self, start: Step) -> None:
         cur: Step = start
-        ops = 0
+        # Steps are counted as Effect's ``currentOpCount``: the run pauses
+        # before the step that reaches ``MaxOpsBeforeYield`` (Effect's
+        # ``shouldYield``), but always takes its first step, so a budget
+        # of 1 or 2 still makes progress. An ``EffectScheduler`` is asked
+        # before every step, the first too, as in Effect.
+        ops, self._ops_on_resume = self._ops_on_resume, 0
+        first = ops + 1 if self._should_yield is None else 0
         # Whether ``cur`` is the exit a step (or a frame that ``claims``)
         # just returned: a result it decided (a taken item, an applied
         # update) reaches its continuation with no pause in between, where
@@ -534,7 +546,7 @@ class Fiber(Generic[A_co, E_co]):
 
             if isinstance(cur, Effect):
                 ops += 1
-                if ops > self._ops_budget and self._pause_due(cur, ops):
+                if ops >= self._ops_budget and ops > first and self._pause_due(cur, ops):
                     return
                 try:
                     hook = self._tracer_hook
@@ -542,7 +554,7 @@ class Fiber(Generic[A_co, E_co]):
                 except BaseException as exc:
                     cur = self._raised(exc)
                 decided = True
-            elif isinstance(cur, Success | Failure):
+            elif isinstance(cur, _EXITS):
                 if not self._stack:
                     if self._stack_frame is not None and isinstance(cur, Failure):
                         cur = self._in_frame(cur, self._stack_frame)
@@ -559,7 +571,8 @@ class Fiber(Generic[A_co, E_co]):
                 if (
                     not decided
                     and ops % _INLINE_STEPS == 0
-                    and ops > self._ops_budget
+                    and ops >= self._ops_budget
+                    and ops > first
                     and self._pause_due(cur, ops)
                 ):
                     return
@@ -589,8 +602,10 @@ class Fiber(Generic[A_co, E_co]):
 
     def _pause(self, cur: Step) -> None:
         """The step budget is spent: let other fibers run, then go on with
-        ``cur``."""
-        self._queue_yielded(_Yielded(cur))
+        ``cur``. Effect pauses with ``flatMap(yieldNow, () => cur)``, whose
+        continuation is the first step of the resumed run, so that run
+        starts one step into its budget."""
+        self._queue_yielded(_Yielded(cur, ops=1))
 
     def _queue_yielded(self, yielded: _Yielded, priority: int = 0) -> None:
         self._yielded = yielded
@@ -598,6 +613,7 @@ class Fiber(Generic[A_co, E_co]):
         def go_on() -> None:
             if self._yielded is yielded:
                 self._yielded = None
+                self._ops_on_resume = yielded.ops
                 self._drive(yielded.step)
 
         self._scheduler.schedule(go_on, priority)

@@ -114,7 +114,7 @@ def at_path(path: list[object], issue: Issue) -> IssueError:
 
 
 def is_number(value: object) -> bool:
-    return isinstance(value, int | float) and not isinstance(value, bool)
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
 def is_negative(value: float) -> bool:
@@ -137,7 +137,7 @@ def is_safe_number(value: float) -> bool:
 
 
 def is_safe_integer(value: object) -> bool:
-    return isinstance(value, int | float) and is_safe_number(value)
+    return isinstance(value, (int, float)) and is_safe_number(value)
 
 
 def as_float(value: float) -> float | None:

@@ -185,7 +185,7 @@ class _Messages:
         executed = [
             part
             for part in message.content
-            if isinstance(part, Pr.ToolCallPart | Pr.ToolResultPart) and part.provider_executed
+            if isinstance(part, (Pr.ToolCallPart, Pr.ToolResultPart)) and part.provider_executed
         ]
         reasoning: dict[str, Item] = {}
         for part in message.content:

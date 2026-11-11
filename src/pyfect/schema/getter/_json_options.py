@@ -37,7 +37,7 @@ def replace_json(value: object, replacer: JsonReplacer) -> object:
 
         def walk(key: str, node: object) -> object:
             node = replace(key, node)
-            if isinstance(node, list | tuple):
+            if isinstance(node, (list, tuple)):
                 items: tuple[object, ...] = tuple(node)  # pyright: ignore[reportUnknownArgumentType, reportUnknownVariableType]
                 return [walk(str(i), item) for i, item in enumerate(items)]
             if isinstance(node, Mapping):
@@ -49,7 +49,7 @@ def replace_json(value: object, replacer: JsonReplacer) -> object:
     keys = list(dict.fromkeys(str(key) for key in replacer))
 
     def keep(node: object) -> object:
-        if isinstance(node, list | tuple):
+        if isinstance(node, (list, tuple)):
             items: tuple[object, ...] = tuple(node)  # pyright: ignore[reportUnknownArgumentType, reportUnknownVariableType]
             return [keep(item) for item in items]
         if isinstance(node, Mapping):

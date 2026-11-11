@@ -261,4 +261,4 @@ def schemas_of(annotations: Mapping[str, object] | None) -> Sequence[object]:
     if not isinstance(representation, Mapping):
         return ()
     schemas = cast("Mapping[str, object]", representation).get("schemas")
-    return cast("Sequence[object]", schemas) if isinstance(schemas, tuple | list) else ()
+    return cast("Sequence[object]", schemas) if isinstance(schemas, (tuple, list)) else ()

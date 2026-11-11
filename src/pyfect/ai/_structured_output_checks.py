@@ -106,7 +106,7 @@ def _record_check(check: A.Check[Any]) -> list[A.Check[Any]]:
             minimum = payload.get("minimum")
         case _:
             return []
-    if not isinstance(minimum, int | float):
+    if not isinstance(minimum, (int, float)):
         return []
     filter = is_min_length(minimum)
     return [replace(filter, annotations=_without(filter.annotations, _DOCUMENTATION))]

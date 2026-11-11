@@ -255,7 +255,7 @@ def _key_text(value: object) -> str:
         return ""
     if isinstance(value, bool):
         return "true" if value else "false"
-    if isinstance(value, int | float):
+    if isinstance(value, (int, float)):
         return js_number(value)
     return str(value)
 

@@ -250,19 +250,19 @@ class GraphQLClientError(S.TaggedError, identifier="~effect/graphql/GraphQLClien
     def retry_after(self) -> Duration | None:
         """The ``Retry-After`` hint of a response or transport reason."""
         reason = self.reason
-        if isinstance(reason, ResponseError | TransportError):
+        if isinstance(reason, (ResponseError, TransportError)):
             return reason.retry_after
         return None
 
     @property
     def status(self) -> int | None:
         reason = self.reason
-        return reason.status if isinstance(reason, ResponseError | TransportError) else None
+        return reason.status if isinstance(reason, (ResponseError, TransportError)) else None
 
     @property
     def headers(self) -> Headers | None:
         reason = self.reason
-        return reason.headers if isinstance(reason, ResponseError | TransportError) else None
+        return reason.headers if isinstance(reason, (ResponseError, TransportError)) else None
 
     @property
     def message(self) -> str:

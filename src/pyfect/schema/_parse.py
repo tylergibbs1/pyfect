@@ -104,7 +104,7 @@ def _settled[O](result: ParseResult) -> Exit[O, SchemaError] | Effect[O, SchemaE
 
 def _run_now[O](run: _Run[O], input: object, options: ParseOptions) -> Exit[O, SchemaError]:
     result = run(input, options)
-    if isinstance(result, Success | Failure):
+    if isinstance(result, (Success, Failure)):
         return result
     return run_sync_exit(cast("Effect[O, SchemaError, Never]", result))
 
@@ -123,7 +123,7 @@ def _as_effect[O](run: _Run[O]) -> Parser[object, Effect[O, SchemaError, Any]]:
 
     def parse(input: object, /, **options: Unpack[ParseOptions]) -> Effect[O, SchemaError, Any]:
         result = run(input, options)
-        if isinstance(result, Success | Failure):
+        if isinstance(result, (Success, Failure)):
             return from_exit(result)
         return result
 

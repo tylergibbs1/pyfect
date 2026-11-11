@@ -185,7 +185,7 @@ def _key(literal: object) -> str | None:
     one key); ``None`` for a literal that is no key (a boolean, ``None``)."""
     if isinstance(literal, str):
         return literal
-    if isinstance(literal, int | float) and not isinstance(literal, bool):
+    if isinstance(literal, (int, float)) and not isinstance(literal, bool):
         return js_number(literal)
     return None
 

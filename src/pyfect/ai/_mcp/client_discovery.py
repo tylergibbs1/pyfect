@@ -40,7 +40,7 @@ DEFAULT_DISCOVERY_LIMITS = DiscoveryLimits(max_pages=100, max_items=10_000)
 def _as_limit(value: object) -> int | None:
     """``value`` as a bound when it is a nonnegative safe integer (an
     integral float too, as JavaScript's ``Number.isSafeInteger``)."""
-    if isinstance(value, bool) or not isinstance(value, int | float):
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
     if isinstance(value, float) and not value.is_integer():
         return None

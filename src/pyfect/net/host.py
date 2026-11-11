@@ -101,7 +101,7 @@ def is_domain_name(value: object) -> bool:
 
 def is_host(value: object) -> bool:
     return (
-        isinstance(value, IPv4Address | IPv6Address)
+        isinstance(value, (IPv4Address, IPv6Address))
         or is_scoped_ipv6_literal(value)
         or is_domain_name(value)
     )

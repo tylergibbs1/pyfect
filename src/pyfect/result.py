@@ -61,7 +61,7 @@ class Ok(Generic[A_co]):
         """After this success: ``that(value)`` for a function, ``that``
         otherwise; what is not already a ``Result`` becomes ``Ok``."""
         result: object = that(self.value) if callable(that) else that
-        return cast("Any", result) if isinstance(result, Ok | Err) else Ok(result)
+        return cast("Any", result) if isinstance(result, (Ok, Err)) else Ok(result)
 
     def or_else(self, f: Callable[[Never], object]) -> Ok[A_co]:
         return self

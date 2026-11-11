@@ -39,7 +39,9 @@ def _split_sections(value: str) -> list[str]:
 
 def _key(value: object) -> str:
     """A parsed key as JavaScript's ``String`` writes it."""
-    return js_string(value) if isinstance(value, str | bool | int | float | None) else str(value)
+    return (
+        js_string(value) if isinstance(value, (str, bool, int, float, type(None))) else str(value)
+    )
 
 
 def _is_quoted(value: str) -> bool:

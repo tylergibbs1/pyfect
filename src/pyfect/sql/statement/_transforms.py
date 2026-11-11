@@ -28,7 +28,7 @@ def default_transforms(transformer: Callable[[str], str], nested: bool = True) -
     as they are."""
 
     def transform_value(value: object) -> object:
-        if isinstance(value, list | tuple):
+        if isinstance(value, (list, tuple)):
             items = cast("Sequence[object]", value)
             if not items or not isinstance(items[0], Mapping):
                 return items
@@ -43,7 +43,7 @@ def default_transforms(transformer: Callable[[str], str], nested: bool = True) -
     def transform_array(rows: Rows, values: Callable[[object], object]) -> list[Any]:
         result: list[Any] = []
         for row in rows:
-            if isinstance(row, list | tuple):
+            if isinstance(row, (list, tuple)):
                 result.append(transform_array(row, values))  # pyright: ignore[reportUnknownArgumentType]
             elif isinstance(row, Mapping):
                 entries: Mapping[str, object] = row  # pyright: ignore[reportUnknownVariableType]

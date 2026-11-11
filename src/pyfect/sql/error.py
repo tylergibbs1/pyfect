@@ -202,7 +202,7 @@ def _prop(cause: object, name: str) -> object:
 
 def _code(cause: object) -> str | int | None:
     code = _prop(cause, "sqlite_errorname" if isinstance(cause, sqlite3.Error) else "code")
-    return code if isinstance(code, str | int) and not isinstance(code, bool) else None
+    return code if isinstance(code, (str, int)) and not isinstance(code, bool) else None
 
 
 def _errno(cause: object) -> object:

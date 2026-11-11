@@ -112,7 +112,7 @@ def _same(a: object, b: object) -> bool:
     strings, numbers or bytes (NaN equals NaN)."""
     if a is b:
         return True
-    if type(a) is not type(b) or not isinstance(a, str | int | float | bytes):
+    if type(a) is not type(b) or not isinstance(a, (str, int, float, bytes)):
         return False
     return a == b or (isinstance(a, float) and a != a and b != b)  # noqa: PLR0124
 

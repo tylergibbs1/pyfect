@@ -64,7 +64,7 @@ def material(key: KeyBase[Any]) -> Material:
 
 
 def is_bytes(data: object) -> bool:
-    return isinstance(data, bytes | bytearray | memoryview)
+    return isinstance(data, (bytes, bytearray, memoryview))
 
 
 def check_key_length(name: str, key_length: int) -> Callable[[bytes], str | None]:

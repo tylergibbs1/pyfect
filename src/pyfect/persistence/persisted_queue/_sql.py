@@ -74,7 +74,7 @@ def _cleanup_failed(cause: Cause[Any]) -> Effect[Never, PersistedQueueError]:
 
 
 def _sequence(value: object) -> int | str:
-    return value if isinstance(value, int | str) else str(value)
+    return value if isinstance(value, (int, str)) else str(value)
 
 
 def _lookup(  # noqa: PLR0917

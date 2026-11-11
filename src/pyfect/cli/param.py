@@ -506,7 +506,7 @@ def with_fallback_config[A](param: Param[A], config: config_.Config[Any]) -> Par
 def require_prompt(value: object) -> None:
     from pyfect.cli import prompt as prompt_
 
-    if not isinstance(value, prompt_.Prompt | EffectBase):
+    if not isinstance(value, (prompt_.Prompt, EffectBase)):
         hint = "to ask, pass a Prompt such as prompt.string(message)"
         raise TypeError(wrong_argument(value, "prompt", "an Effect or a Prompt", hint))
 

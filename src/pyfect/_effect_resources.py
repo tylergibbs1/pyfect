@@ -152,13 +152,7 @@ def _on_exit[A, E, R, E2, R2](
 ) -> Effect[A, E | E2, R | R2]:
     """Run ``f(exit)`` uninterruptibly after ``eff``; a failure of ``f``
     adds its cause to the result."""
-    return _core.uninterruptible_mask(
-        lambda restore: _core._MatchCause(
-            restore(eff),
-            lambda c: _run_finalizer(_call_user(f, Failure(c)), Failure(c)),
-            lambda a: _run_finalizer(_call_user(f, Success(a)), Success(a)),
-        )
-    )
+    return _core._OnExit(eff, lambda ex: _run_finalizer(_call_user(f, ex), ex))
 
 
 def _call_user[*Ts, A, E, R](f: Callable[[*Ts], Effect[A, E, R]], *args: *Ts) -> Effect[A, E, R]:

@@ -80,7 +80,7 @@ class _ByReference:
 
 def _slot_key(resolver: RequestResolver[Any, Any], key: Hashable) -> Hashable:
     if isinstance(resolver.batch_key, EqualKeys) or isinstance(
-        key, str | bytes | int | float | NoneType
+        key, (str, bytes, int, float, NoneType)
     ):
         return key
     return _ByReference(key)

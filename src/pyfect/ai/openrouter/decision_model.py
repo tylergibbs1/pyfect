@@ -125,7 +125,7 @@ def make(
             options: DM.ProviderOptions[D.NonLocateDecision],
         ) -> Effect[DM.ProviderResponse, E.AiError]:
             state = options.state
-            if state is None or isinstance(state, bool | int | float):
+            if state is None or isinstance(state, (bool, int, float)):
                 return fx.fail(_invalid_state())
             questions = {key: _question(d) for key, d in options.decisions.items()}
 

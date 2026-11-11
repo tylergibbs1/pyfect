@@ -16,14 +16,14 @@ from pyfect.schema.issue import Issue
 
 
 def _is_json_leaf(value: object) -> bool:
-    if value is None or isinstance(value, str | bool | int):
+    if value is None or isinstance(value, (str, bool, int)):
         return True
     return isinstance(value, float) and math.isfinite(value)
 
 
 def _children(value: object) -> Iterator[object] | None:
     """The values inside a JSON container; ``None`` for anything else."""
-    if isinstance(value, list | tuple):
+    if isinstance(value, (list, tuple)):
         return iter(cast("Sequence[object]", value))
     if isinstance(value, Mapping):
         mapping = cast("Mapping[object, object]", value)

@@ -42,7 +42,7 @@ _INFINITIES = {"Infinity": math.inf, "+Infinity": math.inf, "-Infinity": -math.i
 
 def to_number(value: object) -> float:
     """JavaScript's ``Number(value)``: ``NaN`` for what is not a number."""
-    if isinstance(value, bool | int | float):
+    if isinstance(value, (bool, int, float)):
         return float(value)
     if value is None:
         return 0.0
@@ -74,7 +74,7 @@ def to_boolean(value: object) -> bool:
 
 def to_big_int(value: object) -> int | None:
     """JavaScript's ``BigInt(value)``, or ``None`` where it throws."""
-    if isinstance(value, bool | int):
+    if isinstance(value, (bool, int)):
         return int(value)
     if isinstance(value, float):
         return int(value) if value.is_integer() else None

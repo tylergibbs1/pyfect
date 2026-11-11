@@ -62,7 +62,7 @@ def _join(parent: str, name: str) -> str:
 
 
 def _is_missing(error: PlatformError) -> bool:
-    return isinstance(error.reason, NotFound | BadResource)
+    return isinstance(error.reason, (NotFound, BadResource))
 
 
 def _is_ignorable(error: PlatformError) -> bool:

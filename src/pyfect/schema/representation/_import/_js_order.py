@@ -28,7 +28,7 @@ def _has_array_index_key(document: object) -> bool:
             if any(_array_index(key) is not None for key in entries):
                 return True
             pending.extend(entries.values())
-        elif isinstance(value, list | tuple):
+        elif isinstance(value, (list, tuple)):
             pending.extend(cast("list[object] | tuple[object, ...]", value))
     return False
 

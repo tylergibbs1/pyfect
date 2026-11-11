@@ -447,7 +447,7 @@ def _defined_names(document: CodeDocument) -> set[str]:
     identifiers += [
         artifact.identifier
         for artifact in document.artifacts
-        if isinstance(artifact, TypedDictArtifact | EnumArtifact)
+        if isinstance(artifact, (TypedDictArtifact, EnumArtifact))
     ]
     return {name for identifier in identifiers for name in (identifier, f"{identifier}Type")}
 
@@ -538,7 +538,7 @@ def to_code_module(document: CodeDocument, /, *, names: Sequence[str] = ()) -> s
     lines += [
         artifact.code.runtime
         for artifact in document.artifacts
-        if isinstance(artifact, TypedDictArtifact | EnumArtifact)
+        if isinstance(artifact, (TypedDictArtifact, EnumArtifact))
     ]
     definitions = {
         named.identifier: (f"{named.identifier} = {named.code.runtime}", named.code.runtime)

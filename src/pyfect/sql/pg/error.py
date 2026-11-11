@@ -86,7 +86,7 @@ def classify(cause: BaseException, *, message: str, operation: str) -> SqlErrorR
     if not isinstance(cause, psycopg.Error):
         return UnknownError(cause=cause, message=message, operation=operation)
     code = cause.sqlstate
-    if code is None and isinstance(cause, psycopg.OperationalError | psycopg.InterfaceError):
+    if code is None and isinstance(cause, (psycopg.OperationalError, psycopg.InterfaceError)):
         if _AUTHENTICATION_FAILURE.search(str(cause)):
             return AuthenticationError(cause=cause, message=message, operation=operation)
         return ConnectionError(cause=cause, message=message, operation=operation)

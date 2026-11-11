@@ -130,7 +130,7 @@ def _error_name(error: BaseException) -> str:
     """Effect's ``error.name``: a schema error class's identifier or tag (its ``name``), else
     the class name. Other exceptions' ``name`` attributes (``ImportError.name``, the module) are
     not an error's name."""
-    if isinstance(error, SchemaErrorClass | SchemaTaggedError):
+    if isinstance(error, (SchemaErrorClass, SchemaTaggedError)):
         return error.name
     return type(error).__name__
 

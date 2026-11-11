@@ -517,12 +517,12 @@ def make(input: RawInput) -> Prompt:
         return input
     items = list(input)
     if all(
-        isinstance(m, SystemMessage | UserMessage | AssistantMessage | ToolMessage) for m in items
+        isinstance(m, (SystemMessage, UserMessage, AssistantMessage, ToolMessage)) for m in items
     ):
         return Prompt(tuple(cast("list[Message]", items)))
     encoded = [
         S.encode_sync(MESSAGE)(m)
-        if isinstance(m, SystemMessage | UserMessage | AssistantMessage | ToolMessage)
+        if isinstance(m, (SystemMessage, UserMessage, AssistantMessage, ToolMessage))
         else m
         for m in items
     ]

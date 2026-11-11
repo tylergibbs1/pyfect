@@ -77,7 +77,7 @@ def _open_pubsub(_store_id: str) -> Effect[PubSub[RemoteEntry], Never, Scope]:
 
 
 def _is_constraint_conflict(error: SqlError) -> bool:
-    return isinstance(error.reason, ConstraintError | UniqueViolation)
+    return isinstance(error.reason, (ConstraintError, UniqueViolation))
 
 
 def make_storage(

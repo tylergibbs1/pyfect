@@ -132,7 +132,7 @@ from pyfect.net.net_address._mac import (
 
 def is_family(address: IpAddress | InetAddress, family: IpFamily) -> bool:
     """Whether ``address`` (or a socket address's IP) is of ``family``."""
-    ip = address.address if isinstance(address, InetAddressV4 | InetAddressV6) else address
+    ip = address.address if isinstance(address, (InetAddressV4, InetAddressV6)) else address
     return family_of(ip) == family
 
 

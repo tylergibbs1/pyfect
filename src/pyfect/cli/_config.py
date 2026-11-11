@@ -54,7 +54,7 @@ class Config:
         fields: dict[str, Field] = {}
         for klass in reversed(cls.__mro__):
             for name, value in vars(klass).items():
-                if isinstance(value, Flag | Argument | Nested):
+                if isinstance(value, (Flag, Argument, Nested)):
                     fields.pop(name, None)
                     fields[name] = cast("Field", value)
         cls.__cli_fields__ = fields

@@ -396,14 +396,14 @@ type _Wrapped = _WrappedEffect[Any, Any, Any] | _WrappedStream[Any, Any, Any]
 
 def wrap_options(value: object) -> WrapOptions | None:
     """The options a handler's result was wrapped with, if any."""
-    if isinstance(value, _WrappedEffect | _WrappedStream):
+    if isinstance(value, (_WrappedEffect, _WrappedStream)):
         return cast("_Wrapped", value).options
     return None
 
 
 def unwrap[T](value: T) -> T:
     """``value`` without the server options it was wrapped with."""
-    if isinstance(value, _WrappedEffect | _WrappedStream):
+    if isinstance(value, (_WrappedEffect, _WrappedStream)):
         return cast("T", cast("_Wrapped", value).value)
     return value
 

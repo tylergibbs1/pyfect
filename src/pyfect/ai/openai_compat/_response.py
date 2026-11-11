@@ -66,8 +66,8 @@ def usage(raw: W.Usage | None) -> dict[str, Any]:
     details: dict[str, Any] = {**raw}
     cached = P.obj(details.get("prompt_tokens_details")).get("cached_tokens")
     reasoning = P.obj(details.get("completion_tokens_details")).get("reasoning_tokens")
-    cached = cached if isinstance(cached, int | float) else 0
-    reasoning = reasoning if isinstance(reasoning, int | float) else 0
+    cached = cached if isinstance(cached, (int, float)) else 0
+    reasoning = reasoning if isinstance(reasoning, (int, float)) else 0
     prompt, completion = raw["prompt_tokens"], raw["completion_tokens"]
     return {
         "inputTokens": {"uncached": prompt - cached, "total": prompt, "cacheRead": cached},

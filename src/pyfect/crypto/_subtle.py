@@ -261,20 +261,20 @@ def _algorithm_of(params: Params, key: Any) -> KeyAlgorithm:
     name = params.name
     if name in _EC:
         curve = _require_curve(params)
-        if not isinstance(key, ec.EllipticCurvePrivateKey | ec.EllipticCurvePublicKey):
+        if not isinstance(key, (ec.EllipticCurvePrivateKey, ec.EllipticCurvePublicKey)):
             raise _data_error(f"Expected an EC key for {name}")
         if _curve_name(key) != curve:
             raise _data_error(f"Expected a {curve} key")
         return KeyAlgorithm(name=name, named_curve=curve)
     if name == "Ed25519":
-        if not isinstance(key, ed25519.Ed25519PrivateKey | ed25519.Ed25519PublicKey):
+        if not isinstance(key, (ed25519.Ed25519PrivateKey, ed25519.Ed25519PublicKey)):
             raise _data_error("Expected an Ed25519 key")
         return KeyAlgorithm(name=name)
     if name == "X25519":
-        if not isinstance(key, x25519.X25519PrivateKey | x25519.X25519PublicKey):
+        if not isinstance(key, (x25519.X25519PrivateKey, x25519.X25519PublicKey)):
             raise _data_error("Expected an X25519 key")
         return KeyAlgorithm(name=name)
-    if not isinstance(key, rsa.RSAPrivateKey | rsa.RSAPublicKey):
+    if not isinstance(key, (rsa.RSAPrivateKey, rsa.RSAPublicKey)):
         raise _data_error(f"Expected an RSA key for {name}")
     public = key.public_key() if isinstance(key, rsa.RSAPrivateKey) else key
     return _rsa_algorithm(params, public)

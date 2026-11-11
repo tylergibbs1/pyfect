@@ -172,7 +172,7 @@ def _ensure_table_pg(
 
 
 def _is_constraint_conflict(error: SqlError) -> bool:
-    return isinstance(error.reason, ConstraintError | UniqueViolation)
+    return isinstance(error.reason, (ConstraintError, UniqueViolation))
 
 
 def _load_migration(resolved: ResolvedMigration) -> Effect[Migration, MigrationError]:

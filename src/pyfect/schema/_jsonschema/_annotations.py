@@ -67,7 +67,7 @@ _EXCLUDED = frozenset(
 
 def to_json(value: object) -> object:
     """A JSON value as JSON Schema holds it: tuples as lists, mappings as dicts."""
-    if isinstance(value, list | tuple):
+    if isinstance(value, (list, tuple)):
         return [to_json(item) for item in cast("Sequence[object]", value)]
     if isinstance(value, Mapping):
         return {k: to_json(v) for k, v in cast("Mapping[str, object]", value).items()}
@@ -75,7 +75,7 @@ def to_json(value: object) -> object:
 
 
 def _is_sequence(value: object) -> TypeIs[Sequence[object]]:
-    return isinstance(value, list | tuple)
+    return isinstance(value, (list, tuple))
 
 
 def collect(annotations: ast.Annotations | None, options: Options) -> JsonSchema:

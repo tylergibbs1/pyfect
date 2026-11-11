@@ -71,7 +71,7 @@ def timestamp(created_at: float) -> str:
 
 def _token_detail(details: object, key: str) -> int | float | None:
     value = P.obj(details).get(key)
-    return value if isinstance(value, int | float) and not isinstance(value, bool) else None
+    return value if isinstance(value, (int, float)) and not isinstance(value, bool) else None
 
 
 def usage(raw: W.ResponseUsage | None) -> dict[str, Any]:

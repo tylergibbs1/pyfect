@@ -118,7 +118,7 @@ type Returning = str | Fragment | None
 
 
 def _returning(sql: LiteralString | Identifier | Fragment) -> str | Fragment:
-    return sql if isinstance(sql, str | Fragment) else Fragment((sql,))
+    return sql if isinstance(sql, (str, Fragment)) else Fragment((sql,))
 
 
 @dataclass(frozen=True, slots=True)
@@ -438,7 +438,7 @@ def update_values(value: Sequence[Mapping[str, object]], alias: str) -> RecordUp
 
 
 def _values(value: Sequence[object]) -> tuple[object, ...]:
-    if isinstance(value, str | bytes):
+    if isinstance(value, (str, bytes)):
         raise TypeError("expected a sequence of values, got a string")
     return tuple(value)
 

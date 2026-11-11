@@ -138,7 +138,7 @@ class _Lowering:
         properties: list[R.PropertySignature] = []
         for p in node.properties:
             name = p.name
-            if not isinstance(name, str | int | float) or isinstance(name, bool):
+            if not isinstance(name, (str, int, float)) or isinstance(name, bool):
                 raise TypeError(f"Cannot represent the property name {name!r}")
             optional = p.optional_when_encoded()
             key_annotations = _annotations(p.type.key_annotations)

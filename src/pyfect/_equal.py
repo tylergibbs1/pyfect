@@ -69,7 +69,7 @@ def _container_key(value: object, path: set[int]) -> Hashable:
         raise TypeError("cyclic value")
     path.add(marker)
     try:
-        if isinstance(value, list | tuple):
+        if isinstance(value, (list, tuple)):
             items = cast("Sequence[object]", value)
             return (tuple, tuple(_key(item, path) for item in items))
         if isinstance(value, Mapping):
@@ -131,7 +131,7 @@ def _equal_structure(a: object, b: object) -> bool:
     # (keying it whole would key each level again when a part is unhashable).
     if isinstance(a, bool) or isinstance(b, bool):
         return type(a) is type(b) and a == b
-    if isinstance(a, list | tuple) and isinstance(b, list | tuple):
+    if isinstance(a, (list, tuple)) and isinstance(b, (list, tuple)):
         left, right = cast("Sequence[object]", a), cast("Sequence[object]", b)
         return len(left) == len(right) and all(map(equals, left, right))
     if isinstance(a, Mapping) and isinstance(b, Mapping):

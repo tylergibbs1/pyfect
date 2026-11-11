@@ -122,7 +122,7 @@ def _cancel(value: object) -> None:
 
 def raw_bytes(value: object) -> bytes:
     """The bytes of a raw body that is ``bytes`` or ``str``."""
-    if isinstance(value, bytes | bytearray):
+    if isinstance(value, (bytes, bytearray)):
         return bytes(value)
     if isinstance(value, str):
         return text_encode(value)

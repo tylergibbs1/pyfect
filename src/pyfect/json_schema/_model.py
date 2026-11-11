@@ -62,7 +62,7 @@ def as_object(value: object) -> Mapping[str, object]:
 
 
 def is_array(value: object) -> bool:
-    return isinstance(value, list | tuple)
+    return isinstance(value, (list, tuple))
 
 
 def as_array(value: object) -> Sequence[object]:
@@ -70,7 +70,7 @@ def as_array(value: object) -> Sequence[object]:
 
 
 def is_number(value: object) -> TypeIs[int | float]:
-    return isinstance(value, int | float) and not isinstance(value, bool)
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
 def is_meta_schema_uri(value: object, uri: str) -> bool:

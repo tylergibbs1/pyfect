@@ -35,6 +35,9 @@ from pyfect.scheduler import Scheduler
 
 type Strategy = Literal["suspend", "dropping", "sliding"]
 
+_TRUE: Effect[bool] = _FromExit(Success(True))
+_FALSE: Effect[bool] = _FromExit(Success(False))
+
 
 class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
     __slots__ = ("_capacity", "_items", "_scheduler", "_state", "_strategy")
@@ -90,21 +93,30 @@ class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
 
         def register(resume: Callable[[Effect[bool]], None]) -> Effect[None] | None:
             if self.offer_unsafe(item):
-                resume(_Succeed(True))
-            elif isinstance(self._state, st.Open) and self._strategy == "suspend":
+                resume(_TRUE)
+            elif isinstance(self._state, st.Open):
                 return self._park(self._state.offers, st.OfferOne(item, resume))
             else:
-                resume(_Succeed(False))
+                resume(_FALSE)
             return None
 
-        return _Callback(register)
+        def attempt() -> Effect[bool]:
+            # As Effect's ``offer``: an item that fits is added in this step,
+            # and only a full suspending queue parks the offer.
+            if self.offer_unsafe(item):
+                return _TRUE
+            if isinstance(self._state, st.Open) and self._strategy == "suspend":
+                return _Callback(register)
+            return _FALSE
+
+        return _Suspend(attempt)
 
     def flush(self) -> Effect[None]:
         """Wake the takers that can go on now, not in a scheduled task."""
         return _Sync(self.flush_unsafe)
 
     def flush_unsafe(self) -> None:
-        if isinstance(self._state, st.Open | st.Closing):
+        if isinstance(self._state, (st.Open, st.Closing)):
             self._state.takers.notify_ready()
 
     def offer_unsafe(self, item: A) -> bool:

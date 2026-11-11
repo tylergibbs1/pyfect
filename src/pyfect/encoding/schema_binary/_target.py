@@ -95,7 +95,7 @@ def is_success_exit(value: object) -> bool:
 
 def is_object(value: object) -> bool:
     """Whether a decoded value has an identity of its own to hand over."""
-    return not (value is None or isinstance(value, str | bool | int | float | bytes))
+    return not (value is None or isinstance(value, (str, bool, int, float, bytes)))
 
 
 def reports_excess(_: object, options: ParseOptions) -> bool:

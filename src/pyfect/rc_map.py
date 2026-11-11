@@ -217,15 +217,19 @@ class RcMap[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never]:
         """Restart ``key``'s idle time to live."""
 
         def body(fiber: Fiber[Any, Any]) -> Effect[None]:
-            entry = None if self._entries is None else self._entries.get(key)
-            if entry is not None and not entry.idle_time_to_live.is_zero():
-                clock: ClockService = fiber._context.lookup(Clock)[1]
-                entry.expires_at = clock.monotonic_nanos_unsafe() + nanos_or_infinite(
-                    entry.idle_time_to_live
-                )
+            self.touch_unsafe(key, fiber)
             return _VOID
 
         return _WithFiber(body)
+
+    def touch_unsafe(self, key: K, fiber: Fiber[Any, Any]) -> None:
+        """``touch`` in ``fiber``'s step, on the clock of its context."""
+        entry = None if self._entries is None else self._entries.get(key)
+        if entry is not None and not entry.idle_time_to_live.is_zero():
+            clock: ClockService = fiber._context.lookup(Clock)[1]
+            entry.expires_at = clock.monotonic_nanos_unsafe() + nanos_or_infinite(
+                entry.idle_time_to_live
+            )
 
     def __repr__(self) -> str:
         if self._entries is None:

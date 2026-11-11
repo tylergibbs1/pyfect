@@ -284,7 +284,7 @@ def _check_modulus(
     """Checked on the imported key, whose algorithm carries the real modulus."""
     algorithm: signature.Algorithm = key.algorithm
     if (
-        isinstance(algorithm, signature.RsaPss | signature.RsaPkcs1v15)
+        isinstance(algorithm, (signature.RsaPss, signature.RsaPkcs1v15))
         and algorithm.modulus_length < 2048
     ):
         return invalid_key("RSA keys must have at least 2048 bits")
@@ -567,7 +567,7 @@ _THUMBPRINT_HASHES = ("SHA-256", "SHA-384", "SHA-512")
 def _thumbprint_jwk(input: ThumbprintInput) -> Effect[Mapping[str, object], JoseError]:
     if isinstance(input, Redacted):
         return succeed(cast("Mapping[str, object]", reveal(input)))
-    if isinstance(input, PublicKey | PrivateKey | HmacKey | DirKey):
+    if isinstance(input, (PublicKey, PrivateKey, HmacKey, DirKey)):
         failure = crypto_failure("Could not export the key for a thumbprint")
         encoded = key_format.encode(key_format.jwk, input.key)
         return encoded.map_both(

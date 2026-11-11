@@ -93,7 +93,7 @@ def _to_xml(root_name: str, tree: object, options: _Options) -> str:
 def _format(value: object) -> str:
     if isinstance(value, bool):
         return "true" if value else "false"
-    return js_number(value) if isinstance(value, int | float) else str(value)
+    return js_number(value) if isinstance(value, (int, float)) else str(value)
 
 
 def _escape_text(value: str) -> str:

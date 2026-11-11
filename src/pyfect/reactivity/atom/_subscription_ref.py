@@ -61,7 +61,7 @@ def make_sub_ref(
 
     def read_ref(get: AtomContext) -> Any:
         ref = get(ref_atom)
-        if isinstance(ref, SubscriptionRef | Success):
+        if isinstance(ref, (SubscriptionRef, Success)):
             return read(get, cast("Any", ref))
         return ref
 

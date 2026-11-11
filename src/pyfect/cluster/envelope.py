@@ -77,7 +77,7 @@ type Partial = PartialRequest | AckChunk | Interrupt
 
 
 def is_envelope(u: object) -> TypeIs[Envelope[Any]]:
-    return isinstance(u, Request | AckChunk | Interrupt)
+    return isinstance(u, (Request, AckChunk, Interrupt))
 
 
 def make_request[P](
