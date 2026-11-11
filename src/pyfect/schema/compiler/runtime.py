@@ -123,7 +123,7 @@ def array_maker(ast: Arrays, element: Make) -> Make:
     def make(input: object, options: ParseOptions) -> object:
         if input is MISSING:
             return MISSING
-        if not isinstance(input, list | tuple):
+        if not isinstance(input, (list, tuple)):
             return INVALID
         out: list[object] = []
         for item in cast("list[object]", input):
@@ -210,7 +210,7 @@ def _leaf_test(ast: AST) -> Callable[[object], bool] | None:  # noqa: PLR0911 - 
         case String():
             return lambda v: isinstance(v, str)
         case Number(whole=False):
-            return lambda v: isinstance(v, int | float) and not isinstance(v, bool)
+            return lambda v: isinstance(v, (int, float)) and not isinstance(v, bool)
         case Boolean():
             return lambda v: isinstance(v, bool)
         case BigInt():

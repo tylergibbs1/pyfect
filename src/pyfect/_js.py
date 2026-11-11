@@ -234,7 +234,7 @@ def same_value(a: object, b: object) -> bool:
     and ``1`` is not ``1.0`` or ``True``."""
     if a is b:
         return True
-    if type(a) is not type(b) or not isinstance(a, str | int | float | bytes):
+    if type(a) is not type(b) or not isinstance(a, (str, int, float, bytes)):
         return False
     if isinstance(a, float) and isinstance(b, float):
         if math.isnan(a):

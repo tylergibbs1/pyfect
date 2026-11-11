@@ -69,7 +69,7 @@ NON_FINITE = ast.Union((ast.Literal("Infinity"), ast.Literal("-Infinity"), ast.L
 def _number_of(value: object) -> float:
     # A JSON number is kept as it is (an ``int`` stays one); only the
     # non-finite spellings are read.
-    return value if isinstance(value, int | float) else to_number(value)
+    return value if isinstance(value, (int, float)) else to_number(value)
 
 
 def _json_number(value: float) -> float | str:

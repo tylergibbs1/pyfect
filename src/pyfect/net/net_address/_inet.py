@@ -295,7 +295,7 @@ def to_canonical(
     """An IPv4-mapped IPv6 address as the IPv4 address it holds (its port
     kept, its scope dropped); any other address unchanged (the same
     object)."""
-    if isinstance(address, InetAddressV4 | InetAddressV6):
+    if isinstance(address, (InetAddressV4, InetAddressV6)):
         ip = canonical_ip(address.address)
         return address if ip is address.address else inet_address_unsafe(ip, address.port)
     return canonical_ip(address)
@@ -358,7 +358,7 @@ def to_url(address: IpAddress | InetAddress, scheme: str = "http") -> Result[Url
         return address_error(address, "scoped IPv6 addresses are not supported by WHATWG URLs")
     authority = (
         format_inet(address)
-        if isinstance(address, InetAddressV4 | InetAddressV6)
+        if isinstance(address, (InetAddressV4, InetAddressV6))
         else format_url_host(address)
     )
     try:

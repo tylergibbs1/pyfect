@@ -388,7 +388,7 @@ def make_test[G](group: GroupClass[G, Any, Any], /, **handlers: TestHandler) -> 
     cls = cast("type[GraphQLGroup[Any, Any]]", group)
     declared = {name: _raw_attribute(cls, name) for name in handlers}
     unknown = [
-        name for name, op in declared.items() if not isinstance(op, Operation | Subscription)
+        name for name, op in declared.items() if not isinstance(op, (Operation, Subscription))
     ]
     if unknown:
         raise ValueError(f"make_test: {cls.__qualname__} has no operations {unknown!r}")

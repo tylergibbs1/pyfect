@@ -38,7 +38,7 @@ def _length(options: ParameterOptions, value: object, maximum: int) -> int | Non
         return maximum
     if isinstance(value, memoryview):
         return cast("memoryview[int]", value).nbytes or 1
-    if isinstance(value, bytes | bytearray):
+    if isinstance(value, (bytes, bytearray)):
         return len(value) or 1
     size = _utf16_units(value if isinstance(value, str) else str(value))
     return size or 1
@@ -126,7 +126,7 @@ def _value(name: DataTypeName, value: object) -> object:  # noqa: PLR0911
         return bytes(value)
     if name in _BINARY and isinstance(value, memoryview):
         return cast("memoryview[int]", value).tobytes()
-    if name in _DECIMAL and isinstance(value, int | float) and not isinstance(value, bool):
+    if name in _DECIMAL and isinstance(value, (int, float)) and not isinstance(value, bool):
         return Decimal(str(value))
     if name == "UniqueIdentifier" and isinstance(value, str):
         return uuid.UUID(value)

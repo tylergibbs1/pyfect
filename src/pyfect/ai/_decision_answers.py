@@ -87,7 +87,7 @@ def _invalid(description: str) -> Err[D.Unanswered]:
 
 def _is_finite(value: object) -> TypeGuard[float]:
     """A finite JavaScript number: an int or float, not a bool."""
-    return isinstance(value, int | float) and not isinstance(value, bool) and math.isfinite(value)
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
 
 
 def _is_unit(value: object) -> TypeGuard[float]:

@@ -181,7 +181,7 @@ def _tls(value: object) -> Tls | None:
 
 
 def _connect_timeout(value: object) -> Duration:
-    if isinstance(value, bool) or not isinstance(value, int | float) or value < 0:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0:
         raise ValueError(f"connectTimeout in the MySQL URL must be milliseconds, got {value!r}")
     return millis(value)
 

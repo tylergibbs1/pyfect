@@ -37,7 +37,7 @@ def compress_body(
     """``body`` compressed with ``algorithm``; bodies other than bytes and
     streams, and those known to be shorter than ``min_size``, unchanged. A
     compressed stream has no known length."""
-    if not isinstance(body, _body.Bytes | _body.Stream):
+    if not isinstance(body, (_body.Bytes, _body.Stream)):
         return succeed(body)
     if body.content_length is not None and body.content_length < min_size:
         return succeed(body)

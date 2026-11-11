@@ -65,7 +65,7 @@ def kind_of(value: object) -> frozenset[str]:
 def _literal_kind(literal: LiteralValue) -> frozenset[str]:
     return (
         frozenset({"number"})
-        if isinstance(literal, int | float) and not isinstance(literal, bool)
+        if isinstance(literal, (int, float)) and not isinstance(literal, bool)
         else kind_of(literal)
     )
 
@@ -200,7 +200,7 @@ def _collect(ast: AST, memo: _Memo) -> tuple[Sentinel, ...]:  # noqa: PLR0911
     match ast:
         case Declaration(annotations=annotations):
             declared = (annotations or {}).get(SENTINELS)
-            if not isinstance(declared, tuple | list):
+            if not isinstance(declared, (tuple, list)):
                 return ()
             return tuple(cast("Sequence[Sentinel]", declared))
         case Suspend():
@@ -261,7 +261,7 @@ def _observed(
     if reads_properties(input) or callable(input):
         attributes = ObjectKeys(input)
         return {key: attributes[key] for key in keys if key in attributes}, kind_of(input)
-    if isinstance(input, list | tuple):
+    if isinstance(input, (list, tuple)):
         items = cast("Sequence[object]", input)
         n = len(items)
         return {key: items[key] for key in keys if type(key) is int and 0 <= key < n}, ARRAY

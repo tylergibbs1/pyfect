@@ -369,9 +369,9 @@ class _Buffer:
 
 
 def _message_data(data: object) -> Chunk:
-    if isinstance(data, str | bytes):
+    if isinstance(data, (str, bytes)):
         return data
-    if isinstance(data, bytearray | memoryview):
+    if isinstance(data, (bytearray, memoryview)):
         return bytes(data)  # pyright: ignore[reportUnknownArgumentType]
     raise TypeError(f"unsupported WebSocket message data: {type(data).__name__}")
 

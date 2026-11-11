@@ -19,7 +19,7 @@ def _fields(row: object) -> dict[object, object] | None:
     """A row's cells by column, or ``None`` for a scalar row."""
     if isinstance(row, Mapping):
         return dict(row)  # pyright: ignore[reportUnknownArgumentType]
-    if isinstance(row, Iterable) and not isinstance(row, str | bytes | bytearray):
+    if isinstance(row, Iterable) and not isinstance(row, (str, bytes, bytearray)):
         return dict(enumerate(row))  # pyright: ignore[reportUnknownArgumentType]
     return None
 

@@ -58,7 +58,7 @@ def primitive_to_string(value: Primitive) -> str:
         return value
     if isinstance(value, bool):
         return "true" if value else "false"
-    if isinstance(value, int | float):
+    if isinstance(value, (int, float)):
         return js_number(value)
     if value is None:
         return ""
@@ -133,7 +133,7 @@ def stream(strings: Sequence[str] | TemplateLike, /, *args: object) -> Stream[st
         buffer += texts[index]
         if isinstance(value, Some):
             buffer += primitive_to_string(cast("Some[Primitive]", value).value)
-        elif isinstance(value, Effect | Stream):
+        elif isinstance(value, (Effect, Stream)):
             if buffer:
                 chunks.append(buffer)
                 buffer = ""

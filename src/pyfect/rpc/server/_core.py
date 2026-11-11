@@ -217,7 +217,7 @@ class RpcServer:
                 client = _Client(client_id, ServerClient(client_id))
                 self._clients[client_id] = client
             elif client.ended and not (
-                isinstance(message, Ack | Interrupt) and message.request_id in client.fibers
+                isinstance(message, (Ack, Interrupt)) and message.request_id in client.fibers
             ):
                 return interrupt()
             return self._dispatch(request_fiber, client, message, on_request)

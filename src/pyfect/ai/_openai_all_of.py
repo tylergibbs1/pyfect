@@ -84,13 +84,13 @@ class _Merge:
 def _strictly_equal(a: object, b: object) -> bool:
     """JavaScript's ``===`` on JSON values: two lists or objects are equal
     only when they are the same one."""
-    if isinstance(a, list | dict) or isinstance(b, list | dict):
+    if isinstance(a, (list, dict)) or isinstance(b, (list, dict)):
         return a is b
     return same_value(a, b)
 
 
 def _is_number(value: object) -> bool:
-    return isinstance(value, int | float) and not isinstance(value, bool)
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
 def _merge_count(schema: JsonSchema, key: str, value: object, *, lower: bool) -> None:

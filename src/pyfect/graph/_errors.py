@@ -33,7 +33,7 @@ def missing_node(node: int) -> GraphError:
 
 def is_safe_index(value: object) -> bool:
     """``Number.isSafeInteger(value) && value >= 0``."""
-    if isinstance(value, bool) or not isinstance(value, int | float):
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
         return False
     return math.isfinite(value) and float(value).is_integer() and 0 <= value <= MAX_SAFE_INDEX
 

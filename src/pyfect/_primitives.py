@@ -80,8 +80,14 @@ def run_known(eff: Effect[Any, Any, Any]) -> Step:
     this, so the claimed result reaches its continuation in the same step:
     returned as an effect, it would run in a later step, and a yield in
     between could let an interrupt drop it."""
-    ex = known_exit(eff)
-    return eff if ex is None else ex
+    # ``known_exit``, inlined: this runs for every suspended step.
+    if isinstance(eff, _Succeed):
+        return Success(eff.value)
+    if isinstance(eff, _FromExit):
+        return eff.outcome
+    if isinstance(eff, _FailCause):
+        return Failure(eff.cause)
+    return eff
 
 
 @final
@@ -122,7 +128,7 @@ class _Map(Effect[Any, Any, Any]):
         self.f = f
 
     def _step(self, fiber: Fiber[Any, Any]) -> Step:
-        fiber._push(self)
+        fiber._stack.append(self)
         return self.inner
 
     def _on_success(self, value: Any, fiber: Fiber[Any, Any]) -> Step:
@@ -140,11 +146,30 @@ class _FlatMap(Effect[Any, Any, Any]):
         self.f = f
 
     def _step(self, fiber: Fiber[Any, Any]) -> Step:
-        fiber._push(self)
+        fiber._stack.append(self)
         return self.inner
 
     def _on_success(self, value: Any, fiber: Fiber[Any, Any]) -> Step:
         return self.f(value)
+
+
+@final
+class _Forever(Effect[Never, Any, Any]):
+    """Run ``body`` again each time it succeeds (Effect's ``whileLoop``
+    with a ``while`` that is always true): one frame for the whole loop."""
+
+    __slots__ = ("body",)
+
+    def __init__(self, body: Effect[Any, Any, Any]) -> None:
+        self.body = body
+
+    def _step(self, fiber: Fiber[Any, Any]) -> Step:
+        fiber._stack.append(self)
+        return self.body
+
+    def _on_success(self, value: Any, fiber: Fiber[Any, Any]) -> Step:
+        fiber._stack.append(self)
+        return self.body
 
 
 @final
@@ -167,7 +192,7 @@ class _MatchCause(Effect[Any, Any, Any]):
         self.on_success = on_success
 
     def _step(self, fiber: Fiber[Any, Any]) -> Step:
-        fiber._push(self)
+        fiber._stack.append(self)
         return self.inner
 
     def _on_success(self, value: Any, fiber: Fiber[Any, Any]) -> Step:
@@ -247,6 +272,37 @@ class _RestoreInterruptible(Frame):
     def _on_failure(self, cause: Cause[Any], fiber: Fiber[Any, Any]) -> Step:
         fiber._interruptible = self.flag
         return Failure(cause)
+
+
+@final
+class _OnExit(Effect[Any, Any, Any]):
+    """Run ``inner``, then ``finish(exit)`` uninterruptibly (Effect's
+    ``OnExit`` primitive). ``inner`` keeps the caller's interruptibility; an
+    interrupt that lands as it ends reaches ``finish`` in the exit."""
+
+    __slots__ = ("finish", "inner")
+
+    def __init__(
+        self, inner: Effect[Any, Any, Any], finish: Callable[[Exit[Any, Any]], Step]
+    ) -> None:
+        self.inner = inner
+        self.finish = finish
+
+    def _step(self, fiber: Fiber[Any, Any]) -> Step:
+        fiber._stack.append(self)
+        return self.inner
+
+    def _on_success(self, value: Any, fiber: Fiber[Any, Any]) -> Step:
+        return self._finished(Success(value), fiber)
+
+    def _on_failure(self, cause: Cause[Any], fiber: Fiber[Any, Any]) -> Step:
+        return self._finished(Failure(cause), fiber)
+
+    def _finished(self, ex: Exit[Any, Any], fiber: Fiber[Any, Any]) -> Step:
+        if fiber._interruptible:
+            fiber._stack.append(_RestoreInterruptible(True))
+            fiber._interruptible = False
+        return self.finish(ex)
 
 
 @final
@@ -368,7 +424,7 @@ class _GenFrame(Frame):
             nxt = self.gen.send(value)
         except StopIteration as stop:
             return Success(stop.value)
-        fiber._push(self)
+        fiber._stack.append(self)
         return nxt
 
     def _on_failure(self, cause: Cause[Any], fiber: Fiber[Any, Any]) -> Step:

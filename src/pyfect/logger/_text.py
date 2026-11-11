@@ -135,9 +135,9 @@ def format_unknown(value: object) -> str:
     def compound(v: object) -> str:
         kind = type(v)
         name = kind.__name__
-        if isinstance(v, list | tuple):
+        if isinstance(v, (list, tuple)):
             text = items(cast("Iterable[object]", v))
-        elif isinstance(v, datetime | date):
+        elif isinstance(v, (datetime, date)):
             text = v.isoformat()
         elif isinstance(v, BaseException):
             text = _exception_text(v)
@@ -178,7 +178,7 @@ def structured_message(value: object) -> object:
     by name, sequences item by item, anything else as it is."""
     if _is_function(value):
         return str(value)
-    if isinstance(value, list | tuple):
+    if isinstance(value, (list, tuple)):
         items = cast("Iterable[object]", value)
         return with_fresh_stack(lambda: [structured_message(v) for v in items])
     return value
@@ -221,12 +221,12 @@ def to_json(value: object) -> Any:
         if isinstance(v, Mapping):
             pairs = list(cast("Mapping[object, object]", v).items())
             return container(identity, lambda: mapping(pairs))
-        if isinstance(v, list | tuple):
+        if isinstance(v, (list, tuple)):
             values = list(cast("Iterable[object]", v))
             return container(identity, lambda: sequence(values))
-        if isinstance(v, set | frozenset):
+        if isinstance(v, (set, frozenset)):
             return {}  # a JavaScript ``Set`` has no enumerable keys
-        if isinstance(v, bytes | bytearray):
+        if isinstance(v, (bytes, bytearray)):
             return {str(index): byte for index, byte in enumerate(v)}  # a ``Uint8Array``
         if _is_function(v):
             return _DROP  # ``JSON.stringify`` leaves a function out
@@ -236,7 +236,7 @@ def to_json(value: object) -> Any:
         return container(identity, lambda: mapping(fields.items()))
 
     def recur(v: object) -> object:
-        if v is None or isinstance(v, str | bool | int):
+        if v is None or isinstance(v, (str, bool, int)):
             return v
         if isinstance(v, float):
             return v if math.isfinite(v) else None

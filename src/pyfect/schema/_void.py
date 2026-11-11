@@ -46,7 +46,7 @@ value; JSON writes it as ``null``."""
 
 
 def _is_object(value: object) -> TypeIs[object]:
-    return not isinstance(value, str | int | float | NoneType)
+    return not isinstance(value, (str, int, float, NoneType))
 
 
 def _object_strategy(_: tuple[object, ...]) -> object:

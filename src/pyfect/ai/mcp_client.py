@@ -334,7 +334,7 @@ def _optional_seconds(timeout: DurationInput | None) -> Duration | None:
 
 def _version_rejected(error: McpClientError, version: str) -> bool:
     reason = error.reason
-    if not isinstance(reason, ProtocolError | HttpError):
+    if not isinstance(reason, (ProtocolError, HttpError)):
         return False
     code = cast("Any", reason).code
     data = cast("Any", reason).data

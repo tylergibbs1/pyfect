@@ -196,7 +196,7 @@ class _Parser:
                 pass
 
     def _on_split(self, index: int, chunk: bytes) -> None:
-        if isinstance(self._phase, _Done | _Stopped):
+        if isinstance(self._phase, (_Done, _Stopped)):
             return
         if index == 0:
             # data before the first boundary
@@ -279,7 +279,7 @@ class _Parser:
                 pass
 
     def write(self, chunk: bytes) -> None:
-        if isinstance(self._phase, _Done | _Stopped):
+        if isinstance(self._phase, (_Done, _Stopped)):
             return
         self._total_size += len(chunk)
         if self._total_size > self._max_total_size:
@@ -289,7 +289,7 @@ class _Parser:
 
     def end(self) -> None:
         self._split.end()
-        if not isinstance(self._phase, _Done | _Stopped):
+        if not isinstance(self._phase, (_Done, _Stopped)):
             self._stop(EndNotReached())
         self._reset()
 

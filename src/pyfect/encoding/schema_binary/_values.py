@@ -37,11 +37,11 @@ def is_zoned(value: object) -> bool:
 
 
 def is_reason(value: object) -> bool:
-    return isinstance(value, Fail | Die | Interrupt)
+    return isinstance(value, (Fail, Die, Interrupt))
 
 
 def _is_array(value: object) -> bool:
-    return isinstance(value, list | tuple)
+    return isinstance(value, (list, tuple))
 
 
 def _is_bigint(value: object) -> bool:
@@ -66,8 +66,8 @@ _GUARDS: dict[str, Callable[[object], bool]] = {
     "duration": lambda value: isinstance(value, Duration),
     "bigDecimal": lambda value: isinstance(value, bd.BigDecimal),
     "option": lambda value: value is None or isinstance(value, Some),
-    "result": lambda value: isinstance(value, Ok | Err),
-    "exit": lambda value: isinstance(value, Success | Failure),
+    "result": lambda value: isinstance(value, (Ok, Err)),
+    "exit": lambda value: isinstance(value, (Success, Failure)),
     "cause": lambda value: isinstance(value, Cause),
     "causeReason": is_reason,
     "array": _is_array,

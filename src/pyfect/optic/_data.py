@@ -16,7 +16,7 @@ type Key = Hashable
 
 
 def _sequence(value: object) -> Sequence[Any] | None:
-    return cast("Sequence[Any]", value) if isinstance(value, list | tuple) else None
+    return cast("Sequence[Any]", value) if isinstance(value, (list, tuple)) else None
 
 
 def has(value: object, key: Key) -> bool:

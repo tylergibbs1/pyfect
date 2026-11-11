@@ -184,13 +184,13 @@ type Persisted = Mapping[str, list[PersistedFile] | list[str] | str]
 
 
 def is_part(value: object) -> bool:
-    return isinstance(value, Field | File | PersistedFile)
+    return isinstance(value, (Field, File, PersistedFile))
 
 
 def is_stream_part(value: object) -> bool:
     """A part of a parsed stream: a ``Field`` or ``File``, not a
     ``PersistedFile``."""
-    return isinstance(value, Field | File)
+    return isinstance(value, (Field, File))
 
 
 def is_field(value: object) -> bool:

@@ -62,7 +62,7 @@ type Reply[A = Any, E = Any] = WithExit[A, E] | Chunk[A]
 
 
 def is_reply(u: object) -> TypeIs[Reply]:
-    return isinstance(u, WithExit | Chunk)
+    return isinstance(u, (WithExit, Chunk))
 
 
 class WithExitEncoded(TypedDict):

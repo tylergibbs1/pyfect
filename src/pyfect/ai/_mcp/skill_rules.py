@@ -77,7 +77,7 @@ def json_equal(a: object, b: object) -> bool:
         return len(left_items) == len(right_items) and all(
             json_equal(x, y) for x, y in zip(left_items, right_items, strict=True)
         )
-    if isinstance(a, int | float) and isinstance(b, int | float):
+    if isinstance(a, (int, float)) and isinstance(b, (int, float)):
         return a == b
     return type(cast("object", a)) is type(b) and a == b
 

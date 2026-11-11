@@ -233,7 +233,7 @@ def interpreter(ast: AST, resolve: Resolve, detailed: bool = False) -> Parser:
 
 def _has_children(ast: AST) -> bool:
     return ast.encoding is not None or isinstance(
-        ast, Arrays | Objects | Union | Suspend | Declaration | Class | TemplateLiteral
+        ast, (Arrays, Objects, Union, Suspend, Declaration, Class, TemplateLiteral)
     )
 
 

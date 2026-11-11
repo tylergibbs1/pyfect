@@ -193,7 +193,7 @@ class StandardSchemaV1(Generic[T_co, E_co, RD_co, RE_co]):
             raw: object = inspect.getattr_static(schema, name, None)
             if isinstance(raw, classmethod):
                 return MethodType(cast("classmethod[Any, Any, Any]", raw).__func__, self)
-            if not inspect.isfunction(raw) and not isinstance(raw, staticmethod | type):
+            if not inspect.isfunction(raw) and not isinstance(raw, (staticmethod, type)):
                 get = getattr(type(raw), "__get__", None)
                 if get is not None:
                     # A class-level accessor reads through the adapter too.

@@ -29,10 +29,10 @@ def assignable(sub: ast.AST, sup: ast.AST) -> Answer:
     """Whether every value ``sub`` decodes to is one ``sup`` accepts (both
     decoded sides)."""
     sup = sup.to_type()
-    if isinstance(sup, ast.Any | ast.Unknown) and not sup.checks:
+    if isinstance(sup, (ast.Any, ast.Unknown)) and not sup.checks:
         return True  # before ``to_type`` walks a deeply nested ``sub``
     sub = sub.to_type()
-    if isinstance(sub, ast.Any | ast.Never):
+    if isinstance(sub, (ast.Any, ast.Never)):
         return True
     if isinstance(sub, ast.Union):
         return _all(assignable(member, sup) for member in sub.types)

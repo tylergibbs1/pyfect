@@ -73,7 +73,7 @@ class Arrays(AST):
         return "array"
 
     def _parse(self, input: object, options: ParseOptions) -> ParseResult:
-        if not isinstance(input, list | tuple):
+        if not isinstance(input, (list, tuple)):
             return invalid_type(self, input, options)
         run = _Run(self, cast("Sequence[object]", input), options)
         return run_steps(run, options.get("concurrency"))

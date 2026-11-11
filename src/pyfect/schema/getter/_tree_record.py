@@ -159,7 +159,7 @@ def collect_bracket_path_entries[A](
         def append(key: str, value: object) -> None:
             if is_leaf(value):
                 entries.append((key, value))
-            elif isinstance(value, Sequence) and not isinstance(value, str | bytes):
+            elif isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
                 items = cast("Sequence[object]", value)
                 if all(is_leaf(item) for item in items):
                     entries.extend((key, cast("A", item)) for item in items)

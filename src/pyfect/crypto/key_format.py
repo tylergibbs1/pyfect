@@ -358,7 +358,7 @@ def _decode_asymmetric(
             converted: bytes | _Problem = der
             curve: Curve | None = (
                 algorithm.named_curve
-                if isinstance(algorithm, signature_module.Ecdsa | key_agreement.Ecdh)
+                if isinstance(algorithm, (signature_module.Ecdsa, key_agreement.Ecdh))
                 else None
             )
             if format.tag == "pkcs1":

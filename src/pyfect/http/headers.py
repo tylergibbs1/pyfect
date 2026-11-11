@@ -98,7 +98,7 @@ class Headers(Mapping[str, str]):
     def redact(self, key: Pattern | Sequence[Pattern]) -> dict[str, str | Redacted[str]]:
         """The entries, with the values of the names matching ``key``
         hidden in ``Redacted``."""
-        patterns: Sequence[Pattern] = (key,) if isinstance(key, str | re.Pattern) else key
+        patterns: Sequence[Pattern] = (key,) if isinstance(key, (str, re.Pattern)) else key
         return {
             name: Redacted(value) if is_redacted_name(name, patterns) else value
             for name, value in self._entries.items()

@@ -95,7 +95,7 @@ def _is_str(u: object) -> TypeIs[str]:
 
 
 def _is_number(u: object) -> TypeIs[int | float]:
-    return isinstance(u, int | float) and not isinstance(u, bool)
+    return isinstance(u, (int, float)) and not isinstance(u, bool)
 
 
 def _is_bool(u: object) -> TypeIs[bool]:

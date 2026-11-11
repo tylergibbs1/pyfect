@@ -95,7 +95,7 @@ class _Derivation:
         rest = [self(r) for r in node.rest]
 
         def equivalent(a: object, b: object) -> bool:
-            if not isinstance(a, list | tuple) or not isinstance(b, list | tuple):
+            if not isinstance(a, (list, tuple)) or not isinstance(b, (list, tuple)):
                 return False
             a = cast("Sequence[object]", a)
             b = cast("Sequence[object]", b)

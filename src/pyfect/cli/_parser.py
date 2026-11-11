@@ -419,7 +419,7 @@ class _LevelScan:
     def scan(self, tokens: Sequence[Token]) -> _Level:
         cursor = _Cursor(tokens)
         while (token := cursor.take()) is not None:
-            if isinstance(token, LongOption | ShortOption):
+            if isinstance(token, (LongOption, ShortOption)):
                 self._flag(token, cursor)
                 continue
             if self.awaiting_first_value:

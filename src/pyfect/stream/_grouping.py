@@ -11,11 +11,23 @@ when it stops, so a group that stops early never blocks the others.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Generator, Hashable
+from collections.abc import Callable, Generator, Hashable, Sequence
+from functools import partial
 from typing import Any
 
 from pyfect import channel
-from pyfect._core import Effect, _FailCause, _FlatMap, _Gen, _MatchCause, _Succeed, _Suspend, _Sync
+from pyfect._core import (
+    Effect,
+    _FailCause,
+    _FlatMap,
+    _Gen,
+    _MatchCause,
+    _Succeed,
+    _Suspend,
+    _Sync,
+    _WithFiber,
+)
+from pyfect._fiber import Fiber
 from pyfect.cause import Cause
 from pyfect.channel._base import end_with
 from pyfect.duration import Input as DurationInput
@@ -35,6 +47,7 @@ type Groups = RcMap[Any, Queue[Any, Done], Any]
 type OfferChunk = Callable[[Chunk, Groups, dict[Any, Queue[Any, Done]]], AnyEffect]
 
 _ENDED: AnyEffect = end_with(None)
+_VOID: AnyEffect = _Succeed(None)
 
 
 def from_queue_shutdown_on_end(queue: Queue[Any, Any]) -> AnyStream_:
@@ -49,10 +62,44 @@ def from_queue_shutdown_on_end(queue: Queue[Any, Any]) -> AnyStream_:
     return Stream(built)
 
 
-def _queue_for(key: Any, groups: Groups, open_queues: dict[Any, Queue[Any, Done]]) -> AnyEffect:
-    queue = open_queues.get(key)
-    found = _Succeed(queue) if queue is not None else scoped(groups.get(key))
-    return found.tap(lambda _: groups.touch(key))
+def _offer_groups(
+    batch: Sequence[tuple[Any, list[Any]]],
+    groups: Groups,
+    open_queues: dict[Any, Queue[Any, Done]],
+    start: int = 0,
+) -> AnyEffect:
+    """Effect's per-key ``RcMap.get`` (for a new key), ``RcMap.touch`` and
+    ``Queue.offerAll``, from ``batch[start]`` on. A key whose group is open
+    and has room for its values is served within this one step; the first
+    that needs a new group or has to wait goes on as effects."""
+
+    def offer(fiber: Fiber[Any, Any]) -> AnyEffect:
+        for index in range(start, len(batch)):
+            key, values = batch[index]
+            queue = open_queues.get(key)
+            if queue is None:
+                return _Gen(partial(_offer_new_group, batch, groups, open_queues, index))
+            groups.touch_unsafe(key, fiber)
+            rest = queue.offer_all_unsafe(values)
+            if rest:
+                then = _offer_groups(batch, groups, open_queues, index + 1)
+                return queue.offer_all(rest).and_then(then)
+        return _VOID
+
+    return _WithFiber(offer)
+
+
+def _offer_new_group(
+    batch: Sequence[tuple[Any, list[Any]]],
+    groups: Groups,
+    open_queues: dict[Any, Queue[Any, Done]],
+    index: int,
+) -> Generator[AnyEffect, Any]:
+    key, values = batch[index]
+    queue = yield scoped(groups.get(key))
+    yield groups.touch(key)
+    yield queue.offer_all(values)
+    yield _offer_groups(batch, groups, open_queues, index + 1)
 
 
 def _group_by(
@@ -113,8 +160,7 @@ def group_by(
         def body() -> Generator[AnyEffect, Any]:
             for item in chunk:
                 key, value = yield f(item)
-                queue = yield _queue_for(key, groups, open_queues)
-                yield queue.offer(value)
+                yield _offer_groups(((key, [value]),), groups, open_queues)
 
         return _Gen(body)
 
@@ -133,13 +179,7 @@ def group_by_key(
         batch: dict[Any, list[Any]] = {}
         for item in chunk:
             batch.setdefault(f(item), []).append(item)
-
-        def body() -> Generator[AnyEffect, Any]:
-            for key, values in batch.items():
-                queue = yield _queue_for(key, groups, open_queues)
-                yield queue.offer_all(values)
-
-        return _Gen(body)
+        return _offer_groups(list(batch.items()), groups, open_queues)
 
     return _group_by(self, offer_chunk, buffer_size, idle_time_to_live)
 

@@ -144,7 +144,7 @@ def _take_unannotated(
             raise TypeError(
                 f"{cls.__name__}.{name} is in the {default!r} variant: annotate it with its type"
             )
-        if name in annotated or not isinstance(value, Field | Struct):
+        if name in annotated or not isinstance(value, (Field, Struct)):
             continue
         if isinstance(value, Struct) or default in value.schemas:
             raise TypeError(

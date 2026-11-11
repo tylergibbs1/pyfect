@@ -64,7 +64,7 @@ class Compact:
     def index_of(self, node: object) -> int | None:
         """The position of a node id, ``None`` when it is not a node."""
         if self.position is None:
-            if isinstance(node, bool) or not isinstance(node, int | float):
+            if isinstance(node, bool) or not isinstance(node, (int, float)):
                 return None
             whole = float(node).is_integer() and 0 <= node < len(self.node_ids)
             return int(node) if whole else None

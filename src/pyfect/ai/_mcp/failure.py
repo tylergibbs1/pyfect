@@ -41,7 +41,7 @@ def _from_feature(error: object) -> JsonRpcErrorObject:
     if isinstance(error, Mapping):
         fields = cast("Mapping[str, Any]", error)
         code, message = fields.get("code"), fields.get("message")
-        number = isinstance(code, int | float) and not isinstance(code, bool)
+        number = isinstance(code, (int, float)) and not isinstance(code, bool)
         if number and math.isfinite(cast("float", code)) and isinstance(message, str):
             wire: JsonRpcErrorObject = {"code": cast("int", code), "message": message}
             if "data" in fields:

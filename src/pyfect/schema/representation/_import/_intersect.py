@@ -257,7 +257,7 @@ class Intersector:
                 return N.NEVER
             return self._both(replace(left, checks=(*left.checks, *right.checks)), left, right)
         satisfied = (
-            isinstance(right, N.String | N.Number) and _satisfies_literal(right, left)
+            isinstance(right, (N.String, N.Number)) and _satisfies_literal(right, left)
         ) or (isinstance(right, N.Boolean) and isinstance(left.literal, bool))
         return self._both(left, left, right) if satisfied else N.NEVER
 

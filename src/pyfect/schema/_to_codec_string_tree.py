@@ -90,7 +90,7 @@ class _Derivation(CodecDerivation):
                 return enum_to_string(node)
 
     def _priority(self, encoded: ast.AST) -> int:
-        return 0 if isinstance(encoded, ast.Null | ast.Boolean | ast.Number | ast.BigInt) else 1
+        return 0 if isinstance(encoded, (ast.Null, ast.Boolean, ast.Number, ast.BigInt)) else 1
 
     def _declaration(self, node: ast.Declaration) -> ast.AST:
         annotations = node.annotations or {}

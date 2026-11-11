@@ -174,12 +174,8 @@ class Effect(
         the fiber yields after each run (so a loop of steps that never wait
         lets other fibers in between), unless ``disable_yield``."""
         if disable_yield:
-            loop: Effect[Never, E_co, R_co] = _Suspend(lambda: _FlatMap(self, lambda _: loop))
-            return loop
-        yielding: Effect[Never, E_co, R_co] = _Suspend(
-            lambda: _FlatMap(self, lambda _: _FlatMap(_YieldNow(), lambda _: yielding))
-        )
-        return yielding
+            return _Forever(self)
+        return _Forever(_FlatMap(self, _yield_now))
 
     def flatten[B, E2, R2](
         self: Effect[Effect[B, E2, R2], E_co, R_co],
@@ -295,6 +291,10 @@ def _identity[T](value: T) -> T:
     return value
 
 
+def _yield_now(_: object) -> Effect[None]:
+    return _YieldNow()
+
+
 def _pair[A, B](a: A, b: B) -> tuple[A, B]:
     return (a, b)
 
@@ -308,6 +308,7 @@ from pyfect._primitives import (  # noqa: E402
     _Callback,
     _FailCause,
     _FlatMap,
+    _Forever,
     _Fork,
     _FromExit,
     _Gen,
@@ -315,6 +316,7 @@ from pyfect._primitives import (  # noqa: E402
     _Locally,
     _Map,
     _MatchCause,
+    _OnExit,
     _RestoreContext,
     _RestoreInterruptible,
     _SetInterruptible,
@@ -339,6 +341,7 @@ __all__ = [
     "_Callback",
     "_FailCause",
     "_FlatMap",
+    "_Forever",
     "_Fork",
     "_FromExit",
     "_Gen",
@@ -346,6 +349,7 @@ __all__ = [
     "_Locally",
     "_Map",
     "_MatchCause",
+    "_OnExit",
     "_RestoreContext",
     "_RestoreInterruptible",
     "_SetInterruptible",

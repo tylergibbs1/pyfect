@@ -79,7 +79,7 @@ class Routing:
     def send_local(self, message: Outgoing | Incoming) -> Effect[None, Any]:
         state = self._state
         address = message.envelope.address
-        is_request = isinstance(message, IncomingRequest | OutgoingRequest)
+        is_request = isinstance(message, (IncomingRequest, OutgoingRequest))
 
         def loop() -> Effect[None, Any]:
             # Entities draining from a released shard still take interrupts
@@ -96,7 +96,7 @@ class Routing:
             ):
                 # Shutting down: no new requests.
                 return fail(EntityNotAssignedToRunner(address=address))
-            if isinstance(message, IncomingRequest | IncomingEnvelope):
+            if isinstance(message, (IncomingRequest, IncomingEnvelope)):
                 return found.manager.send(message)
             return state.runners.send_local(
                 message,
@@ -129,7 +129,7 @@ class Routing:
             if found.status == "closed":
                 return fail(EntityNotAssignedToRunner(address=address))
             is_local = state.is_entity_on_local_shards(address)
-            if isinstance(message, IncomingRequest | IncomingEnvelope):
+            if isinstance(message, (IncomingRequest, IncomingEnvelope)):
                 if not is_local:
                     return fail(EntityNotAssignedToRunner(address=address))
                 if isinstance(message, IncomingRequest) and found.manager.is_processing_for(
@@ -250,7 +250,7 @@ class Routing:
             return state.runners.send(target, message)
 
         def recover(error: Any) -> Effect[None, OutgoingError]:
-            if not isinstance(error, EntityNotAssignedToRunner | RunnerUnavailable):
+            if not isinstance(error, (EntityNotAssignedToRunner, RunnerUnavailable)):
                 return fail(error)
             # Abandon the message during teardown: retrying would loop
             # forever once the runner is shutting down.

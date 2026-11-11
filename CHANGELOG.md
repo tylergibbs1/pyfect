@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.5.5 (unreleased)
+
+### Changed
+
+- Faster streams and fibers, with the same results. `group_by_key` serves each key of a chunk
+  whose group is open and has room in one step (Effect's `RcMap.touch` and `Queue.offerAll`,
+  without their effects), `forever` is one loop frame (Effect's `whileLoop`), `on_exit` (and
+  `ensuring`, `on_error` and every channel's per-pull error handler) is one primitive (Effect's
+  `OnExit`), `Queue.offer` adds an item that fits in its own step as Effect's `offer` does, and
+  `isinstance` checks take tuples (`A | B` built a union on every call, once per fiber step).
+  On CPython 3.14, `group_by_key` + `flat_map` runs about 3M items/s in chunks of 256 (was
+  480k) and 210k/s in chunks of one (was 78k); with a `grouped_within` per group, 1.6M (was
+  330k) and 150k/s (was 63k). `benchmarks/streams.py` measures these.
+- A fiber pauses for its step budget where Effect does: before the step that reaches
+  `MaxOpsBeforeYield`, the resumed run counting the pause's continuation. A producer that never
+  waits now offers 1023 items between a waiting consumer's turns, as in Effect (it was 683),
+  and a full bounded queue of 1024 no longer hands over one item per fiber switch.
+
 ## 0.5.3 (2026-11-10)
 
 ### Changed

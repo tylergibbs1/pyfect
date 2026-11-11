@@ -72,7 +72,7 @@ class _Exported:
 
 def _exports(namespace: Mapping[str, object]) -> list[str]:
     names = namespace.get("__all__")
-    if isinstance(names, list | tuple):
+    if isinstance(names, (list, tuple)):
         candidates = [n for n in names if isinstance(n, str)]  # pyright: ignore[reportUnknownVariableType]
     else:
         candidates = [n for n in namespace if not n.startswith("_")]

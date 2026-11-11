@@ -567,11 +567,11 @@ def is_stream_payload(
     value: object,
 ) -> TypeIs[StreamUint8ArraySchema | StreamNdjsonSchema[Any]]:
     """A schema of a streamed payload."""
-    return isinstance(value, StreamUint8ArraySchema | StreamNdjsonSchema)
+    return isinstance(value, (StreamUint8ArraySchema, StreamNdjsonSchema))
 
 
 def is_stream_schema(value: object) -> TypeIs[StreamSchema]:
-    return isinstance(value, StreamSseSchema | StreamUint8ArraySchema | StreamNdjsonSchema)
+    return isinstance(value, (StreamSseSchema, StreamUint8ArraySchema, StreamNdjsonSchema))
 
 
 # --- upgrades ------------------------------------------------------------------------

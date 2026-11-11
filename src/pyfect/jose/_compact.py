@@ -189,7 +189,7 @@ def _has_invalid_component(duration: DurationInput) -> bool:
         case _:
             parts = cast("Mapping[str, Any]", duration)
             for unit, component in parts.items():
-                if not isinstance(component, int | float):
+                if not isinstance(component, (int, float)):
                     continue
                 if not math.isfinite(component):
                     return True

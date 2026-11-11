@@ -84,7 +84,7 @@ class Number(Refinement):
         return "number"
 
     def accepts(self, input: object) -> bool:
-        return isinstance(input, int | float) and not isinstance(input, bool)
+        return isinstance(input, (int, float)) and not isinstance(input, bool)
 
     def _parse(self, input: object, options: ParseOptions) -> Exit[object, Issue]:
         if self.whole and isinstance(input, float) and input.is_integer():

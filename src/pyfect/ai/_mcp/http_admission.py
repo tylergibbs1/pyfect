@@ -81,7 +81,7 @@ def _record(value: object) -> dict[str, Any] | None:
 
 def _is_id(value: object) -> bool:
     return isinstance(value, str) or (
-        isinstance(value, int | float) and not isinstance(value, bool)
+        isinstance(value, (int, float)) and not isinstance(value, bool)
     )
 
 

@@ -110,13 +110,13 @@ def _headers(encoded: object) -> Headers | None:
         pairs: list[object] = [
             list(item) for item in cast("Mapping[object, object]", encoded).items()
         ]
-    elif isinstance(encoded, list | tuple):
+    elif isinstance(encoded, (list, tuple)):
         pairs = list(cast("Sequence[object]", encoded))
     else:
         return None
     out: dict[str, str] = {}
     for pair in pairs:
-        if not isinstance(pair, list | tuple):
+        if not isinstance(pair, (list, tuple)):
             return None
         match cast("Sequence[object]", pair):
             case [str() as name, str() as value]:

@@ -237,7 +237,7 @@ def _encode_exit(response: Mapping[str, Any]) -> Message:
 
 def _number(value: object) -> int | float | None:
     """JS ``Number(value)`` as JSON writes it: ``None`` for ``NaN``."""
-    if isinstance(value, bool | int):
+    if isinstance(value, (bool, int)):
         return int(value)
     if isinstance(value, float):
         return None if math.isnan(value) else value

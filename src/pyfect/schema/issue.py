@@ -141,17 +141,19 @@ type Issue = Leaf | Filter | Pointer | Composite | Encoding | AnyOf
 def is_issue(value: object) -> TypeIs[Issue]:
     return isinstance(
         value,
-        InvalidType
-        | InvalidValue
-        | MissingKey
-        | UnexpectedKey
-        | Forbidden
-        | OneOf
-        | Filter
-        | Pointer
-        | Composite
-        | Encoding
-        | AnyOf,
+        (
+            InvalidType,
+            InvalidValue,
+            MissingKey,
+            UnexpectedKey,
+            Forbidden,
+            OneOf,
+            Filter,
+            Pointer,
+            Composite,
+            Encoding,
+            AnyOf,
+        ),
     )
 
 

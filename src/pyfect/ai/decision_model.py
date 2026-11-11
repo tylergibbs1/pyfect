@@ -206,7 +206,7 @@ def _extract_images(state: JsonValue, random: RandomService) -> _Extracted:
                 reference = references[image.media_type, found] = _random_uuid(random)
                 images.append(ProviderImage(reference, path, image))
             return reference
-        if isinstance(value, list | tuple):
+        if isinstance(value, (list, tuple)):
             return [walk(item, (*path, index)) for index, item in enumerate(value)]
         if isinstance(value, Mapping):
             return {k: walk(item, (*path, k)) for k, item in value.items()}

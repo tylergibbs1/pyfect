@@ -25,9 +25,9 @@ def frozen(value: object) -> Hashable:
     if isinstance(value, Mapping):
         items = cast("Mapping[object, object]", value).items()
         return ("mapping", frozenset((frozen(k), frozen(v)) for k, v in items))
-    if isinstance(value, list | tuple):
+    if isinstance(value, (list, tuple)):
         return ("sequence", tuple(frozen(item) for item in cast("Sequence[object]", value)))
-    if isinstance(value, set | frozenset):
+    if isinstance(value, (set, frozenset)):
         return ("set", frozenset(frozen(item) for item in cast("set[object]", value)))
     return cast("Hashable", value)
 
@@ -87,7 +87,7 @@ def find_list(data: object, path: Sequence[str]) -> FoundList | None:
     for name in path[:-1]:
         parent = _field(parent, name)
     items = _field(parent, path[-1])
-    if not isinstance(items, list | tuple):
+    if not isinstance(items, (list, tuple)):
         return None
     page_info = _field(parent, "pageInfo")
     return FoundList(

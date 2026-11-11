@@ -156,7 +156,7 @@ _ABSENT = object()
 def _field(value: object, key: Any) -> object:
     if isinstance(value, Mapping):
         return cast("Mapping[Any, Any]", value).get(key, _ABSENT)
-    if isinstance(value, list | tuple):
+    if isinstance(value, (list, tuple)):
         items = cast("list[Any] | tuple[Any, ...]", value)
         return items[key] if isinstance(key, int) and -len(items) <= key < len(items) else _ABSENT
     if dataclasses.is_dataclass(value) and isinstance(key, str):

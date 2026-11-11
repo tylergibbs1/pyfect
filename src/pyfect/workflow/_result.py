@@ -37,7 +37,7 @@ type Result[A, E] = Complete[A, E] | Suspended
 
 def is_result(value: object) -> bool:
     """Whether ``value`` is a ``Complete`` or a ``Suspended``."""
-    return isinstance(value, Complete | Suspended)
+    return isinstance(value, (Complete, Suspended))
 
 
 __all__ = ["Complete", "Result", "Suspended", "is_result"]

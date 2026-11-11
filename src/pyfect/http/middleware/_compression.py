@@ -101,7 +101,7 @@ def _sent_as_is(
     cache_control = response.headers.get("cache-control", "")
     content_type = response.headers.get("content-type", body.content_type)
     skipped = (
-        isinstance(body, _body.Empty | _body.FormData)
+        isinstance(body, (_body.Empty, _body.FormData))
         or _NO_TRANSFORM.search(cache_control) is not None
         or content_type is None
         or not compressible(content_type)

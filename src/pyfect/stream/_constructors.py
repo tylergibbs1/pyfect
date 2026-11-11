@@ -183,7 +183,7 @@ def from_iterable[A](iterable: Iterable[A], *, chunk_size: int | None = None) ->
     chunk unless ``chunk_size`` is given; anything else is iterated anew
     each run (a generator or an iterator only once) in chunks of up to
     ``chunk_size`` (``DEFAULT_CHUNK_SIZE`` by default, at least 1)."""
-    if isinstance(iterable, list | tuple) and chunk_size is None:
+    if isinstance(iterable, (list, tuple)) and chunk_size is None:
         chunk = tuple(iterable)
         return Stream(channel.succeed(chunk)) if chunk else empty
     size = DEFAULT_CHUNK_SIZE if chunk_size is None else chunk_size

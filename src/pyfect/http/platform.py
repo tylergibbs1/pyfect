@@ -177,7 +177,7 @@ def make_compression_stream(
                     return succeed(response)
                 if isinstance(raw, str):
                     raw = text_encode(raw)
-                if isinstance(raw, bytes | bytearray):
+                if isinstance(raw, (bytes, bytearray)):
                     chunks = stream_succeed(bytes(raw))
                 elif hasattr(raw, "__aiter__"):
                     chunks = from_async_iterable(cast("Any", raw), lambda error: error)

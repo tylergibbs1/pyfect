@@ -89,7 +89,7 @@ def prop(
         f: Callable[..., Any], args: tuple[Any, ...], kwargs: dict[str, Any], started: float
     ) -> None:
         out = f(*args, **kwargs)
-        if isinstance(out, Effect | Generator) or not (out is None or isinstance(out, bool)):
+        if isinstance(out, (Effect, Generator)) or not (out is None or isinstance(out, bool)):
             raise TypeError(
                 "testing.prop properties must return bool or None; "
                 "use testing.effect_prop for effects"

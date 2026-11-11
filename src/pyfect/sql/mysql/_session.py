@@ -51,7 +51,7 @@ def _header(affected_rows: object, insert_id: int) -> ResultSetHeader:
 def _parameter(value: object) -> object:
     """A dict or list as its JSON text (mysql2's ``execute``); asyncmy would
     send its ``repr``."""
-    if isinstance(value, dict | list):
+    if isinstance(value, (dict, list)):
         return json_text.stringify(cast("object", value))
     return value
 

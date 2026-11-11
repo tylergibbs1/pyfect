@@ -239,7 +239,7 @@ def make_writer(
         return delimiter.join(map(cell, cells)) + newline
 
     def write_record(value: object) -> str:
-        if isinstance(value, list | tuple):
+        if isinstance(value, (list, tuple)):
             return write(cast("Sequence[object]", value))
         if columns is None:
             raise TypeError("Csv: encoding object records requires columns")

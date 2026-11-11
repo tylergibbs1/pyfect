@@ -80,14 +80,14 @@ class AddressResolverService:
     ) -> Effect[tuple[SocketAddress, ...], ResolveError]:
         if isinstance(target, UnixPathAddress):
             return succeed((target,))
-        if isinstance(target, InetAddressV4 | InetAddressV6):
+        if isinstance(target, (InetAddressV4, InetAddressV6)):
             return _widen(_in_family(target, family))
         if not isinstance(target, HostPort):
             return from_result(host_port_from_input(target)).flat_map(
                 lambda endpoint: self.resolve(endpoint, family=family)
             )
         host, port = target.host, target.port
-        if isinstance(host, IPv4Address | IPv6Address) or "%" in host:
+        if isinstance(host, (IPv4Address, IPv6Address)) or "%" in host:
             return _widen(self._from_literal(host, port).flat_map(lambda a: _in_family(a, family)))
 
         def addresses(
@@ -114,7 +114,7 @@ class AddressResolverService:
     def _from_literal(
         self, host: IPv4Address | IPv6Address | str, port: int
     ) -> Effect[InetAddress, NetAddressError]:
-        if isinstance(host, IPv4Address | IPv6Address):
+        if isinstance(host, (IPv4Address, IPv6Address)):
             return from_result(inet_address(host, port))
         zone = host[host.index("%") + 1 :]
         lookup = self._scope_id

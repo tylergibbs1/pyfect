@@ -270,7 +270,7 @@ def _multipart(parts: Mapping[str, str], boundary: str) -> str:
 
 def _is_one(value: object) -> bool:
     """JavaScript's ``value === 1``."""
-    return not isinstance(value, bool) and isinstance(value, int | float) and value == 1
+    return not isinstance(value, bool) and isinstance(value, (int, float)) and value == 1
 
 
 class ClickhouseDriver:
@@ -591,7 +591,7 @@ class ClickhouseDriver:
     ) -> Effect[InsertResult, ClickhouseRequestError]:
         """``INSERT INTO <table> [(columns)] FORMAT <format>`` with
         ``values`` as its data. An empty list of rows sends nothing."""
-        if isinstance(values, Sequence) and not isinstance(values, str | bytes) and not values:
+        if isinstance(values, Sequence) and not isinstance(values, (str, bytes)) and not values:
             return succeed(InsertResult(False, ""))
         query_id = self._query_id(options.get("query_id"))
         query = f"INSERT INTO {table.strip()}{_columns(columns)} FORMAT {format}"

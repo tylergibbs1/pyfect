@@ -35,7 +35,7 @@ def same_literal(literal: LiteralValue, input: object) -> bool:
             return isinstance(input, bool) and input == literal
         case int() | float():
             return (
-                isinstance(input, int | float) and not isinstance(input, bool) and input == literal
+                isinstance(input, (int, float)) and not isinstance(input, bool) and input == literal
             )
         case str():
             return isinstance(input, str) and input == literal
@@ -102,7 +102,7 @@ class Enum(AST):
     def __post_init__(self) -> None:
         for member in self.enum:
             value: object = member.value
-            if not isinstance(value, str | int | float) or isinstance(value, bool):
+            if not isinstance(value, (str, int, float)) or isinstance(value, bool):
                 raise TypeError(
                     f"An enum value must be a string or a number, got {value!r} ({member!r})"
                 )
