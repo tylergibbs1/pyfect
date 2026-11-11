@@ -1,5 +1,6 @@
 # Changelog
 
+
 ## 0.5.6 (unreleased)
 
 ### Added
@@ -27,7 +28,7 @@
   pins every public generic class's variance; a change that makes one stricter fails the
   pyright run.
 
-## 0.5.5 (unreleased)
+## 0.5.5 (2026-11-10)
 
 ### Changed
 
