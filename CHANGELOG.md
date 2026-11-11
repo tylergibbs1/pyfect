@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.5.6 (unreleased)
+
+### Fixed
+
+- An offer to a full `Queue` that found room while it parked could report an interrupt with
+  its item already queued: a callback resumed while it registered handed its result to the
+  next step, where a step-budget pause let an interrupt drop it. Any `fx.callback` whose
+  `register` resumes at once now hands its result straight to its continuation.
+- `TestClock.adjust` no longer gives up with a spurious `BusyFiberWarning` (stalling for
+  `warning_delay`) when the fiber it woke finished while `adjust` paused for its step budget.
+- Found by a new deterministic interleaving harness for the fiber runtime (`tests/interleave`),
+  which explores the order of scheduled tasks, timers and simulated threads systematically and
+  replays any failure from its schedule.
+
 ## 0.5.5 (2026-11-10)
 
 ### Changed

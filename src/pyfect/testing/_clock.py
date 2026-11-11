@@ -287,24 +287,32 @@ class TestClock:
         """Wait for the callback given to ``arm``; after ``warning_delay`` of
         real time, warn with ``message`` and stop waiting."""
 
-        def register(resume: Callable[[Effect[None]], None]) -> Effect[None]:
+        def register(resume: Callable[[Effect[None]], None]) -> Effect[None] | None:
+            armed: list[Cancel] = []  # the wait, then the warning timer
+            finished = False
+
             def finish() -> None:
-                disarm()
-                cancel_timer()
+                nonlocal finished
+                finished = True
+                for cancel in armed:
+                    cancel()
                 resume(_Succeed(None))
 
+            armed.append(arm(finish))  # calls ``finish`` now if the work is already over
+            if finished:
+                return None
+
             def give_up() -> None:
-                disarm()
+                armed[0]()
                 # Warn from the fiber, in its context: without the GIL warning filters are
                 # per context, and this timer's is not the caller's.
                 resume(_Sync(lambda: warnings.warn(message, BusyFiberWarning, stacklevel=1)))
 
-            cancel_timer = scheduler.call_later(self._warning_delay, give_up)
-            disarm = arm(finish)
+            armed.append(scheduler.call_later(self._warning_delay, give_up))
 
             def cancel() -> None:
-                disarm()
-                cancel_timer()
+                for cancel_one in armed:
+                    cancel_one()
 
             return _Sync(cancel)
 

@@ -256,6 +256,24 @@ def _synchronized_ref_case() -> _Case:
     return _Case(lambda: fx.SynchronizedRef.make(0), op, check)
 
 
+def _callback_case() -> _Case:
+    """A callback whose ``register`` claims and resumes before returning, as
+    an offer to a full queue that frees up while it parks: the claimed result
+    must be the step's outcome, not an effect for a later step. Found by the
+    interleaving harness (tests/interleave)."""
+
+    def op(items: list[int], seen: list[Any]) -> fx.Effect[Any]:
+        def register(resume: Callable[[fx.Effect[int]], None]) -> None:
+            resume(fx.succeed(items.pop()))
+
+        return fx.callback(register).map(seen.append)
+
+    def check(items: list[int], seen: list[Any]) -> fx.Effect[str | None]:
+        return fx.sync(lambda: None if [*seen, *items] == [1] else f"saw {seen}, left {items}")
+
+    return _Case(lambda: fx.sync(lambda: [1]), op, check)
+
+
 def _semaphore_case(*, parked: bool) -> _Case:
     def setup() -> fx.Effect[fx.Semaphore]:
         made = fx.Semaphore.make(1)
@@ -392,6 +410,7 @@ _CASES: dict[str, _Case] = {
         parked=True, make=lambda: fx.PubSub[int].sliding(1)
     ),
     "pubsub.take (parked, user strategy)": _pubsub_case(parked=True, make=_custom_strategy),
+    "callback resumed while registering": _callback_case(),
     "ref.update": _ref_case(),
     "synchronized_ref.update": _synchronized_ref_case(),
     "semaphore.take (free)": _semaphore_case(parked=False),

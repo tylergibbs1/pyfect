@@ -32,7 +32,12 @@ class WakeTracker:
         self.on_idle: Callable[[], None] | None = None
 
     def when_idle(self, task: Task) -> Cancel:
-        """Run ``task`` once every counted task has finished."""
+        """Run ``task`` once every counted task has finished: now, if none
+        is left (the last may have finished between the caller's look at
+        ``pending`` and this call, which a fiber can pause between)."""
+        if self.pending == 0:
+            task()
+            return _no_op
         self.on_idle = task
 
         def cancel() -> None:
@@ -45,6 +50,10 @@ class WakeTracker:
         self.pending -= 1
         if self.pending == 0 and self.on_idle is not None:
             self.on_idle()
+
+
+def _no_op() -> None:
+    pass
 
 
 class _Current(threading.local):

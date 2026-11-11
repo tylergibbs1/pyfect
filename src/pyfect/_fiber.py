@@ -64,6 +64,7 @@ from pyfect._core import (
     _Succeed,
     _Sync,
     _WithFiber,
+    run_known,
 )
 from pyfect._interrupt_reason import closed
 from pyfect._metric_ref import FiberRuntimeMetrics
@@ -743,7 +744,10 @@ class Fiber(Generic[A_co, E_co]):
             raise
         sync_result = wait.end_registration()
         if sync_result is not None:
-            return sync_result
+            # Resumed while registering: ``register`` may have claimed state
+            # (an offer admitted as it parked), so its result is this step's
+            # outcome, never an effect for a later step a pause could drop.
+            return run_known(sync_result)
         wait.canceler = canceler
         self._waiting = wait
         if self._interrupted_and_interruptible():
