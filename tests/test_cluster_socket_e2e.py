@@ -7,12 +7,12 @@ completed activity replayed, not rerun."""
 
 from __future__ import annotations
 
-import socket
 from collections.abc import Generator
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, Literal, TypedDict
 
+import _ports
 import pytest
 
 import pyfect as fx
@@ -36,12 +36,6 @@ from pyfect.workflow.workflow_engine import WorkflowEngine
 
 HOST = "127.0.0.1"
 SHARDS = 12
-
-
-def _free_port() -> int:
-    with socket.socket() as probe:
-        probe.bind((HOST, 0))
-        return probe.getsockname()[1]
 
 
 class Where(Entity, type="E2EWhere", rpc_annotations=Context.make(Persisted, True)):
@@ -185,7 +179,7 @@ def test_two_runners_share_sqlite_storage_route_and_resume_workflows(
     tmp_path: Path, transport: Transport
 ):
     database = tmp_path / "cluster.db"
-    ports = [_free_port(), _free_port()]
+    ports = [_ports.reserved_port(HOST), _ports.reserved_port(HOST)]
 
     def body() -> Generator[fx.Effect[Any, Any, Any], Any]:
         first = yield from _start(transport, database, ports[0])

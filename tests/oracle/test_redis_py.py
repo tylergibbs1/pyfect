@@ -25,6 +25,7 @@ import warnings
 from collections.abc import Callable, Generator
 from typing import Any, Literal, Never
 
+import _ports
 import pytest
 
 pytest.importorskip("redis")
@@ -480,7 +481,7 @@ def test_restarts_the_refill_interval_after_both_redis_keys_expire(
 
 def test_fails_the_initial_connection_by_default() -> None:
     """fails the initial connection by default"""
-    port = _redis.free_port()
+    port = _ports.refused_tcp_port()
     built: fx.Effect[Any, RedisError] = fx.scoped(
         redis_py.layer(f"redis://127.0.0.1:{port}").build()
     )

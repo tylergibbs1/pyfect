@@ -12,6 +12,7 @@ import struct
 import threading
 from collections.abc import Iterator
 
+import _ports
 import pytest
 
 from pyfect import duration as fx_duration
@@ -84,11 +85,8 @@ def _serve_tcp(sock: socket.socket) -> None:
 
 @pytest.fixture(scope="module")
 def name_server() -> Iterator[na.InetAddress]:
-    udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    udp.bind(("127.0.0.1", 0))
-    port = udp.getsockname()[1]
-    tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    tcp.bind(("127.0.0.1", port))
+    tcp, udp = _ports.tcp_and_udp()
+    port = tcp.getsockname()[1]
     tcp.listen()
     for target, sock in ((_serve_udp, udp), (_serve_tcp, tcp)):
         threading.Thread(target=target, args=(sock,), daemon=True).start()

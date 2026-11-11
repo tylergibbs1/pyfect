@@ -7,6 +7,7 @@ import socket
 from collections.abc import Iterator
 from ipaddress import IPv4Address, IPv6Address
 
+import _ports
 import pytest
 
 from pyfect import testing
@@ -156,10 +157,7 @@ def test_ipv6_round_trip():
 @live
 def test_a_connected_socket_reports_refused_packets_to_on_error():
     errors: list[DatagramSocketError] = []
-    probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    probe.bind(("127.0.0.1", 0))
-    closed_port = probe.getsockname()[1]
-    probe.close()
+    closed_port = _ports.refused_udp_port()
     _, writer = yield from open_udp(
         Options(remote=Connect(HostPort("127.0.0.1", closed_port)), on_error=errors.append)
     )

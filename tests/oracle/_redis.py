@@ -18,6 +18,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+import _ports
 import pytest
 
 _SEARCH = ("/opt/homebrew/bin", "/usr/local/bin", "/usr/bin")
@@ -44,13 +45,6 @@ def _binary(name: str) -> str | None:
     return None
 
 
-def free_port() -> int:
-    """A localhost port nothing listens on."""
-    with socket.socket() as probe:
-        probe.bind(("127.0.0.1", 0))
-        return probe.getsockname()[1]
-
-
 def _ready(port: int) -> bool:
     try:
         with socket.create_connection(("127.0.0.1", port), timeout=0.2) as connection:
@@ -74,7 +68,7 @@ def _start() -> RedisServer:
     if binary is None:
         raise RuntimeError("redis-server not found")
     root = tempfile.mkdtemp(prefix="pyfect-redis-")
-    port = free_port()
+    port = _ports.reserved_port()
     process = subprocess.Popen(
         [
             binary,

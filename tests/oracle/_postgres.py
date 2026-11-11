@@ -25,6 +25,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+import _ports
 import pytest
 
 import pyfect as fx
@@ -64,12 +65,6 @@ def _binary(name: str) -> str | None:
         if candidate.exists():
             return str(candidate)
     return None
-
-
-def _free_port() -> int:
-    with socket.socket() as probe:
-        probe.bind(("127.0.0.1", 0))
-        return probe.getsockname()[1]
 
 
 class _Shared:
@@ -114,7 +109,7 @@ def _start() -> PgServer:
         capture_output=True,
         check=True,
     )
-    port = _free_port()
+    port = _ports.reserved_port()
     options = f"-p {port} -k {root} -c listen_addresses=127.0.0.1 -c fsync=off"
     subprocess.run(
         [pg_ctl, "-D", data_dir, "-l", os.path.join(root, "log"), "-o", options, "-w", "start"],
@@ -189,8 +184,8 @@ def closing_listener():
 
 
 def refused_port() -> int:
-    """A local port nothing listens on."""
-    return _free_port()
+    """A local port that refuses connections."""
+    return _ports.refused_tcp_port()
 
 
 _CANCEL_REQUEST = (16).to_bytes(4) + (80877102).to_bytes(4)
