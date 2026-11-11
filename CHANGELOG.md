@@ -2,15 +2,6 @@
 
 ## 0.5.3 (unreleased)
 
-### Added
-
-- Cryptography guide: envelope encryption (`KeyWrap` with a key from Argon2id through `Kdf`), sealing
-  to an X25519 public key with HKDF, expiring EdDSA tokens (`iat` / `exp` with
-  `required_claims`), the JWK thumbprint as `kid`, and key sets that change (`jwks.make_local`
-  per request, `JwksService(resolve=...)` refusing a revoked `kid`).
-- Testing: in-memory responses carry cookies in `.cookies`, not `set-cookie` headers, as in
-  Effect. CLI: `literals` keeps its literal type for a tuple of choices.
-
 ### Changed
 
 - `router.in_memory_client` and `router.layer_in_memory_client` make every failure of the
@@ -26,6 +17,15 @@
   service's operations have docstrings, as do `fx.run_blocking`, the other run functions and
   every other function `pyfect` exports.
 
+### Added
+
+- Cryptography guide: envelope encryption (`KeyWrap` with a key from Argon2id through `Kdf`), sealing
+  to an X25519 public key with HKDF, expiring EdDSA tokens (`iat` / `exp` with
+  `required_claims`), the JWK thumbprint as `kid`, and key sets that change (`jwks.make_local`
+  per request, `JwksService(resolve=...)` refusing a revoked `kid`).
+- Testing: in-memory responses carry cookies in `.cookies`, not `set-cookie` headers, as in
+  Effect. CLI: `literals` keeps its literal type for a tuple of choices.
+
 ### Fixed
 
 - `jwt.sign` and `jwt.encrypt` check `claims` against the schema's Type, as Effect's
@@ -35,6 +35,26 @@
 - `router.layer_in_memory_client` takes routes that need services (`Requires[...]`): they become
   the layer's requirements, as with `serve`, and a service the request provides itself comes
   first.
+- Typed errors become defects only where Effect elects them: after a failed body's finalizer
+  fails, when every racer of a race fails, and when a concurrent `for_each` adds a later
+  failure to its first. Closing a scope now fails with its finalizers' causes as they are
+  (concatenated, as Effect's `Exit.asVoidAll`: a typed failure stays a `Fail` beside a
+  defect, and equal failures are kept), and so does `scoped` / `ensuring` / `on_exit` after
+  a successful body. A race every racer lost keeps equal failures (still electing defects).
+- An interrupted `callback` whose canceler fails reports the interruption first, then the
+  canceler's cause (Effect's `combineFinalizerCause`).
+- `HttpApiClient`: an error response whose decoder dies keeps its `StatusCodeError` a typed
+  failure beside the defect.
+- The live HTTP server writes a streamed body as Effect does (`Stream.orDie`), so its failure
+  after the head is a defect, combined with the response without electing.
+- MCP: a `resources/read` failing with a typed error beside a defect and an interruption
+  answers the whole cause with the error still a failure, as the other requests do (it went
+  through a `catch_tag`, which elected the defect; Effect maps the error instead).
+
+### Deprecated
+
+- `cause.merge` (it elects defects, and Effect has no such combinator): combine causes with
+  `a + b`, Effect's `Cause.combine`. It goes in 0.6.0.
 
 ## 0.5.2 (2026-11-10)
 

@@ -705,6 +705,30 @@ def test_errors_report_unsupported_error_response_content_types() -> None:
     assert "Unsupported response content-type" in decode.description
 
 
+def _dying_decode() -> str:
+    raise RuntimeError("decoder defect")
+
+
+_DYING_ERROR = api_schema.status(400)(
+    api_schema.as_no_content(S.Literal("NoContentError"), decode=_dying_decode)
+)
+
+
+def test_a_dying_error_decoder_keeps_the_status_error_a_failure() -> None:
+    """Under Node: an error response whose decoder dies fails with
+    ``Cause.combine`` of the ``StatusCodeError`` and the defect, which never
+    elects: the status error stays a ``Fail`` beside the ``Die``."""
+    api = _api(ep.get("noContent", "/no-content", error=_DYING_ERROR))
+    exit_ = _exit(api, _responding(status=400), lambda g: g.method("noContent")())
+    assert isinstance(exit_, Failure)
+    first, second = exit_.cause.reasons
+    assert isinstance(first, cause.Fail)
+    assert isinstance(first.error, HttpClientError)
+    assert isinstance(first.error.reason, StatusCodeError)
+    assert isinstance(second, cause.Die)
+    assert str(second.defect) == "decoder defect"
+
+
 def test_errors_decode_no_content_errors_without_a_content_type_header() -> None:
     """HttpApiClient / error responses / decodes no-content errors without a content-type header"""
     assert _flip("noContent", _responding(status=400)) == "NoContentError"

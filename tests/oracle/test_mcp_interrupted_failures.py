@@ -58,10 +58,10 @@ CALLS: dict[str, dict[str, Any]] = {
 }
 
 CAUSES: dict[str, Any] = {
-    "mcp error": lambda: C.merge(C.fail(Unauthorized("no", data={"x": 1})), C.interrupt(7)),
-    "other error": lambda: C.merge(C.fail("plain"), C.interrupt(7)),
+    "mcp error": lambda: C.fail(Unauthorized("no", data={"x": 1})) + C.interrupt(7),
+    "other error": lambda: C.fail("plain") + C.interrupt(7),
     "interruption only": lambda: C.interrupt(7),
-    "invalid params": lambda: C.merge(C.fail(MS.InvalidParams("Not found")), C.interrupt()),
+    "invalid params": lambda: C.fail(MS.InvalidParams("Not found")) + C.interrupt(),
 }
 
 INTERNAL = {"code": -32603, "message": "Internal error"}
@@ -200,7 +200,7 @@ def test_hidden_list_answers_the_serialized_cause():
 
     def interrupt(effect: Any, _options: M.MiddlewareOptions) -> Any:
         def failed(cause: Cause[Any]) -> fx.Effect[Never, Any]:
-            return fx.fail_cause(C.merge(cause, C.interrupt(123)))
+            return fx.fail_cause(cause + C.interrupt(123))
 
         return effect.catch_cause(failed)
 
@@ -224,3 +224,75 @@ def test_hidden_list_answers_the_serialized_cause():
             {"_tag": "Interrupt", "fiberId": 123},
         ],
     }
+
+
+# Combining causes never elects defects (Effect's ``Cause.combine``), so a
+# cause can hold a typed failure, a defect and an interruption together.
+MIXED_CAUSES: dict[str, Any] = {
+    "fail die interrupt": lambda: (
+        C.fail(Unauthorized("no", data={"x": 1})) + C.die("boom") + C.interrupt(7)
+    ),
+    "die fail interrupt": lambda: C.die(RuntimeError("boom")) + C.fail("plain") + C.interrupt(7),
+    "invalid params die interrupt": lambda: (
+        C.fail(MS.InvalidParams("Not found")) + C.die("boom") + C.interrupt()
+    ),
+}
+MIXED_EXPECTED = {
+    "fail die interrupt": {
+        "_tag": "Cause",
+        "code": -32001,
+        "message": "no",
+        "data": [
+            {"_tag": "Fail", "error": {"code": -32001, "message": "no", "data": {"x": 1}}},
+            {"_tag": "Die", "defect": "boom"},
+            {"_tag": "Interrupt", "fiberId": 7},
+        ],
+    },
+    "die fail interrupt": {
+        "_tag": "Cause",
+        "code": -32603,
+        "message": "MCP feature handler failed",
+        "data": [
+            {"_tag": "Die", "defect": {"name": "RuntimeError", "message": "boom"}},
+            {"_tag": "Fail", "error": {"code": -32603, "message": "MCP feature handler failed"}},
+            {"_tag": "Interrupt", "fiberId": 7},
+        ],
+    },
+    "invalid params die interrupt": {
+        "_tag": "Cause",
+        "code": -32602,
+        "message": "Not found",
+        "data": [
+            {"_tag": "Fail", "error": {"code": -32602, "message": "Not found"}},
+            {"_tag": "Die", "defect": "boom"},
+            {"_tag": "Interrupt", "fiberId": None},
+        ],
+    },
+}
+
+
+@pytest.mark.parametrize("name", list(MIXED_CAUSES))
+@pytest.mark.parametrize("outside_visibility", [False, True])
+@pytest.mark.parametrize("stateless", [False, True])
+@testing.effect
+def test_a_failure_beside_a_defect_and_an_interruption_is_answered_whole(
+    name: str, outside_visibility: bool, stateless: bool
+):
+    """Under Node: middleware failing with ``Cause.combine`` of a ``Fail``, a
+    ``Die`` and an ``Interrupt``. Every request but ``tools/call`` answers
+    the whole cause with the ``Fail`` still a failure (nothing on the way
+    elects defects); ``tools/call`` answers an internal error, its
+    ``catchTags`` electing the defect (also for an ``InvalidParams``, which
+    alone would be the tool's ``isError`` result)."""
+    make = MIXED_CAUSES[name]
+    middleware = _outside_hidden(make) if outside_visibility else _failing(make)
+    protocol = P.v2026_07_28 if stateless else P.v2025_11_25
+    harness = yield from stdio_harness(protocol, layer=_registrations(middleware))
+    if not stateless:
+        yield from harness.initialize()
+    methods = [*LISTS, *CALLS] if outside_visibility else list(CALLS)
+    for method in methods:
+        params = {**CALLS.get(method, {}), **({"_meta": META} if stateless else {})}
+        response = yield from harness.send_request(method, params)
+        expected = INTERNAL if method == "tools/call" else MIXED_EXPECTED[name]
+        assert response["error"] == expected, method

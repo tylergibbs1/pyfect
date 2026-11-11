@@ -22,6 +22,7 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Generic, Never, Self, TypeVar, cast
+from warnings import deprecated
 
 from pyfect._equal import dedupe
 from pyfect.result import Err, Ok, Result
@@ -404,10 +405,13 @@ def _reason_key(reason: Reason[object]) -> object:
             return (type(reason).__name__, payload, dict(annotations) if annotations else None)
 
 
+@deprecated("cause.merge elects defects, which Effect's Cause.combine never does; use a + b")
 def merge[E](*causes: Cause[E]) -> Cause[E]:
-    """Combine causes of failures that happened together: a body and its
-    finalizers, or concurrent siblings. A defect in any of them makes
-    every typed error a defect, so the result cannot be recovered."""
+    """Combine causes, then make every typed error a defect if any of them
+    holds one. Effect has no such combinator: ``Cause.combine`` is ``a + b``,
+    which never elects; Effect elects only after a finalizer that failed,
+    a race every racer lost, and a concurrent ``for_each``'s later failures,
+    which pyfect does internally."""
     combined: Cause[E] = Cause(())
     for c in causes:
         combined = combined + c

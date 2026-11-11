@@ -20,7 +20,7 @@ from pyfect._core import (
     Effect,
     _AfterStarted,
     _call_user,
-    _FailCause,
+    _FromExit,
     _Gen,
     _Locally,
     _Succeed,
@@ -32,9 +32,8 @@ from pyfect._core import (
 from pyfect._effect_args import require_effect
 from pyfect._fiber import Fiber, Uninterruptible
 from pyfect._interrupt_reason import closed
-from pyfect.cause import merge
 from pyfect.context import Tag
-from pyfect.exit import Exit, Failure
+from pyfect.exit import Exit, as_void_all
 
 type Finalizer = Callable[[Exit[Any, Any]], Effect[object, Never, Any]]
 
@@ -164,8 +163,9 @@ type _Entries = list[tuple[object, Finalizer]]
 
 
 def _fail_with_all(exits: list[Exit[Any, Never]]) -> Effect[None]:
-    cause = merge(*(e.cause for e in exits if isinstance(e, Failure)))
-    return _FailCause(cause) if cause.reasons else _Succeed(None)
+    """Every finalizer's failure, as Effect's ``Exit.asVoidAll``: reasons
+    concatenated, not deduped nor elected."""
+    return _FromExit(as_void_all(exits))
 
 
 def _run_sequential(entries: _Entries, ex: Exit[Any, Any]) -> Effect[None]:

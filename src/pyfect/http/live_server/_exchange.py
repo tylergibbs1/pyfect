@@ -20,7 +20,7 @@ from typing import Any
 
 from pyfect._core import Effect
 from pyfect._digits import parse_digits
-from pyfect.cause import Cause, merge
+from pyfect.cause import Cause
 from pyfect.cause import die as die_cause
 from pyfect.effect import fail_cause, succeed, suspend, void
 from pyfect.http._field import is_field_value, is_token
@@ -285,7 +285,8 @@ class Exchange:
                 return self._failed(response, mismatch)
             return (self._write(b"0\r\n\r\n") if chunked else void).map(self._done)
 
-        written: Effect[None, Any] = body.run_for_each_array(write).interruptible()
+        # Effect writes the body ``Stream.orDie``: its failure is a defect.
+        written: Effect[None, Any] = body.or_die().run_for_each_array(write).interruptible()
         return written.match_cause_effect(
             on_success=end, on_failure=lambda cause: self._failed(response, cause)
         )
@@ -297,7 +298,7 @@ class Exchange:
         if self.headers_sent:
             self.close_after = True
             self.conn.close(graceful=False)
-            return fail_cause(merge(cause, die_cause(response)))
+            return fail_cause(cause + die_cause(response))
 
         def write(pair: tuple[HttpServerResponse, Cause[Any]]) -> Effect[None, Any]:
             fallback, reported = pair

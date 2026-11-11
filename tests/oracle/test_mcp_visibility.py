@@ -423,7 +423,7 @@ def test_propagates_interruption_from_middleware_outside_a_visibility_on_lists()
     def interrupt(effect: Any, options: M.MiddlewareOptions) -> Any:
         def failed(cause: Cause[Any]) -> fx.Effect[Any, Any]:
             targets.append(options.target)
-            return fx.fail_cause(C.merge(cause, C.interrupt(123)))
+            return fx.fail_cause(cause + C.interrupt(123))
 
         return effect.catch_cause(failed)
 

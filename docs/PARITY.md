@@ -93,7 +93,7 @@ Every item below was reproduced by running pyfect against Effect's source and te
 
 | # | Status | Pinned by |
 |---|---|---|
-| 1 | Fixed. `Cause.find_recoverable_error` / `elect_defects` / `cause.merge`; `first_failure` removed | `tests/test_cause_recovery.py` (defects take precedence, finalizer errors merged, sibling and race election) |
+| 1 | Fixed. `Cause.find_recoverable_error` / `elect_defects`, called only at the ports of Effect's three `causeElectDefects` sites (`_cause_election.py`); scope closes, successful bodies' finalizers, joins and HTTP causes combine without electing; `first_failure` removed | `tests/test_cause_recovery.py` (defects take precedence, finalizer errors merged, sibling and race election, the electing sites pinned to Effect's), `tests/oracle/test_cause_election.py` |
 | 2 | Fixed. Skipped handlers drop Fails and keep defects when interrupted | `test_cause_recovery.py::test_skipped_handlers_drop_failures_and_keep_defects_when_interrupted` |
 | 3 | Fixed. The loop matches `SUSPEND` explicitly; any non-Effect dies with `TypeError` | `test_user_callbacks.py::test_yielding_a_non_effect_in_gen_dies_with_type_error` |
 | 4 | Fixed via `_call_user` | `test_user_callbacks.py::test_acquire_use_release_runs_release_when_use_throws` |

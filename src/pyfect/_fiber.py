@@ -60,6 +60,7 @@ from pyfect._core import (
     _Callback,
     _FromExit,
     _RestoreInterruptible,
+    _run_finalizer,
     _Succeed,
     _Sync,
     _WithFiber,
@@ -852,11 +853,11 @@ class Fiber(Generic[A_co, E_co]):
         assert self._interrupt is not None
         if wait.canceler is None:
             return Failure(self._interrupt)
-        # Run the canceler uninterruptibly; restoring interruptibility
-        # afterwards makes the loop raise the interrupt.
+        # Run the canceler uninterruptibly, then end with the interrupt; a
+        # failing canceler is a failing finalizer (Effect's asyncFinalizer).
         self._push(_RestoreInterruptible(True))
         self._interruptible = False
-        return wait.canceler
+        return _run_finalizer(wait.canceler, Failure(self._interrupt))
 
 
 def _no_op() -> None:

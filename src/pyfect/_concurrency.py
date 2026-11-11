@@ -12,6 +12,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 from typing import Any, Literal, Never
 
+from pyfect._cause_election import late_sibling_cause, race_failure_cause
 from pyfect._core import (
     Effect,
     _Callback,
@@ -25,7 +26,7 @@ from pyfect._core import (
 )
 from pyfect._effect_args import require_effects
 from pyfect._fiber import Fiber, interrupt_all
-from pyfect.cause import Cause, Interrupt, fail, merge
+from pyfect.cause import Cause, Interrupt, fail
 from pyfect.duration import Input as DurationInput
 from pyfect.duration import from_input_unsafe
 from pyfect.errors import TimeoutException
@@ -45,14 +46,10 @@ def _parse_limit(concurrency: int | Literal["unbounded"]) -> Callable[[int], int
 
 
 def _drop_own_interrupts(causes: list[Cause[Any]], by: int) -> Cause[Any]:
-    """Combine sibling causes, dropping the interrupts we sent ourselves."""
-    return merge(
-        *(
-            Cause(
-                tuple(r for r in c.reasons if not (isinstance(r, Interrupt) and r.fiber_id == by))
-            )
-            for c in causes
-        )
+    """Combine the racers' causes, dropping the interrupts we sent ourselves."""
+    return race_failure_cause(
+        Cause(tuple(r for r in c.reasons if not (isinstance(r, Interrupt) and r.fiber_id == by)))
+        for c in causes
     )
 
 
@@ -63,7 +60,7 @@ def _with_late_failure(failure: Cause[Any] | None, late: Cause[Any]) -> Cause[An
     reasons = tuple(r for r in late.reasons if not isinstance(r, Interrupt))
     if not reasons:
         return failure
-    return Cause(reasons) if failure is None else merge(failure, Cause(reasons))
+    return Cause(reasons) if failure is None else late_sibling_cause(failure, Cause(reasons))
 
 
 def for_each[T, B, E = Never, R = Never](

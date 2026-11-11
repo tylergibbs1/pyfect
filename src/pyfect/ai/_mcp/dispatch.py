@@ -857,20 +857,22 @@ class Connection:
         self, protocol: AnyProtocolAdapter, uri: str, context: RequestContext
     ) -> Effect[Wire, McpError, RequestServices]:
 
-        def not_found(error: ResourceNotFound) -> Effect[Never, McpError]:
+        def not_found(
+            error: McpError | RequestRejected | ResourceNotFound,
+        ) -> McpError | RequestRejected:
+            if not isinstance(error, ResourceNotFound):
+                return error
             # Only 2026-07-28 names the URI in the error's data.
             data = {"uri": error.uri} if protocol.is_stateless else None
-            return fail(
-                ProtocolError(
-                    f"Resource '{error.uri}' not found",
-                    data,
-                    error_code=protocol.resource_not_found_code,
-                )
+            return ProtocolError(
+                f"Resource '{error.uri}' not found",
+                data,
+                error_code=protocol.resource_not_found_code,
             )
 
-        read = self.server.read_resource_for(uri, context).pipe(
-            catch_tag(ResourceNotFound, not_found)
-        )
+        # A ``map_error``, as Effect's ``mapError(fromFeature)``: mapping
+        # never elects a defect beside the failure.
+        read = self.server.read_resource_for(uri, context).map_error(not_found)
         return unwrap_rejected(read).map(_wire)
 
     # --- 2026-07-28 ----------------------------------------------------------------------
