@@ -20,6 +20,7 @@ from json.encoder import encode_basestring as _encode_string
 from typing import Never, cast
 
 from pyfect._js import int_text, js_number
+from pyfect._nesting import parse_nested
 from pyfect._stack import with_fresh_stack
 
 type Json = bool | int | float | str | list[Json] | dict[str, Json] | None
@@ -42,10 +43,7 @@ def parse(text: str | bytes | bytearray) -> Json:
     extensions (bytes are read as ``json.loads`` reads them). Text that is
     not JSON raises ``ValueError``, also when it nests too deeply to decode
     (where ``json.loads`` raises ``RecursionError``)."""
-    try:
-        value: Json = json.loads(text, parse_constant=_reject_constant)
-    except RecursionError as cause:
-        raise ValueError("JSON is nested too deeply") from cause
+    value: Json = parse_nested(lambda: json.loads(text, parse_constant=_reject_constant))
     return value
 
 

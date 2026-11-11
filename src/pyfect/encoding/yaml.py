@@ -25,6 +25,8 @@ from dataclasses import dataclass
 from typing import Never, cast
 
 from pyfect._js import LINE_END, SPACE, js_number, trim, trim_end, trim_start
+from pyfect._nesting import parse_nested
+from pyfect._stack import with_fresh_stack
 
 type _Record = dict[str, object]
 
@@ -343,7 +345,7 @@ class _FlowParser:
         character = self._peek()
         if character in ("[", "{"):
             self._depth += 1
-            collection = self._sequence() if character == "[" else self._mapping()
+            collection = with_fresh_stack(self._sequence if character == "[" else self._mapping)
             self._depth -= 1
             return collection
         if character in ('"', "'"):
@@ -480,9 +482,9 @@ class _Parser:
         if line.indent != indent:
             self._fail(line, f"Expected indentation of {indent} spaces")
         if _is_sequence_entry(line.text):
-            return self._sequence(indent)
+            return with_fresh_stack(lambda: self._sequence(indent))
         if _mapping_separator(line.text) != -1:
-            return self._mapping(indent)
+            return with_fresh_stack(lambda: self._mapping(indent))
         self._index += 1
         return self._node_value(line.text, parent)
 
@@ -780,9 +782,12 @@ def _make_line(raw: str, index: int) -> _Line:
 def parse(text: str) -> object:
     """One YAML document as Python values: mappings are ``dict[str, ...]``,
     sequences ``list``, scalars ``None``, ``bool``, ``int``, ``float`` or
-    ``str``. Raises ``ValueError`` for malformed or unsupported text."""
+    ``str``. Raises ``ValueError`` for malformed or unsupported text, and for
+    text nested past Python's recursion limit (Effect's throws ``RangeError``
+    past JavaScript's stack)."""
     source = re.sub(r"\r\n?", "\n", text.removeprefix("\ufeff"))
-    return _Parser([_make_line(raw, i) for i, raw in enumerate(source.split("\n"))]).parse()
+    lines = [_make_line(raw, i) for i, raw in enumerate(source.split("\n"))]
+    return parse_nested(_Parser(lines).parse)
 
 
 __all__ = ["parse"]

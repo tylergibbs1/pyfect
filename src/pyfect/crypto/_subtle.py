@@ -522,7 +522,7 @@ class HostSubtle:
                 usages=usages,
                 handle=data,
             )
-        from pyfect.crypto._lib import serialization
+        from pyfect.crypto._lib import load_der_private_key, load_der_public_key
 
         if format == "raw":
             if name in _RSA:
@@ -530,16 +530,14 @@ class HostSubtle:
             handle = _import_raw_public(params, data)
             type: KeyType = "public"
         elif format == "spki":
-            try:
-                handle = serialization.load_der_public_key(data)
-            except (ValueError, TypeError) as error:
-                raise _data_error() from error
+            handle = load_der_public_key(data)
+            if handle is None:
+                raise _data_error()
             type = "public"
         else:
-            try:
-                handle = serialization.load_der_private_key(data, None)
-            except (ValueError, TypeError) as error:
-                raise _data_error() from error
+            handle = load_der_private_key(data)
+            if handle is None:
+                raise _data_error()
             type = "private"
         _check_usages(name, type, usages)
         return CryptoKey(

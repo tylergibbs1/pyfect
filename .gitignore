@@ -21,3 +21,4 @@ wheels/
 # Throwaway localhost keys for the test suite
 !tests/**/fixtures/**/*.pem
 .effect/
+.fuzz/

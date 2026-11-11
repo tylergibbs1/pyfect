@@ -83,7 +83,9 @@ _LITERALS: dict[str, object] = {"true": True, "false": False, "null": None}
 
 
 def parse(text: str) -> dict[str, Any]:
-    """The sections and properties of ``text``."""
+    """The sections and properties of ``text``. A property in a ``[section]``
+    whose name holds a value (``a=1`` then ``[a]`` and ``b=2``) raises
+    ``TypeError``, as Effect's ``Ini.parse`` throws."""
     return _nest_sections(_parse_lines(text))
 
 
@@ -150,7 +152,7 @@ def _section(output: dict[str, Any], section: str) -> dict[str, Any]:
     ``output[section] ??= {}``): a fresh mapping for ``null`` or a new name,
     a throwaway one for ``__proto__`` or a list (JavaScript sets them as
     properties the array does not show); setting a property in a section
-    over any other value raises ``ValueError`` (JavaScript's ``TypeError``)."""
+    over any other value raises ``TypeError``, as JavaScript does."""
     existing = output.get(section)
     if section == _PROTO or isinstance(existing, list):
         return {}

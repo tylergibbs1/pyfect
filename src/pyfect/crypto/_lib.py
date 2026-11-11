@@ -15,6 +15,7 @@ try:
         utils,
         x25519,
     )
+    from cryptography.hazmat.primitives.asymmetric.types import PrivateKeyTypes, PublicKeyTypes
     from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM, ChaCha20Poly1305
     from cryptography.hazmat.primitives.kdf.argon2 import Argon2id
@@ -30,6 +31,29 @@ try:
     from nacl.exceptions import CryptoError as NaclCryptoError
 except ImportError as error:  # pragma: no cover - depends on the environment
     raise missing_extra("pyfect.crypto keys", "crypto", error) from error
+
+_UNREADABLE = (ValueError, TypeError, UnsupportedAlgorithm)
+"""What ``cryptography``'s key loaders raise for bytes they cannot read: an
+SPKI naming an algorithm it does not know is ``UnsupportedAlgorithm``."""
+
+
+def load_der_public_key(data: bytes) -> PublicKeyTypes | None:
+    """An SPKI key, ``None`` when ``data`` is not one ``cryptography`` reads.
+    Keys are loaded only through here (``tests/test_crypto_key_loading_guard.py``)."""
+    try:
+        return serialization.load_der_public_key(data)
+    except _UNREADABLE:
+        return None
+
+
+def load_der_private_key(data: bytes) -> PrivateKeyTypes | None:
+    """An unencrypted PKCS#8 (or traditional) key, ``None`` when ``data`` is
+    not one ``cryptography`` reads."""
+    try:
+        return serialization.load_der_private_key(data, None)
+    except _UNREADABLE:
+        return None
+
 
 __all__ = [
     "AESGCM",
@@ -50,6 +74,8 @@ __all__ = [
     "ec",
     "ed25519",
     "hashes",
+    "load_der_private_key",
+    "load_der_public_key",
     "modes",
     "nacl_bindings",
     "padding",

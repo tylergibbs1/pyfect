@@ -1,0 +1,16 @@
+POST /m HTTP/1.1
+Host: x
+Content-Type: multipart/form-data; boundary=XyZ
+Content-Length: 173
+Origin: http://x
+
+--XyZ
+Content-Disposition: form-data; name="a"
+
+value
+--XyZ
+Content-Disposition: form-data; name="f"; filename="a.txt"
+Content-Type: text/plain
+
+file body
+--XyZ--

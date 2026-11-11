@@ -125,6 +125,10 @@ dev = [
     "ruff>=0.17.2",
 ]
 docs = ["griffe-typingdoc==0.2.9"]
+# Atheris, the coverage-guided fuzzer tests/fuzz runs (`python -m fuzz`, from tests/); it has
+# wheels for Linux only. On macOS build it with Homebrew's clang:
+# CLANG_BIN=$(brew --prefix llvm)/bin/clang uv pip install atheris
+fuzz = ["atheris==3.1.0; sys_platform == 'linux'"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

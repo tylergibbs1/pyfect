@@ -84,6 +84,17 @@
   `DurableDeferred.succeed` / `fail` / `done` / `into`, `DurableQueue.worker` and
   `Workflow.to_layer` bind their value types through `self`, so a wrongly typed value or
   handler is still an error.
+- Fuzzing of every parser of untrusted input (`tests/fuzz`): 32 targets covering the HTTP/1
+  server (request heads, chunked and compressed bodies, multipart, URLs, cookies, WebSocket
+  frames and extensions, and the live server end to end), the JSON family, CSV, NDJSON, SSE,
+  XML, TOML, YAML, INI, tar, zip, schema decoding of JSON and binary input, JOSE and key
+  formats, durations, date-times, cron, dotenv and Config. Each target allows only its
+  documented errors and runs under a time limit. A checked-in seed corpus replays in every
+  pytest run, along with a short Hypothesis fuzz of each target and a comparison with Effect's
+  answers (`effect_answers.json`, from Effect under Node) on every parser the two share. The
+  `fuzz` workflow runs Atheris on each target for 30 seconds on every push, and for 20 minutes
+  weekly or on demand, uploading any crash. `python -m fuzz` (from `tests/`) runs targets
+  locally and `--differential` compares a grown corpus with Effect.
 
 ### Fixed
 
@@ -107,6 +118,26 @@
   finished, as Node's `closeIdleConnections` does, instead of once the serving fiber came back
   round for the next request. A shutdown starting just after a client got its response no
   longer waits out `graceful_shutdown_timeout` for that connection.
+- Fuzzing (`tests/fuzz`, Atheris and Hypothesis, see Added) found four kinds of input that
+  raised where a documented error belongs:
+  - An `Origin` header holding an unclosed IPv6 literal (`http://[`) made the origin check of
+    WebSocket upgrades and RPC calls die with a 500 (`urlsplit` raises `ValueError` there);
+    `request_to_web` and the ASGI mount had the same raise. The origin is now no origin, so the
+    check refuses it, and `request_to_web` fails with `RequestParseError`. Request-facing code
+    splits URLs only through `_url_text.split_url`, which returns `None` where `urlsplit` raises
+    (`tests/test_split_url_guard.py`).
+  - Importing an SPKI or PKCS#8 key naming an algorithm `cryptography` does not know (an
+    `UnsupportedAlgorithm`) was a defect, not a `CryptoError` `InvalidKey`. Keys are loaded
+    only through `crypto._lib`'s loaders, which turn every unreadable key into `None`
+    (`tests/test_crypto_key_loading_guard.py`).
+  - TOML and YAML nested about 500 levels deep raised `RecursionError`. They now recurse
+    through `with_fresh_stack`, as recursive schemas do, so they read input nested far deeper
+    than JavaScript's stack allows; past that `toml.parse` fails with an `EncodingError` and
+    `yaml.parse` raises `ValueError`, as Effect's do when their stack runs out.
+    `tests/test_deep_nesting.py` feeds every nested-text parser 200,000 levels.
+  - `ini.parse` documents the `TypeError` it raises for a property in a section named after a
+    value (`a=1`, then `[a]`, then `b=2`), as Effect's `Ini.parse` throws; its docstring said
+    `ValueError`.
 
 ### Docs
 

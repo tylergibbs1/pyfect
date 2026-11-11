@@ -1,0 +1,2 @@
+{a:1, b:'x', c:[1,2,], d:0x1F, e:+Infinity, f:NaN, // c
+ g:.5}

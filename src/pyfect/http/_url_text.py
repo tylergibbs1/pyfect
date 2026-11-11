@@ -3,11 +3,22 @@
 from __future__ import annotations
 
 import re
+from urllib.parse import SplitResult, urlsplit
 
 from pyfect._url import Url
 from pyfect.http.url_params import UrlParams, parse
 
 _ORIGIN_FORM = re.compile(r"/(?![/\\])")
+
+
+def split_url(url: str) -> SplitResult | None:
+    """``urlsplit(url)``; ``None`` where it raises (a ``[`` with no ``]`` in the
+    authority). Request-facing code splits URLs only through this
+    (``tests/test_split_url_guard.py``): a raise there is a defect, a 500."""
+    try:
+        return urlsplit(url)
+    except ValueError:
+        return None
 
 
 def strip_search_and_hash(url: str) -> str:
