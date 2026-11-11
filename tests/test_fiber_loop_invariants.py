@@ -76,5 +76,7 @@ def test_every_effect_method_group_is_only_used_through_effect():
     base: type[object] = EffectBase
     groups = subclasses(base, recursive=False)
     assert all(cls.__bases__ == (EffectBase,) for cls in groups)
-    users: set[type[object]] = {sub for group in groups for sub in subclasses(group, recursive=False)}
+    users: set[type[object]] = {
+        sub for group in groups for sub in subclasses(group, recursive=False)
+    }
     assert users == {Effect}
