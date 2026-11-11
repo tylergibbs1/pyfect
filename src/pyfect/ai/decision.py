@@ -45,8 +45,9 @@ type Description = str | Mapping[str, JsonValue] | Sequence[JsonValue]
 """Instructions or a description: a string, a JSON object or a JSON array."""
 
 L = TypeVar("L", bound=str)
+L_co = TypeVar("L_co", bound=str, covariant=True)
 A = TypeVar("A")
-RE = TypeVar("RE")
+RE_co = TypeVar("RE_co", covariant=True)
 
 
 @dataclass(frozen=True, eq=False)
@@ -60,21 +61,21 @@ class Classify(Generic[L]):
 
 
 @dataclass(frozen=True)
-class Level(Generic[L]):
+class Level(Generic[L_co]):
     """A level of a ``Rate`` scale: the label answers use and the
     description the provider sees."""
 
-    label: L
+    label: L_co
     description: Description
 
 
 @dataclass(frozen=True, eq=False)
-class Rate(Generic[L]):
+class Rate(Generic[L_co]):
     """Places the input on ``criteria``, levels from lowest to highest."""
 
     tag: ClassVar[str] = "Rate"
     instructions: Description
-    criteria: tuple[Level[L], ...]
+    criteria: tuple[Level[L_co], ...]
 
 
 class ProbabilityCriteria(TypedDict):
@@ -239,13 +240,14 @@ type Outcome[T] = Result[T, Unanswered]
 
 
 @dataclass(frozen=True, eq=False)
-class Definition(Generic[A, RE]):
+class Definition(Generic[A, RE_co]):
     """An input schema and the named decisions answered together in one
-    provider call."""
+    provider call. ``A`` stays invariant: ``decide(definition, input=...)``
+    infers ``A`` from both, and a covariant ``A`` would widen it to accept any input."""
 
-    input: S.Codec[A, Any, Any, RE]
+    input: S.Codec[A, Any, Any, RE_co]
     decisions: Mapping[str, AnyDecision]
-    json_input: S.Bottom[A, JsonValue, Any, RE] = field(init=False, repr=False)
+    json_input: S.Bottom[A, JsonValue, Any, RE_co] = field(init=False, repr=False)
     """``input`` as a JSON codec (``S.to_codec_json``): the state sent."""
 
     def __post_init__(self) -> None:

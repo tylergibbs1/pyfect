@@ -29,12 +29,12 @@ from pyfect.schema._to_formatter import Formatter
 
 # Explicit parameters (``tests/test_schema_variance.py``): ``HashSet`` and
 # ``HashMap`` take their items in ``add`` / ``set``, so they are invariant.
-A_ = TypeVar("A_")
-I_ = TypeVar("I_")
-K_ = TypeVar("K_")
-V_ = TypeVar("V_")
-KI_ = TypeVar("KI_")
-VI_ = TypeVar("VI_")
+A_co = TypeVar("A_co", covariant=True)
+I_co = TypeVar("I_co", covariant=True)
+K_co = TypeVar("K_co", covariant=True)
+V_co = TypeVar("V_co", covariant=True)
+KI_co = TypeVar("KI_co", covariant=True)
+VI_co = TypeVar("VI_co", covariant=True)
 RD_co = TypeVar("RD_co", covariant=True)
 RE_co = TypeVar("RE_co", covariant=True)
 
@@ -65,11 +65,11 @@ def _sorted_text(size: int, name: str, texts: Iterable[str]) -> str:
 
 @dataclass(frozen=True, slots=True, eq=False)
 class HashSetSchema(
-    Bottom[_HashSet[A_], _HashSet[I_], RD_co, RE_co], Generic[A_, I_, RD_co, RE_co]
+    Bottom[_HashSet[A_co], _HashSet[I_co], RD_co, RE_co], Generic[A_co, I_co, RD_co, RE_co]
 ):
     """A ``HashSet`` of ``value``'s values."""
 
-    value: Codec[A_, I_, RD_co, RE_co]
+    value: Codec[A_co, I_co, RD_co, RE_co]
 
 
 def _set_of(values: Iterable[object]) -> _Set:
@@ -137,13 +137,13 @@ def HashSet[A, I, RD, RE](value: Codec[A, I, RD, RE], /) -> HashSetSchema[A, I, 
 
 @dataclass(frozen=True, slots=True, eq=False)
 class HashMapSchema(
-    Bottom[_HashMap[K_, V_], _HashMap[KI_, VI_], RD_co, RE_co],
-    Generic[K_, V_, KI_, VI_, RD_co, RE_co],
+    Bottom[_HashMap[K_co, V_co], _HashMap[KI_co, VI_co], RD_co, RE_co],
+    Generic[K_co, V_co, KI_co, VI_co, RD_co, RE_co],
 ):
     """A ``HashMap`` of ``key``'s values to ``value``'s."""
 
-    key: Codec[K_, KI_, RD_co, RE_co]
-    value: Codec[V_, VI_, RD_co, RE_co]
+    key: Codec[K_co, KI_co, RD_co, RE_co]
+    value: Codec[V_co, VI_co, RD_co, RE_co]
 
 
 def _map_of(entries: Iterable[_Entry]) -> _Map:

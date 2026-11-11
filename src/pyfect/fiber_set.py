@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Iterator
-from typing import Any, Never
+from typing import Any, Generic, Never, TypeVar
 
 from pyfect._core import Effect, _AfterStarted, _Gen, _Succeed, _Suspend, _Sync, _WithFiber
 from pyfect._effect_args import require_effect
@@ -35,44 +35,50 @@ from pyfect.exit import Exit
 from pyfect.scheduler import Scheduler
 from pyfect.scope import Scope, acquire_release
 
+A_co = TypeVar("A_co", covariant=True, default=object)
+E_co = TypeVar("E_co", covariant=True, default=object)
 
-class FiberSet[A = object, E = object]:
+
+class FiberSet(Generic[A_co, E_co]):
     """Make one with ``FiberSet[A, E].make()`` inside a scope."""
 
     __slots__ = ("_fibers", "deferred")
 
     def __init__(self) -> None:
         # None once the scope has closed. A dict keeps insertion order.
-        self._fibers: dict[Fiber[A, E], None] | None = {}
+        self._fibers: dict[Fiber[A_co, E_co], None] | None = {}
         # Completed by the first reported failure, or when the scope closes.
-        self.deferred: Deferred[None, E] = Deferred()
+        # Typed as Effect's ``Deferred<void, unknown>``, so the class stays covariant.
+        self.deferred: Deferred[None, Any] = Deferred()
 
     @classmethod
-    def make(cls) -> Effect[FiberSet[A, E], Never, Scope]:
+    def make(cls) -> Effect[FiberSet[A_co, E_co], Never, Scope]:
         """A set whose fibers are interrupted when the current scope closes."""
         return acquire_release(_Sync(cls), lambda s, _: s._close())
 
     @classmethod
-    def make_runtime[R = Never](
-        cls, *tags: TagLike[Any, R]
-    ) -> Effect[FiberSetRuntime[A, E, R], Never, Scope | R]:
+    def make_runtime[XA, XE, R = Never](
+        cls: type[FiberSet[XA, XE]], *tags: TagLike[Any, R]
+    ) -> Effect[FiberSetRuntime[XA, XE, R], Never, Scope | R]:
         """``make`` and ``runtime`` in one."""
         return cls.make().flat_map(lambda s: s.runtime(*tags))
 
     @classmethod
-    def make_runtime_async[R = Never](
-        cls, *tags: TagLike[Any, R]
-    ) -> Effect[FiberSetAsyncRuntime[A, E, R], Never, Scope | R]:
+    def make_runtime_async[XA, XE, R = Never](
+        cls: type[FiberSet[XA, XE]], *tags: TagLike[Any, R]
+    ) -> Effect[FiberSetAsyncRuntime[XA, XE, R], Never, Scope | R]:
         """``make`` and ``runtime_async`` in one."""
         return cls.make().flat_map(lambda s: s.runtime_async(*tags))
 
-    def __iter__(self) -> Iterator[Fiber[A, E]]:
+    def __iter__(self) -> Iterator[Fiber[A_co, E_co]]:
         return iter(() if self._fibers is None else list(self._fibers))
 
     def __repr__(self) -> str:
         return "FiberSet(closed)" if self._fibers is None else f"FiberSet(size={len(self._fibers)})"
 
-    def add_unsafe(self, fiber: Fiber[A, E], *, propagate_interruption: bool = False) -> None:
+    def add_unsafe[XA, XE](
+        self: FiberSet[XA, XE], fiber: Fiber[XA, XE], *, propagate_interruption: bool = False
+    ) -> None:
         """Add a running fiber; it leaves the set when it completes. Into a
         closed set the fiber is interrupted. Call on the scheduler thread."""
         fibers = self._fibers
@@ -83,7 +89,7 @@ class FiberSet[A = object, E = object]:
             return
         fibers[fiber] = None
 
-        def observer(ex: Exit[A, E]) -> None:
+        def observer(ex: Exit[XA, XE]) -> None:
             if self._fibers is None:
                 return
             self._fibers.pop(fiber, None)
@@ -92,42 +98,46 @@ class FiberSet[A = object, E = object]:
 
         fiber.add_observer_unsafe(observer)
 
-    def add(self, fiber: Fiber[A, E], *, propagate_interruption: bool = False) -> Effect[None]:
+    def add[XA, XE](
+        self: FiberSet[XA, XE], fiber: Fiber[XA, XE], *, propagate_interruption: bool = False
+    ) -> Effect[None]:
         return _Sync(lambda: self.add_unsafe(fiber, propagate_interruption=propagate_interruption))
 
-    def run[R = Never](
-        self,
-        eff: Effect[A, E, R],
+    def run[XA, XE, R = Never](
+        self: FiberSet[XA, XE],
+        eff: Effect[XA, XE, R],
         *,
         propagate_interruption: bool = False,
         start_immediately: bool = True,
-    ) -> Effect[Fiber[A, E], Never, R]:
+    ) -> Effect[Fiber[XA, XE], Never, R]:
         """Fork ``eff`` into the set. It starts at once unless
         ``start_immediately=False``. A closed set gives back an interrupted
         fiber that never runs ``eff``."""
         require_effect(eff, "eff")
 
-        def body(parent: Fiber[Any, Any]) -> Effect[Fiber[A, E]]:
+        def body(parent: Fiber[Any, Any]) -> Effect[Fiber[XA, XE]]:
             if self._fibers is None:
                 return _Succeed(
                     interrupted_fiber(parent._run_scheduler, parent._context, closed("FiberSet"))
                 )
-            fiber: Fiber[A, E] = parent._fork(eff, daemon=True, start_immediately=start_immediately)
+            fiber: Fiber[XA, XE] = parent._fork(
+                eff, daemon=True, start_immediately=start_immediately
+            )
             self.add_unsafe(fiber, propagate_interruption=propagate_interruption)
             return _AfterStarted(fiber)
 
         return _WithFiber(body)
 
-    def runtime[R = Never](
-        self, *tags: TagLike[Any, R]
-    ) -> Effect[FiberSetRuntime[A, E, R], Never, R]:
+    def runtime[XA, XE, R = Never](
+        self: FiberSet[XA, XE], *tags: TagLike[Any, R]
+    ) -> Effect[FiberSetRuntime[XA, XE, R], Never, R]:
         """A runner that forks effects needing ``tags`` into the set, with
         the services of the fiber calling this."""
         return _WithFiber(lambda fiber: _Succeed(FiberSetRuntime(self, CapturedRuntime(fiber))))
 
-    def runtime_async[R = Never](
-        self, *tags: TagLike[Any, R]
-    ) -> Effect[FiberSetAsyncRuntime[A, E, R], Never, R]:
+    def runtime_async[XA, XE, R = Never](
+        self: FiberSet[XA, XE], *tags: TagLike[Any, R]
+    ) -> Effect[FiberSetAsyncRuntime[XA, XE, R], Never, R]:
         """``runtime``, but the runner returns a future of the value (needs
         a running asyncio loop when called)."""
         return self.runtime(*tags).map(FiberSetAsyncRuntime)
@@ -147,7 +157,7 @@ class FiberSet[A = object, E = object]:
     def size(self) -> Effect[int]:
         return _Sync(lambda: 0 if self._fibers is None else len(self._fibers))
 
-    def join(self) -> Effect[None, E]:
+    def join(self) -> Effect[None, E_co]:
         """Wait for the first reported failure and fail with it; succeed
         when the scope closes."""
         return self.deferred.wait()

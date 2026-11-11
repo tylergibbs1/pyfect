@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Generator, Mapping, Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Never, Protocol, cast, overload
+from typing import TYPE_CHECKING, Any, Generic, Never, Protocol, TypeVar, cast, overload
 
 from pyfect import _json_text
 from pyfect._concurrency import for_each
@@ -138,24 +138,27 @@ __all__ = [
 # --- handlers ------------------------------------------------------------------------
 
 
+P_co = TypeVar("P_co", covariant=True)
+
+
 @dataclass(frozen=True, slots=True)
-class Conflict[P]:
+class Conflict(Generic[P_co]):
     """A stored entry newer than the one being handled, with its payload."""
 
     entry: Entry
-    payload: P
+    payload: P_co
 
 
 @dataclass(frozen=True, slots=True)
-class HandlerInput[P]:
+class HandlerInput(Generic[P_co]):
     """What a handler gets: the store, the decoded payload, the entry and
     its conflicts (stored entries of the same event and primary key with
     greater ids, oldest first)."""
 
     store_id: StoreId
-    payload: P
+    payload: P_co
     entry: Entry
-    conflicts: tuple[Conflict[P], ...] = ()
+    conflicts: tuple[Conflict[P_co], ...] = ()
 
 
 type HandlerFn = Callable[[HandlerInput[object]], Effect[object, object, object]]
@@ -374,11 +377,14 @@ make_identity: Effect[IdentityService, Never, EventLogEncryption] = EventLogEncr
 # --- schemas and groups --------------------------------------------------------------
 
 
+G_co = TypeVar("G_co", covariant=True)
+
+
 @dataclass(frozen=True, slots=True)
-class EventLogSchema[G]:
+class EventLogSchema(Generic[G_co]):
     """The groups of an event log."""
 
-    groups: tuple[G, ...]
+    groups: tuple[G_co, ...]
 
 
 def schema[G: EventGroup[AnyEvent]](*groups: G) -> EventLogSchema[G]:

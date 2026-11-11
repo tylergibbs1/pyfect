@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Literal, Never
+from typing import Any, Generic, Literal, Never, TypeVar
 
 from pyfect import _json_text, stream
 from pyfect import effect as fx
@@ -42,9 +42,11 @@ from pyfect.socket._socket import Chunk, Writer
 from pyfect.socket._web_socket import WebSocketConstructor, make_web_socket
 from pyfect.stream import Stream
 
+R_co = TypeVar("R_co", covariant=True, default=Never)
+
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class WebSocketOptions[R = Never]:
+class WebSocketOptions(Generic[R_co]):
     """A graphql-transport-ws endpoint: its ``url`` and handshake
     ``headers``; ``connection_params`` (run once per connection, needing
     ``R``) is the ``connection_init`` payload. ``connection_ack_timeout``
@@ -53,7 +55,7 @@ class WebSocketOptions[R = Never]:
 
     url: str
     headers: HeadersInput | None = None
-    connection_params: Effect[Mapping[str, object] | None, object, R] | None = None
+    connection_params: Effect[Mapping[str, object] | None, object, R_co] | None = None
     connection_ack_timeout: DurationInput | None = None
     keep_alive: DurationInput | Literal[False] | None = None
     idle_timeout: DurationInput | None = None

@@ -13,12 +13,14 @@ from dataclasses import dataclass, field, replace
 from typing import (
     TYPE_CHECKING,
     Any,
+    Generic,
     Literal,
     LiteralString,
     Never,
     NotRequired,
     TypedDict,
     TypeIs,
+    TypeVar,
     Unpack,
     cast,
     overload,
@@ -440,26 +442,29 @@ class StreamUint8ArraySchema(Bottom[Stream[bytes, Any], Stream[bytes, Any], Neve
         def http_api_payload_client(self) -> Stream[bytes, Any]: ...
 
 
+A_co = TypeVar("A_co", covariant=True)
+
+
 @dataclass(frozen=True, slots=True, eq=False)
-class StreamNdjsonSchema[A](Bottom[Stream[A, Any], Stream[A, Any], Never, Never]):
+class StreamNdjsonSchema(Bottom[Stream[A_co, Any], Stream[A_co, Any], Never, Never], Generic[A_co]):
     """A newline-delimited JSON body, one ``schema`` value a line; as a
     payload, at most ``max_bytes`` and ``max_element_bytes`` a line."""
 
     content_type: str = field(kw_only=True)
     content_types: tuple[str, *tuple[str, ...]] = field(kw_only=True)
     """Every media type it is sent under; the first is ``content_type``."""
-    schema: Codec[A, Any, Any, Any] = field(kw_only=True)
+    schema: Codec[A_co, Any, Any, Any] = field(kw_only=True)
     max_bytes: ByteSize | None = field(kw_only=True)
     max_element_bytes: ByteSize = field(kw_only=True)
 
     if TYPE_CHECKING:
 
         @property
-        def http_api_success_client(self) -> Stream[A, HttpClientError | SchemaError]: ...
+        def http_api_success_client(self) -> Stream[A_co, HttpClientError | SchemaError]: ...
         @property
-        def http_api_payload(self) -> Stream[A, HttpApiSchemaError | HttpApiPayloadTooLarge]: ...
+        def http_api_payload(self) -> Stream[A_co, HttpApiSchemaError | HttpApiPayloadTooLarge]: ...
         @property
-        def http_api_payload_client(self) -> Stream[A, Any]: ...
+        def http_api_payload_client(self) -> Stream[A_co, Any]: ...
 
 
 type StreamSchema = StreamSseSchema[Any, Any] | StreamUint8ArraySchema | StreamNdjsonSchema[Any]
@@ -577,28 +582,31 @@ def is_stream_schema(value: object) -> TypeIs[StreamSchema]:
 # --- upgrades ------------------------------------------------------------------------
 
 
+H_co = TypeVar("H_co", covariant=True)
+
+
 @dataclass(frozen=True, slots=True)
-class Upgraded[H]:
+class Upgraded(Generic[H_co]):
     """What a client of an upgrade endpoint gets: the response headers and
     the upgraded connection."""
 
-    headers: H
+    headers: H_co
     socket: SocketService
 
 
 @dataclass(frozen=True, slots=True, eq=False)
-class UpgradeSchema[H](Bottom[SocketService, SocketService, Never, Never]):
+class UpgradeSchema(Bottom[SocketService, SocketService, Never, Never], Generic[H_co]):
     """A ``101 Switching Protocols`` response to ``protocol``: the handler
     returns the socket of ``request.upgrade(...)``. ``headers`` encodes the
     response's extra headers; a client gets ``Upgraded``."""
 
     protocol: str = field(kw_only=True)
-    headers: Codec[H, Any, Never, Never] | None = field(kw_only=True)
+    headers: Codec[H_co, Any, Never, Never] | None = field(kw_only=True)
 
     if TYPE_CHECKING:
 
         @property
-        def http_api_success_client(self) -> Upgraded[H]: ...
+        def http_api_success_client(self) -> Upgraded[H_co]: ...
 
 
 _UPGRADE: Bottom[SocketService] = status(101)(instance_of(SocketService))
@@ -622,11 +630,11 @@ def Upgrade(
 
 
 @dataclass(frozen=True, slots=True)
-class WithHeadersValue[A, H]:
+class WithHeadersValue(Generic[A_co, H_co]):
     """A response ``body`` sent with ``headers`` (Effect's ``withHeaders``)."""
 
-    body: A
-    headers: H
+    body: A_co
+    headers: H_co
 
 
 def with_headers[A, H](body: A, headers: H) -> WithHeadersValue[A, H]:
@@ -634,14 +642,15 @@ def with_headers[A, H](body: A, headers: H) -> WithHeadersValue[A, H]:
 
 
 @dataclass(frozen=True, slots=True, eq=False)
-class WithHeadersSchema[A, H](
-    Bottom[WithHeadersValue[A, H], WithHeadersValue[Any, Any], Never, Never]
+class WithHeadersSchema(
+    Bottom[WithHeadersValue[A_co, H_co], WithHeadersValue[Any, Any], Never, Never],
+    Generic[A_co, H_co],
 ):
     """A response of ``schema`` with the headers ``headers`` encodes; the
     handler returns ``with_headers(body, headers)``."""
 
-    schema: Codec[A, Any, Any, Any] = field(kw_only=True)
-    headers: Codec[H, Any, Any, Any] = field(kw_only=True)
+    schema: Codec[A_co, Any, Any, Any] = field(kw_only=True)
+    headers: Codec[H_co, Any, Any, Any] = field(kw_only=True)
 
 
 _WITH_HEADERS = cast("Bottom[WithHeadersValue[Any, Any]]", instance_of(WithHeadersValue))

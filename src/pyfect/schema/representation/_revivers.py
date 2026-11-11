@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, ClassVar, Never
+from typing import Any, ClassVar, Generic, Never, TypeVar
 
 from pyfect.schema._schema import Bottom, Codec, Top
 from pyfect.schema.ast import Annotations, Filter, FilterGroup
@@ -23,16 +23,19 @@ type AnySchema = Bottom[object, object, object, object]
 ``Schema.Top``)."""
 
 
+P_co = TypeVar("P_co", covariant=True)
+
+
 @dataclass(frozen=True, slots=True)
-class DeclarationInput[P]:
-    payload: P
+class DeclarationInput(Generic[P_co]):
+    payload: P_co
     type_parameters: tuple[AnySchema, ...]
     annotations: Annotations | None
 
 
 @dataclass(frozen=True, slots=True)
-class CheckInput[P]:
-    payload: P
+class CheckInput(Generic[P_co]):
+    payload: P_co
     schemas: tuple[AnySchema, ...]
     """The revived schemas of the check's ``representation.schemas``."""
     annotations: Annotations | None

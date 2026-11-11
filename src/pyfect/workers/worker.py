@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Any, Literal, Never, Protocol, cast
+from typing import Any, Generic, Literal, Never, Protocol, TypeVar, cast
 
 from pyfect._core import Effect, Restore, uninterruptible_mask
 from pyfect._effect_args import require_effect
@@ -127,19 +127,25 @@ class Port(Protocol):
     def post_message(self, message: object, transfers: Transfers) -> None: ...
 
 
+W_co = TypeVar("W_co", covariant=True)
+
+
 @dataclass(frozen=True, slots=True)
-class SetupOptions[W]:
-    worker: W
+class SetupOptions(Generic[W_co]):
+    worker: W_co
     scope: CloseableScope
 
 
+P_co = TypeVar("P_co", covariant=True)
+
+
 @dataclass(frozen=True, slots=True)
-class ListenOptions[P]:
+class ListenOptions(Generic[P_co]):
     """``emit`` each ``PlatformMessage`` the worker sends (on the runtime's
     thread); complete ``deferred`` with a ``WorkerError`` when it goes
     away. ``scope`` closes when the run ends."""
 
-    port: P
+    port: P_co
     emit: Callable[[PlatformMessage], None]
     deferred: Deferred[None, WorkerError]
     scope: CloseableScope

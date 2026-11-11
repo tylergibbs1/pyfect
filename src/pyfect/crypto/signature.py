@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Any, ClassVar, Literal, Never, Protocol, final
+from typing import Any, ClassVar, Generic, Literal, Never, Protocol, TypeVar, final
 
 from pyfect._core import Effect
 from pyfect.context import Tag
@@ -41,12 +41,15 @@ class Ed25519:
     tag: ClassVar[Literal["Ed25519"]] = "Ed25519"
 
 
+C_co = TypeVar("C_co", bound=Curve, covariant=True, default=Curve)
+
+
 @dataclass(frozen=True, kw_only=True)
-class Ecdsa[C: Curve = Curve]:
+class Ecdsa(Generic[C_co]):
     """ECDSA on ``named_curve`` with ``hash``."""
 
     name: Literal["ecdsaP256", "ecdsaP384", "ecdsaP521"]
-    named_curve: C
+    named_curve: C_co
     hash: DigestAlgorithm
 
     tag: ClassVar[Literal["Ecdsa"]] = "Ecdsa"

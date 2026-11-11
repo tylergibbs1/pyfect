@@ -6,7 +6,7 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass, field
-from typing import cast
+from typing import Generic, TypeVar, cast
 
 from pyfect._js import decode_uri
 from pyfect.http.find_my_way import _query_string
@@ -45,9 +45,12 @@ class RouterConfig:
     max_param_length: int = 100
 
 
+A_co = TypeVar("A_co", covariant=True)
+
+
 @dataclass(frozen=True, slots=True)
-class FindResult[A]:
-    handler: A
+class FindResult(Generic[A_co]):
+    handler: A_co
     params: dict[str, str]
     search_params: dict[str, str | list[str]]
 

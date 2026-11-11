@@ -17,7 +17,18 @@ from __future__ import annotations
 import math
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Literal, Never, NotRequired, TypedDict, Unpack, cast, overload
+from typing import (
+    Any,
+    Generic,
+    Literal,
+    Never,
+    NotRequired,
+    TypedDict,
+    TypeVar,
+    Unpack,
+    cast,
+    overload,
+)
 
 from pyfect import schema as S
 from pyfect._core import Effect
@@ -89,26 +100,30 @@ _REGISTERED_CLAIM_GUARDS: tuple[tuple[RegisteredClaim, Callable[[object], bool]]
 )
 
 
+A_co = TypeVar("A_co", covariant=True)
+H_co = TypeVar("H_co", covariant=True, default=jws.ProtectedHeader)
+
+
 @dataclass(frozen=True, slots=True)
-class Verified[A, H = jws.ProtectedHeader]:
-    claims: A
+class Verified(Generic[A_co, H_co]):
+    claims: A_co
     registered_claims: RegisteredClaims
-    protected_header: H
+    protected_header: H_co
 
 
 @dataclass(frozen=True, slots=True)
-class VerifiedWithKey[A]:
+class VerifiedWithKey(Generic[A_co]):
     """``verify_with_key_set``'s result: the claims and the key that verified them."""
 
-    claims: A
+    claims: A_co
     registered_claims: RegisteredClaims
     protected_header: jws.ProtectedHeader
     key: PublicKey
 
 
 @dataclass(frozen=True, slots=True)
-class Decrypted[A]:
-    claims: A
+class Decrypted(Generic[A_co]):
+    claims: A_co
     registered_claims: RegisteredClaims
     protected_header: jwe.ProtectedHeader
     key: DirKey

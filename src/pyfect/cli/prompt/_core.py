@@ -164,14 +164,19 @@ class Event(Generic[A_co]):
 type ProcessInput[A] = Input | Event[A]
 
 
+S = TypeVar("S")
+Out = TypeVar("Out")
+I_contra = TypeVar("I_contra", contravariant=True, default=UserInput)
+
+
 @dataclass(frozen=True, slots=True)
-class Handlers[S, O, I = UserInput]:
+class Handlers(Generic[S, Out, I_contra]):
     """A custom prompt's three steps: ``render`` the frame for an action,
     ``process`` one input into an action, ``clear`` the previous frame."""
 
-    render: Callable[[S, Action[S, O]], Effect[str, Never, PromptEnvironment]]
-    process: Callable[[I, S], Effect[Action[S, O], Never, PromptEnvironment]]
-    clear: Callable[[S, Action[S, O]], Effect[str, Never, PromptEnvironment]]
+    render: Callable[[S, Action[S, Out]], Effect[str, Never, PromptEnvironment]]
+    process: Callable[[I_contra, S], Effect[Action[S, Out], Never, PromptEnvironment]]
+    clear: Callable[[S, Action[S, Out]], Effect[str, Never, PromptEnvironment]]
 
 
 # --- the prompt type -----------------------------------------------------------

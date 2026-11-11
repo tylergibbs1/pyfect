@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import types
 from collections.abc import Sequence
-from typing import Any, NamedTuple, Never, TypedDict
+from typing import Any, Generic, NamedTuple, Never, TypedDict, TypeVar
 
 from pyfect.http_api import endpoint as http_endpoint
 from pyfect.http_api.endpoint import HttpApiEndpoint
@@ -50,19 +50,26 @@ RESUME_PAYLOAD = Struct(ResumePayload)
 type AnyWorkflow = Workflow[Any, Any, Any]
 
 
-class WorkflowRpcs[P, A, E](NamedTuple):
+P_co = TypeVar("P_co", covariant=True)
+A = TypeVar("A")
+E = TypeVar("E")
+A_co = TypeVar("A_co", covariant=True)
+E_co = TypeVar("E_co", covariant=True)
+
+
+class WorkflowRpcs(NamedTuple, Generic[P_co, A_co, E_co]):
     """The three RPCs of one workflow (``rpcs``)."""
 
-    execute: Rpc[P, A, E]
-    discard: Rpc[P, str, Never]
+    execute: Rpc[P_co, A_co, E_co]
+    discard: Rpc[P_co, str, Never]
     resume: Rpc[ResumePayload, None, Never]
 
 
-class WorkflowEndpoints[P, A, E](NamedTuple):
+class WorkflowEndpoints(NamedTuple, Generic[P_co, A, E]):
     """The three HTTP endpoints of one workflow (``http_endpoints``)."""
 
-    execute: HttpApiEndpoint[None, None, P, P, None, A, A, E]
-    discard: HttpApiEndpoint[None, None, P, P, None, str, str, Never]
+    execute: HttpApiEndpoint[None, None, P_co, P_co, None, A, A, E]
+    discard: HttpApiEndpoint[None, None, P_co, P_co, None, str, str, Never]
     resume: HttpApiEndpoint[None, None, ResumePayload, ResumePayload, None, None, None, Never]
 
 

@@ -28,7 +28,7 @@ if TYPE_CHECKING:
     from pyfect._fiber import Fiber
     from pyfect._primitives import Step
 
-In = TypeVar("In")
+In_contra = TypeVar("In_contra", contravariant=True)
 C_co = TypeVar("C_co", covariant=True)
 E_co = TypeVar("E_co", covariant=True, default=Never)
 R_co = TypeVar("R_co", covariant=True, default=Never)
@@ -164,8 +164,8 @@ def _run_handler(handler: Callable[[Any], Effect[object, Any, Any]]) -> _Handle:
     return lambda value, _: handler(value).as_void()
 
 
-class Command(Effect[C_co, Never, CommandContext[C_co]], Generic[In, C_co, E_co, R_co]):
-    """A command: its config ``In`` parsed from the command line, the shared
+class Command(Effect[C_co, Never, CommandContext[C_co]], Generic[In_contra, C_co, E_co, R_co]):
+    """A command: its config ``In_contra`` parsed from the command line, the shared
     flags ``C_co`` its subcommands read, and a handler failing with ``E_co`` and
     needing ``R_co``. Build with ``make`` and run with ``run``."""
 
@@ -222,16 +222,17 @@ class Command(Effect[C_co, Never, CommandContext[C_co]], Generic[In, C_co, E_co,
     # --- combinators -----------------------------------------------------------
 
     @overload
-    def with_handler[EH = Never](
-        self, handler: Callable[[In], Effect[object, EH, LogLevel]]
-    ) -> Command[In, C_co, EH, Never]: ...
+    def with_handler[I2, C2, EH = Never](
+        self: Command[I2, C2, Any, Any], handler: Callable[[I2], Effect[object, EH, LogLevel]]
+    ) -> Command[I2, C2, EH, Never]: ...
     @overload
-    def with_handler[EH = Never, RH = Never](
-        self, handler: Callable[[In], Effect[object, EH, LogLevel | RH]]
-    ) -> Command[In, C_co, EH, RH]: ...
+    def with_handler[I2, C2, EH = Never, RH = Never](
+        self: Command[I2, C2, Any, Any],
+        handler: Callable[[I2], Effect[object, EH, LogLevel | RH]],
+    ) -> Command[I2, C2, EH, RH]: ...
     def with_handler(
-        self, handler: Callable[[In], Effect[object, Any, Any]]
-    ) -> Command[In, C_co, Any, Any]:
+        self, handler: Callable[[Any], Effect[object, Any, Any]]
+    ) -> Command[Any, Any, Any, Any]:
         """Runs ``handler`` with the parsed config (in place of any handler
         before)."""
         own = _run_handler(handler)
@@ -239,16 +240,16 @@ class Command(Effect[C_co, Never, CommandContext[C_co]], Generic[In, C_co, E_co,
             return self._derive(handle=_dispatch(self.state, own))
         return self._derive(handle=own)
 
-    def validate(
-        self, f: Callable[[In], Effect[object, CliError, Environment]]
-    ) -> Command[In, C_co, E_co, R_co]:
+    def validate[I2, C2, E2, R2](
+        self: Command[I2, C2, E2, R2], f: Callable[[I2], Effect[object, CliError, Environment]]
+    ) -> Command[I2, C2, E2, R2]:
         """Checks the parsed config before the handler runs; a failure is
         shown with the help, as a parse error is."""
         before = self.state.parse
 
         def parse(command: Command[Any, Any, Any, Any], tokens: ParsedTokens):
             def check(value: Any) -> Effect[object, CliError, Environment]:
-                return f(cast("In", value.context if isinstance(value, Selected) else value))
+                return f(cast("I2", value.context if isinstance(value, Selected) else value))
 
             return before(command, tokens).tap(check)
 
@@ -259,13 +260,13 @@ class Command(Effect[C_co, Never, CommandContext[C_co]], Generic[In, C_co, E_co,
         self,
         *subcommands: Command[Any, Any, ES, CommandContext[C_co]]
         | SubcommandGroup[ES, CommandContext[C_co]],
-    ) -> Command[In | C_co, C_co, E_co | ES, R_co]: ...
+    ) -> Command[In_contra | C_co, C_co, E_co | ES, R_co]: ...
     @overload
     def with_subcommands[ES = Never, RS = Never](
         self,
         *subcommands: Command[Any, Any, ES, CommandContext[C_co] | RS]
         | SubcommandGroup[ES, CommandContext[C_co] | RS],
-    ) -> Command[In | C_co, C_co, E_co | ES, R_co | RS]: ...
+    ) -> Command[In_contra | C_co, C_co, E_co | ES, R_co | RS]: ...
     def with_subcommands(
         self, *subcommands: Command[Any, Any, Any, Any] | SubcommandGroup[Any, Any]
     ) -> Command[Any, Any, Any, Any]:
@@ -298,7 +299,9 @@ class Command(Effect[C_co, Never, CommandContext[C_co]], Generic[In, C_co, E_co,
         self: Command[Config, Config, E_co, R_co], shared: type[S]
     ) -> Command[S, S, E_co, R_co]: ...
     @overload
-    def with_shared_flags[S: Config](self, shared: type[S]) -> Command[In, S, E_co, R_co]: ...
+    def with_shared_flags[S: Config](
+        self, shared: type[S]
+    ) -> Command[In_contra, S, E_co, R_co]: ...
     def with_shared_flags(self, shared: type[Config]) -> Command[Any, Any, E_co, R_co]:
         """Flags this command parses and its subcommands read (``yield from
         parent``). A command with its own config must subclass ``shared``;
@@ -326,33 +329,35 @@ class Command(Effect[C_co, Never, CommandContext[C_co]], Generic[In, C_co, E_co,
             check_for_duplicate_flags(state, flat, context_config)
         return self._derive(config=config, context_config=context_config)
 
-    def with_description(self, description: str) -> Command[In, C_co, E_co, R_co]:
+    def with_description(self, description: str) -> Command[In_contra, C_co, E_co, R_co]:
         return self._derive(description=description)
 
-    def with_short_description(self, short_description: str) -> Command[In, C_co, E_co, R_co]:
+    def with_short_description(
+        self, short_description: str
+    ) -> Command[In_contra, C_co, E_co, R_co]:
         """The one-line description in a parent's list of subcommands."""
         return self._derive(short_description=short_description)
 
-    def with_alias(self, alias: str) -> Command[In, C_co, E_co, R_co]:
+    def with_alias(self, alias: str) -> Command[In_contra, C_co, E_co, R_co]:
         """Another name the command is chosen by as a subcommand."""
         return self._derive(alias=alias)
 
-    def with_unlisted(self) -> Command[In, C_co, E_co, R_co]:
+    def with_unlisted(self) -> Command[In_contra, C_co, E_co, R_co]:
         """Parsed when named, but left out of help, completions and
         suggestions (Effect's ``Command.unlisted``)."""
         return self._derive(unlisted=True)
 
-    def annotate[S, T](self, tag: TagLike[S, T], value: S) -> Command[In, C_co, E_co, R_co]:
+    def annotate[S, T](self, tag: TagLike[S, T], value: S) -> Command[In_contra, C_co, E_co, R_co]:
         """Metadata for custom formatters, in the help doc's ``annotations``."""
         return self._derive(annotations=self.state.annotations.add(tag, value))
 
-    def annotate_merge(self, annotations: Context[Any]) -> Command[In, C_co, E_co, R_co]:
+    def annotate_merge(self, annotations: Context[Any]) -> Command[In_contra, C_co, E_co, R_co]:
         return self._derive(annotations=self.state.annotations.merge(annotations))
 
     def with_examples(
         self,
         examples: Sequence[ExampleDoc] | Callable[[tuple[str, ...]], Sequence[ExampleDoc]],
-    ) -> Command[In, C_co, E_co, R_co]:
+    ) -> Command[In_contra, C_co, E_co, R_co]:
         """Examples shown in help; a function gets the command's path."""
         if callable(examples):
             resolve = examples

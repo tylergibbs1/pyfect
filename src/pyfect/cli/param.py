@@ -15,7 +15,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Literal, Never, cast
+from typing import TYPE_CHECKING, Any, Generic, Literal, Never, TypeVar, cast
 
 from pyfect import config as config_
 from pyfect import schema as S
@@ -90,13 +90,16 @@ class Param[A](ABC):
         """Whether the tree is optional or variadic, and its bounds."""
 
 
+A_co = TypeVar("A_co", covariant=True)
+
+
 @dataclass(frozen=True, eq=False)
-class Single[A](Param[A]):
+class Single(Param[A_co], Generic[A_co]):
     """One named flag or positional argument."""
 
     kind: Kind
     name: str
-    primitive: Primitive[A]
+    primitive: Primitive[A_co]
     description: str | None = None
     aliases: tuple[str, ...] = ()
     type_name: str | None = None
@@ -107,12 +110,12 @@ class Single[A](Param[A]):
     """A boolean flag's negated name; ``None`` is ``no-<name>``, ``False``
     none."""
 
-    def parse(self, args: ParsedArgs) -> Parsed[A]:
+    def parse(self, args: ParsedArgs) -> Parsed[A_co]:
         if self.kind == ARGUMENT:
             return _parse_positional(self.name, self.primitive, args)
         return _parse_flag(self.name, self.primitive, args)
 
-    def map_singles(self, f: Callable[[Single[Any]], Single[Any]]) -> Param[A]:
+    def map_singles(self, f: Callable[[Single[Any]], Single[Any]]) -> Param[A_co]:
         return f(self)
 
     def singles(self) -> list[Single[Any]]:
@@ -122,21 +125,24 @@ class Single[A](Param[A]):
         return ParamMetadata()
 
 
+X = TypeVar("X")
+
+
 @dataclass(frozen=True, eq=False)
-class Mapped[X, A](Param[A]):
+class Mapped(Param[A_co], Generic[X, A_co]):
     param: Param[X]
-    f: Callable[[X], A]
+    f: Callable[[X], A_co]
 
     kind: Kind = field(init=False)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "kind", self.param.kind)
 
-    def parse(self, args: ParsedArgs) -> Parsed[A]:
+    def parse(self, args: ParsedArgs) -> Parsed[A_co]:
         f = self.f
         return self.param.parse(args).map(lambda parsed: (parsed[0], f(parsed[1])))
 
-    def map_singles(self, f: Callable[[Single[Any]], Single[Any]]) -> Param[A]:
+    def map_singles(self, f: Callable[[Single[Any]], Single[Any]]) -> Param[A_co]:
         return Mapped(self.param.map_singles(f), self.f)
 
     def singles(self) -> list[Single[Any]]:
@@ -150,11 +156,11 @@ type Alternative = Callable[[], Param[Any]]
 
 
 @dataclass(frozen=True, eq=False)
-class Transformed[X, A](Param[A]):
+class Transformed(Param[A_co], Generic[X, A_co]):
     """A parse built from the inner param's parse and its alternatives'."""
 
     param: Param[X]
-    f: Callable[[Parse[X], tuple[Callable[[], Parse[Any]], ...]], Parse[A]]
+    f: Callable[[Parse[X], tuple[Callable[[], Parse[Any]], ...]], Parse[A_co]]
     alternatives: tuple[Alternative, ...] = ()
 
     kind: Kind = field(init=False)
@@ -162,11 +168,11 @@ class Transformed[X, A](Param[A]):
     def __post_init__(self) -> None:
         object.__setattr__(self, "kind", self.param.kind)
 
-    def parse(self, args: ParsedArgs) -> Parsed[A]:
+    def parse(self, args: ParsedArgs) -> Parsed[A_co]:
         parsers = tuple(_lazy_parse(alternative) for alternative in self.alternatives)
         return self.f(self.param.parse, parsers)(args)
 
-    def map_singles(self, f: Callable[[Single[Any]], Single[Any]]) -> Param[A]:
+    def map_singles(self, f: Callable[[Single[Any]], Single[Any]]) -> Param[A_co]:
         alternatives = tuple(_mapped_alternative(alt, f) for alt in self.alternatives)
         return Transformed(self.param.map_singles(f), self.f, alternatives)
 
@@ -190,27 +196,30 @@ def _mapped_alternative(
     return lambda: alternative().map_singles(f)
 
 
+X_co = TypeVar("X_co", covariant=True)
+
+
 @dataclass(frozen=True, eq=False)
-class Optional[X](Param[X | None]):
-    param: Param[X]
+class Optional(Param[X_co | None], Generic[X_co]):
+    param: Param[X_co]
 
     kind: Kind = field(init=False)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "kind", self.param.kind)
 
-    def parse(self, args: ParsedArgs) -> Parsed[X | None]:
+    def parse(self, args: ParsedArgs) -> Parsed[X_co | None]:
         missing = (MissingOption, MissingArgument)
         return (
             self.param.parse(args)
-            .map(lambda parsed: (parsed[0], cast("X | None", parsed[1])))
+            .map(lambda parsed: (parsed[0], cast("X_co | None", parsed[1])))
             .catch_if(
                 lambda error: isinstance(error, missing),
                 lambda _: succeed((args.arguments, None)),
             )
         )
 
-    def map_singles(self, f: Callable[[Single[Any]], Single[Any]]) -> Param[X | None]:
+    def map_singles(self, f: Callable[[Single[Any]], Single[Any]]) -> Param[X_co | None]:
         return Optional(self.param.map_singles(f))
 
     def singles(self) -> list[Single[Any]]:
@@ -221,8 +230,8 @@ class Optional[X](Param[X | None]):
 
 
 @dataclass(frozen=True, eq=False)
-class Variadic[X](Param[tuple[X, ...]]):
-    param: Param[X]
+class Variadic(Param[tuple[X_co, ...]], Generic[X_co]):
+    param: Param[X_co]
     min: int | None = None
     max: int | None = None
 
@@ -231,13 +240,13 @@ class Variadic[X](Param[tuple[X, ...]]):
     def __post_init__(self) -> None:
         object.__setattr__(self, "kind", self.param.kind)
 
-    def parse(self, args: ParsedArgs) -> Parsed[tuple[X, ...]]:
+    def parse(self, args: ParsedArgs) -> Parsed[tuple[X_co, ...]]:
         single = get_underlying_single_or_throw(self.param)
         if single.kind == ARGUMENT:
             return _parse_positional_variadic(self, single, args)
         return _parse_flag_variadic(self, single, args)
 
-    def map_singles(self, f: Callable[[Single[Any]], Single[Any]]) -> Param[tuple[X, ...]]:
+    def map_singles(self, f: Callable[[Single[Any]], Single[Any]]) -> Param[tuple[X_co, ...]]:
         return Variadic(self.param.map_singles(f), self.min, self.max)
 
     def singles(self) -> list[Single[Any]]:

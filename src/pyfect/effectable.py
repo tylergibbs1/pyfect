@@ -15,7 +15,7 @@ Box)``; its ``Prototype`` is this class too (docs/PARITY.md section 4).
 from __future__ import annotations
 
 from abc import ABCMeta, abstractmethod
-from typing import TYPE_CHECKING, Any, Never
+from typing import TYPE_CHECKING, Any, Generic, Never, TypeVar
 
 from pyfect._core import Effect, Step
 
@@ -23,11 +23,16 @@ if TYPE_CHECKING:
     from pyfect._fiber import Fiber
 
 
-class Class[A, E = Never, R = Never](Effect[A, E, R], metaclass=ABCMeta):
+A_co = TypeVar("A_co", covariant=True)
+E_co = TypeVar("E_co", covariant=True, default=Never)
+R_co = TypeVar("R_co", covariant=True, default=Never)
+
+
+class Class(Effect[A_co, E_co, R_co], Generic[A_co, E_co, R_co], metaclass=ABCMeta):
     """An effect defined by ``as_effect`` (Effect's ``Effectable.Class``)."""
 
     @abstractmethod
-    def as_effect(self) -> Effect[A, E, R]:
+    def as_effect(self) -> Effect[A_co, E_co, R_co]:
         """The effect an instance runs, built each time it runs."""
 
     def _step(self, fiber: Fiber[Any, Any]) -> Step:

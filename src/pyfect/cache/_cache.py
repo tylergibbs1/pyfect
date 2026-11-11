@@ -89,14 +89,14 @@ class Cache[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never, R = Never
     ) -> Effect[Cache[K, A, E], Never, RR]: ...
     @overload
     @classmethod
-    def make(
-        cls,
-        lookup: Callable[[K], Effect[A, E, R]],
+    def make[RR](
+        cls: type[Cache[K, A, E, RR]],
+        lookup: Callable[[K], Effect[A, E, RR]],
         *,
         capacity: int | None,
         time_to_live: TimeToLive[K, A, E] | None = None,
         require_services_at: Literal["lookup"],
-    ) -> Effect[Cache[K, A, E, R]]: ...
+    ) -> Effect[Cache[K, A, E, RR]]: ...
     @classmethod
     def make(
         cls,

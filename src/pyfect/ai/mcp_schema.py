@@ -19,7 +19,18 @@ from __future__ import annotations
 import math
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from typing import Any, ClassVar, Literal, Never, NotRequired, TypedDict, cast, overload
+from typing import (
+    Any,
+    ClassVar,
+    Generic,
+    Literal,
+    Never,
+    NotRequired,
+    TypedDict,
+    TypeVar,
+    cast,
+    overload,
+)
 
 from pyfect import schema as S
 from pyfect._core import Effect
@@ -740,14 +751,18 @@ ELICIT_RESULT = S.Struct(ElicitResult, content=JSON_OBJECT, **_META)
 # --- methods ----------------------------------------------------------------------------
 
 
+P_co = TypeVar("P_co", covariant=True)
+A_co = TypeVar("A_co", covariant=True)
+
+
 @dataclass(frozen=True, slots=True)
-class Method[P, A]:
+class Method(Generic[P_co, A_co]):
     """One MCP request or notification (Effect's ``Rpc.make`` of it): the
     method name and the schemas of its params and its result."""
 
     name: str
-    payload_schema: S.Codec[P, Any, Never, Never]
-    success_schema: S.Codec[A, Any, Never, Never]
+    payload_schema: S.Codec[P_co, Any, Never, Never]
+    success_schema: S.Codec[A_co, Any, Never, Never]
 
 
 class _Cursor(TypedDict):
@@ -1105,12 +1120,15 @@ class EnabledWhen(Tag[Callable[[ClientProfile], bool]], key="effect/ai/McpSchema
 # --- resource template parameters ---------------------------------------------------------
 
 
+T_co = TypeVar("T_co", covariant=True)
+
+
 @dataclass(frozen=True, slots=True)
-class Param[T]:
+class Param(Generic[T_co]):
     """A named URI-template parameter (Effect's ``McpSchema.param``)."""
 
     name: str
-    schema: S.Codec[T, Any, Any, Any]
+    schema: S.Codec[T_co, Any, Any, Any]
 
 
 def param[T](name: str, schema: S.Codec[T, Any, Any, Any]) -> Param[T]:

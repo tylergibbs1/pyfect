@@ -62,7 +62,7 @@ class HashMap[K = Unsubscripted, V = Unsubscripted]:
     ) -> HashMap[K2, V2]: ...
     @overload
     @classmethod
-    def make(cls, *entries: tuple[K, V]) -> HashMap[K, V]: ...
+    def make[K2, V2](cls: type[HashMap[K2, V2]], *entries: tuple[K2, V2]) -> HashMap[K2, V2]: ...
     @classmethod
     def make[K2, V2](cls, *entries: tuple[K2, V2]) -> HashMap[K2, V2]:
         return HashMap.from_iterable(entries)
@@ -74,7 +74,9 @@ class HashMap[K = Unsubscripted, V = Unsubscripted]:
     ) -> HashMap[K2, V2]: ...
     @overload
     @classmethod
-    def from_iterable(cls, entries: Iterable[tuple[K, V]]) -> HashMap[K, V]: ...
+    def from_iterable[K2, V2](
+        cls: type[HashMap[K2, V2]], entries: Iterable[tuple[K2, V2]]
+    ) -> HashMap[K2, V2]: ...
     @classmethod
     def from_iterable[K2, V2](cls, entries: Iterable[tuple[K2, V2]]) -> HashMap[K2, V2]:
         """The map of ``entries``; a later value for an equal key wins, and
@@ -103,7 +105,7 @@ class HashMap[K = Unsubscripted, V = Unsubscripted]:
     def __contains__(self, key: object) -> bool:
         return self.has(key)
 
-    def __getitem__(self, key: K) -> V:
+    def __getitem__[K2, V2](self: HashMap[K2, V2], key: K2) -> V2:
         found = self._find(key)
         if found is None:
             raise KeyError(key)
@@ -143,13 +145,13 @@ class HashMap[K = Unsubscripted, V = Unsubscripted]:
     def values(self) -> Iterator[V]:
         return (e.value for e in self._entries())
 
-    def to_values(self) -> list[V]:
+    def to_values[V2](self: HashMap[Any, V2]) -> list[V2]:
         return list(self.values())
 
     def entries(self) -> Iterator[tuple[K, V]]:
         return iter(self)
 
-    def to_entries(self) -> list[tuple[K, V]]:
+    def to_entries[K2, V2](self: HashMap[K2, V2]) -> list[tuple[K2, V2]]:
         return list(self)
 
     def find_first(self, predicate: Callable[[V, K], bool]) -> Option[tuple[K, V]]:
@@ -185,7 +187,7 @@ class HashMap[K = Unsubscripted, V = Unsubscripted]:
             return self
         return HashMap(root, size)
 
-    def set(self, key: K, value: V) -> HashMap[K, V]:
+    def set[K2, V2](self: HashMap[K2, V2], key: K2, value: V2) -> HashMap[K2, V2]:
         """The map with ``key`` set to ``value``; the same map when ``key``
         already holds this value (``Object.is``: ``pyfect._js.same_value``).
         An equal key already there is kept."""
@@ -195,7 +197,9 @@ class HashMap[K = Unsubscripted, V = Unsubscripted]:
         root = _hamt.insert(self._root, Entry(hash, ident, key, value))
         return self._with(root, self._size + added)
 
-    def set_many(self, entries: Iterable[tuple[K, V]]) -> HashMap[K, V]:
+    def set_many[K2, V2](
+        self: HashMap[K2, V2], entries: Iterable[tuple[K2, V2]]
+    ) -> HashMap[K2, V2]:
         root, size = self._root, self._size
         for key, value in entries:
             ident = equal_key(key)
@@ -204,11 +208,11 @@ class HashMap[K = Unsubscripted, V = Unsubscripted]:
             root = _hamt.insert(root, Entry(hash, ident, key, value))
         return self._with(root, size)
 
-    def remove(self, key: K) -> HashMap[K, V]:
+    def remove[K2, V2](self: HashMap[K2, V2], key: K2) -> HashMap[K2, V2]:
         """The map without ``key``; the same map when it has no ``key``."""
         return self.remove_many((key,))
 
-    def remove_many(self, keys: Iterable[K]) -> HashMap[K, V]:
+    def remove_many[K2, V2](self: HashMap[K2, V2], keys: Iterable[K2]) -> HashMap[K2, V2]:
         root, size = self._root, self._size
         for key in keys:
             ident = equal_key(key)
@@ -217,7 +221,9 @@ class HashMap[K = Unsubscripted, V = Unsubscripted]:
             root = smaller
         return self._with(root, size)
 
-    def modify_at(self, key: K, f: Callable[[Option[V]], Option[V]]) -> HashMap[K, V]:
+    def modify_at[K2, V2](
+        self: HashMap[K2, V2], key: K2, f: Callable[[Option[V2]], Option[V2]]
+    ) -> HashMap[K2, V2]:
         """Set, keep or remove ``key`` by what ``f`` makes of its current
         value: ``Some(new)`` sets it, ``None`` removes it."""
         match f(self.get(key)):
@@ -226,10 +232,12 @@ class HashMap[K = Unsubscripted, V = Unsubscripted]:
             case None:
                 return self.remove(key)
 
-    def modify_hash(self, key: K, hash: int, f: Callable[[Option[V]], Option[V]]) -> HashMap[K, V]:
+    def modify_hash[K2, V2](
+        self: HashMap[K2, V2], key: K2, hash: int, f: Callable[[Option[V2]], Option[V2]]
+    ) -> HashMap[K2, V2]:
         return self.modify_at(key, f)
 
-    def modify(self, key: K, f: Callable[[V], V]) -> HashMap[K, V]:
+    def modify[K2, V2](self: HashMap[K2, V2], key: K2, f: Callable[[V2], V2]) -> HashMap[K2, V2]:
         """The map with ``key``'s value replaced by ``f(value)``; the same
         map without ``key``."""
         found = self._find(key)
@@ -239,13 +247,16 @@ class HashMap[K = Unsubscripted, V = Unsubscripted]:
         """Both maps' entries; ``that``'s value wins for an equal key."""
         return HashMap[K | K1, V | V1](self._root, self._size).set_many(that)
 
-    def _rebuilt[A](self, pairs: Iterable[tuple[K, A]]) -> HashMap[K, A]:
-        return HashMap[K, A]().set_many(pairs)
+    @staticmethod
+    def _rebuilt[K2, A](pairs: Iterable[tuple[K2, A]]) -> HashMap[K2, A]:
+        return HashMap[K2, A]().set_many(pairs)
 
     def map[A](self, f: Callable[[V, K], A]) -> HashMap[K, A]:
         return self._rebuilt((e.key, f(e.value, e.key)) for e in list(self._entries()))
 
-    def flat_map[A](self, f: Callable[[V, K], HashMap[K, A]]) -> HashMap[K, A]:
+    def flat_map[K2, V2, A](
+        self: HashMap[K2, V2], f: Callable[[V2, K2], HashMap[K2, A]]
+    ) -> HashMap[K2, A]:
         """The union of ``f(value, key)`` for every entry."""
         return self._rebuilt(pair for e in list(self._entries()) for pair in f(e.value, e.key))
 
