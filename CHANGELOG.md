@@ -10,9 +10,9 @@
   `ensuring`, `on_error` and every channel's per-pull error handler) is one primitive (Effect's
   `OnExit`), `Queue.offer` adds an item that fits in its own step as Effect's `offer` does, and
   `isinstance` checks take tuples (`A | B` built a union on every call, once per fiber step).
-  On CPython 3.14, `group_by_key` + `flat_map` runs about 3M items/s in chunks of 256 (was
-  480k) and 210k/s in chunks of one (was 78k); with a `grouped_within` per group, 1.6M (was
-  330k) and 150k/s (was 63k). `benchmarks/streams.py` measures these.
+  On CPython 3.14, `group_by_key` + `flat_map` runs about 3.7M items/s in chunks of 256 (was
+  520k) and 285k/s in chunks of one (was 84k); with a `grouped_within` per group, 2.0M (was
+  350k) and 195k/s (was 69k). `benchmarks/streams.py` measures these.
 - A fiber pauses for its step budget where Effect does: before the step that reaches
   `MaxOpsBeforeYield`, the resumed run counting the pause's continuation. A producer that never
   waits now offers 1023 items between a waiting consumer's turns, as in Effect (it was 683),
