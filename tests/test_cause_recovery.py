@@ -5,6 +5,7 @@ names the Effect test it follows.
 """
 
 import math
+import os
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -430,6 +431,62 @@ def test_recovery_reads_causes_only_through_find_recoverable_error():
         if re.search(r"\bfirst_failure\b|\.failures\b", line)
     ]
     assert offenders == []
+
+
+# Where Effect 4.1.2 calls ``causeElectDefects`` (internal/effect.ts, by the
+# function around the call) and what ports each call. Nothing else elects.
+_ELECTING_SITES = {
+    "findRecoverableError": "cause.py: Cause.find_recoverable_error",
+    "raceAll": "_cause_election.py: race_failure_cause",
+    "combineFinalizerCause": "_cause_election.py: finalizer_cause",
+    "iterateConcurrentImpl": "_cause_election.py: late_sibling_cause",
+}
+_SRC = Path(__file__).parent.parent / "src" / "pyfect"
+_EFFECT_TS = (
+    Path(os.environ.get("PYFECT_EFFECT_REF") or _SRC.parent.parent.parent / "pyfect-ref" / "effect")
+    / "packages/effect/src/internal/effect.ts"
+)
+
+
+def test_only_the_ports_of_effects_electing_sites_elect_defects():
+    """Combining causes elects defects only where Effect does. Electing is
+    ``elect_defects``, called only by ``find_recoverable_error`` and the
+    functions of ``_cause_election.py``, one per Effect site; combining
+    anywhere else is ``a + b`` or ``exit.as_void_all``. ``cause.merge``
+    elects too, so src never uses it."""
+    calls = {
+        f"{p.relative_to(_SRC)}:{n}"
+        for p in _SRC.rglob("*.py")
+        for n, line in enumerate(p.read_text().splitlines(), 1)
+        if re.search(
+            r"\.elect_defects\(|\bmerge\b.*\bfrom pyfect\.cause\b|"
+            r"from pyfect\.cause import[^\n]*\bmerge\b|\bcause_?\.merge\(",
+            line,
+        )
+    }
+    election = (_SRC / "_cause_election.py").read_text()
+    assert {c for c in calls if not c.startswith(("cause.py:", "_cause_election.py:"))} == set()
+    ported = {site.split(": ")[1] for site in _ELECTING_SITES.values()}
+    functions = set(re.findall(r"^def (\w+)", election, re.MULTILINE))
+    assert functions == {name for name in ported if "." not in name}
+    assert election.count(".elect_defects()") == len(functions)
+
+
+@pytest.mark.skipif(not _EFFECT_TS.is_file(), reason=f"no Effect checkout at {_EFFECT_TS}")
+def test_effect_still_elects_exactly_where_pyfect_does():
+    """Every ``causeElectDefects`` call in Effect's internal/effect.ts, named by
+    the function it is in, has its port in ``_ELECTING_SITES``, and no more."""
+    lines = _EFFECT_TS.read_text().splitlines()
+    owners: list[str] = []
+    for n, line in enumerate(lines):
+        if "causeElectDefects(" in line and not line.startswith("export const causeElectDefects"):
+            owner = next(
+                m.group(1)
+                for prev in reversed(lines[: n + 1])
+                if (m := re.match(r"(?:export )?const (\w+)", prev))
+            )
+            owners.append(owner)
+    assert sorted(owners) == sorted(_ELECTING_SITES)
 
 
 def test_tap_error_taps_the_first_error_even_beside_a_defect():

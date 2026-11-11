@@ -13,8 +13,9 @@ from __future__ import annotations
 from collections.abc import Callable, Generator
 from typing import TYPE_CHECKING, Any, Never, Protocol, cast, final
 
+from pyfect._cause_election import finalizer_cause
 from pyfect._core import Effect, Frame, Step
-from pyfect.cause import Cause, merge
+from pyfect.cause import Cause
 from pyfect.cause import die as die_cause
 from pyfect.exit import Exit, Failure, Success
 
@@ -376,7 +377,9 @@ class _GenFrame(Frame):
         except KeyboardInterrupt:
             raise  # Ctrl-C: the loop interrupts the fiber (Fiber._raised)
         except BaseException as exc:
-            return Failure(merge(cause, die_cause(exc)))
+            # A ``finally`` that raises while the generator unwinds a failure
+            # is a failing finalizer.
+            return Failure(finalizer_cause(Failure(cause), die_cause(exc)))
         return Failure(cause)
 
 

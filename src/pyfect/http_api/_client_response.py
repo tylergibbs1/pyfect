@@ -14,7 +14,6 @@ from pyfect._json_text import PARSE_ERRORS, parse
 from pyfect._primitives import Restore, uninterruptible_mask
 from pyfect.cause import Cause
 from pyfect.cause import fail as cause_fail
-from pyfect.cause import merge as cause_merge
 from pyfect.effect import context, fail, fail_cause, succeed, suspend
 from pyfect.encoding import ndjson, sse
 from pyfect.http import url_params
@@ -97,7 +96,7 @@ def _fail_with(decode: ResponseDecoder) -> ResponseDecoder:
         status_error = HttpClientError(StatusCodeError(response.request, response))
 
         def on_cause(cause: Cause[Any]) -> Effect[Any, Any, Any]:
-            return fail_cause(cause_merge(cause_fail(status_error), cause))
+            return fail_cause(cause_fail(status_error) + cause)
 
         return decode(response, sse_options).catch_cause(on_cause).flat_map(fail)
 

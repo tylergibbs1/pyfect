@@ -993,3 +993,35 @@ def test_completes_a_response_sent_after_a_disconnect(
         return (yield from sent.wait().timeout("2 seconds"))
 
     assert run_live(program()).status == 200
+
+
+def test_a_body_stream_failing_after_the_head_is_a_defect_beside_the_response() -> None:
+    """Under Node: a streamed body that fails once its head is sent. Effect
+    writes the body ``Stream.orDie``, then ``Cause.combine``s the failure with
+    a ``Die`` of the response (no election), so middleware sees two defects:
+    the stream's error and the response."""
+    from pyfect.cause import Die
+    from pyfect.deferred import Deferred
+
+    @fx.fn
+    def program():
+        sent = yield from Deferred[Exit.Exit[Any, Any], Never].make()
+        body = stream.make(b"a").concat(stream.fail("boom"))
+        app = router.add("GET", "/", effect.succeed(server_response.stream(body)))
+
+        def middleware(app: fx.Effect[HttpServerResponse, Any, Any]) -> Any:
+            return app.on_exit(sent.succeed)
+
+        yield from router.serve(app, middleware=middleware, disable_logger=True).build()
+        client = yield from HttpClient()
+        yield from client.get("/").flat_map(lambda response: response.text).exit()
+        return (yield from sent.wait().timeout("2 seconds"))
+
+    exit_: Exit.Exit[Any, Any] = run_live(program())
+    assert isinstance(exit_, Exit.Failure)
+    reasons: tuple[object, ...] = exit_.cause.reasons
+    stream_error, sent_response = reasons
+    assert isinstance(stream_error, Die)
+    assert stream_error.defect == "boom"
+    assert isinstance(sent_response, Die)
+    assert isinstance(sent_response.defect, HttpServerResponse)

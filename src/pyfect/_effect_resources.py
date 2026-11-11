@@ -11,9 +11,10 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Never
 
 from pyfect import _core
+from pyfect._cause_election import finalizer_cause
 from pyfect._effect_args import require_effect
 from pyfect._effect_base import A_co, E_co, EffectBase, R_co, Step, as_effect
-from pyfect.cause import Cause, merge
+from pyfect.cause import Cause
 from pyfect.exit import Exit, Failure, Success
 from pyfect.result import Ok, Result
 
@@ -173,7 +174,6 @@ def _run_finalizer(finalizer: Effect[object, Any, Any], ex: Exit[Any, Any]) -> S
     its cause to the result."""
 
     def after_failure(fin_cause: Cause[Any]) -> Effect[Any, Any, Any]:
-        base = ex.cause if isinstance(ex, Failure) else Cause(())
-        return _core._FailCause(merge(base, fin_cause))
+        return _core._FailCause(finalizer_cause(ex, fin_cause))
 
     return _core._MatchCause(finalizer, after_failure, lambda _: _core._FromExit(ex))

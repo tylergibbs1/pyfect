@@ -50,8 +50,12 @@ Effect (effect.website, v4 semantics) for Python. Python >= 3.13, pyright strict
 - Recovery combinators read a cause only through `Cause.find_recoverable_error()` (elects
   defects); observers like `tap_error` use `find_error()`. `.failures` outside `cause.py` is
   banned by `tests/test_cause_recovery.py`.
-- Causes of failures that happened together (finalizers, siblings) are combined with
-  `cause.merge(...)`, which dedupes and elects defects.
+- Combining causes is `a + b` (Effect's `Cause.combine`: dedupes, never elects) or
+  `exit.as_void_all` (`Exit.asVoidAll`: concatenates, e.g. a scope's finalizers). Effect
+  elects defects only after a failed body's finalizer fails (`combineFinalizerCause`), when
+  every racer of a race failed, and when a concurrent `for_each` adds a later failure to
+  its first. Those three are `_cause_election.py`; `tests/test_cause_recovery.py` bans
+  `elect_defects` and `cause.merge` anywhere else in src and checks Effect's own call sites.
 
 ## API names that follow Effect v4
 

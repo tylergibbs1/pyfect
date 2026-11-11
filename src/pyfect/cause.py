@@ -405,9 +405,11 @@ def _reason_key(reason: Reason[object]) -> object:
 
 
 def merge[E](*causes: Cause[E]) -> Cause[E]:
-    """Combine causes of failures that happened together: a body and its
-    finalizers, or concurrent siblings. A defect in any of them makes
-    every typed error a defect, so the result cannot be recovered."""
+    """Combine causes, then make every typed error a defect if any of them
+    holds one. Effect has no such combinator: ``Cause.combine`` is ``a + b``,
+    which never elects; Effect elects only after a finalizer that failed,
+    a race every racer lost, and a concurrent ``for_each``'s later failures,
+    which pyfect does internally."""
     combined: Cause[E] = Cause(())
     for c in causes:
         combined = combined + c

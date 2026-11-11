@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.5.3 (unreleased)
+
+### Fixed
+
+- Typed errors become defects only where Effect elects them: after a failed body's finalizer
+  fails, when every racer of a race fails, and when a concurrent `for_each` adds a later
+  failure to its first. Closing a scope now fails with its finalizers' causes as they are
+  (concatenated, as Effect's `Exit.asVoidAll`: a typed failure stays a `Fail` beside a
+  defect, and equal failures are kept), and so does `scoped` / `ensuring` / `on_exit` after
+  a successful body. A race every racer lost keeps equal failures (still electing defects).
+- An interrupted `callback` whose canceler fails reports the interruption first, then the
+  canceler's cause (Effect's `combineFinalizerCause`).
+- `HttpApiClient`: an error response whose decoder dies keeps its `StatusCodeError` a typed
+  failure beside the defect.
+- The live HTTP server writes a streamed body as Effect does (`Stream.orDie`), so its failure
+  after the head is a defect, combined with the response without electing.
+- MCP: a `resources/read` failing with a typed error beside a defect and an interruption
+  answers the whole cause with the error still a failure, as the other requests do (it went
+  through a `catch_tag`, which elected the defect; Effect maps the error instead).
+
 ## 0.5.2 (2026-11-10)
 
 ### Added
