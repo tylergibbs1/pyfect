@@ -8,7 +8,6 @@ Each test's docstring is the Effect test title. Durations are seconds.
 
 from __future__ import annotations
 
-from dataclasses import replace
 from typing import Any
 
 import pytest
@@ -46,7 +45,13 @@ _STORE_ERROR = cb.CircuitBreakerError(
 
 def _memory_store_with(**override: Any) -> fx.Layer[cb.CircuitBreakerStore]:
     def build(store: cb.CircuitBreakerStoreService) -> cb.CircuitBreakerStoreService:
-        return replace(store, **override)
+        operations: dict[str, Any] = {
+            "admit": store.admit,
+            "record": store.record,
+            "state": store.state,
+            **override,
+        }
+        return cb.CircuitBreakerStoreService(**operations)
 
     return fx.layer.effect(cb.CircuitBreakerStore, cb.CircuitBreakerStore().map(build)).pipe(
         fx.provide(cb.layer_store_memory())

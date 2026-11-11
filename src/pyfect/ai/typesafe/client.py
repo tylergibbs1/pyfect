@@ -11,14 +11,14 @@ nothing is retried.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
-from typing import Any, Never
+from typing import Any, Never, Self, final
 
 from pyfect import byte_size
 from pyfect import config as C
 from pyfect import layer as L
 from pyfect._core import Effect
 from pyfect._js import or_default
+from pyfect._service_copy import replaced
 from pyfect.ai import _provider as P
 from pyfect.ai._provider import ClientTransform
 from pyfect.ai.ai_error import AiError
@@ -46,15 +46,43 @@ def _uses_images(request: W.SystemOneRequest) -> bool:
     return "assets" in request or any(q["type"] == "box" for q in request["questions"].values())
 
 
-@dataclass(frozen=True)
+@final
 class Service:
-    """The client: the configured ``HttpClient`` and its calls."""
+    """The client: the configured ``HttpClient`` and its calls. ``make``
+    builds it; ``Service(http_client, system_one, list_models)`` makes one
+    of two functions (a test double, say)."""
+
+    __slots__ = ("_list_models", "_system_one", "http_client")
 
     http_client: HttpClientService[HttpClientError]
-    system_one: Callable[[W.SystemOneRequest], Effect[W.SystemOneResponse, AiError]]
-    """Sends ``TypeSafe-Danger-Zone-Images: true`` when the request has
-    assets or a box question."""
-    list_models: Callable[[], Effect[W.ListModelsResponse, AiError]]
+
+    def __replace__(self, **changes: Any) -> Self:
+        """A copy with ``changes`` to the constructor's arguments (``copy.replace``)."""
+        return replaced(self, changes)
+
+    def __init__(
+        self,
+        http_client: HttpClientService[HttpClientError],
+        system_one: Callable[[W.SystemOneRequest], Effect[W.SystemOneResponse, AiError]],
+        list_models: Callable[[], Effect[W.ListModelsResponse, AiError]],
+    ) -> None:
+        self.http_client = http_client
+        self._system_one = system_one
+        self._list_models = list_models
+
+    def system_one(self, request: W.SystemOneRequest) -> Effect[W.SystemOneResponse, AiError]:
+        """Ask System One ``request`` 's questions: ``POST /systemone``,
+        sending ``TypeSafe-Danger-Zone-Images: true`` when the request has
+        assets or a box question; a ``TypeSafeConfig`` in context transforms
+        the client for this call. Every failure is an ``AiError``: an error
+        status maps to its reason, an undecodable body to an
+        ``InvalidOutputError`` or ``InvalidResponseError``, a transport
+        failure to a ``NetworkError``. Nothing is retried."""
+        return self._system_one(request)
+
+    def list_models(self) -> Effect[W.ListModelsResponse, AiError]:
+        """The available models: ``GET /models``. Fails as ``system_one``."""
+        return self._list_models()
 
 
 class TypeSafeClient(Tag[Service], key="@effect/ai-typesafe/TypeSafeClient"):
@@ -154,4 +182,12 @@ def layer_config(
     return L.effect(TypeSafeClient, built)
 
 
-__all__ = ["DEFAULT_API_URL", "Service", "TypeSafeClient", "layer", "layer_config", "make"]
+__all__ = [
+    "DEFAULT_API_URL",
+    "AiError",
+    "Service",
+    "TypeSafeClient",
+    "layer",
+    "layer_config",
+    "make",
+]

@@ -324,10 +324,8 @@ def _clients() -> list[Any]:
 @testing.effect
 def test_every_client_call_reads_under_the_limit(make: Any, status: int):
     """Walks each client's ``create_*`` calls, so a new call is covered."""
-    from dataclasses import fields
-
     built = yield from make(max_response_bytes=CHUNK).pipe(fx.provide(Counter(0).mock().layer))
-    calls = [f.name for f in fields(built) if f.name.startswith("create_")]
+    calls = [name for name in dir(type(built)) if name.startswith("create_")]
     assert len(calls) >= 2
     for name in calls:
         counter = Counter(4096, CHUNK)  # 4 MiB

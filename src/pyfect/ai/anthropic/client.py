@@ -18,8 +18,7 @@ a message until ``message_stop``.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
-from typing import Any, Never, Protocol, TypedDict
+from typing import Any, Never, Protocol, Self, TypedDict, final
 
 import pyfect as fx
 from pyfect import byte_size
@@ -28,6 +27,7 @@ from pyfect import schema as S
 from pyfect import stream as St
 from pyfect._core import Effect
 from pyfect._js import or_default
+from pyfect._service_copy import replaced
 from pyfect.ai import _provider as P
 from pyfect.ai.ai_error import AiError
 from pyfect.ai.anthropic import _schema as W
@@ -77,14 +77,55 @@ class CreateMessageStream(Protocol):
     ) -> Effect[tuple[HttpClientResponse, Stream[W.MessageStreamEvent, AiError]], AiError]: ...
 
 
-@dataclass(frozen=True)
+@final
 class Service:
-    """The client: the configured ``HttpClient`` and the Messages calls."""
+    """The client: the configured ``HttpClient`` and the Messages calls.
+    ``make`` builds it; ``Service(http_client, create_message,
+    create_message_stream)`` makes one of two functions (a test double,
+    say)."""
+
+    __slots__ = ("_create_message", "_create_message_stream", "http_client", "max_response_bytes")
 
     http_client: HttpClientService[HttpClientError]
-    create_message: CreateMessage
-    create_message_stream: CreateMessageStream
-    max_response_bytes: ByteSize = P.DEFAULT_MAX_RESPONSE_BYTES
+    max_response_bytes: ByteSize
+
+    def __replace__(self, **changes: Any) -> Self:
+        """A copy with ``changes`` to the constructor's arguments (``copy.replace``)."""
+        return replaced(self, changes)
+
+    def __init__(
+        self,
+        http_client: HttpClientService[HttpClientError],
+        create_message: CreateMessage,
+        create_message_stream: CreateMessageStream,
+        max_response_bytes: ByteSize = P.DEFAULT_MAX_RESPONSE_BYTES,
+    ) -> None:
+        self.http_client = http_client
+        self._create_message = create_message
+        self._create_message_stream = create_message_stream
+        self.max_response_bytes = max_response_bytes
+
+    def create_message(
+        self, payload: Payload, params: MessageParams | None = None, /
+    ) -> Effect[tuple[W.Message, HttpClientResponse], AiError]:
+        """Create a message: ``POST /v1/messages?beta=true`` with
+        ``payload``, ``params`` giving the ``anthropic-beta`` and
+        ``anthropic-version`` headers; an ``AnthropicConfig`` in context
+        transforms the client for this call. The decoded message and the
+        response. Every failure is an ``AiError``: an error status maps to
+        its reason (a 429 to a ``RateLimitError``), a malformed body to an
+        ``InvalidResponseError``."""
+        return self._create_message(payload, params)
+
+    def create_message_stream(
+        self, payload: Payload, params: MessageParams | None = None, /
+    ) -> Effect[tuple[HttpClientResponse, Stream[W.MessageStreamEvent, AiError]], AiError]:
+        """Create a message as server-sent events: ``POST /v1/messages``
+        with ``payload`` and ``"stream": true``. The response and its
+        events (pings left out), ending after ``message_stop``. Failures,
+        of the request or of the stream, are ``AiError`` s mapped as in
+        ``create_message``."""
+        return self._create_message_stream(payload, params)
 
 
 class AnthropicClient(Tag[Service], key="@effect/ai-anthropic/AnthropicClient"):
@@ -275,6 +316,7 @@ def layer_config(
 __all__ = [
     "DEFAULT_API_URL",
     "DEFAULT_API_VERSION",
+    "AiError",
     "AnthropicClient",
     "CreateMessage",
     "CreateMessageStream",

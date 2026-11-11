@@ -3,20 +3,42 @@ presses by the test, recording everything displayed."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from collections.abc import Callable
 from typing import Never, cast
 
 import pyfect as fx
 from pyfect import layer, scope
 from pyfect.errors import Done
-from pyfect.queue import Queue
-from pyfect.terminal import Key, Size, Terminal, TerminalService, UserInput
+from pyfect.platform_error import PlatformError
+from pyfect.queue import Dequeue, Queue
+from pyfect.terminal import Key, QuitError, Size, Terminal, TerminalService, UserInput
 
 
-@dataclass(frozen=True, slots=True, kw_only=True)
 class MockTerminalService(TerminalService):
-    output: list[str] = field(default_factory=list[str])
-    queue: Queue[UserInput, Done] = field(default_factory=Queue[UserInput, Done])
+    __slots__ = ("output", "queue")
+
+    def __init__(
+        self,
+        *,
+        columns: fx.Effect[int],
+        rows: fx.Effect[int],
+        size: fx.Effect[Dequeue[Size, Done], Never, scope.Scope],
+        read_input: fx.Effect[Dequeue[UserInput, Done], Never, scope.Scope],
+        read_line: fx.Effect[str, QuitError],
+        display: Callable[[str], fx.Effect[None, PlatformError]],
+        output: list[str],
+        queue: Queue[UserInput, Done],
+    ) -> None:
+        super().__init__(
+            columns=columns,
+            rows=rows,
+            size=size,
+            read_input=read_input,
+            read_line=read_line,
+            display=display,
+        )
+        self.output = output
+        self.queue = queue
 
     def input_text(self, text: str) -> fx.Effect[None]:
         return self.queue.offer_all([_user_input(ch) for ch in text]).as_(None)

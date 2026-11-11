@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import copy
 from collections.abc import Callable, Generator
 from dataclasses import replace
 from datetime import datetime
@@ -502,7 +503,9 @@ def expect_continues_beside_parked_sibling(
                 return engine.deferred_done(deferred, **done).delay("10 millis")
 
             delayed = body.pipe(
-                fx.provide_service(WorkflowEngine, replace(engine, deferred_done=deferred_done))
+                fx.provide_service(
+                    WorkflowEngine, copy.replace(engine, deferred_done=deferred_done)
+                )
             )
             result, _ = yield from fx.all(
                 delayed.flat_map(lambda value: next_step_activity(next_step_runs, value)),

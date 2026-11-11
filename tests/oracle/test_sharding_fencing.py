@@ -5,8 +5,9 @@ holds it. Each test's docstring is the Effect test title."""
 
 from __future__ import annotations
 
+import copy
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from typing import Any
 
 import pyfect as fx
@@ -93,7 +94,7 @@ def _with_fenced_entity(body: Callable[[_Fenced], fx.Effect[None, Any, Any]]) ->
                 fence.refreshes.append(shards)
             return fx.succeed([])
 
-        return replace(storage, refresh=refresh)
+        return copy.replace(storage, refresh=refresh)
 
     storage_layer = fx.layer.effect(RunnerStorage, runner_storage.make_memory().map(fenced_storage))
 

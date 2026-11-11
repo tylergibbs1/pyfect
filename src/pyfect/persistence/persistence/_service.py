@@ -7,11 +7,12 @@ from __future__ import annotations
 import math
 from collections.abc import Callable, Generator, Iterable, Sequence
 from dataclasses import dataclass
-from typing import Any, Final, Never, Protocol
+from typing import Any, Final, Never, Protocol, Self
 
 from pyfect import _json_text
 from pyfect._core import Effect
 from pyfect._effect_args import require_effect
+from pyfect._service_copy import replaced
 from pyfect.clock import ClockService
 from pyfect.context import Tag
 from pyfect.duration import Duration, from_input_unsafe, infinity, to_millis
@@ -54,12 +55,27 @@ class BackingPersistenceStore:
         require_effect(self.clear, "clear")
 
 
-@dataclass(frozen=True, slots=True)
 class BackingPersistenceService:
-    """A backend: ``make(store_id)`` opens one of its stores, kept apart
-    from the others."""
+    """A backend whose stores ``Persistence`` keeps outcomes in:
+    ``BackingPersistenceService(make)`` builds one from the function that
+    opens a store."""
 
-    make: Callable[[str], Effect[BackingPersistenceStore, Never, Scope]]
+    __slots__ = ("_make",)
+
+    def __replace__(self, **changes: Any) -> Self:
+        """A copy with ``changes`` to the constructor's arguments (``copy.replace``)."""
+        return replaced(self, changes)
+
+    def __init__(
+        self, make: Callable[[str], Effect[BackingPersistenceStore, Never, Scope]]
+    ) -> None:
+        self._make = make
+
+    def make(self, store_id: str) -> Effect[BackingPersistenceStore, Never, Scope]:
+        """Opens the store ``store_id``, kept apart from the backend's other
+        stores; the scope is its lifetime. Never fails: a backend that cannot
+        open it dies (the SQL backend, when it cannot create the table)."""
+        return self._make(store_id)
 
 
 class BackingPersistence(

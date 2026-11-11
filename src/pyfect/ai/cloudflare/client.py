@@ -12,8 +12,7 @@ is retried.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
-from typing import Any, Literal, Never, TypedDict, cast
+from typing import Any, Literal, Never, Self, TypedDict, cast, final
 from urllib.parse import quote
 
 import pyfect as fx
@@ -23,6 +22,7 @@ from pyfect import layer as L
 from pyfect import schema as S
 from pyfect._core import Effect
 from pyfect._js import or_default
+from pyfect._service_copy import replaced
 from pyfect.ai import _provider as P
 from pyfect.ai._provider import ClientTransform
 from pyfect.ai.ai_error import AiError
@@ -40,12 +40,37 @@ from pyfect.redacted import value as redacted_value
 DEFAULT_API_URL = "https://api.cloudflare.com/client/v4"
 
 
-@dataclass(frozen=True)
+@final
 class Service:
-    """The client: the configured ``HttpClient`` and the decisions call."""
+    """The client: the configured ``HttpClient`` and the decisions call.
+    ``make`` builds it; ``Service(http_client, create_decisions)`` makes one
+    of a function (a test double, say)."""
+
+    __slots__ = ("_create_decisions", "http_client")
 
     http_client: HttpClientService[HttpClientError]
-    create_decisions: Callable[[W.DecisionsRequest], Effect[W.DecisionsResponse, AiError]]
+
+    def __replace__(self, **changes: Any) -> Self:
+        """A copy with ``changes`` to the constructor's arguments (``copy.replace``)."""
+        return replaced(self, changes)
+
+    def __init__(
+        self,
+        http_client: HttpClientService[HttpClientError],
+        create_decisions: Callable[[W.DecisionsRequest], Effect[W.DecisionsResponse, AiError]],
+    ) -> None:
+        self.http_client = http_client
+        self._create_decisions = create_decisions
+
+    def create_decisions(self, request: W.DecisionsRequest) -> Effect[W.DecisionsResponse, AiError]:
+        """Run ``request`` 's Clef model: ``POST`` to
+        ``/accounts/<account_id>/ai/run/@cf/cloudflare/<model>``, giving the
+        ``result`` of Cloudflare's envelope. Every failure is an ``AiError``:
+        an error status or a failure envelope maps to its reason (a 429 to a
+        ``RateLimitError``), an undecodable body to an ``InvalidOutputError``
+        or ``InvalidResponseError``, a transport failure to a
+        ``NetworkError``. Nothing is retried."""
+        return self._create_decisions(request)
 
 
 class CloudflareClient(Tag[Service], key="@effect/ai-cloudflare/CloudflareClient"):
@@ -171,4 +196,12 @@ def layer_config(
     return L.effect(CloudflareClient, built)
 
 
-__all__ = ["DEFAULT_API_URL", "CloudflareClient", "Service", "layer", "layer_config", "make"]
+__all__ = [
+    "DEFAULT_API_URL",
+    "AiError",
+    "CloudflareClient",
+    "Service",
+    "layer",
+    "layer_config",
+    "make",
+]

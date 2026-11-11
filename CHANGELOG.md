@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.6.0 (unreleased)
+
+### Changed
+
+- The services that held their operations in dataclass fields of function or effect type are
+  classes whose operations are documented methods and properties, as `MacService` has been
+  since 0.5.3, so `help()`, `inspect.signature` and the API reference show them. Constructors
+  keep their keywords, positional order and defaults, and `svc.op(...)` / `svc.value` read as
+  before. Converted: the ai provider clients (`anthropic`, `openai`, `openai_compat`,
+  `openrouter`, `cloudflare`, `typesafe`, the OpenAI socket), `IdGenerator`, `LanguageModel`'s
+  hooks, the MCP client transport, `RunnerHealth`, `RunnerStorage`, the RPC client and server
+  protocols, `RpcClientProtocol`, `RpcSerialization`, the RPC connection hooks,
+  `WorkflowEngine`, `WorkerPlatform`, `WorkerRunnerPlatform`, `EventLogRemote`,
+  `GraphQLProtocol`, `HttpPlatform`, `HttpServer`, the OTLP flusher and serialization, the
+  `KeyValueStore`, `PersistedQueue` and `CircuitBreaker` stores, `BackingPersistence`,
+  `UserDirectories`, `ChildProcessSpawner`, `Socket`, `DatagramSocket`, `Stdio` and `Terminal`.
+  They are no longer dataclasses:
+  - `dataclasses.replace(svc, op=...)` becomes `copy.replace(svc, op=...)`, which every one of
+    them supports; `dataclasses.fields` and `asdict` no longer apply.
+  - Two of them are equal only when they are the same object (as the crypto services), where
+    a dataclass compared its fields; hashing is by identity too.
+  - Their plain data attributes (such as `http_client` or `max_response_bytes`) can be
+    assigned; the operations' properties are read-only.
+  - `SqlClientService.reserve` and `PgClientService.pool_stats` are read-only properties:
+    build a new client instead of assigning them.
+- Each converted module also exports the errors its service's methods fail with (`AiError` from
+  the ai client modules, `PlatformError` from `http.platform` and
+  `persistence.user_directories`), and `EventLogRemote.when_authenticated` and
+  `Flusher.register` reject a non-effect argument with a `TypeError`.
+- `tests/test_service_docs.py` now also fails for any public service that holds an operation
+  in a field.
+
 ## 0.5.7 (2026-11-11)
 
 ### Added

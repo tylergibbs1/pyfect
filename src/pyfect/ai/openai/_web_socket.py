@@ -13,8 +13,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable
-from dataclasses import dataclass
-from typing import Any, Literal, Never, NotRequired, TypedDict, cast
+from typing import Any, Literal, Never, NotRequired, Self, TypedDict, cast, final
 
 import pyfect as fx
 from pyfect import cause
@@ -23,6 +22,7 @@ from pyfect import scope as scope_mod
 from pyfect import stream as St
 from pyfect._core import Effect, uninterruptible_mask
 from pyfect._json_text import parse as parse_json_text
+from pyfect._service_copy import replaced
 from pyfect.ai import _provider as P
 from pyfect.ai import ai_error as E
 from pyfect.ai import response_id_tracker as RIT
@@ -47,12 +47,34 @@ type _Turn = Queue[W.ResponseStreamEvent, AiError | Done]
 type _Request = http_request.HttpClientRequest
 
 
-@dataclass(frozen=True)
+@final
 class SocketService:
     """Response streams over a WebSocket connection (Effect's
-    ``OpenAiSocket``)."""
+    ``OpenAiSocket``): ``make`` builds it, and
+    ``SocketService(create_response_stream)`` makes one of a function (a
+    test double, say)."""
 
-    create_response_stream: Callable[[W.CreateResponse], Effect[ResponseStream, AiError]]
+    __slots__ = ("_create_response_stream",)
+
+    def __replace__(self, **changes: Any) -> Self:
+        """A copy with ``changes`` to the constructor's arguments (``copy.replace``)."""
+        return replaced(self, changes)
+
+    def __init__(
+        self,
+        create_response_stream: Callable[[W.CreateResponse], Effect[ResponseStream, AiError]],
+    ) -> None:
+        self._create_response_stream = create_response_stream
+
+    def create_response_stream(self, options: W.CreateResponse) -> Effect[ResponseStream, AiError]:
+        """A response stream for ``options``, sent as a ``response.create``
+        message over the shared connection, one request at a time. Gives a
+        placeholder 200 response at once, and the events, ending at a
+        terminal event. The stream fails with an ``AiError``: a
+        ``NetworkError`` when the socket cannot be written or fails, or an
+        error event's reason by its status (``previous_response_not_found``
+        a 400)."""
+        return self._create_response_stream(options)
 
 
 _ERROR_TYPE_TO_STATUS = {

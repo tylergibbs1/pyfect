@@ -6,9 +6,10 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Any, Literal, Self
 
 from pyfect import schema as S
+from pyfect._service_copy import replaced
 from pyfect.context import Reference, Tag
 from pyfect.effect import Effect
 from pyfect.graphql.client_error import GraphQLError, TransportError
@@ -72,15 +73,50 @@ class Answer:
     headers: Headers | None = None
 
 
-@dataclass(frozen=True, slots=True, kw_only=True)
 class GraphQLProtocolService:
     """A transport: ``execute`` sends a query or mutation, ``subscribe``
     a subscription. ``url`` resolves the endpoint of an operation, when the
-    transport has one."""
+    transport has one. ``GraphQLProtocolService(execute=..., subscribe=...)``
+    makes one of functions (a test double, say)."""
 
-    execute: Callable[[GraphQLRequest], Effect[Answer, TransportError]]
-    subscribe: Callable[[GraphQLRequest], Stream[Answer, TransportError]]
-    url: Callable[[Kind, str], Effect[str]] | None = None
+    __slots__ = ("_execute", "_subscribe", "_url")
+
+    def __replace__(self, **changes: Any) -> Self:
+        """A copy with ``changes`` to the constructor's arguments (``copy.replace``)."""
+        return replaced(self, changes)
+
+    def __init__(
+        self,
+        *,
+        execute: Callable[[GraphQLRequest], Effect[Answer, TransportError]],
+        subscribe: Callable[[GraphQLRequest], Stream[Answer, TransportError]],
+        url: Callable[[Kind, str], Effect[str]] | None = None,
+    ) -> None:
+        self._execute = execute
+        self._subscribe = subscribe
+        self._url = url
+
+    def execute(self, request: GraphQLRequest) -> Effect[Answer, TransportError]:
+        """Sends the query or mutation ``request`` and succeeds with the
+        ``Answer`` the server gave, whatever its HTTP status. Fails with a
+        ``TransportError`` when the request could not be sent or the answer
+        is not a GraphQL response."""
+        return self._execute(request)
+
+    def subscribe(self, request: GraphQLRequest) -> Stream[Answer, TransportError]:
+        """Runs the subscription ``request``: a stream of every ``Answer``
+        the server sends, ending when the server completes it. Fails with a
+        ``TransportError`` when the subscription could not be opened or the
+        connection breaks."""
+        return self._subscribe(request)
+
+    @property
+    def url(self) -> Callable[[Kind, str], Effect[str]] | None:
+        """``url(kind, operation_name)`` resolves the endpoint the
+        transport sends that operation to (resolver batches group by it),
+        or ``None`` when the transport has no per-operation URL (the
+        WebSocket transport)."""
+        return self._url
 
 
 class GraphQLProtocol(Tag[GraphQLProtocolService], key="effect/graphql/GraphQLProtocol"):

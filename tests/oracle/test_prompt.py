@@ -36,7 +36,7 @@ from pyfect.cli.prompt import (
 )
 from pyfect.file_system import FileInfo, FileSystem, FileType, NoopFileSystem, layer_noop
 from pyfect.queue import Queue
-from pyfect.terminal import Terminal, UserInput
+from pyfect.terminal import Terminal, TerminalService, UserInput
 from pyfect.testing import Services
 
 from ._mock_terminal import display_lines, input_key, input_text
@@ -178,8 +178,13 @@ def test_does_not_acquire_terminal_input(env: Services[Env]):
         nonlocal acquisitions
         acquisitions += 1
 
-    counting = dataclasses.replace(
-        terminal, read_input=fx.sync(count).flat_map(lambda _: terminal.read_input)
+    counting = TerminalService(
+        columns=terminal.columns,
+        rows=terminal.rows,
+        size=terminal.size,
+        read_input=fx.sync(count).flat_map(lambda _: terminal.read_input),
+        read_line=terminal.read_line,
+        display=terminal.display,
     )
     result = yield from prompt.run(prompt.succeed("x")).pipe(fx.provide_service(Terminal, counting))
     assert result == "x"

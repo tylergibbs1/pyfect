@@ -5,9 +5,10 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Final, Protocol
+from typing import Any, Final, Protocol, Self
 
 from pyfect._core import Effect
+from pyfect._service_copy import replaced
 from pyfect.context import Tag
 from pyfect.duration import Duration, from_input_unsafe, millis
 from pyfect.duration import Input as DurationInput
@@ -63,22 +64,65 @@ class Cleanup(Protocol):
     ) -> Effect[None, PersistedQueueError]: ...
 
 
-@dataclass(frozen=True, slots=True, kw_only=True)
 class PersistedQueueStoreService:
-    """The elements of every queue.
+    """The elements of every queue: ``make_store_memory``,
+    ``make_store_sql`` and ``make_store_redis`` build one, and
+    ``PersistedQueueStoreService(offer=..., take=..., cleanup=...)`` makes
+    one of three functions (a test double, say)."""
 
-    - ``offer``: store an element (see ``Offer``).
-    - ``take(options)``: claim the next visible element, counting an
-      attempt, waiting while there is none. When the scope closes, a
-      success marks it completed, an interruption releases it without the
-      attempt, a ``DeadLetter`` failure marks it failed, and any other
-      failure retries it or, after ``max_attempts``, marks it failed.
-    - ``cleanup``: see ``Cleanup``.
-    """
+    __slots__ = ("_cleanup", "_offer", "_take")
 
-    offer: Offer
-    take: Callable[[TakeOptions], Effect[TakenElement, PersistedQueueError, Scope]]
-    cleanup: Cleanup
+    def __replace__(self, **changes: Any) -> Self:
+        """A copy with ``changes`` to the constructor's arguments (``copy.replace``)."""
+        return replaced(self, changes)
+
+    def __init__(
+        self,
+        *,
+        offer: Offer,
+        take: Callable[[TakeOptions], Effect[TakenElement, PersistedQueueError, Scope]],
+        cleanup: Cleanup,
+    ) -> None:
+        self._offer = offer
+        self._take = take
+        self._cleanup = cleanup
+
+    def offer(
+        self,
+        *,
+        name: str,
+        id: str,
+        element: object,
+        is_custom_id: bool,
+        delay: Duration | None = None,
+    ) -> Effect[None, PersistedQueueError]:
+        """Stores ``element`` (a JSON value) under ``id`` in queue ``name``,
+        unless the queue already has that id (``is_custom_id`` says the
+        caller chose it, so a store must check). A ``delay`` is finite and
+        positive: the element is not taken before it elapses. Fails with
+        ``PersistedQueueError`` when the backend does."""
+        return self._offer(
+            name=name, id=id, element=element, is_custom_id=is_custom_id, delay=delay
+        )
+
+    def take(self, options: TakeOptions) -> Effect[TakenElement, PersistedQueueError, Scope]:
+        """Claims the next visible element of queue ``options.name``,
+        counting an attempt, and waits while there is none. When the scope
+        closes, a success marks it completed, an interruption releases it
+        without the attempt, a ``DeadLetter`` failure marks it failed, and
+        any other failure retries it after ``options.retry_delay`` or, on
+        attempt ``options.max_attempts``, marks it failed. Fails with
+        ``PersistedQueueError`` when the backend does."""
+        return self._take(options)
+
+    def cleanup(
+        self, *, time_to_live: Duration, failed_time_to_live: Duration | None
+    ) -> Effect[None, PersistedQueueError]:
+        """Removes completed elements older than ``time_to_live`` with
+        their de-duplication records; failed ones only when
+        ``failed_time_to_live`` is given, once older than it. Fails with
+        ``PersistedQueueError`` when the backend does."""
+        return self._cleanup(time_to_live=time_to_live, failed_time_to_live=failed_time_to_live)
 
 
 class PersistedQueueStore(

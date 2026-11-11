@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Set
 from dataclasses import dataclass, field
-from typing import Any, Never
+from typing import Any, Never, Self
 
 from pyfect._core import Effect
+from pyfect._service_copy import replaced
 from pyfect.context import Context, Tag
 from pyfect.effect import context, gen, never, provide_context, succeed, suspend
 from pyfect.option import Option
@@ -24,27 +25,102 @@ def _no_initial_message() -> Effect[Option[object]]:
     return succeed(None)
 
 
-@dataclass(frozen=True, slots=True)
-class ServerProtocolService:
-    """A server transport: ``run`` hands each message of a client to the
-    server (and never returns); ``send`` writes a response to a client,
-    ``end`` closes it; ``disconnects`` yields the clients that left.
-    ``initial_message`` is the value a worker client sent first
-    (``rpc.worker.initial_message``); other transports have none.
-    ``supports_notifications``: whether the server can write to a client
-    unasked (an MCP server over it serves no subscriptions otherwise).
-    ``client_ids`` are the clients connected now (``None``: not reported)."""
+_NO_INITIAL_MESSAGE: Effect[Option[object]] = succeed(None)
 
-    run: Callable[[WriteRequest], Effect[Never]]
+
+class ServerProtocolService:
+    """A server transport (Effect's ``RpcServer.Protocol``): ``run``
+    hands each message of a client to the server, ``send`` and ``end``
+    answer a client. ``with_run`` builds one from its parts."""
+
+    __slots__ = (
+        "_client_ids",
+        "_codec_for",
+        "_end",
+        "_initial_message",
+        "_run",
+        "_send",
+        "disconnects",
+        "supports_ack",
+        "supports_notifications",
+        "supports_span_propagation",
+    )
+
     disconnects: Queue[int]
-    send: Callable[[int, Message], Effect[None]]
-    end: Callable[[int], Effect[None]]
+    """The ids of the clients that left, as they leave."""
     supports_ack: bool
+    """Whether clients send an ``Ack`` after each stream chunk."""
     supports_span_propagation: bool
-    codec_for: CodecFor
-    initial_message: Effect[Option[object]] = field(default_factory=_no_initial_message)
-    supports_notifications: bool = True
-    client_ids: Effect[Set[int]] | None = None
+    """Whether requests carry their caller's span."""
+    supports_notifications: bool
+    """Whether the server can write to a client unasked (an MCP server
+    over it serves no subscriptions otherwise)."""
+
+    def __replace__(self, **changes: Any) -> Self:
+        """A copy with ``changes`` to the constructor's arguments (``copy.replace``)."""
+        return replaced(self, changes)
+
+    def __init__(  # noqa: PLR0917
+        self,
+        run: Callable[[WriteRequest], Effect[Never]],
+        disconnects: Queue[int],
+        send: Callable[[int, Message], Effect[None]],
+        end: Callable[[int], Effect[None]],
+        supports_ack: bool,
+        supports_span_propagation: bool,
+        codec_for: CodecFor,
+        initial_message: Effect[Option[object]] = _NO_INITIAL_MESSAGE,
+        supports_notifications: bool = True,
+        client_ids: Effect[Set[int]] | None = None,
+    ) -> None:
+        self._run = run
+        self.disconnects = disconnects
+        self._send = send
+        self._end = end
+        self.supports_ack = supports_ack
+        self.supports_span_propagation = supports_span_propagation
+        self._codec_for = codec_for
+        self._initial_message = initial_message
+        self.supports_notifications = supports_notifications
+        self._client_ids = client_ids
+
+    def run(self, f: WriteRequest) -> Effect[Never]:
+        """Hands each encoded message to ``f`` with its client's id, until
+        interrupted (it never returns and never fails). Messages that
+        arrived before the server ran are handed over first."""
+        return self._run(f)
+
+    def send(self, client_id: int, response: Message) -> Effect[None]:
+        """Writes the encoded ``response`` to ``client_id``; never fails
+        (the built-in transports drop it for a client that has left)."""
+        return self._send(client_id, response)
+
+    def end(self, client_id: int) -> Effect[None]:
+        """Ends the responses to ``client_id``: the HTTP transport closes
+        its response body and stdio its output; the socket and worker
+        transports do nothing. Never fails."""
+        return self._end(client_id)
+
+    @property
+    def codec_for(self) -> CodecFor:
+        """``codec_for(schema)``: the codec filling the value holes of the
+        messages for ``schema``, the very function of the
+        ``RpcSerialization`` behind this transport (encode caches compare
+        it by identity)."""
+        return self._codec_for
+
+    @property
+    def initial_message(self) -> Effect[Option[object]]:
+        """The value a worker client sent first
+        (``rpc.worker.initial_message``), waiting for it; ``None`` on the
+        other transports. Never fails."""
+        return self._initial_message
+
+    @property
+    def client_ids(self) -> Effect[Set[int]] | None:
+        """The ids of the clients connected now (never fails), or ``None``
+        when the transport does not report them."""
+        return self._client_ids
 
 
 class ServerProtocol(Tag[ServerProtocolService], key="effect/rpc/RpcServer/Protocol"):

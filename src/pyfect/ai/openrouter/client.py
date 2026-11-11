@@ -22,8 +22,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable
-from dataclasses import dataclass
-from typing import Any, Never
+from typing import Any, Never, Self, final
 
 import pyfect as fx
 from pyfect import byte_size
@@ -31,6 +30,7 @@ from pyfect import layer as L
 from pyfect import stream as St
 from pyfect._core import Effect
 from pyfect._json_text import parse as parse_json_text
+from pyfect._service_copy import replaced
 from pyfect.ai import _provider as P
 from pyfect.ai.ai_error import AiError, InvalidRequestError
 from pyfect.ai.openrouter import _errors as Errors
@@ -68,16 +68,69 @@ type ChatCompletionStream = Effect[
 type Decisions = Effect[tuple[W.DecisionsResponse, HttpClientResponse], AiError]
 
 
-@dataclass(frozen=True)
+@final
 class Service:
     """The client: the generated client of every operation and the calls
-    the models make."""
+    the models make. ``make`` builds it; ``Service(client,
+    create_decisions, ...)`` makes one of three functions (a test double,
+    say).
+
+    Every failure is an ``AiError``: an error status maps to its reason (a
+    429 to a ``RateLimitError``), an unreadable or malformed body to an
+    ``InvalidOutputError`` or ``InvalidResponseError``, a transport failure
+    to a ``NetworkError``."""
+
+    __slots__ = (
+        "_create_chat_completion",
+        "_create_chat_completion_stream",
+        "_create_decisions",
+        "client",
+        "max_response_bytes",
+    )
 
     client: generated_client.OpenRouterClient
-    create_decisions: Callable[[W.DecisionsRequest], Decisions]
-    create_chat_completion: Callable[[GT.ChatRequest], ChatCompletion]
-    create_chat_completion_stream: Callable[[GT.ChatRequest], ChatCompletionStream]
-    max_response_bytes: ByteSize = P.DEFAULT_MAX_RESPONSE_BYTES
+    max_response_bytes: ByteSize
+
+    def __replace__(self, **changes: Any) -> Self:
+        """A copy with ``changes`` to the constructor's arguments (``copy.replace``)."""
+        return replaced(self, changes)
+
+    def __init__(
+        self,
+        client: generated_client.OpenRouterClient,
+        create_decisions: Callable[[W.DecisionsRequest], Decisions],
+        create_chat_completion: Callable[[GT.ChatRequest], ChatCompletion],
+        create_chat_completion_stream: Callable[[GT.ChatRequest], ChatCompletionStream],
+        max_response_bytes: ByteSize = P.DEFAULT_MAX_RESPONSE_BYTES,
+    ) -> None:
+        self.client = client
+        self._create_decisions = create_decisions
+        self._create_chat_completion = create_chat_completion
+        self._create_chat_completion_stream = create_chat_completion_stream
+        self.max_response_bytes = max_response_bytes
+
+    def create_decisions(self, options: W.DecisionsRequest) -> Decisions:
+        """Answer decision questions: ``POST /alpha/decisions`` (next to the
+        versioned API) with ``options``, through an ``OpenRouterConfig``'s
+        transform. The decoded decisions and the HTTP response; a body that
+        cannot be encoded fails with an ``InvalidRequestError`` ``AiError``,
+        the rest as the class says."""
+        return self._create_decisions(options)
+
+    def create_chat_completion(self, options: GT.ChatRequest) -> ChatCompletion:
+        """Create a chat completion through the generated client (and an
+        ``OpenRouterConfig``'s transform). The decoded result and the HTTP
+        response; fails with an ``AiError`` (see the class)."""
+        return self._create_chat_completion(options)
+
+    def create_chat_completion_stream(self, options: GT.ChatRequest) -> ChatCompletionStream:
+        """Create a chat completion as server-sent events: ``POST
+        /chat/completions`` with ``"stream": true`` and usage included, not
+        through an ``OpenRouterConfig``. The HTTP response and the chunks
+        until ``[DONE]`` (a chunk may carry an ``error``); data that is not
+        a chunk fails the stream with an ``InvalidResponseError``. The call
+        and the stream fail with an ``AiError`` (see the class)."""
+        return self._create_chat_completion_stream(options)
 
 
 class OpenRouterClient(Tag[Service], key="@effect/ai-openrouter/OpenRouterClient"):

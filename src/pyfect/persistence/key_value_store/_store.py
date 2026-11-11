@@ -6,12 +6,13 @@ from __future__ import annotations
 import base64
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Self
 
 from pyfect._concurrency import for_each
 from pyfect._core import Effect
 from pyfect._effect_args import require_effect
 from pyfect._js import text_encode
+from pyfect._service_copy import replaced
 from pyfect.context import Tag
 from pyfect.effect import succeed, suspend
 from pyfect.errors import TaggedError
@@ -36,35 +37,127 @@ type Value = str | bytes
 """What a store holds: text, or bytes (Effect's ``Uint8Array``)."""
 
 
-@dataclass(frozen=True, slots=True, kw_only=True)
 class KeyValueStoreService:
     """A string-keyed store of text and bytes. Build one with ``make`` (or
-    ``make_string_only`` for a backend that holds only text)."""
+    ``make_string_only`` for a backend that holds only text). Every
+    operation fails with ``KeyValueStoreError`` when the backend does."""
 
-    get: Callable[[str], Effect[str | None, KeyValueStoreError]]
-    """The value as text (bytes as Base64); ``None`` when missing."""
-    get_bytes: Callable[[str], Effect[bytes | None, KeyValueStoreError]]
-    """The value as bytes (text as UTF-8); ``None`` when missing."""
-    set: Callable[[str, Value], Effect[None, KeyValueStoreError]]
-    remove: Callable[[str], Effect[None, KeyValueStoreError]]
-    clear: Effect[None, KeyValueStoreError]
-    clear_prefix: Callable[[str], Effect[None, KeyValueStoreError]]
-    """Remove every entry whose key starts with the prefix."""
-    size: Effect[int, KeyValueStoreError]
-    keys: Effect[list[str], KeyValueStoreError]
-    """A snapshot of the keys, in no particular order."""
-    modify: Callable[[str, Callable[[str], str]], Effect[str | None, KeyValueStoreError]]
-    """Replace a present value with ``f(value)`` and return it; ``None``
-    (and nothing written) when missing."""
-    modify_bytes: Callable[
-        [str, Callable[[bytes], bytes]], Effect[bytes | None, KeyValueStoreError]
-    ]
-    has: Callable[[str], Effect[bool, KeyValueStoreError]]
-    is_empty: Effect[bool, KeyValueStoreError]
+    __slots__ = (
+        "_clear",
+        "_clear_prefix",
+        "_get",
+        "_get_bytes",
+        "_has",
+        "_is_empty",
+        "_keys",
+        "_modify",
+        "_modify_bytes",
+        "_remove",
+        "_set",
+        "_size",
+    )
 
-    def __post_init__(self) -> None:
-        for name in ("clear", "size", "keys", "is_empty"):
-            require_effect(getattr(self, name), name)
+    def __replace__(self, **changes: Any) -> Self:
+        """A copy with ``changes`` to the constructor's arguments (``copy.replace``)."""
+        return replaced(self, changes)
+
+    def __init__(
+        self,
+        *,
+        get: Callable[[str], Effect[str | None, KeyValueStoreError]],
+        get_bytes: Callable[[str], Effect[bytes | None, KeyValueStoreError]],
+        set: Callable[[str, Value], Effect[None, KeyValueStoreError]],
+        remove: Callable[[str], Effect[None, KeyValueStoreError]],
+        clear: Effect[None, KeyValueStoreError],
+        clear_prefix: Callable[[str], Effect[None, KeyValueStoreError]],
+        size: Effect[int, KeyValueStoreError],
+        keys: Effect[list[str], KeyValueStoreError],
+        modify: Callable[[str, Callable[[str], str]], Effect[str | None, KeyValueStoreError]],
+        modify_bytes: Callable[
+            [str, Callable[[bytes], bytes]], Effect[bytes | None, KeyValueStoreError]
+        ],
+        has: Callable[[str], Effect[bool, KeyValueStoreError]],
+        is_empty: Effect[bool, KeyValueStoreError],
+    ) -> None:
+        for name, value in (
+            ("clear", clear),
+            ("size", size),
+            ("keys", keys),
+            ("is_empty", is_empty),
+        ):
+            require_effect(value, name)
+        self._get = get
+        self._get_bytes = get_bytes
+        self._set = set
+        self._remove = remove
+        self._clear = clear
+        self._clear_prefix = clear_prefix
+        self._size = size
+        self._keys = keys
+        self._modify = modify
+        self._modify_bytes = modify_bytes
+        self._has = has
+        self._is_empty = is_empty
+
+    def get(self, key: str) -> Effect[str | None, KeyValueStoreError]:
+        """``key``'s value as text (bytes as Base64); ``None`` when
+        missing."""
+        return self._get(key)
+
+    def get_bytes(self, key: str) -> Effect[bytes | None, KeyValueStoreError]:
+        """``key``'s value as bytes (text as UTF-8); ``None`` when
+        missing."""
+        return self._get_bytes(key)
+
+    def set(self, key: str, value: Value) -> Effect[None, KeyValueStoreError]:
+        """Sets ``key`` to ``value`` (text or bytes)."""
+        return self._set(key, value)
+
+    def remove(self, key: str) -> Effect[None, KeyValueStoreError]:
+        """Removes ``key``; nothing happens when it is missing."""
+        return self._remove(key)
+
+    @property
+    def clear(self) -> Effect[None, KeyValueStoreError]:
+        """Removes every entry."""
+        return self._clear
+
+    def clear_prefix(self, prefix: str) -> Effect[None, KeyValueStoreError]:
+        """Removes every entry whose key starts with ``prefix``."""
+        return self._clear_prefix(prefix)
+
+    @property
+    def size(self) -> Effect[int, KeyValueStoreError]:
+        """The number of entries."""
+        return self._size
+
+    @property
+    def keys(self) -> Effect[list[str], KeyValueStoreError]:
+        """A snapshot of the keys, in no particular order."""
+        return self._keys
+
+    def modify(self, key: str, f: Callable[[str], str]) -> Effect[str | None, KeyValueStoreError]:
+        """Replaces ``key``'s value (as text) with ``f(value)`` and gives the
+        new value; ``None``, and nothing written, when ``key`` is
+        missing."""
+        return self._modify(key, f)
+
+    def modify_bytes(
+        self, key: str, f: Callable[[bytes], bytes]
+    ) -> Effect[bytes | None, KeyValueStoreError]:
+        """Replaces ``key``'s value (as bytes) with ``f(value)`` and gives
+        the new value; ``None``, and nothing written, when ``key`` is
+        missing."""
+        return self._modify_bytes(key, f)
+
+    def has(self, key: str) -> Effect[bool, KeyValueStoreError]:
+        """Whether the store holds ``key``."""
+        return self._has(key)
+
+    @property
+    def is_empty(self) -> Effect[bool, KeyValueStoreError]:
+        """Whether the store holds no entries."""
+        return self._is_empty
 
     def prefix(self, prefix: str) -> KeyValueStoreService:
         """This store with ``prefix`` put before every key. ``keys`` (without

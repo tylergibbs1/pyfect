@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Never
+from typing import Any, Never, Self
 
 from pyfect._core import Effect
 from pyfect._effect_args import require_effect
+from pyfect._service_copy import replaced
 from pyfect.context import Tag
 from pyfect.errors import Done, TaggedError
 from pyfect.platform_error import PlatformError
@@ -52,26 +53,73 @@ class QuitError(TaggedError):
         return "QuitError"
 
 
-@dataclass(frozen=True, slots=True, kw_only=True)
 class TerminalService:
-    """Effect's ``Terminal``; the constructor is ``Terminal.make``.
+    """Effect's ``Terminal``; the constructor is ``Terminal.make``."""
 
-    ``read_input`` gives a queue of key presses for as long as its scope is
-    open; the queue ends when input ends or the user quits. ``size`` gives
-    a queue holding the current ``Size``, then each resize until its scope
-    closes, keeping only the latest.
-    ``read_line`` reads one line without its line break."""
+    __slots__ = ("_columns", "_display", "_read_input", "_read_line", "_rows", "_size")
 
-    columns: Effect[int]
-    rows: Effect[int]
-    size: Effect[Dequeue[Size, Done], Never, Scope]
-    read_input: Effect[Dequeue[UserInput, Done], Never, Scope]
-    read_line: Effect[str, QuitError]
-    display: Callable[[str], Effect[None, PlatformError]]
+    def __replace__(self, **changes: Any) -> Self:
+        """A copy with ``changes`` to the constructor's arguments (``copy.replace``)."""
+        return replaced(self, changes)
 
-    def __post_init__(self) -> None:
-        for name in ("columns", "rows", "size", "read_input", "read_line"):
-            require_effect(getattr(self, name), name)
+    def __init__(
+        self,
+        *,
+        columns: Effect[int],
+        rows: Effect[int],
+        size: Effect[Dequeue[Size, Done], Never, Scope],
+        read_input: Effect[Dequeue[UserInput, Done], Never, Scope],
+        read_line: Effect[str, QuitError],
+        display: Callable[[str], Effect[None, PlatformError]],
+    ) -> None:
+        for name, value in (
+            ("columns", columns),
+            ("rows", rows),
+            ("size", size),
+            ("read_input", read_input),
+            ("read_line", read_line),
+        ):
+            require_effect(value, name)
+        self._columns = columns
+        self._rows = rows
+        self._size = size
+        self._read_input = read_input
+        self._read_line = read_line
+        self._display = display
+
+    @property
+    def columns(self) -> Effect[int]:
+        """The terminal's width in character cells. Never fails."""
+        return self._columns
+
+    @property
+    def rows(self) -> Effect[int]:
+        """The terminal's height in character cells. Never fails."""
+        return self._rows
+
+    @property
+    def size(self) -> Effect[Dequeue[Size, Done], Never, Scope]:
+        """A queue holding the current ``Size``, then each resize until the
+        scope closes, keeping only the latest. Never fails."""
+        return self._size
+
+    @property
+    def read_input(self) -> Effect[Dequeue[UserInput, Done], Never, Scope]:
+        """A queue of key presses from standard input for as long as the
+        scope is open; it ends when input ends or the user quits. Never
+        fails."""
+        return self._read_input
+
+    @property
+    def read_line(self) -> Effect[str, QuitError]:
+        """Reads one line from standard input, without its line break.
+        Fails with ``QuitError`` when input ends first."""
+        return self._read_line
+
+    def display(self, text: str) -> Effect[None, PlatformError]:
+        """Writes ``text`` to standard output. Fails with a
+        ``PlatformError`` when the write does."""
+        return self._display(text)
 
 
 class Terminal(Tag[TerminalService]):

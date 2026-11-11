@@ -188,7 +188,7 @@ class _LockFaultController:
         self.release_gate = Latch(True)
         self.persistent: Literal["stuck", "hangRelease"] | None = None
         self.current: _LockSession | None = None
-        client = copy.copy(sql.without_transforms())
+        client = sql.without_transforms()
 
         @fx.gen
         def reserve():
@@ -207,8 +207,9 @@ class _LockFaultController:
             connection = yield from sql.reserve
             return _FaultyConnection(connection, self, session)
 
-        client.reserve = reserve
-        self.client: SqlClientService = client
+        fields = client.fields()
+        fields["reserve"] = reserve
+        self.client: SqlClientService = SqlClientService(**fields)
 
     def set(self, mode: LockFaultMode) -> fx.Effect[None]:
         def apply() -> None:
@@ -281,7 +282,7 @@ class _RunnerStorageController:
         def unregister(address: RunnerAddress) -> fx.Effect[None, Any]:
             return unless_killed(lambda: storage.unregister(address))
 
-        self.controlled = replace(
+        self.controlled = copy.replace(
             storage,
             get_runners=fx.sync(read_started).and_then(
                 self._while_frozen(

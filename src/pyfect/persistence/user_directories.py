@@ -24,11 +24,12 @@ import re
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Final, Literal
+from typing import Any, Final, Literal, Self
 
 from pyfect import config
 from pyfect._core import Effect
 from pyfect._effect_args import require_effect
+from pyfect._service_copy import replaced
 from pyfect.context import Tag
 from pyfect.effect import fail, succeed
 from pyfect.layer import Layer
@@ -47,20 +48,58 @@ _XDG: Final[dict[Kind, str]] = {
 _WINDOWS_ABSOLUTE: Final = re.compile(r"^([a-zA-Z]:)?[\\/]")
 
 
-@dataclass(frozen=True, slots=True, kw_only=True)
 class UserDirectoriesService:
     """The user's home and each kind of directory for an application
-    name. A missing home fails with ``NotFound``; a ``ConfigProvider``
-    that cannot be read with ``Unknown``."""
+    name: ``make`` builds one by a platform's rules, and
+    ``UserDirectoriesService(home=..., config=..., ...)`` from an effect and
+    four functions (a test double, say). Every operation fails with a
+    ``PlatformError``: ``NotFound`` when the home it needs is not set,
+    ``Unknown`` when the ``ConfigProvider`` cannot be read."""
 
-    home: Effect[str, PlatformError]
-    config: Callable[[str], Effect[str, PlatformError]]
-    data: Callable[[str], Effect[str, PlatformError]]
-    cache: Callable[[str], Effect[str, PlatformError]]
-    state: Callable[[str], Effect[str, PlatformError]]
+    __slots__ = ("_cache", "_config", "_data", "_home", "_state")
 
-    def __post_init__(self) -> None:
-        require_effect(self.home, "home")
+    def __replace__(self, **changes: Any) -> Self:
+        """A copy with ``changes`` to the constructor's arguments (``copy.replace``)."""
+        return replaced(self, changes)
+
+    def __init__(
+        self,
+        *,
+        home: Effect[str, PlatformError],
+        config: Callable[[str], Effect[str, PlatformError]],
+        data: Callable[[str], Effect[str, PlatformError]],
+        cache: Callable[[str], Effect[str, PlatformError]],
+        state: Callable[[str], Effect[str, PlatformError]],
+    ) -> None:
+        require_effect(home, "home")
+        self._home = home
+        self._config = config
+        self._data = data
+        self._cache = cache
+        self._state = state
+
+    @property
+    def home(self) -> Effect[str, PlatformError]:
+        """The current user's home directory (``HOME``, or ``USERPROFILE``
+        on Windows)."""
+        return self._home
+
+    def config(self, app_name: str) -> Effect[str, PlatformError]:
+        """Where ``app_name`` keeps its settings."""
+        return self._config(app_name)
+
+    def data(self, app_name: str) -> Effect[str, PlatformError]:
+        """Where ``app_name`` keeps data it cannot regenerate."""
+        return self._data(app_name)
+
+    def cache(self, app_name: str) -> Effect[str, PlatformError]:
+        """Where ``app_name`` keeps data it can regenerate."""
+        return self._cache(app_name)
+
+    def state(self, app_name: str) -> Effect[str, PlatformError]:
+        """Where ``app_name`` keeps logs, history and other state that is
+        not user data."""
+        return self._state(app_name)
 
 
 class UserDirectories(Tag[UserDirectoriesService], key="~effect/persistence/UserDirectories"):
@@ -192,6 +231,7 @@ def layer_platform(platform: str) -> Layer[UserDirectories]:
 
 __all__ = [
     "Kind",
+    "PlatformError",
     "UserDirectories",
     "UserDirectoriesService",
     "layer",

@@ -7,12 +7,12 @@ stores addresses, runners and shard ids as text
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Sequence
-from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol, Self
 
 from pyfect import layer as layer_
 from pyfect import schema as S
 from pyfect._core import Effect
+from pyfect._service_copy import replaced
 from pyfect.cluster import shard_id as shard_id_
 from pyfect.cluster.cluster_error import PersistenceError
 from pyfect.cluster.machine_id import MachineId
@@ -23,19 +23,102 @@ from pyfect.context import Tag
 from pyfect.effect import succeed, sync
 
 
-@dataclass(frozen=True, slots=True, kw_only=True)
 class RunnerStorageService:
-    """``acquire`` takes the locks it can of ``shard_ids`` and gives back
-    the shards now held; ``refresh`` extends the locks still held."""
+    """Where the cluster's runners register and lock their shards
+    (Effect's ``RunnerStorage``). ``copy.replace(storage, acquire=...)``
+    swaps an operation."""
 
-    register: Callable[[Runner, bool], Effect[MachineId, PersistenceError]]
-    unregister: Callable[[RunnerAddress], Effect[None, PersistenceError]]
-    get_runners: Effect[list[tuple[Runner, bool]], PersistenceError]
-    set_runner_health: Callable[[RunnerAddress, bool], Effect[None, PersistenceError]]
-    acquire: Callable[[RunnerAddress, Iterable[ShardId]], Effect[list[ShardId], PersistenceError]]
-    refresh: Callable[[RunnerAddress, Iterable[ShardId]], Effect[list[ShardId], PersistenceError]]
-    release: Callable[[RunnerAddress, ShardId], Effect[None, PersistenceError]]
-    release_all: Callable[[RunnerAddress], Effect[None, PersistenceError]]
+    __slots__ = (
+        "_acquire",
+        "_get_runners",
+        "_refresh",
+        "_register",
+        "_release",
+        "_release_all",
+        "_set_runner_health",
+        "_unregister",
+    )
+
+    def __replace__(self, **changes: Any) -> Self:
+        """A copy with ``changes`` to the constructor's arguments (``copy.replace``)."""
+        return replaced(self, changes)
+
+    def __init__(
+        self,
+        *,
+        register: Callable[[Runner, bool], Effect[MachineId, PersistenceError]],
+        unregister: Callable[[RunnerAddress], Effect[None, PersistenceError]],
+        get_runners: Effect[list[tuple[Runner, bool]], PersistenceError],
+        set_runner_health: Callable[[RunnerAddress, bool], Effect[None, PersistenceError]],
+        acquire: Callable[
+            [RunnerAddress, Iterable[ShardId]], Effect[list[ShardId], PersistenceError]
+        ],
+        refresh: Callable[
+            [RunnerAddress, Iterable[ShardId]], Effect[list[ShardId], PersistenceError]
+        ],
+        release: Callable[[RunnerAddress, ShardId], Effect[None, PersistenceError]],
+        release_all: Callable[[RunnerAddress], Effect[None, PersistenceError]],
+    ) -> None:
+        self._register = register
+        self._unregister = unregister
+        self._get_runners = get_runners
+        self._set_runner_health = set_runner_health
+        self._acquire = acquire
+        self._refresh = refresh
+        self._release = release
+        self._release_all = release_all
+
+    def register(self, runner: Runner, healthy: bool) -> Effect[MachineId, PersistenceError]:
+        """Registers ``runner`` (replacing one at its address) with its
+        health, and gives the machine id it is assigned. Fails with
+        ``PersistenceError`` when the storage cannot be written."""
+        return self._register(runner, healthy)
+
+    def unregister(self, address: RunnerAddress) -> Effect[None, PersistenceError]:
+        """Removes the runner at ``address``. Fails with
+        ``PersistenceError`` when the storage cannot be written."""
+        return self._unregister(address)
+
+    @property
+    def get_runners(self) -> Effect[list[tuple[Runner, bool]], PersistenceError]:
+        """Every registered runner with whether it is healthy (a stored
+        runner that does not decode is skipped). Fails with
+        ``PersistenceError`` when the storage cannot be read."""
+        return self._get_runners
+
+    def set_runner_health(
+        self, address: RunnerAddress, healthy: bool
+    ) -> Effect[None, PersistenceError]:
+        """Records whether the runner at ``address`` is healthy. Fails with
+        ``PersistenceError`` when the storage cannot be written."""
+        return self._set_runner_health(address, healthy)
+
+    def acquire(
+        self, address: RunnerAddress, shard_ids: Iterable[ShardId]
+    ) -> Effect[list[ShardId], PersistenceError]:
+        """Takes for the runner at ``address`` the locks it can of
+        ``shard_ids``, and gives back the shards it now holds. Fails with
+        ``PersistenceError`` when the storage cannot be written."""
+        return self._acquire(address, shard_ids)
+
+    def refresh(
+        self, address: RunnerAddress, shard_ids: Iterable[ShardId]
+    ) -> Effect[list[ShardId], PersistenceError]:
+        """Extends the locks of ``shard_ids`` the runner at ``address``
+        still holds, and gives back those shards. Fails with
+        ``PersistenceError`` when the storage cannot be written."""
+        return self._refresh(address, shard_ids)
+
+    def release(self, address: RunnerAddress, shard_id: ShardId) -> Effect[None, PersistenceError]:
+        """Releases the lock the runner at ``address`` holds on
+        ``shard_id``. Fails with ``PersistenceError`` when the storage
+        cannot be written."""
+        return self._release(address, shard_id)
+
+    def release_all(self, address: RunnerAddress) -> Effect[None, PersistenceError]:
+        """Releases every shard lock the runner at ``address`` holds. Fails
+        with ``PersistenceError`` when the storage cannot be written."""
+        return self._release_all(address)
 
 
 class RunnerStorage(Tag[RunnerStorageService], key="effect/cluster/RunnerStorage"):

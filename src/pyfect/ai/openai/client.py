@@ -25,8 +25,7 @@ error event, is replaced for the next request.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
-from typing import Any, Never
+from typing import Any, Never, Self, final
 
 import pyfect as fx
 from pyfect import byte_size
@@ -34,6 +33,7 @@ from pyfect import layer as L
 from pyfect import stream as St
 from pyfect._core import Effect
 from pyfect._json_text import parse as parse_json_text
+from pyfect._service_copy import replaced
 from pyfect.ai import _provider as P
 from pyfect.ai import ai_error as E
 from pyfect.ai import response_id_tracker as RIT
@@ -66,22 +66,86 @@ ResponseStreamEvent = W.ResponseStreamEvent
 _redacted = P.with_redacted_headers(OPENAI.secret_headers)
 
 
-@dataclass(frozen=True)
+@final
 class Service:
-    """The client: the configured ``HttpClient`` and its calls."""
+    """The client: the configured ``HttpClient`` and its calls. ``make``
+    builds it; ``Service(http_client, create_response, ...)`` makes one of
+    four functions (a test double, say).
+
+    Every call goes through the client and then a provided
+    ``OpenAiConfig``'s transform. Every failure is an ``AiError``: an error
+    status maps to its reason (a 429 to a ``RateLimitError``), an
+    unreadable or malformed body to an ``InvalidOutputError`` or
+    ``InvalidResponseError``, a transport failure to a ``NetworkError``."""
+
+    __slots__ = (
+        "_create_decisions",
+        "_create_embedding",
+        "_create_response",
+        "_create_response_stream",
+        "http_client",
+        "max_response_bytes",
+    )
 
     http_client: HttpClientService[HttpClientError]
-    create_response: Callable[
-        [W.CreateResponse], Effect[tuple[W.Response, HttpClientResponse], AiError]
-    ]
-    create_response_stream: Callable[[W.CreateResponse], Effect[ResponseStream, AiError]]
-    create_embedding: Callable[
-        [W.CreateEmbeddingRequest], Effect[W.CreateEmbeddingResponse, AiError]
-    ]
-    create_decisions: Callable[
-        [W.CreateDecisionsRequest], Effect[W.CreateDecisionsResponse, AiError]
-    ]
-    max_response_bytes: ByteSize = P.DEFAULT_MAX_RESPONSE_BYTES
+    max_response_bytes: ByteSize
+
+    def __replace__(self, **changes: Any) -> Self:
+        """A copy with ``changes`` to the constructor's arguments (``copy.replace``)."""
+        return replaced(self, changes)
+
+    def __init__(  # noqa: PLR0917
+        self,
+        http_client: HttpClientService[HttpClientError],
+        create_response: Callable[
+            [W.CreateResponse], Effect[tuple[W.Response, HttpClientResponse], AiError]
+        ],
+        create_response_stream: Callable[[W.CreateResponse], Effect[ResponseStream, AiError]],
+        create_embedding: Callable[
+            [W.CreateEmbeddingRequest], Effect[W.CreateEmbeddingResponse, AiError]
+        ],
+        create_decisions: Callable[
+            [W.CreateDecisionsRequest], Effect[W.CreateDecisionsResponse, AiError]
+        ],
+        max_response_bytes: ByteSize = P.DEFAULT_MAX_RESPONSE_BYTES,
+    ) -> None:
+        self.http_client = http_client
+        self._create_response = create_response
+        self._create_response_stream = create_response_stream
+        self._create_embedding = create_embedding
+        self._create_decisions = create_decisions
+        self.max_response_bytes = max_response_bytes
+
+    def create_response(
+        self, options: W.CreateResponse
+    ) -> Effect[tuple[W.Response, HttpClientResponse], AiError]:
+        """Create a response: ``POST /responses`` with ``options``. The
+        decoded response and the HTTP response; fails with an ``AiError``
+        (see the class)."""
+        return self._create_response(options)
+
+    def create_response_stream(self, options: W.CreateResponse) -> Effect[ResponseStream, AiError]:
+        """Create a response as server-sent events: ``POST /responses`` with
+        ``"stream": true``, or over the connection while ``OpenAiSocket``
+        (WebSocket mode) is provided. The HTTP response and the events,
+        ending at ``response.completed``, ``response.incomplete`` or
+        ``response.failed`` (or ``[DONE]``); the call and the stream fail
+        with an ``AiError`` (see the class)."""
+        return self._create_response_stream(options)
+
+    def create_embedding(
+        self, options: W.CreateEmbeddingRequest
+    ) -> Effect[W.CreateEmbeddingResponse, AiError]:
+        """Create embeddings: ``POST /embeddings`` with ``options``; fails
+        with an ``AiError`` (see the class)."""
+        return self._create_embedding(options)
+
+    def create_decisions(
+        self, options: W.CreateDecisionsRequest
+    ) -> Effect[W.CreateDecisionsResponse, AiError]:
+        """Answer decision questions: ``POST /decisions`` with ``options``;
+        fails with an ``AiError`` (see the class)."""
+        return self._create_decisions(options)
 
 
 class OpenAiClient(Tag[Service], key="@effect/ai-openai/OpenAiClient"):
@@ -278,6 +342,7 @@ connection closes when it ends (Effect's ``withWebSocketMode``). Use with
 
 __all__ = [
     "DEFAULT_API_URL",
+    "AiError",
     "CreateDecisionsRequest",
     "CreateEmbeddingRequest",
     "CreateResponse",

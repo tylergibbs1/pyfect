@@ -3,10 +3,9 @@
 Each test's docstring is the Effect test title. ``withEnv`` provides a
 ``CurrentConfigProvider`` reading the given variables; the
 ``Layer.succeed`` override replaces one member of ``make()``'s service
-with ``dataclasses.replace``.
+by building a ``UserDirectoriesService`` from the others.
 """
 
-import dataclasses
 from typing import Any
 
 import pyfect as fx
@@ -187,7 +186,10 @@ def test_is_provided_by_a_layer():
     def config(app_name: str) -> fx.Effect[str]:
         return fx.succeed(f"/tmp/{app_name}")
 
-    custom = dataclasses.replace(ud.make(), config=config)
+    base = ud.make()
+    custom = ud.UserDirectoriesService(
+        home=base.home, config=config, data=base.data, cache=base.cache, state=base.state
+    )
     assert (
         yield from config_dir.pipe(fx.provide(fx.layer.succeed(ud.UserDirectories, custom)))
     ) == "/tmp/myapp"

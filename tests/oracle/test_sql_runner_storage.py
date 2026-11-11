@@ -236,7 +236,9 @@ def test_an_interrupted_lock_operation_keeps_the_reserved_connection(pg_server: 
             reserves[0] += 1
             return reserve
 
-        faults.client.reserve = fx.suspend(counted)
+        fields = faults.client.fields()
+        fields["reserve"] = fx.suspend(counted)
+        faults.client = SqlClientService(**fields)
         storage = yield from _storage(faults.client, _prefix("interrupted"))
         shard = shard_id.make("default", 1)
         assert (yield from storage.acquire(runner_address1, [shard])) == [shard]

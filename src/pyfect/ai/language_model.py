@@ -20,7 +20,7 @@ model's parts.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, replace
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -28,9 +28,11 @@ from typing import (
     Literal,
     LiteralString,
     Never,
+    Self,
     TypedDict,
     TypeVar,
     cast,
+    final,
     overload,
 )
 
@@ -39,6 +41,7 @@ from pyfect import _json_text
 from pyfect import schema as S
 from pyfect._core import Effect
 from pyfect._effect_args import require_effect
+from pyfect._service_copy import replaced
 from pyfect.ai import _approvals as A
 from pyfect.ai import _tool_call_ids as Ids
 from pyfect.ai import prompt as P
@@ -372,21 +375,72 @@ def _fallback(options: ProviderOptions) -> ProviderOptions:
     )
 
 
-@dataclass(frozen=True)
+@final
 class Service:
     """A language model (made by ``make``)."""
 
-    _generate: GenerateFn
-    _stream: StreamFn
-    codec_transformer: CodecTransformer = default_codec_transformer
-    supports_system_messages_in_history: Effect[bool] | None = None
-    id_generator: IdService = default_id_generator
-    # The transformer in context when the model was made (Effect's
-    # parentSpanTransformer); the one at the call wins.
-    span_transformer: SpanTransformer | None = None
-    _decoders: dict[tuple[bool, bool, bool], tuple[tuple[AnyTool, ...], Any]] = field(
-        default_factory=dict[tuple[bool, bool, bool], tuple[tuple[AnyTool, ...], Any]]
+    __slots__ = (
+        "_codec_transformer",
+        "_decoders",
+        "_generate",
+        "_made_span_transformer",
+        "_stream",
+        "_supports_system_messages_in_history",
+        "id_generator",
     )
+
+    id_generator: IdService
+    """The ids of the model's requests (the ``IdGenerator`` in context at
+    ``make``, else the default one)."""
+
+    def __replace__(self, **changes: Any) -> Self:
+        """A copy with ``changes`` to the constructor's arguments (``copy.replace``)."""
+        return replaced(self, changes, stored={"span_transformer": "_made_span_transformer"})
+
+    def __init__(
+        self,
+        _generate: GenerateFn,
+        _stream: StreamFn,
+        codec_transformer: CodecTransformer = default_codec_transformer,
+        supports_system_messages_in_history: Effect[bool] | None = None,
+        id_generator: IdService = default_id_generator,
+        span_transformer: SpanTransformer | None = None,
+        _decoders: dict[tuple[bool, bool, bool], tuple[tuple[AnyTool, ...], Any]] | None = None,
+    ) -> None:
+        self._generate = _generate
+        self._stream = _stream
+        self._codec_transformer = codec_transformer
+        self._supports_system_messages_in_history = supports_system_messages_in_history
+        self.id_generator = id_generator
+        self._made_span_transformer = span_transformer
+        self._decoders = (
+            dict[tuple[bool, bool, bool], tuple[tuple[AnyTool, ...], Any]]()
+            if _decoders is None
+            else _decoders
+        )
+
+    def codec_transformer(self, schema: S.Top) -> tuple[S.Top, JsonSchema]:
+        """The provider's form of ``schema`` for structured output: the codec
+        that decodes the model's text and the JSON Schema sent with the
+        request (``default_codec_transformer`` unless the provider gave
+        one). It may raise for a schema the provider cannot express;
+        ``generate_object`` then fails with an ``UnsupportedSchemaError``
+        ``AiError``."""
+        return self._codec_transformer(schema)
+
+    @property
+    def supports_system_messages_in_history(self) -> Effect[bool] | None:
+        """Whether the provider's effective configuration takes system
+        messages after the first; run it in the request's context to respect
+        scoped overrides. ``None`` when unknown."""
+        return self._supports_system_messages_in_history
+
+    @property
+    def span_transformer(self) -> SpanTransformer | None:
+        """The ``CurrentSpanTransformer`` in context when the model was made
+        (Effect's ``parentSpanTransformer``); one in context at the call
+        wins over it."""
+        return self._made_span_transformer
 
     def _decoder(
         self,
