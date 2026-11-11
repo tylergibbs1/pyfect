@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.6.0 (unreleased)
+
+### Fixed
+
+- A `Pool.make_with_ttl` made inside `acquire_release`'s acquire closes with its scope again;
+  closing it used to wait forever once the pool's TTL strategy fiber had started. The cause was
+  `uninterruptible_mask`: an uninterruptible caller got a `restore` that made the effect
+  uninterruptible, where Effect's is the identity, so a fiber forked with `restore(...)` (the
+  pool's strategy and first resize) could not be interrupted. `restore` is now the identity
+  there, as in Effect. A new test builds every resource that forks a background fiber (pools,
+  `RcRef`, `RcMap`, `ScopedCache`, `LayerMap`, fiber sets, maps and handles, shared and
+  broadcast streams, `fork_scoped`) inside an acquire and checks its scope closes.
+
 ## 0.5.7 (2026-11-11)
 
 ### Added
