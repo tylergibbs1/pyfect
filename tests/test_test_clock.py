@@ -41,6 +41,26 @@ def test_timeout_repetition_of_uninterruptible_effect():
     assert isinstance(ex.cause.failures[0], fx.TimeoutException)
 
 
+@pytest.mark.parametrize("budget", [1, 2, 3])
+def test_adjust_sees_a_woken_fiber_that_finished_while_adjust_paused(budget: int):
+    """``adjust`` pauses for its step budget between waking a sleeper and
+    waiting for it, and the woken fiber's last task runs in that pause. Its
+    wake-up is already over: ``adjust`` goes on at once, with no warning.
+    Found by the interleaving harness (tests/interleave, ``test_clock``)."""
+
+    @fx.gen
+    def program():
+        sleeper = yield from fx.sleep("1 second").and_then(fx.yield_now()).fork()
+        yield from fx.yield_now()
+        yield from testing.adjust("1 second").pipe(fx.provide_service(fx.MaxOpsBeforeYield, budget))
+        yield from sleeper.join()
+
+    started = time.monotonic()
+    with _no_busy_warning():
+        testing.run_test(program, warning_delay="1 second")
+    assert time.monotonic() - started < 0.5
+
+
 def test_adjust_does_not_wait_for_a_busy_fiber_it_did_not_wake():
     @fx.gen
     def program():
