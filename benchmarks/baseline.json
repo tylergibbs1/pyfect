@@ -1,0 +1,11 @@
+{
+  "3.13-gil": {
+    "fork-heavy": 3.639,
+    "group_by_key + flat_map": 1.709,
+    "group_by_key + flat_map, 1-item chunks": 6.125,
+    "group_by_key + grouped_within": 3.466,
+    "group_by_key + grouped_within, 1-item chunks": 8.276,
+    "map + filter": 2.019,
+    "queue offer/take": 11.855
+  }
+}

@@ -2,12 +2,69 @@ name: ci
 
 on:
   push:
+    branches: ["**"]
   pull_request:
+  # release.yml runs this whole workflow and publishes only if it passes.
+  workflow_call:
 
 permissions:
   contents: read
 
 jobs:
+  check:
+    # The project's full check (CLAUDE.md): formatting, lint, pyright strict and every test,
+    # against the Effect 4.1.2 checkout the oracle tests read. Server-backed tests start their
+    # databases in Docker.
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    env:
+      EFFECT_COMMIT: 506eef143bcc1750ce58920aac1e45da7265d103 # Effect 4.1.2, as ../pyfect-ref/effect
+      PYFECT_EFFECT_REF: ${{ github.workspace }}/.effect
+      PYFECT_REF: ${{ github.workspace }}/.effect
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+
+      - name: Check out Effect 4.1.2
+        run: |
+          git init -q .effect
+          git -C .effect fetch -q --depth 1 https://github.com/Effect-TS/effect.git "$EFFECT_COMMIT"
+          git -C .effect checkout -q FETCH_HEAD
+
+      - name: Install
+        run: uv sync --locked
+
+      - name: Format
+        run: uv run ruff format --check .
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Types
+        run: uv run pyright
+
+      - name: Tests
+        run: uv run pytest -q -p no:randomly -rfEs
+
+  benchmarks:
+    # Fails when a stream or fiber pipeline is more than 1.6x slower than benchmarks/baseline.json,
+    # measured against a pure-Python calibration so the runner's speed cancels out.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+
+      - name: Benchmark gate
+        working-directory: benchmarks
+        run: uv run --python 3.13 python gate.py
+
   base-install:
     # What `uv add pyfect-dev` gives a user: no extras, no pytest.
     # QA api-surface F1/F2: `import pyfect` and the pytest plugin once failed
@@ -53,6 +110,7 @@ jobs:
         run: >
           "$RUNNER_TEMP/ft/bin/python" -m pytest -q -p no:cacheprovider
           tests/test_free_threaded.py
+          tests/test_run_caller_context.py
           tests/test_concurrency.py
           tests/test_decided_results.py
           tests/test_fibers.py

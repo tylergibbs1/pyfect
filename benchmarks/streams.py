@@ -88,31 +88,33 @@ def fork_heavy() -> object:
     return fx.run_blocking(each)
 
 
+CASES: tuple[tuple[str, int, Callable[[], object]], ...] = (
+    ("group_by_key + flat_map", GROUP_ITEMS, lambda: group_by_key(GROUP_ITEMS, GROUP_CHUNK)),
+    (
+        "group_by_key + grouped_within",
+        GROUP_ITEMS,
+        lambda: group_by_key_grouped_within(GROUP_ITEMS, GROUP_CHUNK),
+    ),
+    (
+        "group_by_key + flat_map, 1-item chunks",
+        SMALL_ITEMS,
+        lambda: group_by_key(SMALL_ITEMS, 1),
+    ),
+    (
+        "group_by_key + grouped_within, 1-item chunks",
+        SMALL_ITEMS,
+        lambda: group_by_key_grouped_within(SMALL_ITEMS, 1),
+    ),
+    ("map + filter", PLAIN_ITEMS, map_filter),
+    ("queue offer/take", QUEUE_ITEMS, lambda: fx.run_blocking(queue_pair)),
+    ("fork-heavy", FORKS, fork_heavy),
+)
+
+
 def main() -> None:
     gil = "free-threaded" if sysconfig.get_config_var("Py_GIL_DISABLED") else "GIL"
     print(f"python {sys.version.split()[0]} ({gil})")
-    cases: tuple[tuple[str, int, Callable[[], object]], ...] = (
-        ("group_by_key + flat_map", GROUP_ITEMS, lambda: group_by_key(GROUP_ITEMS, GROUP_CHUNK)),
-        (
-            "group_by_key + grouped_within",
-            GROUP_ITEMS,
-            lambda: group_by_key_grouped_within(GROUP_ITEMS, GROUP_CHUNK),
-        ),
-        (
-            "group_by_key + flat_map, 1-item chunks",
-            SMALL_ITEMS,
-            lambda: group_by_key(SMALL_ITEMS, 1),
-        ),
-        (
-            "group_by_key + grouped_within, 1-item chunks",
-            SMALL_ITEMS,
-            lambda: group_by_key_grouped_within(SMALL_ITEMS, 1),
-        ),
-        ("map + filter", PLAIN_ITEMS, map_filter),
-        ("queue offer/take", QUEUE_ITEMS, lambda: fx.run_blocking(queue_pair)),
-        ("fork-heavy", FORKS, fork_heavy),
-    )
-    for name, items, run in cases:
+    for name, items, run in CASES:
         seconds = best_of(run)
         print(f"{name}: {items / seconds / 1e3:,.0f}k items/s")
 

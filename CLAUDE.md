@@ -6,6 +6,12 @@ Effect (effect.website, v4 semantics) for Python. Python >= 3.13, pyright strict
 
     uv run ruff format . && uv run ruff check . && uv run pyright && uv run pytest
 
+`main` moves only to a commit whose CI passed: push the branch, wait for `gh run watch` on its
+`ci` and `docs` runs, then fast-forward `main` to that commit. Read a check's result from its
+exit code, never from grepping its output. A release tag re-runs both workflows and publishes
+only if they pass (`tests/test_ci_workflows.py`). After a deliberate speed change, refresh
+`benchmarks/baseline.json` from a CI run's printed ratios (`benchmarks/gate.py --update`).
+
 `tests/type_checks.py` is part of the pyright run: `assert_type` pins inferred types, and
 `# pyright: ignore[...]` lines must error (unnecessary ignores fail the build).
 
