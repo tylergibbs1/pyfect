@@ -1,11 +1,11 @@
 {
   "3.13-gil": {
-    "fork-heavy": 3.639,
-    "group_by_key + flat_map": 1.709,
-    "group_by_key + flat_map, 1-item chunks": 6.125,
-    "group_by_key + grouped_within": 3.466,
-    "group_by_key + grouped_within, 1-item chunks": 8.276,
-    "map + filter": 2.019,
-    "queue offer/take": 11.855
+    "fork-heavy": 4.488,
+    "group_by_key + flat_map": 1.902,
+    "group_by_key + flat_map, 1-item chunks": 6.825,
+    "group_by_key + grouped_within": 3.76,
+    "group_by_key + grouped_within, 1-item chunks": 8.922,
+    "map + filter": 1.996,
+    "queue offer/take": 13.3
   }
 }
