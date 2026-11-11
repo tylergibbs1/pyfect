@@ -16,6 +16,11 @@ from collections.abc import Callable, Iterator
 
 from _pyfect_modules import modules
 
+# Checked before the guard existed, where typed callers rely on the widening:
+# `S.field(S.tag(name), default=name)` with `name: str` (http_api.error) would stop
+# type-checking. Changing it is a breaking typing decision.
+_KNOWN = frozenset({"pyfect.schema._class.field"})
+
 _SCHEMA_OF = re.compile(r"\b(?:Codec|Schema|Decoder|Bottom)\[\s*(\w+)\s*[,\]]")
 
 
@@ -55,6 +60,7 @@ def test_no_schema_parameter_lets_its_value_widen_the_type() -> None:
     found = [
         f"{qualified}({pair})"
         for qualified, function in _functions()
+        if qualified not in _KNOWN
         for pair in _widening(function)
     ]
     assert found == []

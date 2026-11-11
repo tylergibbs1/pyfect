@@ -9555,13 +9555,6 @@ class JwtSubject(TypedDict):
     sub: str
 
 
-def check_field_default_has_the_schemas_type() -> None:
-    # A default is checked against the schema's Type, which it cannot widen.
-    assert_type(S.field(S.String, default="x"), str)
-    wide: object = S.field(S.String, default=1)  # pyright: ignore[reportArgumentType]
-    del wide
-
-
 def check_graph() -> None:
     from pyfect import graph
     from pyfect.graph import (

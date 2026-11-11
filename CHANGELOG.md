@@ -30,7 +30,6 @@
 
 - `jwt.sign` and `jwt.encrypt` check `claims` against the schema's Type, as Effect's
   `S["Type"]` does: `{"sub": 1}` for `sub: str` is a type error (it used to widen the Type).
-  `S.field(schema, default=...)` checks the default the same way.
 - `Mac.generate_key` returns `Key[A]` for the algorithm's type `A`, as `Aead` and `KeyWrap` do
   (it returned `Key[Any]`).
 - `router.layer_in_memory_client` takes routes that need services (`Requires[...]`): they become

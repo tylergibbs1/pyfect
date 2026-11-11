@@ -57,7 +57,6 @@ from pyfect.schema._adapters import CONSTRUCTOR, raise_schema_failure
 from pyfect.schema._constructor_default import tag as tag_schema
 from pyfect.schema._derive import AnyBottom, schema_of
 from pyfect.schema._error import SchemaError
-from pyfect.schema._exact import Exact
 from pyfect.schema._make import make_class_sync
 from pyfect.schema._options import ParseOptions
 from pyfect.schema._schema import Bottom, Codec
@@ -72,7 +71,9 @@ _SCHEMA = "pyfect.schema"
 @overload
 def field[A](schema: Codec[A, object, Never, Never], /, *, key: str | None = None) -> A: ...
 @overload
-def field[A](schema: Exact[A, Never, Never], /, *, default: A, key: str | None = None) -> A: ...
+def field[A](
+    schema: Codec[A, object, Never, Never], /, *, default: A, key: str | None = None
+) -> A: ...
 @overload
 def field[A](
     schema: Codec[A, object, Never, Never],
@@ -88,7 +89,7 @@ def field[A](*, default: A, key: str) -> A: ...
 @overload
 def field(*, key: str) -> Any: ...
 def field(
-    schema: Codec[object, object, Never, Never] | Exact[Any, Never, Never] | None = None,
+    schema: Codec[object, object, Never, Never] | None = None,
     /,
     *,
     default: object = MISSING,
