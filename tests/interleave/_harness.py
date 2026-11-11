@@ -53,6 +53,9 @@ type Timers = Literal["anytime", "when_idle"]
 only once no task is ready (virtual time moves when the run is idle)."""
 
 BUDGET_ENV = "PYFECT_INTERLEAVE_BUDGET"
+SEED_ENV = "PYFECT_INTERLEAVE_SEED"
+"""The first seed of the random phase (default 0, as in CI): a deeper run
+started at another seed explores schedules CI never tried."""
 
 
 # --- recorded actions ----------------------------------------------------------------
@@ -742,8 +745,13 @@ def _bounded_dfs(scenario: Scenario, budget: _Budget, report: Report) -> int:
         k += 1
 
 
+def _first_seed() -> int:
+    raw = os.environ.get(SEED_ENV)
+    return 0 if not raw else int(raw)
+
+
 def _seeded(scenario: Scenario, budget: _Budget, report: Report, baseline: int) -> None:
-    seed = 0
+    seed = _first_seed()
     while budget.take():
         chooser: Chooser
         if seed % 2 == 0:

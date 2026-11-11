@@ -384,7 +384,9 @@ class ScopedCache[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never, R =
                     return _FailCause(ex.cause.without_failures())
                 return _VOID
 
-            return lookup.interrupt().flat_map(report)
+            # Closed whatever the lookup did: one in its uninterruptible
+            # acquire still succeeds, into an entry nobody holds any more.
+            return lookup.interrupt().and_then(entry.scope.close(_DONE)).flat_map(report)
 
         return restore(entry.deferred.wait()).on_exit(leave)
 

@@ -48,15 +48,22 @@ def _my_scenario(w: World) -> None:
         yield from victim.get().await_exit()
 
     w.fork(main)  # a root fiber
-    _interrupt_from_thread(w, "interrupter", victim)  # a simulated thread
+    interrupt_from_thread(w, "interrupter", victim)  # a simulated thread
     w.check(lambda: None if len(taken) <= 1 else f"took {taken}")
 ```
 
-Add it to `BASE` in `scenarios.py`. Keep it small: two or three fibers, a yield or
+Add it to `SCENARIOS` in its family's module (`scenarios_sync.py` for queues,
+PubSub, semaphores, latches, refs, Deferred and References; `scenarios_resources.py`
+for pools, RC refs and maps, caches, layer memoization and masks;
+`scenarios_fibers.py` for fiber collections, timeouts, concurrent combinators and
+schedules; `scenarios_streams.py` for streams), or to `BASE` in `scenarios.py` for the
+runtime itself. Shared helpers live in `_kit.py`. Keep it small: two or three fibers, a yield or
 two, one interrupt from a fiber and one from a thread. Record a decided result in
 the continuation that receives it (`.map(seen.append)`): a later step can be
-interrupted first. `w.bump(name)` counts finalizers, `_resource(w, name)` and
-`_balanced(...)` check one runs once per acquire. A scenario must do the same thing
+interrupted first. `w.bump(name)` counts finalizers, `resource(w, name)` and
+`balanced(...)` (or `released_once(...)`) check one runs once per acquire;
+`from_thread(w, name, act, when=...)` calls an `*_unsafe` API or a resume from a
+simulated thread. A scenario must do the same thing
 every run (no real time, no randomness), or replays diverge.
 
 Options on `Scenario`: `order="fifo"` when correctness depends on the real
@@ -65,9 +72,12 @@ when timers stand for real time that only passes while nothing is ready, `runs`.
 
 ## Running
 
-- In the suite: `pytest tests/interleave` (deterministic, about 20 seconds).
+- In the suite: `pytest tests/interleave` (deterministic, a fixed set of schedules and
+  seeds; about 90 seconds of CPU for 94 scenarios in three variants each).
 - Longer: `PYFECT_INTERLEAVE_BUDGET=60 pytest tests/interleave -o test_timeout=600`
   explores each scenario for 60 seconds.
+- `PYFECT_INTERLEAVE_SEED=<n>` starts the random phase at seed `n` instead of 0, so
+  a deeper run explores schedules CI never tried.
 - A failure prints `replay(BY_NAME['name'], '0*12.1.0*3.2')`: the scenario and the
   schedule (choices, `0*12` being twelve first choices). Replaying it reruns exactly
   that interleaving. Once fixed, keep it in `test_regressions.py` with

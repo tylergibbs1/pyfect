@@ -22,8 +22,8 @@ from pyfect.exit import Exit, Success
 from pyfect.exit import void as exit_void
 from pyfect.testing import TestClock, adjust
 
-from ._harness import Problems, Scenario, ThreadBody, World
 from . import scenarios_fibers, scenarios_resources, scenarios_streams, scenarios_sync
+from ._harness import Problems, Scenario, ThreadBody, World
 from ._kit import AnyFiber, Slot, balanced, interrupt_from_thread, resource
 
 # --- Queue -----------------------------------------------------------------------------

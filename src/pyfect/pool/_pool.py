@@ -480,7 +480,7 @@ class Pool[A = Unsubscripted, E = Never]:
 
         def register(resume: Callable[[Effect[None, Any]], None]) -> Effect[None] | None:
             if state.is_shutting_down or (
-                not state.waiters and state._first_healthy_available() is not None
+                state.waiters.is_next(waiter) and state._first_healthy_available() is not None
             ):
                 resume(_VOID)
                 return None
@@ -628,8 +628,11 @@ class Pool[A = Unsubscripted, E = Never]:
             scope = CloseableScope()
             context = self._context.add(Scope, scope)
             acquire: Effect[A, E] = _Locally(self._acquire, lambda _: context)
-            acquired = acquire.exit().flat_map(lambda ex: self._track(ex, scope))
-            return restore(acquired).on_exit(
+            # Only the acquire is interruptible: ``_track`` claims the item
+            # (puts it in the pool), so its result must reach ``on_exit``
+            # without a pause in which an interrupt closes the item's scope.
+            acquired = restore(acquire.exit()).flat_map(lambda ex: self._track(ex, scope))
+            return acquired.on_exit(
                 lambda ex: scope.close(ex) if isinstance(ex, Failure) else _VOID
             )
 

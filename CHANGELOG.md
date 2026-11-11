@@ -107,6 +107,28 @@
   finished, as Node's `closeIdleConnections` does, instead of once the serving fiber came back
   round for the next request. A shutdown starting just after a client got its response no
   longer waits out `graceful_shutdown_timeout` for that connection.
+- `race`, `race_first`, `race_all`, `race_all_first` and `timeout` no longer return before their
+  losers have stopped when an interrupt lands just after the winner decided the race. The losers
+  were stopped in the effect the winner resumed the race with, which a fiber that paused there
+  for its step budget (`MaxOpsBeforeYield`) skipped once interrupted, so `timeout(...)` could
+  return while the timed-out effect still held its resources. They are now stopped in an
+  `on_exit` around the wait, however the race ends, as Effect's `raceAll` does with its
+  `onExitUnsafe` hook. Found by the interleaving harness (`tests/interleave`), as were the next
+  three; a new test bans handing work to a callback's `resume` anywhere in `src`.
+- A pool no longer releases an item it has just put in service when its scope closes at that
+  moment. The resize fiber published a new item while interruptible, so an interrupt in the
+  pause right after (the pool's scope closing) made it close the item's scope while borrowers
+  held it. Only the acquire is interruptible now; publishing the item is not. Effect's
+  `Pool.ts` `allocate` restores interruptibility around both and has the same gap.
+- A pool borrower woken to retry no longer parks forever next to free items. A woken waiter
+  keeps its place in line; if its retry found nothing and items came back before it parked
+  again, their wake-ups had skipped it (it was awake), and it then parked because the line, which
+  held only itself, was not empty. It now goes on when nobody asleep is ahead of it. Effect's
+  `waitForItem` checks `waiters.size === 0` and has the same race.
+- A `ScopedCache` lookup whose last getter left while the lookup was in its uninterruptible
+  acquire is released. The lookup went on to succeed into an entry already removed, and
+  nothing closed its scope, not even closing the cache. The last getter now closes the entry's
+  scope once the lookup has stopped. Effect's `ScopedCache.ts` has the same leak.
 
 ### Docs
 
