@@ -32,6 +32,7 @@ from pyfect.layer import effect as layer_effect
 from pyfect.persistence._columns import column_bytes, column_int
 from pyfect.pubsub import PubSub
 from pyfect.rc_map import RcMap
+from pyfect.schema import new
 from pyfect.scope import Scope, acquire_release, scoped
 from pyfect.semaphore import Semaphore
 from pyfect.sql.client import SqlClient, SqlClientService
@@ -61,9 +62,9 @@ def _dialect(sql: SqlClientService) -> _Dialect:
 
 
 def _to_remote_entry(row: Row) -> RemoteEntry:
-    return RemoteEntry(
+    return new(RemoteEntry, disable_checks=True)(
         remote_sequence=column_int(row["sequence"]),
-        entry=Entry(
+        entry=new(Entry, disable_checks=True)(
             id=EntryId(column_bytes(row["entry_id"])),
             event=str(row["event"]),
             primary_key=str(row["primary_key"]),
@@ -498,8 +499,9 @@ class _SqlStorage(StorageService):
         def body() -> Generator[Effect[Any, SqlError, Any], Any, list[RemoteEntry]]:
             yield from self._ensure_store(store_id)
             current = yield from self._lock_store(store_id)
+            unchecked = new(RemoteEntry, disable_checks=True)
             committed = [
-                RemoteEntry(remote_sequence=current + i, entry=entry)
+                unchecked(remote_sequence=current + i, entry=entry)
                 for i, entry in enumerate(entries)
             ]
             rows = [

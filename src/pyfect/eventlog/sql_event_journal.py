@@ -49,6 +49,7 @@ from pyfect.layer import effect as layer_effect
 from pyfect.option import Option, Some
 from pyfect.persistence._columns import column_bytes, column_int
 from pyfect.pubsub import PubSub, Subscription
+from pyfect.schema import new
 from pyfect.scope import Scope
 from pyfect.sql.client import SqlClient, SqlClientService
 from pyfect.sql.connection import Row
@@ -70,7 +71,7 @@ def _dialect(sql: SqlClientService) -> _Dialect:
 
 
 def _to_entry(row: Row) -> Entry:
-    return Entry(
+    return new(Entry, disable_checks=True)(
         id=EntryId(column_bytes(row["id"])),
         event=str(row["event"]),
         primary_key=str(row["primary_key"]),

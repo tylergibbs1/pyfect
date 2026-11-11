@@ -190,6 +190,54 @@ def test_disable_checks_skips_the_class_checks_when_decoding():
     SchemaAsserts(_Range).decoding().fail({"low": 2, "high": 1}, "low above high")
 
 
+class _Scored(_Range):
+    score: float = S.field(S.Finite)
+    nick: str = "anon"
+
+
+def test_new_with_disable_checks_skips_field_and_class_checks_and_keeps_defaults():
+    # Effect's ``new A(props, { disableChecks: true })``.
+    unchecked = S.new(_Scored, disable_checks=True)(low=2, high=1, score=float("nan"))
+    assert (unchecked.low, unchecked.high, unchecked.nick) == (2, 1, "anon")
+    assert isinstance(unchecked, _Scored)
+    with pytest.raises(S.SchemaError, match="low above high"):
+        S.new(_Scored)(low=2, high=1, score=1.0)
+    with pytest.raises(S.SchemaError, match="Expected a finite number"):
+        _Scored(low=1, high=2, score=float("nan"))
+
+
+def test_new_with_disable_checks_still_checks_the_field_types():
+    with pytest.raises(S.SchemaError, match="Expected number"):
+        S.new(_Scored, disable_checks=True)(low="2", high=1, score=1.0)  # pyright: ignore[reportArgumentType]
+
+
+def test_new_passes_its_parse_options_to_the_constructor():
+    with pytest.raises(S.SchemaError) as raised:
+        S.new(_Scored, errors="all")(low="2", high="1", score=1.0)  # pyright: ignore[reportArgumentType]
+    assert str(raised.value).count("Expected number") == 2
+
+
+def test_new_builds_errors_with_their_cause_linked():
+    cause = ValueError("boom")
+    error = S.new(_Missing, disable_checks=True)(id=1, cause=cause)
+    assert error.__cause__ is cause
+
+
+def test_new_builds_a_tagged_class():
+    class Circle(S.TaggedClass, tag="circle"):
+        radius: float = S.field(S.Finite)
+
+    circle = S.new(Circle, disable_checks=True)(radius=float("inf"))
+    assert isinstance(circle, Circle)
+    assert circle.radius == float("inf")
+    assert S.encode_sync(Circle)(circle, disable_checks=True)["_tag"] == "circle"
+
+
+def test_new_rejects_a_class_that_is_not_a_schema_class():
+    with pytest.raises(TypeError, match="schema class base"):
+        S.new(S.Class)()
+
+
 class _Chain(TypedDict):
     value: int
     next: "_Chain | None"

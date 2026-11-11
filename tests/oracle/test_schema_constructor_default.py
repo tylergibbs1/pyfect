@@ -11,15 +11,14 @@ the Effect test title, prefixed by its ``describe`` blocks.
 Python mappings: a struct is ``S.Struct(TypedDict, key=schema)``; Effect's
 ``context.constructorDefault`` is the node's ``constructor_default``; a
 class is made with ``A.make(fields)`` (``A(...)`` uses its dataclass
-defaults, which are values, not effects).
+defaults, which are values, not effects); Effect's ``new A(props, options)``
+is ``S.new(A, **options)(...)``.
 
 Omitted:
-- "withConstructorDefault / Struct / applies constructor default when
-  disableChecks is true" and "Class / make applies defaults, source checks,
-  and the constructor once": they build a class whose own constructor
-  (``new A({})``) runs the defaults; a pyfect class's ``__init__`` is its
-  dataclass's (field defaults are values), so ``A.make`` is ported in the
-  nested-class titles instead.
+- "Class / make applies defaults, source checks, and the constructor once":
+  it builds a class whose own constructor (``new A({})``) runs effectful
+  defaults; a pyfect class's ``__init__`` is its dataclass's (field defaults
+  are values), so ``A.make`` is ported in the nested-class titles instead.
 """
 
 from typing import Literal, Never, NotRequired, TypedDict, cast
@@ -143,6 +142,16 @@ def test_nested_defaults_class():
     make.succeed({}, _Nested(a={"b": -1}))
     assert _Nested.make({"a": {}}) == _Nested(a={"b": -1})  # pyright: ignore[reportArgumentType]
     assert _Nested.make({}) == _Nested(a={"b": -1})  # pyright: ignore[reportArgumentType]
+
+
+def test_applies_constructor_default_when_disable_checks_is_true():
+    """withConstructorDefault / Struct / applies constructor default when disableChecks is true"""
+
+    class A(S.Class):
+        a: str = "default"
+
+    instance = S.new(A, disable_checks=True)()
+    assert instance.a == "default"
 
 
 def test_struct_effect_sync():

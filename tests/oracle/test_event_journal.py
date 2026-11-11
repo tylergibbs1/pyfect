@@ -24,6 +24,7 @@ from typing import Never
 import pytest
 
 import pyfect as fx
+from pyfect import schema as S
 from pyfect import testing
 from pyfect.eventlog import event_journal as J
 from pyfect.eventlog.event_journal import Entry, EntryId, RemoteEntry
@@ -39,7 +40,9 @@ def entry(msecs: int, event: str = "Repro", primary_key: str = "key", tail: int 
     entry_id = J.make_entry_id_unsafe(msecs=msecs)
     if tail is not None:
         entry_id = _with_tail(entry_id, tail)
-    return Entry(id=entry_id, event=event, primary_key=primary_key, payload=b"")
+    return S.new(Entry, disable_checks=True)(
+        id=entry_id, event=event, primary_key=primary_key, payload=b""
+    )
 
 
 def remote_entry_with_rand_a(msecs: int, rand_a: int) -> Entry:
@@ -47,7 +50,9 @@ def remote_entry_with_rand_a(msecs: int, rand_a: int) -> Entry:
     raw = bytearray(J.make_entry_id_unsafe(msecs=msecs))
     raw[6] = 0x70 | (rand_a >> 8)
     raw[7] = rand_a & 0xFF
-    return Entry(id=EntryId(bytes(raw)), event="Repro", primary_key="key", payload=b"")
+    return S.new(Entry, disable_checks=True)(
+        id=EntryId(bytes(raw)), event="Repro", primary_key="key", payload=b""
+    )
 
 
 def maximum_entry() -> Entry:
@@ -56,7 +61,9 @@ def maximum_entry() -> Entry:
     raw = bytearray(J.make_entry_id_unsafe(msecs=2**48 - 1))
     raw[6] = 0x7F
     raw[7] = 0xFF
-    return Entry(id=EntryId(bytes(raw)), event="Repro", primary_key="key", payload=b"")
+    return S.new(Entry, disable_checks=True)(
+        id=EntryId(bytes(raw)), event="Repro", primary_key="key", payload=b""
+    )
 
 
 def import_entry(journal: J.EventJournalService, item: Entry):
@@ -101,7 +108,9 @@ def _now(monkeypatch: pytest.MonkeyPatch, millis: int) -> Callable[[int], None]:
 
 def _conflict_entry(msecs: int, tail: int, payload: int) -> Entry:
     entry_id = _with_tail(J.make_entry_id_unsafe(msecs=msecs), tail)
-    return Entry(id=entry_id, event="Repro", primary_key="key", payload=bytes([payload]))
+    return S.new(Entry, disable_checks=True)(
+        id=entry_id, event="Repro", primary_key="key", payload=bytes([payload])
+    )
 
 
 class _LastWriterWins:
@@ -516,7 +525,9 @@ def test_relays_an_imported_entry_to_another_remote():
     source = J.make_remote_id_unsafe()
     target = J.make_remote_id_unsafe()
     yield from journal.next_remote_sequence(target)
-    item = Entry(id=J.make_entry_id_unsafe(), event="Repro", primary_key="key", payload=b"")
+    item = S.new(Entry, disable_checks=True)(
+        id=J.make_entry_id_unsafe(), event="Repro", primary_key="key", payload=b""
+    )
     yield from journal.write_from_remote(
         remote_id=source,
         entries=[RemoteEntry(remote_sequence=0, entry=item)],
@@ -547,7 +558,9 @@ def test_returns_the_next_unused_remote_sequence():
     """EventJournal / returns the next unused remote sequence"""
     journal = yield from J.make_memory
     remote_id = J.make_remote_id_unsafe()
-    item = Entry(id=J.make_entry_id_unsafe(), event="Repro", primary_key="key", payload=b"")
+    item = S.new(Entry, disable_checks=True)(
+        id=J.make_entry_id_unsafe(), event="Repro", primary_key="key", payload=b""
+    )
 
     def acks(*sequences: int) -> list[J.RemoteAck]:
         return [J.RemoteAck(item.id, sequence) for sequence in sequences]

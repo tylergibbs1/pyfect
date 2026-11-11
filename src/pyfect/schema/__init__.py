@@ -120,7 +120,15 @@ from pyfect.schema._checks_string import (
     is_uppercased,
     is_uuid,
 )
-from pyfect.schema._class import Class, Error, TaggedClass, TaggedError, class_check, field
+from pyfect.schema._class import (
+    Class,
+    Error,
+    TaggedClass,
+    TaggedError,
+    class_check,
+    field,
+    new,
+)
 from pyfect.schema._codecs import (
     URL,
     ArrayEnsure,
@@ -863,6 +871,7 @@ __all__ = [
     "middleware_decoding",
     "middleware_encoding",
     "model",
+    "new",
     "optional_key",
     "override_to_codec_iso",
     "refine",

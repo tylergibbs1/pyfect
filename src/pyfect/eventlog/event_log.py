@@ -78,7 +78,7 @@ from pyfect.redacted import value as reveal
 from pyfect.result import Ok
 from pyfect.schedule import exponential, spaced
 from pyfect.schedule import min as schedule_min
-from pyfect.schema import decode_effect, encode_effect
+from pyfect.schema import decode_effect, encode_effect, new
 from pyfect.schema.getter._binary import (
     base64_decode,
     base64_encode,
@@ -502,7 +502,7 @@ def _register_batch_compaction[R](
 
                 def body():
                     encoded = yield from encode_effect(found.payload_codec)(payload).or_die()
-                    entry = Entry(
+                    entry = new(Entry, disable_checks=True)(
                         id=make_entry_id_unsafe(msecs=source.created_at_millis),
                         event=found.tag,
                         primary_key=found.primary_key(payload),

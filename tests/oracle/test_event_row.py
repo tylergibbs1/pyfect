@@ -59,7 +59,7 @@ type Call = tuple[Any, ...]
 def _entry(
     msecs: int, event: str = "grocery", primary_key: str = "g1", payload: bytes = b""
 ) -> Entry:
-    return Entry(
+    return S.new(Entry, disable_checks=True)(
         id=J.make_entry_id_unsafe(msecs=msecs),
         event=event,
         primary_key=primary_key,

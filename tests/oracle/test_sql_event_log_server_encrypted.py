@@ -13,6 +13,7 @@ from collections.abc import Callable, Generator, Sequence
 from typing import Any
 
 import pyfect as fx
+from pyfect import schema as S
 from pyfect import stream as St
 from pyfect import testing
 from pyfect.context import Context
@@ -44,7 +45,7 @@ get_material = make_get_identity_root_secret_material()
 
 
 def make_entry(value: int) -> Entry:
-    return Entry(
+    return S.new(Entry, disable_checks=True)(
         id=J.make_entry_id_unsafe(),
         event="UserCreated",
         primary_key=f"user-{value}",

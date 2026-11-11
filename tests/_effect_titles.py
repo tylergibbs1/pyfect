@@ -22,7 +22,7 @@ _SPRINTF = re.compile(r"%[sdifoOj]|\$\{?[A-Za-z_][\w.]*\}?")
 _ESCAPE = re.compile(r"\\(.)", re.DOTALL)
 
 
-def _skip_string(text: str, start: int) -> int:
+def skip_string(text: str, start: int) -> int:
     """The index after the quoted string or template opening at ``start``."""
     quote = text[start]
     index = start + 1
@@ -33,20 +33,20 @@ def _skip_string(text: str, start: int) -> int:
         elif char == quote:
             return index + 1
         elif quote == "`" and text.startswith("${", index):
-            index = _skip_balanced(text, index + 1)
+            index = skip_balanced(text, index + 1)
         else:
             index += 1
     return index
 
 
-def _skip_balanced(text: str, start: int) -> int:
+def skip_balanced(text: str, start: int) -> int:
     """The index after the bracket opening at ``start``, skipping strings and comments."""
     depth = 0
     index = start
     while index < len(text):
         char = text[index]
         if char in "\"'`":
-            index = _skip_string(text, index)
+            index = skip_string(text, index)
             continue
         if text.startswith("//", index):
             end = text.find("\n", index)
@@ -79,7 +79,7 @@ def _template_title(text: str, start: int) -> tuple[str, int]:
         elif char == quote:
             return _ESCAPE.sub(r"\1", "".join(out)), index + 1
         elif quote == "`" and text.startswith("${", index):
-            index = _skip_balanced(text, index + 1)
+            index = skip_balanced(text, index + 1)
             out.append(_PLACEHOLDER)
         else:
             out.append(char)
@@ -115,7 +115,7 @@ def _title_after(source: str, start: int, modifiers: str) -> str | None:
         if ".each" not in modifiers and ".for" not in modifiers:
             return None
         # it.each(table)("title", ...): the table is the first call, the title the second.
-        end = _skip_balanced(source, index - 1)
+        end = skip_balanced(source, index - 1)
         if source[end : end + 1] != "(":
             return None
         index = end + 1

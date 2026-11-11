@@ -19,6 +19,7 @@ from typing import Any
 import pytest
 
 import pyfect as fx
+from pyfect import schema as S
 from pyfect import testing
 from pyfect.context import Context
 from pyfect.crypto import digest
@@ -48,7 +49,7 @@ other_store_id = StoreId("store-b")
 
 def make_entries(count: int) -> list[Entry]:
     return [
-        Entry(
+        S.new(Entry, disable_checks=True)(
             id=J.make_entry_id_unsafe(),
             event="UserCreated",
             primary_key=f"user-{i}",

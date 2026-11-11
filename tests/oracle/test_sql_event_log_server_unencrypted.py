@@ -20,6 +20,7 @@ from typing import Any
 import pytest
 
 import pyfect as fx
+from pyfect import schema as S
 from pyfect import testing
 from pyfect.eventlog import event_journal as J
 from pyfect.eventlog import event_log as L
@@ -65,7 +66,7 @@ def make_store_id(prefix: str) -> StoreId:
 
 
 def make_entry(name: str, primary_key: str = "user-1") -> Entry:
-    return Entry(
+    return S.new(Entry, disable_checks=True)(
         id=J.make_entry_id_unsafe(),
         event="UserNameSet",
         primary_key=primary_key,
@@ -675,7 +676,7 @@ def _authenticate_request(
 
 
 def _created(value: int) -> Entry:
-    return Entry(
+    return S.new(Entry, disable_checks=True)(
         id=J.make_entry_id_unsafe(),
         event="UserCreated",
         primary_key=f"user-{value}",
@@ -766,7 +767,7 @@ def test_reads_batch_history_through_id_and_primary_key_lookups():
         storage = yield from make_storage(sql)
 
         def entry(msecs: int, key: str) -> Entry:
-            return Entry(
+            return S.new(Entry, disable_checks=True)(
                 id=J.make_entry_id_unsafe(msecs=msecs),
                 event="Set",
                 primary_key=key,

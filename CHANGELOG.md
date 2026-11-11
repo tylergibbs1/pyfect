@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.5.7 (unreleased)
+
+### Added
+
+- `S.new(A, **options)` is a schema class's constructor with parse options, Effect's
+  `new A(props, options)`: `S.new(A, disable_checks=True)(x=1)` builds the instance without
+  running its fields' or its `@S.class_check` checks, still checking the fields' types and
+  applying their defaults. It is typed with `A`'s own keyword signature.
+
+### Performance
+
+- The event log and cluster constructors that Effect builds with `disableChecks` skip their
+  checks too (`compact_backlog`, journal and SQL storage rows, `runner.make`,
+  `runner_address.make`, `entity_address.make`). A construction with `disable_checks` that
+  succeeds parses each field once instead of through the whole struct: building 150 thousand
+  entries takes about half as long.
+
+### Fixed
+
+- Ported event log tests build entries with `S.new(Entry, disable_checks=True)` wherever Effect's
+  tests pass `{ disableChecks: true }`, so the large-group `compact_backlog` tests no longer
+  time out on slower CI runners. A new test fails when a port drops the option again.
+
 ## 0.5.6 (2026-11-11)
 
 ### Fixed

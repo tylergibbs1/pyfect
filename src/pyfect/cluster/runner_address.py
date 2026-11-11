@@ -17,7 +17,7 @@ class RunnerAddress(S.Class, identifier="~effect/cluster/RunnerAddress"):
 
 
 def make(host: str, port: int) -> RunnerAddress:
-    return RunnerAddress(host=host, port=port)
+    return S.new(RunnerAddress, disable_checks=True)(host=host, port=port)
 
 
 __all__ = ["RunnerAddress", "make"]

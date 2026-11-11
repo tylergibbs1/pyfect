@@ -64,7 +64,7 @@ from pyfect.redacted import make as redacted
 from pyfect.rpc.group import HandlersFor
 from pyfect.rpc.server import ServerProtocol
 from pyfect.rpc.server import layer as rpc_server_layer
-from pyfect.schema import decode_effect, encode_effect
+from pyfect.schema import decode_effect, encode_effect, new
 from pyfect.scope import Scope, acquire_release, scoped
 from pyfect.semaphore import Semaphore
 from pyfect.stream import Stream, from_iterable, from_subscription
@@ -357,8 +357,9 @@ def compact_backlog(
             if sequences is None:
                 result.extend(group)
             else:
+                unchecked = new(RemoteEntry, disable_checks=True)
                 result.extend(
-                    RemoteEntry(remote_sequence=s, entry=e)
+                    unchecked(remote_sequence=s, entry=e)
                     for s, e in zip(sequences, flat, strict=True)
                 )
         return result
@@ -626,9 +627,10 @@ class _MemoryStorage(StorageService):
                 return (yield from die(ValueError("Duplicate entries")))
             last = store.journal[-1].remote_sequence if store.journal else 0
             committed: list[RemoteEntry] = []
+            unchecked = new(RemoteEntry, disable_checks=True)
             for entry in entries:
                 last += 1
-                remote_entry = RemoteEntry(remote_sequence=last, entry=entry)
+                remote_entry = unchecked(remote_sequence=last, entry=entry)
                 committed.append(remote_entry)
                 store.journal.append(remote_entry)
                 store.by_id[entry.id] = remote_entry
@@ -741,7 +743,7 @@ class EventLogServerUnencryptedService:
                         "PersistenceFailure", public_key, store_id, "Failed to encode event"
                     )
                 )
-                entry = Entry(
+                entry = new(Entry, disable_checks=True)(
                     id=make_entry_id_unsafe(),
                     event=tag,
                     primary_key=schema_event.primary_key(payload),

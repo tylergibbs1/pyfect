@@ -64,6 +64,9 @@ in the order Effect writes them. Annotations work too: a `HashSet[int]` field is
 
 A subclass of `S.Class` is an immutable class with a keyword constructor, and a schema. Its annotations are its
 fields, `S.field(schema)` gives a field its own schema, and a default makes the key optional.
+The constructor checks every field; `S.new(User, disable_checks=True)(...)` builds one without
+running the checks (Effect's `new User(props, { disableChecks: true })`), still checking the
+fields' types.
 `S.from_json_string` wraps any schema so it reads and writes JSON text. A class whose
 fields differ between the database and a JSON API is a [model](/docs/models).
 

@@ -78,7 +78,9 @@ def _saturated(msecs: int) -> Entry:
     raw = bytearray(J.make_entry_id_unsafe(msecs=msecs))
     raw[6] = 0x7F
     raw[7] = 0xFF
-    return Entry(id=EntryId(bytes(raw)), event="Repro", primary_key="key", payload=b"")
+    return S.new(Entry, disable_checks=True)(
+        id=EntryId(bytes(raw)), event="Repro", primary_key="key", payload=b""
+    )
 
 
 def _import(journal: J.EventJournalService, item: Entry, remote_id: J.RemoteId | None = None):
@@ -116,7 +118,7 @@ def _user_entry(user_id: str) -> fx.Effect[Entry]:
         S.encode_effect(UserCreated.payload_codec)({"id": user_id})
         .or_die()
         .map(
-            lambda payload: Entry(
+            lambda payload: S.new(Entry, disable_checks=True)(
                 id=J.make_entry_id_unsafe(),
                 event="UserCreated",
                 primary_key=user_id,
@@ -968,10 +970,10 @@ def test_writes_remote_entries_and_sequences():
         journal = yield from make_journal
         remote_id = J.make_remote_id_unsafe()
         assert (yield from journal.next_remote_sequence(remote_id)) == 0
-        entry_a = Entry(
+        entry_a = S.new(Entry, disable_checks=True)(
             id=J.make_entry_id_unsafe(), event="UserCreated", primary_key="user-2", payload=b"\2"
         )
-        entry_b = Entry(
+        entry_b = S.new(Entry, disable_checks=True)(
             id=J.make_entry_id_unsafe(), event="UserCreated", primary_key="user-3", payload=b"\3"
         )
         seen_conflicts: list[tuple[Entry, ...]] = []

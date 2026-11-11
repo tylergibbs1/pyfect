@@ -145,6 +145,8 @@ class _Built(NamedTuple):
     """The decoding struct, by key."""
     constructor: ast.AST
     """The fields' Types by attribute: issues of ``Class(...)`` name its keywords."""
+    types: tuple[tuple[str, ast.AST], ...]
+    """Each field's Type by attribute, without a tagged class's tag."""
     encoded: ast.AST
     absent_when_none: frozenset[str]
 
@@ -231,8 +233,14 @@ class _Shape:
             fields = ast.Objects(
                 keyed, annotations={"identifier": self.identifier} if extends else None
             )
+            types = tuple((name, schema.ast.to_type()) for name, schema in schemas.items())
             self._built = _Built(
-                schemas, fields, ast.Objects(named).to_type(), fields.flip().to_type(), absent
+                schemas,
+                fields,
+                ast.Objects(named).to_type(),
+                types,
+                fields.flip().to_type(),
+                absent,
             )
         return self._built
 
@@ -271,18 +279,29 @@ class _Shape:
                 values[keys[name]] = value
         return values
 
-    def validate(self, instance: object) -> None:
+    def _types_fit(self, instance: object, options: ParseOptions) -> bool:
+        """Each field's value parses against its Type at once. Without checks
+        no filter runs, so ``validate`` may parse again to build the issue."""
+        for name, type_ in self._build().types:
+            if type(type_.parse(getattr(instance, name), options)) is not Success:
+                return False
+        return True
+
+    def validate(self, instance: object, options: ParseOptions) -> None:
         """Raise ``SchemaError`` unless ``instance``'s fields fit their
-        schemas' Types and the class's checks pass."""
+        schemas' Types and the class's checks pass (skipped with
+        ``disable_checks``)."""
+        if options.get("disable_checks") and self._types_fit(instance, options):
+            return
         values: dict[object, object] = {} if self.tag is None else {"_tag": self.tag}
         for name in self.field_names:
             values[name] = getattr(instance, name)
-        match ast.run_now(self._build().constructor.parse(values, {})):
+        match ast.run_now(self._build().constructor.parse(values, options)):
             case Success():
                 pass
             case failure:
                 raise_schema_failure(failure.cause.map(SchemaError), CONSTRUCTOR)
-        match ast.check_instance(self, instance, {}):
+        match ast.check_instance(self, instance, options):
             case Success():
                 pass
             case failure:
@@ -387,7 +406,7 @@ def _define(
     @functools.wraps(init)
     def __init__(self: object, *args: object, **kwargs: object) -> None:
         init(self, *args, **kwargs)
-        shape.validate(self)
+        shape.validate(self, {})
 
     type.__setattr__(cls, "__init__", __init__)
     if tag is not None:
@@ -502,6 +521,24 @@ class _SchemaClass:
     @classmethod
     def pipe[B](cls, f: Callable[[type[Self]], B], /) -> B:
         return f(cls)
+
+
+def new[**P, T: _SchemaClass](
+    cls: Callable[P, T], /, **options: Unpack[ParseOptions]
+) -> Callable[P, T]:
+    """``cls``'s constructor with options (Effect's ``new A(props, options)``):
+    ``S.new(A, disable_checks=True)(x=1)`` skips the fields' and the class's
+    checks, still checking the fields' types and applying their defaults."""
+    klass = cast("type[_SchemaClass]", cls)
+    shape = _shape_of(klass)
+
+    def construct(*args: P.args, **kwargs: P.kwargs) -> T:
+        instance = klass.__new__(klass)
+        shape.init(instance, *args, **kwargs)
+        shape.validate(instance, options)
+        return cast("T", instance)
+
+    return construct
 
 
 @dataclass_transform(kw_only_default=True, frozen_default=True, field_specifiers=(field,))

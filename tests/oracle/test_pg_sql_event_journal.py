@@ -18,6 +18,7 @@ import pytest
 pytest.importorskip("psycopg")
 
 import pyfect as fx
+from pyfect import schema as S
 from pyfect import testing
 from pyfect.deferred import Deferred
 from pyfect.eventlog import event_journal as J
@@ -59,7 +60,7 @@ def _local(journal: J.EventJournalService, primary_key: str, **options: Any):
 def _remote_entry(primary_key: str, msecs: int | None = None) -> RemoteEntry:
     return RemoteEntry(
         remote_sequence=0,
-        entry=Entry(
+        entry=S.new(Entry, disable_checks=True)(
             id=J.make_entry_id_unsafe(msecs=msecs),
             event="Repro",
             primary_key=primary_key,
@@ -127,7 +128,7 @@ def test_round_trips_a_remote_entry_and_advances_its_sequence(pg_server: PgServe
     def body():
         journal = yield from _open((yield from _client(pg_server)), **_tables("remote"))
         remote_id = J.make_remote_id_unsafe()
-        remote = Entry(
+        remote = S.new(Entry, disable_checks=True)(
             id=J.make_entry_id_unsafe(msecs=1_700_000_000_000),
             event="UserCreated",
             primary_key="user-2",
@@ -481,7 +482,7 @@ def test_an_import_waits_for_a_local_write_in_flight_on_another_connection(pg_se
             lambda written: started.succeed(written[0]).and_then(release.wait()),
         ).fork()
         local = yield from started.wait()
-        newer = Entry(
+        newer = S.new(Entry, disable_checks=True)(
             id=J.make_entry_id_unsafe(msecs=J.entry_id_millis(local.id) + 60_000),
             event="Repro",
             primary_key="key",

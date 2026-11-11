@@ -19,7 +19,9 @@ class EntityAddress(S.Class, identifier="~effect/cluster/EntityAddress"):
 
 
 def make(*, shard_id: ShardId, entity_type: EntityType, entity_id: EntityId) -> EntityAddress:
-    return EntityAddress(shard_id=shard_id, entity_type=entity_type, entity_id=entity_id)
+    return S.new(EntityAddress, disable_checks=True)(
+        shard_id=shard_id, entity_type=entity_type, entity_id=entity_id
+    )
 
 
 __all__ = ["EntityAddress", "make"]

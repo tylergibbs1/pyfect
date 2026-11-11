@@ -49,7 +49,7 @@ def _make_entry(
 ) -> Generator[Any, Any, Entry]:
     codec = group.events[next(iter(group.events))].payload_codec
     data = yield from S.encode_unknown_effect(codec)(payload).or_die()
-    return Entry(
+    return S.new(Entry, disable_checks=True)(
         id=J.make_entry_id_unsafe(msecs=msecs),
         event=event,
         primary_key=str(payload["id"]),

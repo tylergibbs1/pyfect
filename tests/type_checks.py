@@ -4406,6 +4406,12 @@ def check_schema_classes(unknown: object) -> None:
     assert_type(S.decode_unknown_sync(User)(unknown), User)
     assert_type(S.encode_sync(User), S.Parser[User, Mapping[str, object]])
     assert_type(User.make(user), User)
+    unchecked = S.new(User, disable_checks=True)
+    assert_type(unchecked(id=1, name="a", score=1.0), User)
+    unchecked(id=1, name="a")  # pyright: ignore[reportCallIssue]
+    unchecked(id="1", name="a", score=1.0)  # pyright: ignore[reportArgumentType]
+    S.new(User, disable_check=True)  # pyright: ignore[reportCallIssue]
+    S.new(int)  # pyright: ignore[reportArgumentType]
     assert_type(User.make_option(user), Option[User])
     assert_type(User.make_effect(user), fx.Effect[User, S.issue.Issue])
     assert_type(User.check(S.make_filter(lambda u: u.id > 0)), S.Bottom[User, Mapping[str, object]])

@@ -26,7 +26,7 @@ class Runner(S.Class, identifier="~effect/cluster/Runner"):
 
 
 def make(*, address: RunnerAddress, groups: tuple[str, ...], weight: float) -> Runner:
-    return Runner(address=address, groups=groups, weight=weight)
+    return S.new(Runner, disable_checks=True)(address=address, groups=groups, weight=weight)
 
 
 __all__ = ["Runner", "make"]

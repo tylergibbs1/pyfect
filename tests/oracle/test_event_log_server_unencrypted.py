@@ -58,7 +58,7 @@ group = G.empty.add(Set).add(Other)
 def make_entry(msecs: int, key: str, tag: str = "Set") -> Generator[Any, Any, Entry]:
     event = Set if tag == "Set" else Other
     payload = yield from S.encode_effect(event.payload_codec)({"key": key}).or_die()
-    return Entry(
+    return S.new(Entry, disable_checks=True)(
         id=J.make_entry_id_unsafe(msecs=msecs), event=tag, primary_key=key, payload=payload
     )
 
@@ -335,7 +335,9 @@ def test_lowest_id_applies_to_every_lookup(storage: fx.Layer[U.Storage, Any]):
         # shares a key with the batch's second entry, so the history must
         # start from the batch's lowest id.
         def with_key_b(e: Entry) -> Entry:
-            return Entry(id=EntryId(e.id), event=e.event, primary_key="b", payload=e.payload)
+            return S.new(Entry, disable_checks=True)(
+                id=EntryId(e.id), event=e.event, primary_key="b", payload=e.payload
+            )
 
         second = with_key_b(entries[1])
         stored = with_key_b(entries[2])
@@ -461,7 +463,7 @@ def test_indexes_conflicts_from_sliced_history():
         payload = yield from S.encode_effect(ReproEvent.payload_codec)(
             {"key": key, "value": value}
         ).or_die()
-        return Entry(
+        return S.new(Entry, disable_checks=True)(
             id=J.make_entry_id_unsafe(msecs=msecs),
             event="ReproEvent",
             primary_key=key,
@@ -511,7 +513,7 @@ def test_compact_backlog_keeps_forwarded_entries_in_order():
             if value is None
             else S.encode_effect(ReproEvent.payload_codec)({"key": key, "value": value})
         ).or_die()
-        return Entry(
+        return S.new(Entry, disable_checks=True)(
             id=J.make_entry_id_unsafe(), event="ReproEvent", primary_key=key, payload=payload
         )
 
@@ -543,10 +545,12 @@ def test_compact_backlog_keeps_forwarded_entries_in_order():
 
 def _large_group(fallback: bool):
     count = 150_000
+    remote_entry = S.new(J.RemoteEntry, disable_checks=True)
+    entry = S.new(Entry, disable_checks=True)
     remote_entries = [
-        J.RemoteEntry(
+        remote_entry(
             remote_sequence=index + 1,
-            entry=Entry(
+            entry=entry(
                 id=J.make_entry_id_unsafe(msecs=index),
                 event="ReproEvent",
                 primary_key="large-group",

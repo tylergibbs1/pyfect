@@ -229,8 +229,9 @@ def make_entries(
 
     def build() -> list[Entry]:
         sequence = _sequence_after(_max_entry_id(after))
+        unchecked = S.new(Entry, disable_checks=True)
         return [
-            Entry(
+            unchecked(
                 id=_next_entry_id(sequence, now_millis()),
                 event=e.event,
                 primary_key=e.primary_key,

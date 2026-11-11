@@ -71,7 +71,7 @@ from pyfect.redacted import value as reveal
 from pyfect.result import Err, Ok, Result
 from pyfect.rpc.client import ClientOptions, ClientProtocol
 from pyfect.rpc.client import make as make_rpc_client
-from pyfect.schema import SchemaError
+from pyfect.schema import SchemaError, new
 from pyfect.scope import Scope, fork_scoped
 from pyfect.stream import Stream
 from pyfect.stream import unwrap as unwrap_stream
@@ -554,8 +554,9 @@ def _encrypted(compaction: bool) -> Generator[Any, Any, EventLogRemoteService]:
                 if entries is None:
                     result.extend(next(next_decrypted) for _ in batch.entry_ids)
                 else:
+                    unchecked = new(RemoteEntry, disable_checks=True)
                     result.extend(
-                        RemoteEntry(remote_sequence=batch.sequence + j, entry=entry)
+                        unchecked(remote_sequence=batch.sequence + j, entry=entry)
                         for j, entry in enumerate(entries)
                     )
             return result

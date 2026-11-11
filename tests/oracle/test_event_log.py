@@ -121,7 +121,7 @@ def _encode(event: Ev.AnyEvent, payload: object) -> fx.Effect[bytes]:
 
 
 def _entry(event: str, primary_key: str, payload: bytes, entry_id: bytes | None = None) -> Entry:
-    return Entry(
+    return S.new(Entry, disable_checks=True)(
         id=EntryId(entry_id if entry_id is not None else J.make_entry_id_unsafe()),
         event=event,
         primary_key=primary_key,
