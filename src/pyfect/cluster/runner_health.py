@@ -6,11 +6,11 @@ through ``Runners``, and ``layer_k8s`` reads its pod's readiness."""
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
-from typing import Never
+from typing import Any, Never, Self
 
 from pyfect import layer as layer_
 from pyfect._core import Effect
+from pyfect._service_copy import replaced
 from pyfect.cluster.k8s_http_client import K8sHttpClient, Pod, make_get_pods
 from pyfect.cluster.runner_address import RunnerAddress
 from pyfect.cluster.runners import Runners, RunnersService
@@ -21,9 +21,23 @@ from pyfect.layer import Layer
 from pyfect.schedule import spaced
 
 
-@dataclass(frozen=True, slots=True)
 class RunnerHealthService:
-    is_alive: Callable[[RunnerAddress], Effect[bool]]
+    """How to tell whether a runner is alive: ``make_ping``, ``make_k8s``
+    and ``layer_noop`` build one."""
+
+    __slots__ = ("_is_alive",)
+
+    def __replace__(self, **changes: Any) -> Self:
+        """A copy with ``changes`` to the constructor's arguments (``copy.replace``)."""
+        return replaced(self, changes)
+
+    def __init__(self, is_alive: Callable[[RunnerAddress], Effect[bool]]) -> None:
+        self._is_alive = is_alive
+
+    def is_alive(self, address: RunnerAddress) -> Effect[bool]:
+        """Whether the runner at ``address`` is responsive; sharding keeps
+        a responsive runner's shards where they are. Never fails."""
+        return self._is_alive(address)
 
 
 class RunnerHealth(Tag[RunnerHealthService], key="effect/cluster/RunnerHealth"):

@@ -6,10 +6,11 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from ipaddress import IPv4Address, IPv6Address
-from typing import TYPE_CHECKING, Literal, Never, Protocol, overload
+from typing import TYPE_CHECKING, Any, Literal, Never, Protocol, Self, overload
 
 from pyfect._core import Effect
 from pyfect._effect_args import require_effect
+from pyfect._service_copy import replaced
 from pyfect.context import Tag
 from pyfect.net.net_address import InetAddress, IpAddress, inet_address_from_native_unsafe
 from pyfect.scope import Scope
@@ -121,18 +122,41 @@ class Writer:
     write_all: Callable[[Sequence[Outgoing]], Effect[None, DatagramSocketError]]
 
 
-@dataclass(frozen=True, slots=True)
 class DatagramSocketService:
     """A UDP socket: acquiring ``reader`` in a scope opens and binds a
     socket (one at a time; another acquisition waits for it to close);
-    ``writer`` writes through the open one."""
+    ``writer`` writes through the open one. ``make(reader, writer)``
+    builds one."""
 
-    reader: Effect[Reader, DatagramSocketError, Scope]
-    writer: Effect[Writer, Never, Scope]
+    __slots__ = ("_reader", "_writer")
 
-    def __post_init__(self) -> None:
-        require_effect(self.reader, "reader")
-        require_effect(self.writer, "writer")
+    def __replace__(self, **changes: Any) -> Self:
+        """A copy with ``changes`` to the constructor's arguments (``copy.replace``)."""
+        return replaced(self, changes)
+
+    def __init__(
+        self,
+        reader: Effect[Reader, DatagramSocketError, Scope],
+        writer: Effect[Writer, Never, Scope],
+    ) -> None:
+        require_effect(reader, "reader")
+        require_effect(writer, "writer")
+        self._reader = reader
+        self._writer = writer
+
+    @property
+    def reader(self) -> Effect[Reader, DatagramSocketError, Scope]:
+        """Opens and binds the socket for the life of the scope and gives
+        its ``Reader``; while one is open, another acquisition waits for
+        its scope to close. Fails with ``DatagramSocketError`` when the
+        socket cannot be opened or bound."""
+        return self._reader
+
+    @property
+    def writer(self) -> Effect[Writer, Never, Scope]:
+        """The ``Writer``: acquiring it never fails, and its writes wait for
+        an open reader's socket."""
+        return self._writer
 
 
 class DatagramSocket(Tag[DatagramSocketService], key="effect/socket/DatagramSocket"):

@@ -15,7 +15,11 @@ Adapted, with the reason:
   the runners again before it sends: the new owner can take the lock up to
   a ``refresh_assignments_interval`` before the client stops routing to
   the frozen runner, which still serves requests (its sockets are open and
-  its lock refresh waits), so Effect's test races there too.
+  its lock refresh waits), so Effect's test races there too. The frozen
+  runner's message storage waits as well (the harness's ``freeze``):
+  otherwise its read loop, still polling the shard, can claim the request
+  before the new owner reads it, and the request hangs (Effect has no
+  shard fence, so there the frozen runner would answer it instead).
 """
 
 from __future__ import annotations

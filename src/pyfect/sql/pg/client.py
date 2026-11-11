@@ -153,13 +153,9 @@ class PgClientService(SqlClientService):
     """A PostgreSQL client: an ``SqlClientService`` with ``json`` values
     and ``LISTEN`` / ``NOTIFY``."""
 
-    __slots__ = ("_listen_acquirer", "config", "pool_stats")
+    __slots__ = ("_listen_acquirer", "_pool_stats", "config")
 
     config: PgClientConfig
-    pool_stats: Effect[PoolStats]
-    """A snapshot of the pool's session occupancy. A ``make_client`` client
-    has one session leased for its lifetime, so it always reports
-    ``PoolStats(idle=0, used=1, pending=0, min=1, max=1)``."""
 
     def __init__(
         self,
@@ -172,7 +168,15 @@ class PgClientService(SqlClientService):
         super().__init__(**fields)
         self.config = config
         self._listen_acquirer = listen_acquirer
-        self.pool_stats = pool_stats
+        self._pool_stats = pool_stats
+
+    @property
+    def pool_stats(self) -> Effect[PoolStats]:
+        """A snapshot of the pool's session occupancy; never fails. A
+        ``make_client`` client has one session leased for its lifetime, so
+        it always reports ``PoolStats(idle=0, used=1, pending=0, min=1,
+        max=1)``."""
+        return self._pool_stats
 
     @staticmethod
     def json(value: object) -> Fragment:

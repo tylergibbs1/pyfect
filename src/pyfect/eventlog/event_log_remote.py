@@ -12,11 +12,13 @@ from __future__ import annotations
 import sys
 from collections.abc import Callable, Generator, Iterable, Sequence
 from dataclasses import dataclass
-from typing import Any, Never, Protocol
+from typing import Any, Never, Protocol, Self
 
 from pyfect._concurrency import for_each
 from pyfect._core import Effect
+from pyfect._effect_args import require_effect
 from pyfect._public import publish
+from pyfect._service_copy import replaced
 from pyfect.cache import Cache
 from pyfect.context import Tag
 from pyfect.effect import gen, succeed
@@ -140,25 +142,100 @@ def _authenticated[A, E, R](effect: Effect[A, E, R], /) -> Effect[A, E, R]:
     return effect
 
 
-@dataclass(frozen=True, slots=True)
 class EventLogRemoteService:
-    """A remote: its id, the sequence its changes start at, ``changes``
-    from ``start_sequence``, ``write`` (succeeding with the acks, or
-    ``None`` when it has none), ``when_authenticated`` and
-    ``latest_sequence``, the highest sequence it has stored for a store
-    (a pyfect addition, ``None`` for a remote that cannot tell, which
-    ``EventLogService.synced`` then does not wait for), and ``compaction``."""
+    """A remote an event log syncs with (Effect's ``EventLogRemote``):
+    ``write`` sends it entries, ``changes`` streams the entries stored
+    there."""
+
+    __slots__ = (
+        "_changes",
+        "_latest_sequence",
+        "_when_authenticated",
+        "_write",
+        "compaction",
+        "first_sequence",
+        "id",
+    )
 
     id: RemoteId
-    changes: Changes
-    write: WriteFn
-    first_sequence: int | None = None
-    when_authenticated: WhenAuthenticated = _authenticated
-    latest_sequence: LatestSequence | None = None
-    compaction: EventLogRemoteCompaction | None = None
+    """The remote's id."""
+    first_sequence: int | None
+    """The lowest sequence the remote assigns (``None``: 0)."""
+    compaction: EventLogRemoteCompaction | None
     """Encrypted remote compaction: present when the remote advertises
     ``HelloResponse.compaction`` and the RPC client includes
     ``EventLogCompactionRpcs``."""
+
+    def __replace__(self, **changes: Any) -> Self:
+        """A copy with ``changes`` to the constructor's arguments (``copy.replace``)."""
+        return replaced(self, changes)
+
+    def __init__(  # noqa: PLR0917
+        self,
+        id: RemoteId,
+        changes: Changes,
+        write: WriteFn,
+        first_sequence: int | None = None,
+        when_authenticated: WhenAuthenticated = _authenticated,
+        latest_sequence: LatestSequence | None = None,
+        compaction: EventLogRemoteCompaction | None = None,
+    ) -> None:
+        self.id = id
+        self._changes = changes
+        self._write = write
+        self.first_sequence = first_sequence
+        self._when_authenticated = when_authenticated
+        self._latest_sequence = latest_sequence
+        self.compaction = compaction
+
+    def changes(
+        self,
+        *,
+        identity: IdentityService,
+        store_id: StoreId,
+        start_sequence: int,
+        known_entries: EntriesById | None = None,
+    ) -> Effect[Dequeue[RemoteEntry, EventLogRemoteError], Never, Scope]:
+        """A queue of the entries of ``store_id`` stored on the remote for
+        ``identity``, from ``start_sequence`` on and then as they arrive,
+        until the ``Scope`` closes. ``known_entries`` looks up entries
+        stored locally, so the remote can reuse them instead of decoding
+        the matching changes. Making it never fails; the queue fails with
+        an ``EventLogRemoteError`` when the subscription does."""
+        return self._changes(
+            identity=identity,
+            store_id=store_id,
+            start_sequence=start_sequence,
+            known_entries=known_entries,
+        )
+
+    def write(
+        self, *, identity: IdentityService, store_id: StoreId, entries: Sequence[Entry]
+    ) -> Effect[Sequence[WriteAck] | None, EventLogRemoteError]:
+        """Sends ``entries`` of ``store_id`` for ``identity``, giving the
+        remote's acks (``None`` from a remote that sends none). Fails with
+        an ``EventLogRemoteError`` when the remote cannot be written."""
+        return self._write(identity=identity, store_id=store_id, entries=entries)
+
+    def when_authenticated[A, E, R](
+        self, effect: Effect[A, E, R], /
+    ) -> Effect[A, E | EventLogRemoteError, R | Identity]:
+        """Runs ``effect`` once the ``Identity`` in the context is
+        authenticated with the remote; fails with an
+        ``EventLogRemoteError`` when authenticating does, or as ``effect``
+        does."""
+        require_effect(effect, "effect")
+        return self._when_authenticated(effect)
+
+    @property
+    def latest_sequence(self) -> LatestSequence | None:
+        """``latest_sequence(identity=, store_id=)``: the highest sequence
+        the remote has stored for the store (``None`` when it has none),
+        failing with an ``EventLogRemoteError`` when the remote cannot be
+        asked. ``None`` for a remote that cannot tell, which
+        ``EventLogService.synced`` then does not wait for (a pyfect
+        addition)."""
+        return self._latest_sequence
 
 
 class EventLogRemote(Tag[EventLogRemoteService], key="effect/eventlog/EventLogRemote"):

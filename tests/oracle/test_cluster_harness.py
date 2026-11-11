@@ -100,6 +100,41 @@ def test_the_client_routes_by_the_runners_of_its_last_sync(cluster_db: ClusterDa
     yield from fx.scoped(fx.gen(body))
 
 
+@testing.live(timeout="1 minute")
+def test_a_frozen_runner_claims_no_messages(cluster_db: ClusterDatabase):
+    """A frozen runner stands for a paused process: its read loop claims no
+    message. A claim lasts ten minutes, and the frozen runner's lock refresh
+    never returns to confirm the shard or give the claim back, so a request
+    it claimed after its lock moved would hang (the flake of "transfers
+    frozen row locks after expiry")."""
+    backend = cluster_db.backend
+
+    def body() -> Body:
+        cluster = yield from make(cluster_db, entities=standard_entities, lock_mode="row")
+        [runner] = yield from cluster.start(1)
+        yield from cluster.wait_for_stable_assignments()
+        yield from cluster.wait_for_client_sync()
+        yield from cluster.freeze(runner)
+        client = yield from cluster.get_client(StateEntity)
+        yield from (
+            client(f"frozen-claim-{backend}")
+            .increment(EntityRequest(id=f"{backend}-frozen-claim", sequence=0))
+            .fork(start_immediately=True)
+        )
+        claims = cluster.sql(
+            "SELECT last_read FROM {} WHERE kind = 0", cluster.table("messages")
+        ).map(lambda rows: [row["last_read"] for row in rows])
+        yield from cluster.wait_until(
+            "The request was not saved", claims.map(lambda found: len(found) == 1)
+        )
+        # The runner is notified at once and polls every 500 ms.
+        yield from fx.sleep("2 seconds")
+        assert (yield from claims) == [None]
+        yield from cluster.kill(runner)
+
+    yield from fx.scoped(fx.gen(body))
+
+
 @testing.live(timeout="20 seconds")
 def test_wait_until_fails_at_its_deadline_on_a_condition_that_never_returns(
     cluster_db: ClusterDatabase,

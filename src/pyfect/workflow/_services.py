@@ -5,10 +5,10 @@ one workflow run."""
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Never, Protocol
+from typing import TYPE_CHECKING, Any, Never, Protocol, Self
 
 from pyfect._core import Effect
+from pyfect._service_copy import replaced
 from pyfect.cause import Cause
 from pyfect.context import Tag
 from pyfect.exit import Exit
@@ -193,39 +193,162 @@ class ScheduleClock(Protocol):
     ) -> Effect[None]: ...
 
 
-@dataclass(frozen=True, slots=True)
 class WorkflowEngineService:
     """Registers and runs workflows and coordinates their activities,
-    durable deferreds, interrupts, resumes and clocks. Build one with
-    ``workflow_engine.make_unsafe`` (or use ``layer_memory``); replace a
-    member with ``dataclasses.replace``.
+    durable deferreds, interrupts, resumes and clocks (Effect's
+    ``WorkflowEngine``). Build one with ``workflow_engine.make_unsafe``
+    (or use ``layer_memory``); ``copy.replace(engine, poll=...)`` swaps an
+    operation."""
 
-    - ``register(workflow, execute)``: the handler of ``workflow``
-    - ``execute(workflow, execution_id=, payload=, discard=, detached=,
-      suspended_retry_schedule=)``: run it; unless ``discard``, a caller
-      outside any workflow waits for the result, retrying a suspended
-      execution on ``suspended_retry_schedule`` (woken sooner when the
-      engine sees the result). ``detached`` needs ``discard`` (else a
-      defect) and skips the parent's completion wakes and interruption.
-    - ``poll``: the result so far, ``None`` while there is none
-    - ``interrupt`` / ``interrupt_unsafe``: interrupt an execution; the
-      unsafe one may skip compensations and orphan child workflows
-    - ``resume``: replay a suspended execution
-    - ``activity_execute``, ``deferred_result``, ``deferred_done``,
-      ``schedule_clock``: what activities, durable deferreds and clocks
-      call
-    """
+    __slots__ = (
+        "_activity_execute",
+        "_deferred_done",
+        "_deferred_result",
+        "_execute",
+        "_interrupt",
+        "_interrupt_unsafe",
+        "_poll",
+        "_register",
+        "_resume",
+        "_schedule_clock",
+    )
 
-    register: Register
-    execute: Execute
-    poll: Poll
-    interrupt: ByExecutionId
-    interrupt_unsafe: ByExecutionId
-    resume: ByExecutionId
-    activity_execute: ActivityExecute
-    deferred_result: DeferredResult
-    deferred_done: DeferredDone
-    schedule_clock: ScheduleClock
+    def __replace__(self, **changes: Any) -> Self:
+        """A copy with ``changes`` to the constructor's arguments (``copy.replace``)."""
+        return replaced(self, changes)
+
+    def __init__(  # noqa: PLR0917
+        self,
+        register: Register,
+        execute: Execute,
+        poll: Poll,
+        interrupt: ByExecutionId,
+        interrupt_unsafe: ByExecutionId,
+        resume: ByExecutionId,
+        activity_execute: ActivityExecute,
+        deferred_result: DeferredResult,
+        deferred_done: DeferredDone,
+        schedule_clock: ScheduleClock,
+    ) -> None:
+        self._register = register
+        self._execute = execute
+        self._poll = poll
+        self._interrupt = interrupt
+        self._interrupt_unsafe = interrupt_unsafe
+        self._resume = resume
+        self._activity_execute = activity_execute
+        self._deferred_result = deferred_result
+        self._deferred_done = deferred_done
+        self._schedule_clock = schedule_clock
+
+    def register(
+        self,
+        workflow: Workflow[Any, Any, Any],
+        execute: Callable[[Any, str], Effect[Any, Any, Any]],
+        /,
+    ) -> Effect[None, Never, Scope]:
+        """Registers ``execute(payload, execution_id)`` as the handler of
+        ``workflow``, with the services of the caller, until the ``Scope``
+        closes. Never fails."""
+        return self._register(workflow, execute)
+
+    def execute(
+        self,
+        workflow: Workflow[Any, Any, Any],
+        /,
+        *,
+        execution_id: str,
+        payload: object,
+        discard: bool = False,
+        detached: bool = False,
+        suspended_retry_schedule: Schedule[Any, Any, Any, Any] | None = None,
+    ) -> Effect[Any, Any]:
+        """Runs ``workflow`` (it must be registered, else a defect) with
+        ``payload`` as ``execution_id``. With ``discard`` it gives the
+        execution id without waiting for the result; otherwise it gives the
+        workflow's success or fails with its error.
+        A caller outside any workflow waits for the result, retrying a
+        suspended execution on ``suspended_retry_schedule`` (by default
+        exponential from 200 ms, at most 30 s apart), woken sooner when the
+        engine sees the result. Inside a workflow the child is interrupted
+        with its parent, and a child suspension suspends the parent; a child
+        that was interrupted is a defect for the parent. ``detached`` skips
+        that link and needs ``discard`` (else a defect)."""
+        return self._execute(
+            workflow,
+            execution_id=execution_id,
+            payload=payload,
+            discard=discard,
+            detached=detached,
+            suspended_retry_schedule=suspended_retry_schedule,
+        )
+
+    def poll[P, A, E](
+        self, workflow: Workflow[P, A, E], execution_id: str, /
+    ) -> Effect[Result[A, E] | None]:
+        """The result of the execution so far (``Complete`` or
+        ``Suspended``), ``None`` when it has none. Never fails."""
+        return self._poll(workflow, execution_id)
+
+    def interrupt(self, workflow: Workflow[Any, Any, Any], execution_id: str, /) -> Effect[None]:
+        """Interrupts the execution: its run is replayed to run its
+        compensations and interrupt its child workflows. Never fails."""
+        return self._interrupt(workflow, execution_id)
+
+    def interrupt_unsafe(
+        self, workflow: Workflow[Any, Any, Any], execution_id: str, /
+    ) -> Effect[None]:
+        """Interrupts the execution at once, possibly skipping its
+        compensations and orphaning its child workflows. Never fails."""
+        return self._interrupt_unsafe(workflow, execution_id)
+
+    def resume(self, workflow: Workflow[Any, Any, Any], execution_id: str, /) -> Effect[None]:
+        """Replays a suspended execution. Never fails."""
+        return self._resume(workflow, execution_id)
+
+    def activity_execute[A, E](
+        self, activity: Activity[A, E, Any], attempt: int, /
+    ) -> Effect[Result[A, E], Never, WorkflowInstance]:
+        """Runs ``activity`` (its ``attempt``-th try) for the workflow run
+        in the context, or gives its stored result when it already ran.
+        Its failure is in the ``Result``; the effect never fails."""
+        return self._activity_execute(activity, attempt)
+
+    def deferred_result[A, E](
+        self, deferred: DurableDeferred[A, E], /
+    ) -> Effect[Exit[A, E] | None, Never, WorkflowInstance]:
+        """The stored exit of ``deferred`` for the workflow run in the
+        context, ``None`` while it is not done. Never fails."""
+        return self._deferred_result(deferred)
+
+    def deferred_done[A, E](
+        self,
+        deferred: DurableDeferred[A, E],
+        /,
+        *,
+        workflow_name: str,
+        execution_id: str,
+        deferred_name: str,
+        exit: Exit[A, E],
+    ) -> Effect[None]:
+        """Stores ``exit`` as the result of the deferred ``deferred_name``
+        of ``execution_id`` (of ``workflow_name``), then resumes the run
+        waiting on it. Never fails."""
+        return self._deferred_done(
+            deferred,
+            workflow_name=workflow_name,
+            execution_id=execution_id,
+            deferred_name=deferred_name,
+            exit=exit,
+        )
+
+    def schedule_clock(
+        self, workflow: Workflow[Any, Any, Any], /, *, execution_id: str, clock: DurableClock
+    ) -> Effect[None]:
+        """Schedules the wake-up of ``clock`` for ``execution_id``: when it
+        is due, the clock's deferred is done and the execution resumes.
+        Never fails."""
+        return self._schedule_clock(workflow, execution_id=execution_id, clock=clock)
 
 
 class WorkflowEngine(Tag[WorkflowEngineService], key="effect/workflow/WorkflowEngine"):

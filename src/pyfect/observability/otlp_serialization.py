@@ -8,11 +8,11 @@ from __future__ import annotations
 import base64
 import math
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Final, cast
+from typing import TYPE_CHECKING, Any, Final, Self, cast
 
 from pyfect import _json_text
 from pyfect import layer as _layer
+from pyfect._service_copy import replaced
 from pyfect.context import Tag
 from pyfect.http import body as _body
 from pyfect.layer import Layer
@@ -26,13 +26,42 @@ if TYPE_CHECKING:
 __all__ = ["OtlpSerialization", "OtlpSerializationService", "layer_json", "layer_protobuf"]
 
 
-@dataclass(frozen=True, slots=True)
 class OtlpSerializationService:
-    """How each signal's payload becomes a request body."""
+    """How each signal's payload becomes a request body:
+    ``layer_json`` and ``layer_protobuf`` provide one, and
+    ``OtlpSerializationService(traces=..., metrics=..., logs=...)`` makes
+    one of functions."""
 
-    traces: Callable[[TraceData], _body.HttpBody]
-    metrics: Callable[[MetricsData], _body.HttpBody]
-    logs: Callable[[LogsData], _body.HttpBody]
+    __slots__ = ("_logs", "_metrics", "_traces")
+
+    def __replace__(self, **changes: Any) -> Self:
+        """A copy with ``changes`` to the constructor's arguments (``copy.replace``)."""
+        return replaced(self, changes)
+
+    def __init__(
+        self,
+        traces: Callable[[TraceData], _body.HttpBody],
+        metrics: Callable[[MetricsData], _body.HttpBody],
+        logs: Callable[[LogsData], _body.HttpBody],
+    ) -> None:
+        self._traces = traces
+        self._metrics = metrics
+        self._logs = logs
+
+    def traces(self, data: TraceData) -> _body.HttpBody:
+        """The request body of the trace export ``data`` (an OTLP
+        ``ExportTraceServiceRequest``), with its content type."""
+        return self._traces(data)
+
+    def metrics(self, data: MetricsData) -> _body.HttpBody:
+        """The request body of the metrics export ``data`` (an OTLP
+        ``ExportMetricsServiceRequest``), with its content type."""
+        return self._metrics(data)
+
+    def logs(self, data: LogsData) -> _body.HttpBody:
+        """The request body of the logs export ``data`` (an OTLP
+        ``ExportLogsServiceRequest``), with its content type."""
+        return self._logs(data)
 
 
 class OtlpSerialization(Tag[OtlpSerializationService]):

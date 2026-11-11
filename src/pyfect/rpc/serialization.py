@@ -15,12 +15,13 @@ the codec of the values inside messages (payloads, chunks, exits).
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass, replace
-from typing import Any, Literal, Protocol, cast
+from dataclasses import dataclass
+from typing import Any, Literal, Protocol, Self, cast
 
 from pyfect import schema as S
 from pyfect._js import text_decoder, text_encode
 from pyfect._json_text import parse, stringify
+from pyfect._service_copy import replaced
 from pyfect.context import Tag
 from pyfect.encoding import schema_binary
 from pyfect.errors import TaggedError
@@ -43,18 +44,49 @@ class Parser(Protocol):
     def encode(self, response: object, /) -> Frame | None: ...
 
 
-@dataclass(frozen=True, slots=True)
 class RpcSerializationService:
-    """A serialization: ``make_unsafe`` makes a parser per connection;
-    ``content_type`` is its HTTP content type; ``includes_framing`` says
-    whether a frame can hold part of a message (so a stream can be split
-    anywhere); ``codec_for`` gives the codecs of the values inside
-    messages."""
+    """A wire format of RPC messages (Effect's ``RpcSerialization``):
+    ``make_unsafe`` makes a parser per connection and ``codec_for`` the
+    codecs of the values inside messages."""
 
-    make_unsafe: Callable[[], Parser]
+    __slots__ = ("_codec_for", "_make_unsafe", "content_type", "includes_framing")
+
     content_type: str
+    """The HTTP content type of the frames."""
     includes_framing: bool
-    codec_for: CodecFor
+    """Whether a frame can hold part of a message (so a stream can be
+    split anywhere)."""
+
+    def __replace__(self, **changes: Any) -> Self:
+        """A copy with ``changes`` to the constructor's arguments (``copy.replace``)."""
+        return replaced(self, changes)
+
+    def __init__(
+        self,
+        make_unsafe: Callable[[], Parser],
+        content_type: str,
+        includes_framing: bool,
+        codec_for: CodecFor,
+    ) -> None:
+        self._make_unsafe = make_unsafe
+        self.content_type = content_type
+        self.includes_framing = includes_framing
+        self._codec_for = codec_for
+
+    def make_unsafe(self) -> Parser:
+        """A new parser, holding the state of one connection (a partly
+        received frame, say). Its ``decode`` raises on malformed data, or
+        ``MaxBufferSizeExceeded`` when a framed format holds more than its
+        buffer limit of an unfinished message."""
+        return self._make_unsafe()
+
+    @property
+    def codec_for(self) -> CodecFor:
+        """``codec_for(schema)``: the codec of ``schema``'s values inside
+        messages (``S.to_codec_json`` for the text formats). The same
+        function for every serialization sharing it, since encode caches
+        compare it by identity."""
+        return self._codec_for
 
 
 class RpcSerialization(Tag[RpcSerializationService], key="effect/rpc/RpcSerialization"):
@@ -300,7 +332,9 @@ def with_codec_for(
     service: RpcSerializationService, codec_for: CodecFor
 ) -> RpcSerializationService:
     """``service`` with other value codecs."""
-    return replace(service, codec_for=codec_for)
+    return RpcSerializationService(
+        service.make_unsafe, service.content_type, service.includes_framing, codec_for
+    )
 
 
 layer_json: Layer[RpcSerialization] = layer_succeed(RpcSerialization, json)

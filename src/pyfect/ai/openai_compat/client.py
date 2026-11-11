@@ -19,8 +19,7 @@ as an ``UnknownEvent``.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
-from typing import Any, Never
+from typing import Any, Never, Self, final
 
 import pyfect as fx
 from pyfect import byte_size
@@ -29,6 +28,7 @@ from pyfect import stream as St
 from pyfect._core import Effect
 from pyfect._js import or_default
 from pyfect._json_text import parse as parse_json_text
+from pyfect._service_copy import replaced
 from pyfect.ai import _openai_errors as OE
 from pyfect.ai import _provider as P
 from pyfect.ai.ai_error import AiError
@@ -60,19 +60,74 @@ type Payload = Mapping[str, Any]
 """A Chat Completions or Embeddings request body."""
 
 
-@dataclass(frozen=True)
+@final
 class Service:
-    """The client: the configured ``HttpClient`` and its calls."""
+    """The client: the configured ``HttpClient`` and its calls. ``make``
+    builds it; ``Service(http_client, create_response, ...)`` makes one of
+    three functions (a test double, say).
+
+    Every call goes through the client and then a provided
+    ``OpenAiConfig``'s transform. Every failure is an ``AiError``: an error
+    status maps to its reason (a 429 to a ``RateLimitError``), an
+    unreadable or malformed body to an ``InvalidOutputError`` or
+    ``InvalidResponseError``, a transport failure to a ``NetworkError``."""
+
+    __slots__ = (
+        "_create_embedding",
+        "_create_response",
+        "_create_response_stream",
+        "http_client",
+        "max_response_bytes",
+    )
 
     http_client: HttpClientService[HttpClientError]
-    create_response: Callable[
-        [Payload], Effect[tuple[W.ChatCompletion, HttpClientResponse], AiError]
-    ]
-    create_response_stream: Callable[
-        [Payload], Effect[tuple[HttpClientResponse, Stream[W.StreamEvent, AiError]], AiError]
-    ]
-    create_embedding: Callable[[Payload], Effect[W.EmbeddingResponse, AiError]]
-    max_response_bytes: ByteSize = P.DEFAULT_MAX_RESPONSE_BYTES
+    max_response_bytes: ByteSize
+
+    def __replace__(self, **changes: Any) -> Self:
+        """A copy with ``changes`` to the constructor's arguments (``copy.replace``)."""
+        return replaced(self, changes)
+
+    def __init__(
+        self,
+        http_client: HttpClientService[HttpClientError],
+        create_response: Callable[
+            [Payload], Effect[tuple[W.ChatCompletion, HttpClientResponse], AiError]
+        ],
+        create_response_stream: Callable[
+            [Payload], Effect[tuple[HttpClientResponse, Stream[W.StreamEvent, AiError]], AiError]
+        ],
+        create_embedding: Callable[[Payload], Effect[W.EmbeddingResponse, AiError]],
+        max_response_bytes: ByteSize = P.DEFAULT_MAX_RESPONSE_BYTES,
+    ) -> None:
+        self.http_client = http_client
+        self._create_response = create_response
+        self._create_response_stream = create_response_stream
+        self._create_embedding = create_embedding
+        self.max_response_bytes = max_response_bytes
+
+    def create_response(
+        self, options: Payload
+    ) -> Effect[tuple[W.ChatCompletion, HttpClientResponse], AiError]:
+        """Create a chat completion: ``POST /chat/completions`` with
+        ``options``. The decoded completion and the HTTP response; fails
+        with an ``AiError`` (see the class)."""
+        return self._create_response(options)
+
+    def create_response_stream(
+        self, options: Payload
+    ) -> Effect[tuple[HttpClientResponse, Stream[W.StreamEvent, AiError]], AiError]:
+        """Create a chat completion as server-sent events: ``POST
+        /chat/completions`` with ``"stream": true`` and usage included. The
+        HTTP response and the chunks, ending with ``"[DONE]"``; an event
+        that is not a chunk arrives as an ``UnknownEvent``, one that is not
+        JSON is skipped. The call and the stream fail with an ``AiError``
+        (see the class)."""
+        return self._create_response_stream(options)
+
+    def create_embedding(self, options: Payload) -> Effect[W.EmbeddingResponse, AiError]:
+        """Create embeddings: ``POST /embeddings`` with ``options``; fails
+        with an ``AiError`` (see the class)."""
+        return self._create_embedding(options)
 
 
 class OpenAiClient(Tag[Service], key="@effect/ai-openai-compat/OpenAiClient"):
@@ -221,6 +276,7 @@ def layer_config(
 __all__ = [
     "DEFAULT_API_URL",
     "ERRORS",
+    "AiError",
     "ChatCompletion",
     "EmbeddingResponse",
     "OpenAiClient",

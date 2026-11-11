@@ -9,8 +9,8 @@ helpers are in ``_cluster_workflows.py``."""
 
 from __future__ import annotations
 
+import copy
 import functools
-from dataclasses import replace
 from typing import Any, TypedDict, cast
 
 import pytest
@@ -2569,7 +2569,7 @@ def test_reacquires_shards_after_a_forced_release_abandons_a_parent_waking_from_
                 return fx.fail(PersistenceError(cause=RuntimeError("runner storage outage")))
             return storage.refresh(address, shard_ids)
 
-        return replace(storage, refresh=refresh)
+        return copy.replace(storage, refresh=refresh)
 
     runner_storage_layer = fx.layer.effect(RunnerStorage, runner_storage.make_memory().map(wrap))
 
@@ -2656,7 +2656,7 @@ def test_reacquires_shards_after_a_forced_release_interrupts_a_parent_resume_wai
                 return fx.fail(PersistenceError(cause=RuntimeError("runner storage outage")))
             return storage.refresh(address, shard_ids)
 
-        return replace(storage, refresh=refresh)
+        return copy.replace(storage, refresh=refresh)
 
     runner_storage_layer = fx.layer.effect(RunnerStorage, runner_storage.make_memory().map(wrap))
 

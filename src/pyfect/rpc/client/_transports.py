@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Never, cast
+from typing import Any, Never, Self, cast
 
 from pyfect import schedule
 from pyfect._core import Effect
+from pyfect._service_copy import replaced
 from pyfect.cause import Cause
 from pyfect.clock import Clock
 from pyfect.context import Reference
@@ -50,12 +51,31 @@ def _defect(message: str, cause: object) -> RpcClientError:
     return RpcClientError(reason=RpcClientDefect(message=message, cause=cause))
 
 
-@dataclass(frozen=True, slots=True)
 class ConnectionHooksService:
-    """Run when a socket protocol connects and when it disconnects."""
+    """Effects a socket protocol runs when it connects and when it
+    disconnects (Effect's ``RpcClient.ConnectionHooks``)."""
 
-    on_connect: Effect[None]
-    on_disconnect: Effect[None]
+    __slots__ = ("_on_connect", "_on_disconnect")
+
+    def __replace__(self, **changes: Any) -> Self:
+        """A copy with ``changes`` to the constructor's arguments (``copy.replace``)."""
+        return replaced(self, changes)
+
+    def __init__(self, on_connect: Effect[None], on_disconnect: Effect[None]) -> None:
+        self._on_connect = on_connect
+        self._on_disconnect = on_disconnect
+
+    @property
+    def on_connect(self) -> Effect[None]:
+        """Run each time the socket connects (its reader opened), before
+        any message is read; it never fails."""
+        return self._on_connect
+
+    @property
+    def on_disconnect(self) -> Effect[None]:
+        """Run each time a connection attempt ends (the socket failed or a
+        ping timed out), whether or not it had connected; it never fails."""
+        return self._on_disconnect
 
 
 class ConnectionHooks(

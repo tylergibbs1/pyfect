@@ -11,11 +11,11 @@ layer, and the test client.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
-from typing import Any, Never, overload
+from typing import Any, Never, Self, overload
 
 from pyfect._core import Effect
 from pyfect._effect_args import require_effect
+from pyfect._service_copy import replaced
 from pyfect.context import Tag
 from pyfect.effect import die, fn_untraced
 from pyfect.file_system import FileSystem, layer_noop
@@ -47,13 +47,36 @@ type HttpApp = Effect[HttpServerResponse, Any, Any]
 type Middleware = Callable[[HttpApp], HttpApp]
 
 
-@dataclass(frozen=True, slots=True)
 class HttpServerService:
     """``serve(app, middleware)`` handles requests with ``app`` until the
-    scope closes; ``address`` is where the server listens."""
+    scope closes; ``address`` is where the server listens. A backend makes
+    one with ``make``."""
 
-    serve: Callable[[HttpApp, Middleware | None], Effect[None, Never, Scope]]
+    __slots__ = ("_serve", "address")
+
     address: SocketAddress
+
+    def __replace__(self, **changes: Any) -> Self:
+        """A copy with ``changes`` to the constructor's arguments (``copy.replace``)."""
+        return replaced(self, changes)
+
+    def __init__(
+        self,
+        serve: Callable[[HttpApp, Middleware | None], Effect[None, Never, Scope]],
+        address: SocketAddress,
+    ) -> None:
+        self._serve = serve
+        self.address = address
+
+    def serve(
+        self, app: HttpApp, middleware: Middleware | None = None
+    ) -> Effect[None, Never, Scope]:
+        """Starts handling requests with ``app`` (wrapped by ``middleware``
+        when given), each with its ``HttpServerRequest`` provided, and keeps
+        serving until the current scope closes. Succeeds once the server is
+        serving; never fails (an app's failure becomes its request's error
+        response)."""
+        return self._serve(app, middleware)
 
 
 class HttpServer(Tag[HttpServerService], key="effect/http/HttpServer"):

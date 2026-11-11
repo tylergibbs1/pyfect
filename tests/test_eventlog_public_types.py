@@ -94,11 +94,11 @@ def test_the_guard_sees_any_in_a_signature() -> None:
     from pyfect.eventlog import event_log_remote
 
     service = event_log_remote.EventLogRemoteService
-    original = service.__annotations__["when_authenticated"]
-    service.__annotations__["when_authenticated"] = "Callable[[Effect[Any, Any, Any]], Any]"
+    original = service.__annotations__["first_sequence"]
+    service.__annotations__["first_sequence"] = "Callable[[Effect[Any, Any, Any]], Any]"
     try:
         assert _any_in_public_signatures("event_log_remote") == [
-            "EventLogRemoteService.when_authenticated: Callable[[Effect[Any, Any, Any]], Any]"
+            "EventLogRemoteService.first_sequence: Callable[[Effect[Any, Any, Any]], Any]"
         ]
     finally:
-        service.__annotations__["when_authenticated"] = original
+        service.__annotations__["first_sequence"] = original

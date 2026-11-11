@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Never, Protocol
+from typing import Any, Never, Protocol, Self
 
 from pyfect._core import Effect
+from pyfect._service_copy import replaced
 from pyfect.cluster.cluster_error import (
     AlreadyProcessingMessage,
     EntityNotAssignedToRunner,
@@ -116,13 +117,36 @@ class RunnersTransport:
     on_runner_unavailable: Callable[[RunnerAddress], Effect[None]]
 
 
-@dataclass(frozen=True, slots=True)
 class RpcClientProtocolService:
-    """Makes the RPC client protocol of a runner address; ``codec_for`` is
-    the codec its protocols share."""
+    """Makes the RPC client protocols of the RPC-based ``Runners``
+    (Effect's ``Runners.RpcClientProtocol``)."""
 
-    make: Callable[[RunnerAddress], Effect[ClientProtocolService, Never, Scope]]
-    codec_for: CodecFor
+    __slots__ = ("_codec_for", "_make")
+
+    def __replace__(self, **changes: Any) -> Self:
+        """A copy with ``changes`` to the constructor's arguments (``copy.replace``)."""
+        return replaced(self, changes)
+
+    def __init__(
+        self,
+        make: Callable[[RunnerAddress], Effect[ClientProtocolService, Never, Scope]],
+        codec_for: CodecFor,
+    ) -> None:
+        self._make = make
+        self._codec_for = codec_for
+
+    def make(self, address: RunnerAddress) -> Effect[ClientProtocolService, Never, Scope]:
+        """A client protocol connected to the runner at ``address``, open
+        until the ``Scope`` closes; never fails (connection errors surface
+        through the protocol's calls)."""
+        return self._make(address)
+
+    @property
+    def codec_for(self) -> CodecFor:
+        """``codec_for(schema)``: the codec for ``schema``'s values that
+        every protocol from ``make`` shares (used when a local send
+        simulates a remote one; encode caches compare it by identity)."""
+        return self._codec_for
 
 
 class RpcClientProtocol(

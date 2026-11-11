@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Any, Never
+from typing import Any, Never, Self
 
 from pyfect._context_effects import service_option
 from pyfect._core import Effect
 from pyfect._released import closed_message
+from pyfect._service_copy import replaced
 from pyfect.context import Context, Tag
 from pyfect.effect import context, fail, gen, never, provide_context, succeed, suspend
 from pyfect.rpc.client_error import RpcClientDefect, RpcClientError
@@ -21,15 +22,50 @@ type Message = Mapping[str, Any]
 type WriteResponse = Callable[[Message], Effect[None]]
 
 
-@dataclass(frozen=True, slots=True)
 class ClientProtocolService:
-    """A client transport: ``run(client_id, f)`` hands each response for
-    the client to ``f`` (and never returns); ``send`` writes a message."""
+    """A client transport (Effect's ``RpcClient.Protocol``): ``run``
+    delivers the responses for a client, ``send`` writes its messages.
+    ``with_run_client`` builds one from its parts."""
 
-    run: Callable[[int, WriteResponse], Effect[Never]]
-    send: Callable[[int, Message], Effect[None, RpcClientError]]
+    __slots__ = ("_codec_for", "_run", "_send", "supports_ack")
+
     supports_ack: bool
-    codec_for: CodecFor
+    """Whether the server expects an ``Ack`` after each stream chunk."""
+
+    def __replace__(self, **changes: Any) -> Self:
+        """A copy with ``changes`` to the constructor's arguments (``copy.replace``)."""
+        return replaced(self, changes)
+
+    def __init__(
+        self,
+        run: Callable[[int, WriteResponse], Effect[Never]],
+        send: Callable[[int, Message], Effect[None, RpcClientError]],
+        supports_ack: bool,
+        codec_for: CodecFor,
+    ) -> None:
+        self._run = run
+        self._send = send
+        self.supports_ack = supports_ack
+        self._codec_for = codec_for
+
+    def run(self, client_id: int, f: WriteResponse) -> Effect[Never]:
+        """Hands each encoded response for ``client_id`` to ``f``, until
+        interrupted (it never returns and never fails)."""
+        return self._run(client_id, f)
+
+    def send(self, client_id: int, message: Message) -> Effect[None, RpcClientError]:
+        """Writes the encoded ``message`` of ``client_id``; fails with
+        ``RpcClientError`` when the transport cannot write it (and, for a
+        protocol from ``with_run_client``, once its scope has closed)."""
+        return self._send(client_id, message)
+
+    @property
+    def codec_for(self) -> CodecFor:
+        """``codec_for(schema)``: the codec filling the value holes of the
+        messages for ``schema``, the very function of the
+        ``RpcSerialization`` behind this transport (encode caches compare
+        it by identity)."""
+        return self._codec_for
 
 
 class ClientProtocol(Tag[ClientProtocolService], key="effect/rpc/RpcClient/Protocol"):

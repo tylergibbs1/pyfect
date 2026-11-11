@@ -3,7 +3,7 @@
 
 Each test's docstring is the Effect test title. Durations are seconds;
 ``Schema.Void`` is ``S.Null`` (``None``); ``{ ...engine, deferredResult }``
-is ``dataclasses.replace(engine, deferred_result=...)``; ``Layer.build``
+is ``copy.replace(engine, deferred_result=...)``; ``Layer.build``
 into a scope is ``layer.build_with_scope(scope)``.
 
 Omitted:
@@ -14,7 +14,7 @@ Omitted:
 
 from __future__ import annotations
 
-import dataclasses
+import copy
 import functools
 from collections.abc import Generator
 from typing import Any, Never, TypedDict
@@ -152,7 +152,7 @@ def test_deferred_self_completion(failure: bool):
                 )
                 .pipe(
                     fx.provide_service(
-                        WorkflowEngine, dataclasses.replace(engine, deferred_result=deferred_result)
+                        WorkflowEngine, copy.replace(engine, deferred_result=deferred_result)
                     )
                 )
                 .ensuring(fx.sync(lambda: events.append(f"end-{run}")))

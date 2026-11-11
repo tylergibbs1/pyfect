@@ -7,6 +7,7 @@ Effect test title. The rest of this group is in
 
 from __future__ import annotations
 
+import copy
 from collections.abc import Iterable
 from dataclasses import replace
 from typing import Any, Never
@@ -196,7 +197,7 @@ def test_keeps_shards_acquired_while_an_earlier_lock_refresh_is_in_flight():
                 yield from acquire_done.wait()
             return (yield from storage.refresh(address, shards))
 
-        return replace(storage, acquire=acquire, refresh=refresh)
+        return copy.replace(storage, acquire=acquire, refresh=refresh)
 
     layer = _sharding_over(
         failover_storage_layer(state, update),
@@ -260,7 +261,7 @@ def test_releases_a_lost_requested_shard_without_dropping_a_shard_acquired_durin
                 return lost
             return (yield from storage.refresh(address, shards))
 
-        return replace(storage, acquire=acquire, refresh=refresh)
+        return copy.replace(storage, acquire=acquire, refresh=refresh)
 
     layer = _sharding_over(
         failover_storage_layer(state, update),
@@ -373,7 +374,7 @@ def test_refreshes_a_newly_acquired_shard_when_retrying_a_failed_lock_refresh():
                 return (yield from fx.fail(PersistenceError(cause=RuntimeError("refresh failed"))))
             return (yield from storage.refresh(address, shards))
 
-        return replace(storage, acquire=acquire, refresh=refresh)
+        return copy.replace(storage, acquire=acquire, refresh=refresh)
 
     layer = _sharding_over(
         failover_storage_layer(state, update),

@@ -12,11 +12,13 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Final, Literal, Never
+from typing import Any, Final, Literal, Never, Self
 
 from pyfect import layer as _layer
 from pyfect._concurrency import for_each
+from pyfect._effect_args import require_effect
 from pyfect._fiber import Fiber
+from pyfect._service_copy import replaced
 from pyfect._version import VERSION
 from pyfect.cause import Cause
 from pyfect.clock import Clock, now_millis_unsafe, sleep
@@ -66,15 +68,39 @@ type Compression = Literal["gzip", "none"]
 """Request compression; ``"gzip"`` leaves bodies under 1 KB as they are."""
 
 
-@dataclass(frozen=True, slots=True)
 class FlusherService:
-    """``flush`` drains every registered exporter at once and cannot fail.
-    It skips exporters in their 60-second disabled window and waits only for
-    the exports it starts; bound it with ``timeout_option``. ``register``
+    """``flush`` drains every registered exporter at once; ``register``
     adds an export until the current scope closes."""
 
-    flush: Effect[None]
-    register: Callable[[Effect[None]], Effect[None, Never, Scope]]
+    __slots__ = ("_flush", "_register")
+
+    def __replace__(self, **changes: Any) -> Self:
+        """A copy with ``changes`` to the constructor's arguments (``copy.replace``)."""
+        return replaced(self, changes)
+
+    def __init__(
+        self,
+        *,
+        flush: Effect[None],
+        register: Callable[[Effect[None]], Effect[None, Never, Scope]],
+    ) -> None:
+        self._flush = flush
+        self._register = register
+
+    @property
+    def flush(self) -> Effect[None]:
+        """Runs every registered export concurrently and waits for them;
+        never fails. It skips exporters in their 60-second disabled window
+        and waits only for the exports it starts; there is no built-in
+        timeout, so bound it with ``timeout_option``. A no-op when nothing
+        is registered."""
+        return self._flush
+
+    def register(self, run: Effect[None]) -> Effect[None, Never, Scope]:
+        """Adds ``run`` (an exporter's export-now) to the registry until
+        the current scope closes, when it is removed. Never fails."""
+        require_effect(run, "run")
+        return self._register(run)
 
 
 class Flusher(Tag[FlusherService]):

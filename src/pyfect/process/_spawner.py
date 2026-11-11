@@ -4,9 +4,10 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from typing import Any, Self
 
 from pyfect._core import Effect
+from pyfect._service_copy import replaced
 from pyfect.context import Tag
 from pyfect.effect import never
 from pyfect.platform_error import PlatformError
@@ -19,7 +20,6 @@ from pyfect.stream import unwrap as unwrap_stream
 type Spawn = Callable[[Command], Effect[ChildProcessHandle, PlatformError, Scope]]
 
 
-@dataclass(frozen=True, slots=True)
 class ChildProcessSpawnerService:
     """Starts commands; the constructor is Effect's
     ``ChildProcessSpawner.make``: given ``spawn``, the rest is built on it.
@@ -27,7 +27,21 @@ class ChildProcessSpawnerService:
     The helpers own the handles they spawn, so they read and drop the output
     they do not return, keeping a full pipe from stopping the child."""
 
-    spawn: Spawn
+    __slots__ = ("_spawn",)
+
+    def __replace__(self, **changes: Any) -> Self:
+        """A copy with ``changes`` to the constructor's arguments (``copy.replace``)."""
+        return replaced(self, changes)
+
+    def __init__(self, spawn: Spawn) -> None:
+        self._spawn = spawn
+
+    def spawn(self, command: Command) -> Effect[ChildProcessHandle, PlatformError, Scope]:
+        """Starts ``command`` (a single command or a pipeline) and gives its
+        handle; closing the scope kills the process if it is still
+        running. Fails with a ``PlatformError`` when it cannot start (a
+        missing program or working directory, an invalid argument)."""
+        return self._spawn(command)
 
     def exit_code(self, command: Command) -> Effect[ExitCode, PlatformError]:
         """Run ``command`` and give back its exit code, reading and dropping

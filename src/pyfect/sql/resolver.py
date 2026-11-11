@@ -39,10 +39,14 @@ class SqlRequest[In, A, E = Never, R = Never](Request[A, E, R]):
     """A request carrying ``payload``; requests with equal payloads are
     equal."""
 
-    __slots__ = ("payload",)
+    __slots__ = ("_payload",)
 
     def __init__(self, payload: In) -> None:
-        self.payload = payload
+        self._payload = payload
+
+    @property
+    def payload(self) -> In:
+        return self._payload
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, SqlRequest):

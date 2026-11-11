@@ -1,4 +1,4 @@
-from typing import TypedDict
+from typing import Literal, TypedDict
 
 import pyfect as fx
 from pyfect import schema as S
@@ -12,9 +12,14 @@ class Amount(TypedDict):
     by: int
 
 
-# An entity type is a class of RPCs. Persisted RPCs are stored before they run,
-# so a request survives its runner restarting; `get` is volatile.
-class Counter(Entity, type="Counter", rpc_annotations=fx.Context.make(Persisted, True)):
+# An entity type is a class of RPCs; listing their tags lets pyright check that each
+# has a handler. Persisted RPCs are stored before they run, so a request survives its
+# runner restarting; `get` is volatile.
+class Counter(
+    Entity[Literal["Increment", "Get"]],
+    type="Counter",
+    rpc_annotations=fx.Context.make(Persisted, True),
+):
     increment = make_rpc("Increment", payload=S.Struct(Amount), success=S.Int)
     get = make_rpc("Get", success=S.Int).annotate(Persisted, False)
 

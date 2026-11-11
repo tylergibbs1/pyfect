@@ -6,10 +6,7 @@ effects) showed none of them: ``help(MacService)`` listed no ``sign`` and
 ``inspect.signature`` had nothing to read (FINDINGS-vault 10). Every class
 named ``*Service`` that a public module exports keeps its operations as
 documented methods or properties; a field (or annotated attribute) whose
-type is a function, an ``Effect`` or a ``Stream`` is refused here, except on
-the services in ``WAITING_FOR_0_6``: turning their fields into methods ends
-``dataclasses.replace``, field equality and frozenness, so it waits for
-0.6.0. The list may only shrink.
+type is a function, an ``Effect`` or a ``Stream`` is refused here.
 """
 
 from __future__ import annotations
@@ -150,73 +147,10 @@ def test_services_are_found() -> None:
     assert len(SERVICES) > 50
 
 
-WAITING_FOR_0_6 = frozenset(
-    {
-        "pyfect.ai._mcp.client_transport.TransportService",
-        "pyfect.ai.anthropic.client.Service",
-        "pyfect.ai.cloudflare.client.Service",
-        "pyfect.ai.id_generator.Service",
-        "pyfect.ai.language_model.Service",
-        "pyfect.ai.openai._web_socket.SocketService",
-        "pyfect.ai.openai.client.Service",
-        "pyfect.ai.openai_compat.client.Service",
-        "pyfect.ai.openrouter.client.Service",
-        "pyfect.ai.typesafe.client.Service",
-        "pyfect.cluster.runner_health.RunnerHealthService",
-        "pyfect.cluster.runner_storage.RunnerStorageService",
-        "pyfect.cluster.runners._service.RpcClientProtocolService",
-        "pyfect.eventlog.event_log_remote.EventLogRemoteService",
-        "pyfect.graphql._types.GraphQLProtocolService",
-        "pyfect.http.platform.HttpPlatformService",
-        "pyfect.http.server.HttpServerService",
-        "pyfect.observability.otlp_exporter.FlusherService",
-        "pyfect.observability.otlp_serialization.OtlpSerializationService",
-        "pyfect.persistence.circuit_breaker._store.CircuitBreakerStoreService",
-        "pyfect.persistence.key_value_store._store.KeyValueStoreService",
-        "pyfect.persistence.persisted_queue._store.PersistedQueueStoreService",
-        "pyfect.persistence.persistence._service.BackingPersistenceService",
-        "pyfect.persistence.user_directories.UserDirectoriesService",
-        "pyfect.process._spawner.ChildProcessSpawnerService",
-        "pyfect.rpc.client._protocol.ClientProtocolService",
-        "pyfect.rpc.client._transports.ConnectionHooksService",
-        "pyfect.rpc.serialization.RpcSerializationService",
-        "pyfect.rpc.server._protocol.ServerProtocolService",
-        "pyfect.socket._socket.SocketService",
-        "pyfect.socket.datagram._model.DatagramSocketService",
-        "pyfect.sql.clickhouse.client.ClickhouseClientService",
-        "pyfect.sql.client._client.SqlClientService",
-        "pyfect.sql.d1.client.D1ClientService",
-        "pyfect.sql.libsql.client.LibsqlClientService",
-        "pyfect.sql.mssql.client.MssqlClientService",
-        "pyfect.sql.mysql.client.MysqlClientService",
-        "pyfect.sql.pg.client.PgClientService",
-        "pyfect.sql.sqlite.client.SqliteClientService",
-        "pyfect.stdio.StdioService",
-        "pyfect.terminal._service.TerminalService",
-        "pyfect.workers.worker.WorkerPlatformService",
-        "pyfect.workers.worker_runner.WorkerRunnerPlatformService",
-        "pyfect.workflow._services.WorkflowEngineService",
-    }
-)
-"""Services that still hold operations in fields; each becomes a class with
-documented methods in 0.6.0 (a behaviour change under docs/VERSIONING.md)."""
-
-
-def _operation_fields(service: type) -> list[str]:
-    return [name for name, hint in _attributes(service) if _is_operation(hint)]
-
-
 @pytest.mark.parametrize("service", SERVICES.values(), ids=list(SERVICES))
 def test_no_operation_is_a_bare_field(service: type) -> None:
-    name = f"{service.__module__}.{service.__qualname__}"
-    if name in WAITING_FOR_0_6:
-        assert _operation_fields(service), f"{name} is converted: drop it from WAITING_FOR_0_6"
-    else:
-        assert _operation_fields(service) == [], "operations held in fields"
-
-
-def test_every_waiting_service_still_exists() -> None:
-    assert sorted(WAITING_FOR_0_6 - SERVICES.keys()) == []
+    fields = [name for name, hint in _attributes(service) if _is_operation(hint)]
+    assert fields == [], f"operations held in fields: {fields}"
 
 
 @pytest.mark.parametrize("service", SERVICES.values(), ids=list(SERVICES))

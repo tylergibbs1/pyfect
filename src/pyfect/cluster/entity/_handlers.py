@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Literal, Never, Protocol, overload
+from typing import TYPE_CHECKING, Any, Generic, Literal, Never, TypeVar, cast, overload
 
 from pyfect._core import Effect
 from pyfect.cluster.entity._request import Request
@@ -27,13 +27,28 @@ type Concurrency = int | Literal["unbounded"]
 type EntityHandlerFn = Callable[[Request[Any]], Any]
 
 
-class EntityHandlers[G, R = Never]:
-    """The handlers of the entity ``G`` so far, needing ``R``. Immutable:
-    ``handle`` gives a new one."""
+G_co = TypeVar("G_co", covariant=True)
+R_co = TypeVar("R_co", covariant=True, default=Never)
+H = TypeVar("H", default=Never)
+X_co = TypeVar("X_co", covariant=True)
+S_contra = TypeVar("S_contra", contravariant=True)
+A_contra = TypeVar("A_contra", contravariant=True)
+E = TypeVar("E")
+E_contra = TypeVar("E_contra", contravariant=True)
+MP_contra = TypeVar("MP_contra", contravariant=True)
+K = TypeVar("K")
+RR_co = TypeVar("RR_co", covariant=True)
+
+
+class EntityHandlers(Generic[G_co, R_co, H]):
+    """The handlers of the entity ``G`` so far, needing ``R``; ``H`` is the
+    tags of the RPCs still without one, for an entity that lists its tags
+    (``Never`` once all have one, and for an entity that does not).
+    Immutable: ``handle`` gives a new one."""
 
     __slots__ = ("_by_tag", "entity")
 
-    def __init__(self, entity: type[Entity], by_tag: Mapping[str, EntityHandlerFn]) -> None:
+    def __init__(self, entity: type[Entity[Any]], by_tag: Mapping[str, EntityHandlerFn]) -> None:
         self.entity = entity
         self._by_tag = dict(by_tag)
 
@@ -42,80 +57,201 @@ class EntityHandlers[G, R = Never]:
         return self._by_tag
 
     @overload
-    def handle[P, S, E](
-        self, rpc: Rpc[P, S, E, Never], /
-    ) -> Bound[G, Request[P], S, E, Never, R]: ...
+    def handle[P, S, E1, T: str](
+        self, rpc: Rpc[P, S, E1, Never, Never, T], /
+    ) -> Bound[G_co, Request[P], S, E1, Never, R_co, T, H]: ...
     @overload
-    def handle[P, S, E, MP, ME, MT](
-        self, rpc: Rpc[P, S, E, RpcMiddleware[MP, ME, Any], MT], /
-    ) -> Bound[G, Request[P], S, E | ME, MP, R | MT]: ...
+    def handle[P, S, E1, MP, ME, MT, T: str](
+        self, rpc: Rpc[P, S, E1, RpcMiddleware[MP, ME, Any], MT, T], /
+    ) -> Bound[G_co, Request[P], S, E1 | ME, MP, R_co | MT, T, H]: ...
     @overload
-    def handle[P, A, E](
-        self, rpc: StreamRpc[P, A, E, Never], /
-    ) -> StreamBound[G, Request[P], A, E, Never, R]: ...
+    def handle[P, A, E1, T: str](
+        self, rpc: StreamRpc[P, A, E1, Never, Never, T], /
+    ) -> StreamBound[G_co, Request[P], A, E1, Never, R_co, T, H]: ...
     @overload
-    def handle[P, A, E, MP, ME, MT](
-        self, rpc: StreamRpc[P, A, E, RpcMiddleware[MP, ME, Any], MT], /
-    ) -> StreamBound[G, Request[P], A, E | ME, MP, R | MT]: ...
+    def handle[P, A, E1, MP, ME, MT, T: str](
+        self, rpc: StreamRpc[P, A, E1, RpcMiddleware[MP, ME, Any], MT, T], /
+    ) -> StreamBound[G_co, Request[P], A, E1 | ME, MP, R_co | MT, T, H]: ...
     def handle(self, rpc: AnyRpc, /) -> Any:
         """The slot of ``rpc``'s handler: call it with the handler, which
         gets the entity ``Request`` and returns the effect to run (for a
-        stream RPC, a stream or a scoped queue)."""
+        stream RPC, a stream or a scoped queue). In an entity that lists its
+        tags, giving a handler to an RPC that already has one, or is not the
+        entity's, is a pyright error."""
         if rpc.tag not in self.entity.rpcs:
             raise ValueError(f"{rpc.tag!r} is not an RPC of the entity {self.entity.type}")
-        return _Slot(self, rpc.tag)
+        slot: type[_Slot] = StreamBound if rpc.is_stream else Bound
+        return cast("Any", slot(self, rpc.tag))
 
     def missing(self) -> list[str]:
         """The tags of the entity's RPCs without a handler."""
         return [tag for tag in self.entity.rpcs if tag not in self._by_tag]
 
 
-class Bound[G, X, S, E, MP, RR](Protocol):
+class _Slot:
+    """Registers the handler it is called with (``Bound`` / ``StreamBound``)."""
+
+    __slots__ = ("_handlers", "_tag")
+
+    def __init__(self, handlers: EntityHandlers[Any, Any, Any], tag: str) -> None:
+        self._handlers = handlers
+        self._tag = tag
+
+    def __call__(self, handler: EntityHandlerFn, /) -> Any:
+        handlers = self._handlers
+        return EntityHandlers[Any, Any, Any](
+            handlers.entity, {**handlers.by_tag, self._tag: handler}
+        )
+
+
+# Each slot's overloads come in three pairs, by the tags ``H`` still without a
+# handler: ``K`` alone (the last), ``K`` among others (pyright solves ``Rest``
+# as the others), or ``Never`` (all handled, or a group not listing its tags).
+# An RPC already handled matches none. In each pair the first solves a handler
+# needing only ``MP``; the second alone would leave ``R1`` Unknown.
+
+
+class Bound(_Slot, Generic[G_co, X_co, S_contra, E, MP_contra, RR_co, K, H]):
     """The handler slot of a unary RPC of the entity ``G``: request ``X``,
-    success ``S``, errors ``E``; its middleware provides ``MP``; ``RR`` is
-    what the handlers need so far."""
+    success ``S``, errors ``E``; its middleware provides ``MP``; ``R`` is
+    what the handlers need so far; ``K`` is the RPC's tag and ``H`` the tags
+    still without a handler."""
+
+    __slots__ = ()
 
     @overload
     def __call__(
-        self, handler: Callable[[X], Effect[S | Deferred[S, E], E, MP]], /
-    ) -> EntityHandlers[G, RR]: ...
+        self: Bound[G_co, X_co, S_contra, E, MP_contra, RR_co, K, K],
+        handler: Callable[[X_co], Effect[S_contra | Deferred[S_contra, E], E, MP_contra]],
+        /,
+    ) -> EntityHandlers[G_co, RR_co]: ...
     @overload
     def __call__[R1](
-        self, handler: Callable[[X], Effect[S | Deferred[S, E], E, R1 | MP]], /
-    ) -> EntityHandlers[G, RR | R1]: ...
+        self: Bound[G_co, X_co, S_contra, E, MP_contra, RR_co, K, K],
+        handler: Callable[[X_co], Effect[S_contra | Deferred[S_contra, E], E, R1 | MP_contra]],
+        /,
+    ) -> EntityHandlers[G_co, RR_co | R1]: ...
+    @overload
+    def __call__[Rest](
+        self: Bound[G_co, X_co, S_contra, E, MP_contra, RR_co, K, K | Rest],
+        handler: Callable[[X_co], Effect[S_contra | Deferred[S_contra, E], E, MP_contra]],
+        /,
+    ) -> EntityHandlers[G_co, RR_co, Rest]: ...
+    @overload
+    def __call__[R1, Rest](
+        self: Bound[G_co, X_co, S_contra, E, MP_contra, RR_co, K, K | Rest],
+        handler: Callable[[X_co], Effect[S_contra | Deferred[S_contra, E], E, R1 | MP_contra]],
+        /,
+    ) -> EntityHandlers[G_co, RR_co | R1, Rest]: ...
+    @overload
+    def __call__(
+        self: Bound[G_co, X_co, S_contra, E, MP_contra, RR_co, K, Never],
+        handler: Callable[[X_co], Effect[S_contra | Deferred[S_contra, E], E, MP_contra]],
+        /,
+    ) -> EntityHandlers[G_co, RR_co]: ...
+    @overload
+    def __call__[R1](
+        self: Bound[G_co, X_co, S_contra, E, MP_contra, RR_co, K, Never],
+        handler: Callable[[X_co], Effect[S_contra | Deferred[S_contra, E], E, R1 | MP_contra]],
+        /,
+    ) -> EntityHandlers[G_co, RR_co | R1]: ...
+    def __call__(self: Bound[Any, Any, Any, Any, Any, Any, Any, Any], handler: Any, /) -> Any:
+        return _Slot.__call__(self, handler)
 
 
-class StreamBound[G, X, A, E, MP, RR](Protocol):
+class StreamBound(_Slot, Generic[G_co, X_co, A_contra, E_contra, MP_contra, RR_co, K, H]):
     """The handler slot of a stream RPC of the entity ``G`` (see
     ``Bound``): the handler gives a stream, or a scoped queue that ends
     with ``Done``."""
 
-    @overload
-    def __call__(self, handler: Callable[[X], Stream[A, E, MP]], /) -> EntityHandlers[G, RR]: ...
-    @overload
-    def __call__[R1](
-        self, handler: Callable[[X], Stream[A, E, R1 | MP]], /
-    ) -> EntityHandlers[G, RR | R1]: ...
+    __slots__ = ()
+
     @overload
     def __call__(
-        self, handler: Callable[[X], Effect[Dequeue[A, E | Done], E, MP | Scope]], /
-    ) -> EntityHandlers[G, RR]: ...
+        self: StreamBound[G_co, X_co, A_contra, E_contra, MP_contra, RR_co, K, K],
+        handler: Callable[[X_co], Stream[A_contra, E_contra, MP_contra]],
+        /,
+    ) -> EntityHandlers[G_co, RR_co]: ...
     @overload
     def __call__[R1](
-        self, handler: Callable[[X], Effect[Dequeue[A, E | Done], E, R1 | MP | Scope]], /
-    ) -> EntityHandlers[G, RR | R1]: ...
-
-
-class _Slot:
-    __slots__ = ("handlers", "tag")
-
-    def __init__(self, handlers: EntityHandlers[Any, Any], tag: str) -> None:
-        self.handlers = handlers
-        self.tag = tag
-
-    def __call__(self, handler: EntityHandlerFn, /) -> EntityHandlers[Any, Any]:
-        handlers = self.handlers
-        return EntityHandlers(handlers.entity, {**handlers.by_tag, self.tag: handler})
+        self: StreamBound[G_co, X_co, A_contra, E_contra, MP_contra, RR_co, K, K],
+        handler: Callable[[X_co], Stream[A_contra, E_contra, R1 | MP_contra]],
+        /,
+    ) -> EntityHandlers[G_co, RR_co | R1]: ...
+    @overload
+    def __call__(
+        self: StreamBound[G_co, X_co, A_contra, E_contra, MP_contra, RR_co, K, K],
+        handler: Callable[
+            [X_co], Effect[Dequeue[A_contra, E_contra | Done], E_contra, MP_contra | Scope]
+        ],
+        /,
+    ) -> EntityHandlers[G_co, RR_co]: ...
+    @overload
+    def __call__[R1](
+        self: StreamBound[G_co, X_co, A_contra, E_contra, MP_contra, RR_co, K, K],
+        handler: Callable[
+            [X_co], Effect[Dequeue[A_contra, E_contra | Done], E_contra, R1 | MP_contra | Scope]
+        ],
+        /,
+    ) -> EntityHandlers[G_co, RR_co | R1]: ...
+    @overload
+    def __call__[Rest](
+        self: StreamBound[G_co, X_co, A_contra, E_contra, MP_contra, RR_co, K, K | Rest],
+        handler: Callable[[X_co], Stream[A_contra, E_contra, MP_contra]],
+        /,
+    ) -> EntityHandlers[G_co, RR_co, Rest]: ...
+    @overload
+    def __call__[R1, Rest](
+        self: StreamBound[G_co, X_co, A_contra, E_contra, MP_contra, RR_co, K, K | Rest],
+        handler: Callable[[X_co], Stream[A_contra, E_contra, R1 | MP_contra]],
+        /,
+    ) -> EntityHandlers[G_co, RR_co | R1, Rest]: ...
+    @overload
+    def __call__[Rest](
+        self: StreamBound[G_co, X_co, A_contra, E_contra, MP_contra, RR_co, K, K | Rest],
+        handler: Callable[
+            [X_co], Effect[Dequeue[A_contra, E_contra | Done], E_contra, MP_contra | Scope]
+        ],
+        /,
+    ) -> EntityHandlers[G_co, RR_co, Rest]: ...
+    @overload
+    def __call__[R1, Rest](
+        self: StreamBound[G_co, X_co, A_contra, E_contra, MP_contra, RR_co, K, K | Rest],
+        handler: Callable[
+            [X_co], Effect[Dequeue[A_contra, E_contra | Done], E_contra, R1 | MP_contra | Scope]
+        ],
+        /,
+    ) -> EntityHandlers[G_co, RR_co | R1, Rest]: ...
+    @overload
+    def __call__(
+        self: StreamBound[G_co, X_co, A_contra, E_contra, MP_contra, RR_co, K, Never],
+        handler: Callable[[X_co], Stream[A_contra, E_contra, MP_contra]],
+        /,
+    ) -> EntityHandlers[G_co, RR_co]: ...
+    @overload
+    def __call__[R1](
+        self: StreamBound[G_co, X_co, A_contra, E_contra, MP_contra, RR_co, K, Never],
+        handler: Callable[[X_co], Stream[A_contra, E_contra, R1 | MP_contra]],
+        /,
+    ) -> EntityHandlers[G_co, RR_co | R1]: ...
+    @overload
+    def __call__(
+        self: StreamBound[G_co, X_co, A_contra, E_contra, MP_contra, RR_co, K, Never],
+        handler: Callable[
+            [X_co], Effect[Dequeue[A_contra, E_contra | Done], E_contra, MP_contra | Scope]
+        ],
+        /,
+    ) -> EntityHandlers[G_co, RR_co]: ...
+    @overload
+    def __call__[R1](
+        self: StreamBound[G_co, X_co, A_contra, E_contra, MP_contra, RR_co, K, Never],
+        handler: Callable[
+            [X_co], Effect[Dequeue[A_contra, E_contra | Done], E_contra, R1 | MP_contra | Scope]
+        ],
+        /,
+    ) -> EntityHandlers[G_co, RR_co | R1]: ...
+    def __call__(self: StreamBound[Any, Any, Any, Any, Any, Any, Any, Any], handler: Any, /) -> Any:
+        return _Slot.__call__(self, handler)
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

@@ -12,10 +12,10 @@ child processes (Effect's ``NodeWorkerRunner``).
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
-from typing import Any, Literal, Never, cast
+from typing import Any, Literal, Never, Self, cast
 
 from pyfect._core import Effect
+from pyfect._service_copy import replaced
 from pyfect.context import Tag
 from pyfect.effect import sync
 from pyfect.queue import Dequeue
@@ -61,12 +61,23 @@ class WorkerRunner[O = Any, I = Any]:
         self._send_unsafe(port_id, message, transfers)
 
 
-@dataclass(frozen=True, slots=True)
 class WorkerRunnerPlatformService:
-    """``start()`` gives the runner of the worker this code runs in; it
-    fails with a ``WorkerError`` outside a worker."""
+    """Starts the runner of the worker this code runs in (Effect's
+    ``WorkerRunner.WorkerRunnerPlatform``)."""
 
-    start: Callable[[], Effect[WorkerRunner[Any, Any], WorkerError]]
+    __slots__ = ("_start",)
+
+    def __replace__(self, **changes: Any) -> Self:
+        """A copy with ``changes`` to the constructor's arguments (``copy.replace``)."""
+        return replaced(self, changes)
+
+    def __init__(self, start: Callable[[], Effect[WorkerRunner[Any, Any], WorkerError]]) -> None:
+        self._start = start
+
+    def start(self) -> Effect[WorkerRunner[Any, Any], WorkerError]:
+        """The runner of the worker this code runs in; fails with a
+        ``WorkerError`` (``WorkerSpawnError``) outside a worker."""
+        return self._start()
 
 
 class WorkerRunnerPlatform(

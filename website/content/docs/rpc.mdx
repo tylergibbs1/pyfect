@@ -16,7 +16,15 @@ carries many at once, and a procedure can answer with a stream of values.
 `rpc_schema.Stream(values, error)` makes it a stream. `Group.handlers().handle(Group.rpc)(f)`
 adds a handler, which takes an `RpcRequest` with the decoded `payload` and gives the success
 value (or a `Stream` of them) or fails with the declared error. `Group.to_layer(handlers)` is
-their layer.
+their layer, and raises `ValueError` naming each procedure left without a handler.
+
+A group can list its tags, `class Users(RpcGroup[Literal["GetUser", "Users"]])`, so pyright
+checks its handlers as TypeScript checks Effect's `toLayer`: `to_layer` rejects them while a
+procedure has none, and a second handler for one is an error. Python has no way to gather a
+class's attributes into a type, so the list repeats the tags; the class is checked against it
+when it is defined, and a `TypeError` names any tag missing from either side. A tag must be a
+string literal at `rpc.make` for its procedure to be checked (`prefix` makes it a plain
+`str`).
 
 `rpc_server.layer_http(Group, path=...)` serves the group on a route of the
 [router](/docs/http-server), over WebSockets by default or HTTP POSTs with

@@ -5,11 +5,12 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Any, Never
+from typing import Any, Never, Self
 
 from pyfect._core import Effect
 from pyfect._effect_args import require_effect
 from pyfect._js import text_decoder, text_encode
+from pyfect._service_copy import replaced
 from pyfect.cause import Cause
 from pyfect.channel import Channel, from_transform
 from pyfect.channel import unwrap as unwrap_channel
@@ -80,13 +81,41 @@ class Writer:
     write_all: WriteAll
 
 
-@dataclass(frozen=True, slots=True)
 class SocketService:
     """A socket: acquiring ``reader`` in a scope opens it (until the scope
-    closes); ``writer`` writes to the open connection, waiting for one."""
+    closes); ``writer`` writes to the open connection, waiting for one.
+    ``make(reader, writer)`` builds one."""
 
-    reader: Effect[Reader, SocketError, Scope]
-    writer: Effect[Writer, Never, Scope]
+    __slots__ = ("_reader", "_writer")
+
+    def __replace__(self, **changes: Any) -> Self:
+        """A copy with ``changes`` to the constructor's arguments (``copy.replace``)."""
+        return replaced(self, changes)
+
+    def __init__(
+        self, reader: Effect[Reader, SocketError, Scope], writer: Effect[Writer, Never, Scope]
+    ) -> None:
+        self._reader = reader
+        self._writer = writer
+
+    @property
+    def reader(self) -> Effect[Reader, SocketError, Scope]:
+        """Opens the connection for the life of the scope and gives its
+        ``Reader``, whose ``pull`` gives non-empty batches of incoming
+        chunks and never ends: every close, a clean one included, fails it
+        with a ``SocketError`` holding the reason, and so does closing the
+        scope during a pull. Code between acquiring it and the first pull
+        runs once per (re)connection. Fails with ``SocketError`` when the
+        connection cannot be opened."""
+        return self._reader
+
+    @property
+    def writer(self) -> Effect[Writer, Never, Scope]:
+        """The ``Writer``, detached from any one connection: acquiring it
+        never fails, and writes made while disconnected wait for the next
+        connection. Releasing its scope half-closes the write side where
+        the transport can."""
+        return self._writer
 
 
 class Socket(Tag[SocketService], key="effect/socket/Socket"):

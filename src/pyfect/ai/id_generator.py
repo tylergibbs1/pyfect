@@ -8,22 +8,37 @@ so a seeded ``Random`` makes them reproducible.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
-from typing import Never
+from typing import Any, Never, Self, final
 
 import pyfect as fx
 from pyfect import layer as L
 from pyfect import random as Random
 from pyfect._core import Effect
+from pyfect._service_copy import replaced
 from pyfect.context import Tag
 from pyfect.errors import IllegalArgumentError
 
 DEFAULT_ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 
 
-@dataclass(frozen=True)
+@final
 class Service:
-    generate_id: Callable[[], Effect[str]]
+    """The ``IdGenerator`` service: ``make`` and ``layer`` build one, and
+    ``Service(generate_id)`` makes one of a function (a fixed id in tests,
+    say)."""
+
+    __slots__ = ("_generate_id",)
+
+    def __replace__(self, **changes: Any) -> Self:
+        """A copy with ``changes`` to the constructor's arguments (``copy.replace``)."""
+        return replaced(self, changes)
+
+    def __init__(self, generate_id: Callable[[], Effect[str]]) -> None:
+        self._generate_id = generate_id
+
+    def generate_id(self) -> Effect[str]:
+        """A new id, drawn when the effect runs; never fails."""
+        return self._generate_id()
 
 
 class IdGenerator(Tag[Service], key="@effect/ai/IdGenerator"):

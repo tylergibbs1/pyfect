@@ -15,10 +15,11 @@ import zlib
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from importlib.util import find_spec
-from typing import Any, Literal, Never, Protocol, TypedDict, Unpack, cast
+from typing import Any, Literal, Never, Protocol, Self, TypedDict, Unpack, cast
 
 from pyfect._core import Effect
 from pyfect._js import text_encode
+from pyfect._service_copy import replaced
 from pyfect.byte_size import ByteSize
 from pyfect.byte_size import Input as ByteSizeInput
 from pyfect.byte_size import from_input as byte_size_from_input
@@ -91,14 +92,51 @@ class FileWebOptions(TypedDict, total=False):
     offset: int
 
 
-@dataclass(frozen=True, slots=True)
 class HttpPlatformService:
+    """The ``HttpPlatform`` service: ``make`` builds it, and
+    ``HttpPlatformService(platform, compression, file_response,
+    file_web_response)`` makes one of functions (a test double, say)."""
+
+    __slots__ = ("_file_response", "_file_web_response", "compression", "platform")
+
     platform: PlatformName
     compression: Compression
-    file_response: Callable[..., Effect[HttpServerResponse, PlatformError]]
-    """``(path, **FileOptions)``"""
-    file_web_response: Callable[..., Effect[HttpServerResponse]]
-    """``(file, **FileWebOptions)``"""
+
+    def __replace__(self, **changes: Any) -> Self:
+        """A copy with ``changes`` to the constructor's arguments (``copy.replace``)."""
+        return replaced(self, changes)
+
+    def __init__(
+        self,
+        platform: PlatformName,
+        compression: Compression,
+        file_response: Callable[..., Effect[HttpServerResponse, PlatformError]],
+        file_web_response: Callable[..., Effect[HttpServerResponse]],
+    ) -> None:
+        self.platform = platform
+        self.compression = compression
+        self._file_response = file_response
+        self._file_web_response = file_web_response
+
+    def file_response(
+        self, path: str, **options: Unpack[FileOptions]
+    ) -> Effect[HttpServerResponse, PlatformError]:
+        """A response streaming the file at ``path``, with an ``etag``
+        and a ``last-modified`` header from its ``stat``. ``offset`` and
+        ``bytes_to_read`` pick a range (clamped to the file); ``status``,
+        ``status_text``, ``headers`` and ``content_type`` go on the
+        response. Fails with a ``PlatformError`` when the file cannot be
+        stat'ed, or ``offset`` or ``bytes_to_read`` is invalid."""
+        return self._file_response(path, **options)
+
+    def file_web_response(
+        self, file: FileLike, **options: Unpack[FileWebOptions]
+    ) -> Effect[HttpServerResponse]:
+        """A response streaming the file-like ``file``, with an ``etag``
+        and a ``last-modified`` header; ``offset``, ``bytes_to_read`` and
+        ``chunk_size`` pick the range and its chunks, and the other options
+        go on the response. Never fails."""
+        return self._file_web_response(file, **options)
 
 
 class HttpPlatform(Tag[HttpPlatformService], key="effect/http/HttpPlatform"):
@@ -580,6 +618,7 @@ __all__ = [
     "FileWebResponseImpl",
     "HttpPlatform",
     "HttpPlatformService",
+    "PlatformError",
     "PlatformName",
     "Transform",
     "compression_live",

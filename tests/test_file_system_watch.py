@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from _threads import live_threads
 
 import pyfect as fx
 from pyfect import file_system
@@ -30,7 +31,7 @@ _TIMEOUT = "10 seconds"
 
 
 def _watcher_threads() -> list[threading.Thread]:
-    return [thread for thread in threading.enumerate() if thread.name == "pyfect-watch"]
+    return live_threads("pyfect-watch")
 
 
 def _watch(

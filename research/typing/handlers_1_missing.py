@@ -17,11 +17,13 @@ Q1. Yes, given distinct endpoint types: union matching removes the handled
     ``to_layer`` taking ``Handlers[Never]`` rejects what is left. Endpoints would need a
     type of their own each (their name as a ``Literal`` type parameter).
 Q2. No: pyright has no mapped types, so nothing gathers a class's
-    attributes into a union; the group would have to repeat its endpoint
-    names as a type argument. pyfect does not ask for that: an RPC group's
-    ``to_layer`` raises ``ValueError`` naming each RPC without a handler, and
-    an HttpApi group's layer dies when built naming each endpoint (its
-    handlers are made then).
+    attributes into a union; the group has to repeat its endpoint names as a
+    type argument. Since 0.6.0 an RPC group or entity may
+    (``RpcGroup[Literal["Get", "Ping"]]``, checked against its RPCs when the
+    class is defined; ``rpc.make`` keeps a literal tag as the RPC's last type
+    parameter). Unlisted, an RPC group's ``to_layer`` raises ``ValueError``
+    naming each RPC without a handler, and an HttpApi group's layer dies when
+    built naming each endpoint (its handlers are made then).
 """
 
 from typing import Any, Literal, Never, assert_type, overload

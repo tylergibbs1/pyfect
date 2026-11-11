@@ -95,13 +95,13 @@ class Workflow[P, A, E]:
     failing with ``E``. Make one with ``make``."""
 
     __slots__ = (
-        "annotations",
-        "error_schema",
-        "idempotency_key",
-        "payload_schema",
-        "success_schema",
-        "suspended_retry_schedule",
-        "tag",
+        "_annotations",
+        "_error_schema",
+        "_idempotency_key",
+        "_payload_schema",
+        "_success_schema",
+        "_suspended_retry_schedule",
+        "_tag",
     )
 
     def __init__(
@@ -115,13 +115,48 @@ class Workflow[P, A, E]:
         annotations: Context[Any],
         suspended_retry_schedule: Schedule[Any, Any, Any, Any] | None,
     ) -> None:
-        self.tag = tag
-        self.payload_schema = payload_schema
-        self.success_schema = success_schema
-        self.error_schema = error_schema
-        self.idempotency_key = idempotency_key
-        self.annotations = annotations
-        self.suspended_retry_schedule = suspended_retry_schedule
+        self._tag = tag
+        self._payload_schema = payload_schema
+        self._success_schema = success_schema
+        self._error_schema = error_schema
+        self._idempotency_key = idempotency_key
+        self._annotations = annotations
+        self._suspended_retry_schedule = suspended_retry_schedule
+
+    @property
+    def tag(self) -> str:
+        """The workflow's name."""
+        return self._tag
+
+    @property
+    def payload_schema(self) -> _C[P]:
+        """The schema of the workflow's payload."""
+        return self._payload_schema
+
+    @property
+    def success_schema(self) -> _C[A]:
+        """The schema of the workflow's success."""
+        return self._success_schema
+
+    @property
+    def error_schema(self) -> _C[E]:
+        """The schema of the workflow's failure."""
+        return self._error_schema
+
+    @property
+    def idempotency_key(self) -> Callable[[P], str]:
+        """The key of a payload: executions with the same key are one execution."""
+        return self._idempotency_key
+
+    @property
+    def annotations(self) -> Context[Any]:
+        """The workflow's annotations."""
+        return self._annotations
+
+    @property
+    def suspended_retry_schedule(self) -> Schedule[Any, Any, Any, Any] | None:
+        """How a suspended execution is retried, when set."""
+        return self._suspended_retry_schedule
 
     def __repr__(self) -> str:
         return f"Workflow({self.tag!r})"
@@ -234,18 +269,18 @@ class Workflow[P, A, E]:
     # The first overload solves a handler needing only the workflow's own
     # services; the second alone would leave ``R`` Unknown.
     @overload
-    def to_layer(
-        self,
-        execute: Callable[[P, str], Effect[A, E, WorkflowEngine | WorkflowInstance | Scope]],
+    def to_layer[A2, E2](
+        self: Workflow[P, A2, E2],
+        execute: Callable[[P, str], Effect[A2, E2, WorkflowEngine | WorkflowInstance | Scope]],
     ) -> Layer[Never, Never, WorkflowEngine]: ...
     @overload
-    def to_layer[R](
-        self,
-        execute: Callable[[P, str], Effect[A, E, R | WorkflowEngine | WorkflowInstance | Scope]],
+    def to_layer[A2, E2, R](
+        self: Workflow[P, A2, E2],
+        execute: Callable[[P, str], Effect[A2, E2, R | WorkflowEngine | WorkflowInstance | Scope]],
     ) -> Layer[Never, Never, R | WorkflowEngine]: ...
-    def to_layer[R](
-        self,
-        execute: Callable[[P, str], Effect[A, E, R | WorkflowEngine | WorkflowInstance | Scope]],
+    def to_layer[A2, E2, R](
+        self: Workflow[P, A2, E2],
+        execute: Callable[[P, str], Effect[A2, E2, R | WorkflowEngine | WorkflowInstance | Scope]],
     ) -> Layer[Never, Never, R | WorkflowEngine]:
         """The layer registering ``execute(payload, execution_id)`` as the
         workflow's handler; it runs with the layer's services."""

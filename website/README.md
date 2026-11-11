@@ -60,5 +60,7 @@ Every route is static (search uses a prebuilt index), so any static host works t
 - `bun run check:layout` (after a build) loads a guide, a guide with tabs and a diagram,
   and a reference page at 1512, 1280, 1024 and 390px, and fails if the title, description,
   body or table of contents moves between them, or if any layout shift is recorded while a
-  page loads, after a client-side navigation, or when the fonts arrive a second late (they are
-  `display: 'optional'`, so a late font never reflows the page). It uses the installed Google Chrome.
+  page loads, after a client-side navigation, when the fonts arrive a second late (they are
+  `display: 'optional'`, so a late font never reflows the page), or while a page's HTML
+  arrives in slow chunks (the browser paints these large pages part-parsed, so nothing may be
+  laid out by an element that comes later in the document). It uses the installed Google Chrome.

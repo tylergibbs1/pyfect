@@ -5,11 +5,11 @@ notification, and says which tools it can call."""
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
-from typing import Any, Literal, Never, cast
+from typing import Any, Literal, Never, Self, cast, final
 
 from pyfect import stream
 from pyfect._core import Effect
+from pyfect._service_copy import replaced
 from pyfect.ai._mcp.client_wire import (
     cancelled,
     encode_message,
@@ -57,14 +57,56 @@ DEFAULT_MAX_MESSAGE_BYTES = 16 * 1024 * 1024
 _VOID: Effect[None] = succeed(None)
 
 
-@dataclass(frozen=True, slots=True)
+@final
 class TransportService:
-    """How a client reaches its server (Effect's ``McpClient.Transport``)."""
+    """How a client reaches its server (Effect's ``McpClient.Transport``):
+    ``stdio`` and ``http`` build one, and ``TransportService(protocol,
+    request, notify, is_callable)`` makes one of three functions (a test
+    double, say)."""
+
+    __slots__ = ("_is_callable", "_notify", "_request", "protocol")
 
     protocol: ClientProtocol
-    request: Callable[[JsonObject, Tool | None], Effect[JsonObject, McpClientError]]
-    notify: Callable[[JsonObject], Effect[None, McpClientError]]
-    is_callable: Callable[[Tool], bool]
+    """The protocol adapter of the version the client speaks."""
+
+    def __replace__(self, **changes: Any) -> Self:
+        """A copy with ``changes`` to the constructor's arguments (``copy.replace``)."""
+        return replaced(self, changes)
+
+    def __init__(
+        self,
+        protocol: ClientProtocol,
+        request: Callable[[JsonObject, Tool | None], Effect[JsonObject, McpClientError]],
+        notify: Callable[[JsonObject], Effect[None, McpClientError]],
+        is_callable: Callable[[Tool], bool],
+    ) -> None:
+        self.protocol = protocol
+        self._request = request
+        self._notify = notify
+        self._is_callable = is_callable
+
+    def request(self, message: JsonObject, tool: Tool | None) -> Effect[JsonObject, McpClientError]:
+        """Send the JSON-RPC request ``message`` and wait for its response
+        (a JSON-RPC error response included); ``tool`` supplies a tool
+        call's routing headers. Fails with an ``McpClientError`` when the
+        message cannot be sent or read, a message exceeds the size limit,
+        the server answers an HTTP error status or no or a mismatched
+        response, or the transport has closed. Interrupting it
+        tells the server the request was cancelled (except ``initialize``,
+        and on 2026-07-28 HTTP)."""
+        return self._request(message, tool)
+
+    def notify(self, message: JsonObject) -> Effect[None, McpClientError]:
+        """Send the JSON-RPC notification ``message`` without waiting for a
+        reply. Fails with an ``McpClientError`` when it cannot be sent, the
+        server answers an HTTP error status, or the transport has closed."""
+        return self._notify(message)
+
+    def is_callable(self, tool: Tool) -> bool:
+        """Whether this transport can route a call to ``tool``: always on
+        stdio; on 2026-07-28 HTTP only when its header parameters are
+        valid."""
+        return self._is_callable(tool)
 
 
 def message_limit(max_message_bytes: int | None) -> Effect[ByteSize, McpClientError]:

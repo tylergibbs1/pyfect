@@ -16,7 +16,7 @@ Omitted:
 """
 
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 import pytest
@@ -31,7 +31,7 @@ from pyfect.file_system import NoopFileSystem, layer_noop
 from pyfect.platform_error import PlatformError
 from pyfect.process import ChildProcessSpawner, Command
 from pyfect.process._command import StandardCommand
-from pyfect.process._spawner import ChildProcessSpawnerService
+from pyfect.process._spawner import ChildProcessSpawnerService, Spawn
 from pyfect.sql import SqlClient, pg
 from pyfect.sql import client as sql_client
 from pyfect.sql.pg import migrator as pg_migrator
@@ -71,9 +71,12 @@ class _Files(NoopFileSystem):
         return fx.sync(lambda: self.written.append(path))
 
 
-@dataclass(frozen=True, slots=True)
 class _Recorder(ChildProcessSpawnerService):
-    commands: list[StandardCommand] = field(default_factory=list[StandardCommand])
+    __slots__ = ("commands",)
+
+    def __init__(self, spawn: Spawn) -> None:
+        super().__init__(spawn)
+        self.commands: list[StandardCommand] = []
 
     def string(
         self, command: Command, *, include_stderr: bool = False

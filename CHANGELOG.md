@@ -2,8 +2,88 @@
 
 ## 0.6.0 (unreleased)
 
+### Changed
+
+- The services that held their operations in dataclass fields of function or effect type are
+  classes whose operations are documented methods and properties, as `MacService` has been
+  since 0.5.3, so `help()`, `inspect.signature` and the API reference show them. Constructors
+  keep their keywords, positional order and defaults, and `svc.op(...)` / `svc.value` read as
+  before. Converted: the ai provider clients (`anthropic`, `openai`, `openai_compat`,
+  `openrouter`, `cloudflare`, `typesafe`, the OpenAI socket), `IdGenerator`, `LanguageModel`'s
+  hooks, the MCP client transport, `RunnerHealth`, `RunnerStorage`, the RPC client and server
+  protocols, `RpcClientProtocol`, `RpcSerialization`, the RPC connection hooks,
+  `WorkflowEngine`, `WorkerPlatform`, `WorkerRunnerPlatform`, `EventLogRemote`,
+  `GraphQLProtocol`, `HttpPlatform`, `HttpServer`, the OTLP flusher and serialization, the
+  `KeyValueStore`, `PersistedQueue` and `CircuitBreaker` stores, `BackingPersistence`,
+  `UserDirectories`, `ChildProcessSpawner`, `Socket`, `DatagramSocket`, `Stdio` and `Terminal`.
+  They are no longer dataclasses:
+  - `dataclasses.replace(svc, op=...)` becomes `copy.replace(svc, op=...)`, which every one of
+    them supports; `dataclasses.fields` and `asdict` no longer apply.
+  - Two of them are equal only when they are the same object (as the crypto services), where
+    a dataclass compared its fields; hashing is by identity too.
+  - Their plain data attributes (such as `http_client` or `max_response_bytes`) can be
+    assigned; the operations' properties are read-only.
+  - `SqlClientService.reserve` and `PgClientService.pool_stats` are read-only properties:
+    build a new client instead of assigning them.
+- Each converted module also exports the errors its service's methods fail with (`AiError` from
+  the ai client modules, `PlatformError` from `http.platform` and
+  `persistence.user_directories`), and `EventLogRemote.when_authenticated` and
+  `Flusher.register` reject a non-effect argument with a `TypeError`.
+- `tests/test_service_docs.py` now also fails for any public service that holds an operation
+  in a field.
+- `router.provide_request(services)` is typed as Effect's `HttpRouter.provideRequest`: the
+  result drops each `Requires[S]` that `services` builds and adds `services`' own errors and
+  requirements (it was `Layer[Any, Any, Any]`, so even `provide_request(layer.empty)` passed).
+- `router.to_asgi` takes only routes whose requirements its layer builds, as Effect's
+  `toWebHandler` needs them built by the app layer when there is no request context: a missing
+  service, or `layer.provide(services)` where `provide_request(services)` belongs, is a pyright
+  error instead of a 500 on every request. A routes layer still needing a service to build is
+  refused too, as is a `middleware=` needing one. Runtime behaviour is unchanged. A helper
+  generic in its services' type (`def app_routes[RO](services: Layer[RO])`) keeps its routes'
+  `Requires`, since pyright can't see which ones `RO` builds (TypeScript resolves Effect's
+  `Exclude` at each call), so `to_asgi` refuses its result: name the services in the helper's
+  parameter (`services: Layer[Users | Db, E]`), or apply `provide_request` outside the helper.
+- Attributes Effect has `readonly` are read-only, so assigning one is a pyright error: an
+  atom's `read` and a writable atom's `write` (`Final`), `router.Middleware.layer`,
+  `SqlRequest.payload`, and the fields of `workflow.Activity`, `Workflow`, `DurableDeferred`
+  and `DurableQueue` (properties). Make a new value instead of assigning one (`make`,
+  `annotate`). The classes now take Effect's
+  variance (see Added). `tests/test_variance.py` no longer lets a writable attribute pass
+  as read-only, and fails on a `Final` slot of a class whose variance pyright infers, which
+  pyright still reads as writable.
+- `rpc.make("Tag", ...)` types the RPC with its tag as a `Literal`, a new last type parameter
+  of `Rpc` / `StreamRpc` (`Rpc[P, S, E, M, MT, Tag]`, `str` by default), and `prefix` makes it
+  `str`. An `assert_type` of a made RPC now spells the tag
+  (`rpc.Rpc[str, User, NotFound, Never, Never, Literal["GetUser"]]`); annotations without it
+  still accept the RPC. `Handlers` / `EntityHandlers` gain a third, invariant parameter, the
+  tags still without a handler (`Never` for a group that does not list its tags), and
+  `Bound` / `StreamBound` two more (the RPC's tag and that list): code naming these types
+  adds `Never`, or uses the type `handlers()` returns.
+
+### Removed
+
+- `cause.merge`, deprecated since 0.5.3: combine causes with `a + b` (Effect's
+  `Cause.combine`, which never elects defects). Where the old electing result is wanted, write
+  `(a + b).elect_defects()`.
+
 ### Added
 
+- An RPC group or cluster entity can list its RPC tags,
+  `class Counter(Entity[Literal["Increment", "Get"]])` or
+  `class Users(RpcGroup[Literal["GetUser"]])` (`RpcGroupWith[Auth, Literal[...]]` with group
+  middleware), and pyright then checks its handlers as TypeScript checks Effect's `toLayer`:
+  `to_layer` / `to_layer_effect` reject them while an RPC has none, and a second handler for
+  an RPC is an error. Python can't gather a class's attributes into a type, so the list
+  repeats the tags; the class is checked against it when it is defined (a `TypeError` names
+  each tag missing on either side). Groups that list nothing are unchanged: `to_layer` raises
+  `ValueError` for a missing handler. Pyright tracks RPCs by tag, so a second handler given
+  after all have one is not caught, and an RPC needs a literal tag at `rpc.make`.
+- `workflow.Activity`, `DurableDeferred` and `router.Middleware` are covariant, `Workflow`
+  and `DurableQueue` in their success and error, and `SqlRequest` in its payload, as in
+  Effect: an `Activity[int, ...]` is accepted where an `Activity[object, ...]` is expected.
+  `DurableDeferred.succeed` / `fail` / `done` / `into`, `DurableQueue.worker` and
+  `Workflow.to_layer` bind their value types through `self`, so a wrongly typed value or
+  handler is still an error.
 - `help()` on a layer constant shows the constant's own docstring (the one below its
   assignment, which IDEs show on hover and the API reference reads) instead of the `Layer`
   class's: `help(otel.tracer.layer)` now says to provide an `OtelTracerProvider`. Every public
@@ -17,6 +97,26 @@
 
 ### Fixed
 
+- A `Pool.make_with_ttl` made inside `acquire_release`'s acquire closes with its scope again;
+  closing it used to wait forever once the pool's TTL strategy fiber had started. The cause was
+  `uninterruptible_mask`: an uninterruptible caller got a `restore` that made the effect
+  uninterruptible, where Effect's is the identity, so a fiber forked with `restore(...)` (the
+  pool's strategy and first resize) could not be interrupted. `restore` is now the identity
+  there, as in Effect. A new test builds every resource that forks a background fiber (pools,
+  `RcRef`, `RcMap`, `ScopedCache`, `LayerMap`, fiber sets, maps and handles, shared and
+  broadcast streams, `fork_scoped`) inside an acquire and checks its scope closes.
+- An idle keep-alive connection no longer holds a TLS server's shutdown. asyncio kept a closed
+  TLS connection open until the client sent its `close_notify`, up to 30 seconds, so
+  `hypercorn_server` took 30 seconds to stop (HTTP/1.1 and HTTP/2) whatever
+  `graceful_shutdown_timeout` said, and `uvicorn_server` waited out the whole timeout. Their TLS
+  connections now close once their own `close_notify` is sent, as Node's and `live_server`'s
+  do, so idle connections close at once, as Effect's `NodeHttpServer` closes them. A test
+  times each adapter's shutdown, cleartext and TLS, HTTP/1.1 and HTTP/2, and fails when a new
+  server module is left out of it.
+- `live_server` counts a connection as idle once its request is read and its response
+  finished, as Node's `closeIdleConnections` does, instead of once the serving fiber came back
+  round for the next request. A shutdown starting just after a client got its response no
+  longer waits out `graceful_shutdown_timeout` for that connection.
 - `help()` and `inspect.signature` show typed signatures instead of `Any` for
   `Stream.transduce`, `aggregate`, `aggregate_within`, `channel.from_transform`,
   `from_transform_bracket`, `stream.transform_pull`, `transform_pull_bracket` and `sink.make`.
@@ -28,6 +128,9 @@
 
 ### Docs
 
+- On a wide screen the page no longer jumps sideways while it loads. The browser draws these
+  long pages before it has read all of them, and until it reached the table of contents on the
+  right, the article was centred as if the table of contents took no space.
 - asyncio-apps.mdx said uvicorn's TLS was the same as hypercorn's `certfile` and `keyfile`,
   which made uvicorn raise a `TypeError`. A new "Serving over TLS" section serves the same app
   over TLS on both, with hypercorn's `certfile`/`keyfile` and uvicorn's

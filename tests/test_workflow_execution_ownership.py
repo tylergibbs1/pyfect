@@ -6,6 +6,7 @@ Effect's engines ignore the workflow; pyfect does not."""
 from __future__ import annotations
 
 import functools
+import inspect
 from collections.abc import Callable
 from typing import Any, Never, TypedDict
 
@@ -31,7 +32,7 @@ def _a(_p: Empty, _id: str) -> fx.Effect[None]:
     return fx.void
 
 
-# Every ``WorkflowEngineService`` member taking ``(workflow, execution_id)``.
+# Every ``WorkflowEngineService`` method taking ``(workflow, execution_id)``.
 type ById = Callable[[Any, Any, str], fx.Effect[Any, Any, Any]]
 BY_ID: dict[str, ById] = {
     "resume": lambda engine, wf, id: engine.resume(wf, id),
@@ -44,10 +45,13 @@ BY_ID: dict[str, ById] = {
 def test_every_by_id_member_is_covered() -> None:
     from pyfect.workflow._services import WorkflowEngineService
 
-    hints = WorkflowEngineService.__annotations__
-    assert {name for name, hint in hints.items() if "ByExecutionId" in str(hint)} | {"poll"} == set(
-        BY_ID
-    )
+    by_id = {
+        name
+        for name, member in vars(WorkflowEngineService).items()
+        if inspect.isfunction(member)
+        and list(inspect.signature(member).parameters) == ["self", "workflow", "execution_id"]
+    }
+    assert by_id == set(BY_ID)
 
 
 @pytest.mark.parametrize("operation", sorted(BY_ID))

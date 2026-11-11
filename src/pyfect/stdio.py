@@ -17,14 +17,14 @@ from __future__ import annotations
 
 import sys
 from collections.abc import Callable
-from dataclasses import dataclass, field
-from typing import IO, Any, Literal, Never, Protocol
+from typing import IO, Any, Literal, Never, Protocol, Self
 
 from pyfect import sink as sink_
 from pyfect import stream as stream_
 from pyfect._core import Effect
 from pyfect._effect_args import require_effect
 from pyfect._js import text_encode
+from pyfect._service_copy import replaced
 from pyfect.context import Tag
 from pyfect.effect import fail, succeed, sync, try_blocking
 from pyfect.errors import Done
@@ -49,23 +49,94 @@ def _false() -> Effect[bool]:
     return succeed(False)
 
 
-@dataclass(frozen=True, slots=True, kw_only=True)
+_NOT_A_TERMINAL: Effect[bool] = _false()
+
+
 class StdioService:
     """Effect's ``Stdio``; the constructor is ``Stdio.make`` (terminal
     checks default to ``False``)."""
 
-    args: Effect[tuple[str, ...]]
-    stdout: OutputSink
-    stderr: OutputSink
-    stdin: Stream[bytes, PlatformError]
-    stdin_is_terminal: Effect[bool] = field(default_factory=_false)
-    stdout_is_terminal: Effect[bool] = field(default_factory=_false)
-    stderr_is_terminal: Effect[bool] = field(default_factory=_false)
+    __slots__ = (
+        "_args",
+        "_stderr",
+        "_stderr_is_terminal",
+        "_stdin",
+        "_stdin_is_terminal",
+        "_stdout",
+        "_stdout_is_terminal",
+    )
 
-    def __post_init__(self) -> None:
-        for name in ("args", "stdin_is_terminal", "stdout_is_terminal", "stderr_is_terminal"):
-            require_effect(getattr(self, name), name)
-        require_stream(self.stdin, "stdin")
+    def __replace__(self, **changes: Any) -> Self:
+        """A copy with ``changes`` to the constructor's arguments (``copy.replace``)."""
+        return replaced(self, changes)
+
+    def __init__(
+        self,
+        *,
+        args: Effect[tuple[str, ...]],
+        stdout: OutputSink,
+        stderr: OutputSink,
+        stdin: Stream[bytes, PlatformError],
+        stdin_is_terminal: Effect[bool] = _NOT_A_TERMINAL,
+        stdout_is_terminal: Effect[bool] = _NOT_A_TERMINAL,
+        stderr_is_terminal: Effect[bool] = _NOT_A_TERMINAL,
+    ) -> None:
+        for name, value in (
+            ("args", args),
+            ("stdin_is_terminal", stdin_is_terminal),
+            ("stdout_is_terminal", stdout_is_terminal),
+            ("stderr_is_terminal", stderr_is_terminal),
+        ):
+            require_effect(value, name)
+        require_stream(stdin, "stdin")
+        self._args = args
+        self._stdout = stdout
+        self._stderr = stderr
+        self._stdin = stdin
+        self._stdin_is_terminal = stdin_is_terminal
+        self._stdout_is_terminal = stdout_is_terminal
+        self._stderr_is_terminal = stderr_is_terminal
+
+    @property
+    def args(self) -> Effect[tuple[str, ...]]:
+        """The program's command-line arguments, without the program name.
+        Never fails."""
+        return self._args
+
+    def stdout(self, *, end_on_done: bool = False) -> Output:
+        """A sink writing text and bytes to standard output; with
+        ``end_on_done``, standard output is closed once the sink's input
+        ends. The sink fails with a ``PlatformError`` when a write does."""
+        return self._stdout(end_on_done=end_on_done)
+
+    def stderr(self, *, end_on_done: bool = False) -> Output:
+        """A sink writing text and bytes to standard error; with
+        ``end_on_done``, standard error is closed once the sink's input
+        ends. The sink fails with a ``PlatformError`` when a write does."""
+        return self._stderr(end_on_done=end_on_done)
+
+    @property
+    def stdin(self) -> Stream[bytes, PlatformError]:
+        """Standard input as a stream of byte chunks, ending at end of
+        input; fails with a ``PlatformError`` when a read does."""
+        return self._stdin
+
+    @property
+    def stdin_is_terminal(self) -> Effect[bool]:
+        """Whether standard input is attached to a terminal. Never fails."""
+        return self._stdin_is_terminal
+
+    @property
+    def stdout_is_terminal(self) -> Effect[bool]:
+        """Whether standard output is attached to a terminal. Never
+        fails."""
+        return self._stdout_is_terminal
+
+    @property
+    def stderr_is_terminal(self) -> Effect[bool]:
+        """Whether standard error is attached to a terminal. Never
+        fails."""
+        return self._stderr_is_terminal
 
 
 class Stdio(Tag[StdioService]):

@@ -1,11 +1,14 @@
 """A group left without a handler for one of its endpoints or RPCs (QA types 5,
-6). Effect rejects it at compile time; pyright cannot name the endpoints not
-yet handled (``research/typing/handlers_1_missing.py``), so pyfect fails with
-an error naming each one and the attribute declaring it: an RPC group in
-``to_layer`` itself, an HttpApi group when its layer is built (its handlers
+6). Effect rejects it at compile time. Pyright can't gather a class's attributes
+into a union (``research/typing/handlers_1_missing.py``), so it checks the
+handlers only of an RPC group or entity that lists its RPC tags
+(``RpcGroup[Literal[...]]``, pinned in ``tests/type_checks.py``); the class is
+checked against its list when defined. Either way pyfect fails with an error
+naming each RPC without a handler and the attribute declaring it: an RPC group
+in ``to_layer`` itself, an HttpApi group when its layer is built (its handlers
 are made then)."""
 
-from typing import Never, TypedDict
+from typing import Literal, Never, TypedDict
 
 import pytest
 
@@ -90,3 +93,82 @@ def test_a_complete_rpc_group_builds():
     )
     built: fx.Effect[object, Never, fx.Scope] = layer.fresh(Accounts.to_layer(complete)).build()
     assert isinstance(fx.run_blocking_exit(fx.scoped(built)), fx.Success)
+
+
+def test_a_group_listing_its_tags_builds_once_every_rpc_has_a_handler():
+    class Listed(rpc.RpcGroup[Literal["Get", "Ping"]]):
+        get = rpc.make("Get", payload=S.String, success=Profile)
+        ping = rpc.make("Ping")
+
+    complete = (
+        Listed.handlers()
+        .handle(Listed.ping)(lambda _r: fx.succeed(None))
+        .handle(Listed.get)(lambda r: fx.succeed(Profile(id=r.payload)))
+    )
+    built = layer.fresh(Listed.to_layer(complete)).build()
+    assert isinstance(fx.run_blocking_exit(fx.scoped(built)), fx.Success)
+
+
+def test_a_group_listing_tags_it_does_not_have_is_rejected_when_defined():
+    with pytest.raises(
+        TypeError,
+        match=r"^Listed lists the RPC tags \['Get', 'Gone'\], but has no RPC for: \['Gone'\]$",
+    ):
+
+        class Listed(rpc.RpcGroup[Literal["Get", "Gone"]]):  # pyright: ignore[reportUnusedClass]
+            get = rpc.make("Get")
+
+
+def test_a_group_not_listing_one_of_its_tags_is_rejected_when_defined():
+    with pytest.raises(TypeError, match=r"RPCs it does not list: \['Ping'\]$"):
+
+        class Listed(rpc.RpcGroup[Literal["Get"]]):  # pyright: ignore[reportUnusedClass]
+            get = rpc.make("Get")
+            ping = rpc.make("Ping")
+
+
+def test_a_subclass_adding_an_rpc_must_list_it():
+    class Base(rpc.RpcGroup[Literal["Get"]]):
+        get = rpc.make("Get")
+
+    with pytest.raises(TypeError, match=r"RPCs it does not list: \['Ping'\]$"):
+
+        class More(Base):  # pyright: ignore[reportUnusedClass]
+            ping = rpc.make("Ping")
+
+    class Listed(Base, rpc.RpcGroup[Literal["Get", "Ping"]]):
+        ping = rpc.make("Ping")
+
+    assert set(Listed.rpcs) == {"Get", "Ping"}
+
+
+def test_tags_are_listed_as_a_literal():
+    with pytest.raises(TypeError, match="list a group's RPC tags as a Literal of strings"):
+
+        class Listed(rpc.RpcGroup[str]):  # pyright: ignore[reportUnusedClass]
+            get = rpc.make("Get")
+
+
+def test_a_group_with_middleware_lists_its_tags_after_it():
+    class Auth(rpc.RpcMiddleware[Never, Never, Never]): ...
+
+    class Listed(rpc.RpcGroupWith[Auth, Literal["Get"]]):
+        get = rpc.make("Get")
+
+    assert Listed.rpcs["Get"].middlewares == (Auth,)
+
+
+def test_an_entity_listing_its_tags_is_checked_when_defined():
+    from pyfect.cluster.entity import Entity
+
+    class Counter(Entity[Literal["Increment", "Get"]]):
+        increment = rpc.make("Increment", payload=S.Int, success=S.Int)
+        get = rpc.make("Get", success=S.Int)
+
+    partial = Counter.handlers().handle(Counter.get)(lambda _r: fx.succeed(1))
+    with pytest.raises(ValueError, match="has no handler for Increment"):
+        Counter.to_layer(partial)  # pyright: ignore[reportArgumentType]
+    with pytest.raises(TypeError, match=r"no RPC for: \['Reset'\]$"):
+
+        class Listed(Entity[Literal["Increment", "Reset"]]):  # pyright: ignore[reportUnusedClass]
+            increment = rpc.make("Increment", payload=S.Int, success=S.Int)

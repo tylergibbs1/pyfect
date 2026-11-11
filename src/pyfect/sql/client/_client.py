@@ -63,19 +63,15 @@ class SqlClientService(Constructor):
         "_after_commit",
         "_reactive_queue",
         "_reactivity",
+        "_reserve",
         "_with_transaction",
         "driver",
-        "reserve",
         "transaction_service",
     )
 
     driver: str
     """The driver that made the client, such as ``"sqlite"``. Unlike the
     dialect, it tells apart drivers of the same SQL."""
-
-    reserve: Acquirer
-    """Leases a connection (outside any transaction) until the scope
-    closes."""
 
     transaction_service: type[TransactionConnection]
     """The tag of this client's open transaction."""
@@ -98,12 +94,20 @@ class SqlClientService(Constructor):
     ) -> None:
         super().__init__(acquirer, compiler, span_attributes, transform_rows, borrower)
         self.driver = driver
-        self.reserve = reserve
+        self._reserve = reserve
         self.transaction_service = transaction_service
         self._with_transaction = with_transaction
         self._after_commit = after_commit
         self._reactivity = reactivity
         self._reactive_queue = reactive_queue
+
+    @property
+    def reserve(self) -> Acquirer:
+        """Leases a connection of its own (the driver's transaction
+        acquirer, never the open transaction's connection) until the
+        current scope closes. Fails with an ``SqlError`` when no connection
+        can be acquired."""
+        return self._reserve
 
     @property
     def safe(self) -> SqlClientService:
@@ -120,7 +124,7 @@ class SqlClientService(Constructor):
             "transform_rows": self.transform_rows,
             "borrower": self.borrower,
             "driver": self.driver,
-            "reserve": self.reserve,
+            "reserve": self._reserve,
             "transaction_service": self.transaction_service,
             "with_transaction": self._with_transaction,
             "after_commit": self._after_commit,

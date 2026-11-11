@@ -450,11 +450,14 @@ class Restore(Protocol):
 
 def uninterruptible_mask[A, E, R](f: Callable[[Restore], Effect[A, E, R]]) -> Effect[A, E, R]:
     """Run ``f`` uninterruptibly. ``f`` receives ``restore``, which runs an
-    inner effect with the interruptibility the caller had."""
+    inner effect with the interruptibility the caller had. As in Effect, an
+    uninterruptible caller gets the identity: a fiber forked with
+    ``restore(...)`` then starts interruptible, like any forked fiber."""
 
     def body(fiber: Fiber[Any, Any]) -> Effect[A, E, R]:
-        restore = _interruptible if fiber._interruptible else _uninterruptible
-        return _SetInterruptible(_Suspend(lambda: f(restore)), False)
+        if not fiber._interruptible:
+            return _Suspend(lambda: f(_keep_interruptibility))
+        return _SetInterruptible(_Suspend(lambda: f(_interruptible)), False)
 
     return _WithFiber(body)
 

@@ -17,10 +17,11 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Any, Generic, Literal, Never, Protocol, TypeVar, cast
+from typing import Any, Generic, Literal, Never, Protocol, Self, TypeVar, cast
 
 from pyfect._core import Effect, Restore, uninterruptible_mask
 from pyfect._effect_args import require_effect
+from pyfect._service_copy import replaced
 from pyfect.context import Tag
 from pyfect.deferred import Deferred
 from pyfect.effect import gen, provide_service, succeed, suspend, sync, try_
@@ -109,12 +110,27 @@ def layer_spawner(spawner: SpawnerFn) -> Layer[Spawner]:
     return layer_succeed(Spawner, spawner)
 
 
-@dataclass(frozen=True, slots=True)
 class WorkerPlatformService:
-    """``spawn(id)`` gives the worker for ``id`` (from the ``Spawner``); it
-    starts when it is run."""
+    """Spawns workers (Effect's ``Worker.WorkerPlatform``); ``make_platform``
+    builds one from a transport's hooks."""
 
-    spawn: Callable[[int], Effect[Worker[Any, Any], WorkerError, Spawner]]
+    __slots__ = ("_spawn",)
+
+    def __replace__(self, **changes: Any) -> Self:
+        """A copy with ``changes`` to the constructor's arguments (``copy.replace``)."""
+        return replaced(self, changes)
+
+    def __init__(
+        self, spawn: Callable[[int], Effect[Worker[Any, Any], WorkerError, Spawner]]
+    ) -> None:
+        self._spawn = spawn
+
+    def spawn(self, worker_id: int) -> Effect[Worker[Any, Any], WorkerError, Spawner]:
+        """The worker for ``worker_id``, found with the ``Spawner`` in the
+        context; it starts when it is run. Fails with a ``WorkerError``
+        when the platform cannot make it (``make_platform``'s never
+        fails: a worker that cannot start fails its run)."""
+        return self._spawn(worker_id)
 
 
 class WorkerPlatform(Tag[WorkerPlatformService], key="effect/workers/Worker/WorkerPlatform"):
