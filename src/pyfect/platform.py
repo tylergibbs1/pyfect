@@ -22,5 +22,6 @@ type PlatformServices = ChildProcessSpawner | FileSystem | Path | Stdio | Termin
 layer: Layer[PlatformServices] = process.layer.pipe(
     provide_merge(merge(file_system.layer, path.layer, stdio.layer, terminal.layer))
 )
+"""The live ``FileSystem``, ``Path``, ``Stdio``, ``Terminal`` and ``ChildProcessSpawner``."""
 
 __all__ = ["PlatformServices", "layer"]

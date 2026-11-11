@@ -43,6 +43,34 @@ straggler is not held back waiting for more. Here a queue's items are posted thr
 
 </CodeOutput>
 
+## Rollups
+
+A sink can also run again and again over one stream, each run's result becoming an item.
+`transduce(sink)` starts the next run where the last one stopped (its leftovers first).
+`aggregate(sink)` does the same on a fiber of its own, so the sink keeps folding while
+downstream is busy. `aggregate_within(sink, schedule)` also ends a run when the schedule says
+so, which makes a sink that never ends on its own a rollup per window.
+
+The schedule steps once per run, when the run gets its first item, and its clock leaves out the
+time between runs, so an idle stream does not run it. `schedule.fixed` and other time-based
+schedules therefore count only time spent aggregating; `schedule.spaced` is the flush timer.
+When the schedule ends, the current run and the sink's leftovers are emitted and the stream ends.
+
+An upstream failure ends the two differently, as in Effect: `transduce` emits the run in
+progress and then fails, while `aggregate` and `aggregate_within` fail at once and drop the
+open run.
+
+<CodeOutput>
+
+<include meta='title="rollups.py"'>../../snippets/streams/rollups.py</include>
+
+<include lang="text">../../snippets/streams/rollups.out</include>
+
+</CodeOutput>
+
+Reference: [`pyfect.sink`](/docs/reference/sink),
+[`pyfect.schedule`](/docs/reference/schedule).
+
 ## A pipeline
 
 NDJSON records arriving in byte chunks, priced by a flaky service four at a time with retries,
@@ -68,6 +96,34 @@ belong and how to spot a saturated run.
 XML, zip and tar, below. As in Effect, `ndjson.decode()` fails the whole stream at the first
 line that isn't JSON; to skip bad lines, read text lines (`decode_text().split_lines()`) and
 parse each one yourself.
+
+## Custom operators
+
+When no operator fits, write one as a `Channel` and run the stream through it with
+`pipe_through_channel_or_fail` (or `pipe_through_channel`, whose channel also sees the stream's
+failure). A stream's channel reads and writes chunks: non-empty tuples of items.
+`channel.from_transform(transform)` builds the channel from a function given the upstream pull
+and a scope for resources:
+
+- The upstream pull is an effect that succeeds with the next chunk and fails with `Done` once
+  the stream ends (see [`pyfect.pull`](/docs/reference/pull)).
+- `transform` returns an effect of the channel's own pull, which works the same way. A `Done`
+  from upstream that it lets through ends it too.
+- `transform` runs once per run of the stream, so state made inside it belongs to that run.
+- Each chunk it writes must be non-empty, as for `stream.from_channel`. The types can't say so
+  (Effect's do), so skip a chunk the operator emptied instead of writing it.
+
+This one keeps the items a predicate accepts and says how many it dropped:
+
+<CodeOutput>
+
+<include meta='title="custom_channel.py"'>../../snippets/streams/custom_channel.py</include>
+
+<include lang="text">../../snippets/streams/custom_channel.out</include>
+
+</CodeOutput>
+
+Reference: [`pyfect.channel`](/docs/reference/channel).
 
 ## Keys, rates and fan-out
 
@@ -105,7 +161,9 @@ strategy on the slow group keeps the others moving.
 before the upstream starts. `broadcast(capacity=...)` gives one stream that many readers can
 run, each from the moment it starts (plus the last `replay` chunks). `share(...)` is a
 `broadcast` that starts the upstream with its first reader and stops it after its last
-(`idle_time_to_live` keeps it running for a later one). All three run in the current scope,
+(`idle_time_to_live` keeps it running for a later one, which joins it instead of restarting it;
+nothing is kept for absent readers, so what the upstream publishes while none is subscribed is
+lost, except the last `replay` chunks). All three run in the current scope,
 and `capacity` counts chunks, not items. With `"suspend"` (the default) the upstream stays at
 most `capacity` chunks ahead of the slowest reader; `"dropping"` and `"sliding"` drop chunks
 for a slow reader instead.
@@ -121,7 +179,17 @@ for a slow reader instead.
 None of these operators reports what it drops (the `"enforce"` throttle, a dropping or sliding
 `buffer` or broadcast, a sliding `Queue`), and Effect has no hook for it either. To count drops,
 compare counts before and after the stage, or use a dropping `Queue`, whose `offer_all` returns
-the items it refused.
+the items it refused. For a sliding `Queue`, number each offer: it drops its oldest items, never
+the newest, so once it ends and the reader drains it, the gaps in the numbers taken count every
+drop.
+
+<CodeOutput>
+
+<include meta='title="sliding_drops.py"'>../../snippets/streams/sliding_drops.py</include>
+
+<include lang="text">../../snippets/streams/sliding_drops.out</include>
+
+</CodeOutput>
 
 ## CSV
 

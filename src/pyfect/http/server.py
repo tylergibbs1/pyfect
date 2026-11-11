@@ -174,6 +174,8 @@ loopback address for a server on an unspecified one)."""
 layer_test_client: Layer[HttpClient, Never, HttpServer | HttpClient] = layer_effect(
     HttpClient, make_test_client
 )
+"""An ``HttpClient`` sending to the ``HttpServer`` (``make_test_client``), built on the
+``HttpClient`` it is provided with."""
 
 layer_services: Layer[Path | HttpPlatform | FileSystem | Generator] = merge(
     platform_layer, path_layer, etag_layer_weak

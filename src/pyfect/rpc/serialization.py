@@ -304,7 +304,9 @@ def with_codec_for(
 
 
 layer_json: Layer[RpcSerialization] = layer_succeed(RpcSerialization, json)
+"""``RpcSerialization`` as JSON (``json``)."""
 layer_ndjson: Layer[RpcSerialization] = layer_succeed(RpcSerialization, ndjson)
+"""``RpcSerialization`` as newline-delimited JSON (``ndjson``)."""
 
 
 def layer_ndjson_with(

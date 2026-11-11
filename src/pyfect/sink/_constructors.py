@@ -19,7 +19,7 @@ from pyfect.pull import catch_done
 from pyfect.scope import CloseableScope, Scope
 from pyfect.sink._combinators import map_end, with_duration
 from pyfect.sink._for_each import for_each_array
-from pyfect.sink._sink import AnySink, End, Sink, Upstream, require_sink
+from pyfect.sink._sink import End, Sink, Upstream, require_sink
 
 if TYPE_CHECKING:
     from pyfect.pubsub import PubSub
@@ -81,7 +81,9 @@ def make[In, B, E = Never](
 def make[In, B, E = Never, R = Never](
     f: Callable[[Stream[In]], Effect[B, E, Scope | R]],
 ) -> Sink[B, In, Never, E, R]: ...
-def make(f: Callable[[Any], AnyEffect]) -> AnySink:
+def make[In, B, E = Never, R = Never](
+    f: Callable[[Stream[In]], Effect[B, E, Scope | R]],
+) -> Sink[B, In, Never, E, R]:
     """A sink from a stream pipeline: ``f`` gets the sink's input as a
     ``Stream`` and returns the effect whose value is the sink's (Effect's
     ``Sink.make<In>()(...)``). The effect runs with the sink's ``Scope``::

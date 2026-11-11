@@ -982,6 +982,8 @@ def layer_with(
 
 
 layer: layer_.Layer[MessageStorage, Never, SqlClient | ShardingConfig] = layer_with()
+"""``MessageStorage`` on the ``SqlClient`` in tables prefixed ``cluster``, after their
+migrations (``layer_with()``)."""
 
 __all__ = [
     "layer",

@@ -109,11 +109,18 @@ def from_transform[A, InElem, InDone, L = None, EE = Never, RR = Never](
         Effect[Effect[A, EE | Done[L], RR], EE, RR],
     ],
 ) -> Channel[A, EE, L, InElem, Never, InDone, RR]: ...
-def from_transform(transform: Callable[[Any, CloseableScope], Effect[Any, Any, Any]]) -> Any:
+def from_transform[A, InElem, InDone, L = None, EE = Never, RR = Never](
+    transform: Callable[
+        [Effect[InElem, Done[InDone]], CloseableScope],
+        Effect[Effect[A, EE | Done[L], RR], EE, RR],
+    ],
+) -> Channel[A, EE, L, InElem, Never, InDone, RR]:
     """A channel from ``transform(upstream, scope)``, an effect building
-    the channel's pull from the upstream pull. Resources go in ``scope``,
-    closed when the run ends. If building the pull fails, the pull fails
-    with that cause."""
+    the channel's pull from the upstream pull. The upstream pull fails with
+    ``Done`` at its end (and with the upstream's error, if it has one).
+    ``transform`` runs once per run of the channel, so state made in it
+    belongs to that run. Resources go in ``scope``, closed when the run
+    ends. If building the pull fails, the pull fails with that cause."""
 
     channel: Channel[Any, Any, Any, Any, Any, Any, Any] = Channel(transform)
     return channel

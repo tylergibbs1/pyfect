@@ -17,6 +17,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 from typing import TYPE_CHECKING, Any, Generic, Never, Self, TypeVar, Unpack, overload
 
+from pyfect._binding_doc import BindingDoc
 from pyfect._core import Effect, _FailCause, _Locally, _Succeed, _Suspend, _WithFiber
 from pyfect._effect_args import require_effect, wrong_argument
 from pyfect.cause import Cause
@@ -167,6 +168,7 @@ class Layer(Generic[ROut_contra, E_co, RIn_co]):
     sharing. Use ``from_build`` / ``from_build_memo`` or the constructors in
     ``pyfect.layer``."""
 
+    __doc__ = BindingDoc(__doc__)  # pyright: ignore[reportAssignmentType]
     __slots__ = ("_build",)
 
     def __init__(self, build: Builder) -> None:

@@ -19,6 +19,13 @@ class CreateRequest(TypedDict):
     body: NewTodo
 
 
+# schema_json's struct reads the request's keys: body, method, url, headers, cookies, and
+# pathParams and searchParams, spelled in camelCase as in Effect.
+class RenameRequest(TypedDict):
+    pathParams: TodoParams
+    body: NewTodo
+
+
 todos = {"1": "Write docs"}
 
 
@@ -40,6 +47,18 @@ def create_todo():
     return (yield from server_response.json({"id": todo_id}, status=201))
 
 
+@fx.fn
+def rename_todo():
+    request = yield from router.schema_json(
+        S.Struct(RenameRequest, pathParams=S.Struct(TodoParams), body=S.Struct(NewTodo))
+    )
+    todo_id = request["pathParams"]["id"]
+    if todo_id not in todos:
+        return server_response.text("no such todo", status=404)
+    todos[todo_id] = request["body"]["title"]
+    return (yield from server_response.json({"id": todo_id, "title": todos[todo_id]}))
+
+
 bad_request = server_response.text("expected {title: string}", status=400)
 
 
@@ -49,6 +68,7 @@ def add_routes(routes: router.HttpRouterService):
     yield from routes.add("GET", "/todos/:id", get_todo())
     on_bad_body = fx.catch_tag(S.SchemaError, lambda _: fx.succeed(bad_request))
     yield from routes.add("POST", "/todos", create_todo().pipe(on_bad_body))
+    yield from routes.add("PUT", "/todos/:id", rename_todo().pipe(on_bad_body))
 
 
 Routes = router.use(add_routes)
@@ -62,6 +82,7 @@ def requests():
         http.get("/todos/1"),
         http.post("/todos", body=body.json_unsafe({"title": "Ship it"})),
         http.get("/todos/2"),
+        http.put("/todos/2", body=body.json_unsafe({"title": "Ship it today"})),
         http.post("/todos", body=body.json_unsafe({"name": "Ship it"})),
         http.get("/todos/9"),
         http.get("/nowhere"),

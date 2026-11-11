@@ -688,6 +688,7 @@ make_storage_memory: Effect[StorageService, Never, Scope] = gen(_make_storage_me
 the scope closes."""
 
 layer_storage_memory: Layer[Storage] = layer_effect(Storage, make_storage_memory)
+"""``Storage`` kept in memory (``make_storage_memory``)."""
 
 
 class ServerWrite(Protocol):

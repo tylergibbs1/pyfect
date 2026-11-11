@@ -65,19 +65,32 @@ class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
 
     @classmethod
     def unbounded(cls) -> Effect[Queue[A, E]]:
+        """A queue with no capacity limit: ``offer`` never waits or drops."""
         return _Sync(cls)
 
     @classmethod
     def bounded(cls, capacity: int) -> Effect[Queue[A, E]]:
-        """``offer`` waits while the queue holds ``capacity`` items."""
+        """A queue of ``capacity`` items whose ``offer`` waits while it is
+        full. Capacity 0 is a rendezvous: an offer completes when a taker
+        takes it."""
         return _Sync(lambda: cls(capacity, "suspend"))
 
     @classmethod
     def dropping(cls, capacity: int) -> Effect[Queue[A, E]]:
+        """A queue of ``capacity`` items that drops a new item offered while
+        it is full: ``offer`` returns ``False`` and ``offer_all`` the items it
+        refused."""
         return _Sync(lambda: cls(capacity, "dropping"))
 
     @classmethod
     def sliding(cls, capacity: int) -> Effect[Queue[A, E]]:
+        """A queue of ``capacity`` items that drops its oldest item to make
+        room for a new one, so ``offer`` always returns ``True`` and the
+        newest item is never the one dropped. Nothing reports the drops.
+
+        As in Effect, ``sliding(0)`` keeps only the newest offered item and
+        wakes no parked taker: a taker waiting on it gets that item only when
+        the queue ends. Use a capacity of at least 1."""
         return _Sync(lambda: cls(capacity, "sliding"))
 
     @property

@@ -53,6 +53,7 @@ make_ping: Effect[RunnerHealthService, Never, Runners] = Runners().map(_make_pin
 a second apart."""
 
 layer_ping: Layer[RunnerHealth, Never, Runners] = layer_.effect(RunnerHealth, make_ping)
+"""``RunnerHealth`` from ``make_ping``: alive when a ping answers."""
 
 
 def make_k8s(

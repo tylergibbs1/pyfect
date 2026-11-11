@@ -55,9 +55,10 @@ from pyfect.socket.server import SocketServerError
 
 class Options(ListenOptions):
     config: NotRequired[Mapping[str, Any]]
-    """More ``uvicorn.Config`` arguments (``http``, ``ws``, ``ws_max_size``,
-    ``proxy_headers``, ``timeout_keep_alive``, ``log_config``...); the app,
-    socket and lifespan are the server's."""
+    """More ``uvicorn.Config`` arguments (``ssl_certfile`` and ``ssl_keyfile``
+    for TLS, ``http``, ``ws``, ``ws_max_size``, ``proxy_headers``,
+    ``timeout_keep_alive``, ``log_config``...); the app, socket and lifespan
+    are the server's."""
 
 
 class _Server(uvicorn.Server):

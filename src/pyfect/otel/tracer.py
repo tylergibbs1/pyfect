@@ -122,7 +122,12 @@ layer_without_otel_tracer: Final[Layer[Never, Never, OtelTracer]] = _layer.effec
 layer: Final[Layer[OtelTracer, Never, OtelTracerProvider]] = layer_without_otel_tracer.pipe(
     _layer.provide_merge(layer_tracer)
 )
-"""Installs the bridge's tracer, with a tracer from the provider."""
+"""Installs the bridge's tracer, with a tracer from the ``OtelTracerProvider``
+provided::
+
+    tracing = tracer.layer.pipe(layer.provide(layer.succeed(OtelTracerProvider, provider)))
+
+``layer_global`` uses the global provider instead."""
 
 layer_global: Final[Layer[OtelTracer]] = layer_without_otel_tracer.pipe(
     _layer.provide_merge(layer_global_tracer)

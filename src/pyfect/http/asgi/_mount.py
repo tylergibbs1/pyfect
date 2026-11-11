@@ -176,10 +176,12 @@ def from_asgi(
     app: AsgiApplication, *, state: Mapping[str, Any] | None = None
 ) -> Effect[HttpServerResponse, HttpServerError, HttpServerRequest]:
     """An app answering with the ASGI application ``app`` (Effect's
-    ``fromWebHandler`` for ASGI). Mounted under a router prefix
-    (``router.prefix_route``), the prefix is the scope's ``root_path``;
-    ``state`` is the scope's ``state`` (what ``lifespan`` gives).
-    Interrupting the app cancels the call."""
+    ``fromWebHandler`` for ASGI). HTTP only, as ``fromWebHandler``: a
+    WebSocket upgrade reaches ``app`` as an ``http`` scope. Mounted under a
+    router prefix (``router.prefix_route``), the prefix is the scope's
+    ``root_path``; on a plain ``"/admin/*"`` route ``root_path`` is empty and
+    ``path`` is the whole path. ``state`` is the scope's ``state`` (what
+    ``lifespan`` gives). Interrupting the app cancels the call."""
 
     def run(fiber: Fiber[Any, Any]) -> Effect[HttpServerResponse, HttpServerError]:
         request = fiber._context.get_unsafe(HttpServerRequest)

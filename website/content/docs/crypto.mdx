@@ -73,6 +73,24 @@ through HKDF (`kdf.hkdf_sha256`, with an `info` naming the purpose) before they 
 
 </CodeOutput>
 
+## Wrapping to a public key
+
+To send a data key to someone who publishes an RSA public key, wrap it with RSA-OAEP:
+`key_wrap.rsa_oaep_sha256` is JWE's `RSA-OAEP-256` (OAEP with SHA-256) and
+`key_wrap.rsa_oaep_sha1` is JWE's `RSA-OAEP` (OAEP with SHA-1, for protocols that require it).
+Both generate 3072-bit keys. A public key that arrives as a JWK becomes a key with
+`key_format.decode_public(key_format.jwk, algorithm, JsonWebKey(...))`, where `JsonWebKey`
+comes from `pyfect.crypto.key_format`. The algorithm, not the JWK, picks the hash, and a key
+wrapped with one hash does not unwrap with the other: it fails with `DecryptionFailed`.
+
+<CodeOutput>
+
+<include meta='title="wrapping.py"'>../../snippets/crypto/wrapping.py</include>
+
+<include lang="text">../../snippets/crypto/wrapping.out</include>
+
+</CodeOutput>
+
 ## Key formats and schemas
 
 `key_format` reads and writes keys as SPKI, PKCS#8, PKCS#1, SEC1, JWK and PEM. The
@@ -124,6 +142,26 @@ JWK you serve.
 <include meta='title="expiring_tokens.py"'>../../snippets/crypto/expiring_tokens.py</include>
 
 <include lang="text">../../snippets/crypto/expiring_tokens.out</include>
+
+</CodeOutput>
+
+### Encrypted tokens
+
+`jwt.encrypt` seals claims into a compact JWE that only holders of the shared key can read, as
+for a session token the issuing service opens again itself; `jwt.decrypt` opens it and checks
+the claims against the same policy options as `verify`. `jwe.encrypt` and `jwe.decrypt` do the
+same for any bytes. As in Effect, one algorithm pair is supported: `alg` `dir` (the key is used
+directly, so the token's encrypted-key segment is empty) with `enc` `A256GCM`. The key is a
+32-byte `jwk.DirKey`, from `jwk.import_dir` of a JWK made with `jwk.generate_secret("dir")`. A
+token with any other `alg` or `enc`, such as `A128GCM` (RFC 7520 §5.6), or with a `zip` or
+`crit` header, is refused with `InvalidToken`; a wrong key or a tampered token gives
+`DecryptionFailed`.
+
+<CodeOutput>
+
+<include meta='title="sessions.py"'>../../snippets/crypto/sessions.py</include>
+
+<include lang="text">../../snippets/crypto/sessions.out</include>
 
 </CodeOutput>
 

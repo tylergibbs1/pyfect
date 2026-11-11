@@ -943,6 +943,8 @@ def layer_with(
 
 
 layer: layer_.Layer[RunnerStorage, Never, SqlClient | ShardingConfig] = layer_with()
+"""``RunnerStorage`` on the ``SqlClient`` in tables prefixed ``cluster``
+(``layer_with()``)."""
 
 __all__ = [
     "effective_interval",

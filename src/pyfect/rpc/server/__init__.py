@@ -96,6 +96,8 @@ def layer_protocol_websocket(
 layer_protocol_socket_server: Layer[ServerProtocol, Never, RpcSerialization | SocketServer] = (
     layer_effect(ServerProtocol, make_protocol_socket_server())
 )
+"""A ``ServerProtocol`` serving each connection of the ``SocketServer``
+(``make_protocol_socket_server``)."""
 
 
 def layer_http[G: RpcGroup](

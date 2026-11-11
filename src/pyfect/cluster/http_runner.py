@@ -89,6 +89,7 @@ def layer_client_protocol_http(
 layer_client_protocol_http_default: Layer[
     RpcClientProtocol, Never, RpcSerialization | HttpClient
 ] = layer_client_protocol_http(path="/")
+"""``layer_client_protocol_http`` dialing runners over HTTP at ``/``."""
 
 
 def layer_client_protocol_websocket(
@@ -124,6 +125,7 @@ def layer_client_protocol_websocket(
 layer_client_protocol_websocket_default: Layer[
     RpcClientProtocol, Never, RpcSerialization | WebSocketConstructor
 ] = layer_client_protocol_websocket(path="/")
+"""``layer_client_protocol_websocket`` dialing runners over a WebSocket at ``/``."""
 
 
 def _serving(

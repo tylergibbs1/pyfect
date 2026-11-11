@@ -198,6 +198,7 @@ def make_memory() -> Effect[RunnerStorageService]:
 
 
 layer_memory: layer_.Layer[RunnerStorage] = layer_.effect(RunnerStorage, make_memory())
+"""``RunnerStorage`` in memory (``make_memory``), for a single process or tests."""
 
 __all__ = [
     "EncodedRunnerStorage",

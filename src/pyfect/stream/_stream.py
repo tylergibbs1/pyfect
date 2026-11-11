@@ -112,17 +112,22 @@ def transform_pull[A, E, B, EE = Never, RR = Never](
         Effect[Effect[tuple[B, ...], EE | Done, RR], EE, RR],
     ],
 ) -> Stream[B, EE, RR]: ...
-def transform_pull(
-    stream: StreamBase[Any, Any, Any],
-    f: Callable[[Any, CloseableScope], Effect[Any, Any, Any]],
-) -> Stream[Any, Any, Any]:
+def transform_pull[A, E, B, EE = Never, RR = Never](
+    stream: StreamBase[A, E, RR],
+    f: Callable[
+        [Pull[tuple[A, ...], E], CloseableScope],
+        Effect[Effect[tuple[B, ...], EE | Done, RR], EE, RR],
+    ],
+) -> Stream[B, EE, RR]:
     """A stream whose pull is ``f(pull, scope)`` of ``stream``'s pull. The
     upstream pull is built in the new stream's scope."""
     require_stream(stream, "stream")
     channel = stream._channel
+    # ``f`` is given a pull without requirements, as in Effect.
+    run: Callable[[Any, CloseableScope], Effect[Any, Any, Any]] = f
 
     def transform(_upstream: Any, scope: CloseableScope) -> Effect[Any, Any, Any]:
-        return channel.to_pull_scoped(scope).flat_map(lambda pull: f(pull, scope))
+        return channel.to_pull_scoped(scope).flat_map(lambda pull: run(pull, scope))
 
     built: Channel[Any, Any, Any, Any, Any, Any, Any] = from_transform(transform)
     return Stream(built)
@@ -144,10 +149,13 @@ def transform_pull_bracket[A, E, B, EE = Never, RR = Never](
         Effect[Effect[tuple[B, ...], EE | Done, RR], EE, RR],
     ],
 ) -> Stream[B, EE, RR]: ...
-def transform_pull_bracket(
-    stream: StreamBase[Any, Any, Any],
-    f: Callable[[Any, CloseableScope, CloseableScope], Effect[Any, Any, Any]],
-) -> Stream[Any, Any, Any]:
+def transform_pull_bracket[A, E, B, EE = Never, RR = Never](
+    stream: StreamBase[A, E, RR],
+    f: Callable[
+        [Pull[tuple[A, ...], E, None, RR], CloseableScope, CloseableScope],
+        Effect[Effect[tuple[B, ...], EE | Done, RR], EE, RR],
+    ],
+) -> Stream[B, EE, RR]:
     """``transform_pull`` with a third argument: a child of the stream's
     scope, closed as soon as the new stream fails or ends."""
     require_stream(stream, "stream")

@@ -188,15 +188,19 @@ layer_aead: Layer[aead.Aead] = aead.layer_web_crypto_with(implementations=_nativ
 """AES-GCM on the ``WebCrypto`` reference, ChaCha20-Poly1305 on ``cryptography``."""
 
 layer_cipher: Layer[cipher.Cipher] = cipher.layer_web_crypto.pipe(provide(layer_secure_random))
+"""``Cipher`` on the host's cryptography, with its own ``SecureRandom``."""
 layer_signature: Layer[signature_module.Signature] = signature_module.layer_web_crypto.pipe(
     provide(layer_secure_random)
 )
+"""``Signature`` on the host's cryptography, with its own ``SecureRandom``."""
 layer_key_agreement: Layer[key_agreement.KeyAgreement] = key_agreement.layer_web_crypto.pipe(
     provide(layer_secure_random)
 )
+"""``KeyAgreement`` on the host's cryptography, with its own ``SecureRandom``."""
 layer_key_wrap: Layer[key_wrap.KeyWrap] = key_wrap.layer_web_crypto.pipe(
     provide(layer_secure_random)
 )
+"""``KeyWrap`` on the host's cryptography, with its own ``SecureRandom``."""
 
 type Services = (
     secure_random.SecureRandom

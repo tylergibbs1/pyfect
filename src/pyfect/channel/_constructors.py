@@ -284,9 +284,12 @@ def from_transform_bracket[A, InElem, InDone, L = None, EE = Never, RR = Never](
         Effect[Effect[A, EE | Done[L], RR], EE, RR],
     ],
 ) -> Channel[A, EE, L, InElem, Never, InDone, RR]: ...
-def from_transform_bracket(
-    f: Callable[[Any, CloseableScope, CloseableScope], Effect[Any, Any, Any]],
-) -> Any:
+def from_transform_bracket[A, InElem, InDone, L = None, EE = Never, RR = Never](
+    f: Callable[
+        [Effect[InElem, Done[InDone]], CloseableScope, CloseableScope],
+        Effect[Effect[A, EE | Done[L], RR], EE, RR],
+    ],
+) -> Channel[A, EE, L, InElem, Never, InDone, RR]:
     """``from_transform`` with a third argument: a child of the channel's
     scope, closed as soon as the channel fails or ends (with the end's
     leftover as a success), so resources can go before the run ends."""

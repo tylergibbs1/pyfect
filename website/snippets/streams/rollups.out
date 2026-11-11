@@ -1,0 +1,8 @@
+pairs [[1, 2], [3, 4], [5]]
+triples [6, 15]
+rollup 6
+rollup 30
+transduce [1, 2]
+transduce [3]
+transduce ended Err(error=Broken())
+aggregate_within ended Err(error=Broken())

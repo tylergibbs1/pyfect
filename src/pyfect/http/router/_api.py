@@ -78,8 +78,9 @@ def _request_fields(fiber: Fiber[Any, Any]) -> dict[str, object]:
 def schema_no_body[T, RD](
     schema: Codec[T, Any, RD, Any], **options: Unpack[ParseOptions]
 ) -> Effect[T, SchemaError, RD | HttpServerRequest | ParsedSearchParams | RouteContext]:
-    """The request's ``method``, ``url``, ``headers``, ``cookies``,
-    ``pathParams`` and ``searchParams`` decoded by ``schema``."""
+    """The request decoded by ``schema``, a struct of any of the keys
+    ``method``, ``url``, ``headers``, ``cookies``, ``pathParams`` and
+    ``searchParams`` (camelCase, as in Effect)."""
     decode = decode_unknown_effect(schema, **options)
     return _WithFiber(lambda fiber: decode(_request_fields(fiber)))
 
@@ -93,7 +94,8 @@ def schema_json[T, RD](
     T, HttpServerError | SchemaError, RD | HttpServerRequest | ParsedSearchParams | RouteContext
 ]:
     """As ``schema_no_body``, with the JSON ``body`` too (parsed with
-    ``reviver``)."""
+    ``reviver``): the struct's keys are ``body``, ``method``, ``url``,
+    ``headers``, ``cookies``, ``pathParams`` and ``searchParams``."""
     decode = decode_unknown_effect(schema, **options)
 
     def parsed(json: object) -> object:

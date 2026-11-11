@@ -101,6 +101,7 @@ def layer(settings: ShardingConfigService = DEFAULTS) -> layer_.Layer[ShardingCo
 
 
 layer_defaults: layer_.Layer[ShardingConfig] = layer()
+"""``ShardingConfig`` with every setting at its default (``DEFAULTS``)."""
 
 _POSITIVE_INT = S.Int.check(S.is_greater_than(0))
 

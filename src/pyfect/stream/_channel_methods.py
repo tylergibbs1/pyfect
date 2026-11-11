@@ -21,7 +21,8 @@ class ChannelMethods(StreamBase[A_co, E_co, R_co]):
     ) -> Stream[B, E2, R_co | R2]:
         """The stream of what ``channel`` writes when this stream's chunks
         are its input. The channel sees this stream's failure (and decides
-        what to do with it); its end value is dropped."""
+        what to do with it); its end value is dropped. Each tuple it writes
+        must be non-empty, as for ``from_channel``."""
         from pyfect.stream import _text
 
         return _text.pipe_through_channel(self, channel)
@@ -31,7 +32,7 @@ class ChannelMethods(StreamBase[A_co, E_co, R_co]):
     ) -> Stream[B, E_co | E2, R_co | R2]:
         """``pipe_through_channel`` for a channel that cannot see this
         stream's failures: they pass through it untouched and fail the
-        stream."""
+        stream. Each tuple it writes must be non-empty."""
         from pyfect.stream import _text
 
         return _text.pipe_through_channel_or_fail(self, channel)

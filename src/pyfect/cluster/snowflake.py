@@ -113,6 +113,8 @@ class Generator(Tag[SnowflakeGenerator], key="effect/cluster/Snowflake/Generator
 
 
 layer_generator: layer_.Layer[Generator, Never] = layer_.effect(Generator, make_generator())
+"""A snowflake ``Generator`` from ``make_generator``: the current ``Clock`` and a random
+machine id until ``set_machine_id``."""
 
 __all__ = [
     "EPOCH_MILLIS",

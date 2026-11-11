@@ -562,6 +562,7 @@ __all__ = [
     "CryptoError",
     "Direction",
     "Format",
+    "JsonWebKey",
     "Key",
     "PrivateKey",
     "PublicKey",

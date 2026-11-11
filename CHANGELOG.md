@@ -1,5 +1,55 @@
 # Changelog
 
+## 0.6.0 (unreleased)
+
+### Added
+
+- `help()` on a layer constant shows the constant's own docstring (the one below its
+  assignment, which IDEs show on hover and the API reference reads) instead of the `Layer`
+  class's: `help(otel.tracer.layer)` now says to provide an `OtelTracerProvider`. Every public
+  layer constant has one, and a test keeps it that way.
+- `JsonWebKey` is importable from `pyfect.crypto.key_format`, next to the `jwk` format that
+  reads it.
+- Docstrings for `Queue.unbounded`, `bounded`, `dropping` and `sliding` (including that
+  `sliding(0)` accepts offers but wakes no waiting taker, as in Effect) and for
+  `PubSub.unbounded`. A test requires a docstring on every public function and constructor of
+  the stream, channel, sink, pull, queue and pubsub modules.
+
+### Fixed
+
+- `help()` and `inspect.signature` show typed signatures instead of `Any` for
+  `Stream.transduce`, `aggregate`, `aggregate_within`, `channel.from_transform`,
+  `from_transform_bracket`, `stream.transform_pull`, `transform_pull_bracket` and `sink.make`.
+  A test keeps the remaining `Any` signatures in those modules from growing.
+- `share(idle_time_to_live=...)`'s docstring said a later reader continues where it left off:
+  what the upstream publishes while no reader is subscribed is lost, except the last `replay`
+  chunks, as in Effect.
+- A pin in the type checks keeps `JoseError.reason` the union of reasons, with no `Unknown`.
+
+### Docs
+
+- asyncio-apps.mdx said uvicorn's TLS was the same as hypercorn's `certfile` and `keyfile`,
+  which made uvicorn raise a `TypeError`. A new "Serving over TLS" section serves the same app
+  over TLS on both, with hypercorn's `certfile`/`keyfile` and uvicorn's
+  `ssl_certfile`/`ssl_keyfile`, in a tested snippet. A test requires every TLS setting a guide
+  names to be a real setting of one of the servers and to be passed by a snippet of that guide.
+- Mounting an ASGI app under a path takes `router.prefix_route(...)`, which gives the app the
+  prefix as its `root_path`; `asgi.from_asgi` passes on HTTP requests only (as Effect's
+  `fromWebHandler`), while `router.to_asgi` does bridge WebSockets. Both in the guides and
+  in `help(asgi.from_asgi)`.
+- `router.schema_json`'s schema is a struct of `body`, `method`, `url`, `headers`, `cookies`,
+  `pathParams` and `searchParams` (camelCase, as in Effect), in http-server.mdx, its snippet
+  and the docstrings.
+- crypto.mdx has an "Encrypted tokens" section (`jwt.encrypt`/`decrypt` and `jwe`, with the one
+  supported pair `dir` + `A256GCM`, as in Effect, and what is refused) and a "Wrapping to a
+  public key" section (`key_wrap.rsa_oaep_sha256` and `rsa_oaep_sha1`, which hash each uses,
+  and importing an RSA public JWK), each with a tested snippet.
+- streams.mdx has a "Rollups" section (`transduce`, `aggregate`, `aggregate_within`, how
+  `fixed` and `spaced` count time, and what an upstream failure does to the open run) and a
+  "Custom operators" section on writing a `Channel` with `channel.from_transform`. It shows how
+  to count a sliding `Queue`'s drops by numbering offers, and concurrency.mdx has a Queues
+  section.
+
 ## 0.5.7 (2026-11-11)
 
 ### Added

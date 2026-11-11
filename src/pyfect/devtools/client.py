@@ -184,6 +184,7 @@ make: Effect[DevToolsClientService, Never, Scope | Socket] = gen(_make).annotate
 """A DevTools connection over the ``Socket``."""
 
 layer: Layer[DevToolsClient, Never, Socket] = layer_effect(DevToolsClient, make)
+"""A ``DevToolsClient`` connected over the ``Socket`` (``make``)."""
 
 
 def _parent(span: Any) -> Any:

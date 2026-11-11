@@ -2,6 +2,7 @@ GET / 200 hello
 GET /todos/1 200 {"id":"1","title":"Write docs"}
 POST /todos 201 {"id":"2"}
 GET /todos/2 200 {"id":"2","title":"Ship it"}
+PUT /todos/2 200 {"id":"2","title":"Ship it today"}
 POST /todos 400 expected {title: string}
 GET /todos/9 404 no such todo
 GET /nowhere 404 

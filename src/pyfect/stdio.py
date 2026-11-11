@@ -194,6 +194,7 @@ live = StdioService(
 worker thread; an interrupted read leaves its thread waiting for input."""
 
 layer: Layer[Stdio] = layer_succeed(Stdio, live)
+"""The live ``Stdio``: the process's arguments and standard streams."""
 
 __all__ = [
     "Output",

@@ -9551,6 +9551,33 @@ def check_jose(
     assert_type(jwks.layer_remote(""), fx.Layer[jwks.Jwks, JoseError, HttpClient])
     jws.sign(b"", dir_key)  # pyright: ignore[reportCallIssue, reportArgumentType]
 
+    # A caught JoseError's reason is the union of reasons, with no Unknown in it.
+    from pyfect.jose import jose_error
+
+    def reason_of(error: JoseError | S.SchemaError) -> jose_error.AnyReason | None:
+        if isinstance(error, S.SchemaError):
+            return None
+        assert_type(
+            error.reason,
+            jose_error.InvalidToken
+            | jose_error.InvalidKey
+            | jose_error.InvalidArgument
+            | jose_error.AlgorithmNotAllowed
+            | jose_error.SignatureVerificationFailed
+            | jose_error.DecryptionFailed
+            | jose_error.KeyNotFound
+            | jose_error.AmbiguousKey
+            | jose_error.KeySetUnavailable
+            | jose_error.ClaimValidationFailed,
+        )
+        return error.reason
+
+    _ = reason_of
+    # `JsonWebKey` is importable where the `jwk` format is.
+    from pyfect.crypto import key_format, web_crypto
+
+    assert_type(key_format.JsonWebKey(kty="RSA"), web_crypto.JsonWebKey)
+
     # Claims have the schema's Type (Effect's `S["Type"]`), so they cannot widen it.
     from pyfect.crypto.aead import Aead
     from pyfect.crypto.secure_random import SecureRandom

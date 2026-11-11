@@ -176,8 +176,11 @@ class FanOutMethods(StreamBase[A_co, E_co, R_co]):
         idle_time_to_live: DurationInput | None = None,
     ) -> Effect[Stream[A_co, E_co], Never, R_co | Scope]:
         """A stream that ``broadcast``s this one when its first reader
-        starts and stops it when the last one stops (or ``idle_time_to_live``
-        after, so a later reader continues where it left off)."""
+        starts and stops it when the last one stops, or ``idle_time_to_live``
+        after. A reader that comes within that time joins the running
+        upstream instead of restarting it, but what the upstream published
+        while no reader was subscribed is lost, except the last ``replay``
+        chunks (as in Effect)."""
         from pyfect.stream import _fanout
 
         return _fanout.share(self, capacity, strategy, replay, idle_time_to_live)

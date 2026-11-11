@@ -118,9 +118,17 @@ first request and never released.
 
 Once most routes have moved, pyfect can serve the app and mount the rest:
 `asgi.from_asgi(legacy_app)` as a `"*"` route on `"/*"` answers every path the router doesn't
-have. `hypercorn_server.layer(host=..., port=...)` serves on hypercorn (the `pyfect-dev[http2]`
-extra), which speaks HTTP/2 in cleartext as well as HTTP/1.1, and with TLS when `config` gives
-`certfile` and `keyfile`; `uvicorn_server.layer` is the same on uvicorn. hypercorn logs no
+have. To mount an app under a path, such as a FastAPI admin app at `/admin`, add its route
+with `router.prefix_route("/admin")`: the app gets `/admin` as its `root_path`, so its own
+routes still match. On a plain `"/admin/*"` route the `root_path` is empty and every route of
+the app answers 404. `from_asgi` passes on HTTP requests only, as Effect's `fromWebHandler`
+does: a WebSocket upgrade reaches the mounted app as an `http` request, which a FastAPI
+WebSocket route answers with 404, so serve WebSockets from pyfect routes
+([WebSockets](/docs/http-server#websockets)). The other way, `router.to_asgi` does bridge
+WebSocket connections to pyfect routes.
+
+`hypercorn_server.layer(host=..., port=...)` serves on hypercorn (the `pyfect-dev[http2]`
+extra), which speaks HTTP/2 in cleartext as well as HTTP/1.1. hypercorn logs no
 startup line of its own: the "Listening on" line is `serve`'s, which `disable_listen_log=True`
 leaves out.
 
@@ -137,7 +145,24 @@ the layer `to_asgi` builds, so provide the loggers to that layer.
 
 </CodeOutput>
 
+## Serving over TLS
+
+Each server takes its own TLS settings in `config`, which passes them to the engine, so their
+names differ: hypercorn's `config` holds `hypercorn.Config` attributes, `certfile` and
+`keyfile`, and then negotiates HTTP/2 with ALPN; uvicorn's holds `uvicorn.Config` arguments,
+`ssl_certfile` and `ssl_keyfile`. Close the clients that talk to a server before it stops: an
+open connection holds hypercorn's TLS shutdown.
+
+<CodeOutput>
+
+<include meta='title="tls.py"'>../../snippets/asyncio_apps/tls.py</include>
+
+<include lang="text">../../snippets/asyncio_apps/tls.out</include>
+
+</CodeOutput>
+
 Reference: [`pyfect.managed_runtime`](/docs/reference/managed_runtime),
 [`pyfect.http.router`](/docs/reference/http/router),
 [`pyfect.http.asgi`](/docs/reference/http/asgi),
-[`pyfect.http.hypercorn_server`](/docs/reference/http/hypercorn_server).
+[`pyfect.http.hypercorn_server`](/docs/reference/http/hypercorn_server),
+[`pyfect.http.uvicorn_server`](/docs/reference/http/uvicorn_server).

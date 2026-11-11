@@ -155,6 +155,8 @@ def _make_client() -> Generator[
 layer: layer_.Layer[K8sHttpClient, Never, HttpClient | FileSystem] = layer_.effect(
     K8sHttpClient, gen(_make_client)
 )
+"""A ``K8sHttpClient`` on the ``HttpClient``, sending the pod's service account token
+(read through the ``FileSystem``) to the cluster's API server."""
 
 
 def _is_status(status: int) -> Callable[[object], bool]:

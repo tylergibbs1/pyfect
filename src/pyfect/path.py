@@ -241,7 +241,9 @@ win32 = PathService(_path_win32, windows=True)
 """Windows rules (Node's ``path.win32``), the same on any host."""
 
 layer_posix: Layer[Path] = layer_succeed(Path, posix)
+"""``Path`` with POSIX rules (``posix``), on any host."""
 layer_win32: Layer[Path] = layer_succeed(Path, win32)
+"""``Path`` with Windows rules (``win32``), on any host."""
 layer: Layer[Path] = layer_win32 if os.name == "nt" else layer_posix
 """The host's rules."""
 

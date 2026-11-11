@@ -16,8 +16,11 @@ the server layer; `uvicorn_server.layer(port=...)` is one on uvicorn (install th
 `router.use(f)` is a layer that calls `f` with the router; `routes.add(method, path, handler)`
 adds a route. A path matches `:name` segments and `*` wildcards; `router.params` gives the
 matched values, and `router.schema_path_params`, `schema_params` and `schema_json` decode the
-path, the query and the JSON body with a [schema](/docs/schema). A request that matches no
-route gets a 404, and a handler that fails gets a 500 unless it handles the error itself.
+path, the query and the JSON body with a [schema](/docs/schema). `schema_json`'s schema is a
+struct of the request: `body`, `method`, `url`, `headers`, `cookies`, and `pathParams` and
+`searchParams`, spelled in camelCase as in Effect (a `params` key fails every request with a
+400). A request that matches no route gets a 404, and a handler that fails gets a 500 unless
+it handles the error itself.
 As in Effect, two failures answer otherwise: a `SchemaError` (a request that doesn't decode)
 gets an empty 400 and a `NoSuchElementException` an empty 404.
 
@@ -96,8 +99,11 @@ build. `hypercorn_server.layer(port=...)` serves on hypercorn instead, with HTTP
 <include meta='title="main.py"'>../../snippets/http_server/main.py</include>
 
 `asgi.from_asgi(app)` goes the other way: it mounts an ASGI application, such as a FastAPI or
-Starlette one, as a route. [Adopting in an asyncio app](/docs/asyncio-apps) moves such an
-app to pyfect step by step.
+Starlette one, as a route, for HTTP requests only (WebSocket upgrades reach it as `http`
+requests, as with Effect's `fromWebHandler`). Mounted under a path, its route needs
+`router.prefix_route(...)`, which makes the path the app's `root_path`.
+[Adopting in an asyncio app](/docs/asyncio-apps#serving-with-hypercorn) moves such an app to
+pyfect step by step, and [serves over TLS](/docs/asyncio-apps#serving-over-tls).
 
 ## WebSockets
 

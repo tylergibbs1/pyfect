@@ -48,7 +48,9 @@ class SinkMethods(StreamBase[A_co, E_co, R_co]):
     def transduce[A, E, R, B, E2 = Never, R2 = Never](
         self: SinkMethods[A, E, R], sink: Sink[B, A, A, E2, R2]
     ) -> Stream[B, E | E2, R | R2]: ...
-    def transduce(self, sink: Sink[Any, Any, Any, Any, Any]) -> Stream[Any, Any, Any]:
+    def transduce[A, E, R, B, E2 = Never, R2 = Never](
+        self: SinkMethods[A, E, R], sink: Sink[B, A, object, E2, R2]
+    ) -> Stream[B, E | E2, R | R2]:
         """Run ``sink`` again and again on the stream, writing each value it
         ends with; its leftovers start the next run. A stream failure ends
         the current run first."""
@@ -65,7 +67,9 @@ class SinkMethods(StreamBase[A_co, E_co, R_co]):
     def aggregate[A, E, R, B, E2 = Never, R2 = Never](
         self: SinkMethods[A, E, R], sink: Sink[B, A, A, E2, R2]
     ) -> Stream[B, E | E2, R | R2]: ...
-    def aggregate(self, sink: Sink[Any, Any, Any, Any, Any]) -> Stream[Any, Any, Any]:
+    def aggregate[A, E, R, B, E2 = Never, R2 = Never](
+        self: SinkMethods[A, E, R], sink: Sink[B, A, object, E2, R2]
+    ) -> Stream[B, E | E2, R | R2]:
         """``transduce`` while the stream keeps running: a fiber pulls the
         stream as ``sink`` asks for input, and each run of the sink ends
         when the sink is done."""
@@ -87,11 +91,11 @@ class SinkMethods(StreamBase[A_co, E_co, R_co]):
         sink: Sink[B, A, A, EE, RR],
         schedule: Schedule[object, Option[B], EE, RR],
     ) -> Stream[B, E | EE, R | RR]: ...
-    def aggregate_within(
-        self,
-        sink: Sink[Any, Any, Any, Any, Any],
-        schedule: Schedule[Any, Any, Any, Any],
-    ) -> Stream[Any, Any, Any]:
+    def aggregate_within[A, E, R, B, EE = Never, RR = Never](
+        self: SinkMethods[A, E, R],
+        sink: Sink[B, A, object, EE, RR],
+        schedule: Schedule[object, Option[B], EE, RR],
+    ) -> Stream[B, E | EE, R | RR]:
         """``aggregate``, also ending each run of ``sink`` when ``schedule``
         says so. The schedule steps once input arrives (with the last value
         written) and its clock leaves out the time between runs; a schedule

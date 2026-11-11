@@ -77,6 +77,8 @@ class PubSub[A = Unsubscripted]:
 
     @classmethod
     def unbounded(cls, *, replay: int | None = None) -> Effect[PubSub[A]]:
+        """A hub with no capacity limit: publishing never waits or drops.
+        ``replay`` messages are kept for new subscribers."""
         return _Sync(lambda: cls(Atomic(None, replay), DroppingStrategy[A]()))
 
     @property

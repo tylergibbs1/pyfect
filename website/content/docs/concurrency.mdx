@@ -74,6 +74,15 @@ one waiter's whole request, so a key with many waiters can't starve the others.
 
 </CodeOutput>
 
+## Queues
+
+A `Queue` hands each item to one taker. Its strategy for a full queue is fixed when it is made:
+`Queue.bounded(n)` makes `offer` wait, `dropping(n)` drops the new item (`offer` returns
+`False`, `offer_all` the items it refused), `sliding(n)` drops the oldest, and `unbounded()`
+never fills. A sliding queue's `offer` always succeeds and reports no drops; to count them,
+number the items ([Streams](/docs/streams#keys-rates-and-fan-out) shows how). As in Effect,
+`sliding(0)` wakes no waiting taker, so give it a capacity of at least 1.
+
 ## Publishing to every subscriber
 
 A `PubSub` delivers each message to every subscription. What it does when `capacity`
