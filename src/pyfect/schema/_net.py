@@ -96,19 +96,23 @@ def _refinement[A, E](
         return guard(value)
 
     def to_arbitrary(_parameters: tuple[Any, ...]) -> Any:
-        # Half the draws are the special addresses ``guard`` accepts, so a refinement
-        # that holds for few values (a broadcast address holds for one) still finds them.
+        # Every draw is accepted, never filtered for: a refinement that holds for few values
+        # (a broadcast address holds for one) once made Hypothesis give up on a test by
+        # chance. A drawn address ``guard`` rejects becomes one of the special addresses it
+        # accepts; a draw it accepts is kept, so wider refinements still vary.
         from pyfect.schema._strategy import _net as strategies
         from pyfect.schema._to_strategy import to_strategy
 
-        accepted = [a for a in strategies.SPECIAL if _accepts(guard, a)]
-        drawn = to_strategy(schema)
-        return (
-            strategies.st.one_of(strategies.st.sampled_from(accepted), drawn) if accepted else drawn
+        st = strategies.st
+        accepted = st.sampled_from([a for a in strategies.SPECIAL if _accepts(guard, a)])
+        return st.tuples(to_strategy(schema), accepted).map(
+            lambda pair: pair[0] if _accepts(guard, pair[0]) else pair[1]
         )
 
-    refined = schema.__codec__().pipe(refine(narrow, expected=expected))
-    return refined.annotate(identifier=identifier, to_arbitrary=to_arbitrary)
+    # ``to_arbitrary`` goes on the declaration, before the check: annotating a schema with
+    # checks annotates its last check, where no strategy derivation reads it.
+    drawn = schema.__codec__().annotate(to_arbitrary=to_arbitrary)
+    return drawn.pipe(refine(narrow, expected=expected)).annotate(identifier=identifier)
 
 
 def _accepts[A](guard: Callable[[A], bool], value: object) -> bool:

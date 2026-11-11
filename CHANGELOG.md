@@ -87,6 +87,17 @@
 
 ### Fixed
 
+- `date_time.add` and `subtract` keep a far year's microseconds exactly: the result was
+  rebuilt through a float of epoch milliseconds, so adding nothing to
+  `2249-01-01T00:00:00.000001` gave `.000002`. Found by a new property test; a guard now
+  rejects a float between an instant and a `timedelta` anywhere in `pyfect.date_time`.
+- `S.to_strategy` of the network refinements (`MacBroadcastAddress`, `Ipv4PrivateAddress`,
+  `IpLoopbackAddressFromString` and the rest) draws only addresses they accept. Their own
+  strategy sat on the refinement's check, where derivation never read it, so they filtered
+  plain addresses for the few that pass (one in five for `MacBroadcastAddress`) and Hypothesis
+  sometimes gave up on a test with "filters out too many inputs". A test now measures, without
+  randomness, that every exported schema's strategy keeps at least half of what it draws, and
+  that no check carries a `to_arbitrary`.
 - A `Pool.make_with_ttl` made inside `acquire_release`'s acquire closes with its scope again;
   closing it used to wait forever once the pool's TTL strategy fiber had started. The cause was
   `uninterruptible_mask`: an uninterruptible caller got a `restore` that made the effect
@@ -110,6 +121,8 @@
 
 ### Docs
 
+- `pyfect.trie` no longer says the empty string is never a key: it is one, first in order, as
+  in Effect.
 - On a wide screen the page no longer jumps sideways while it loads. The browser draws these
   long pages before it has read all of them, and until it reached the table of contents on the
   right, the article was centred as if the table of contents took no space.
