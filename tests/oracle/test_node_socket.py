@@ -23,6 +23,8 @@ Omitted:
   checked through a real handshake below.
 """
 
+from __future__ import annotations
+
 import asyncio
 import gc
 import math
