@@ -115,7 +115,7 @@ class Cause(Generic[E_co]):
         if not annotations.map_unsafe:
             return self
         reasons = tuple(r.annotate(annotations, overwrite=overwrite) for r in self.reasons)
-        changed = any(a is not b for a, b in zip(reasons, self.reasons, strict=True))
+        changed = any(map(operator.is_not, reasons, self.reasons))
         return Cause(reasons) if changed else self
 
     @property
@@ -275,7 +275,7 @@ class Cause(Generic[E_co]):
         reasons = [r for r in self.reasons if not isinstance(r, Interrupt)] or self.reasons[:1]
         return tuple(
             "\n".join([_render_error(e), *render(_frame(r.annotations, StackTrace))])
-            for e, r in zip(errors, reasons, strict=True)
+            for e, r in zip(errors, reasons, strict=True)  # pragma: no mutate, same lengths
         )
 
     def pretty(self) -> str:
@@ -314,7 +314,7 @@ def _render_value(error: BaseException, prefix: str, seen: set[int]) -> str:
     Effect's ``renderPrettyError`` renders one: its line (as Python names
     it), then its ``__cause__`` nested in ``{ [cause]: ... }``. Python's chain would put
     the cause first and end with the error that was logged."""
-    text = "".join(traceback.format_exception(error, chain=False)).rstrip()
+    text = "".join(traceback.format_exception(error, chain=False))
     # The cause gets its own nested block here, so the line keeps Effect's message alone.
     message = getattr(error, "message", None)
     if isinstance(message, str):
@@ -362,7 +362,7 @@ def _interrupted(cause: Cause[object]) -> Interrupted:
 
 
 def _frame(annotations: Annotations, tag: type[Tag[StackFrame]]) -> StackFrame | None:
-    return cast("StackFrame | None", annotations.get(tag))
+    return cast("StackFrame | None", annotations.get(tag))  # pragma: no mutate, cast is static
 
 
 def _interruptor(reason: Interrupt) -> tuple[int | None, object]:
@@ -400,8 +400,7 @@ def _dedupe[E](reasons: tuple[Reason[E], ...]) -> tuple[Reason[E], ...]:
 def _reason_key(reason: Reason[object]) -> object:
     match reason:
         case Fail(error=payload) | Die(defect=payload) | Interrupt(fiber_id=payload):
-            annotations = reason.annotations
-            return (type(reason).__name__, payload, dict(annotations) if annotations else None)
+            return (type(reason).__name__, payload, dict(reason.annotations))
 
 
 empty: Cause[Never] = Cause(())

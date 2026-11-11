@@ -21,3 +21,6 @@ wheels/
 # Throwaway localhost keys for the test suite
 !tests/**/fixtures/**/*.pem
 .effect/
+
+# Mutation testing work directories (scripts/mutation.py)
+.mutation/

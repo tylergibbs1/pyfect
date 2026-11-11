@@ -16,7 +16,7 @@ from typing import Any, Never, overload
 from pyfect._core import Effect, _Locally, _WithFiber
 from pyfect._effect_args import require_effect
 from pyfect._layer_core import require_layer
-from pyfect.channel._base import AnyChannel, AnyPull, ChannelBase
+from pyfect.channel._base import AnyChannel, AnyPull, ChannelBase, require_channel
 from pyfect.channel._channel import Channel, from_transform
 from pyfect.channel._constructors import bracket
 from pyfect.context import Context, TagLike, tag_class
@@ -225,6 +225,7 @@ def scoped[O, E, D, I, IE, ID, R](
 def scoped(channel: AnyChannel) -> Channel_:
     """Give the channel a ``Scope`` of its own, closed as soon as it fails
     or ends (or its run ends), and remove ``Scope`` from ``Env``."""
+    require_channel(channel, "channel")
 
     def build(upstream: AnyPull, scope: CloseableScope, forked: CloseableScope) -> Effect[AnyPull]:
         return _locally(channel, lambda ctx: ctx.add(Scope, forked))._transform(upstream, scope)

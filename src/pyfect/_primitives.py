@@ -483,7 +483,7 @@ class _KeepInterruptibility:
 
 class _Uninterruptible:
     def __call__[A, E, R](self, eff: Effect[A, E, R], /) -> Effect[A, E, R]:
-        return _SetInterruptible(eff, False)
+        return _SetInterruptible(eff, False)  # pragma: no mutate, falsy either way
 
 
 class _Interruptible:

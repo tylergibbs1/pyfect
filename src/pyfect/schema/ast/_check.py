@@ -147,7 +147,7 @@ def _filter_issue(entry: FilterIssue, input: object, options: ParseOptions) -> I
     if is_issue(entry):
         return entry
     path, inner = entry
-    return Pointer(path, _filter_issue(inner, input, options) if isinstance(inner, str) else inner)
+    return Pointer(path, _filter_issue(inner, input, options))
 
 
 def collect_issues(

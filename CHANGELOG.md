@@ -87,6 +87,16 @@
 
 ### Fixed
 
+- `channel.scoped` rejects an argument that is not a channel when it is called, naming the
+  parameter, as every other channel function does; it used to fail only once the channel ran.
+  The argument guard test skipped parameters typed `ChannelBase`, which is how it slipped
+  through; it checks them now. Found by mutation testing.
+- A schema parsed with `concurrency` reports a defect or issue from a child that fails after the
+  parse was already decided, as Effect's concurrent parse does; such a child used to leak an
+  internal exception into the result, a `SchemaError` that crashed when formatted. No child
+  starts once the parse is decided. Found by mutation testing.
+- `Cause.pretty` keeps an unraised error's message exactly, as Effect does; trailing whitespace
+  was stripped (`ValueError("boom  ")` printed as `ValueError: boom`). Found by mutation testing.
 - A `Pool.make_with_ttl` made inside `acquire_release`'s acquire closes with its scope again;
   closing it used to wait forever once the pool's TTL strategy fiber had started. The cause was
   `uninterruptible_mask`: an uninterruptible caller got a `restore` that made the effect

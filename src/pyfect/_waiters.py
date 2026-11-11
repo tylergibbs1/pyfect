@@ -61,7 +61,7 @@ class WaitList:
     def __init__(self) -> None:
         self._waiters: deque[_Waiter] = deque()
         # Whether a ``notify_ready_soon`` task is pending.
-        self._soon = False
+        self._soon = False  # pragma: no mutate, falsy either way
 
     def wait(self, ready: Callable[[], bool]) -> Effect[None]:
         """Park until notified, or not at all if ``ready()`` already holds."""
@@ -82,7 +82,7 @@ class WaitList:
         ready: list[_Waiter] = []
         parked: deque[_Waiter] = deque()
         for waiter in self._waiters:
-            (ready if waiter.ready() else parked).append(waiter)
+            (ready if waiter.ready() else parked).append(waiter)  # pragma: no mutate, wakes retry
         self._waiters = parked
         for waiter in ready:
             waiter.wake()
@@ -96,7 +96,7 @@ class WaitList:
         self._soon = True
 
         def flush() -> None:
-            self._soon = False
+            self._soon = False  # pragma: no mutate, falsy either way
             self.notify_ready()
 
         if scheduler is not None:

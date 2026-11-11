@@ -20,12 +20,13 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Generator
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Never
 
+from pyfect._cause_election import late_sibling_cause
 from pyfect._concurrency import Concurrency, for_each
 from pyfect._core import Effect
-from pyfect.cause import Cause, Fail
-from pyfect.effect import fail, gen
+from pyfect.cause import Cause, Die, Fail, Interrupt, Reason
+from pyfect.effect import fail, fail_cause, gen
 from pyfect.effect import suspend as _suspend
 from pyfect.exit import Exit, Failure, Success
 from pyfect.schema.ast._result import ParseResult, to_effect
@@ -92,8 +93,8 @@ def run_steps(steps: Steps[Any], concurrency: Concurrency = None) -> ParseResult
         return abort.failure
     if suspended is None:
         return steps.finish()
-    workers = _workers(concurrency, steps.size() - suspended[0])
-    if workers > 1:
+    workers = _workers(concurrency, steps.size() - suspended[0])  # pragma: no mutate, idle workers
+    if workers > 1:  # pragma: no mutate, one worker runs as resume
         return _resume_concurrently(steps, *suspended, workers)
     return resume(steps, *suspended)
 
@@ -151,11 +152,14 @@ def _resume_concurrently[S: Steps[Any]](
         steps = snapshot.copy()
         next: list[Pending[S] | None] = [first]
         at = index
-        done = False
+        done = False  # pragma: no mutate, None is as false
+        ended = False  # pragma: no mutate, None is as false
 
         def take() -> Pending[S] | None:
             # The next child to run, recording the synchronous ones on the way.
             nonlocal at, done
+            if ended:
+                return None
             if next[0] is not None:
                 pending, next[0] = next[0], None
                 return pending
@@ -168,16 +172,29 @@ def _resume_concurrently[S: Steps[Any]](
             at, pending = suspended
             return pending
 
+        def end(failure: Failure[Issue] | None) -> Effect[Never, _End]:
+            nonlocal ended
+            ended = True
+            return fail(_End(failure))
+
         def worker() -> Generator[Effect[Any, Any, Any], Any]:
             try:
                 while (pending := take()) is not None:
                     while pending is not None:
                         exit: Exit[object, Issue] = yield from pending.effect.exit()
+                        if ended:
+                            # The parse is decided: a child failing now adds its own cause.
+                            if (
+                                isinstance(exit, Failure)
+                                and (late := _uninterrupted(exit.cause)).reasons
+                            ):
+                                yield from fail_cause(late)
+                            return
                         pending = pending.then(steps, exit)
             except Stop:
-                yield from fail(_End(None))
+                yield from end(None)
             except Abort as abort:
-                yield from fail(_End(abort.failure))
+                yield from end(abort.failure)
 
         def outcome(exit: Exit[object, Any]) -> Effect[object, Issue, Any]:
             if isinstance(exit, Failure):
@@ -195,15 +212,31 @@ def _resume_concurrently[S: Steps[Any]](
 
 def _ended(steps: Steps[Any], cause: Cause[Any]) -> Exit[object, Issue]:
     """The outcome once a worker failed: the step that ended the parse
-    decides it; anything else the workers raised is a defect beside it."""
-    end = next(
-        (r.error for r in cause.reasons if isinstance(r, Fail) and isinstance(r.error, _End)),
-        None,
-    )
+    decides it; the children that failed after it add their causes (their
+    interruptions aside), as in Effect."""
+    end = next((e for r in cause.reasons if isinstance(e := _end_of(r), _End)), None)
     if end is None:
         return Failure(cause)
     outcome = steps.finish() if end.failure is None else end.failure
-    rest = Cause(tuple(r for r in cause.reasons if not (isinstance(r, Fail) and r.error is end)))
+    rest = _uninterrupted(Cause(tuple(r for r in cause.reasons if _end_of(r) is not end)))
     if not rest.reasons:
         return outcome
-    return Failure(rest if isinstance(outcome, Success) else outcome.cause + rest)
+    return Failure(
+        rest if isinstance(outcome, Success) else late_sibling_cause(outcome.cause, rest)
+    )
+
+
+def _end_of(reason: Reason[Any]) -> object:
+    # A worker's ``_End`` is a defect when ``for_each`` elected it beside one.
+    match reason:
+        case Fail(error=error):
+            return error
+        case Die(defect=defect):
+            return defect
+        case _:
+            return None
+
+
+def _uninterrupted(cause: Cause[Any]) -> Cause[Any]:
+    """``cause`` without its interruptions."""
+    return Cause(tuple(r for r in cause.reasons if not isinstance(r, Interrupt)))

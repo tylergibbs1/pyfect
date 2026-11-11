@@ -138,7 +138,7 @@ def _public_callables() -> Iterator[tuple[str, Callable[..., Any]]]:
 _KINDS = {
     "Effect": re.compile(r"(?:_core\.)?Effect(?:\[.*\])?"),
     "Layer": re.compile(r"(?:_layer_core\.)?Layer(?:\[.*\])?"),
-    "Channel": re.compile(r"(?:_channel\.)?Channel(?:\[.*\])?"),
+    "Channel": re.compile(r"(?:_channel\.)?Channel(?:Base)?(?:\[.*\])?"),
     "Stream": re.compile(r"(?:_stream\.)?Stream(?:Base)?(?:\[.*\])?"),
     "Sink": re.compile(r"(?:_sink\.)?Sink(?:\[.*\])?"),
 }

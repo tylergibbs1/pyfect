@@ -376,8 +376,7 @@ def _guard_of(entry: _registry.Entry) -> Callable[[object], bool]:
             try:
                 return fast(input, DEFAULT_PARSE_OPTIONS)
             except Exception as defect:
-                schema_error_of(die_cause(defect), GUARD)
-                return False
+                raise_schema_failure(die_cause(defect), GUARD)
 
         return by_is
     parser = entry.parser
