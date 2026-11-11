@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.5.5 (unreleased)
+
+### Changed
+
+- `fx.blocking` / `fx.try_blocking` run on daemon threads that exit after 10 seconds idle,
+  where a `ThreadPoolExecutor` kept every thread for the process's life and joined them at
+  exit. Effect has no thread pool (Node runs such work on libuv's), so this follows Python's
+  norm for work a program may abandon: a process whose blocking work was interrupted, and is
+  still running, now exits at once instead of waiting for it.
+
+### Added
+
+- Guide: [Adopting in an asyncio app](/docs/asyncio-apps): a `ManagedRuntime` in the app's
+  lifespan, mapping typed errors at the seam (`run_async` takes only `Never` errors), sharing
+  layers between runtimes with `memo_map`, which `contextvars` cross `run_async`, `from_async`
+  and a fork, `router.provide_request`, routes mounted with `to_asgi`, and `hypercorn_server`
+  with the legacy app mounted through `from_asgi`. HTTP server links to it.
+
+### Fixed
+
+- `hypercorn_server` no longer prints hypercorn's own "Running on" line: the listen log is
+  `serve`'s alone, so `disable_listen_log=True` leaves out every startup line, as with Effect's
+  `NodeHttpServer`, which logs nothing itself.
+- `router.add_all([...])` takes a list mixing routes of different error or requirement types:
+  `Route` is now covariant (pyright inferred a frozen dataclass's parameters as invariant), so
+  such a list matched no overload.
+
 ## 0.5.3 (2026-11-10)
 
 ### Changed

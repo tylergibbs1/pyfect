@@ -21,6 +21,7 @@ try:
     from hypercorn.app_wrappers import ASGIWrapper
     from hypercorn.asyncio.run import worker_serve  # pyright: ignore[reportUnknownVariableType]
     from hypercorn.config import Config, Sockets
+    from hypercorn.logging import Logger
 except ImportError as error:  # pragma: no cover - depends on the environment
     raise missing_extra("pyfect.http.hypercorn_server", "http2", error) from error
 
@@ -51,6 +52,16 @@ class Options(ListenOptions):
     ``alpn_protocols``, ``h2_max_concurrent_streams``...)."""
 
 
+class _EngineLogger(Logger):
+    """hypercorn's logger without its "Running on" lines: the listen log is
+    ``serve``'s (``disable_listen_log``), as Effect's ``NodeHttpServer`` logs
+    nothing itself."""
+
+    async def info(self, message: str, *args: Any, **kwargs: Any) -> None:
+        if not message.startswith("Running on "):
+            await super().info(message, *args, **kwargs)
+
+
 class _Hypercorn:
     """hypercorn as an ``Engine``: it takes its sockets and a trigger to stop."""
 
@@ -58,6 +69,7 @@ class _Hypercorn:
         self.dispatch = dispatch
         self.config = Config()
         self.config.graceful_timeout = engine_backstop_seconds(options)
+        self.config.logger_class = _EngineLogger
         for name, value in options.get("config", {}).items():
             setattr(self.config, name, value)
         self.started = False

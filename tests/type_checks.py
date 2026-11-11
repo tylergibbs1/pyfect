@@ -5976,6 +5976,17 @@ assert_type(
     fx.Layer[Never, Never, HttpRouter | Requires[RouteDb] | Raises[RouteNotAllowed]],
 )
 
+# Routes are covariant, so a list mixing a failing route and a plain one is one sequence.
+assert_type(
+    http_router.add_all(
+        [
+            http_router.route("GET", "/db", route_db_handler),
+            http_router.route("GET", "/", http_server_response.text("ok")),
+        ]
+    ),
+    fx.Layer[Never, Never, HttpRouter | Requires[RouteDb] | Raises[RouteNotAllowed]],
+)
+
 
 assert_type(
     rpc_server.layer_protocol_stdio,
