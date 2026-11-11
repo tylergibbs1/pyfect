@@ -25,7 +25,6 @@ from pyfect.cause import (
     die,
     fail,
     interrupt,
-    merge,
 )
 
 
@@ -404,9 +403,9 @@ def test_find_recoverable_error():
     assert elected == die(ERROR) + die(DEFECT)
 
 
-def test_merge_elects_defects():
-    assert merge(fail(ERROR), die(DEFECT)) == die(ERROR) + die(DEFECT)
-    assert merge(fail("a"), fail("b")) == fail("a") + fail("b")
+def test_electing_defects_makes_every_failure_a_defect():
+    assert (fail(ERROR) + die(DEFECT)).elect_defects() == die(ERROR) + die(DEFECT)
+    assert (fail("a") + fail("b")).elect_defects() == fail("a") + fail("b")
 
 
 def test_squash_of_an_empty_cause():
@@ -512,7 +511,16 @@ def test_electing_defects_keeps_a_done_signal():
     done = fx.Done("leftover")
     cause = fail(done) + fail(ERROR) + die(DEFECT)
     assert cause.elect_defects().reasons == (Fail(done), Die(ERROR), Die(DEFECT))
-    assert merge(fail(done), die(DEFECT)).reasons == (Fail(done), Die(DEFECT))
+    assert (fail(done) + die(DEFECT)).elect_defects().reasons == (Fail(done), Die(DEFECT))
     recoverable = cause.find_recoverable_error()
     assert isinstance(recoverable, Cause)
     assert recoverable.reasons == (Fail(done), Die(ERROR), Die(DEFECT))
+
+
+def test_merge_is_deprecated_in_favour_of_plus():
+    """Effect has no electing combine; `merge` misled callers into electing (the `elect` audit)."""
+    from pyfect import cause as C
+
+    with pytest.warns(DeprecationWarning, match=r"a \+ b"):
+        merged = C.merge(C.fail("a"), C.die("b"))  # pyright: ignore[reportDeprecated]
+    assert merged == (C.fail("a") + C.die("b")).elect_defects()

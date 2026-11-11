@@ -20,6 +20,11 @@
   answers the whole cause with the error still a failure, as the other requests do (it went
   through a `catch_tag`, which elected the defect; Effect maps the error instead).
 
+### Deprecated
+
+- `cause.merge` (it elects defects, and Effect has no such combinator): combine causes with
+  `a + b`, Effect's `Cause.combine`. It goes in 0.6.0.
+
 ## 0.5.2 (2026-11-10)
 
 ### Added
