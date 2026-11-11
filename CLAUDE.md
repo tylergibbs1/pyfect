@@ -60,8 +60,9 @@ only if they pass (`tests/test_ci_workflows.py`). After a deliberate speed chang
   `exit.as_void_all` (`Exit.asVoidAll`: concatenates, e.g. a scope's finalizers). Effect
   elects defects only after a failed body's finalizer fails (`combineFinalizerCause`), when
   every racer of a race failed, and when a concurrent `for_each` adds a later failure to
-  its first. Those three are `_cause_election.py`; `tests/test_cause_recovery.py` bans
-  `elect_defects` and `cause.merge` anywhere else in src and checks Effect's own call sites.
+  its first. Those three are `_cause_election.py`, which combine with `a + b` and then
+  `.elect_defects()`; `tests/test_cause_recovery.py` bans `elect_defects` anywhere else in src
+  and checks Effect's own call sites.
 
 ## API names that follow Effect v4
 

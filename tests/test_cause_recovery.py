@@ -451,17 +451,12 @@ def test_only_the_ports_of_effects_electing_sites_elect_defects():
     """Combining causes elects defects only where Effect does. Electing is
     ``elect_defects``, called only by ``find_recoverable_error`` and the
     functions of ``_cause_election.py``, one per Effect site; combining
-    anywhere else is ``a + b`` or ``exit.as_void_all``. ``cause.merge``
-    elects too, so src never uses it."""
+    anywhere else is ``a + b`` or ``exit.as_void_all``."""
     calls = {
         f"{p.relative_to(_SRC)}:{n}"
         for p in _SRC.rglob("*.py")
         for n, line in enumerate(p.read_text().splitlines(), 1)
-        if re.search(
-            r"\.elect_defects\(|\bmerge\b.*\bfrom pyfect\.cause\b|"
-            r"from pyfect\.cause import[^\n]*\bmerge\b|\bcause_?\.merge\(",
-            line,
-        )
+        if ".elect_defects(" in line
     }
     election = (_SRC / "_cause_election.py").read_text()
     assert {c for c in calls if not c.startswith(("cause.py:", "_cause_election.py:"))} == set()
@@ -515,12 +510,3 @@ def test_electing_defects_keeps_a_done_signal():
     recoverable = cause.find_recoverable_error()
     assert isinstance(recoverable, Cause)
     assert recoverable.reasons == (Fail(done), Die(ERROR), Die(DEFECT))
-
-
-def test_merge_is_deprecated_in_favour_of_plus():
-    """Effect has no electing combine; `merge` misled callers into electing (the `elect` audit)."""
-    from pyfect import cause as C
-
-    with pytest.warns(DeprecationWarning, match=r"a \+ b"):
-        merged = C.merge(C.fail("a"), C.die("b"))  # pyright: ignore[reportDeprecated]
-    assert merged == (C.fail("a") + C.die("b")).elect_defects()

@@ -32,6 +32,12 @@
 - `tests/test_service_docs.py` now also fails for any public service that holds an operation
   in a field.
 
+### Removed
+
+- `cause.merge`, deprecated since 0.5.3: combine causes with `a + b` (Effect's
+  `Cause.combine`, which never elects defects). Where the old electing result is wanted, write
+  `(a + b).elect_defects()`.
+
 ## 0.5.7 (2026-11-11)
 
 ### Added
