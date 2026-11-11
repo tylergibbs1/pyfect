@@ -24,7 +24,7 @@ replays, so its side effects before the suspension must be idempotent.
 from __future__ import annotations
 
 from collections.abc import Callable, Generator, Sequence
-from typing import Any, Never, Protocol, TypeVar, cast, overload
+from typing import Any, Generic, Never, Protocol, TypeVar, cast, overload
 
 from pyfect._core import Effect
 from pyfect._effect_args import require_effect
@@ -57,6 +57,9 @@ from pyfect.workflow._suspension import suspend as suspend_run
 from pyfect.workflow._suspension import wrap_activity_result
 
 T = TypeVar("T")
+A_co = TypeVar("A_co", covariant=True)
+E_co = TypeVar("E_co", covariant=True)
+R_co = TypeVar("R_co", covariant=True)
 
 
 class _ExactBottom(Protocol[T]):
@@ -105,57 +108,99 @@ DEFAULT_INTERRUPT_RETRY_POLICY: InterruptRetryPolicy = _interrupt_backoff.while_
 interrupted, at most 10 times."""
 
 
-class Activity[A, E, R](Effect[A, E, R | WorkflowEngine | WorkflowInstance]):
+class Activity(
+    Effect[A_co, E_co, R_co | WorkflowEngine | WorkflowInstance], Generic[A_co, E_co, R_co]
+):
     """A workflow step succeeding with ``A``, failing with ``E`` and needing
     ``R``. Make one with ``make``."""
 
     __slots__ = (
+        "_annotations",
+        "_error_schema",
+        "_execute",
+        "_execute_encoded",
+        "_exit_schema",
+        "_exit_schema_partial",
+        "_name",
         "_options",
         "_run",
-        "annotations",
-        "error_schema",
-        "execute",
-        "execute_encoded",
-        "exit_schema",
-        "exit_schema_partial",
-        "name",
-        "success_schema",
+        "_success_schema",
     )
 
     def __init__(
         self,
         *,
         name: str,
-        success: Codec[A, Any, Never, Never],
-        error: Codec[E, Any, Never, Never],
-        execute: Effect[A, E, Any],
+        success: Codec[A_co, Any, Never, Never],
+        error: Codec[E_co, Any, Never, Never],
+        execute: Effect[A_co, E_co, Any],
         interrupt_retry_policy: InterruptRetryPolicy,
         annotations: Context[Any],
     ) -> None:
-        self.name = name
-        self.success_schema = success
-        self.error_schema = error
-        self.annotations = annotations
+        self._name = name
+        self._success_schema = success
+        self._error_schema = error
+        self._annotations = annotations
         self._options = (execute, interrupt_retry_policy)
         success_json = to_codec_json(success)
         error_json = to_codec_json(error)
-        self.exit_schema: ExitSchema[A, E, Any, Any, Never, Never] = ExitOf(
+        self._exit_schema: ExitSchema[A_co, E_co, Any, Any, Never, Never] = ExitOf(
             success_json, error_json, Defect()
         )
-        self.exit_schema_partial: ExitSchema[A, E, Any, Any, Never, Never] = ExitOf(
+        self._exit_schema_partial: ExitSchema[A_co, E_co, Any, Any, Never, Never] = ExitOf(
             success_json, error_json, cast("DefectCodec[Never, Never]", UnknownSchema)
         )
         without_interrupt = _retry_on_interrupt(name, interrupt_retry_policy, execute)
-        self.execute: Effect[A, E, R | Scope | WorkflowEngine | WorkflowInstance] = (
+        self._execute: Effect[A_co, E_co, R_co | Scope | WorkflowEngine | WorkflowInstance] = (
             without_interrupt
         )
         encode_error = encode_unknown_effect(error_json)
         encode_success = encode_unknown_effect(success_json)
-        self.execute_encoded: Effect[object, object, Any] = without_interrupt.match_effect(
+        self._execute_encoded: Effect[object, object, Any] = without_interrupt.match_effect(
             on_failure=lambda e: encode_error(e).or_die().flat_map(fail),
             on_success=lambda a: encode_success(a).or_die(),
         )
         self._run = _make_execute(self)
+
+    @property
+    def name(self) -> str:
+        """The activity's name, unique within its workflow."""
+        return self._name
+
+    @property
+    def success_schema(self) -> Codec[A_co, Any, Never, Never]:
+        """The schema of the activity's success."""
+        return self._success_schema
+
+    @property
+    def error_schema(self) -> Codec[E_co, Any, Never, Never]:
+        """The schema of the activity's failure."""
+        return self._error_schema
+
+    @property
+    def annotations(self) -> Context[Any]:
+        """The activity's annotations."""
+        return self._annotations
+
+    @property
+    def exit_schema(self) -> ExitSchema[A_co, E_co, Any, Any, Never, Never]:
+        """The schema of the activity's recorded exit."""
+        return self._exit_schema
+
+    @property
+    def exit_schema_partial(self) -> ExitSchema[A_co, E_co, Any, Any, Never, Never]:
+        """The exit schema with defects kept as they are."""
+        return self._exit_schema_partial
+
+    @property
+    def execute(self) -> Effect[A_co, E_co, R_co | Scope | WorkflowEngine | WorkflowInstance]:
+        """The activity's effect, retried when interrupted as its policy says."""
+        return self._execute
+
+    @property
+    def execute_encoded(self) -> Effect[object, object, Any]:
+        """``execute`` with its success and failure encoded."""
+        return self._execute_encoded
 
     def __repr__(self) -> str:
         return f"Activity({self.name!r})"
@@ -163,7 +208,7 @@ class Activity[A, E, R](Effect[A, E, R | WorkflowEngine | WorkflowInstance]):
     def _step(self, fiber: Fiber[Any, Any]) -> Step:
         return self._run
 
-    def _with_annotations(self, annotations: Context[Any]) -> Activity[A, E, R]:
+    def _with_annotations(self, annotations: Context[Any]) -> Activity[A_co, E_co, R_co]:
         execute, policy = self._options
         return Activity(
             name=self.name,
@@ -174,10 +219,10 @@ class Activity[A, E, R](Effect[A, E, R | WorkflowEngine | WorkflowInstance]):
             annotations=annotations,
         )
 
-    def annotate[S, X](self, tag: TagLike[S, X], value: S) -> Activity[A, E, R]:
+    def annotate[S, X](self, tag: TagLike[S, X], value: S) -> Activity[A_co, E_co, R_co]:
         return self._with_annotations(self.annotations.add(tag, value))
 
-    def annotate_merge(self, annotations: Context[Any]) -> Activity[A, E, R]:
+    def annotate_merge(self, annotations: Context[Any]) -> Activity[A_co, E_co, R_co]:
         return self._with_annotations(self.annotations.merge(annotations))
 
 

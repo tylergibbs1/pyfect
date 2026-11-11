@@ -6001,6 +6001,86 @@ assert_type(
 )
 
 
+# `provide_request` removes the `Requires` its layer builds, adding the layer's own
+# errors and requirements, as Effect's `Exclude<R, Request.From<"Requires", A2>>` (graft #13).
+def check_provide_request(
+    db_live: fx.Layer[RouteDb, OSError, RouteCache],
+    both_live: fx.Layer[RouteDb | RouteCache, Never, Never],
+) -> None:
+    assert_type(
+        route_app.pipe(http_router.provide_request(db_live)),
+        fx.Layer[
+            Never,
+            OSError,
+            HttpRouter
+            | Raises[RouteNotAllowed]
+            | Requires[RouteCache]
+            | Raises[RouteMissing]
+            | RouteCache,
+        ],
+    )
+    assert_type(
+        route_app.pipe(http_router.provide_request(both_live)),
+        fx.Layer[Never, Never, HttpRouter | Raises[RouteNotAllowed] | Raises[RouteMissing]],
+    )
+    # One layer per service, provided in turn.
+    assert_type(
+        route_app.pipe(http_router.provide_request(layer.succeed(RouteDb, "db"))).pipe(
+            http_router.provide_request(layer.succeed(RouteCache, 1))
+        ),
+        fx.Layer[Never, Never, HttpRouter | Raises[RouteNotAllowed] | Raises[RouteMissing]],
+    )
+    # An empty layer removes nothing.
+    assert_type(
+        route_app.pipe(http_router.provide_request(layer.empty)),
+        fx.Layer[
+            Never,
+            Never,
+            HttpRouter
+            | Requires[RouteDb]
+            | Raises[RouteNotAllowed]
+            | Requires[RouteCache]
+            | Raises[RouteMissing],
+        ],
+    )
+    served = route_app.pipe(http_router.provide_request(both_live))
+    assert_type(http_router.serve(served), fx.Layer[Never, Never, HttpServer])
+
+    # `to_asgi` serves with the layer's services alone: what the routes need must be built by
+    # the layer, as with Effect's `toWebHandler` (graft #14).
+    assert_type(http_router.to_asgi(served), fx.http.asgi.AsgiApp)
+    assert_type(
+        http_router.to_asgi(route_app.pipe(layer.provide_merge(both_live))), fx.http.asgi.AsgiApp
+    )
+    assert_type(
+        http_router.to_asgi(served, middleware=http_middleware.logger), fx.http.asgi.AsgiApp
+    )
+    http_router.to_asgi(route_app)  # pyright: ignore[reportArgumentType]
+    # `layer.provide` builds the services for the routes' layer only, not for its requests:
+    # every request would fail with a 500 (graft #5).
+    http_router.to_asgi(route_app.pipe(layer.provide(both_live)))  # pyright: ignore[reportArgumentType]
+    http_router.to_asgi(route_app.pipe(http_router.provide_request(layer.empty)))  # pyright: ignore[reportArgumentType]
+    # A service the routes' layer needs to build, which nothing provides.
+    http_router.to_asgi(route_app.pipe(http_router.provide_request(db_live)))  # pyright: ignore[reportArgumentType]
+    # A middleware's requirements must be built by the layer too.
+    http_router.to_asgi(
+        served,
+        middleware=lambda app: app.flat_map(lambda res: RouteDb().as_(res)),  # pyright: ignore[reportArgumentType]
+    )
+
+    # A helper generic in its services' type keeps the routes' `Requires`: pyright can't see
+    # which services `RO` builds (TypeScript resolves the `Exclude` per call). Typing the
+    # helper with the services it is given removes them.
+    def generic_routes[RO, E](services: fx.Layer[RO, E]):
+        return route_app.pipe(http_router.provide_request(services))
+
+    def typed_routes[E](services: fx.Layer[RouteDb | RouteCache, E]):
+        return route_app.pipe(http_router.provide_request(services))
+
+    http_router.to_asgi(generic_routes(both_live))  # pyright: ignore[reportArgumentType]
+    assert_type(http_router.to_asgi(typed_routes(both_live)), fx.http.asgi.AsgiApp)
+
+
 assert_type(
     rpc_server.layer_protocol_stdio,
     layer.Layer[rpc_server.ServerProtocol, Never, fx.Stdio | RpcSerialization],
@@ -6630,12 +6710,17 @@ class RpcUsers(rpc.RpcGroup):
 def check_rpc(users: RpcUsers) -> None:
     # a stream schema's error and the RPC's error share one TypeVar, so a
     # `Never` stream error stays `Never` instead of widening to Unknown
-    assert_type(RpcUsers.never_fails, rpc.StreamRpc[None, str, Never])
-    assert_type(RpcUsers.both_fail, rpc.StreamRpc[None, str, float | str])
-    assert_type(RpcUsers.get, rpc.Rpc[str, RpcUser, RpcNotFound])
-    assert_type(RpcUsers.ping, rpc.Rpc[None, None, Never])
-    assert_type(RpcUsers.stream, rpc.StreamRpc[None, float, Never])
-    assert_type(RpcUsers.me, rpc.Rpc[None, RpcUser, Never, RpcAuth, RpcAuth])
+    assert_type(
+        RpcUsers.never_fails, rpc.StreamRpc[None, str, Never, Never, Never, Literal["NeverFails"]]
+    )
+    assert_type(
+        RpcUsers.both_fail,
+        rpc.StreamRpc[None, str, float | str, Never, Never, Literal["BothFail"]],
+    )
+    assert_type(RpcUsers.get, rpc.Rpc[str, RpcUser, RpcNotFound, Never, Never, Literal["Get"]])
+    assert_type(RpcUsers.ping, rpc.Rpc[None, None, Never, Never, Never, Literal["Ping"]])
+    assert_type(RpcUsers.stream, rpc.StreamRpc[None, float, Never, Never, Never, Literal["Stream"]])
+    assert_type(RpcUsers.me, rpc.Rpc[None, RpcUser, Never, RpcAuth, RpcAuth, Literal["Me"]])
     # A client method fails with the RPC's error, its middleware's, or the client's.
     assert_type(users.get("1"), fx.Effect[RpcUser, RpcNotFound | rpc.RpcClientError])
     assert_type(users.ping(), fx.Effect[None, rpc.RpcClientError])
@@ -10155,7 +10240,7 @@ class _S4Users(rpc.RpcGroupWith[_S4Auth]):
 
 def section4_pins() -> None:
     # A group-wide middleware shows in each RPC's type.
-    assert_type(_S4Users.get, rpc.Rpc[None, str, Never, _S4Auth, _S4Auth])
+    assert_type(_S4Users.get, rpc.Rpc[None, str, Never, _S4Auth, _S4Auth, Literal["S4Users.get"]])
     assert_type(S.decode_promise(S.String)("a"), Coroutine[Any, Any, str]).close()
     assert_type(S.encode_promise(S.String)("a"), Coroutine[Any, Any, str]).close()
     assert_type(S.Undefined, S.Bottom[None])
@@ -10691,3 +10776,94 @@ def check_read_only_classes_are_covariant() -> None:
         hash_set.add(1.5)  # pyright: ignore[reportArgumentType]
 
     _ = pins
+
+
+# Read-only attributes, as Effect's `readonly` fields (0.6.0): assigning one is an error, and
+# the classes take Effect's variance (a narrower activity, workflow, middleware or SQL request
+# where a wider one is expected).
+def check_read_only_attributes(
+    *,
+    counter: fx.reactivity.atom.Writable[int, int],
+    step: Activity[int, ValueError, Never],
+    flow: Workflow[str, int, ValueError],
+    deferred: DurableDeferred[int, ValueError],
+    queue: durable_queue.DurableQueue[str, int, ValueError],
+    middleware: http_router.Middleware[ValueError, Db],
+    request: fx.sql.SqlRequest[int, str],
+) -> None:
+    counter.read = counter.read  # pyright: ignore[reportAttributeAccessIssue]
+    counter.write = counter.write  # pyright: ignore[reportAttributeAccessIssue]
+    step.execute = step.execute  # pyright: ignore[reportAttributeAccessIssue]
+    flow.idempotency_key = flow.idempotency_key  # pyright: ignore[reportAttributeAccessIssue]
+    deferred.success_schema = deferred.success_schema  # pyright: ignore[reportAttributeAccessIssue]
+    queue.deferred = queue.deferred  # pyright: ignore[reportAttributeAccessIssue]
+    middleware.layer = middleware.layer  # pyright: ignore[reportAttributeAccessIssue]
+    request.payload = request.payload  # pyright: ignore[reportAttributeAccessIssue]
+    wider_step: Activity[object, Exception, object] = step
+    wider_flow: Workflow[str, object, Exception] = flow
+    wider_deferred: DurableDeferred[object, Exception] = deferred
+    wider_queue: durable_queue.DurableQueue[str, object, Exception] = queue
+    wider_middleware: http_router.Middleware[Exception, object] = middleware
+    wider_request: fx.sql.SqlRequest[object, object] = request
+    del wider_step, wider_flow, wider_deferred, wider_queue, wider_middleware, wider_request
+
+
+# A group or entity listing its RPC tags has its handlers checked, as Effect's `toLayer`
+# (0.6.0): a missing handler, one given twice or for an RPC of another group, and a wrongly
+# typed one are pyright errors. A group that lists nothing is checked when `to_layer` runs.
+class ListedCounter(rpc.RpcGroup[Literal["Inc", "Get", "Watch"]]):
+    inc = rpc.make("Inc", payload=S.Int, success=S.Int)
+    get = rpc.make("Get", success=S.Int)
+    watch = rpc.make("Watch", success=S.Int, stream=True)
+
+
+class UnlistedCounter(rpc.RpcGroup):
+    inc = rpc.make("Inc", payload=S.Int, success=S.Int)
+    get = rpc.make("Get", success=S.Int)
+
+
+def _one(_: object) -> fx.Effect[int]:
+    return fx.succeed(1)
+
+
+def check_listed_rpc_handlers() -> None:
+    start = ListedCounter.handlers()
+    assert_type(start, rpc.Handlers[ListedCounter, Never, Literal["Inc", "Get", "Watch"]])
+    some = start.handle(ListedCounter.inc)(lambda request: fx.succeed(request.payload + 1))
+    assert_type(some, rpc.Handlers[ListedCounter, Never, Literal["Get", "Watch"]])
+    more = some.handle(ListedCounter.watch)(lambda _: fx.stream.make(1, 2))
+    done = more.handle(ListedCounter.get)(lambda _: fx.succeed(1))
+    assert_type(done, rpc.Handlers[ListedCounter, Never])
+    assert_type(ListedCounter.to_layer(done), fx.Layer[rpc.HandlersFor[ListedCounter]])
+    ListedCounter.to_layer(more)  # pyright: ignore[reportArgumentType]
+    some.handle(ListedCounter.inc)(_one)  # pyright: ignore[reportCallIssue]
+    # An RPC of another group with a tag this one has handled already.
+    some.handle(UnlistedCounter.inc)(_one)  # pyright: ignore[reportCallIssue]
+    some.handle(ListedCounter.get)(lambda _: fx.succeed("one"))  # pyright: ignore[reportCallIssue, reportArgumentType]
+    ListedCounter.to_layer_effect(fx.succeed(more))  # pyright: ignore[reportArgumentType]
+
+    # Unlisted, the handlers type-check either way and `to_layer` raises.
+    partial = UnlistedCounter.handlers().handle(UnlistedCounter.inc)(lambda _: fx.succeed(1))
+    assert_type(partial, rpc.Handlers[UnlistedCounter, Never])
+    UnlistedCounter.to_layer(partial)
+    # Every group is still an `RpcGroup`; a prefixed RPC's tag is a `str`.
+    group: type[rpc.RpcGroup] = ListedCounter
+    del group
+    assert_type(ListedCounter.inc.prefix("v1."), rpc.Rpc[int, int, Never])
+
+
+def check_listed_entity_handlers() -> None:
+    from pyfect.cluster.entity import Entity, EntityHandlers
+
+    class Counter(Entity[Literal["Increment", "Get"]]):
+        increment = rpc.make("Increment", payload=S.Int, success=S.Int)
+        get = rpc.make("Get", success=S.Int)
+
+    start = Counter.handlers()
+    some = start.handle(Counter.increment)(lambda request: fx.succeed(request.payload))
+    assert_type(some, EntityHandlers[Counter, Never, Literal["Get"]])
+    done = some.handle(Counter.get)(lambda _: fx.succeed(0))
+    Counter.to_layer(done)
+    Counter.to_layer(some)  # pyright: ignore[reportArgumentType]
+    some.handle(Counter.increment)(_one)  # pyright: ignore[reportCallIssue]
+    Counter.to_layer_effect(fx.succeed(some))  # pyright: ignore[reportArgumentType]

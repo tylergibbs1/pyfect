@@ -19,7 +19,7 @@ import builtins
 import types
 from collections.abc import Callable, Mapping
 from dataclasses import replace
-from typing import Any, ClassVar, Never, Self, cast
+from typing import Any, ClassVar, Generic, Never, Self, cast
 
 from pyfect import layer as layer_
 from pyfect._core import Effect
@@ -48,6 +48,7 @@ from pyfect.duration import Input as DurationInput
 from pyfect.effect import context, die, gen, succeed
 from pyfect.layer import Layer
 from pyfect.rpc._rpc import AnyRpc, ClientErrors, HandlerEntry, RpcRequest, handler_tag
+from pyfect.rpc._tags import Tags_contra, check_listed_tags
 from pyfect.rpc.group import RpcGroup
 from pyfect.schedule import Schedule
 from pyfect.scope import Scope
@@ -70,9 +71,13 @@ def _rpc_attributes(cls: builtins.type[Any]) -> dict[str, AnyRpc]:
     }
 
 
-class Entity(ClientErrors[ClusterClientError]):
+class Entity(ClientErrors[ClusterClientError], Generic[Tags_contra]):
     """An entity type: subclass it with the RPCs as attributes and
-    ``type=`` its name (the class name when left out)."""
+    ``type=`` its name (the class name when left out). An entity listing
+    its RPCs' tags, ``class Counter(Entity[Literal["Increment"]])``, has its
+    handlers checked by pyright: ``to_layer`` rejects them while an RPC has
+    none (Effect's ``toLayer``). The class is checked against the list when
+    it is defined."""
 
     type: ClassVar[EntityType]
     rpcs: ClassVar[Mapping[str, AnyRpc]] = {}
@@ -105,6 +110,7 @@ class Entity(ClientErrors[ClusterClientError]):
                 setattr(cls, name, annotated)
                 attributes[name] = annotated
         cls.rpcs = {rpc.tag: rpc for rpc in attributes.values()}
+        check_listed_tags(cls, Entity, cls.rpcs)
         cls.protocol = builtins.type(
             f"{cls.__name__}Protocol", (RpcGroup,), {rpc.tag: rpc for rpc in attributes.values()}
         )
@@ -159,7 +165,7 @@ class Entity(ClientErrors[ClusterClientError]):
     # --- handlers -----------------------------------------------------------------------
 
     @classmethod
-    def handlers(cls) -> EntityHandlers[Self]:
+    def handlers(cls) -> EntityHandlers[Self, Never, Tags_contra]:
         """No handlers yet: add one per RPC with ``handle``."""
         return EntityHandlers(cls, {})
 
@@ -201,7 +207,7 @@ class Entity(ClientErrors[ClusterClientError]):
     @classmethod
     def to_layer[R](
         cls,
-        handlers: EntityHandlers[Self, R],
+        handlers: EntityHandlers[Self, R, Never],
         /,
         *,
         max_idle_time: DurationInput | None = None,
@@ -213,7 +219,9 @@ class Entity(ClientErrors[ClusterClientError]):
         span_attributes: Mapping[str, str] | None = None,
     ) -> Layer[Never, Never, R | Sharding]:
         """Register the entity's ``handlers`` with ``Sharding`` (Effect's
-        ``toLayer``). An RPC without a handler is a ``ValueError``."""
+        ``toLayer``). An RPC without a handler is a pyright error when the
+        entity lists its tags (``Entity[Literal[...]]``), and a
+        ``ValueError`` here either way."""
         message = cls._missing_message(handlers)
         if message is not None:
             raise ValueError(message)
@@ -231,7 +239,7 @@ class Entity(ClientErrors[ClusterClientError]):
     @classmethod
     def to_layer_effect[RR, RX](
         cls,
-        build: Effect[EntityHandlers[Self, RR], Never, RX | _Activation],
+        build: Effect[EntityHandlers[Self, RR, Never], Never, RX | _Activation],
         /,
         *,
         max_idle_time: DurationInput | None = None,

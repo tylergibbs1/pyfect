@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import copy
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any, Generic, Literal, Never, Protocol, Self, TypeVar, cast
+from typing import TYPE_CHECKING, Any, Final, Generic, Literal, Never, Protocol, Self, TypeVar, cast
 
 from pyfect._js import same_value
 from pyfect.duration import Duration
@@ -58,7 +58,7 @@ class Atom(Generic[A_co]):
     )
 
     def __init__(self, read: Callable[[AtomContext], A_co], refresh: Refresh | None = None) -> None:
-        self.read: Callable[[AtomContext], A_co] = read
+        self.read: Final[Callable[[AtomContext], A_co]] = read
         self.refresh: Refresh | None = refresh
         self.kept_alive = False
         self.lazy = True
@@ -246,7 +246,7 @@ class Writable(Atom[A_co], Generic[A_co, W_contra]):
         refresh: Refresh | None = None,
     ) -> None:
         super().__init__(read, refresh)
-        self.write: Callable[[WriteContext[Any], W_contra], None] = write
+        self.write: Final[Callable[[WriteContext[Any], W_contra], None]] = write
 
     def map[B](self, f: Callable[[A_co], B]) -> Writable[B, W_contra]:
         from pyfect.reactivity.atom._combinators import transform

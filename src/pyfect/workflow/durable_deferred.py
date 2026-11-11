@@ -120,7 +120,7 @@ class DurableDeferred[A, E = Never]:
     """A named wait point of a workflow execution whose result is an ``A``
     or an ``E`` failure. Make one with ``make``."""
 
-    __slots__ = ("error_schema", "exit_schema", "name", "success_schema")
+    __slots__ = ("_error_schema", "_exit_schema", "_name", "_success_schema")
 
     def __init__(
         self,
@@ -129,12 +129,32 @@ class DurableDeferred[A, E = Never]:
         success: Codec[A, Any, Never, Never],
         error: Codec[E, Any, Never, Never],
     ) -> None:
-        self.name = name
-        self.success_schema = success
-        self.error_schema = error
-        self.exit_schema: ExitSchema[A, E, Any, Any, Never, Never] = ExitOf(
+        self._name = name
+        self._success_schema = success
+        self._error_schema = error
+        self._exit_schema: ExitSchema[A, E, Any, Any, Never, Never] = ExitOf(
             to_codec_json(success), to_codec_json(error), to_codec_json(Defect())
         )
+
+    @property
+    def name(self) -> str:
+        """The deferred's name, unique within its workflow."""
+        return self._name
+
+    @property
+    def success_schema(self) -> Codec[A, Any, Never, Never]:
+        """The schema of the deferred's success."""
+        return self._success_schema
+
+    @property
+    def error_schema(self) -> Codec[E, Any, Never, Never]:
+        """The schema of the deferred's failure."""
+        return self._error_schema
+
+    @property
+    def exit_schema(self) -> ExitSchema[A, E, Any, Any, Never, Never]:
+        """The schema of the deferred's result."""
+        return self._exit_schema
 
     def __repr__(self) -> str:
         return f"DurableDeferred({self.name!r})"
@@ -154,9 +174,9 @@ class DurableDeferred[A, E = Never]:
         (Effect's ``DurableDeferred.await``)."""
         return await_(self)
 
-    def into[R](
-        self, effect: Effect[A, E, R]
-    ) -> Effect[A, E, R | WorkflowEngine | WorkflowInstance]:
+    def into[A2, E2, R](
+        self: DurableDeferred[A2, E2], effect: Effect[A2, E2, R]
+    ) -> Effect[A2, E2, R | WorkflowEngine | WorkflowInstance]:
         """Run ``effect`` and record its exit as this deferred's result,
         waking executions waiting on it.
 
@@ -197,7 +217,9 @@ class DurableDeferred[A, E = Never]:
             )
         )
 
-    def done(self, *, token: str, exit: Exit[A, E]) -> Effect[None, Never, WorkflowEngine]:
+    def done[A2, E2](
+        self: DurableDeferred[A2, E2], *, token: str, exit: Exit[A2, E2]
+    ) -> Effect[None, Never, WorkflowEngine]:
         """Record ``exit`` as the result of the deferred ``token`` names,
         waking its execution. A token naming another deferred is a defect
         (Effect writes ``exit`` into that deferred, with this one's schema)."""
@@ -219,15 +241,21 @@ class DurableDeferred[A, E = Never]:
 
         return gen(body)
 
-    def succeed(self, *, token: str, value: A) -> Effect[None, Never, WorkflowEngine]:
+    def succeed[A2](
+        self: DurableDeferred[A2, Any], *, token: str, value: A2
+    ) -> Effect[None, Never, WorkflowEngine]:
         return self.done(token=token, exit=Success(value))
 
-    def fail(self, *, token: str, error: E) -> Effect[None, Never, WorkflowEngine]:
+    def fail[E2](
+        self: DurableDeferred[Any, E2], *, token: str, error: E2
+    ) -> Effect[None, Never, WorkflowEngine]:
         from pyfect.cause import fail as fail_cause_of
 
         return self.done(token=token, exit=Failure(fail_cause_of(error)))
 
-    def fail_cause(self, *, token: str, cause: Cause[E]) -> Effect[None, Never, WorkflowEngine]:
+    def fail_cause[E2](
+        self: DurableDeferred[Any, E2], *, token: str, cause: Cause[E2]
+    ) -> Effect[None, Never, WorkflowEngine]:
         return self.done(token=token, exit=Failure(cause))
 
 

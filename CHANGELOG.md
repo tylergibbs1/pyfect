@@ -31,12 +31,59 @@
   `Flusher.register` reject a non-effect argument with a `TypeError`.
 - `tests/test_service_docs.py` now also fails for any public service that holds an operation
   in a field.
+- `router.provide_request(services)` is typed as Effect's `HttpRouter.provideRequest`: the
+  result drops each `Requires[S]` that `services` builds and adds `services`' own errors and
+  requirements (it was `Layer[Any, Any, Any]`, so even `provide_request(layer.empty)` passed).
+- `router.to_asgi` takes only routes whose requirements its layer builds, as Effect's
+  `toWebHandler` needs them built by the app layer when there is no request context: a missing
+  service, or `layer.provide(services)` where `provide_request(services)` belongs, is a pyright
+  error instead of a 500 on every request. A routes layer still needing a service to build is
+  refused too, as is a `middleware=` needing one. Runtime behaviour is unchanged. A helper
+  generic in its services' type (`def app_routes[RO](services: Layer[RO])`) keeps its routes'
+  `Requires`, since pyright can't see which ones `RO` builds (TypeScript resolves Effect's
+  `Exclude` at each call), so `to_asgi` refuses its result: name the services in the helper's
+  parameter (`services: Layer[Users | Db, E]`), or apply `provide_request` outside the helper.
+- Attributes Effect has `readonly` are read-only, so assigning one is a pyright error: an
+  atom's `read` and a writable atom's `write` (`Final`), `router.Middleware.layer`,
+  `SqlRequest.payload`, and the fields of `workflow.Activity`, `Workflow`, `DurableDeferred`
+  and `DurableQueue` (properties). Make a new value instead of assigning one (`make`,
+  `annotate`). The classes now take Effect's
+  variance (see Added). `tests/test_variance.py` no longer lets a writable attribute pass
+  as read-only, and fails on a `Final` slot of a class whose variance pyright infers, which
+  pyright still reads as writable.
+- `rpc.make("Tag", ...)` types the RPC with its tag as a `Literal`, a new last type parameter
+  of `Rpc` / `StreamRpc` (`Rpc[P, S, E, M, MT, Tag]`, `str` by default), and `prefix` makes it
+  `str`. An `assert_type` of a made RPC now spells the tag
+  (`rpc.Rpc[str, User, NotFound, Never, Never, Literal["GetUser"]]`); annotations without it
+  still accept the RPC. `Handlers` / `EntityHandlers` gain a third, invariant parameter, the
+  tags still without a handler (`Never` for a group that does not list its tags), and
+  `Bound` / `StreamBound` two more (the RPC's tag and that list): code naming these types
+  adds `Never`, or uses the type `handlers()` returns.
 
 ### Removed
 
 - `cause.merge`, deprecated since 0.5.3: combine causes with `a + b` (Effect's
   `Cause.combine`, which never elects defects). Where the old electing result is wanted, write
   `(a + b).elect_defects()`.
+
+### Added
+
+- An RPC group or cluster entity can list its RPC tags,
+  `class Counter(Entity[Literal["Increment", "Get"]])` or
+  `class Users(RpcGroup[Literal["GetUser"]])` (`RpcGroupWith[Auth, Literal[...]]` with group
+  middleware), and pyright then checks its handlers as TypeScript checks Effect's `toLayer`:
+  `to_layer` / `to_layer_effect` reject them while an RPC has none, and a second handler for
+  an RPC is an error. Python can't gather a class's attributes into a type, so the list
+  repeats the tags; the class is checked against it when it is defined (a `TypeError` names
+  each tag missing on either side). Groups that list nothing are unchanged: `to_layer` raises
+  `ValueError` for a missing handler. Pyright tracks RPCs by tag, so a second handler given
+  after all have one is not caught, and an RPC needs a literal tag at `rpc.make`.
+- `workflow.Activity`, `DurableDeferred` and `router.Middleware` are covariant, `Workflow`
+  and `DurableQueue` in their success and error, and `SqlRequest` in its payload, as in
+  Effect: an `Activity[int, ...]` is accepted where an `Activity[object, ...]` is expected.
+  `DurableDeferred.succeed` / `fail` / `done` / `into`, `DurableQueue.worker` and
+  `Workflow.to_layer` bind their value types through `self`, so a wrongly typed value or
+  handler is still an error.
 
 ## 0.5.7 (2026-11-11)
 

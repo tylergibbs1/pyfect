@@ -16,7 +16,18 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
-from typing import TYPE_CHECKING, Any, Generic, Literal, Never, Self, TypeVar, cast, overload
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Generic,
+    Literal,
+    LiteralString,
+    Never,
+    Self,
+    TypeVar,
+    cast,
+    overload,
+)
 
 from pyfect import schema as S
 from pyfect._core import Effect
@@ -43,6 +54,7 @@ MT_co = TypeVar("MT_co", covariant=True, default=M_co)
 A_co = TypeVar("A_co", covariant=True)
 R_co = TypeVar("R_co", covariant=True)
 TE_co = TypeVar("TE_co", covariant=True)
+Tag_co = TypeVar("Tag_co", bound=str, covariant=True, default=str)
 
 _KEY_PREFIX = "effect/rpc/Rpc/"
 
@@ -137,15 +149,17 @@ class AnyRpc:
 
 
 @dataclass(frozen=True, slots=True, eq=False)
-class Rpc(AnyRpc, Generic[P_co, S_co, E_co, M_co, MT_co]):
+class Rpc(AnyRpc, Generic[P_co, S_co, E_co, M_co, MT_co, Tag_co]):
     """An RPC with a payload ``P``, succeeding with ``S`` or failing with
     ``E``, wrapped by the middleware ``M`` (``MT`` repeats it, so handlers
-    can read both what it provides and its tag)."""
+    can read both what it provides and its tag). ``Tag`` is its tag, a
+    ``Literal`` when ``make`` is given one, so a group listing its tags can
+    check its handlers."""
 
     @overload
     def __get__[GM](
         self, instance: None, owner: type[RpcGroupWith[GM]], /
-    ) -> Rpc[P_co, S_co, E_co, M_co | GM, MT_co | GM]: ...
+    ) -> Rpc[P_co, S_co, E_co, M_co | GM, MT_co | GM, Tag_co]: ...
     @overload
     def __get__(self, instance: None, owner: type[object], /) -> Self: ...
     @overload
@@ -184,7 +198,7 @@ class Rpc(AnyRpc, Generic[P_co, S_co, E_co, M_co, MT_co]):
 
     def middleware[T: RpcMiddleware[Any, Any, Any]](
         self, middleware: type[T], /
-    ) -> Rpc[P_co, S_co, E_co, M_co | T, MT_co | T]:
+    ) -> Rpc[P_co, S_co, E_co, M_co | T, MT_co | T, Tag_co]:
         """This RPC wrapped by ``middleware``: its handler may fail with the
         middleware's error and needs what it provides; a client may fail
         with it too."""
@@ -192,29 +206,34 @@ class Rpc(AnyRpc, Generic[P_co, S_co, E_co, M_co, MT_co]):
 
     def set_success[S1](
         self, schema: Codec[S1, Any, Never, Never], /
-    ) -> Rpc[P_co, S1, E_co, M_co, MT_co]:
+    ) -> Rpc[P_co, S1, E_co, M_co, MT_co, Tag_co]:
         return replace(self, success_schema=schema.__codec__())  # pyright: ignore[reportReturnType]
 
     def set_error[E1](
         self, schema: Codec[E1, Any, Never, Never], /
-    ) -> Rpc[P_co, S_co, E1, M_co, MT_co]:
+    ) -> Rpc[P_co, S_co, E1, M_co, MT_co, Tag_co]:
         return replace(self, error_schema=schema.__codec__())  # pyright: ignore[reportReturnType]
 
     def set_payload[P1](
         self, schema: Codec[P1, Any, Never, Never], /
-    ) -> Rpc[P1, S_co, E_co, M_co, MT_co]:
+    ) -> Rpc[P1, S_co, E_co, M_co, MT_co, Tag_co]:
         return replace(self, payload_schema=schema.__codec__())  # pyright: ignore[reportReturnType]
+
+    def prefix(self, prefix: str) -> Rpc[P_co, S_co, E_co, M_co, MT_co]:
+        """This RPC with ``prefix`` before its tag (typed ``str``: Python can't
+        join ``Literal`` types)."""
+        return replace(self, tag=prefix + self.tag)
 
 
 @dataclass(frozen=True, slots=True, eq=False)
-class StreamRpc(AnyRpc, Generic[P_co, A_co, E_co, M_co, MT_co]):
+class StreamRpc(AnyRpc, Generic[P_co, A_co, E_co, M_co, MT_co, Tag_co]):
     """An RPC with a payload ``P`` succeeding with a stream of ``A`` items
-    that fails with ``E``."""
+    that fails with ``E`` (``Tag`` as in ``Rpc``)."""
 
     @overload
     def __get__[GM](
         self, instance: None, owner: type[RpcGroupWith[GM]], /
-    ) -> StreamRpc[P_co, A_co, E_co, M_co | GM, MT_co | GM]: ...
+    ) -> StreamRpc[P_co, A_co, E_co, M_co | GM, MT_co | GM, Tag_co]: ...
     @overload
     def __get__(self, instance: None, owner: type[object], /) -> Self: ...
     @overload
@@ -249,19 +268,53 @@ class StreamRpc(AnyRpc, Generic[P_co, A_co, E_co, M_co, MT_co]):
 
     def middleware[T: RpcMiddleware[Any, Any, Any]](
         self, middleware: type[T], /
-    ) -> StreamRpc[P_co, A_co, E_co, M_co | T, MT_co | T]:
+    ) -> StreamRpc[P_co, A_co, E_co, M_co | T, MT_co | T, Tag_co]:
         """This RPC wrapped by ``middleware`` (see ``Rpc.middleware``)."""
         return self.with_middleware(middleware)
 
     def set_payload[P1](
         self, schema: Codec[P1, Any, Never, Never], /
-    ) -> StreamRpc[P1, A_co, E_co, M_co, MT_co]:
+    ) -> StreamRpc[P1, A_co, E_co, M_co, MT_co, Tag_co]:
         return replace(self, payload_schema=schema.__codec__())  # pyright: ignore[reportReturnType]
+
+    def prefix(self, prefix: str) -> StreamRpc[P_co, A_co, E_co, M_co, MT_co]:
+        """This RPC with ``prefix`` before its tag (see ``Rpc.prefix``)."""
+        return replace(self, tag=prefix + self.tag)
 
 
 type _C[T] = Codec[T, Any, Never, Never]
 
 
+@overload
+def make[T: LiteralString, P = None, A = None, E1 = Never](
+    tag: T,
+    *,
+    payload: _C[P] | None = None,
+    success: _C[A] | None = None,
+    error: _C[E1] | None = None,
+    defect: Codec[object, Any, Never, Never] | None = None,
+    stream: Literal[True],
+) -> StreamRpc[P, A, E1, Never, Never, T]: ...
+@overload
+def make[T: LiteralString, P = None, A = None, EE = Never](  # pyright: ignore[reportOverlappingOverload]
+    tag: T,
+    *,
+    payload: _C[P] | None = None,
+    success: StreamSchema[A, EE],
+    error: _C[EE] | None = None,
+    defect: Codec[object, Any, Never, Never] | None = None,
+    stream: Literal[False] = False,
+) -> StreamRpc[P, A, EE, Never, Never, T]: ...
+@overload
+def make[T: LiteralString, P = None, S1 = None, E1 = Never](
+    tag: T,
+    *,
+    payload: _C[P] | None = None,
+    success: _C[S1] | None = None,
+    error: _C[E1] | None = None,
+    defect: Codec[object, Any, Never, Never] | None = None,
+    stream: Literal[False] = False,
+) -> Rpc[P, S1, E1, Never, Never, T]: ...
 @overload
 def make[P = None, A = None, E1 = Never](
     tag: str,
@@ -273,7 +326,7 @@ def make[P = None, A = None, E1 = Never](
     stream: Literal[True],
 ) -> StreamRpc[P, A, E1]: ...
 @overload
-def make[P = None, A = None, EE = Never](  # pyright: ignore[reportOverlappingOverload]
+def make[P = None, A = None, EE = Never](
     tag: str,
     *,
     payload: _C[P] | None = None,
