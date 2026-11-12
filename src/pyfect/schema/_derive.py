@@ -21,7 +21,7 @@ import sys
 import types
 import typing
 from collections.abc import Callable, Mapping
-from typing import Any, cast, get_args, get_origin, get_type_hints, is_typeddict
+from typing import Any, TypeVar, cast, get_args, get_origin, get_type_hints, is_typeddict
 from weakref import WeakKeyDictionary
 from zoneinfo import ZoneInfo
 
@@ -154,13 +154,13 @@ def _unwrap(annotation: object) -> tuple[tuple[object, ...], object]:
 
 
 def _of_class(annotation: object) -> AnyBottom | None:
+    if is_typeddict(get_origin(annotation) or annotation):
+        return Bottom(typed_dict_ast(cast("type[Mapping[str, object]]", annotation)))
     if not isinstance(annotation, type):
         return None
     annotation = cast("type[object]", annotation)
     if issubclass(annotation, enum.Enum):
         return Enum(annotation)
-    if is_typeddict(annotation):
-        return Bottom(typed_dict_ast(cast("type[Mapping[str, object]]", annotation)))
     if hasattr(annotation, "__codec__"):
         return cast("Codec[Any, Any, Any, Any]", annotation).__codec__()
     return None
@@ -204,10 +204,10 @@ def typed_dict_fields(
     typed_dict: type[Mapping[str, object]], overrides: Mapping[str, AnyBottom]
 ) -> dict[str, AnyBottom]:
     """The schema of each key: the given one, else its annotation's."""
-    hints = get_type_hints(typed_dict)
+    hints = typed_dict_hints(typed_dict)
     unknown = [name for name in overrides if name not in hints]
     if unknown:
-        raise TypeError(f"{typed_dict.__name__} has no key {unknown[0]!r}")
+        raise TypeError(f"{typed_dict_name(typed_dict)} has no key {unknown[0]!r}")
     for name, schema in overrides.items():
         _require_fits(typed_dict, name, hints[name], schema)
     return {
@@ -229,9 +229,43 @@ def _require_fits(
         return
     if assignable(schema.ast, declared.ast) is False:
         raise TypeError(
-            f"{typed_dict.__name__}[{name!r}] is {_type_name(hint)}, but its schema decodes to "
-            f"{schema.ast.to_type().expected()}"
+            f"{typed_dict_name(typed_dict)}[{name!r}] is {_type_name(hint)}, "
+            f"but its schema decodes to {schema.ast.to_type().expected()}"
         )
+
+
+def typed_dict_hints(
+    typed_dict: type[Mapping[str, object]], *, include_extras: bool = False
+) -> dict[str, object]:
+    """The evaluated annotation of each key. A parameterized generic
+    (``Body[int]``) has its type arguments in place of its parameters:
+    ``get_type_hints`` of the alias itself is empty."""
+    origin = get_origin(typed_dict)
+    if origin is None:
+        return get_type_hints(typed_dict, include_extras=include_extras)
+    parameters: tuple[object, ...] = getattr(origin, "__parameters__", ())
+    arguments = dict(zip(parameters, get_args(typed_dict), strict=True))
+    hints = get_type_hints(origin, include_extras=include_extras)
+    return {name: _substitute(hint, arguments) for name, hint in hints.items()}
+
+
+def _substitute(hint: object, arguments: Mapping[object, object]) -> object:
+    if isinstance(hint, TypeVar):
+        return arguments.get(hint, hint)
+    parameters: tuple[object, ...] = getattr(hint, "__parameters__", ())
+    if not parameters or isinstance(hint, type):
+        return hint
+    return cast("Any", hint)[tuple(arguments.get(p, p) for p in parameters)]
+
+
+def _typed_dict_class(typed_dict: type[Mapping[str, object]]) -> type[Mapping[str, object]]:
+    """The class of a TypedDict or of a parameterized generic one, whose
+    dunder attributes its alias does not forward."""
+    return get_origin(typed_dict) or typed_dict
+
+
+def typed_dict_name(typed_dict: type[Mapping[str, object]]) -> str:
+    return _typed_dict_class(typed_dict).__name__
 
 
 def _type_name(hint: object) -> str:
@@ -242,8 +276,8 @@ def optional_keys(typed_dict: type[Mapping[str, object]]) -> frozenset[str]:
     """The keys that may be missing. Python's ``__optional_keys__`` misses a
     ``NotRequired`` / ``Required`` written as a string (``from __future__
     import annotations``), so the evaluated annotations decide."""
-    optional = set(getattr(typed_dict, "__optional_keys__", frozenset[str]()))
-    for name, hint in get_type_hints(typed_dict, include_extras=True).items():
+    optional = set(getattr(_typed_dict_class(typed_dict), "__optional_keys__", frozenset[str]()))
+    for name, hint in typed_dict_hints(typed_dict, include_extras=True).items():
         match _requiredness(hint):
             case "required":
                 optional.discard(name)
@@ -307,7 +341,7 @@ def extra_items(typed_dict: type[Mapping[str, object]]) -> object | None:
     """The type of the keys ``typed_dict`` does not declare (PEP 728's
     ``extra_items=``, Effect's ``StructWithRest`` of a string record), or
     ``None`` when it declares none (or is ``closed``)."""
-    extra = getattr(typed_dict, "__extra_items__", None)
+    extra = getattr(_typed_dict_class(typed_dict), "__extra_items__", None)
     if extra is None or extra is typing.Never or extra in _no_extra_items():
         return None
     return get_args(extra)[0] if get_origin(extra) is typing.ReadOnly else extra

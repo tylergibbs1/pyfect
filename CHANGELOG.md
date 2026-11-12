@@ -11,6 +11,13 @@
   a database pool) was still starting. A WebSocket upgrade waits the same way instead of
   closing with 1013. The test runs on every server built on the shared ASGI listener, and
   fails if a new one is not added to it. Found by dogfooding (lantern).
+- `S.Struct` of a parameterized generic TypedDict (`S.Struct(Body[Inner])`) has the TypedDict's
+  keys with the type arguments in place, also as another key's annotation and in
+  `S.TaggedStruct`. `get_type_hints` of the alias is empty, so the struct had no keys at all
+  (it accepted anything), and giving a key its own schema raised
+  `TypeError: Body has no key 'body'`. Every reader of a TypedDict's annotations now goes
+  through one function that substitutes the arguments, and a test fails on any other
+  `get_type_hints` call in `pyfect.schema`. Found by dogfooding (lantern).
 
 ## 0.6.1 (2026-11-12)
 

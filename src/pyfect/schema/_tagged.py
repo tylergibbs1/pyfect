@@ -30,7 +30,6 @@ from typing import (
     cast,
     get_args,
     get_origin,
-    get_type_hints,
     overload,
 )
 from typing import Literal as TypingLiteral
@@ -38,7 +37,7 @@ from typing import Literal as TypingLiteral
 from pyfect._js import js_number
 from pyfect.effect import succeed
 from pyfect.schema._constructor_default import tag
-from pyfect.schema._derive import optional_keys
+from pyfect.schema._derive import optional_keys, typed_dict_hints, typed_dict_name
 from pyfect.schema._literals import LiteralValue as LiteralInput
 from pyfect.schema._literals import Union, UnionSchema
 from pyfect.schema._middleware import with_decoding_default_key
@@ -81,10 +80,10 @@ def TaggedStruct(
     (Effect's ``TaggedStruct``); ``make`` fills the tag in (``S.tag``)
     unless ``fields`` give the ``_tag`` schema. Any other ``_tag`` raises
     ``TypeError``."""
-    hint = get_type_hints(typed_dict).get("_tag")
+    hint = typed_dict_hints(typed_dict).get("_tag")
     literals = get_args(hint) if get_origin(hint) is TypingLiteral else ()
     if len(literals) != 1 or "_tag" in optional_keys(typed_dict):
-        raise TypeError(f'{typed_dict.__name__} needs a required "_tag" key of one literal')
+        raise TypeError(f'{typed_dict_name(typed_dict)} needs a required "_tag" key of one literal')
     struct = Struct(typed_dict, **{"_tag": tag(literals[0]), **fields})
     return TaggedStructSchema(struct.ast, struct.fields, literals[0])
 
