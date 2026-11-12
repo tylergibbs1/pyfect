@@ -13,6 +13,8 @@ from __future__ import annotations
 import gc
 import weakref
 
+from _gc_census import tracked_count
+
 from pyfect.http_api import endpoint as ep
 from pyfect.http_api import openapi
 from pyfect.http_api.api import AnyApi, HttpApi
@@ -27,11 +29,11 @@ def _cached_objects(calls: int) -> int:
     api = _api()
     openapi.from_api(api, include_annotation_key=lambda k: k.startswith("x-"))
     gc.collect()
-    before = len(gc.get_objects())
+    before = tracked_count()
     for _ in range(calls):
         openapi.from_api(api, include_annotation_key=lambda k: k.startswith("x-"))
     gc.collect()
-    return len(gc.get_objects()) - before
+    return tracked_count() - before
 
 
 def test_fresh_option_functions_add_nothing_per_call() -> None:

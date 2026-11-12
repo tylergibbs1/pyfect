@@ -7,7 +7,6 @@ still measured.
 from __future__ import annotations
 
 import ctypes
-import gc
 import os
 import sys
 import threading
@@ -15,6 +14,8 @@ import time
 from collections import Counter
 from collections.abc import Callable
 from typing import Any
+
+from _gc_census import counts_by_type
 
 from pyfect.context import Context
 from pyfect.exit import Exit
@@ -179,6 +180,7 @@ def _type_name(kind: type) -> str:
 
 def object_counts() -> tuple[int, Counter[str]]:
     """Every object the collector tracks, and how many there are of each type."""
-    objects: list[object] = gc.get_objects()
-    counts = Counter(_type_name(type(obj)) for obj in objects)
+    counts = Counter[str]()
+    for kind, count in counts_by_type().items():
+        counts[_type_name(kind)] += count
     return sum(counts.values()), counts

@@ -18,6 +18,8 @@ import re
 import weakref
 from pathlib import Path
 
+from _gc_census import tracked_count
+
 import pyfect as fx
 from pyfect import testing
 from pyfect._timer_heap import TimerHeap
@@ -46,10 +48,10 @@ def _objects_left_by_cancelled_timers(count: int) -> fx.Effect[int]:
     def program():
         yield from sleepers()  # warm up
         gc.collect()
-        before = len(gc.get_objects())
+        before = tracked_count()
         yield from sleepers()
         gc.collect()
-        return len(gc.get_objects()) - before
+        return tracked_count() - before
 
     return program()
 
