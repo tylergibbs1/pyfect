@@ -14,7 +14,6 @@ changed matrix. Regenerate ``src/pyfect/date_time/_intl/cldr.zip``
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import subprocess
@@ -22,18 +21,9 @@ import sys
 from pathlib import Path
 
 _ROOT = Path(__file__).parent.parent
-sys.path.insert(0, str(_ROOT / "tests"))
+sys.path.insert(0, str(_ROOT))
 
-from oracle.intl_matrix import cases  # noqa: E402
-
-ANSWERS = _ROOT / "tests" / "oracle" / "intl_answers.json"
-ORACLE = _ROOT / "tests" / "oracle" / "intl_oracle.ts"
-ENVIRONMENT = {"LC_ALL": "en_US.UTF-8", "TZ": "UTC"}
-
-
-def digest(found: object) -> str:
-    """The digest of the cases the answers are for."""
-    return hashlib.sha256(json.dumps(found, sort_keys=True).encode()).hexdigest()
+from tests.oracle.intl_matrix import ANSWERS, ENVIRONMENT, ORACLE, cases, digest  # noqa: E402
 
 
 def main() -> None:

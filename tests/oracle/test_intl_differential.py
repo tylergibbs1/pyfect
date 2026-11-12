@@ -16,21 +16,29 @@ import os
 import re
 import shutil
 import subprocess
-import sys
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import cast
+from zoneinfo import ZoneInfo
 
 import pytest
 
 from pyfect.date_time import intl, zone_named
 
-from .intl_matrix import NODE_LOCALES, UNSUPPORTED_CALENDAR_LOCALES, Case, cases
+from .intl_matrix import (
+    ANSWERS,
+    ENVIRONMENT,
+    NODE_LOCALES,
+    ORACLE,
+    UNSUPPORTED_CALENDAR_LOCALES,
+    Case,
+    cases,
+    digest,
+)
 
 _ROOT = Path(__file__).parent.parent.parent
-sys.path.insert(0, str(_ROOT / "scripts"))
-
-from gen_intl_answers import ANSWERS, ENVIRONMENT, ORACLE, digest  # noqa: E402
 
 _KEYS = {"dateStyle": "date_style", "timeStyle": "time_style", "timeZone": "time_zone"}
 _UNSUPPORTED = re.compile(r"the [a-z-]+ calendar is not supported")
@@ -47,8 +55,19 @@ KNOWN_DIFFERENCES: dict[str, Callable[[Case, str, str], bool]] = {
 }
 
 
-def _recorded() -> dict[str, object]:
-    return json.loads(ANSWERS.read_text(encoding="utf-8"))
+@dataclass(frozen=True)
+class _Recorded:
+    versions: tuple[str, str, str, str]
+    """Node's, ICU's, CLDR's and tz's."""
+    cases: str
+    answers: list[str]
+
+
+def _recorded() -> _Recorded:
+    data = cast("dict[str, str]", json.loads(ANSWERS.read_text(encoding="utf-8")))
+    answers = cast("list[str]", data["answers"])
+    versions = (data["node"], data["icu"], data["cldr"], data["tz"])
+    return _Recorded(versions, data["cases"], answers)
 
 
 def _ours(case: Case) -> str:
@@ -77,7 +96,7 @@ def node_environment(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_the_answers_cover_the_matrix() -> None:
-    assert _recorded()["cases"] == digest(cases()), (
+    assert _recorded().cases == digest(cases()), (
         "the matrix changed: regenerate intl_answers.json (scripts/gen_intl_answers.py)"
     )
 
@@ -85,25 +104,19 @@ def test_the_answers_cover_the_matrix() -> None:
 def test_the_data_is_from_the_answers_node() -> None:
     from pyfect.date_time._intl._data import meta
 
-    recorded = _recorded()
     data = meta()
-    assert (data.node, data.icu, data.cldr, data.tz) == (
-        recorded["node"],
-        recorded["icu"],
-        recorded["cldr"],
-        recorded["tz"],
-    ), "regenerate cldr.zip and intl_answers.json with the same Node"
+    assert (data.node, data.icu, data.cldr, data.tz) == _recorded().versions, (
+        "regenerate cldr.zip and intl_answers.json with the same Node"
+    )
     assert sorted(data.available) == list(NODE_LOCALES)
 
 
 @pytest.mark.usefixtures("node_environment")
 def test_formats_as_node() -> None:
-    answers = _recorded()["answers"]
-    assert isinstance(answers, list)
+    answers = _recorded().answers
     unexplained: list[tuple[Case, str, str]] = []
     explained: dict[str, int] = dict.fromkeys(KNOWN_DIFFERENCES, 0)
     for case, node in zip(cases(), answers, strict=True):
-        assert isinstance(node, str)
         ours = _ours(case)
         if ours == node:
             continue
@@ -134,8 +147,8 @@ def test_the_docs_state_the_versions() -> None:
 def test_the_answers_are_nodes_answers() -> None:
     node = subprocess.run(["node", "--version"], capture_output=True, text=True, check=True)
     recorded = _recorded()
-    if node.stdout.strip() != f"v{recorded['node']}":
-        pytest.skip(f"answers are from Node {recorded['node']}, this is {node.stdout.strip()}")
+    if node.stdout.strip() != f"v{recorded.versions[0]}":
+        pytest.skip(f"answers are from Node {recorded.versions[0]}, this is {node.stdout.strip()}")
     sample = cases()[::50]
     result = subprocess.run(
         ["node", str(ORACLE)],
@@ -145,6 +158,16 @@ def test_the_answers_are_nodes_answers() -> None:
         check=True,
         env={**os.environ, **ENVIRONMENT},
     )
-    answers = recorded["answers"]
-    assert isinstance(answers, list)
-    assert json.loads(result.stdout)["answers"] == answers[::50]
+    assert json.loads(result.stdout)["answers"] == recorded.answers[::50]
+
+
+def test_a_zone_read_from_a_file_without_a_name_formats_with_its_offset() -> None:
+    # zone_local falls back to ZoneInfo.from_file(/etc/localtime), whose key is
+    # None; Intl then has only the offset to name it by.
+    tzif = Path("/usr/share/zoneinfo/Asia/Tokyo")
+    if not tzif.exists():
+        pytest.skip("no system zoneinfo")
+    with tzif.open("rb") as file:
+        zone = ZoneInfo.from_file(file)
+    moment = datetime(2024, 3, 15, 12, 4, 6, tzinfo=UTC).astimezone(zone)
+    assert intl.format(moment, locale="en-US", time_style="long") == "9:04:06 PM GMT+9"

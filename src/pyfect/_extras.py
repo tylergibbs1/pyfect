@@ -41,7 +41,8 @@ LIBRARIES: Final[Mapping[Extra, frozenset[str]]] = {
     "mssql": frozenset({"pytds", "OpenSSL"}),
     "server": frozenset({"uvicorn", "websockets"}),
     "http2": frozenset({"hypercorn"}),
-    "intl": frozenset({"babel"}),
+    # date_time.intl ships its own data now; the extra installs nothing.
+    "intl": frozenset(),
     "regex": frozenset({"regex"}),
     "redis": frozenset({"redis"}),
     "eventlog": frozenset({"cryptography", "nacl"}),

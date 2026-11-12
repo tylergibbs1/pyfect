@@ -542,11 +542,12 @@ def test_group_wide_middleware_wraps_every_rpc():
         ("en-US", {"year": "numeric", "month": "long", "day": "numeric"}, "March 15, 2024"),
         ("de-DE", {"weekday": "long"}, "Freitag"),
         ("ja-JP", {"year": "numeric", "month": "long", "day": "numeric"}, "2024年3月15日"),
-        ("en-US", {"time_zone": "Asia/Tokyo", "time_style": "short"}, "9:04 PM"),
+        # formatUtc puts UTC over a timeZone option: {...options, timeZone: "UTC"}
+        ("en-US", {"time_zone": "Asia/Tokyo", "time_style": "short"}, "12:04 PM"),
     ],
 )
 def test_intl_format_matches_node(locale: str, options: dict[str, str], expected: str):
-    # Node 24: new Intl.DateTimeFormat(locale, {timeZone: "UTC", ...options}).format(d)
+    # Node 24: DateTime.formatUtc(d, {locale, ...options})
     from pyfect.date_time import intl
 
     at = datetime(2024, 3, 15, 12, 4, 6, tzinfo=UTC)
