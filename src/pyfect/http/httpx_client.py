@@ -64,8 +64,10 @@ _READ_SIZE = 65536
 
 _FORM_CONTENT_TYPE = "pyfect_form_content_type"
 _BODY_READER = "pyfect_body_reader"
-"""The keys ``_content`` returns a streamed form's content type and a
-streamed body's reader under (taken out before the rest goes to httpx)."""
+_BODY_DONE = "pyfect_body_done"
+"""The keys ``_content`` returns a streamed form's content type, a streamed body's
+reader, and what to call once that body is done, under (taken out before the rest
+goes to httpx)."""
 
 
 def _stream_content(
@@ -73,13 +75,18 @@ def _stream_content(
 ) -> dict[str, Any]:
     chunks = stream.tap_error(lambda error: sync(lambda: failures.append(error)))
     reader = aiter(chunks.to_async_iterable_with(fiber._context))
+    done: list[Callable[[], object]] = []
 
     async def content() -> AsyncIterator[bytes]:
-        async with contextlib.aclosing(reader):
-            async for chunk in reader:
-                yield chunk
+        try:
+            async with contextlib.aclosing(reader):
+                async for chunk in reader:
+                    yield chunk
+        finally:
+            for then in done:
+                then()
 
-    return {"content": content(), _BODY_READER: reader}
+    return {"content": content(), _BODY_READER: reader, _BODY_DONE: done}
 
 
 def _form_body(
@@ -227,11 +234,19 @@ class _Backend:
         failures: list[object] = []
         content = self._content(request, fiber, failures)
         reader: StreamAsyncIterator[bytes] | None = content.pop(_BODY_READER, None)
+        done: list[Callable[[], object]] = content.pop(_BODY_DONE, [])
         if reader is not None:
             # An abort (interrupt, timeout) stops the body's stream at once: an
             # upload the server stopped reading must not hold it open.
             body_reader = reader
-            signal.add_listener(lambda: self._call_soon(lambda: self._close_reader(body_reader)))
+            # Once the body is done the listener goes: it holds the request's context,
+            # which reaches the response, so it would keep an unread response (and the
+            # finalizer that aborts it) alive.
+            done.append(
+                signal.add_listener(
+                    lambda: self._call_soon(lambda: self._close_reader(body_reader))
+                )
+            )
         headers = request.headers
         if isinstance(request.body, _body.FormData):
             headers = headers.remove("content-type")

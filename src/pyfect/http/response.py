@@ -106,9 +106,20 @@ class HttpClientResponse:
         self._remote_address = remote_address
         self._upgrade = upgrade
         self._bytes: Effect[bytes, HttpClientError] | None = None
+        self._abort_request: Callable[[], None] | None = None
 
     def __repr__(self) -> str:
         return f"HttpClientResponse({self.status}, {self.request!r})"
+
+    def _abort_with(self, abort: Callable[[], None]) -> None:
+        """Set by the client that made the response: abort its request."""
+        self._abort_request = abort
+
+    def _abort_unread(self) -> None:
+        """Abort the request, releasing its connection without reading the body;
+        nothing for a response made by hand."""
+        if self._abort_request is not None:
+            self._abort_request()
 
     def to_json(self) -> dict[str, object]:
         return {
@@ -225,6 +236,7 @@ class _InterruptibleResponse(HttpClientResponse):
         self.original = original
         self._abort = abort
         self._release = release
+        self._abort_request = None
         self.request = original.request
         self.status = original.status
         self.headers = original.headers

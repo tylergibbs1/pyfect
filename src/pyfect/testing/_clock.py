@@ -4,8 +4,6 @@
 from __future__ import annotations
 
 import contextvars
-import heapq
-import itertools
 import math
 import sys
 import warnings
@@ -15,6 +13,7 @@ from typing import Any, Never
 from pyfect._core import Effect, _Callback, _Gen, _Succeed, _Sync, _WithFiber, _YieldNow
 from pyfect._effect_args import require_effect
 from pyfect._fiber import Fiber
+from pyfect._timer_heap import TimerHeap
 from pyfect._timestamps import millis_to_nanos
 from pyfect._wake_tracking import WakeTracker
 from pyfect.clock import Clock, ClockService, LiveClock
@@ -81,14 +80,6 @@ def _add_nanos(a: int | float, b: int | float) -> int | float:
     return _in_float_range(_in_float_range(a) + _in_float_range(b))
 
 
-class _Sleeper:
-    __slots__ = ("alive", "wake")
-
-    def __init__(self, wake: Callable[[], None]) -> None:
-        self.wake = wake
-        self.alive = True
-
-
 class _NotAdvanced:
     """The "not advancing the test clock" warning: armed by the first
     sleep, disarmed for good once time moves or the test ends."""
@@ -150,8 +141,8 @@ class TestClock:
         self._timestamp_ns: float = start_ns
         self._wall_ns = start_ns
         self._monotonic_ns = start_ns
-        self._sleepers: list[tuple[float, int, _Sleeper]] = []
-        self._seq = itertools.count()
+        # Wake-ups by deadline; an interrupted sleep's lets go of its fiber at once.
+        self._sleepers: TimerHeap[Callable[[], None]] = TimerHeap()
         self._warning_delay = from_input_unsafe(warning_delay)
         self._live = live or LiveClock()
         self._not_advanced = _NotAdvanced()
@@ -195,13 +186,8 @@ class TestClock:
                     resume(_Succeed(None))
                     return None
                 self._not_advanced.arm(fiber._scheduler, self._warning_delay)
-                sleeper = _Sleeper(lambda: resume(_Succeed(None)))
-                heapq.heappush(self._sleepers, (end, next(self._seq), sleeper))
-
-                def cancel() -> None:
-                    sleeper.alive = False
-
-                return _Sync(cancel)
+                sleeper = self._sleepers.push(end, lambda: resume(_Succeed(None)))
+                return _Sync(sleeper.cancel)
 
             return _Callback(register)
 
@@ -237,7 +223,7 @@ class TestClock:
     @property
     def pending_sleeps(self) -> int:
         """How many fibers are sleeping on this clock."""
-        return sum(1 for _, _, s in self._sleepers if s.alive)
+        return len(self._sleepers)
 
     def _move(self, step: Callable[[float], float]) -> Effect[None]:
         def body(fiber: Fiber[Any, Any]) -> Effect[None]:
@@ -253,13 +239,12 @@ class TestClock:
         yield from settled.await_exit()
         yield from self._outside_done(scheduler)
         end = step(self._timestamp_ns)
-        while self._sleepers and self._sleepers[0][0] <= end:
-            when, _, sleeper = heapq.heappop(self._sleepers)
-            if not sleeper.alive:
-                continue
+        while (when := self._sleepers.next_due()) is not None and when <= end:
+            popped = self._sleepers.pop()
+            assert popped is not None
             self._advance_to(when)
             tracker = WakeTracker()
-            scheduler.track(tracker, sleeper.wake)
+            scheduler.track(tracker, popped[1])
             if tracker.pending:
                 yield from self._wait_or_warn(scheduler, tracker.when_idle, _WAKE_WARNING)
             yield from self._outside_done(scheduler)

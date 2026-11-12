@@ -1,5 +1,40 @@
 # Changelog
 
+## 0.6.2 (unreleased)
+
+### Fixed
+
+- An interrupted sleep, and a timeout that did not fire, no longer leave their timer in
+  memory until its deadline. Cancelling a timer of `run_blocking`'s scheduler (or of the
+  `TestClock`) only flagged it, so the timer and what it would have run stayed in the heap:
+  with a 60-second timeout around each operation the soak test held about 14,000 dead
+  timers, and a long timeout on every request of a busy server holds rate x timeout of
+  them. A cancelled timer now lets go of its task at once and cancelled timers are swept
+  out once they are most of the heap, as asyncio does and as Effect's `clearTimeout`
+  frees its callback. Every timer heap is now one `TimerHeap`, and a test keeps it so.
+- The httpx client frees the response to a streamed upload once the program is done with
+  it. Each response's abort was kept in a module-wide weak-keyed table whose entry reached
+  its own key again (through the upload body's abort listener, the request's context and
+  its span), so the entry, the response and its connection objects were never freed:
+  eight responses a second under the soak's load. The finalizer that aborts a response
+  dropped unread held the same chain, so for a streamed upload it never ran and the
+  response stayed. The abort is now an attribute of the response, the upload body's abort
+  listener is removed once the body is sent, and a test keeps weak-keyed tables out of
+  `pyfect.http`.
+
+### Added
+
+- A soak test (`tests/soak`, `python -m soak run` from `tests/`): HTTPS and WSS traffic
+  through the live server and the httpx client (keep-alive, streamed bodies, WebSockets),
+  fiber, scope, pool, cache, queue, PubSub, semaphore, stream, retry, schema and SQLite
+  workloads, with failures, timeouts and interruptions on purpose, at a moderate pace for
+  hours. It samples memory, objects by type, live fibers, file descriptors, threads and
+  each workload's latency into a JSONL file, and `python -m soak analyse` fails when,
+  after the warm-up, any of them trends upward (a robust slope over bin floors, so noise
+  and the collector's sawtooth pass), latency rises, a workload stalls or fails
+  unexpectedly, or the shutdown leaves fibers running. The `soak` workflow runs it for
+  over five hours weekly and on demand on 3.13, 3.14 and free-threaded 3.14t.
+
 ## 0.6.1 (2026-11-12)
 
 ### Added

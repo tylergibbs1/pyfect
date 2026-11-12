@@ -1,0 +1,68 @@
+name: soak
+
+# Long-run health (tests/soak): HTTPS and WSS traffic, fiber, scope, pool, cache, queue,
+# PubSub, semaphore, stream, retry, schema and SQLite workloads, failures and interruptions
+# included, for as long as a job may run, on the GIL builds and free-threaded 3.14t. The
+# analyser fails the job when, after the warm-up, memory, objects, fibers, file descriptors
+# or threads trend upward, latency rises, a workload stalls or fails unexpectedly, or the
+# shutdown leaves fibers running. The health samples are uploaded either way: read them
+# with `python -m soak analyse FILE` (from tests/). Weekly and on demand.
+
+on:
+  schedule:
+    - cron: "41 2 * * 6"
+  workflow_dispatch:
+    inputs:
+      duration:
+        description: How long to soak (90s, 30m, 5h)
+        default: "320m"
+      rate:
+        description: Operations per second, relative to the default pace
+        default: "1.0"
+
+permissions:
+  contents: read
+
+jobs:
+  soak:
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.13", "3.14", "3.14t"]
+    runs-on: ubuntu-latest
+    # A job may run six hours: the soak, its warm-up and shutdown, and the setup fit in this.
+    timeout-minutes: 350
+    env:
+      DURATION: ${{ inputs.duration || '320m' }}
+      RATE: ${{ inputs.rate || '1.0' }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+
+      - name: Install
+        run: |
+          uv python install ${{ matrix.python }}
+          uv venv -q --python ${{ matrix.python }} "$RUNNER_TEMP/soak"
+          # What the workloads use: the HTTP client, WebSockets and certificates.
+          uv pip install -q --python "$RUNNER_TEMP/soak/bin/python" '.[httpx,websockets,crypto]'
+          "$RUNNER_TEMP/soak/bin/python" -c "import sys; print(sys.version, 'GIL', sys._is_gil_enabled())"
+
+      - name: Soak
+        working-directory: tests
+        run: |
+          # Extensions not marked free-threading safe would turn the GIL back on.
+          if [ "${{ matrix.python }}" = "3.14t" ]; then export PYTHON_GIL=0; fi
+          "$RUNNER_TEMP/soak/bin/python" -m soak run \
+            --duration "$DURATION" --rate "$RATE" --interval 30s \
+            --out "$GITHUB_WORKSPACE/.soak/soak-${{ matrix.python }}.jsonl"
+
+      - name: Upload the health samples
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: soak-${{ matrix.python }}
+          path: |
+            .soak/*.jsonl
+            .soak/*.stacks.txt
+          if-no-files-found: warn
