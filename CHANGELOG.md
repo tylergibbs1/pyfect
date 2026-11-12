@@ -42,6 +42,19 @@
 - `pyfect.socket.ws.make_server` and `layer_server` warn; use
   `pyfect.socket.server.make_web_socket` and `layer_web_socket`. They are removed in 0.7.0.
 
+### Docs
+
+- http-server.mdx says when the server starts answering: its port opens before the app's
+  layers are built, and requests wait for the app meanwhile, so readiness checks should
+  request a route.
+- postgres.mdx: streaming a statement's rows with `.stream` (a query ended early is cancelled),
+  `timestamptz` values arriving in the session's time zone and decoded with
+  `S.DateTimeUtcFromDate` as Effect decodes a `Date`, reading the name of the constraint a
+  `ConstraintError` broke from the driver's cause, and where the spans' `db.namespace` and
+  `server.address` come from (the config's `database` and `host`, not `url`, as in Effect).
+- A DevTools page: the client layers, what the protocol carries, and serving the DevTools side
+  on `socket.server.layer_web_socket`.
+
 ## 0.6.1 (2026-11-12)
 
 ### Added

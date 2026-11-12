@@ -1,0 +1,5 @@
+Span checkout: Started
+SpanEvent charging
+Span charge: Started
+Span charge: Ended
+Span checkout: Ended

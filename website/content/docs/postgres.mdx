@@ -1,6 +1,6 @@
 ---
 title: PostgreSQL
-description: "A pooled PostgreSQL client: JSON columns, LISTEN/NOTIFY, notifications sent on commit, and migrations."
+description: "A pooled PostgreSQL client: JSON columns, streamed rows, time zones, LISTEN/NOTIFY, notifications sent on commit, and migrations."
 ---
 
 `pyfect.sql.pg` runs on psycopg 3; install the `pyfect-dev[pg]` extra. psycopg needs the
@@ -41,6 +41,54 @@ PostgreSQL or easy to miss:
 <include lang="text">../../snippets/postgres/connect.out</include>
 
 </CodeOutput>
+
+## Streaming rows
+
+A statement's `.stream` is its rows as a `Stream`, read from PostgreSQL as the stream is
+pulled, so an export of millions of rows never holds them all in memory. The stream holds one
+session until it ends. Ending it early, with `take` or by interrupting it (a client that
+hangs up on a streamed HTTP response, for example), cancels the query in PostgreSQL.
+
+<CodeOutput>
+
+<include meta='title="streaming.py"'>../../snippets/postgres/streaming.py</include>
+
+<include lang="text">../../snippets/postgres/streaming.out</include>
+
+</CodeOutput>
+
+## Timestamps and time zones
+
+A `timestamptz` column comes back as an aware `datetime` in the session's `TimeZone`, which
+is the server's setting unless the pool sets one. Effect's driver gives a JavaScript `Date`,
+an instant with no zone, so decode the column the way Effect decodes a `Date`: with
+`S.DateTimeUtcFromDate`, which takes an aware `datetime` in any zone and gives it in UTC.
+`S.DateTimeUtc` takes only a `datetime` that is already in UTC, so on a server whose zone
+isn't UTC it rejects every row. Setting `startup_parameters={"TimeZone": "UTC"}` on the pool
+makes the values UTC as well.
+
+<CodeOutput>
+
+<include meta='title="timestamps.py"'>../../snippets/postgres/timestamps.py</include>
+
+<include lang="text">../../snippets/postgres/timestamps.out</include>
+
+</CodeOutput>
+
+## Errors and traces
+
+A failed statement is a `SqlError` whose `reason` comes from the SQLSTATE, as in Effect's
+driver: `UniqueViolation` carries the name of the constraint it broke, and any other
+integrity violation (a foreign key, a `CHECK`, an exclusion constraint) is a
+`ConstraintError`, which, as in Effect, does not. To tell such constraints apart, read the
+driver's error in the reason's `cause`: psycopg's `cause.diag.constraint_name` and
+`cause.sqlstate`.
+
+Each statement's span records `db.namespace`, `server.address` and `server.port` from the
+config's `database` (else `username`, else `postgres`), `host` (else `localhost`) and `port`
+(else 5432), as Effect's driver does. They are not read from `url`, so a client configured by
+URL alone reports the defaults; give `database` and `host` as well, or add the attributes you
+want with `span_attributes`.
 
 ## LISTEN and NOTIFY
 

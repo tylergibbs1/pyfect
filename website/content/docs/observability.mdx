@@ -31,6 +31,9 @@ program ends are sent.
 
 <include meta='title="otel_sdk.py"'>../../snippets/observability/otel_sdk.py</include>
 
+To watch spans live in the Effect DevTools instead, provide `devtools.layer()` (see
+[DevTools](/docs/devtools)).
+
 In production the processor is usually `BatchSpanProcessor(OTLPSpanExporter())` from
 `opentelemetry-exporter-otlp`, with `PeriodicExportingMetricReader(OTLPMetricExporter())` for
 metrics.

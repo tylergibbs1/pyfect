@@ -1,0 +1,55 @@
+---
+title: DevTools
+description: "Report spans, span events and metrics to the Effect DevTools, or serve the DevTools side yourself."
+---
+
+`pyfect.devtools` speaks the protocol of the Effect DevTools (the VS Code extension and its
+server), so a pyfect program shows up there as an Effect program does. Each line on the wire
+is one JSON message, the same in both directions as Effect's, so a pyfect app can report to
+Effect's DevTools server and an Effect app to a pyfect one.
+
+## Reporting to the DevTools
+
+`devtools.layer()` reports every span of the program it's provided to the DevTools at
+`ws://localhost:34437`, the extension's default; `devtools.layer(url)` reports to another
+address. It opens the WebSocket with the `websockets` library, so install the
+`pyfect-dev[websockets]` extra. Two other layers take the connection from you:
+`devtools.layer_web_socket(url)` opens it with the `WebSocketConstructor` you provide, and
+`devtools.layer_socket` reports over the `Socket` you provide, such as a TCP one from
+`socket.layer_net(port, host)`.
+
+The protocol carries:
+
+- **Spans**, sent when they start and again when they end, with their parent, attributes and
+  status. An attribute added while the span runs appears in the end message.
+- **Span events**: each log inside a span is an event of that span.
+- **Metrics**: a `MetricsSnapshot` of every metric, each time the DevTools asks with a
+  `MetricsRequest`, and a last one when the layer is released.
+
+The protocol has no fibers, in pyfect as in Effect, so the DevTools shows none.
+
+## Serving the DevTools side
+
+`devtools.server.run(handle)` is the other end: for each app that connects to the
+`SocketServer`, it calls `handle` with a `Client`. `client.queue` has the app's spans, span
+events and snapshots (pings are answered for it), and `client.send(request)` sends it a
+`MetricsRequest`. The default client speaks WebSocket, so serve on
+`socket.server.layer_web_socket(port=..., host=...)`; `socket.server.layer(port, host)` is a
+TCP server, for apps reporting with `devtools.layer_socket`.
+
+<CodeOutput>
+
+<include meta='title="devtools.py"'>../../snippets/devtools/devtools.py</include>
+
+<include lang="text">../../snippets/devtools/devtools.out</include>
+
+</CodeOutput>
+
+When an app disconnects, its queue shuts down: requests its handler has not taken yet are
+dropped, and a handler waiting on `client.queue.take()` is interrupted, which the server logs
+as "Unhandled error in SocketServer". Effect's server does the same. The snippet takes the
+app's messages while it is still connected for that reason.
+
+Reference: [`pyfect.devtools`](/docs/reference/devtools),
+[`pyfect.devtools.server`](/docs/reference/devtools/server),
+[`pyfect.socket.server`](/docs/reference/socket/server).
