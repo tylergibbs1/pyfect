@@ -224,7 +224,7 @@ class AST(ABC):
                 return self
             return _with_context(typed, self)
         if not self._type_side:
-            base = self if self.encoding is None else replace_encoding(self, None)
+            base = replace_encoding(self, None)
             typed = base._to_type()
             encoding_checks = typed.encoding_checks
             if encoding_checks is not None:
@@ -240,7 +240,7 @@ class AST(ABC):
                     typed, encoding_checks=None, checks=join_checks(typed.checks, promoted)
                 )
             self._type_side.append(typed)
-            if typed is not self and not typed._type_side:
+            if typed is not self and not typed._type_side:  # pragma: no mutate, memo only
                 typed._type_side.append(typed)
         return self._type_side[0]
 
@@ -303,9 +303,9 @@ def _preserves_encoding_checks(ast: AST) -> bool:
     seen: set[int] = set()
     while pending:
         child = pending.pop()
-        if id(child) in seen:
+        if id(child) in seen:  # pragma: no mutate, dedupe is only a speedup
             continue
-        seen.add(id(child))
+        seen.add(id(child))  # pragma: no mutate, dedupe is only a speedup
         if child.encoding is not None or child.is_opaque():
             return False
         pending.extend(child.children())
@@ -548,5 +548,8 @@ def construct_missing(ast: AST, options: ParseOptions) -> ParseResult | None:
     known = known_exit(default)
     if type(known) is Success:
         return ast.parse(known.value, options)
-    wrapped = map_issue(default if known is None else known, lambda i: EncodingIssue(ast, i))
+    wrapped = map_issue(
+        default if known is None else known,  # pragma: no mutate, same outcome
+        lambda i: EncodingIssue(ast, i),
+    )
     return flat_map(wrapped, lambda value: ast.parse(value, options))

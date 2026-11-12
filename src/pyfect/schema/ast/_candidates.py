@@ -92,10 +92,10 @@ class _Memo:
 
 
 def _kinds(ast: AST, memo: _Memo) -> frozenset[str]:
-    found = memo.kinds.get(id(ast))
+    found = memo.kinds.get(id(ast))  # pragma: no mutate, a memo
     if found is None:
         found = (ast, _kinds_of(ast, memo))
-        memo.kinds[id(ast)] = found
+        memo.kinds[id(ast)] = found  # pragma: no mutate, a memo
     return found[1]
 
 
@@ -107,11 +107,11 @@ def _kinds_of(ast: AST, memo: _Memo) -> frozenset[str]:  # noqa: PLR0911
     match ast:
         case Literal(literal=literal):
             return _literal_kind(literal)
-        case Enum(side="decode" | "encoded"):
+        case Enum(side="decode" | "encoded"):  # pragma: no mutate, inputs are never "decode"
             return frozenset[str]().union(*(_literal_kind(m.value) for m in ast.enum))
         case Objects(properties=(), index_signatures=()):
             return NOT_NULL
-        case Objects() | Class(side="decode" | "encoded"):
+        case Objects() | Class(side="decode" | "encoded"):  # pragma: no mutate, as Enum's
             return OBJECT
         case Arrays():
             return ARRAY
@@ -134,10 +134,10 @@ def _settled(ast: AST, memo: _Memo) -> AST:
     """``ast`` with every part whose failures a middleware sees (and may
     recover from, as ``catch_decoding`` does) taken as ``Unknown``: such a
     part may take any input and holds no sentinel (Effect's ``toCandidate``)."""
-    found = memo.settled.get(id(ast))
+    found = memo.settled.get(id(ast))  # pragma: no mutate, a memo
     if found is None:
         found = (ast, _settle(ast, memo))
-        memo.settled[id(ast)] = found
+        memo.settled[id(ast)] = found  # pragma: no mutate, a memo
     return found[1]
 
 
@@ -183,10 +183,10 @@ def collect_sentinels(ast: AST) -> tuple[Sentinel, ...]:
 
 
 def _sentinels(ast: AST, memo: _Memo) -> tuple[Sentinel, ...]:
-    found = memo.sentinels.get(id(ast))
+    found = memo.sentinels.get(id(ast))  # pragma: no mutate, a memo
     if found is None:
         found = (ast, _collect(ast, memo))
-        memo.sentinels[id(ast)] = found
+        memo.sentinels[id(ast)] = found  # pragma: no mutate, a memo
     return found[1]
 
 
@@ -328,8 +328,8 @@ class CandidateIndex:
                 if not m.kinds.isdisjoint(kind):
                     selected.append(i)
                 continue
-            matched = False
-            contradicted = False
+            matched = False  # pragma: no mutate, None is as falsy
+            contradicted = False  # pragma: no mutate, None is as falsy
             for key, literal in m.sentinels:
                 value = observed.get(key, _ABSENT)
                 if value is _ABSENT:

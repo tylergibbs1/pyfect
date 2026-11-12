@@ -188,7 +188,7 @@ class _Wait:
 
     def __init__(self, fiber: Fiber[Any, Any]) -> None:
         self.fiber: Fiber[Any, Any] | None = fiber
-        self.done = False
+        self.done = False  # pragma: no mutate, falsy until claimed
         self.registering = True
         self.sync_result: Effect[Any, Any, Any] | None = None
         self.canceler: Effect[Any, Any, Any] | None = None
@@ -197,14 +197,14 @@ class _Wait:
         with _resume_lock:
             if self.done:
                 return False
-            self.done = True
+            self.done = True  # pragma: no mutate, read only before a claim
             self.fiber = None
             return True
 
     def end_registration(self) -> Effect[Any, Any, Any] | None:
         """Registration is over; the effect a resume during it left."""
         with _resume_lock:
-            self.registering = False
+            self.registering = False  # pragma: no mutate, falsy either way
             result, self.sync_result = self.sync_result, None
             return result
 
@@ -295,7 +295,7 @@ class Fiber(Generic[A_co, E_co]):
         ``context``'s ``CurrentScheduler``."""
         self.id = next(_fiber_ids)
         self._run_scheduler = run_scheduler
-        self.current_op_count = 0
+        self.current_op_count = 0  # pragma: no mutate, set before every read
         self._parent = parent
         self._stack: list[Frame] = []
         self._interruptible = interruptible
@@ -540,7 +540,7 @@ class Fiber(Generic[A_co, E_co]):
         # just returned: a result it decided (a taken item, an applied
         # update) reaches its continuation with no pause in between, where
         # an interrupt could drop it.
-        decided = False
+        decided = False  # pragma: no mutate, a run starts at most 2 ops in
         while True:
             if self._interrupt is not None and self._interruptible:
                 cur = self._with_interrupt(cur, self._interrupt)
@@ -671,7 +671,7 @@ class Fiber(Generic[A_co, E_co]):
         """The stack is empty. Interrupt children first; then complete."""
         if self._children:
             children = list(self._children)
-            self._interruptible = False
+            self._interruptible = False  # pragma: no mutate, falsy either way
             self._push(_ReturnExit(ex))
             return interrupt_all(children, self.id, self._interruptor_annotations())
         self._exit = ex
@@ -731,7 +731,7 @@ class Fiber(Generic[A_co, E_co]):
         drain.push_first((self, then))
         return SUSPEND
 
-    def _yield_now(self, priority: int = 0) -> Step:
+    def _yield_now(self, priority: int = 0) -> Step:  # pragma: no mutate, callers pass priority
         self._queue_yielded(_Yielded(Success(None)), priority)
         return SUSPEND
 
@@ -846,7 +846,7 @@ class Fiber(Generic[A_co, E_co]):
                         drain.queue.extendleft(reversed(first))
                 queue = drain.queue
                 if not queue:
-                    break
+                    break  # pragma: no mutate, last statement in try
                 fiber, nxt = queue.popleft()
         finally:
             _thread.drain = outer
@@ -887,7 +887,7 @@ class Fiber(Generic[A_co, E_co]):
         # Run the canceler uninterruptibly, then end with the interrupt; a
         # failing canceler is a failing finalizer (Effect's asyncFinalizer).
         self._push(_RestoreInterruptible(True))
-        self._interruptible = False
+        self._interruptible = False  # pragma: no mutate, falsy either way
         return _run_finalizer(wait.canceler, Failure(self._interrupt))
 
 
@@ -942,9 +942,9 @@ class _RunView:
             budget = math.inf
             should_yield = None
         elif should_yield is not None:
-            budget = 0
+            budget = 0  # pragma: no mutate, ops >= 1 at every check
         else:
-            budget = max(1, context.lookup(MaxOpsBeforeYield)[1])
+            budget = max(1, context.lookup(MaxOpsBeforeYield)[1])  # pragma: no mutate, 1 acts as 2
         hook = context.lookup(CurrentTracer)[1].context
         runtime_metrics = context.lookup(FiberRuntimeMetrics)[1]
         frame = context.lookup(CurrentStackFrame)[1]

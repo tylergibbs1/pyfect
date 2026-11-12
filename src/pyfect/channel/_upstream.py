@@ -25,7 +25,9 @@ def _hidden(reason: Reason[Any]) -> Cause[Any] | None:
     """The upstream cause ``reason`` hides, if it is a hidden one."""
     if isinstance(reason, Die) and is_done(reason.defect):
         value: object = reason.defect.value
-        return cast("Cause[Any]", value) if isinstance(value, Cause) else None
+        if not isinstance(value, Cause):
+            return None
+        return cast("Cause[Any]", value)  # pragma: no mutate, cast is static
     return None
 
 

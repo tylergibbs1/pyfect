@@ -69,7 +69,7 @@ def merge_all(
                 return _VOID
             fiber, fiber_scope = next(iter(fibers.items()))
             del fibers[fiber]
-            if not fibers:
+            if not fibers:  # pragma: no mutate, start() closes the latch again
                 done_latch.open_unsafe()
             # A worker interrupted before it starts never closes its own
             # scope; failures of replaced workers' finalizers are dropped.

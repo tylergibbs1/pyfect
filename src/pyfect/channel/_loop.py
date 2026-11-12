@@ -76,7 +76,7 @@ class ChunkPull(Effect[tuple[Any, ...], Done[Any], Never]):
         # Only a generator has a return value to keep; other iterators are
         # read in C, a chunk at a time.
         self.generator = isinstance(iterator, Generator)
-        self.ended = False
+        self.ended: bool = False
         self.leftover: object = None
 
     def _step(self, fiber: Fiber[Any, Any]) -> Step:

@@ -1,0 +1,50 @@
+name: mutation
+
+# Mutation testing of the core (scripts/mutation.py): fails when a module's share of killed
+# mutants drops below scripts/mutation_baseline.json. Hours of work, so it runs weekly and on
+# demand only.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 4 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  mutation:
+    # One job per group of scripts/mutation.py (tests/test_mutation_config.py keeps the lists
+    # equal); the runtime group alone takes hours.
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [runtime, cause, scope, stream, schema, schema-composites]
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    env:
+      EFFECT_COMMIT: 506eef143bcc1750ce58920aac1e45da7265d103 # Effect 4.1.2, as ../pyfect-ref/effect
+      PYFECT_EFFECT_REF: ${{ github.workspace }}/.effect
+      PYFECT_REF: ${{ github.workspace }}/.effect
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+
+      - name: Check out Effect 4.1.2
+        run: |
+          git init -q .effect
+          git -C .effect fetch -q --depth 1 https://github.com/Effect-TS/effect.git "$EFFECT_COMMIT"
+          git -C .effect checkout -q FETCH_HEAD
+
+      - name: Install
+        run: uv sync --locked --python 3.13
+
+      - name: Mutate and test
+        run: uv run python scripts/mutation.py run ${{ matrix.group }}
+
+      - name: Scores and survivors
+        if: always()
+        run: uv run python scripts/mutation.py report ${{ matrix.group }}
+
+      - name: Compare with the baseline
+        run: uv run python scripts/mutation.py check ${{ matrix.group }}

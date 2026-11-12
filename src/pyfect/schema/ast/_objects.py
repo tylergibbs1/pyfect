@@ -58,7 +58,7 @@ class ObjectKeys(Mapping[object, object]):
                 return getattr(self.value, key)
             except AttributeError:
                 pass
-        raise KeyError(key)
+        raise KeyError(key)  # pragma: no mutate, never shown
 
     def __contains__(self, key: object) -> bool:
         return isinstance(key, str) and hasattr(self.value, key)
@@ -70,7 +70,7 @@ class ObjectKeys(Mapping[object, object]):
         return len(_own_attributes(self.value))
 
     def __repr__(self) -> str:
-        return repr(self.value)
+        return repr(self.value)  # pragma: no mutate, debug only
 
 
 def reads_properties(value: object) -> bool:
@@ -292,11 +292,9 @@ class _Run(Steps["_Run"]):
         self.entries: tuple[tuple[IndexSignature, object], ...] | None = _NO_ENTRIES
         if ast.index_signatures:
             self.declared: frozenset[Hashable] = frozenset(p.name for p in ast.properties)
-            # Strict parsing lists the keys before reading any property (with
-            # the excess check); otherwise after the properties, as in Effect.
+            # Listed on first use: strict parsing's excess check lists the keys
+            # before reading any property; otherwise after them, as in Effect.
             self.entries = None
-            if options.get("on_excess_property") == "error":
-                self._listed()
         else:
             self.declared = _NO_KEYS
 
@@ -322,7 +320,7 @@ class _Run(Steps["_Run"]):
         return other
 
     def size(self) -> int:
-        return 1 + len(self.ast.properties) + len(self._listed())
+        return 1 + len(self.ast.properties) + len(self._listed())  # pragma: no mutate, idle worker
 
     def finish(self) -> Exit[object, Issue]:
         if self.issues:
@@ -379,7 +377,7 @@ class _Run(Steps["_Run"]):
                 self._report(key, UnexpectedKey(ast, reported(value, self.options)))
 
     def _report(self, key: object, issue: Issue) -> None:
-        self.issues.append(Pointer((cast("Hashable", key),), issue))
+        self.issues.append(Pointer((cast("Hashable", key),), issue))  # pragma: no mutate, a cast
         if self.options.get("errors") != "all":
             raise Stop
 

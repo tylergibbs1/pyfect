@@ -41,6 +41,25 @@ types, and its `# pyright: ignore[...]` lines must produce an error.
 Write a failing test first, then fix it. Then ask why the bug was easy to write and change
 the code (a type, a safer API, a test helper) so that kind of bug can't come back.
 
+## Mutation testing
+
+Tests must catch bugs, not just run code. `scripts/mutation.py` uses
+[mutmut](https://github.com/boxed/mutmut) to plant small bugs in the core (the fiber
+runtime, causes and exits, scopes, the stream and channel core, schema parsing) and runs
+the tests that reach each one:
+
+```sh
+uv run python scripts/mutation.py run [GROUP...]   # every group in GROUPS by default
+uv run python scripts/mutation.py report --diffs   # score per module, each survivor's change
+uv run python scripts/mutation.py check            # fails below scripts/mutation_baseline.json
+```
+
+A mutant pyright rejects counts as caught. A surviving one is a missing test: add a behaviour
+test that fails with it, in a file the group's test globs match. If the mutant cannot
+change behaviour (an equivalent mutant), end the line with
+`# pragma: no mutate, <why it is equivalent>`. When scores go up, record them with
+`check --update`. The `mutation` workflow runs this weekly and on demand.
+
 ## Docs
 
 The site lives in `website/` ([pyfect.dev](https://pyfect.dev)). Every Python example is a
