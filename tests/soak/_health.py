@@ -56,7 +56,7 @@ class Recorder:
         self._latencies: list[float] = []
         self._errors = 0
         self._state = rng_seed or 0x9E3779B9
-        self.last_progress = time.monotonic()
+        self._last_success = time.monotonic()
         self._first_error: str | None = None
         self.dead = False
         """The workload's loop ended, which only the soak stopping may do."""
@@ -73,7 +73,7 @@ class Recorder:
     def ok(self, seconds: float) -> None:
         with self._lock:
             self._seen += 1
-            self.last_progress = time.monotonic()
+            self._last_success = time.monotonic()
             if len(self._latencies) < _RESERVOIR:
                 self._latencies.append(seconds)
             else:
@@ -84,9 +84,13 @@ class Recorder:
     def error(self, description: str) -> None:
         with self._lock:
             self._errors += 1
-            self.last_progress = time.monotonic()
             if self._first_error is None:
                 self._first_error = description
+
+    def stalled(self, now: float, limit: float) -> bool:
+        """The loop died, or no operation succeeded for ``limit`` seconds (failing
+        ones are not progress)."""
+        return self.dead or now - self._last_success > limit
 
     def died(self, description: str) -> None:
         self.error(f"the loop died: {description}")

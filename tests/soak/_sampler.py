@@ -78,9 +78,7 @@ class Sampler:
             threads=os_threads(),
             cpu_seconds=time.process_time(),
             latency={r.name: r.drain() for r in recorders},
-            stalled=[
-                r.name for r in recorders if r.dead or now - r.last_progress > self._stall_limit
-            ],
+            stalled=[r.name for r in recorders if r.stalled(now, self._stall_limit)],
         )
 
     def _run(self) -> None:
