@@ -36,7 +36,7 @@ from collections import deque
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Literal, Protocol
 
-from pyfect._timer_heap import TimerHeap
+from pyfect import _timer_heap
 from pyfect._wake_tracking import Tracking, WakeTracker
 from pyfect.context import Reference
 from pyfect.duration import Duration
@@ -309,7 +309,7 @@ class SyncScheduler(Tracking):
         self._ready: deque[Task] = deque()
         self._prioritized: _PriorityBuckets | None = None
         # A cancelled timer lets go of its task at once (``TimerHeap``).
-        self._timers: TimerHeap[_Timer] = TimerHeap()
+        self._timers: _timer_heap.TimerHeap[_Timer] = _timer_heap.TimerHeap()
         self._cond = threading.Condition()
         # The thread inside ``run_until``, if any.
         self._driver: int | None = None

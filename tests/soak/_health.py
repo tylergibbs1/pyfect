@@ -157,7 +157,7 @@ def os_threads() -> int:
         for line in status:
             if line.startswith("Threads:"):
                 return int(line.split()[1])
-    return threading.active_count()
+    raise RuntimeError("/proc/self/status has no Threads: line")
 
 
 def open_fds() -> int:
