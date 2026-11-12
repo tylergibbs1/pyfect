@@ -24,7 +24,7 @@ from pyfect.http.server_response import HttpServerResponse
 from pyfect.net.net_address import InetAddressV4
 from pyfect.scope import scoped
 from pyfect.socket import SocketService
-from pyfect.socket import ws as ws_platform
+from pyfect.socket import server as socket_server
 from pyfect.socket._web_socket import DEFAULT_HIGH_WATER_MARK
 
 _CHUNK = b"x" * (64 * 1024)
@@ -71,7 +71,7 @@ def _silent_client(port: int) -> socket.socket:
 @fx.testing.live(timeout="20 seconds")
 def test_a_server_write_waits_while_the_peer_does_not_read():
     written = [0]
-    srv = yield from ws_platform.make_server(0, "127.0.0.1")
+    srv = yield from socket_server.make_web_socket(0, "127.0.0.1")
     yield from srv.run(_writer_counting(written)).fork_scoped()
     address = srv.address
     assert isinstance(address, InetAddressV4)

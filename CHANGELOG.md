@@ -2,6 +2,26 @@
 
 ## 0.6.2 (unreleased)
 
+### Deprecated
+
+- `pyfect.socket.ws.make_server` and `layer_server` warn; use
+  `pyfect.socket.server.make_web_socket` and `layer_web_socket`. They are removed in 0.7.0.
+
+### Added
+
+- An `audit` workflow checks `uv.lock` and `website/bun.lock` against known vulnerabilities
+  (OSV) on every push and weekly, and `tests/test_workflow_security.py` keeps every
+  workflow's actions pinned to commits, read-only by default, off `pull_request_target`, and
+  free of pull-request text in its scripts.
+- `pyfect.socket.server.make_web_socket` and `layer_web_socket`, Effect's
+  `NodeSocketServer.makeWebSocket` and `layerWebSocket`, where Effect has them: a
+  `SocketServer` whose connections are WebSockets (on the `websockets` extra), such as a
+  DevTools server for the default `devtools.layer()` client. Handlers get the upgrade request
+  as the new `IncomingMessage` service, as well as the native socket as `WebSocket`. The
+  server existed only as `pyfect.socket.ws.make_server` / `layer_server`, where a dogfood app
+  looking for Effect's names did not find it; a test now checks that every `NodeSocketServer`
+  export is in `pyfect.socket.server`. Found by dogfooding (lantern).
+
 ### Fixed
 
 - `S.Finite` and `S.is_finite` read an `int` as a JavaScript number, so one past the largest
@@ -28,13 +48,26 @@
   variable for its own. The parent now passes its pid with the channel's descriptor, and a
   process whose parent is another ignores the channel instead of unpickling whatever its
   descriptor of that number is. Found by the security review.
-
-### Added
-
-- An `audit` workflow checks `uv.lock` and `website/bun.lock` against known vulnerabilities
-  (OSV) on every push and weekly, and `tests/test_workflow_security.py` keeps every
-  workflow's actions pinned to commits, read-only by default, off `pull_request_target`, and
-  free of pull-request text in its scripts.
+- `uvicorn_server` and `hypercorn_server` hold a request that arrives before an app is served
+  until it is, as Effect's `NodeHttpServer` leaves such a request pending; it used to get an
+  empty 503. The socket is bound when the server's layer is built, before the layers of the
+  app it serves, so a client that waited for the port got a 503 while a slow layer (telemetry,
+  a database pool) was still starting. A WebSocket upgrade waits the same way instead of
+  closing with 1013. The test runs on every server built on the shared ASGI listener, and
+  fails if a new one is not added to it. Found by dogfooding (lantern).
+- `S.Struct` of a parameterized generic TypedDict (`S.Struct(Body[Inner])`) has the TypedDict's
+  keys with the type arguments in place, also as another key's annotation and in
+  `S.TaggedStruct`. `get_type_hints` of the alias is empty, so the struct had no keys at all
+  (it accepted anything), and giving a key its own schema raised
+  `TypeError: Body has no key 'body'`. Every reader of a TypedDict's annotations now goes
+  through one function that substitutes the arguments, and a test fails on any other
+  `get_type_hints` call in `pyfect.schema`. Found by dogfooding (lantern).
+- A WebSocket server connection that its client closed before a handler read it no longer
+  loses the messages sent before the close. A paused `WsWebSocket` stopped waiting once the
+  connection closed and delivered the messages it held to no listener; it now reads nothing
+  while paused, as a paused `ws` socket in Effect, until it is resumed or closed on this side.
+  So a short-lived app that reported its spans to a DevTools server and exited before the
+  server's `run` took the connection lost them all. Found while porting the DevTools docs.
 
 ### Docs
 
@@ -42,6 +75,16 @@
   for a security contact address, and links the November 2026 security review
   (`docs/security-review-2026-11.md`), a manual audit of the code that handles untrusted
   input or secrets.
+- http-server.mdx says when the server starts answering: its port opens before the app's
+  layers are built, and requests wait for the app meanwhile, so readiness checks should
+  request a route.
+- postgres.mdx: streaming a statement's rows with `.stream` (a query ended early is cancelled),
+  `timestamptz` values arriving in the session's time zone and decoded with
+  `S.DateTimeUtcFromDate` as Effect decodes a `Date`, reading the name of the constraint a
+  `ConstraintError` broke from the driver's cause, and where the spans' `db.namespace` and
+  `server.address` come from (the config's `database` and `host`, not `url`, as in Effect).
+- A DevTools page: the client layers, what the protocol carries, and serving the DevTools side
+  on `socket.server.layer_web_socket`.
 
 ## 0.6.1 (2026-11-12)
 

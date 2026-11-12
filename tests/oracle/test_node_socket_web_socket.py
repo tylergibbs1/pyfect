@@ -52,6 +52,7 @@ from pyfect.socket import (
     make_web_socket,
     reader_bytes,
 )
+from pyfect.socket import server as socket_server
 from pyfect.socket import ws as ws_platform
 
 live = testing.live(timeout="10 seconds")
@@ -185,7 +186,9 @@ def test_pending_handshake_interruption():
 def test_closes_with_pending_pre_run_web_socket():
     """closes with a pending pre-run WebSocket"""
     scope = CloseableScope()
-    srv = yield from ws_platform.make_server(0, "127.0.0.1").pipe(provide_service(Scope, scope))
+    srv = yield from socket_server.make_web_socket(0, "127.0.0.1").pipe(
+        provide_service(Scope, scope)
+    )
     yield from ws_client(f"ws://127.0.0.1:{port_of(srv.address)}")
     exit = yield from scope.close(Success(None)).timeout("1 second").exit()
     assert isinstance(exit, Success)
@@ -195,7 +198,7 @@ def test_closes_with_pending_pre_run_web_socket():
 def test_receives_messages_after_paused_handover():
     """receives messages after handing a paused WebSocket to the reader"""
     received = yield from Deferred[tuple[bytes | str, ...]].make()
-    srv = yield from ws_platform.make_server(0, "127.0.0.1")
+    srv = yield from socket_server.make_web_socket(0, "127.0.0.1")
 
     def handler(sock: SocketService):
         def body():
@@ -257,7 +260,7 @@ def test_passes_headers():
     def process_request(_connection: Any, request: Any) -> None:
         authorization.done_unsafe(Success(request.headers.get("Authorization")))
 
-    srv = yield from ws_platform.make_server(0, "127.0.0.1", process_request=process_request)
+    srv = yield from socket_server.make_web_socket(0, "127.0.0.1", process_request=process_request)
     construct = yield from WebSocketConstructor().pipe(with_constructor)
     options = WebSocketClientOptions(headers={"Authorization": "Bearer test"})
     client = yield from acquire_release(

@@ -14,7 +14,7 @@ import asyncio
 import ssl
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Never
+from typing import TYPE_CHECKING, Any, Never
 
 from pyfect._core import Effect
 from pyfect.cause import Cause
@@ -38,6 +38,11 @@ from pyfect.socket._loop import get_loop, run
 from pyfect.socket._net import from_connection
 from pyfect.socket._socket import PemInput, TlsUpgradeOptions
 from pyfect.socket._tls import server_context
+
+if TYPE_CHECKING:
+    # The websockets extra is imported only by ``make_web_socket``; ruff misses the
+    # reference in ``IncomingMessage``'s base.
+    from websockets.http11 import Request  # noqa: F401
 
 
 @dataclass(eq=False)
@@ -122,6 +127,14 @@ class SocketServerService:
 
 class SocketServer(Tag[SocketServerService], key="@effect/platform/SocketServer"):
     """The socket server service."""
+
+
+class IncomingMessage(
+    Tag["Request"], key="@effect/platform-node-shared/NodeSocketServer/IncomingMessage"
+):
+    """The HTTP request that opened the WebSocket a ``make_web_socket``
+    server handler serves (``websockets``' ``Request``: ``path``,
+    ``headers``)."""
 
 
 def report_unhandled(cause: Cause[object]) -> Effect[None]:
@@ -237,6 +250,24 @@ def make_tls(
     return suspend(body)
 
 
+def make_web_socket(
+    port: int = 0, host: str | None = None, **serve_options: Any
+) -> Effect[SocketServerService, SocketServerError, Scope]:
+    """A WebSocket server listening on ``host:port`` (port 0: any free
+    port), closed with the scope, on the ``websockets`` library (the
+    ``websockets`` extra). A handler gets each connection as a ``Socket``,
+    the native socket as ``WebSocket`` and the upgrade request as
+    ``IncomingMessage``. ``serve_options`` go to ``websockets``' ``serve``
+    (``process_request``, ``subprotocols``, ``max_size``, 16 MiB by
+    default, ...). A handshake whose ``Origin`` ``AllowedOrigins`` does not
+    allow (same-origin by default; a client without ``Origin``, such as
+    the DevTools client, is allowed) is refused with 403 before
+    ``process_request`` runs."""
+    from pyfect.socket._ws_server import make_web_socket as make_on_websockets
+
+    return make_on_websockets(port, host, **serve_options)
+
+
 def layer(port: int = 0, host: str | None = None) -> Layer[SocketServer, SocketServerError]:
     return layer_effect(SocketServer, make(port, host))
 
@@ -247,7 +278,15 @@ def layer_tls(
     return layer_effect(SocketServer, make_tls(cert=cert, key=key, port=port, host=host))
 
 
+def layer_web_socket(
+    port: int = 0, host: str | None = None, **serve_options: Any
+) -> Layer[SocketServer, SocketServerError]:
+    """``SocketServer`` as a ``make_web_socket`` WebSocket server."""
+    return layer_effect(SocketServer, make_web_socket(port, host, **serve_options))
+
+
 __all__ = [
+    "IncomingMessage",
     "Listen",
     "SocketServer",
     "SocketServerError",
@@ -257,8 +296,10 @@ __all__ = [
     "SocketServerUnknownError",
     "layer",
     "layer_tls",
+    "layer_web_socket",
     "make",
     "make_tls",
     "make_unix",
+    "make_web_socket",
     "report_unhandled",
 ]

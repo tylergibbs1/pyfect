@@ -1,12 +1,11 @@
 """WebSockets on the ``websockets`` library (extra ``pyfect-dev[websockets]``;
-Effect's ``NodeSocket.layerWebSocketConstructorWS`` and
-``NodeSocketServer.makeWebSocket``).
+Effect's ``NodeSocket.layerWebSocketConstructorWS``; the server side,
+``NodeSocketServer.makeWebSocket``, is ``pyfect.socket.server.make_web_socket``).
 
 ``WsWebSocket`` is a ``WebSocketLike`` over a ``websockets`` connection run
 on the socket loop thread; its events are dispatched there. ``layer_web_socket_constructor``
-provides ``WebSocketConstructor`` with it, ``layer_web_socket`` a client
-``Socket``, and ``make_server`` a ``SocketServerService`` whose handlers get
-each accepted WebSocket (also as the ``WebSocket`` service)::
+provides ``WebSocketConstructor`` with it, and ``layer_web_socket`` a client
+``Socket``::
 
     socket = make_web_socket("ws://127.0.0.1:8080").pipe(
         provide(layer_web_socket_constructor)
@@ -16,21 +15,18 @@ each accepted WebSocket (also as the ``WebSocket`` service)::
 from __future__ import annotations
 
 import asyncio
-import inspect
 import threading
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from http import HTTPStatus
-from typing import Any, Never
+from typing import Any
+from warnings import deprecated
 
 from pyfect._extras import missing_extra
 
 try:
     from websockets.asyncio.client import connect
     from websockets.asyncio.connection import Connection as WsConnection
-    from websockets.asyncio.server import Server, ServerConnection, serve
     from websockets.exceptions import ConnectionClosed
-    from websockets.http11 import Request
     from websockets.typing import Subprotocol
 except ImportError as error:  # pragma: no cover - depends on the environment
     raise missing_extra("pyfect.socket.ws", "websockets", error) from error
@@ -38,17 +34,12 @@ except ImportError as error:  # pragma: no cover - depends on the environment
 from pyfect._core import Effect
 from pyfect._js import text_encode, to_well_formed
 from pyfect.duration import Input as DurationInput
-from pyfect.effect import provide_service, succeed, sync
-from pyfect.http._authority import parse_authority
-from pyfect.http.origin import AllowedOrigins, OriginPolicy
 from pyfect.layer import Layer
 from pyfect.layer import effect as layer_effect
 from pyfect.layer import provide as layer_provide
 from pyfect.layer import succeed as layer_succeed
-from pyfect.net.net_address import inet_address_from_native_unsafe
-from pyfect.scope import Scope, acquire_release
-from pyfect.socket._accepted import Accepted, Handler
-from pyfect.socket._loop import call_soon, get_loop, run
+from pyfect.scope import Scope
+from pyfect.socket._loop import call_soon, get_loop
 from pyfect.socket._socket import Socket
 from pyfect.socket._web_socket import (
     CLOSED,
@@ -57,14 +48,12 @@ from pyfect.socket._web_socket import (
     DEFAULT_MAX_MESSAGE_SIZE,
     OPEN,
     Listener,
-    WebSocket,
     WebSocketClientOptions,
     WebSocketConstructor,
     WebSocketConstructorService,
     WebSocketEvent,
     WebSocketEventType,
     WebSocketLike,
-    from_web_socket,
 )
 from pyfect.socket._web_socket import Outgoing as _Outgoing
 from pyfect.socket._web_socket import (
@@ -73,9 +62,7 @@ from pyfect.socket._web_socket import (
 from pyfect.socket.server import (
     SocketServer,
     SocketServerError,
-    SocketServerOpenError,
     SocketServerService,
-    report_unhandled,
 )
 
 
@@ -104,6 +91,7 @@ class WsWebSocket:
         self._flowing = asyncio.Event()
         if not paused:
             self._flowing.set()
+        self._abandoned = asyncio.Event()
         self._task: asyncio.Task[None] | None = None
         self._connection: WsConnection | None = None
         self.url: str | None = None
@@ -191,6 +179,7 @@ class WsWebSocket:
         """Drop the connection without a closing handshake."""
 
         def abort() -> None:
+            self._abandoned.set()
             connection = self._connection
             if connection is not None:
                 connection.transport.abort()
@@ -215,6 +204,7 @@ class WsWebSocket:
                 )
 
     def _close(self, code: int, reason: str) -> None:
+        self._abandoned.set()
         if self._state == CONNECTING:
             self._state = CLOSING
             if self._task is not None:
@@ -274,7 +264,7 @@ class WsWebSocket:
         sender = asyncio.get_running_loop().create_task(self._send_all(connection))
         try:
             while True:
-                await self._wait_flowing(connection)
+                await self._wait_flowing()
                 try:
                     message = await connection.recv()
                 except ConnectionClosed:
@@ -294,13 +284,15 @@ class WsWebSocket:
             ),
         )
 
-    async def _wait_flowing(self, connection: WsConnection) -> None:
-        """Wait while paused; once the connection closes, the messages it
-        still holds are delivered regardless, so the close is seen."""
+    async def _wait_flowing(self) -> None:
+        """Wait while paused. As a paused ``ws`` socket in Node, a paused one
+        reads nothing, so a peer's close stays behind the messages it sent
+        first; closing or terminating this side ends the wait, the messages
+        unread being nobody's then."""
         if self._flowing.is_set():
             return
         loop = asyncio.get_running_loop()
-        waits = {loop.create_task(self._flowing.wait()), loop.create_task(connection.wait_closed())}
+        waits = {loop.create_task(self._flowing.wait()), loop.create_task(self._abandoned.wait())}
         try:
             await asyncio.wait(waits, return_when=asyncio.FIRST_COMPLETED)
         finally:
@@ -383,93 +375,24 @@ def layer_web_socket(
 # --- server -----------------------------------------------------------------
 
 
-class _WsIncoming:
-    """An accepted WebSocket, paused until a handler reads it."""
-
-    __slots__ = ("_ws",)
-
-    def __init__(self, ws: WsWebSocket) -> None:
-        self._ws = ws
-
-    def handle[E, R](self, handler: Handler[E, R]) -> Effect[None, Never, R]:
-        ws = self._ws
-        opened: Effect[WebSocketLike, Never, Scope] = acquire_release(
-            succeed(ws), lambda w, _: sync(w.close)
-        )
-        socket = from_web_socket(opened)
-        return (
-            handler(socket)
-            .pipe(provide_service(WebSocket, ws))
-            .as_void()
-            .catch_cause(report_unhandled)
-        )
-
-    def release(self) -> None:
-        self._ws.close()
-
-    def abort(self) -> None:
-        self._ws.terminate()
-
-
+@deprecated("Use pyfect.socket.server.make_web_socket; ws.make_server is removed in 0.7.0")
 def make_server(
     port: int = 0, host: str | None = None, **serve_options: Any
 ) -> Effect[SocketServerService, SocketServerError, Scope]:
-    """A WebSocket server listening on ``host:port`` (port 0: any free
-    port), closed with the scope; ``serve_options`` go to ``websockets``'
-    ``serve`` (``process_request``, ``subprotocols``, ``max_size``, 16 MiB
-    by default, ...). A handshake
-    whose ``Origin`` ``AllowedOrigins`` does not allow (same-origin by
-    default) is refused with 403 before ``process_request`` runs."""
-    return AllowedOrigins().flat_map(lambda policy: _make_server(port, host, policy, serve_options))
+    """``pyfect.socket.server.make_web_socket``."""
+    from pyfect.socket._ws_server import make_web_socket
+
+    return make_web_socket(port, host, **serve_options)
 
 
-def _make_server(
-    port: int, host: str | None, policy: OriginPolicy, serve_options: dict[str, Any]
-) -> Effect[SocketServerService, SocketServerError, Scope]:
-    accepted = Accepted()
-    serve_options = {"max_size": DEFAULT_MAX_MESSAGE_SIZE, **serve_options}
-    then = serve_options.pop("process_request", None)
-
-    async def process_request(connection: ServerConnection, request: Request) -> Any:
-        own = parse_authority(request.headers.get("Host", ""))
-        if not policy.allows(request.headers.get("Origin"), own):
-            return connection.respond(HTTPStatus.FORBIDDEN, "Origin not allowed\n")
-        if then is None:
-            return None
-        answer = then(connection, request)
-        return (await answer) if inspect.isawaitable(answer) else answer
-
-    async def on_connection(connection: ServerConnection) -> None:
-        ws = WsWebSocket(paused=True)
-        accepted.add(_WsIncoming(ws))
-        await ws._serve(connection)  # pyright: ignore[reportPrivateUsage]
-
-    async def start() -> Server:
-        return await serve(
-            on_connection, host, port, process_request=process_request, **serve_options
-        )
-
-    def stop(server: Server, _exit: object) -> Effect[None]:
-        async def close() -> None:
-            accepted.close()
-            server.close()
-            await server.wait_closed()
-
-        return run(close).ignore()
-
-    def opened(server: Server) -> SocketServerService:
-        name = server.sockets[0].getsockname()
-        return SocketServerService(inet_address_from_native_unsafe(name[0], name[1]), accepted)
-
-    starting = run(start).map_error(lambda cause: SocketServerError(SocketServerOpenError(cause)))
-    return acquire_release(starting, stop).map(opened)
-
-
+@deprecated("Use pyfect.socket.server.layer_web_socket; ws.layer_server is removed in 0.7.0")
 def layer_server(
     port: int = 0, host: str | None = None, **serve_options: Any
 ) -> Layer[SocketServer, SocketServerError]:
-    """``SocketServer`` as a ``make_server`` WebSocket server."""
-    return layer_effect(SocketServer, make_server(port, host, **serve_options))
+    """``pyfect.socket.server.layer_web_socket``."""
+    from pyfect.socket._ws_server import make_web_socket
+
+    return layer_effect(SocketServer, make_web_socket(port, host, **serve_options))
 
 
 __all__ = [

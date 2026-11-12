@@ -214,9 +214,9 @@ def _handshake(port_number: int, sent_origin: str | None) -> bytes:
 
 @testing.live(timeout="10 seconds")
 def test_a_websockets_server_handshake_from_another_origin_is_refused():
-    from pyfect.socket import ws as ws_platform
+    from pyfect.socket.server import make_web_socket
 
-    srv = yield from ws_platform.make_server(0, "127.0.0.1")
+    srv = yield from make_web_socket(0, "127.0.0.1")
 
     def handler(sock: SocketService) -> fx.Effect[None, Any, Any]:
         return scoped(sock.reader).ignore()

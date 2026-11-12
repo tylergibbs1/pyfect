@@ -557,8 +557,8 @@ _SOCKETS: dict[str, Case] = {
             lambda port: fx.succeed(make_tls(port, "127.0.0.1", tls=TlsUpgradeOptions(ca=[_CERT])))
         ),
     ),
-    "pyfect.socket.ws.layer_server": Case(
-        layer=lambda: ws.layer_server(0, "127.0.0.1"),
+    "pyfect.socket.server.layer_web_socket": Case(
+        layer=lambda: socket_server.layer_web_socket(0, "127.0.0.1"),
         needs=lambda: ws.layer_web_socket_constructor,
         use=_serving_echo(lambda port: make_web_socket(f"ws://127.0.0.1:{port}")),
     ),
@@ -851,4 +851,6 @@ CASES: dict[str, Case] = {
     **_NET,
     **_HTTP_API,
 }
-SKIPPED: dict[str, str] = {}
+SKIPPED: dict[str, str] = {
+    "pyfect.socket.ws.layer_server": "deprecated: pyfect.socket.server.layer_web_socket",
+}
