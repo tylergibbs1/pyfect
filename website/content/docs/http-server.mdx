@@ -97,6 +97,12 @@ shutdown, and its requests run with their services, so whatever the routes need 
 build. `hypercorn_server.layer(port=...)` serves on hypercorn instead, with HTTP/2 (the
 `pyfect-dev[http2]` extra).
 
+The server binds its port when its layer is built, before the layers of the app it serves, so
+a client can connect while the app is still starting. As with Effect's Node server, its
+requests wait until the app is served instead of getting an answer. Make readiness checks
+request a route rather than wait for the port to open: a request on an open port can still
+wait as long as the slowest layer takes to build.
+
 <include meta='title="main.py"'>../../snippets/http_server/main.py</include>
 
 `asgi.from_asgi(app)` goes the other way: it mounts an ASGI application, such as a FastAPI or

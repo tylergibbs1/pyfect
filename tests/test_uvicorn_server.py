@@ -58,10 +58,6 @@ def _get(path: str) -> fx.Effect[tuple[int, str], Any, HttpClient]:
     return body()
 
 
-def test_requests_before_an_app_is_served_get_a_503() -> None:
-    assert _run(_get("/"))[0] == 503
-
-
 def test_the_address_is_the_bound_socket() -> None:
     @fx.fn
     def program():

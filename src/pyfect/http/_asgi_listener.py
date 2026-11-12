@@ -73,22 +73,59 @@ def _bind(host: str | None, port: int) -> socket.socket:
 
 
 class Dispatch:
-    """The ASGI app the engine runs: the served app's handler, or a 503."""
+    """The ASGI app the engine runs: the served app's handler. A request that
+    arrives while no app is served waits for one, as a request reaching
+    ``NodeHttpServer`` before ``serve`` adds its ``request`` listener stays
+    pending: the socket is bound before the app's layers are built, so an
+    open port does not mean the app is ready."""
 
-    __slots__ = ("current",)
+    __slots__ = ("_current", "_lock", "_waiting")
 
     def __init__(self) -> None:
-        self.current: AsgiHandler | None = None
+        self._current: AsgiHandler | None = None
+        self._lock = threading.Lock()
+        self._waiting: set[tuple[asyncio.AbstractEventLoop, asyncio.Future[None]]] = set()
+
+    def install(self, handler: AsgiHandler) -> None:
+        """Serve ``handler``, waking the requests waiting for an app."""
+        with self._lock:
+            self._current = handler
+            waiting, self._waiting = self._waiting, set()
+        for loop, waiter in waiting:
+            loop.call_soon_threadsafe(_wake, waiter)
+
+    def remove(self, handler: AsgiHandler) -> None:
+        """Stop serving ``handler``, unless another app replaced it."""
+        with self._lock:
+            if self._current is handler:
+                self._current = None
+
+    async def _handler(self) -> AsgiHandler:
+        loop = asyncio.get_running_loop()
+        while True:
+            with self._lock:
+                if self._current is not None:
+                    return self._current
+                waiter = (loop, loop.create_future())
+                self._waiting.add(waiter)
+            try:
+                await waiter[1]
+            finally:
+                with self._lock:
+                    self._waiting.discard(waiter)
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        handler = self.current
-        if handler is not None:
-            await handler(scope, receive, send)
-        elif scope["type"] == "http":
-            await send({"type": "http.response.start", "status": 503, "headers": []})
-            await send({"type": "http.response.body", "body": b""})
-        elif scope["type"] == "websocket":
-            await send({"type": "websocket.close", "code": 1013})
+        handler = self._current
+        if handler is None:
+            if scope["type"] not in ("http", "websocket"):
+                return  # hypercorn's lifespan: unsupported, so it goes on
+            handler = await self._handler()
+        await handler(scope, receive, send)
+
+
+def _wake(waiter: asyncio.Future[None]) -> None:
+    if not waiter.done():
+        waiter.set_result(None)
 
 
 class _Shared:
@@ -220,14 +257,12 @@ def _serve(
                 return run_fork(handled, context=request).run_in(requests)
 
             handler = AsgiHandler(app, middleware, context, fork)
-            dispatch.current = handler
+            dispatch.install(handler)
 
             def unserve(exit: Exit[Any, Any]) -> Effect[None]:
-                def remove() -> None:
-                    if dispatch.current is handler:
-                        dispatch.current = None
-
-                return running.shut_down(handler, requests, exit).ensuring(sync(remove))
+                return running.shut_down(handler, requests, exit).ensuring(
+                    sync(lambda: dispatch.remove(handler))
+                )
 
             return serve_scope.add_finalizer(unserve)
 

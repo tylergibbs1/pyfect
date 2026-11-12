@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.6.2 (unreleased)
+
+### Fixed
+
+- `uvicorn_server` and `hypercorn_server` hold a request that arrives before an app is served
+  until it is, as Effect's `NodeHttpServer` leaves such a request pending; it used to get an
+  empty 503. The socket is bound when the server's layer is built, before the layers of the
+  app it serves, so a client that waited for the port got a 503 while a slow layer (telemetry,
+  a database pool) was still starting. A WebSocket upgrade waits the same way instead of
+  closing with 1013. The test runs on every server built on the shared ASGI listener, and
+  fails if a new one is not added to it. Found by dogfooding (lantern).
+
 ## 0.6.1 (2026-11-12)
 
 ### Added
