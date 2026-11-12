@@ -20,7 +20,7 @@ from pyfect._core import (
     uninterruptible_mask,
 )
 from pyfect._effect_args import require_effect
-from pyfect._fiber import current_fiber
+from pyfect._fiber import FiberDispatcher, current_fiber
 from pyfect._waiters import WaitList
 from pyfect.cause import Cause
 from pyfect.cause import fail as fail_cause
@@ -31,7 +31,7 @@ from pyfect.option import Option, Some
 from pyfect.queue import _state as st
 from pyfect.queue._views import Dequeue, Enqueue
 from pyfect.result import Ok
-from pyfect.scheduler import Scheduler
+from pyfect.scheduler import Scheduler, SyncOnlyScheduler
 
 type Strategy = Literal["suspend", "dropping", "sliding"]
 
@@ -44,16 +44,23 @@ class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
 
     def __init__(self, capacity: int | None = None, strategy: Strategy = "suspend") -> None:
         self._capacity = capacity
-        # A scheduler given to the fiber making the queue also holds its
-        # wakes (Effect keeps that fiber's dispatcher); pyfect's own run
-        # schedulers do not outlive their run, so offers wake on their own.
+        # The dispatcher of the fiber making the queue holds its wakes, as
+        # Effect keeps that fiber's (see ``_waker``).
         fiber = current_fiber()
-        self._scheduler: Scheduler | None = (
-            None if fiber is None or fiber._scheduler is fiber._run_scheduler else fiber._scheduler
-        )
+        self._scheduler: Scheduler | None = None if fiber is None else fiber.dispatcher()
         self._strategy: Strategy = strategy
         self._items: deque[A] = deque()
         self._state: st.State[A, E] = st.Open()
+
+    def _waker(self) -> Scheduler | None:
+        """Where the queue's wakes wait: its maker's dispatcher, unless that
+        fiber's run is not the one running here (a queue can outlive its run),
+        nor under ``run_sync``, whose root flushes them; then the offering
+        fiber's (``notify_ready_soon``)."""
+        found = self._scheduler
+        if isinstance(found, FiberDispatcher) and not found.runs_here():
+            return None
+        return None if isinstance(found, SyncOnlyScheduler) else found
 
     @classmethod
     def make(
@@ -207,7 +214,7 @@ class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
             case st.Open(takers=takers, offers=offers, awaiters=awaiters):
                 self._state = st.Closing(takers, offers, awaiters, cause)
                 # A batch take waiting for its minimum can now drain the rest.
-                takers.notify_ready_soon(self._scheduler)
+                takers.notify_ready_soon(self._waker())
                 self._finish_if_drained()
                 return True
             case st.Closing() | st.Done():
@@ -424,7 +431,7 @@ class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
         if now:
             takers.notify_ready()
         else:
-            takers.notify_ready_soon(self._scheduler)
+            takers.notify_ready_soon(self._waker())
 
     def _shut(self, cause: Cause[E], offers: deque[st.Offer[A]]) -> None:
         self._items.clear()

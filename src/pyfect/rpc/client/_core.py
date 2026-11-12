@@ -313,7 +313,7 @@ class ClientCore:
                 # Deferred to a task, as Effect's: the sender may be the
                 # fiber delivering this reply.
                 fiber = sender[0]
-                parent._scheduler.schedule(lambda: fiber.interrupt_as_unsafe(parent.id))
+                parent.dispatcher().schedule(lambda: fiber.interrupt_as_unsafe(parent.id))
 
         self._entries[id] = _EffectEntry(rpc, context, done)
         fiber = parent._fork(send, daemon=True, start_immediately=True)

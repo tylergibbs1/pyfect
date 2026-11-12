@@ -52,7 +52,7 @@ def wake_soon(task: Callable[[], None]) -> None:
     if fiber is None:
         task()
     else:
-        fiber._scheduler.schedule(task)
+        fiber.dispatcher().schedule(task)
 
 
 class WaitList:

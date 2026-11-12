@@ -37,6 +37,7 @@ from pyfect._core import (
 )
 from pyfect._effect_args import require_effect
 from pyfect._js import same_value
+from pyfect._waiters import wake_soon
 from pyfect.cause import Cause
 from pyfect.cause import interrupt as interrupt_cause
 from pyfect.clock import Clock
@@ -297,9 +298,11 @@ def _await_change(state: TransactionMeta) -> Effect[None]:
     """Park until a ref in the journal is written. The read set is checked
     and the waiter registered in one step: a commit that landed after the
     reads has already woken its waiters, so a stale read set reruns at
-    once. A commit wakes the waiter through the waiter's scheduler, not in
-    the committing step (Effect's ``scheduleTask``), so an interrupt sent
-    later in that step still finds it parked."""
+    once. A commit wakes the waiter in a task on the committing fiber's
+    dispatcher, not in the committing step (Effect's
+    ``fiber.currentDispatcher.scheduleTask``), so an interrupt sent later in
+    that step still finds it parked; a commit in another run wakes it through
+    the waiter's own run."""
 
     def park(fiber: Fiber[Any, Any]) -> Effect[None]:
         def register(resume: Callable[[Effect[None]], None]) -> Effect[None] | None:
@@ -318,7 +321,11 @@ def _await_change(state: TransactionMeta) -> Effect[None]:
                 resume(_VOID)
 
             def wake_later() -> None:
-                fiber._scheduler.schedule(wake)
+                if fiber._on_run_thread():
+                    wake_soon(wake)
+                else:
+                    # A commit in another run, which may end right after it.
+                    fiber._scheduler.schedule(wake)
 
             for ref in refs:
                 ref._pending[key] = wake_later

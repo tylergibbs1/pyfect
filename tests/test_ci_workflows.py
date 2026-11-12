@@ -56,3 +56,20 @@ def test_the_check_runs_on_every_python_pyproject_lists():
     assert re.findall(r'"(3\.\d+)"', matrix.group(1)) == listed
     assert "UV_PYTHON: ${{ matrix.python }}" in job
     assert "uv sync --locked --python ${{ matrix.python }}" in job
+
+
+def test_workflows_pin_one_effect_commit():
+    """The oracle tests, mutation runs and the runtime differential job compare
+    against one Effect."""
+    pins = {
+        path.name: re.findall(r"EFFECT_COMMIT: ([0-9a-f]{40})", path.read_text(encoding="utf-8"))
+        for path in sorted(WORKFLOWS.glob("*.yml"))
+    }
+    assert {"ci.yml", "fuzz.yml"} <= {name for name, commits in pins.items() if commits}
+    assert len({commit for commits in pins.values() for commit in commits}) == 1, pins
+
+
+def test_the_fuzz_workflow_compares_fresh_programs_with_node():
+    job = _job("fuzz.yml", "runtime-differential")
+    assert "python -m runtime_diff --fresh" in job
+    assert "PYFECT_EFFECT_REF" in job and "setup-node" in job

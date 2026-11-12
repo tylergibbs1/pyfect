@@ -9,6 +9,7 @@ and awaited before the failure is reported. Nothing outlives the call.
 
 from __future__ import annotations
 
+import sys
 from collections.abc import Callable, Iterable
 from typing import Any, Literal, Never
 
@@ -36,12 +37,11 @@ type Concurrency = int | Literal["unbounded"] | None
 """``None`` runs one at a time; an ``int`` caps how many run at once."""
 
 
-def _parse_limit(concurrency: int | Literal["unbounded"]) -> Callable[[int], int]:
-    """Maps the number of items (known when it runs) to how many run at once.
-    As in Effect, a limit under 1 runs them one at a time."""
-    if concurrency == "unbounded":
-        return lambda n: max(n, 1)
-    return lambda _: max(concurrency, 1)
+def _resolve_concurrency(concurrency: int | Literal["unbounded"]) -> int:
+    """How many run at once, as Effect's ``resolveConcurrency``: a limit under
+    1 runs them one at a time. It does not see the items, so the choice between
+    the sequential loop and child fibers never depends on how many there are."""
+    return sys.maxsize if concurrency == "unbounded" else max(concurrency, 1)
 
 
 def _drop_own_interrupts(causes: list[Cause[Any]], by: int) -> Cause[Any]:
@@ -73,18 +73,10 @@ def for_each[T, B, E = Never, R = Never](
     With ``concurrency``, up to that many run at once. The first failure
     interrupts the rest. ``items`` is read each time the effect runs.
     """
-    if concurrency is None:
+    limit = 1 if concurrency is None else _resolve_concurrency(concurrency)
+    if limit == 1:
         return _for_each_sequential(items, f)
-    limit_for = _parse_limit(concurrency)
-
-    def start() -> Effect[list[B], E, R]:
-        snapshot = list(items)
-        limit = limit_for(len(snapshot))
-        if limit == 1:
-            return _for_each_sequential(snapshot, f)
-        return _for_each_concurrent(snapshot, f, limit)
-
-    return _Suspend(start)
+    return _Suspend(lambda: _for_each_concurrent(list(items), f, limit))
 
 
 def _for_each_sequential[T, B, E, R](
