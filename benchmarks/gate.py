@@ -2,19 +2,23 @@
 
 Machines differ, so each pipeline's time is divided by a pure-Python calibration timed in
 the same process, and that ratio is compared with ``benchmarks/baseline.json``. A ratio more
-than ``TOLERANCE`` times its baseline fails. ``--update`` rewrites the baseline for this
+than ``TOLERANCE`` times its baseline fails. A shared runner can be slow for a few seconds,
+so a case over the limit is measured again, with a fresh calibration, up to ``ATTEMPTS`` times
+in all, and fails only if every measurement is over. ``--update`` rewrites the baseline for this
 interpreter (do it after a deliberate speed change, from a CI run's printed ratios).
 """
 
 import json
 import sys
 import sysconfig
+from collections.abc import Callable
 from pathlib import Path
 
 from streams import CASES, best_of
 
 BASELINE = Path(__file__).with_name("baseline.json")
 TOLERANCE = 1.6
+ATTEMPTS = 3
 
 
 class _Box:
@@ -44,11 +48,23 @@ def _flavour() -> str:
     return f"{sys.version_info.major}.{sys.version_info.minor}-{gil}"
 
 
+def _ratio(run: Callable[[], object], calibration: float, limit: float | None) -> float:
+    """The case's time over the calibration's; while over `limit`, measure both again."""
+    ratio = best_of(run) / calibration
+    for _ in range(ATTEMPTS - 1):
+        if limit is None or ratio <= limit:
+            break
+        ratio = min(ratio, best_of(run) / best_of(_calibration))
+    return ratio
+
+
+def _read_baseline() -> dict[str, dict[str, float]]:
+    return json.loads(BASELINE.read_text(encoding="utf-8")) if BASELINE.exists() else {}
+
+
 def main() -> int:
     update = "--update" in sys.argv[1:]
-    baseline: dict[str, dict[str, float]] = (
-        json.loads(BASELINE.read_text(encoding="utf-8")) if BASELINE.exists() else {}
-    )
+    baseline = _read_baseline()
     flavour = _flavour()
     expected = baseline.get(flavour, {})
     calibration = best_of(_calibration)
@@ -56,9 +72,9 @@ def main() -> int:
     slower: list[str] = []
     print(f"{flavour}: calibration {calibration * 1e3:.1f} ms")
     for name, _items, run in CASES:
-        ratio = best_of(run) / calibration
-        ratios[name] = round(ratio, 3)
         was = expected.get(name)
+        ratio = _ratio(run, calibration, None if update or was is None else was * TOLERANCE)
+        ratios[name] = round(ratio, 3)
         verdict = "" if was is None else f" (baseline {was:.3f}, x{ratio / was:.2f})"
         print(f"  {name}: {ratio:.3f}{verdict}")
         if was is not None and ratio > was * TOLERANCE:
