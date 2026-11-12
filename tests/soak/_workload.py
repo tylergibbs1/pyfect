@@ -62,13 +62,17 @@ class Workload:
 
 def _describe(cause: Cause[Any]) -> str:
     """The cause's start (what failed) and end (the innermost error), then the error's
-    chain of causes (a ``SocketError``'s reason, say), which ``pretty`` leaves out."""
+    chain of causes (a ``SocketError``'s reason, say), or its ``cause`` when that is no
+    exception (a WebSocket error event), which ``pretty`` leaves out."""
     text = cause.pretty()
     found = cause.find_error()
     if isinstance(found, fx.Ok) and isinstance(found.value, BaseException):
         chain = found.value.__cause__
+        reason: object = getattr(found.value, "cause", None)
         if chain is not None:
             text += "\ncaused by:\n" + "".join(traceback.format_exception(chain))
+        elif reason is not None:
+            text += f"\ncaused by: {reason!r}"
     return text if len(text) <= 4000 else f"{text[:1000]}\n...\n{text[-3000:]}"
 
 
