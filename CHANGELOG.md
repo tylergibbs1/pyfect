@@ -21,6 +21,14 @@
   response stayed. The abort is now an attribute of the response, the upload body's abort
   listener is removed once the body is sent, and a test keeps weak-keyed tables out of
   `pyfect.http`.
+- `S.Struct` of a recursive TypedDict made at run time (per tenant or plugin) no longer
+  keeps the class alive forever: its cached schema reached the class through the
+  recursive reference. The reference now waits on the schema, not the class.
+- `openapi.from_api` with option functions no longer keeps a document per call when the
+  functions are made fresh on each call, nor the API when a function reaches it. Its cache
+  is weak at every level, as Effect's is (on the options, then on the API). Every
+  weak-keyed table and `weakref.finalize` in pyfect is now listed with what makes it free
+  (`tests/test_weak_tables.py`), so a new one is checked before it lands.
 
 ### Added
 

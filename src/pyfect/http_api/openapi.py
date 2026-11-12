@@ -137,19 +137,33 @@ class FromApiOptions(TypedDict, total=False):
     """Decides which schemas become components (``None``: inline)."""
 
 
-type _OptionsKey = tuple[Callable[[str], bool] | None, ReferencePolicy | None]
+class _NoOption:
+    """Stands for an option not given, as a key of the weak cache below."""
 
-_cache: WeakKeyDictionary[AnyApi, dict[_OptionsKey, Json]] = WeakKeyDictionary()
+
+_NO_OPTION = _NoOption()
+type _Specs = WeakKeyDictionary[AnyApi, Json]
+
+# Weakly keyed by each option function, then by the API, as Effect keys its cache by the
+# options object and then the API: a fresh function per call adds nothing that outlives
+# it, and a function reaching its API cannot keep the API (the spec reaches neither).
+_cache: WeakKeyDictionary[object, WeakKeyDictionary[object, _Specs]] = WeakKeyDictionary()
 
 
 def from_api(api: AnyApi, **options: Unpack[FromApiOptions]) -> Json:
-    """The OpenAPI document of ``api`` (a fresh copy on each call). It is
-    made once per API and option functions."""
-    key = (options.get("include_annotation_key"), options.get("reference_policy"))
-    by_options = _cache.setdefault(api, {})
-    spec = by_options.get(key)
+    """The OpenAPI document of ``api`` (a fresh copy on each call). It is made once
+    per API and option functions."""
+    include, policy = options.get("include_annotation_key"), options.get("reference_policy")
+    try:
+        by_policy = _cache.setdefault(
+            _NO_OPTION if include is None else include, WeakKeyDictionary()
+        )
+        specs = by_policy.setdefault(_NO_OPTION if policy is None else policy, WeakKeyDictionary())
+    except TypeError:  # an option function that cannot be weakly referenced: not cached
+        return _make(api, include, policy)
+    spec = specs.get(api)
     if spec is None:
-        spec = by_options[key] = _make(api, *key)
+        spec = specs[api] = _make(api, include, policy)
     return copy.deepcopy(spec)
 
 
