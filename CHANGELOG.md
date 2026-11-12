@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.1 (unreleased)
+
+### Docs
+
+- The asyncio guide no longer says an open client connection holds a TLS server's shutdown;
+  since 0.6.0 stopping closes idle keep-alive connections at once.
+- The libsql guide says sqld can wedge with several concurrent writers (sqld's bug; Effect's
+  driver hits it too), and that one writer at a time avoids it.
+
 ## 0.6.0 (2026-11-12)
 
 ### Changed

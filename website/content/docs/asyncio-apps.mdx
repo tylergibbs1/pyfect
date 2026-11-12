@@ -155,8 +155,8 @@ the layer `to_asgi` builds, so provide the loggers to that layer.
 Each server takes its own TLS settings in `config`, which passes them to the engine, so their
 names differ: hypercorn's `config` holds `hypercorn.Config` attributes, `certfile` and
 `keyfile`, and then negotiates HTTP/2 with ALPN; uvicorn's holds `uvicorn.Config` arguments,
-`ssl_certfile` and `ssl_keyfile`. Close the clients that talk to a server before it stops: an
-open connection holds hypercorn's TLS shutdown.
+`ssl_certfile` and `ssl_keyfile`. Stopping a server closes its idle keep-alive connections at
+once, over TLS too, as Node's server does.
 
 <CodeOutput>
 
