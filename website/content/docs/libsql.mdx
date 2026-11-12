@@ -55,6 +55,13 @@ transactions use savepoints. A few things work differently than on the other dri
 - Hrana has no way to cancel a statement. Interrupting a remote statement stops waiting for
   it, as in Effect, and the server finishes it. A transaction it was part of rolls back
   after that.
+- sqld (checked with 0.24.33) can wedge when several clients write to one database at once:
+  a writer that gets `SQLITE_BUSY` during a checkpoint is left in sqld's write queue, and
+  every later writer then waits forever ([libsql#2286](https://github.com/tursodatabase/libsql/issues/2286)).
+  Effect's `@effect/sql-libsql` wedges it the same way.
+  Writing from one fiber at a time, for example behind a one-permit `Semaphore`, avoids it.
+  Once sqld is wedged, interrupting a statement waits too, since the interrupt waits for the
+  request in flight.
 
 ## Migrations
 
