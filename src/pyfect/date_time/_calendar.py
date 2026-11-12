@@ -16,10 +16,8 @@ from datetime import UTC, datetime, timedelta, tzinfo
 from decimal import Decimal
 from typing import Literal
 
+from pyfect.date_time._epoch import from_epoch_micros, to_epoch_micros
 from pyfect.date_time._zones import make_zoned, zone_of
-
-_EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
-_MICRO = timedelta(microseconds=1)
 
 type _DayUnit = Literal["day", "week", "month", "year"]
 type Unit = Literal["millisecond", "second", "minute", "hour"] | _DayUnit
@@ -43,7 +41,7 @@ def add(
     Time units are added one at a time, smallest first, each sum cut to a
     whole millisecond toward the epoch (Effect's ``setTime``)."""
     zone = zone_of(dt, "dt")
-    epoch_millis = Decimal((dt - _EPOCH) // _MICRO) / 1_000
+    epoch_millis = Decimal(to_epoch_micros(dt)) / 1_000
     for amount, millis_per_unit in (
         (microseconds, Decimal("0.001")),
         (milliseconds, Decimal(1)),
@@ -53,7 +51,9 @@ def add(
     ):
         if amount:
             epoch_millis = _add_truncated(epoch_millis, amount, millis_per_unit)
-    shifted = (_EPOCH + timedelta(milliseconds=float(epoch_millis))).astimezone(zone)
+    # Whole microseconds (whole milliseconds once a unit is added): exact, where a float of
+    # a far year's milliseconds holds only about a microsecond.
+    shifted = from_epoch_micros(int(epoch_millis * 1_000)).astimezone(zone)
     if not (days or weeks or months or years):
         return shifted
 

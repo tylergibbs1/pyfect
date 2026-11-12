@@ -7,10 +7,9 @@ order, with prefix queries (Effect's ``Trie``)::
 
 Keys are ordered by their UTF-16 code units, as JavaScript compares strings
 (so a character past U+FFFF sorts below U+E000, where Python's ``<`` puts it
-above). The empty string is never a key: inserting it returns the same
-trie. Every update returns a new trie and leaves this one as it was; like
-Effect's, the trie is persistent, so an update copies only the nodes along
-its key.
+above). The empty string is a key like any other, first in order. Every
+update returns a new trie and leaves this one as it was; like Effect's, the
+trie is persistent, so an update copies only the nodes along its key.
 """
 
 from __future__ import annotations

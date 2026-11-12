@@ -11,8 +11,10 @@ import pytest
 
 pytest.importorskip("hypothesis")
 
-from hypothesis import given, settings
+from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
+from hypothesis.errors import StopTest
+from hypothesis.internal.conjecture.data import Status
 
 import pyfect as fx
 from pyfect import big_decimal as bd
@@ -223,6 +225,53 @@ def test_decoding_an_encoded_value_gives_it_back(name: str):
             assert equivalent(decode(encode(value)), value)
 
     round_trip()
+
+
+_MIN_ACCEPTED = 0.5
+"""The share of draws a schema's strategy must keep. Hypothesis fails a test (health check
+``filter_too_much``) when 50 draws are filtered out before 10 are kept: at a keep rate of
+0.2 that happens about one run in four, as it did for ``MacBroadcastAddressFromString``; at
+0.5 about one in a billion. This measures the rate deterministically, so a strategy that
+filters too much fails here every time instead of elsewhere by chance."""
+
+
+@pytest.mark.parametrize("name", sorted(_CATALOG))
+def test_a_strategy_keeps_most_of_what_it_draws(name: str):
+    """A strategy that rejects draws (``.filter``, ``assume``) is a chance health-check
+    failure in every test using it: build valid values instead of filtering for them."""
+    strategy = S.to_strategy(_CATALOG[name])
+    counts = {"tried": 0, "kept": 0}
+
+    @settings(
+        max_examples=200,
+        derandomize=True,
+        database=None,
+        deadline=None,
+        suppress_health_check=[HealthCheck.filter_too_much, HealthCheck.too_slow],
+    )
+    @given(st.data())
+    def draw(data: st.DataObject) -> None:
+        try:
+            data.draw(strategy)
+        except StopTest:
+            # Filtered out (INVALID), not a probe that ran out of choices (OVERRUN).
+            counts["tried"] += data.conjecture_data.status is Status.INVALID
+            raise
+        counts["tried"] += 1
+        counts["kept"] += 1
+
+    draw()
+    assert counts["kept"] >= _MIN_ACCEPTED * counts["tried"], counts
+
+
+@pytest.mark.parametrize("name", sorted(_CATALOG))
+def test_no_check_carries_a_strategy(name: str):
+    """``annotate`` on a schema with checks annotates its last check, and strategy derivation
+    reads ``to_arbitrary`` only from a node: one on a check is silently unused, as the
+    network refinements' were (their strategies then filtered for the few addresses they
+    accept)."""
+    checks = _CATALOG[name].__codec__().ast.checks or ()
+    assert not [c for c in checks if "to_arbitrary" in (c.annotations or {})]
 
 
 @given(S.to_strategy(S.Struct(_User)), st.text())
