@@ -107,6 +107,12 @@
   finished, as Node's `closeIdleConnections` does, instead of once the serving fiber came back
   round for the next request. A shutdown starting just after a client got its response no
   longer waits out `graceful_shutdown_timeout` for that connection.
+- `terminal.live` no longer reads its input after a reader stops. Interrupting `read_line`, or
+  closing `read_input`'s scope (as every prompt does when it finishes), abandoned the read it
+  had handed to a worker thread, which could still run afterwards and take input meant for the
+  next reader of that descriptor (another terminal or `input()` on standard input) or, once the
+  descriptor was closed, for whatever reused its number. A stopped reader now waits for that read, at most
+  50 ms once it has started (on Windows, where a read cannot time out, it is still abandoned).
 
 ### Docs
 

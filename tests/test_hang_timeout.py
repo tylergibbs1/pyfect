@@ -8,6 +8,7 @@ into a test failure.
 from pathlib import Path
 
 import pytest
+from _subprocess import SUBPROCESS_TIMEOUT
 
 HANGING_TEST = """
 import pyfect as fx
@@ -23,7 +24,7 @@ def test_a_transaction_that_never_wakes_fails_the_test(
     monkeypatch.setenv("PYTHONPATH", str(Path(__file__).parent))
     pytester.makepyfile(HANGING_TEST)
     pytester.makeini("[pytest]\ntest_timeout = 0.5\n")
-    result = pytester.runpytest_subprocess("-p", "_timeout", timeout=30)
+    result = pytester.runpytest_subprocess("-p", "_timeout", timeout=SUBPROCESS_TIMEOUT)
     result.assert_outcomes(failed=1)
     result.stdout.fnmatch_lines(["*test hung: still running after 0.5s*"])
 

@@ -18,6 +18,7 @@ from typing import Any, Never
 import httpx
 import pytest
 import uvicorn
+from _subprocess import SUBPROCESS_TIMEOUT
 
 import pyfect as fx
 from pyfect import effect, layer, stream, testing
@@ -179,7 +180,7 @@ def test_ctrl_c_under_run_main_ends_an_open_stream_quietly(tmp_path: Path) -> No
             assert "Listening on" in line
         started = time.monotonic()
         os.kill(proc.pid, signal.SIGINT)
-        stdout, stderr = proc.communicate(timeout=20)
+        stdout, stderr = proc.communicate(timeout=SUBPROCESS_TIMEOUT)
     finally:
         proc.kill()
     elapsed = time.monotonic() - started

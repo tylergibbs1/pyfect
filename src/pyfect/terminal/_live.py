@@ -236,8 +236,16 @@ def live(
 
     source = _Input(input_fd)
     raw_mode = _RawMode(input_fd)
-    fill = blocking(source.fill)
-    fill_within_escape_timeout = blocking(lambda: source.fill(ESCAPE_CODE_TIMEOUT))
+
+    def filled(wait: float) -> Effect[None]:
+        # A stopped reader waits out its read (at most ``wait``), so no
+        # thread reads the descriptor after it and takes the next reader's
+        # input. Windows reads cannot time out, so there they are left.
+        read = blocking(lambda: source.fill(wait))
+        return read if os.name == "nt" else read.uninterruptible()
+
+    fill = filled(_WAIT)
+    fill_within_escape_timeout = filled(ESCAPE_CODE_TIMEOUT)
 
     def read_line() -> Generator[Effect[Any, QuitError], Any, str]:
         while True:

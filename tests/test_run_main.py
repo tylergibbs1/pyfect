@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import ClassVar
 
 import pytest
+from _subprocess import SUBPROCESS_TIMEOUT
 
 import pyfect as fx
 
@@ -62,7 +63,7 @@ def run_main_process(
             first = proc.stdout.readline().strip()
             assert first == READY, f"expected {READY!r}, got {first!r}"
             os.kill(proc.pid, send)
-        stdout, stderr = proc.communicate(timeout=20)
+        stdout, stderr = proc.communicate(timeout=SUBPROCESS_TIMEOUT)
     finally:
         proc.kill()
     return Finished(proc.returncode, stdout, stderr)
