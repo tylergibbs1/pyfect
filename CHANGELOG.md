@@ -2,12 +2,115 @@
 
 ## 0.6.1 (unreleased)
 
+### Added
+
+- Fuzzing of every parser of untrusted input (`tests/fuzz`): 32 targets covering the HTTP/1
+  server (request heads, chunked and compressed bodies, multipart, URLs, cookies, WebSocket
+  frames and extensions, and the live server end to end), the JSON family, CSV, NDJSON, SSE,
+  XML, TOML, YAML, INI, tar, zip, schema decoding of JSON and binary input, JOSE and key
+  formats, durations, date-times, cron, dotenv and Config. Each target allows only its
+  documented errors and runs under a time limit. A checked-in seed corpus replays in every
+  pytest run, along with a short Hypothesis fuzz of each target and a comparison with Effect's
+  answers (`effect_answers.json`, from Effect under Node) on every parser the two share,
+  so a divergence the fuzzers find stays fixed. The
+  `fuzz` workflow runs Atheris on each target for 30 seconds on every push, and for 20 minutes
+  weekly or on demand, uploading any crash. `python -m fuzz` (from `tests/`) runs targets
+  locally and `--differential` compares a grown corpus with Effect.
+
+### Fixed
+
+- `channel.scoped` rejects an argument that is not a channel when it is called, naming the
+  parameter, as every other channel function does; it used to fail only once the channel ran.
+  The argument guard test skipped parameters typed `ChannelBase`, which is how it slipped
+  through; it checks them now. Found by mutation testing.
+- A schema parsed with `concurrency` reports a defect or issue from a child that fails after the
+  parse was already decided, as Effect's concurrent parse does; such a child used to leak an
+  internal exception into the result, a `SchemaError` that crashed when formatted. No child
+  starts once the parse is decided. Found by mutation testing.
+- `Cause.pretty` keeps an unraised error's message exactly, as Effect does; trailing whitespace
+  was stripped (`ValueError("boom  ")` printed as `ValueError: boom`). Found by mutation testing.
+- `date_time.add` and `subtract` keep a far year's microseconds exactly: the result was
+  rebuilt through a float of epoch milliseconds, so adding nothing to
+  `2249-01-01T00:00:00.000001` gave `.000002`. Found by a new property test; a guard now
+  rejects a float between an instant and a `timedelta` anywhere in `pyfect.date_time`.
+- `S.to_strategy` of the network refinements (`MacBroadcastAddress`, `Ipv4PrivateAddress`,
+  `IpLoopbackAddressFromString` and the rest) draws only addresses they accept. Their own
+  strategy sat on the refinement's check, where derivation never read it, so they filtered
+  plain addresses for the few that pass (one in five for `MacBroadcastAddress`) and Hypothesis
+  sometimes gave up on a test with "filters out too many inputs". A test now measures, without
+  randomness, that every exported schema's strategy keeps at least half of what it draws, and
+  that no check carries a `to_arbitrary`.
+- `race`, `race_first`, `race_all`, `race_all_first` and `timeout` no longer return before their
+  losers have stopped when an interrupt lands just after the winner decided the race. The losers
+  were stopped in the effect the winner resumed the race with, which a fiber that paused there
+  for its step budget (`MaxOpsBeforeYield`) skipped once interrupted, so `timeout(...)` could
+  return while the timed-out effect still held its resources. They are now stopped in an
+  `on_exit` around the wait, however the race ends, as Effect's `raceAll` does with its
+  `onExitUnsafe` hook. Found by the interleaving harness (`tests/interleave`), as were the next
+  three; a new test bans handing work to a callback's `resume` anywhere in `src`.
+- A pool no longer releases an item it has just put in service when its scope closes at that
+  moment. The resize fiber published a new item while interruptible, so an interrupt in the
+  pause right after (the pool's scope closing) made it close the item's scope while borrowers
+  held it. Only the acquire is interruptible now; publishing the item is not. Effect's
+  `Pool.ts` `allocate` restores interruptibility around both and has the same gap.
+- A pool borrower woken to retry no longer parks forever next to free items. A woken waiter
+  keeps its place in line; if its retry found nothing and items came back before it parked
+  again, their wake-ups had skipped it (it was awake), and it then parked because the line, which
+  held only itself, was not empty. It now goes on when nobody asleep is ahead of it. Effect's
+  `waitForItem` checks `waiters.size === 0` and has the same race.
+- A `ScopedCache` lookup whose last getter left while the lookup was in its uninterruptible
+  acquire is released. The lookup went on to succeed into an entry already removed, and
+  nothing closed its scope, not even closing the cache. The last getter now closes the entry's
+  scope once the lookup has stopped. Effect's `ScopedCache.ts` has the same leak.
+- `terminal.live` no longer reads its input after a reader stops. Interrupting `read_line`, or
+  closing `read_input`'s scope (as every prompt does when it finishes), abandoned the read it
+  had handed to a worker thread, which could still run afterwards and take input meant for the
+  next reader of that descriptor (another terminal or `input()` on standard input) or, once the
+  descriptor was closed, for whatever reused its number. A stopped reader now waits for that read, at most
+  50 ms once it has started (on Windows, where a read cannot time out, it is still abandoned).
+- Fuzzing (`tests/fuzz`, Atheris and Hypothesis, see Added) found these differences from Effect
+  and inputs that raised where a documented error belongs (each has a regression input in
+  the corpus and a test in `tests/fuzz/test_regressions.py`):
+  - An `Origin` header holding an unclosed IPv6 literal (`http://[`) made the origin check of
+    WebSocket upgrades and RPC calls die with a 500 (`urlsplit` raises `ValueError` there);
+    `request_to_web` and the ASGI mount had the same raise. The origin is now no origin, so the
+    check refuses it, and `request_to_web` fails with `RequestParseError`. Request-facing code
+    splits URLs only through `_url_text.split_url`, which returns `None` where `urlsplit` raises
+    (`tests/test_split_url_guard.py`).
+  - Importing an SPKI or PKCS#8 key naming an algorithm `cryptography` does not know (an
+    `UnsupportedAlgorithm`), or a PKCS#8 key of the wrong size for its algorithm (a 32-byte
+    Ed448 key, which OpenSSL fails with an `InternalError`), was a defect, not a `CryptoError`
+    `InvalidKey`. Keys are loaded
+    only through `crypto._lib`'s loaders, which turn every unreadable key into `None`
+    (`tests/test_crypto_key_loading_guard.py`).
+  - TOML and YAML nested about 500 levels deep raised `RecursionError`. They now recurse
+    through `with_fresh_stack`, as recursive schemas do, so they read input nested far deeper
+    than JavaScript's stack allows; past that `toml.parse` fails with an `EncodingError` and
+    `yaml.parse` raises `ValueError`, as Effect's do when their stack runs out.
+    `tests/test_deep_nesting.py` feeds every nested-text parser 200,000 levels.
+  - `ini.parse` documents the `TypeError` it raises for a property in a section named after a
+    value (`a=1`, then `[a]`, then `b=2`), as Effect's `Ini.parse` throws; its docstring said
+    `ValueError`.
+  - `cron.parse`, `semver_range.parse` and the cookie parsers read whitespace as Python does,
+    where Effect reads JavaScript's: U+001C to U+001F and U+0085 separated cron fields and range
+    comparators and were trimmed from cookie names and values, and a byte-order mark did not
+    separate them. They now split and trim as Effect does (`_js.split_space`, `_js.trim`), and
+    `tests/test_js_whitespace_guard.py` fails on Python's whitespace methods or a regex `\s` in
+    any module ported from one of Effect's text parsers.
+  - `ini.parse` named a quoted key holding JSON by its Python `repr` (`'[]'` became `"[]"`);
+    it is now `String(key)` as in Effect (`""`), and a key whose JSON has a `length` over 2
+    raises Effect's `TypeError`.
+  - `date_time.zone_from_string` documents that an offset of a day or more is `None`, as
+    Python's `tzinfo` cannot hold one; Effect accepts up to `±99:59`.
+
 ### Docs
 
 - The asyncio guide no longer says an open client connection holds a TLS server's shutdown;
   since 0.6.0 stopping closes idle keep-alive connections at once.
 - The libsql guide says sqld can wedge with several concurrent writers (sqld's bug; Effect's
   driver hits it too), and that one writer at a time avoids it.
+- `pyfect.trie` no longer says the empty string is never a key: it is one, first in order, as
+  in Effect.
 
 ## 0.6.0 (2026-11-12)
 
