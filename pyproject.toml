@@ -122,7 +122,7 @@ dev = [
     "psycopg[binary]>=3.3",
     "mutmut>=3.8.1",
     "pyright>=1.1.414",
-    "pytest>=9.1.1",
+    "pytest>=9.2.0",
     "ruff>=0.17.2",
 ]
 docs = ["griffe-typingdoc==0.2.9"]
@@ -130,6 +130,8 @@ docs = ["griffe-typingdoc==0.2.9"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+# An xfail that passes fails the run (tests/test_xfail_guard.py).
+xfail_strict = true
 # A coroutine left pending (a close never awaited before a loop stopped) or
 # an exception raised where nothing can catch it fails the test that left it.
 filterwarnings = [
@@ -137,6 +139,8 @@ filterwarnings = [
     "error::pytest.PytestUnraisableExceptionWarning",
     # `client[Group]` is deprecated; `cast` hides it from pyright, this does not.
     "error:client\\[Group\\]:DeprecationWarning",
+    # A file, socket or pipe left for the garbage collector to close.
+    "error::ResourceWarning",
 ]
 
 [tool.pyright]

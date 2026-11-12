@@ -4,9 +4,14 @@ PostgreSQL server where Effect uses PostgreSQL and MySQL. Each test's
 docstring is the Effect test title, without its backend prefix.
 
 Adapted, with the reason:
-- "retains frozen advisory locks until the session closes" runs on
-  PostgreSQL only: SQLite has no advisory locks (its locks are rows, which
-  "transfers frozen row locks after expiry" covers).
+- "retains frozen advisory locks until the session closes" is stale at
+  Effect 4.1.2 (it times out there under Node on pg and mysql): the lock
+  session's ``idle_session_timeout`` is ``shard_lock_expiration``
+  (Effect-TS/effect#10037), so the server ends a frozen runner's session and
+  frees its locks. "releases frozen advisory locks after the lock
+  expiration" asserts that instead, on PostgreSQL only: SQLite has no
+  advisory locks (its locks are rows, which "transfers frozen row locks
+  after expiry" covers).
 - "assigns annotated entities only to runners in their shard group", "runs
   one singleton and migrates it after owner death" and "keeps
   EntityResource alive during movement and releases it explicitly" run on
@@ -20,6 +25,16 @@ Adapted, with the reason:
   otherwise its read loop, still polling the shard, can claim the request
   before the new owner reads it, and the request hangs (Effect has no
   shard fence, so there the frozen runner would answer it instead).
+- "rebalances on runner addition, graceful stop, and abrupt death" sets
+  ``entity_termination_timeout`` to 0.1 s, as Effect's other stop tests do:
+  the stopping runner keeps the gated handler's shard until that timeout
+  interrupts the handler, and Effect's test keeps the 15 s default, which is
+  also ``wait_until``'s deadline, so the handover (about 15.5 s after the
+  stop) met the deadline only on some runs (Effect's own run failed).
+- "force-interrupts a stuck handler after the graceful termination timeout"
+  expects the interrupted request to fail with the interrupt, as it does in
+  Effect 4.1.2 (on pg and mysql): its request is not persisted, so nothing
+  retries it on the new owner, where Effect's test expects a second attempt.
 """
 
 from __future__ import annotations
@@ -471,13 +486,6 @@ class StuckEntity(Entity, type="ClusterIntegrationStuckReassignment"):
     run_ = make_rpc("Run", success=S.Number).annotate(Persisted, False)
 
 
-# Effect v4.0.6 fails this test too (its cluster-integration Entity.test.ts, run
-# under Node on pg and mysql: the same error). The port passed only while the RPC
-# server registered a handler after its first step, which ended drains at once.
-_FAILS_IN_EFFECT = pytest.mark.xfail(strict=True, reason="fails the same way in Effect v4.0.6")
-
-
-@_FAILS_IN_EFFECT
 @testing.live(timeout="1 minute")
 def test_force_interrupts_a_stuck_handler_after_the_graceful_termination_timeout(
     cluster_db: ClusterDatabase,
@@ -534,8 +542,9 @@ def test_force_interrupts_a_stuck_handler_after_the_graceful_termination_timeout
             ),
         )
 
-        assert (yield from request.join()) == 2
-        assert state["attempts"] == 2
+        exit = yield from request.await_exit()
+        assert isinstance(exit, Exit.Failure) and exit.cause.has_interrupts_only
+        assert state["attempts"] == 1
 
     yield from run(body)
 
@@ -733,7 +742,6 @@ def test_reports_mailbox_saturation_and_revives_idle_entities_with_fresh_state(
     yield from run(body)
 
 
-@_FAILS_IN_EFFECT
 @testing.live(timeout="90 seconds")
 def test_rebalances_on_runner_addition_graceful_stop_and_abrupt_death(
     cluster_db: ClusterDatabase,
@@ -744,7 +752,11 @@ def test_rebalances_on_runner_addition_graceful_stop_and_abrupt_death(
     def body() -> Body:
         reset_order()
         state = order_state
-        cluster = yield from make(cluster_db, entities=standard_entities)
+        cluster = yield from make(
+            cluster_db,
+            entities=standard_entities,
+            config={"entity_termination_timeout": fx.duration.seconds(0.1)},
+        )
         initial = yield from cluster.start(2)
         yield from cluster.wait_for_stable_assignments()
         before: dict[str, ClusterRunner | None] = {}
@@ -836,13 +848,9 @@ def test_transfers_frozen_row_locks_after_expiry(cluster_db: ClusterDatabase):
     yield from run(body)
 
 
-# Effect 4.1.2's lock session sets idle_session_timeout to shard_lock_expiration,
-# so the server ends a frozen runner's session and releases its locks within the
-# observation window. Effect's own test fails the same way under Node at 4.1.2.
-@pytest.mark.xfail(strict=True, reason="stale in Effect 4.1.2: idle lock sessions now end")
 @testing.live(timeout="1 minute")
-def test_retains_frozen_advisory_locks_until_the_session_closes(cluster_db: ClusterDatabase):
-    """retains frozen advisory locks until the session closes"""
+def test_releases_frozen_advisory_locks_after_the_lock_expiration(cluster_db: ClusterDatabase):
+    """releases frozen advisory locks after the lock expiration"""
     backend = cluster_db.backend
     if backend != "pg":
         pytest.skip("SQLite has no advisory locks")
@@ -856,21 +864,21 @@ def test_retains_frozen_advisory_locks_until_the_session_closes(cluster_db: Clus
         assert old_owner is not None
         shard = yield from cluster.shard_of_entity(StateEntity, id)
         yield from cluster.freeze(old_owner)
-        deadline = (yield from now_millis()) + 3000
         yield from cluster.wait_until(
-            "The advisory-lock observation window did not elapse",
-            now_millis().map(lambda now: now >= deadline),
-            5,
-        )
-        assert cluster.owners_of_shard(shard) == []
-        assert cluster.owners_of_shard(shard, True) == [old_owner]
-        yield from cluster.kill(old_owner)
-        yield from cluster.wait_until(
-            "The advisory lock was not handed over after its session closed",
+            "The frozen runner's advisory lock was not released after its session idled out",
             cluster.owner_of_entity(StateEntity, id).map(
                 lambda owner: owner is not None and owner is not old_owner
             ),
+            12,
         )
+        yield from cluster.wait_for_client_sync()
+        next_owner = yield from cluster.owner_of_entity(StateEntity, id)
+        assert next_owner is not None
+        assert cluster.owners_of_shard(shard) == [next_owner]
+        client = yield from cluster.get_client(StateEntity)
+        reply = yield from client(id).increment(EntityRequest(id=f"{backend}-freeze", sequence=0))
+        assert reply["runner"] == address_string(next_owner.address)
+        yield from cluster.kill(old_owner)
 
     yield from run(body)
 

@@ -13,7 +13,8 @@ import subprocess
 import sys
 import tempfile
 import time
-from collections.abc import Iterator
+from collections.abc import Generator, Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -88,17 +89,23 @@ time.sleep(60)
 """
 
 
-def _start_child(tempdir: Path) -> tuple[subprocess.Popen[str], Path, int]:
-    child = subprocess.Popen(
+@contextmanager
+def _start_child(tempdir: Path) -> Generator[tuple[subprocess.Popen[str], Path, int]]:
+    """A child process that owns a server; on exit it is killed if still
+    running, reaped, and its stdout pipe closed."""
+    with subprocess.Popen(
         [sys.executable, "-c", _CHILD],
         cwd=_REPO,
         env={**os.environ, "TMPDIR": str(tempdir)},
         stdout=subprocess.PIPE,
         text=True,
-    )
-    assert child.stdout is not None
-    data_dir, watchdog = child.stdout.readline().split()
-    return child, Path(data_dir), int(watchdog)
+    ) as child:
+        try:
+            assert child.stdout is not None
+            data_dir, watchdog = child.stdout.readline().split()
+            yield child, Path(data_dir), int(watchdog)
+        finally:
+            child.kill()
 
 
 def _running(data_dir: Path) -> bool:
@@ -117,27 +124,26 @@ def _gone_within(data_dir: Path, seconds: float) -> bool:
 @pytest.mark.parametrize("sig", [signal.SIGTERM, signal.SIGINT, signal.SIGKILL])
 def test_a_server_stops_when_its_owner_dies(tempdir: Path, sig: signal.Signals) -> None:
     _require_postgres()
-    child, data_dir, _ = _start_child(tempdir)
-    assert _running(data_dir)
-    child.send_signal(sig)
-    child.wait(10)
+    with _start_child(tempdir) as (child, data_dir, _):
+        assert _running(data_dir)
+        child.send_signal(sig)
+        child.wait(10)
     assert _gone_within(data_dir, 10)
 
 
 def test_starting_a_server_reaps_one_whose_owner_and_watchdog_died(tempdir: Path) -> None:
     _require_postgres()
-    child, data_dir, watchdog = _start_child(tempdir)
-    if watchdog:
-        os.kill(watchdog, signal.SIGKILL)
-    child.kill()
-    child.wait(10)
+    with _start_child(tempdir) as (child, data_dir, watchdog):
+        if watchdog:
+            os.kill(watchdog, signal.SIGKILL)
+        child.kill()
+        child.wait(10)
     assert _running(data_dir)
 
-    survivor, survivor_dir, _ = _start_child(tempdir)
-
-    assert _gone_within(data_dir, 10)
-    assert _running(survivor_dir)
-    assert _pg_owner.reap(tempdir) == []
-    survivor.terminate()
-    survivor.wait(10)
+    with _start_child(tempdir) as (survivor, survivor_dir, _):
+        assert _gone_within(data_dir, 10)
+        assert _running(survivor_dir)
+        assert _pg_owner.reap(tempdir) == []
+        survivor.terminate()
+        survivor.wait(10)
     assert _gone_within(survivor_dir, 10)

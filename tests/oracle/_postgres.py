@@ -215,6 +215,7 @@ class CancelGate:
         self._flowing.set()
         self.accepted = 0
         self._ends: list[socket.socket] = []
+        self._pumps: list[threading.Thread] = []
         self._thread = threading.Thread
         self._thread(target=self._serve, daemon=True).start()
 
@@ -256,7 +257,9 @@ class CancelGate:
         self._ends += [client, backend]
         self.accepted += 1
         backend.sendall(head)
-        self._thread(target=self._pump, args=(backend, client), daemon=True).start()
+        pump = self._thread(target=self._pump, args=(backend, client), daemon=True)
+        self._pumps.append(pump)
+        pump.start()
         self._pump(client, backend)
 
     def _pump(self, source: socket.socket, target: socket.socket) -> None:
@@ -283,6 +286,10 @@ class CancelGate:
         for end in self._ends:
             with contextlib.suppress(OSError):
                 end.shutdown(socket.SHUT_RDWR)
+        for pump in self._pumps:
+            pump.join(5)
+        for end in self._ends:
+            end.close()
 
 
 def _read_exactly(conn: socket.socket, size: int) -> bytes:
