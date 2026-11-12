@@ -149,9 +149,9 @@ class _Backend:
     def __init__(self, options: dict[str, Any]) -> None:
         options.setdefault("timeout", None)
         self.client = import_httpx().AsyncClient(**options)
-        from pyfect.http._httpcore_backend import close_cancelled_handshakes
+        from pyfect.http._httpcore_backend import close_cancelled_connections
 
-        close_cancelled_handshakes(self.client)
+        close_cancelled_connections(self.client)
         self._thread = LoopThread("pyfect-httpx")
         self.loop = self._thread.loop
         self._lifetime = Lifetime("HTTP client")

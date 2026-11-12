@@ -27,6 +27,15 @@
   open, on both ends, for good: the soak test's open file descriptors rose by about one
   a minute. The client now gives its connection pools a network backend that closes the
   stream whatever ends the handshake.
+- The httpx client closes the connection of a request interrupted at any other point
+  too. Three more cancels left an HTTP/1.1 connection open with nothing to close it: one
+  landing as anyio (4.15.1) finished connecting (its socket was never handed on), one
+  between connecting and the request starting (the connection stayed `NEW` in the pool,
+  never reused and never expired, so a pool of them made every request wait), and one
+  while the response released its connection (it stayed `ACTIVE`). The client now
+  connects where a cancel cannot reach and closes what such a connect opened, and closes
+  a pooled connection left busy by a failed request or a closed response. A test cancels
+  a request at every event-loop turn of its life and checks nothing is left open.
 - The live server closes a connection whose TLS handshake does not finish. A client
   that hung up during the handshake left the server's side open (the end of input did
   not fail the handshake), and a client that never sent one held its connection for
