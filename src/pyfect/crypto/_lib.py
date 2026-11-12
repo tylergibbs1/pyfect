@@ -5,7 +5,12 @@ command that installs it (``tests/test_install.py`` checks)."""
 from pyfect._extras import missing_extra
 
 try:
-    from cryptography.exceptions import InvalidSignature, InvalidTag, UnsupportedAlgorithm
+    from cryptography.exceptions import (
+        InternalError,
+        InvalidSignature,
+        InvalidTag,
+        UnsupportedAlgorithm,
+    )
     from cryptography.hazmat.primitives import hashes, serialization
     from cryptography.hazmat.primitives.asymmetric import (
         ec,
@@ -32,9 +37,11 @@ try:
 except ImportError as error:  # pragma: no cover - depends on the environment
     raise missing_extra("pyfect.crypto keys", "crypto", error) from error
 
-_UNREADABLE = (ValueError, TypeError, UnsupportedAlgorithm)
+_UNREADABLE = (ValueError, TypeError, UnsupportedAlgorithm, InternalError)
 """What ``cryptography``'s key loaders raise for bytes they cannot read: an
-SPKI naming an algorithm it does not know is ``UnsupportedAlgorithm``."""
+SPKI naming an algorithm it does not know is ``UnsupportedAlgorithm``, and
+OpenSSL's failure to set up a raw key of the wrong size (a PKCS#8 Ed448 key
+of 32 bytes) is ``InternalError``."""
 
 
 def load_der_public_key(data: bytes) -> PublicKeyTypes | None:

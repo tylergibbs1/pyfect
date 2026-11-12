@@ -64,8 +64,10 @@ const answers: Record<string, (text: string) => unknown> = {
   zone: (t) => some(DateTime.zoneFromString(t), DateTime.zoneToString),
   zoned: (t) => some(DateTime.makeZonedFromString(t), DateTime.formatIsoZoned),
   glob: (t) => {
-    const [pattern, path] = t.split("\n", 2)
-    return thrown(() => Glob.match(Glob.make(pattern), path ?? ""))
+    // Python's partition: the path is everything after the first newline.
+    const at = t.indexOf("\n")
+    const [pattern, path] = at === -1 ? [t, ""] : [t.slice(0, at), t.slice(at + 1)]
+    return thrown(() => Glob.match(Glob.make(pattern), path))
   },
   pointer: (t) => JsonPointer.parseUriFragment(t) ?? null,
   cookies: (t) => Cookies.parseHeader(t),

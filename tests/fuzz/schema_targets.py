@@ -5,7 +5,8 @@ to itself."""
 
 from __future__ import annotations
 
-from typing import Any, NotRequired, TypedDict
+from datetime import datetime
+from typing import Any, NotRequired, TypedDict, cast
 
 from pyfect import _json_text
 from pyfect import schema as S
@@ -69,15 +70,36 @@ def _lone_surrogate(value: object) -> bool:
     return isinstance(value, str) and any(0xD800 <= ord(char) <= 0xDFFF for char in value)
 
 
+def _offset_has_seconds(value: object) -> bool:
+    """A zoned time whose offset has seconds (local mean time, before 1900)."""
+    offset = value.utcoffset() if isinstance(value, datetime) else None
+    return offset is not None and offset.total_seconds() % 60 != 0
+
+
+def _as_number(value: object) -> object:
+    """Numbers as JavaScript has them, one ``Number`` type: an ``int`` the JSON
+    text of a large float re-parses to is that float."""
+    if isinstance(value, int) and not isinstance(value, bool) and abs(value) > 2**53:
+        return float(value)
+    if isinstance(value, dict):
+        items = cast("dict[object, object]", value).items()
+        return {key: _as_number(item) for key, item in items}
+    if isinstance(value, (list, tuple)):
+        return [_as_number(item) for item in cast("list[object]", value)]
+    return value
+
+
 def _round_trip(schema: Any, value: object) -> None:
     decoded = _decoded(schema, value)
     if decoded is None:
         return
     if schema is S.StringFromUriComponent and _lone_surrogate(decoded):
         return  # encodeURIComponent throws on a lone surrogate, in Effect too: a defect
+    if _offset_has_seconds(decoded):
+        return  # ISO text writes whole minutes, so the instant moves, in Effect too
     encoded = S.encode_unknown_sync(schema)(decoded)
     again = S.decode_unknown_sync(schema)(encoded)
-    if again != decoded and repr(again) != repr(decoded):
+    if _as_number(again) != _as_number(decoded) and repr(again) != repr(decoded):
         raise Crash(f"{decoded!r} encodes to {encoded!r}, which decodes to {again!r}")
 
 

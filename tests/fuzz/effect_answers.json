@@ -131,6 +131,15 @@ null
 ],
 [
 "cookies",
+"a=1;\u001cb=2\u001c; c=3",
+{
+"a": "1",
+"\u001cb": "2\u001c",
+"c": "3"
+}
+],
+[
+"cookies",
 "a=1; b=\"two\"; c=%41%zz",
 {
 "a": "1",
@@ -145,6 +154,11 @@ null
 "0-45/15 0-6,18 * 1-3 1-5",
 1710115200000
 ]
+],
+[
+"cron",
+"0 0\u001c* * *",
+null
 ],
 [
 "cron",
@@ -173,6 +187,14 @@ null
 "cron",
 "Europe/London\n0 1 31 3 SUN",
 null
+],
+[
+"cron",
+"\ufeff0 0\ufeff* * *",
+[
+"0 0 * * *",
+1710115200000
+]
 ],
 [
 "duration",
@@ -271,6 +293,11 @@ false
 ],
 [
 "glob",
+"{a,\nb}\nx\nx",
+false
+],
+[
+"glob",
 "{a,{b,c}}\n",
 false
 ],
@@ -302,6 +329,16 @@ null
 [
 "hex",
 "Zm9v\r\nYmFy",
+null
+],
+[
+"ini",
+"'[1,2,3]'=1",
+null
+],
+[
+"ini",
+"'[]'\n'[1,[2,null]]'\n'{\"a\":1}'=x\n['{}']\nk=1",
 null
 ],
 [
@@ -396,6 +433,11 @@ null
 ]
 ],
 [
+"pointer",
+"x",
+null
+],
+[
 "semver",
 "*",
 null
@@ -427,12 +469,22 @@ null
 ],
 [
 "semver",
+"^1.0.0\u001d<2",
+null
+],
+[
+"semver",
 "^1.2.3 || >=2.0.0 <3.0.0-0",
 null
 ],
 [
 "semver",
 "~1.2",
+null
+],
+[
+"semver",
+"\ufeff^1.0.0\ufeff<2",
 null
 ],
 [
@@ -467,6 +519,11 @@ null
 ],
 [
 "semver_range",
+"^1.0.0\u001d<2",
+null
+],
+[
+"semver_range",
 "^1.2.3 || >=2.0.0 <3.0.0-0",
 "^1.2.3 || >=2.0.0 <3.0.0-0"
 ],
@@ -474,6 +531,11 @@ null
 "semver_range",
 "~1.2",
 "~1.2"
+],
+[
+"semver_range",
+"\ufeff^1.0.0\ufeff<2",
+"^1.0.0 <2"
 ],
 [
 "toml",
@@ -521,9 +583,19 @@ null
 }
 ],
 [
+"yaml",
+"{{{{\n\n\nIIIIIIIIIIIIIIIIIIIIIIIII\n [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n{c: [1,,`2|\n2  bl\udcffd\nc: [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n\n\n [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n  - {c: [a{{{{\n\n\n\n [2,\n{\u0000\n\nc: [1,\n{\u0000\n  - {c: [1,,`d\nc\u0000\u0000\u0000\u0000  -\n\n [1,\n{\u0000\n\udcf6\udc9c\udcc5\u07e4\udcce\udcd3\udcf5{\u0000\n\n\udcdf\udcd2\n  - {c: [1,,`2|\n2  bl,\udcffd\nc: [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n\n\n [b,\n{\u0000\n\nc: [1,\n{\u0000\n\n {c: [a{{{{\n\n\n\n [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n  - {c: [1,,`2|\n2  bl,\udcffd\nc: [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\n{c: [1,,`2|\n2  bl\udcffd\nc: [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n\n\n [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n  - {c: [a{{{{\n\n\n\n [2,\n{\u0000\n\nc: [1,\n{\u0000\n  - {c: [1,,`d\nc\u0000\u0000\u0000\u0000  -\n\n [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n  - {c: [1,,`2|\n2  bl,\udcffd\nc: [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n\n\n [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n {c: [a{{{{\n\n\n\n [1,\udcdf\udcd2\n\n\n [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n  2|\n2  bl\udcffd\nc: [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n\n\n [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n  - {c: [a{{{{\n\n\n\n [2,\n{\u0000\n\nc: [1,\n{\u0000\n  - {c: [1,,`d\nc\u0000\u0000\u0000\u0000  -\n\n [1,\n{\u0000\n\udcf6\udc9c\udcc5\u07e4\udcce\udcd3\udcf5{\u0000\n\u0001\u0000\u0000\u0000\n\udcdf\udcd2\n  - {c: [1,,`2|\n2  bl,\udcffd\nc: [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n\n\n [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n {c: [a{{{{\n\n\n\n [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n  - {c: [1,,`2|\n2  bl,\udcffd\nc: [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\n{c: [1,,`2|\n2  bl\udcffd\nc: [1,\n{\u0000\n\nc: [1,\n{\n{\u0000\n\n\udcdf\udcd2\n\n\n [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n  - {c: [a{{{{\n\n\n\n [2,\n{\u0000\n\nc: [1,\n{\u0000\n  - {c: [1,,`d\nc\u0000\u0000\u0000\u0000  -\n\n [1,\n{\u0000\n\udcf6\udc9c\udcc5\u07e4\udcce\udcd3\udcf5{\u0000\n\n\udcdf\udcd2\n  - {c: [1,,`2|\n2  bl,\udcffd\nc: [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n\n\n [b,\n{\u0000\n\nc: [1,\n{\u0000\n\n {c: [a{{{{\n\n\n\n [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n  - {c: [1,,`2|\n2  bl,\udcffd\nc: [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\n{c: [1,,`2|\n2  bl\udcffd\nc: [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n\n\n [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n  - {c: [a{{{{\n\n\n\n [2,\n{\u0000\n\nc: [1,\n{\u0000\n  - {c: [1,,`d\nc\u0000\u0000\u0000\u0000  -\n\n [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n  - {c: [1,,`2|\n2  bl,\udcffd\nc: [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n\n\n [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n {c: [a{{{{\n\n\n\n [1,\udcdf\udcd2\n\n\n [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n  2|\n2  bl\udcffd\nc: [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n\n\n [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n  - {c: [a{{{{\n\n\n\n [2,\n{\u0000\n\nc: [1,\n{\u0000\n  - {c: [1,,`d\nc\u0000\u0000\u0000\u0000  -\n\n [1,\n{\u0000\n\udcf6\udc9c\udcc5\u07e4\udcce\udcd3\udcf5{\u0000\n\u0001\u0000\u0000\u0000\n\udcdf\udcd2\n  - {c: [1,,`2|\n2  bl,\udcffd\nc: [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n\n\n [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n {c: [a{{{{\n\n\n\n [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n  - {c: [1,,`2|\n2  bl,\udcffd\nc: [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\n{c: [1,,`2|\n2  bl\udcffd\nc: [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n\n\n [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n  - {c: [a{{{{\n\n\n\n\n{c: [1,,`2|\n2  bl\udcffd\nc: [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n\n\n [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n  - {c: [a{{{{\n\n\n\n [2,\n{\u0000\n\nc: [1,\n{\u0000\n  - {c: [1,,`d\nc\u0000\u0000\u0000\u0000  -\n\n [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n  - {c: [1,,`2|\n2  bl,\udcffd\nc: [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n\n\n [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n {c: [a{{{{\n\n\n\n [1,\udcdf\udcd2\n\n\n [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n  2|\n2  bl\udcffd\nc: [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n\n\n [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n  - {c: [a{{{{\n\n\n\n [2,\n{\u0000\n\nc: [1,\n{\u0000\n  - {c: [1,,`d\nc\u0000\u0000\u0000\u0000  -\n\n [1,\n{\u0000\n\udcf6\udc9c\udcc5\u07e4\udcce\udcd3\udcf5{\u0000\n\n\udcdf\udcd2\n  - {c: [1,,`2|\n2  bl,\udcffd\nc: [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n\n\n [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n {c: [a{{{{\n\n\n\n \n{\u0000\n\n\udcdf\udcd2\n\n\n [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n  - {c: [a{{{{\n\n\n\n\n{c: [1,,`2|\n2  bl\udcffd\nc: [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n\n\n [1,\n{\u0000\n\nc: \udca6[1,\n{\u0000\n\n\udcdf\udcd2\n  - {c: [a{{{{\n\n\n\n [2,\n{\u0000\n\nc: [1,\n{\u0000\n  - {c: [1,,`d\nc\u0000\u0000\u0000\u0000  -\n\n [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n  - {c: [1,,`2|\n2  bl,\udcffd\nc: [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n\n\n [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n {c: [a{{{{\n\n\n\n [1,\udcdf\udcd2\n\n\n [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n  2|\n2  bl\udcffd\nc: [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n\n\n [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n  - {c: [a{{{{\n\n\n\n [2,\n{\u0000\n\nc: [1,\n{\u0000\n  - {c: [1,,`d\nc\u0000\u0000\u0000\u0000  -\n\n [1,\n{\u0000\n\udcf6\udc9c\udcc5\u07e4\udcce\udcd3\udcf5{\u0000\n\n\udcdf\udcd2\n  - {c: [1,,`2|\n2  bl,\udcffd\nc: [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n\n\n [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n {c: [a{{{{\n\n\n\n [1,\n{\u0000\n\nc:2  bl,\udcffd\nc: [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\n{c: [1,,`2|\n2  bl\udcffd\nc: [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n\n\n [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n  - {c: [a{{{{\n\n\n\n [2,\n{\u0000\n\nc: [1,\n{\u0000\n  - {c: [1,,`\n\n [2,\n{\u0000\n\nc: [1,\n{\u0000\n  - {c: [1,,`d\nc\u0000\u0000\u0000\u0000  -\n\n [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n  - {c: [1,,`2|\n2  bl,\udcffd\nc: [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n = \"x\"\n\n [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n {c: [a{{{{\n\n\n\n [1,\udcdf\udcd2\n\n\n [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n  - {c: [a{{{{\n\n\n\n [2,\n{\u0000\n\nc: [1,\n{\u0000\n  -[1,\n{\u0000\n\nc:2  bl,\udcffd\nc: [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\n{c: [1,,`2|\n2  bl\udcffd\nc: [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n\n\n [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n  - {c: [a{{{{\n\n\n\n [2,\n{\u0000\n\nc: [1,\n{\u0000\n  - {c: [1,,`\n\n [2,\n{\u0000\n\nc: [1,\n{\u0000\n  - {c: [1,,`d\nc\u0000\u0000\u0000\u0000  -\n\n [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n  - {c: [1,,`2|\n2  bl,\udcffd\nc: [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n = \"x\"\n\n [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n {c: [a{{{{\n\n\n\n [1,\udcdf\udcd2\n\n\n [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n  - {c: [a{{{{\n\n\n\n [2,\n{\u0000\n\nc: [1,\n{\u0000\n  - {c: [1,,`1,,`2|\n2  bl\udcffd\nc: [1,\n{\u0000\n- {c: [a{{{{\n\n\n\n [2,\n{\u0000\n\nc: [1,\n{\u0000\n  - {c: [1,,`1,,`2|\n2  bl\udcffd\nc: [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n  - {c: [1,\u0000\n\n\udcdf\udcd2\n\n\n [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n  - {c: [a{{{{\n\n\n\n\n{c: [1,,`2|\n2  bl\udcffd\nc: [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n\n\n [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n  - {c: [a{{{{\n\n\n\n [2,\n{\u0000\n\nc: [1,\n{\u0000\n  - {c: [1,,`d\nc\u0000\u0000\u0000\u0000  -\n\n [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n  - {c: [1,,`2|\n2  bl,\udcffd\nc: [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n\n\n [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n {c: [a{{{{\n\n\n\n [1,\udcdf\udcd2\n\n\n [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n  2|\n2  bl\udcffd\nc: [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n\n\n [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n  - {c: [a{{{{\n\n\n\n [2,\n{\u0000\n\nc: [1,\n{\u0000\n  - {c: [1,,`d\nc\u0000\u0000\u0000\u0000  -\n\n [1,\n{\u0000\n\udcf6\udc9c\udcc5\u07e4\udcce\udcd3\udcf5{\u0000\n\n\udcdf\udcd2\n  - {c: [1,,`2|\n2  bl,\udcffd\nc: [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n\n\n [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n {c: [a{{{{\n\n\n\n \n{\u0000\n\n\udcdf\udcd2\n\n\n [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n  - {c: [a{{{{\n\n\n\n\n{c: [1,,`2|\n2  bl\udcffd\nc: [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n\n\n [1,\n{\u0000\n\nc: \udca6[1,\n{\u0000\n\n\udcdf\udcd2\n  - {c: [a{{{{\n\n\n\n [2,\n{\u0000\n\nc: [1,\n{\u0000\n  - {c: [1,,`d\nc\u0000\u0000\u0000\u0000  -\n\n [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n  - {c: [1,,`2|\n2  bl,\udcffd\nc: [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n\n\n [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n {c: [a{{{{\n\n\n\n [1,\udcdf\udcd2\n\n\n [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n  2|\n2  bl\udcffd\nc: [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n\n\n [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n  - {c: [a{{{{\n\n\n\n [2,\n{\u0000\n\nc: [1,\n{\u0000\n  - {c: [1,,`d\nc\u0000\u0000\u0000\u0000  -\n\n [1,\n{\u0000\n\udcf6\udc9c\udcc5\u07e4\udcce\udcd3\udcf5{\u0000\n\n\udcdf\udcd2\n  - {c: [1,,`2|\n2  bl,\udcffd\nc: [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n\n\n [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n {c: [a{{{{\n\n\n\n [1,\n{\u0000\n\nc:2  bl,\udcffd\nc: [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\n{c: [1,,`2|\n2  bl\udcffd\nc: [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n\n\n [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n  - {c: [a{{{{\n\n\n\n [2,\n{\u0000\n\nc: [1,\n{\u0000\n  - {c: [1,,`\n\n [2,\n{\u0000\n\nc: [1,\n{\u0000\n  - {c: [1,,`d\nc\u0000\u0000\u0000\u0000  -\n\n [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n  - {c: [1,,`2|\n2  bl,\udcffd\nc: [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n = \"x\"\n\n [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n {c: [a{{{{\n\n\n\n [1,\udcdf\udcd2\n\n\n [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n  - {c: [a{{{{\n\n\n\n [2,\n{\u0000\n\nc: [1,\n{\u0000\n  -[1,\n{\u0000\n\nc:2  bl,\udcffd\nc: [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\n{c: [1,,`2|\n2  bl\udcffd\nc: [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n\n\n [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n  - {c: [a{{{{\n\n\n\n [2,\n{\u0000\n\nc: [1,\n{\u0000\n  - {c: [1,,`\n\n [2,\n{\u0000\n\nc: [1,\n{\u0000\n  - {c: [1,,`d\nc\u0000\u0000\u0000\u0000  -\n\n [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n  - {c: [1,,`2|\n2  bl,\udcffd\nc: [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n = \"x\"\n\n [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n {c: [a{{{{\n\n\n\n [1,\udcdf\udcd2\n\n\n [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n  - {c: [a{{{{\n\n\n\n [2,\n{\u0000\n\nc: [1,\n{\u0000\n  - {c: [1,,`1,,`2|\n2  bl\udcffd\nc: [1,\n{\u0000\n- {c: [a{{{{\n\n\n\n [2,\n{\u0000\n\nc: [1,\n{\u0000\n  - {c: [1,,`1,,`2|\n2  bl\udcffd\nc: [1,\n{\u0000\n\nc: [1,\n{\u0000\n\n\udcdf\udcd2\n  - {c: [1,,`2|\n\n",
+null
+],
+[
 "zone",
 "+0530",
 "+05:30"
+],
+[
+"zone",
+"+5300",
+"+53:00"
 ],
 [
 "zone",
@@ -554,6 +626,11 @@ null
 "zoned",
 "+0530",
 "0530-01-01T05:30:00.000+05:30"
+],
+[
+"zoned",
+"+5300",
+"5300-01-03T05:00:00.000+53:00"
 ],
 [
 "zoned",

@@ -26,7 +26,7 @@ from urllib.parse import quote, unquote
 
 from pyfect import _js_date as js_date
 from pyfect._digits import parse_signed_digits
-from pyfect._js import text_encode
+from pyfect._js import text_encode, trim
 from pyfect.date_time._epoch import to_epoch_millis
 from pyfect.duration import Input as DurationInput
 from pyfect.duration import from_input_unsafe
@@ -226,7 +226,7 @@ def serialize_cookie(cookie: Cookie) -> str:
 
 
 def _parse_set_cookie(header: str) -> Cookie | None:  # noqa: PLR0912
-    parts = [p.strip() for p in header.split(";") if p.strip()]
+    parts = [trimmed for p in header.split(";") if (trimmed := trim(p))]
     if not parts:
         return None
     name, equal, value_encoded = parts[0].partition("=")
@@ -238,10 +238,10 @@ def _parse_set_cookie(header: str) -> Cookie | None:  # noqa: PLR0912
     options: CookieOptionsInput = {}
     for part in parts[1:]:
         key, has_value, raw = part.partition("=")
-        key, attribute = key.strip().lower(), raw.strip() if has_value else None
+        key, attribute = trim(key).lower(), trim(raw) if has_value else None
         match key:
             case "domain" if attribute is not None:
-                domain = attribute.strip().removeprefix(".")
+                domain = trim(attribute).removeprefix(".")
                 if domain:
                     options["domain"] = domain
             case "expires" if attribute is not None:
@@ -402,7 +402,7 @@ def from_iterable(cookies: Iterable[Cookie]) -> Cookies:
 def from_set_cookie(headers: Iterable[str] | str) -> Cookies:
     """The cookies of ``Set-Cookie`` header values; invalid ones are skipped."""
     values = [headers] if isinstance(headers, str) else headers
-    return from_iterable(c for c in (_parse_set_cookie(h.strip()) for h in values) if c is not None)
+    return from_iterable(c for c in (_parse_set_cookie(trim(h)) for h in values) if c is not None)
 
 
 def parse_header(header: str) -> dict[str, str]:
@@ -420,11 +420,11 @@ def parse_header(header: str) -> dict[str, str]:
         if eq > end:
             pos = end + 1
             continue
-        key = header[pos:eq].strip()
+        key = trim(header[pos:eq])
         if key not in result:
-            val = header[eq + 1 : end].strip()
+            val = trim(header[eq + 1 : end])
             if val.startswith('"'):
-                val = val[1:-1].strip()
+                val = trim(val[1:-1])
             result[key] = _decode_component(val) if "%" in val else val
         pos = end + 1
     return result

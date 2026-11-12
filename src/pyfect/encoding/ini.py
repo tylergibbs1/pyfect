@@ -13,7 +13,7 @@ import re
 from typing import Any, cast
 
 from pyfect import _json_text
-from pyfect._js import LINE_END, SPACE, js_string
+from pyfect._js import LINE_END, SPACE, js_length, js_string
 from pyfect._js import trim as js_trim
 
 # JavaScript's ``\s`` and ``trim``, not Python's (U+FEFF is space, U+001C is not).
@@ -37,11 +37,29 @@ def _split_sections(value: str) -> list[str]:
     return sections
 
 
-def _key(value: object) -> str:
-    """A parsed key as JavaScript's ``String`` writes it."""
-    return (
-        js_string(value) if isinstance(value, (str, bool, int, float, type(None))) else str(value)
-    )
+def _list_key(raw: object) -> bool:
+    """Effect's ``rawKey.length > 2 && rawKey.endsWith("[]")``: a string key
+    ending in ``[]``; a parsed key whose ``length`` passes has no ``endsWith``,
+    so JavaScript throws."""
+    if isinstance(raw, str):
+        return js_length(raw) > 2 and raw.endswith("[]")
+    if _js_length_over_two(raw):
+        raise TypeError("rawKey.endsWith is not a function")
+    return False
+
+
+def _js_length_over_two(raw: object) -> bool:
+    if isinstance(raw, list):
+        return len(cast("list[object]", raw)) > 2
+    if not isinstance(raw, dict):
+        return False
+    length = cast("dict[str, object]", raw).get("length")
+    if isinstance(length, str):
+        try:
+            return float(js_trim(length) or "0") > 2
+        except ValueError:
+            return False
+    return isinstance(length, (int, float)) and not isinstance(length, bool) and length > 2
 
 
 def _is_quoted(value: str) -> bool:
@@ -97,13 +115,14 @@ def _parse_lines(text: str) -> dict[str, Any]:
             continue
         section_match = _SECTION.fullmatch(line)
         if section_match is not None:
-            current = _section(output, _key(_unquote(section_match.group(1))))
+            current = _section(output, js_string(_unquote(section_match.group(1))))
             continue
         property_match = _PROPERTY.fullmatch(line)
         if property_match is None:
             continue
-        raw_key = _key(_unquote(property_match.group(1)))
-        is_list = len(raw_key) > 2 and raw_key.endswith("[]")
+        raw = _unquote(property_match.group(1))
+        is_list = _list_key(raw)
+        raw_key = js_string(raw)
         key = raw_key[:-2] if is_list else raw_key
         if key == _PROTO:
             continue

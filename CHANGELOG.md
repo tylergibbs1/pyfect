@@ -91,7 +91,8 @@
   formats, durations, date-times, cron, dotenv and Config. Each target allows only its
   documented errors and runs under a time limit. A checked-in seed corpus replays in every
   pytest run, along with a short Hypothesis fuzz of each target and a comparison with Effect's
-  answers (`effect_answers.json`, from Effect under Node) on every parser the two share. The
+  answers (`effect_answers.json`, from Effect under Node) on every parser the two share,
+  so a divergence the fuzzers find stays fixed. The
   `fuzz` workflow runs Atheris on each target for 30 seconds on every push, and for 20 minutes
   weekly or on demand, uploading any crash. `python -m fuzz` (from `tests/`) runs targets
   locally and `--differential` compares a grown corpus with Effect.
@@ -118,8 +119,9 @@
   finished, as Node's `closeIdleConnections` does, instead of once the serving fiber came back
   round for the next request. A shutdown starting just after a client got its response no
   longer waits out `graceful_shutdown_timeout` for that connection.
-- Fuzzing (`tests/fuzz`, Atheris and Hypothesis, see Added) found four kinds of input that
-  raised where a documented error belongs:
+- Fuzzing (`tests/fuzz`, Atheris and Hypothesis, see Added) found these differences from Effect
+  and inputs that raised where a documented error belongs (each has a regression input in
+  the corpus and a test in `tests/fuzz/test_regressions.py`):
   - An `Origin` header holding an unclosed IPv6 literal (`http://[`) made the origin check of
     WebSocket upgrades and RPC calls die with a 500 (`urlsplit` raises `ValueError` there);
     `request_to_web` and the ASGI mount had the same raise. The origin is now no origin, so the
@@ -127,7 +129,9 @@
     splits URLs only through `_url_text.split_url`, which returns `None` where `urlsplit` raises
     (`tests/test_split_url_guard.py`).
   - Importing an SPKI or PKCS#8 key naming an algorithm `cryptography` does not know (an
-    `UnsupportedAlgorithm`) was a defect, not a `CryptoError` `InvalidKey`. Keys are loaded
+    `UnsupportedAlgorithm`), or a PKCS#8 key of the wrong size for its algorithm (a 32-byte
+    Ed448 key, which OpenSSL fails with an `InternalError`), was a defect, not a `CryptoError`
+    `InvalidKey`. Keys are loaded
     only through `crypto._lib`'s loaders, which turn every unreadable key into `None`
     (`tests/test_crypto_key_loading_guard.py`).
   - TOML and YAML nested about 500 levels deep raised `RecursionError`. They now recurse
@@ -138,6 +142,17 @@
   - `ini.parse` documents the `TypeError` it raises for a property in a section named after a
     value (`a=1`, then `[a]`, then `b=2`), as Effect's `Ini.parse` throws; its docstring said
     `ValueError`.
+  - `cron.parse`, `semver_range.parse` and the cookie parsers read whitespace as Python does,
+    where Effect reads JavaScript's: U+001C to U+001F and U+0085 separated cron fields and range
+    comparators and were trimmed from cookie names and values, and a byte-order mark did not
+    separate them. They now split and trim as Effect does (`_js.split_space`, `_js.trim`), and
+    `tests/test_js_whitespace_guard.py` fails on Python's whitespace methods or a regex `\s` in
+    any module ported from one of Effect's text parsers.
+  - `ini.parse` named a quoted key holding JSON by its Python `repr` (`'[]'` became `"[]"`);
+    it is now `String(key)` as in Effect (`""`), and a key whose JSON has a `length` over 2
+    raises Effect's `TypeError`.
+  - `date_time.zone_from_string` documents that an offset of a day or more is `None`, as
+    Python's `tzinfo` cannot hold one; Effect accepts up to `±99:59`.
 
 ### Docs
 

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import tempfile
 import time
@@ -207,6 +208,15 @@ def effect_answers(inputs: list[tuple[str, str]]) -> list[Answer]:
     return answers
 
 
+_DAY_OR_MORE = re.compile(r"[+-](?:2[4-9]|[3-9][0-9]):?[0-9]{2}$")
+
+
+def _python_cannot_hold(parser: str, text: str, mine: Answer) -> bool:
+    """The one documented difference: a zone offset of a day or more, which
+    Effect accepts and Python's ``tzinfo`` cannot hold (``zone_from_string``)."""
+    return parser in ("zone", "zoned") and mine is None and bool(_DAY_OR_MORE.search(text))
+
+
 def differences(
     inputs: list[tuple[str, str]], theirs: list[Answer]
 ) -> list[tuple[str, str, Answer, Answer]]:
@@ -214,7 +224,7 @@ def differences(
     return [
         (parser, text, mine, effect)
         for (parser, text), mine, effect in zip(inputs, ours, theirs, strict=True)
-        if mine != effect
+        if mine != effect and not _python_cannot_hold(parser, text, mine)
     ]
 
 

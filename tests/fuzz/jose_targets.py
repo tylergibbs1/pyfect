@@ -78,9 +78,10 @@ def jose_jwk(data: bytes) -> None:
     and as a key set; the first byte picks the algorithm."""
     if not data:
         return
-    value: Any = raises_only(lambda: _json_text.parse(data[1:]), ValueError)
-    if value is None:
+    parsed: object = raises_only(lambda: _json_text.parse(data[1:]), ValueError)
+    if not isinstance(parsed, dict):  # the imports take a JWK, a dict (TypedDict)
         return
+    value: Any = parsed
     algorithm = _ALGORITHMS[data[0] % len(_ALGORITHMS)]
     _settle(jwk.import_public(value, algorithm))
     _settle(jwk.import_private(redacted(value), algorithm))

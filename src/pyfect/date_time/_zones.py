@@ -178,7 +178,9 @@ def parse_offset(text: str) -> timedelta | None:
 
 def zone_from_string(text: str) -> tzinfo | None:
     """A zone from an offset (``+05:30``, ``-0530``, ``GMT+05:30``) or an
-    IANA name (``Europe/London``, ``GMT``)."""
+    IANA name (``Europe/London``, ``GMT``). An offset of a day or more
+    (``+53:00``) is ``None``: Effect's zones take up to ``±99:59``, Python's
+    ``tzinfo`` stays within a day."""
     if _OFFSET_ZONE.match(text):
         offset = parse_offset(text)
         return None if offset is None else zone_offset(offset)
