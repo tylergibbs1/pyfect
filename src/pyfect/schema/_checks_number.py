@@ -29,6 +29,14 @@ from pyfect.schema._checks_order import (
 from pyfect.schema.ast import Filter, FilterGroup, filter_of
 
 _MAX_SAFE_INTEGER = 2**53 - 1
+_DOUBLE_OVERFLOW = 2**1024 - 2**970
+"""The smallest integer a JavaScript number rounds to ``Infinity``."""
+
+
+def _is_finite_number(n: float) -> bool:
+    """Finite as a JavaScript number: an ``int`` past the largest double is
+    ``Infinity`` there (``JSON.parse("1e400")`` and a 400-digit literal alike)."""
+    return abs(n) < _DOUBLE_OVERFLOW if isinstance(n, int) else math.isfinite(n)
 
 
 def _representation(id: str, payload: object) -> dict[str, object]:
@@ -36,7 +44,7 @@ def _representation(id: str, payload: object) -> dict[str, object]:
 
 
 def _finite(bound: float) -> float:
-    if not (isinstance(bound, int) or math.isfinite(bound)):
+    if not _is_finite_number(bound):
         raise ValueError(f"Expected a finite number, got {js_number(bound)}")
     return bound
 
@@ -44,7 +52,7 @@ def _finite(bound: float) -> float:
 def is_finite(**annotations: object) -> Filter[float]:
     """Not ``NaN`` nor an infinity."""
     return filter_of(
-        lambda n: isinstance(n, int) or math.isfinite(n),
+        _is_finite_number,
         {"expected": "a finite number", **_representation("isFinite", None), **annotations},
     )
 
