@@ -120,19 +120,17 @@ def _unwrap(word: Word) -> str:
     return reveal(word) if isinstance(word, Redacted) else word
 
 
-def _argv(command: StandardCommand, shell: bool | str) -> list[str]:
+def _argv(command: StandardCommand, shell: bool | str) -> list[str] | str:
     """Node's ``shell`` option: the command is the whole script, run by the
-    shell (a command with arguments never gets here, see ``_invalid``)."""
+    shell (a command with arguments never gets here, see ``_invalid``). On
+    Windows that is a command line passed verbatim, as Node's
+    ``windowsVerbatimArguments`` does: as a list, ``subprocess`` would escape
+    the script's quotes and ``cmd.exe`` could not read it."""
     if shell is False:
         return [command.command, *map(_unwrap, command.args)]
     if os.name == "nt":
-        return [
-            shell if isinstance(shell, str) else os.environ.get("COMSPEC", "cmd.exe"),
-            "/d",
-            "/s",
-            "/c",
-            f'"{command.command}"',
-        ]
+        program = shell if isinstance(shell, str) else os.environ.get("COMSPEC", "cmd.exe")
+        return f'"{program}" /d /s /c "{command.command}"'
     return [shell if isinstance(shell, str) else "/bin/sh", "-c", command.command]
 
 

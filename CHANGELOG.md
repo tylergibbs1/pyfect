@@ -24,6 +24,13 @@
   the whole script as the command, quoting any value for `cmd.exe` yourself. A new guard
   requires every place pyfect starts a process to go through the check.
 
+### Fixed
+
+- A command with `shell=True` runs on Windows. Its `cmd.exe /d /s /c "<script>"` line went to
+  `subprocess` as a list, which escaped the script's quotes, so `cmd.exe` ran nothing; it is
+  passed verbatim now, as Node's `windowsVerbatimArguments` does. The new Windows CI job runs
+  a batch file this way.
+
 ## 0.6.1 (2026-11-12)
 
 ### Added
