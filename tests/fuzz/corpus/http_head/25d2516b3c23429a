@@ -1,0 +1,2 @@
+GET http://Example.TEST:80/p?q HTTP/1.1
+Host: good

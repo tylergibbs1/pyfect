@@ -1,0 +1,6 @@
+GET /ws HTTP/1.1
+Host: x
+Origin: https://evil.test
+Connection: Upgrade
+Upgrade: websocket
+

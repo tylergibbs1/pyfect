@@ -1,0 +1,10 @@
+a: 1
+b:
+  - x
+  - 'y'
+  - {c: [1, 2], d: "e\n"}
+f: |
+  block
+  text
+g: >-
+  folded

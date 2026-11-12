@@ -14,12 +14,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, NewType
-from urllib.parse import urlsplit
 
 from pyfect._core import Effect
 from pyfect.context import Reference
 from pyfect.effect import fail, succeed, void
 from pyfect.http._authority import Authority, parse_authority
+from pyfect.http._url_text import split_url
 from pyfect.http.server_error import HttpServerError, OriginNotAllowed
 
 if TYPE_CHECKING:
@@ -44,7 +44,9 @@ def parse_origin(text: str) -> Origin | None:
     alone (a path, query, fragment or userinfo)."""
     if text == "null":
         return Origin(text)
-    parts = urlsplit(text)
+    parts = split_url(text)
+    if parts is None:
+        return None
     scheme = parts.scheme.lower()
     if not scheme or parts.path or parts.query or parts.fragment or text.endswith("#"):
         return None
@@ -108,7 +110,8 @@ class AllowedOrigins(Reference[OriginPolicy]):
 def _authority(request: ServerRequest) -> Authority | None:
     """The request's own ``host[:port]``: its URL's, which servers build
     from a checked ``Host``, else its ``Host``."""
-    netloc = urlsplit(request.original_url).netloc
+    parts = split_url(request.original_url)
+    netloc = "" if parts is None else parts.netloc
     return parse_authority(netloc or request.headers.get("host", ""))
 
 

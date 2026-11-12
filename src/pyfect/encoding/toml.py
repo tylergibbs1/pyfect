@@ -17,6 +17,8 @@ from typing import Any, Never, cast
 from pyfect import _js_date as js_date
 from pyfect._binary_codecs import EncodingError
 from pyfect._js import SPACE
+from pyfect._nesting import parse_nested
+from pyfect._stack import with_fresh_stack
 from pyfect.result import Err, Ok, Result
 
 type _Table = dict[str, Any]
@@ -224,7 +226,9 @@ class _Parser:
         if character == "'":
             return self._literal_string(multiline=self._input.startswith("'''", self._index))
         if character in ("[", "{"):
-            collection: object = self._array() if character == "[" else self._inline_table()
+            collection: object = with_fresh_stack(
+                self._array if character == "[" else self._inline_table
+            )
             self._inline.add(id(collection))
             return collection
         spaced = _SPACED_DATE_TIME.match(self._input, self._index)
@@ -454,7 +458,7 @@ def parse(text: str, /) -> Result[dict[str, Any], EncodingError]:
     """The tables, keys and values of ``text``, or an ``EncodingError``
     (module ``"Toml"``) giving what is wrong and where."""
     try:
-        return Ok(_Parser(text.removeprefix("\ufeff")).parse())
+        return Ok(parse_nested(_Parser(text.removeprefix("\ufeff")).parse))
     except ValueError as error:
         return Err(EncodingError(kind="Decode", module="Toml", input=text, message=str(error)))
 

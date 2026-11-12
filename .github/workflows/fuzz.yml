@@ -1,0 +1,66 @@
+name: fuzz
+
+# Coverage-guided fuzzing (Atheris) of every parser of untrusted input (tests/fuzz). The
+# checked-in corpus also replays in ci.yml's pytest run; this adds new inputs. Each push
+# fuzzes every target for 30 seconds; the weekly run (and a manual one) for 20 minutes,
+# growing a cached corpus between runs. A crash fails the job and is uploaded: minimize it,
+# add it to tests/fuzz/corpus and tests/fuzz/test_regressions.py, then fix it.
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  schedule:
+    - cron: "23 5 * * 1"
+  workflow_dispatch:
+    inputs:
+      seconds:
+        description: Seconds per target
+        default: "1200"
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz:
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [codec, http, text, jose, schema, server]
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 330 || 30 }}
+    env:
+      SECONDS_PER_TARGET: ${{ inputs.seconds || (github.event_name == 'schedule' && '1200') || '30' }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+
+      - name: Install with Atheris
+        run: uv sync --locked --python 3.13 --group fuzz
+
+      - name: Restore the corpus earlier runs grew
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .fuzz/corpus
+          key: fuzz-corpus-${{ matrix.group }}-${{ github.run_id }}
+          restore-keys: fuzz-corpus-${{ matrix.group }}-
+
+      - name: Fuzz
+        working-directory: tests
+        run: uv run --no-sync python -m fuzz --all --group ${{ matrix.group }} --seconds "$SECONDS_PER_TARGET"
+
+      - name: Save the corpus
+        if: always() && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .fuzz/corpus
+          key: fuzz-corpus-${{ matrix.group }}-${{ github.run_id }}
+
+      - name: Upload crashes
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fuzz-crashes-${{ matrix.group }}
+          path: .fuzz/crashes
+          if-no-files-found: ignore

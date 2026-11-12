@@ -1,0 +1,6 @@
+GET / HTTP/1.1
+Host: x
+traceparent: 00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01
+b3: 80f198ee56343ba864fe8b2a57d3eff7-e457b5a2e4d86bd1-1
+If-Modified-Since: Sun, 06 Nov 1994 08:49:37 GMT
+

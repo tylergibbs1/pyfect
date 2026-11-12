@@ -11,7 +11,6 @@ import asyncio
 from collections.abc import AsyncIterator, Mapping
 from dataclasses import dataclass
 from typing import Any
-from urllib.parse import urlsplit
 
 from pyfect._core import Effect, _WithFiber
 from pyfect._fiber import Fiber
@@ -19,6 +18,7 @@ from pyfect.effect import fail, from_async, sync, try_async
 from pyfect.errors import TaggedError
 from pyfect.exit import Exit
 from pyfect.http._foreign_path import decode_path
+from pyfect.http._url_text import split_url
 from pyfect.http.abort import AbortController
 from pyfect.http.asgi._types import AsgiApplication, Message
 from pyfect.http.server_error import HttpServerError, InternalError
@@ -39,7 +39,8 @@ class AsgiNoResponseError(RuntimeError):
 
 def _root_path(request: ServerRequest) -> tuple[str, str]:
     """The original path, and the part of it a router's prefix removed."""
-    original = urlsplit(request.original_url).path or "/"
+    parts = split_url(request.original_url)
+    original = (parts.path if parts is not None else "") or "/"
     path = request.url.split("?", 1)[0] or "/"
     if path == "/":
         return original, original.removesuffix("/")

@@ -14,12 +14,12 @@ when they format the same.
 
 from __future__ import annotations
 
-import re
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from functools import cached_property
 from typing import Literal
 
+from pyfect._js import split_space, trim
 from pyfect._json_text import quote
 from pyfect.result import Ok, Result
 from pyfect.semver import (
@@ -177,11 +177,8 @@ def _parse_partial(text: str) -> _Partial:
     return _Partial(tuple(components), prerelease)
 
 
-_WHITESPACE = re.compile(r"\s+")
-
-
 def _parse_set(text: str) -> tuple[_Clause, ...]:
-    tokens = [t for t in _WHITESPACE.split(text) if t]
+    tokens = split_space(text)
     if not tokens:
         invalid("expected a comparator")
     if len(tokens) == 3 and tokens[1] == "-":
@@ -201,7 +198,7 @@ def _parse_set(text: str) -> tuple[_Clause, ...]:
 
 
 def _parse_or_raise(text: str) -> SemVerRange:
-    if not text.strip():
+    if not trim(text):
         return any_
     return SemVerRange(tuple(map(_parse_set, text.split("||"))))
 

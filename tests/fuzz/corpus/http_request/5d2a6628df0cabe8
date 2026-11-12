@@ -1,0 +1,5 @@
+€GET /a/b?x=1&y=%20z&y=2 HTTP/1.1
+Host: example.test:8080
+Cookie: a=1; b="two"; c=%41
+Origin: https://o.test
+

@@ -1,0 +1,16 @@
+€GET / HTTP/1.1
+Host: example.test
+
+POST /upload HTTP/1.1
+Host: x
+Content-Length: 5
+
+helloPOST / HTTP/1.1
+Host: x
+Transfer-Encoding: chunked
+
+5;ext=1
+hello
+0
+Trailer: v
+

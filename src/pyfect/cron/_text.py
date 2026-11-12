@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import tzinfo
 
 from pyfect._digits import parse_digits
+from pyfect._js import split_space
 from pyfect.cron._model import Cron, DstOverlapPolicy
 from pyfect.date_time import zone_from_string
 from pyfect.errors import TaggedError
@@ -62,7 +63,7 @@ def parse(
     ``a-b``, steps ``/n`` and lists ``a,b``; months and weekdays also take
     three-letter names. ``tz`` is a zone or a zone string
     (``"Europe/Berlin"``, ``"+02:00"``); ``on_dst_overlap`` as for ``Cron``."""
-    segments = expression.split()
+    segments = split_space(expression)
     if len(segments) not in (5, 6):
         return Err(CronParseError("Invalid number of segments in cron expression", expression))
     if len(segments) == 5:

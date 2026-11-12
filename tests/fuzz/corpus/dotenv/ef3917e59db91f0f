@@ -1,0 +1,8 @@
+# c
+export A=hello
+PORT=8080
+TIMEOUT='5 seconds'
+DEBUG=true
+B="x\ny $A ${A} ${MISSING:-def} \$"
+C=`tick`
+D=v # inline

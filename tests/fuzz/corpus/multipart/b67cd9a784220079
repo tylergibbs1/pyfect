@@ -1,0 +1,16 @@
+multipart/form-data; boundary=XyZ
+--XyZ
+Content-Disposition: form-data; name="a"
+
+value
+--XyZ
+Content-Disposition: form-data; name="f"; filename="a.txt"
+Content-Type: text/plain
+
+file body
+--XyZ
+Content-Disposition: form-data; name="l"
+Content-Type: text/plain; charset=iso-8859-1
+
+été
+--XyZ--

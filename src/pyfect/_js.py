@@ -236,6 +236,15 @@ def trim_end(text: str) -> str:
     return text.rstrip(_TRIM)
 
 
+_SPACES = re.compile(f"[{SPACE}]+")
+
+
+def split_space(text: str) -> list[str]:
+    """``text.split(/\\s+/)`` without its empty pieces: JavaScript's
+    whitespace, where ``str.split()`` uses Python's."""
+    return [piece for piece in _SPACES.split(text) if piece]
+
+
 def same_value(a: object, b: object) -> bool:
     """JavaScript's ``Object.is``: the same object, or numbers, strings or
     bytes of one type with one value. ``-0.0`` is not ``0.0``, NaN is NaN,

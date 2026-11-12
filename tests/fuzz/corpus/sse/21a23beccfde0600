@@ -1,0 +1,10 @@
+€event: a
+data: 1
+data: 2
+id: 7
+
+: comment
+retry: 1000
+
+data: x
+
