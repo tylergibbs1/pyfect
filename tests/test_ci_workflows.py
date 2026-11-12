@@ -34,6 +34,12 @@ def test_ci_gates_benchmarks_and_free_threaded():
     assert "3.14t" in _job("ci.yml", "free-threaded")
 
 
+def test_ci_runs_the_batch_file_tests_on_windows():
+    job = _job("ci.yml", "windows")
+    assert "runs-on: windows-latest" in job
+    assert "tests/test_process_batch_files.py" in job
+
+
 def test_a_release_needs_ci_and_the_docs():
     release = (WORKFLOWS / "release.yml").read_text(encoding="utf-8")
     assert "uses: ./.github/workflows/ci.yml" in _job("release.yml", "ci")

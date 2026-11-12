@@ -139,6 +139,16 @@ app needs more room.
   at `MaxBodySize`, 10 MiB by default, with a 413. Provide a larger `ByteSize`, or `None`, on
   the routes that need it. A streamed body (`request.stream`) is read as far as the handler
   reads it.
+- A multipart body has at most 1,000 parts (`multipart.MaxParts`), and `request.multipart`
+  writes at most 100 files and 100 MiB to its temporary directory
+  (`multipart.MaxPersistedFiles`, `multipart.MaxPersistedSize`). One more part or file fails
+  with a `MultipartError` whose reason is `TooManyParts`, one more byte with `BodyTooLarge`;
+  either answers 413. Effect leaves these unlimited; pyfect bounds them on purpose, since
+  each file part becomes a temporary file. Raise a limit, or remove it with `None`, for the
+  routes that need it: `effect.provide_service(multipart.MaxParts, 5000)`, or
+  `effect.provide_context(multipart.limits_context(max_persisted_files=500,
+  max_persisted_size=None))`. HttpApi's `as_multipart` and `as_multipart_stream` take the same
+  keywords.
 - `live_server.layer` closes a connection whose request has not fully arrived after
   `request_timeout` (300 seconds). It answers 400 to a `Host` that is not a host and port, to
   a request target that is not a path, `*` or an absolute `http(s)` URL, to framing headers

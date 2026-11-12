@@ -106,6 +106,14 @@ shells, PowerShell or Windows programs. Arguments and `env` values can be `Redac
 process gets their values, while errors show commands through `command_line.display`, which
 masks them.
 
+On Windows a `.bat` or `.cmd` file runs through `cmd.exe`, which parses its arguments again,
+so an argument could start another command. As Node, and so Effect, has done since
+CVE-2024-27980, the spawner refuses such a file without `shell`, whatever the case of its
+extension and however it is found: the spawn dies with `OSError(EINVAL)`, Node's
+`spawn EINVAL`. A `ProcessWorker` refuses one as its `executable` too. To run a batch file,
+pass the whole script with `shell=True`; `command_line.quote` does not quote for `cmd.exe`,
+so keep values out of that script or escape them for `cmd.exe` yourself.
+
 <CodeOutput>
 
 <include meta='title="command_line.py"'>../../snippets/platform/command_line.py</include>

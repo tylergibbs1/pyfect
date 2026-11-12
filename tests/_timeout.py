@@ -19,6 +19,8 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 @pytest.hookimpl(wrapper=True)
 def pytest_runtest_call(item: pytest.Item) -> Generator[None, object, object]:
     seconds = float(item.config.getini("test_timeout"))
+    if not hasattr(signal, "SIGALRM"):  # Windows (the ci.yml windows job): no alarm
+        return (yield)
 
     def on_alarm(signum: int, frame: FrameType | None) -> None:
         pytest.fail(f"test hung: still running after {seconds:g}s")

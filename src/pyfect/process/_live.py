@@ -13,22 +13,23 @@ in kills it when it closes (see ``_child``).
 
 from __future__ import annotations
 
+import errno
 import os
 import signal
 import socket
 import subprocess
-import sys
 from collections.abc import Callable, Generator
 from dataclasses import dataclass, replace
 from typing import Any, Never
 
 from pyfect import sink as sink_
 from pyfect import stream as stream_
+from pyfect._batch_files import current_platform, refuses_batch_file
 from pyfect._core import Effect
 from pyfect.deferred import Deferred
 from pyfect.duration import Input as DurationInput
 from pyfect.duration import from_input_unsafe
-from pyfect.effect import fail, gen, succeed, sync, try_blocking
+from pyfect.effect import die, fail, gen, succeed, sync, try_blocking
 from pyfect.file_system import FileSystem, FileSystemService
 from pyfect.layer import Layer
 from pyfect.layer import effect as layer_effect
@@ -90,8 +91,29 @@ def build_spawn_options(options: CommandOptions, platform: str) -> SpawnOptions:
     return SpawnOptions(detached=detached, shell=options.shell, windows_hide=windows_hide)
 
 
-def _platform() -> str:
-    return "win32" if os.name == "nt" else sys.platform
+@dataclass(frozen=True, slots=True)
+class _Spawnable:
+    """A command ``_spawnable`` cleared for this platform, with its options;
+    ``_popen`` starts nothing else."""
+
+    command: StandardCommand
+    options: SpawnOptions
+
+
+def _spawnable(command: StandardCommand) -> Effect[_Spawnable]:
+    """``command`` cleared to start, or Node's ``spawn EINVAL`` for a batch
+    file without ``shell``: Node throws it synchronously, so Effect's spawner
+    dies with it."""
+    platform = current_platform()
+    if refuses_batch_file(command.command, shell=command.options.shell, platform=platform):
+        return die(
+            OSError(
+                errno.EINVAL,
+                "spawn EINVAL: a .bat or .cmd file runs only with shell=True",
+                command.command,
+            )
+        )
+    return succeed(_Spawnable(command, build_spawn_options(command.options, platform)))
 
 
 def _unwrap(word: Word) -> str:
@@ -310,10 +332,10 @@ def _above(fd: int, floor: int) -> int:
     return moved
 
 
-def _popen(command: StandardCommand, cwd: str | None, pipes: _Pipes) -> subprocess.Popen[bytes]:
+def _popen(spawnable: _Spawnable, cwd: str | None, pipes: _Pipes) -> subprocess.Popen[bytes]:
     """Start the process (on a worker thread); the parent's copies of the
     child's pipe ends close either way."""
-    spawn_options = build_spawn_options(command.options, _platform())
+    command, spawn_options = spawnable.command, spawnable.options
     flags = 0
     if os.name == "nt":
         flags |= subprocess.CREATE_NO_WINDOW if spawn_options.windows_hide else 0
@@ -446,13 +468,14 @@ class _Spawner:
                 )
             )
         cwd = yield from self._cwd(command.options)
+        spawnable = yield from _spawnable(command)
         line = command_line((command,))
         pipes = yield from acquire_release(
             sync(lambda: _Pipes.open(command.options, line)), lambda p, _: sync(p.release)
         )
         child = yield from acquire_release(
             try_blocking(
-                lambda: Child(command, _popen(command, cwd, pipes), line),
+                lambda: Child(command, _popen(spawnable, cwd, pipes), line),
                 lambda error: from_exception(
                     error, module="ChildProcess", method="spawn", path_or_descriptor=line
                 ),

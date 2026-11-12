@@ -5,9 +5,10 @@
 scoped temporary directory and collects the form as a ``Persisted``
 mapping (a field's value, or the values of a repeated field; a file key's
 ``PersistedFile`` list). The limits are references the parse reads:
-``MaxParts``, ``MaxFieldSize`` (10 MiB), ``MaxFileSize``,
-``MaxBodySize`` (``incoming_message``) and ``FieldMimeTypes`` (parts of
-these types are fields even with a file name).
+``MaxParts`` (1,000), ``MaxFieldSize`` (10 MiB), ``MaxFileSize``,
+``MaxBodySize`` (``incoming_message``, 10 MiB) and ``FieldMimeTypes``
+(parts of these types are fields even with a file name); ``to_persisted``
+also reads ``MaxPersistedFiles`` (100) and ``MaxPersistedSize`` (100 MiB).
 """
 
 # pyright: reportPrivateUsage=false
@@ -15,7 +16,7 @@ these types are fields even with a file name).
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, ClassVar, Literal, Never, TypedDict, Unpack, cast
 
 from pyfect import byte_size
@@ -206,11 +207,12 @@ def is_persisted_file(value: object) -> bool:
 
 
 class MaxParts(Reference[int | None]):
-    """At most this many parts (``None``: no limit)."""
+    """At most this many parts, 1,000 by default (``None``: no limit). Effect
+    has no default limit; pyfect bounds a body an unauthenticated client sends."""
 
     @classmethod
     def default(cls) -> int | None:
-        return None
+        return 1000
 
 
 class MaxFieldSize(Reference[ByteSize]):
@@ -227,6 +229,24 @@ class MaxFileSize(Reference[ByteSize | None]):
     @classmethod
     def default(cls) -> ByteSize | None:
         return None
+
+
+class MaxPersistedFiles(Reference[int | None]):
+    """At most this many files ``to_persisted`` writes, 100 by default (``None``:
+    no limit); one more fails as ``TooManyParts``. Not in Effect."""
+
+    @classmethod
+    def default(cls) -> int | None:
+        return 100
+
+
+class MaxPersistedSize(Reference[ByteSize | None]):
+    """At most this many bytes ``to_persisted`` writes across its files, 100 MiB
+    by default (``None``: no limit); more fails as ``BodyTooLarge``. Not in Effect."""
+
+    @classmethod
+    def default(cls) -> ByteSize | None:
+        return byte_size.mebibytes(100)
 
 
 class FieldMimeTypes(Reference[tuple[str, ...]]):
@@ -419,17 +439,50 @@ def default_write_file(path: str, file: File) -> Effect[None, MultipartError, Fi
     return FileSystem().flat_map(write)
 
 
+class _PersistedLimits:
+    """What one ``to_persisted`` may still write."""
+
+    def __init__(self, files: int | None, size: ByteSize | None) -> None:
+        self.files = files
+        self._size = size
+        self._written = 0
+
+    def count(self, file: File) -> File:
+        """``file`` with content that fails once the files written exceed the size."""
+        size = self._size
+        if size is None:
+            return file
+
+        def check(chunk: bytes) -> Effect[bytes, MultipartError]:
+            self._written += len(chunk)
+            if self._written > size:
+                return fail(MultipartError.from_reason("BodyTooLarge", "MaxPersistedSize"))
+            return succeed(chunk)
+
+        return replace(file, content=file.content.map_effect(check))
+
+
+def _persisted_limits() -> Effect[_PersistedLimits]:
+    return _WithFiber(
+        lambda fiber: succeed(
+            _PersistedLimits(fiber.get_ref(MaxPersistedFiles), fiber.get_ref(MaxPersistedSize))
+        )
+    )
+
+
 def to_persisted(
     stream: Stream[Part, MultipartError], write_file: WriteFile = default_write_file
 ) -> Effect[Persisted, MultipartError, FileSystem | Path | Scope]:
     """Write the file parts of ``stream`` into a temporary directory (removed
     with the scope) and collect the form. Files with an empty name are
-    skipped; equal names get a numbered prefix."""
+    skipped; equal names get a numbered prefix. At most ``MaxPersistedFiles``
+    files and ``MaxPersistedSize`` bytes are written."""
     require_stream(stream, "stream")
 
     def body():
         fs = yield from FileSystem()
         path_ = yield from Path()
+        limits = yield from _persisted_limits()
         directory = yield from fs.make_temp_directory_scoped()
         persisted: dict[str, list[PersistedFile] | list[str] | str] = {}
         used: set[str] = set()
@@ -448,6 +501,8 @@ def to_persisted(
                 return void
             if part.name == "":
                 return void
+            if limits.files is not None and len(used) >= limits.files:
+                return fail(MultipartError.from_reason("TooManyParts", "MaxPersistedFiles"))
             name = persisted_file_name(path_.basename(part.name))
             path = path_.join(directory, name)
             while path in used:
@@ -460,7 +515,7 @@ def to_persisted(
                 cast("list[PersistedFile]", current).append(file)
             else:
                 persisted[part.key] = [file]
-            return write_file(path, part)
+            return write_file(path, limits.count(part))
 
         yield from stream.run_for_each(each)
         return cast("Persisted", persisted)
@@ -473,11 +528,17 @@ def to_persisted(
 
 
 class Limits(TypedDict, total=False):
-    max_parts: int
+    max_parts: int | None
     max_field_size: byte_size.Input
-    max_file_size: byte_size.Input
-    max_total_size: byte_size.Input
+    max_file_size: byte_size.Input | None
+    max_total_size: byte_size.Input | None
+    max_persisted_files: int | None
+    max_persisted_size: byte_size.Input | None
     field_mime_types: Sequence[str]
+
+
+def _size(value: byte_size.Input | None) -> ByteSize | None:
+    return None if value is None else byte_size.from_input_unsafe(value)
 
 
 def limits_context(**options: Unpack[Limits]) -> Context[Never]:
@@ -488,9 +549,13 @@ def limits_context(**options: Unpack[Limits]) -> Context[Never]:
     if "max_field_size" in options:
         ctx = ctx.add(MaxFieldSize, byte_size.from_input_unsafe(options["max_field_size"]))
     if "max_file_size" in options:
-        ctx = ctx.add(MaxFileSize, byte_size.from_input_unsafe(options["max_file_size"]))
+        ctx = ctx.add(MaxFileSize, _size(options["max_file_size"]))
     if "max_total_size" in options:
-        ctx = ctx.add(MaxBodySize, byte_size.from_input_unsafe(options["max_total_size"]))
+        ctx = ctx.add(MaxBodySize, _size(options["max_total_size"]))
+    if "max_persisted_files" in options:
+        ctx = ctx.add(MaxPersistedFiles, options["max_persisted_files"])
+    if "max_persisted_size" in options:
+        ctx = ctx.add(MaxPersistedSize, _size(options["max_persisted_size"]))
     if "field_mime_types" in options:
         ctx = ctx.add(FieldMimeTypes, tuple(options["field_mime_types"]))
     return ctx
@@ -586,6 +651,8 @@ __all__ = [
     "MaxFieldSize",
     "MaxFileSize",
     "MaxParts",
+    "MaxPersistedFiles",
+    "MaxPersistedSize",
     "MultipartError",
     "MultipartErrorReason",
     "MultipartErrorTag",

@@ -135,3 +135,24 @@ jobs:
           tests/test_managed_runtime.py
           tests/test_base_exceptions.py
           tests/oracle/test_synchronous_resume.py
+
+  windows:
+    # On Windows a .bat or .cmd file runs through cmd.exe, which parses its arguments again;
+    # the spawner must refuse one without shell, as Node does. The rest of the suite runs
+    # POSIX commands, so only these end-to-end tests run here.
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+
+      - name: Install CPython 3.13 with pyfect and pytest
+        run: |
+          uv venv -q --python 3.13 "$env:RUNNER_TEMP\win"
+          uv pip install -q --python "$env:RUNNER_TEMP\win\Scripts\python.exe" . pytest
+
+      - name: Batch files on Windows
+        run: >
+          & "$env:RUNNER_TEMP\win\Scripts\python.exe" -m pytest -q -p no:cacheprovider -rs
+          tests/test_process_batch_files.py tests/test_process_spawn_guard.py

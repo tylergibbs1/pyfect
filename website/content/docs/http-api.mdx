@@ -123,7 +123,10 @@ file before the handler runs, and the handler gets a `multipart.PersistedFile` w
 `SingleFileSchema` takes exactly one file for the field. A client sends the payload as an
 `http.body.FormData`, built with `append(name, value)`, where a value is a string or a
 `body.File(content, name, content_type)`. For uploads too large to keep,
-`as_multipart_stream` gives the handler a stream of parts instead.
+`as_multipart_stream` gives the handler a stream of parts instead. Unlike Effect, both are
+bounded by default: 1,000 parts, and 100 files and 100 MiB written to disk; `max_parts`,
+`max_persisted_files` and `max_persisted_size` raise a limit, or remove it with `None` (see
+[security defaults](/docs/http-server#security-defaults)).
 
 `schema.StreamSse(data=...)` declares a `text/event-stream` response: the handler gives a
 `Stream` and each element is sent as one event, encoded by the schema. The client method

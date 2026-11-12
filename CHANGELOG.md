@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.7.0 (unreleased)
+
+### Changed
+
+- A multipart body is bounded by default: at most 1,000 parts (`multipart.MaxParts`, which
+  was unlimited), and `to_persisted` (`request.multipart`, HttpApi's `as_multipart`) writes at
+  most 100 files (`MaxPersistedFiles`) and 100 MiB (`MaxPersistedSize`) to its temporary
+  directory. Past a limit the read fails with a `MultipartError`, `TooManyParts` or
+  `BodyTooLarge` (a 413). Each file part became a temporary file, so one request inside the
+  body limit could create a very large number of them. Effect has no such defaults; pyfect
+  differs on purpose. A form that needs more raises the limits, or removes them with `None`:
+  `effect.provide_service(multipart.MaxParts, ...)`, `multipart.limits_context(max_parts=...,
+  max_persisted_files=..., max_persisted_size=...)`, or the same keywords on `as_multipart` and
+  `as_multipart_stream`. `limits_context` now also takes `None` for `max_parts`,
+  `max_file_size` and `max_total_size`. A new guard requires every `Max...` limit reference to
+  have a finite default, or a finite limit around it.
+- On Windows the process spawner refuses a `.bat` or `.cmd` file (any case, also found through
+  `PATH`) unless the command sets `shell`, as Node, and so Effect, has since CVE-2024-27980:
+  `cmd.exe` parses a batch file's arguments again, so an argument could run another command.
+  The spawn dies with `OSError(EINVAL)`, Node's `spawn EINVAL`; a `ProcessWorker` whose
+  `executable` is a batch file raises it from `start`. Run a batch file with `shell=True` and
+  the whole script as the command, quoting any value for `cmd.exe` yourself. A new guard
+  requires every place pyfect starts a process to go through the check.
+
 ## 0.6.1 (2026-11-12)
 
 ### Added
