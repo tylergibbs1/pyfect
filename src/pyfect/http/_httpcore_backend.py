@@ -10,18 +10,21 @@ stream whatever ends the handshake.
 
 from __future__ import annotations
 
-import ssl
 from typing import TYPE_CHECKING, Any
 
-import httpcore
+from pyfect.http._httpx_options import import_httpx
 
 if TYPE_CHECKING:
+    import ssl
     from collections.abc import Iterable
 
+    import httpcore
     import httpx
 
 
-class _Stream(httpcore.AsyncNetworkStream):
+class _Stream:
+    """An ``httpcore.AsyncNetworkStream`` (httpcore calls it by its methods)."""
+
     __slots__ = ("_stream",)
 
     def __init__(self, stream: httpcore.AsyncNetworkStream) -> None:
@@ -41,7 +44,7 @@ class _Stream(httpcore.AsyncNetworkStream):
         ssl_context: ssl.SSLContext,
         server_hostname: str | None = None,
         timeout: float | None = None,
-    ) -> httpcore.AsyncNetworkStream:
+    ) -> _Stream:
         try:
             secured = await self._stream.start_tls(ssl_context, server_hostname, timeout)
         except BaseException:
@@ -53,7 +56,9 @@ class _Stream(httpcore.AsyncNetworkStream):
         return self._stream.get_extra_info(info)
 
 
-class _Backend(httpcore.AsyncNetworkBackend):
+class _Backend:
+    """An ``httpcore.AsyncNetworkBackend``."""
+
     __slots__ = ("_backend",)
 
     def __init__(self, backend: httpcore.AsyncNetworkBackend) -> None:
@@ -66,7 +71,7 @@ class _Backend(httpcore.AsyncNetworkBackend):
         timeout: float | None = None,
         local_address: str | None = None,
         socket_options: Iterable[httpcore.SOCKET_OPTION] | None = None,
-    ) -> httpcore.AsyncNetworkStream:
+    ) -> _Stream:
         stream = await self._backend.connect_tcp(host, port, timeout, local_address, socket_options)
         return _Stream(stream)
 
@@ -75,7 +80,7 @@ class _Backend(httpcore.AsyncNetworkBackend):
         path: str,
         timeout: float | None = None,
         socket_options: Iterable[httpcore.SOCKET_OPTION] | None = None,
-    ) -> httpcore.AsyncNetworkStream:
+    ) -> _Stream:
         return _Stream(await self._backend.connect_unix_socket(path, timeout, socket_options))
 
     async def sleep(self, seconds: float) -> None:
@@ -85,11 +90,11 @@ class _Backend(httpcore.AsyncNetworkBackend):
 def close_cancelled_handshakes(client: httpx.AsyncClient) -> None:
     """Install the closing backend on every connection pool ``client`` sends through
     (its own transport's and each mount's; other transports have no pool)."""
-    import httpx
-
+    httpx_module = import_httpx()
     transports: list[object] = [client._transport, *client._mounts.values()]  # pyright: ignore[reportPrivateUsage]
     for transport in transports:
-        if isinstance(transport, httpx.AsyncHTTPTransport):
+        if isinstance(transport, httpx_module.AsyncHTTPTransport):
             pool = transport._pool  # pyright: ignore[reportPrivateUsage]
             if not isinstance(pool._network_backend, _Backend):  # pyright: ignore[reportPrivateUsage]
-                pool._network_backend = _Backend(pool._network_backend)  # pyright: ignore[reportPrivateUsage]
+                # Duck-typed: httpcore calls a backend by its methods only.
+                pool._network_backend = _Backend(pool._network_backend)  # pyright: ignore[reportPrivateUsage, reportAttributeAccessIssue]

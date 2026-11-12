@@ -34,7 +34,7 @@ LIBRARIES: Final[Mapping[Extra, frozenset[str]]] = {
     "hypothesis": frozenset({"hypothesis"}),
     "pydantic": frozenset({"pydantic", "pydantic_core"}),
     "msgspec": frozenset({"msgspec"}),
-    "httpx": frozenset({"httpx"}),
+    "httpx": frozenset({"httpx", "httpcore"}),
     "websockets": frozenset({"websockets"}),
     "pg": frozenset({"psycopg"}),
     "mysql": frozenset({"asyncmy"}),
