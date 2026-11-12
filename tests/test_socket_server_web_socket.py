@@ -44,8 +44,12 @@ def test_a_devtools_server_on_it_receives_the_default_clients_spans() -> None:
 
         yield from devtools_server.run(handle).fork_scoped()
         url = f"ws://127.0.0.1:{_port(srv.address)}"
-        yield from fx.void.with_span("lantern.allocate").pipe(fx.provide(devtools.layer(url)))
-        return (yield from received.take().timeout("5 seconds"))
+        # Taken while the client is connected: the DevTools server, as Effect's, drops what
+        # its handler has not taken once the client goes.
+        reported = fx.void.with_span("lantern.allocate").and_then(
+            received.take().timeout("5 seconds")
+        )
+        return (yield from reported.pipe(fx.provide(devtools.layer(url))))
 
     provided = scoped(program()).pipe(fx.provide(layer_web_socket(0, "127.0.0.1")))
     assert fx.run_blocking(provided.or_die()) == "lantern.allocate"
@@ -103,3 +107,38 @@ def test_every_node_socket_server_export_is_in_socket_server() -> None:
         "IncomingMessage": "IncomingMessage",
     }
     assert set(effect_exports.values()) <= set(socket_server.__all__)
+
+
+def _send_and_close(url: str, *messages: str) -> None:
+    with connect(url) as client:
+        for message in messages:
+            client.send(message)
+
+
+def test_messages_from_a_client_gone_before_run_still_reach_the_handler() -> None:
+    """A paused socket reads nothing, as a paused ``ws`` socket in Effect, so the close stays
+    behind the messages sent before it. An app that reports a few spans and exits before the
+    DevTools server's ``run`` takes its connection used to lose them all."""
+
+    @fx.fn
+    def program():
+        srv = yield from make_web_socket(0, "127.0.0.1")
+        url = f"ws://127.0.0.1:{_port(srv.address)}"
+        yield from effect.blocking(lambda: _send_and_close(url, "a", "b"))
+        received = yield from Queue[str, Any].unbounded()
+
+        def handler(socket: SocketService) -> fx.Effect[Any, Any, Any]:
+            @fx.fn
+            def body():
+                reader = yield from socket.reader
+                while True:
+                    for chunk in (yield from reader.pull):
+                        yield from received.offer(str(chunk))
+
+            return scoped(body()).ignore().and_then(received.offer("closed"))
+
+        yield from fx.sleep("200 millis")  # the close has reached the server
+        yield from srv.run(handler).fork_scoped()
+        return (yield from received.take().timeout("5 seconds").replicate_effect(3))
+
+    assert fx.run_blocking(scoped(program()).or_die()) == ["a", "b", "closed"]

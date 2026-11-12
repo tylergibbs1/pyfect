@@ -91,6 +91,7 @@ class WsWebSocket:
         self._flowing = asyncio.Event()
         if not paused:
             self._flowing.set()
+        self._abandoned = asyncio.Event()
         self._task: asyncio.Task[None] | None = None
         self._connection: WsConnection | None = None
         self.url: str | None = None
@@ -178,6 +179,7 @@ class WsWebSocket:
         """Drop the connection without a closing handshake."""
 
         def abort() -> None:
+            self._abandoned.set()
             connection = self._connection
             if connection is not None:
                 connection.transport.abort()
@@ -202,6 +204,7 @@ class WsWebSocket:
                 )
 
     def _close(self, code: int, reason: str) -> None:
+        self._abandoned.set()
         if self._state == CONNECTING:
             self._state = CLOSING
             if self._task is not None:
@@ -261,7 +264,7 @@ class WsWebSocket:
         sender = asyncio.get_running_loop().create_task(self._send_all(connection))
         try:
             while True:
-                await self._wait_flowing(connection)
+                await self._wait_flowing()
                 try:
                     message = await connection.recv()
                 except ConnectionClosed:
@@ -281,13 +284,15 @@ class WsWebSocket:
             ),
         )
 
-    async def _wait_flowing(self, connection: WsConnection) -> None:
-        """Wait while paused; once the connection closes, the messages it
-        still holds are delivered regardless, so the close is seen."""
+    async def _wait_flowing(self) -> None:
+        """Wait while paused. As a paused ``ws`` socket in Node, a paused one
+        reads nothing, so a peer's close stays behind the messages it sent
+        first; closing or terminating this side ends the wait, the messages
+        unread being nobody's then."""
         if self._flowing.is_set():
             return
         loop = asyncio.get_running_loop()
-        waits = {loop.create_task(self._flowing.wait()), loop.create_task(connection.wait_closed())}
+        waits = {loop.create_task(self._flowing.wait()), loop.create_task(self._abandoned.wait())}
         try:
             await asyncio.wait(waits, return_when=asyncio.FIRST_COMPLETED)
         finally:

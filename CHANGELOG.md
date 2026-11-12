@@ -19,6 +19,13 @@
   through one function that substitutes the arguments, and a test fails on any other
   `get_type_hints` call in `pyfect.schema`. Found by dogfooding (lantern).
 
+- A WebSocket server connection that its client closed before a handler read it no longer
+  loses the messages sent before the close. A paused `WsWebSocket` stopped waiting once the
+  connection closed and delivered the messages it held to no listener; it now reads nothing
+  while paused, as a paused `ws` socket in Effect, until it is resumed or closed on this side.
+  So a short-lived app that reported its spans to a DevTools server and exited before the
+  server's `run` took the connection lost them all. Found while porting the DevTools docs.
+
 ### Added
 
 - `pyfect.socket.server.make_web_socket` and `layer_web_socket`, Effect's

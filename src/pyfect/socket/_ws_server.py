@@ -10,8 +10,13 @@ import inspect
 from http import HTTPStatus
 from typing import Any, Never
 
-from websockets.asyncio.server import Server, ServerConnection, serve
-from websockets.http11 import Request
+from pyfect._extras import missing_extra
+
+try:
+    from websockets.asyncio.server import Server, ServerConnection, serve
+    from websockets.http11 import Request
+except ImportError as error:  # pragma: no cover - depends on the environment
+    raise missing_extra("pyfect.socket.server.make_web_socket", "websockets", error) from error
 
 from pyfect._core import Effect
 from pyfect.effect import provide_service, succeed, sync
