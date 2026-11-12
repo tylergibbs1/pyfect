@@ -33,6 +33,7 @@ from pathlib import Path as FsPath
 from typing import Any, Never
 
 import pytest
+from _subprocess import SUBPROCESS_TIMEOUT
 
 import pyfect as fx
 from pyfect import file_system, path, process, redacted, sink, stream, testing
@@ -1360,7 +1361,7 @@ def test_does_not_crash_the_host_when_input_is_interrupted(target: str):
         [sys.executable, str(FIXTURES / "buffered_input.py"), target],
         capture_output=True,
         text=True,
-        timeout=10,
+        timeout=SUBPROCESS_TIMEOUT,
         check=False,
     )
     assert result.returncode == 0, result.stderr

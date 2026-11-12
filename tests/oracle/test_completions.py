@@ -14,6 +14,7 @@ import time
 from pathlib import Path
 
 import pytest
+from _subprocess import SUBPROCESS_TIMEOUT, run_program
 
 import pyfect as fx
 from pyfect.cli import Argument, Config, Flag, command
@@ -298,16 +299,12 @@ def _script_args(command: str) -> list[str]:
 def _has_readline() -> bool:
     if shutil.which("bash") is None or shutil.which("script") is None:
         return False
-    bash = subprocess.run(
-        ["bash", "--noprofile", "--norc", "-c", "compgen -W x"], capture_output=True, check=False
-    )
-    tty = subprocess.run(
-        _script_args("bash --noprofile --norc -c true"),
-        capture_output=True,
-        stdin=subprocess.DEVNULL,
-        check=False,
-    )
-    return bash.returncode == 0 and tty.returncode == 0
+    try:
+        run_program(["bash", "--noprofile", "--norc", "-c", "compgen -W x"], cwd=".")
+        run_program(_script_args("bash --noprofile --norc -c true"), cwd=".")
+    except subprocess.CalledProcessError:
+        return False
+    return True
 
 
 _HAS_READLINE = _has_readline()
@@ -331,7 +328,7 @@ def _type_into(args: list[str], directory: str, keys: str) -> str:
     assert process.stdin is not None
     assert process.stdout is not None
     seen = b""
-    deadline = time.monotonic() + 10
+    deadline = time.monotonic() + SUBPROCESS_TIMEOUT
     while b"$ " not in seen and time.monotonic() < deadline:
         ready, _, _ = select.select([process.stdout], [], [], 0.1)
         if ready:
@@ -340,7 +337,7 @@ def _type_into(args: list[str], directory: str, keys: str) -> str:
                 break
             seen += chunk
     try:
-        rest, _ = process.communicate(keys.encode(), timeout=10)
+        rest, _ = process.communicate(keys.encode(), timeout=SUBPROCESS_TIMEOUT)
     except subprocess.TimeoutExpired:
         process.kill()
         rest, _ = process.communicate()
@@ -1127,14 +1124,9 @@ def _replay_power_shell(descriptor: CommandDescriptor, line: str) -> list[str]:
                 ]
             )
         )
-        output = subprocess.run(
-            ["pwsh", "-NoProfile", "-NonInteractive", "-File", str(file)],
-            cwd=directory,
-            capture_output=True,
-            text=True,
-            check=True,
-            timeout=20,
-        ).stdout
+        output = run_program(
+            ["pwsh", "-NoLogo", "-NoProfile", "-NonInteractive", "-File", str(file)], cwd=directory
+        )
     return [text for text in _ESCAPES.sub("", output).replace("\r", "").split("\n") if text]
 
 

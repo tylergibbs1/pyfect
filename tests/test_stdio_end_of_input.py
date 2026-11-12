@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, TypedDict
 
 import pytest
+from _subprocess import SUBPROCESS_TIMEOUT
 
 import pyfect as fx
 from pyfect import exit as exit_
@@ -237,7 +238,7 @@ def _exit_code(*args: str, then_close: Callable[[subprocess.Popen[str]], None]) 
         cwd=_ROOT,
     ) as server:
         then_close(server)
-        _, stderr = server.communicate(timeout=30)
+        _, stderr = server.communicate(timeout=SUBPROCESS_TIMEOUT)
     assert stderr == ""
     return server.returncode
 
@@ -283,7 +284,7 @@ def test_run_stdio_exits_0_every_time_with_input_closed_from_the_start():
             check=False,
             capture_output=True,
             stdin=subprocess.DEVNULL,
-            timeout=30,
+            timeout=SUBPROCESS_TIMEOUT,
         ).returncode
         for _ in range(10)
     ]

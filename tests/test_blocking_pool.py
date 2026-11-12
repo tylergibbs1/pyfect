@@ -9,6 +9,8 @@ import textwrap
 import threading
 import time
 
+from _subprocess import SUBPROCESS_TIMEOUT
+
 import pyfect as fx
 from pyfect import duration
 from pyfect._blocking_pool import BlockingPool
@@ -31,7 +33,7 @@ def test_a_process_exits_promptly_with_blocking_work_abandoned() -> None:
         [sys.executable, "-c", _ABANDONS_STUCK_WORK],
         capture_output=True,
         text=True,
-        timeout=30,
+        timeout=SUBPROCESS_TIMEOUT,
         check=False,
     )
     assert done.returncode == 0, done.stderr

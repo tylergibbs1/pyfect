@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from _subprocess import SUBPROCESS_TIMEOUT
 
 EXAMPLES = Path(__file__).parent.parent / "examples"
 
@@ -16,7 +17,7 @@ def run_example(name: str) -> str:
         capture_output=True,
         stdin=subprocess.DEVNULL,
         text=True,
-        timeout=30,
+        timeout=SUBPROCESS_TIMEOUT,
     )
     assert done.returncode == 0, done.stderr
     return done.stdout
@@ -93,7 +94,7 @@ def run_cli(*args: str) -> subprocess.CompletedProcess[str]:
         capture_output=True,
         stdin=subprocess.DEVNULL,
         text=True,
-        timeout=30,
+        timeout=SUBPROCESS_TIMEOUT,
     )
 
 

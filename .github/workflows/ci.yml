@@ -47,6 +47,10 @@ jobs:
         run: |
           uv sync --locked --python ${{ matrix.python }}
           uv run python -c "import sys; assert f'{sys.version_info.major}.{sys.version_info.minor}' == '${{ matrix.python }}', sys.version"
+          # The runner's disk is cold: pwsh's first start read its files at 3-6 MB/s and took
+          # 6-35 s once the suite's containers had started (the PowerShell completion test
+          # timed out). Started once here, behind the checks, the test's pwsh takes about 1 s.
+          nohup pwsh -NoLogo -NoProfile -NonInteractive -Command 'TabExpansion2 -inputScript "Get-Chil" -cursorColumn 8 | Out-Null' > /dev/null 2>&1 &
 
       - name: Format
         run: uv run ruff format --check .
