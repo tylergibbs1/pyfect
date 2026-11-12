@@ -93,25 +93,38 @@ class Inbound:
         before any of it. Blank lines (CRLF or LF, as ``llhttp``) before a
         head are skipped (RFC 9112 §2.2)."""
 
-        def step() -> Effect[bytes | None, SocketError | HeadTooLarge | BareLineFeed]:
-            pending = self._pending
-            while pending.startswith((b"\n", b"\r\n")):
-                del pending[: 1 if pending.startswith(b"\n") else 2]
-            end = self._pending.find(b"\r\n\r\n")
-            bare = _BARE_LF.search(self._pending, 0, len(self._pending) if end == -1 else end)
-            if bare is not None:
-                return fail(BareLineFeed())
-            if end != -1:
-                if end > limit:
-                    return fail(HeadTooLarge())
-                head = bytes(self._pending[:end])
-                del self._pending[: end + 4]
-                return succeed(head)
-            if len(self._pending) > limit:
-                return fail(HeadTooLarge())
-            return self._fill().flat_map(lambda more: suspend(step) if more else self._ended_head())
+        def run() -> Effect[bytes | None, SocketError | HeadTooLarge | BareLineFeed]:
+            # Bytes already searched: each arrival is searched once, so a head sent a byte at
+            # a time costs linear time, not quadratic (llhttp parses incrementally too).
+            scanned = 0
 
-        return suspend(step)
+            def step() -> Effect[bytes | None, SocketError | HeadTooLarge | BareLineFeed]:
+                nonlocal scanned
+                pending = self._pending
+                while pending.startswith((b"\n", b"\r\n")):
+                    removed = 1 if pending.startswith(b"\n") else 2
+                    del pending[:removed]
+                    scanned = max(0, scanned - removed)
+                end = pending.find(b"\r\n\r\n", max(0, scanned - 3))
+                bare = _BARE_LF.search(pending, scanned, len(pending) if end == -1 else end)
+                if bare is not None:
+                    return fail(BareLineFeed())
+                if end != -1:
+                    if end > limit:
+                        return fail(HeadTooLarge())
+                    head = bytes(pending[:end])
+                    del pending[: end + 4]
+                    return succeed(head)
+                if len(pending) > limit:
+                    return fail(HeadTooLarge())
+                scanned = len(pending)
+                return self._fill().flat_map(
+                    lambda more: suspend(step) if more else self._ended_head()
+                )
+
+            return step()
+
+        return suspend(run)
 
     def _ended_head(self) -> Effect[bytes | None, SocketError]:
         if self._pending:
@@ -140,17 +153,24 @@ class Inbound:
         past ``limit``, or at a line ending in a bare LF, which ``llhttp``
         fails at once), taken and handed over in one step."""
 
-        def step() -> Effect[A, SocketError | E]:
-            pending = self._pending
-            lf = pending.find(b"\n")
-            if lf != -1:
-                if lf == 0 or pending[lf - 1] != 0x0D:
-                    return take(None)
-                line = bytes(pending[: lf - 1])
-                del pending[: lf + 1]
-                return take(line)
-            if len(self._pending) > limit or self._ended:
-                return take(None)
-            return self._fill().flat_map(lambda _: suspend(step))
+        def run() -> Effect[A, SocketError | E]:
+            scanned = 0
 
-        return suspend(step)
+            def step() -> Effect[A, SocketError | E]:
+                nonlocal scanned
+                pending = self._pending
+                lf = pending.find(b"\n", scanned)
+                if lf != -1:
+                    if lf == 0 or pending[lf - 1] != 0x0D:
+                        return take(None)
+                    line = bytes(pending[: lf - 1])
+                    del pending[: lf + 1]
+                    return take(line)
+                if len(self._pending) > limit or self._ended:
+                    return take(None)
+                scanned = len(pending)
+                return self._fill().flat_map(lambda _: suspend(step))
+
+            return step()
+
+        return suspend(run)

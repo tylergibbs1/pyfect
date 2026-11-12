@@ -148,3 +148,23 @@ def test_a_single_label_host_may_set_a_cookie_for_itself() -> None:
 
     jar = _run(handler, ["http://localhost/"])
     assert _sent(jar, "http://localhost/") == "sid=1"
+
+
+def test_a_client_without_a_jar_keeps_no_cookies() -> None:
+    """Without ``with_cookies_ref`` a client sends only the cookies of each request, as
+    Effect's fetch client does: httpx's own jar kept every ``Set-Cookie`` and sent it on
+    later requests, so one shared client leaked a user's session to the next caller."""
+    received: list[str | None] = []
+
+    def handler(sent: httpx.Request) -> httpx.Response:
+        received.append(sent.headers.get("cookie"))
+        return httpx.Response(200, headers={"set-cookie": "sid=user-a; Path=/"})
+
+    def program() -> Any:
+        client = yield from HttpClient()
+        for _ in range(2):
+            yield from fx.scoped(client.get("https://a.test/"))
+
+    http = httpx_client.layer_with(transport=httpx.MockTransport(handler))
+    fx.run_blocking(fx.gen(program).pipe(fx.provide(http)).or_die())
+    assert received == [None, None]

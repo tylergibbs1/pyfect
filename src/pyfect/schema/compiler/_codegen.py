@@ -221,10 +221,12 @@ class _Emitter:
 
 
 def _literal_source(value: object) -> str | None:
-    """A literal key or value as Python source, when its ``repr`` is one."""
-    if value is None or isinstance(value, (bool, int, str)):
+    """A literal key or value as Python source, for the exact builtin types
+    only: a subclass's ``repr`` is its own code, so it is a bound constant."""
+    kind = type(value)
+    if value is None or kind is bool or kind is int or kind is str:
         return repr(value)
-    if isinstance(value, float):
+    if kind is float:
         return f"float({str(value)!r})"
     return None
 

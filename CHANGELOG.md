@@ -1,5 +1,48 @@
 # Changelog
 
+## 0.6.2 (unreleased)
+
+### Fixed
+
+- `S.Finite` and `S.is_finite` read an `int` as a JavaScript number, so one past the largest
+  double (a 400-digit JSON literal, which `JSON.parse` reads as `Infinity`) is not finite, as
+  in Effect. `jwt.verify` checks `exp`, `nbf` and `iat` with `S.Finite`, so a token signed
+  with such an `exp` verified as never expiring, where Effect fails it with
+  `ClaimValidationFailed("exp", "invalid")`. Found by the security review
+  (`docs/security-review-2026-11.md`).
+- The httpx client keeps no cookies of its own. httpx's jar stored every `Set-Cookie` and sent
+  it with later requests to that site, so a server sharing one `HttpClient` between users sent
+  one user's session cookie on another user's calls. Effect's fetch client keeps none either;
+  cookies persist only through `with_cookies_ref`. Found by the security review.
+- `live_server` searches each received byte of a request head, chunk-size line or trailer
+  once. Every arrival searched the whole buffered head again, so a client sending a 16 KiB
+  head one byte per packet cost the event loop about a second of CPU, and a few such
+  connections slowed every other request. Found by the security review; Node's llhttp parses
+  incrementally too.
+- Generated schema decoders (`jit_compiler`, `aot_compiler`) write a literal as source only
+  when it is exactly a `bool`, `int`, `str` or `float`. A subclass's `repr` was pasted into
+  the code the compiler runs, so a `str` subclass with its own `__repr__` ran that text, and
+  an `IntEnum` literal gave source that did not compile (the schema fell back to
+  interpreting). Found by the security review.
+- A process started by a `pyfect.workers` worker no longer takes the worker's channel
+  variable for its own. The parent now passes its pid with the channel's descriptor, and a
+  process whose parent is another ignores the channel instead of unpickling whatever its
+  descriptor of that number is. Found by the security review.
+
+### Added
+
+- An `audit` workflow checks `uv.lock` and `website/bun.lock` against known vulnerabilities
+  (OSV) on every push and weekly, and `tests/test_workflow_security.py` keeps every
+  workflow's actions pinned to commits, read-only by default, off `pull_request_target`, and
+  free of pull-request text in its scripts.
+
+### Docs
+
+- `SECURITY.md` names the supported release, response times and scope, with a placeholder
+  for a security contact address, and links the November 2026 security review
+  (`docs/security-review-2026-11.md`), a manual audit of the code that handles untrusted
+  input or secrets.
+
 ## 0.6.1 (2026-11-12)
 
 ### Added

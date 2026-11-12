@@ -436,3 +436,13 @@ def test_union_takes_a_sequence_as_effect_does():
         assert S.decode_unknown_sync(schema)("a") == "a"
         with pytest.raises(S.SchemaError, match=re.escape("Expected string | number")):
             S.decode_unknown_sync(schema)(None)
+
+
+def test_finite_reads_an_int_as_a_javascript_number():
+    """An ``int`` past the largest double is ``Infinity`` as a JavaScript number, so not
+    finite (``JSON.parse`` gives ``Infinity`` for such a literal and Effect rejects it)."""
+    decoding = SchemaAsserts(S.Finite).decoding()
+    decoding.succeed(2**1023)
+    decoding.succeed(-(2**1023))
+    decoding.fail(10**400, "Expected a finite number")
+    decoding.fail(-(10**400), "Expected a finite number")

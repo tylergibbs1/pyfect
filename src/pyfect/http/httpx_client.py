@@ -22,6 +22,7 @@ import contextlib
 import socket
 from collections.abc import AsyncIterator, Callable, Coroutine, Sequence
 from concurrent.futures import Future
+from http.cookiejar import CookieJar, DefaultCookiePolicy
 from typing import TYPE_CHECKING, Any, Never
 
 from pyfect._fiber import Fiber
@@ -141,7 +142,11 @@ class _Backend:
 
     def __init__(self, options: dict[str, Any]) -> None:
         options.setdefault("timeout", None)
-        self.client = import_httpx().AsyncClient(**options)
+        httpx = import_httpx()
+        # httpx's own jar would keep every Set-Cookie and send it on later requests, to
+        # whoever shares the client; cookies persist only through ``with_cookies_ref``.
+        options["cookies"] = CookieJar(DefaultCookiePolicy(allowed_domains=[]))
+        self.client = httpx.AsyncClient(**options)
         self._thread = LoopThread("pyfect-httpx")
         self.loop = self._thread.loop
         self._lifetime = Lifetime("HTTP client")
