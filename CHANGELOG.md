@@ -19,6 +19,22 @@
   through one function that substitutes the arguments, and a test fails on any other
   `get_type_hints` call in `pyfect.schema`. Found by dogfooding (lantern).
 
+### Added
+
+- `pyfect.socket.server.make_web_socket` and `layer_web_socket`, Effect's
+  `NodeSocketServer.makeWebSocket` and `layerWebSocket`, where Effect has them: a
+  `SocketServer` whose connections are WebSockets (on the `websockets` extra), such as a
+  DevTools server for the default `devtools.layer()` client. Handlers get the upgrade request
+  as the new `IncomingMessage` service, as well as the native socket as `WebSocket`. The
+  server existed only as `pyfect.socket.ws.make_server` / `layer_server`, where a dogfood app
+  looking for Effect's names did not find it; a test now checks that every `NodeSocketServer`
+  export is in `pyfect.socket.server`. Found by dogfooding (lantern).
+
+### Deprecated
+
+- `pyfect.socket.ws.make_server` and `layer_server` warn; use
+  `pyfect.socket.server.make_web_socket` and `layer_web_socket`. They are removed in 0.7.0.
+
 ## 0.6.1 (2026-11-12)
 
 ### Added
