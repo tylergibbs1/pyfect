@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import random
 import time
+import traceback
 from collections.abc import Callable
 from dataclasses import dataclass
 from types import UnionType
@@ -60,9 +61,15 @@ class Workload:
 
 
 def _describe(cause: Cause[Any]) -> str:
-    """The cause's start (what failed) and end (the innermost error)."""
+    """The cause's start (what failed) and end (the innermost error), then the error's
+    chain of causes (a ``SocketError``'s reason, say), which ``pretty`` leaves out."""
     text = cause.pretty()
-    return text if len(text) <= 3000 else f"{text[:1000]}\n...\n{text[-2000:]}"
+    found = cause.find_error()
+    if isinstance(found, fx.Ok) and isinstance(found.value, BaseException):
+        chain = found.value.__cause__
+        if chain is not None:
+            text += "\ncaused by:\n" + "".join(traceback.format_exception(chain))
+    return text if len(text) <= 4000 else f"{text[:1000]}\n...\n{text[-3000:]}"
 
 
 def loop(workload: Workload, recorder: Recorder, seed: int, rate: float) -> fx.Effect[None]:

@@ -13,6 +13,7 @@ import sys
 import threading
 import time
 from collections import Counter
+from collections.abc import Callable
 from typing import Any
 
 from pyfect.context import Context
@@ -49,14 +50,17 @@ class LiveFibers:
 class Recorder:
     """One workload's latencies and unexpected failures since the last sample."""
 
-    def __init__(self, name: str, rng_seed: int = 0) -> None:
+    def __init__(
+        self, name: str, rng_seed: int = 0, clock: Callable[[], float] = time.monotonic
+    ) -> None:
         self.name = name
+        self._clock = clock
         self._lock = threading.Lock()
         self._seen = 0
         self._latencies: list[float] = []
         self._errors = 0
         self._state = rng_seed or 0x9E3779B9
-        self._last_success = time.monotonic()
+        self._last_success = clock()
         self._first_error: str | None = None
         self.dead = False
         """The workload's loop ended, which only the soak stopping may do."""
@@ -73,7 +77,7 @@ class Recorder:
     def ok(self, seconds: float) -> None:
         with self._lock:
             self._seen += 1
-            self._last_success = time.monotonic()
+            self._last_success = self._clock()
             if len(self._latencies) < _RESERVOIR:
                 self._latencies.append(seconds)
             else:

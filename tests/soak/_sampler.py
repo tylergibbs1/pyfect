@@ -5,6 +5,7 @@ from __future__ import annotations
 import gc
 import threading
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import TextIO
 
@@ -30,7 +31,10 @@ class Sampler:
         stall_limit: float,
         recorders: dict[str, Recorder],
         fibers: LiveFibers,
+        *,
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
+        self._clock = clock
         self._file: TextIO = out.open("a", buffering=1)
         self._lock = threading.Lock()
         self._interval = interval
@@ -65,7 +69,7 @@ class Sampler:
         # Collect first, so counts are of live objects, not garbage awaiting a cycle.
         gc.collect()
         total, counts = object_counts()
-        now = time.monotonic()
+        now = self._clock()
         recorders = list(self._recorders.values())
         return Sample(
             t=self.elapsed(),

@@ -7,24 +7,36 @@ as progress.
 
 from __future__ import annotations
 
-import time
 from pathlib import Path
 
 from ._health import LiveFibers, Recorder
 from ._sampler import Sampler
 
 
+class _Clock:
+    def __init__(self) -> None:
+        self.now = 0.0
+
+    def __call__(self) -> float:
+        return self.now
+
+
 def test_a_workload_that_only_fails_is_stalled(tmp_path: Path) -> None:
-    failing, working = Recorder("failing"), Recorder("working")
+    clock = _Clock()
+    failing = Recorder("failing", clock=clock)
+    working = Recorder("working", clock=clock)
     sampler = Sampler(
         tmp_path / "run.jsonl",
         interval=60,
-        stall_limit=0.05,
+        stall_limit=10,
         recorders={"failing": failing, "working": working},
         fibers=LiveFibers(),
+        clock=clock,
     )
-    time.sleep(0.1)
-    failing.error("timed out")
-    working.ok(0.001)
-    assert sampler.sample().stalled == ["failing"]
-    sampler.close()
+    try:
+        clock.now = 11
+        failing.error("timed out")
+        working.ok(0.001)
+        assert sampler.sample().stalled == ["failing"]
+    finally:
+        sampler.close()
