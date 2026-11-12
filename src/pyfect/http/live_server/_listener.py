@@ -10,6 +10,7 @@ import asyncio
 import ssl
 import threading
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any, Never
 
 from pyfect._core import Effect
@@ -184,20 +185,32 @@ def _address(server: asyncio.Server) -> SocketAddress:
     return inet_address_from_native_unsafe(name[0], name[1])
 
 
-def listen(
-    listen: Listen, tls: ssl.SSLContext | None
-) -> Effect[Listener, SocketServerError, Scope]:
+@dataclass(frozen=True, slots=True)
+class Tls:
+    """What a TLS listener's connections are accepted with."""
+
+    context: ssl.SSLContext
+    handshake_timeout: Duration
+
+
+def listen(listen: Listen, tls: Tls | None) -> Effect[Listener, SocketServerError, Scope]:
     """A listener that stops accepting when the scope closes; each run
     listens anew."""
     return suspend(lambda: _listen(Listener(), listen, tls))
 
 
 def _listen(
-    listener: Listener, listen: Listen, tls: ssl.SSLContext | None
+    listener: Listener, listen: Listen, tls: Tls | None
 ) -> Effect[Listener, SocketServerError, Scope]:
+    def connection() -> Connection:
+        if tls is None:
+            return Connection(listener.made)
+        return Connection(
+            listener.made, server_tls=tls.context, handshake_timeout=tls.handshake_timeout
+        )
 
     async def start() -> asyncio.Server:
-        return await listen(lambda: Connection(listener.made, server_tls=tls))
+        return await listen(connection)
 
     def stop(server: asyncio.Server, _exit: object) -> Effect[None]:
         async def close() -> None:

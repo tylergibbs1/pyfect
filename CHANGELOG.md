@@ -21,6 +21,17 @@
   response stayed. The abort is now an attribute of the response, the upload body's abort
   listener is removed once the body is sent, and a test keeps weak-keyed tables out of
   `pyfect.http`.
+- The httpx client closes the connection of a request interrupted during its TLS
+  handshake. httpcore (1.0.9) closes the stream when a handshake fails but not when it
+  is cancelled, so every request a timeout cut off while connecting left its socket
+  open, on both ends, for good: the soak test's open file descriptors rose by about one
+  a minute. The client now gives its connection pools a network backend that closes the
+  stream whatever ends the handshake.
+- The live server closes a connection whose TLS handshake does not finish. A client
+  that hung up during the handshake left the server's side open (the end of input did
+  not fail the handshake), and a client that never sent one held its connection for
+  good. Now the end of input fails it, and `make_tls` drops a handshake that takes
+  longer than `handshake_timeout` (Node's `handshakeTimeout`, 120 seconds).
 - `S.Struct` of a recursive TypedDict made at run time (per tenant or plugin) no longer
   keeps the class alive forever: its cached schema reached the class through the
   recursive reference. The reference now waits on the schema, not the class.
