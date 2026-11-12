@@ -82,3 +82,44 @@ def test_a_request_cancelled_after_connecting_closes_its_connection() -> None:
     left, closed_by_client = asyncio.run(_cancelled_requests(3))
     assert left == []
     assert closed_by_client == 3
+
+
+async def _concurrent_errors(requests: int) -> list[str]:
+    """The errors of ``requests`` concurrent requests through a one-connection pool."""
+
+    async def serve(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        try:
+            while await reader.readuntil(b"\r\n\r\n"):
+                await asyncio.sleep(0.001)
+                writer.write(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok")
+                await writer.drain()
+        except (asyncio.IncompleteReadError, ConnectionError):
+            pass
+        finally:
+            writer.close()
+            with contextlib.suppress(ConnectionError):
+                await writer.wait_closed()
+
+    server = await asyncio.start_server(serve, "127.0.0.1", 0)
+    port = server.sockets[0].getsockname()[1]
+    errors: list[str] = []
+    async with httpx.AsyncClient(limits=httpx.Limits(max_connections=1)) as client:
+        close_cancelled_connections(client)
+
+        async def one() -> None:
+            try:
+                await client.get(f"http://127.0.0.1:{port}/")
+            except httpx.HTTPError as error:
+                errors.append(repr(error))
+
+        await asyncio.gather(*(one() for _ in range(100)))
+    server.close()
+    await server.wait_closed()
+    return errors
+
+
+def test_a_connection_another_request_holds_stays_open() -> None:
+    """A request the pool hands a connection that is still busy fails with httpcore's
+    ``ConnectionNotAvailable`` and is retried: the connection is the other request's,
+    so it is left alone (closing it failed half the soak's requests)."""
+    assert asyncio.run(_concurrent_errors(100)) == []

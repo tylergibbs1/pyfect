@@ -126,9 +126,11 @@ def _close_connected(task: asyncio.Future[httpcore.AsyncNetworkStream]) -> None:
 
 
 class _Connection:
-    """An ``httpcore.AsyncConnectionInterface`` that closes its connection when a
-    cancel leaves it busy with nobody using it: an HTTP/1.1 connection still ``NEW`` or
-    ``ACTIVE`` once its request failed or its response was closed."""
+    """An ``httpcore.AsyncConnectionInterface`` that closes its HTTP/1.1 connection when
+    a cancel leaves it busy with nobody using it: still ``NEW`` once the request it was
+    made for failed (no other request is handed a ``NEW`` one), or still ``ACTIVE`` once
+    its response was closed. A failed request's ``ACTIVE`` connection may be another
+    request's (httpcore's ``ConnectionNotAvailable``), so it is left alone."""
 
     __slots__ = ("_connection",)
 
@@ -139,13 +141,17 @@ class _Connection:
         try:
             response = await self._connection.handle_async_request(request)
         except BaseException:
-            await self.close_if_abandoned()
+            await self._close_if(_internals().unstarted)
             raise
         response.stream = _ResponseStream(response.stream, self)
         return response
 
-    async def close_if_abandoned(self) -> None:
-        if _busy(self._connection):
+    async def close_if_released_busy(self) -> None:
+        """Called once this connection's response is closed."""
+        await self._close_if(_internals().busy)
+
+    async def _close_if(self, states: frozenset[object]) -> None:
+        if _in_state(self._connection, states):
             with _internals().shield():
                 await self._connection.aclose()
 
@@ -192,13 +198,14 @@ class _ResponseStream:
         try:
             await self._stream.aclose()
         finally:
-            await self._connection.close_if_abandoned()
+            await self._connection.close_if_released_busy()
 
 
 @dataclass(frozen=True, slots=True)
 class _Internals:
     connection: type[httpcore.AsyncHTTPConnection]
     http11: type[httpcore.AsyncHTTP11Connection]
+    unstarted: frozenset[object]
     busy: frozenset[object]
     shield: Callable[[], AsyncShieldCancellation]
 
@@ -216,18 +223,19 @@ def _internals() -> _Internals:
     return _Internals(
         httpcore.AsyncHTTPConnection,
         httpcore.AsyncHTTP11Connection,
+        frozenset({HTTPConnectionState.NEW}),
         frozenset({HTTPConnectionState.NEW, HTTPConnectionState.ACTIVE}),
         AsyncShieldCancellation,
     )
 
 
-def _busy(connection: httpcore.AsyncConnectionInterface) -> bool:
-    """An HTTP/1.1 connection mid-request (HTTP/2 ones serve several requests)."""
+def _in_state(connection: httpcore.AsyncConnectionInterface, states: frozenset[object]) -> bool:
+    """An HTTP/1.1 connection in one of ``states`` (HTTP/2 ones serve several requests)."""
     internals = _internals()
     if not isinstance(connection, internals.connection):
         return False
     inner = connection._connection  # pyright: ignore[reportPrivateUsage]
-    return isinstance(inner, internals.http11) and inner._state in internals.busy  # pyright: ignore[reportPrivateUsage]
+    return isinstance(inner, internals.http11) and inner._state in states  # pyright: ignore[reportPrivateUsage]
 
 
 def _wrap_new_connections(pool: httpcore.AsyncConnectionPool) -> None:
