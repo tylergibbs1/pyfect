@@ -109,8 +109,11 @@ def test_mixed_scheduler_is_fifo_within_a_priority():
 
 
 @testing.effect
-def test_yield_now_with_resumes_lowest_priority_first():
-    """Effect.ts yieldNowWith: lower numbers resume first within a tick."""
+def test_yield_now_with_orders_only_within_a_fibers_batch():
+    """Effect.ts yieldNowWith: lower numbers resume first within a
+    dispatcher's batch. Each fiber has its own, so three fibers yielding at
+    once resume in the order they yielded (Node: high, first, zero; this
+    pinned first, zero, high, never printed by Node)."""
     order: list[str] = []
 
     def task(label: str, priority: int) -> fx.Effect[None]:
@@ -121,7 +124,7 @@ def test_yield_now_with_resumes_lowest_priority_first():
         fibers.append((yield from task(label, priority).fork(start_immediately=True)))
     for fiber in fibers:
         yield from fiber.join()
-    assert order == ["first", "zero", "high"]
+    assert order == ["high", "first", "zero"]
 
 
 def _chain(label: str, order: list[str]) -> fx.Effect[int]:

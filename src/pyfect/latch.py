@@ -110,7 +110,7 @@ class Latch:
             return _TRUE
         if self._scheduled is None:
             self._scheduled = self._waiters
-            fiber._scheduler.schedule(self._flush_scheduled)
+            fiber.dispatcher().schedule(self._flush_scheduled)
         else:
             self._scheduled.extend(self._waiters)
         self._waiters = []

@@ -38,6 +38,7 @@ from collections import deque
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Literal, Protocol
 
+from pyfect._priority_buckets import PriorityBuckets
 from pyfect._wake_tracking import Tracking, WakeTracker
 from pyfect.context import Reference
 from pyfect.duration import Duration
@@ -138,28 +139,6 @@ class EffectScheduler(ABC):
         raise RuntimeError("an EffectScheduler schedules through its run: provide it to a fiber")
 
 
-class _PriorityBuckets:
-    __slots__ = ("buckets",)
-
-    def __init__(self) -> None:
-        self.buckets: list[tuple[int, list[Task]]] = []
-
-    def schedule_task(self, task: Task, priority: int) -> None:
-        buckets = self.buckets
-        for index, (bucket_priority, tasks) in enumerate(buckets):
-            if bucket_priority == priority:
-                tasks.append(task)
-                return
-            if bucket_priority > priority:
-                buckets.insert(index, (priority, [task]))
-                return
-        buckets.append((priority, [task]))
-
-    def drain(self) -> list[tuple[int, list[Task]]]:
-        buckets, self.buckets = self.buckets, []
-        return buckets
-
-
 class _Binding(threading.local):
     """The run of the ``BoundScheduler`` handing a task to its dispatcher."""
 
@@ -194,7 +173,7 @@ class _MixedDispatcher:
 
     def __init__(self, set_immediate: Callable[[Task], Cancel]) -> None:
         self._set_immediate = set_immediate
-        self._tasks = _PriorityBuckets()
+        self._tasks = PriorityBuckets()
         self._running: Cancel | None = None
 
     def schedule_task(self, task: Task, priority: int) -> None:
@@ -286,7 +265,7 @@ class _Timer:
         self.alive = False
 
 
-def _merged(ready: deque[Task], prioritized: _PriorityBuckets | None) -> deque[Task]:
+def _merged(ready: deque[Task], prioritized: PriorityBuckets | None) -> deque[Task]:
     """One batch: lower priorities, then priority 0, then higher ones."""
     if prioritized is None:
         return ready
@@ -313,7 +292,7 @@ class SyncScheduler(Tracking):
         super().__init__()
         self._last_activity = time.monotonic()
         self._ready: deque[Task] = deque()
-        self._prioritized: _PriorityBuckets | None = None
+        self._prioritized: PriorityBuckets | None = None
         self._timers: list[tuple[float, int, _Timer]] = []
         self._seq = itertools.count()
         self._cond = threading.Condition()
@@ -333,7 +312,7 @@ class SyncScheduler(Tracking):
             if priority == 0:
                 self._ready.append(task)
             else:
-                self._prioritized = self._prioritized or _PriorityBuckets()
+                self._prioritized = self._prioritized or PriorityBuckets()
                 self._prioritized.schedule_task(task, priority)
             self._last_activity = time.monotonic()
             self._cond.notify()
@@ -492,7 +471,7 @@ class AsyncioScheduler(Tracking):
         self._loop = loop
         self._thread = threading.get_ident()
         self._ready: deque[Task] = deque()
-        self._prioritized: _PriorityBuckets | None = None
+        self._prioritized: PriorityBuckets | None = None
         self._draining_scheduled = False
 
     @property
@@ -519,7 +498,7 @@ class AsyncioScheduler(Tracking):
         if priority == 0:
             self._ready.append(self._tracked(task))
         else:
-            self._prioritized = self._prioritized or _PriorityBuckets()
+            self._prioritized = self._prioritized or PriorityBuckets()
             self._prioritized.schedule_task(self._tracked(task), priority)
         self._drain_soon()
 

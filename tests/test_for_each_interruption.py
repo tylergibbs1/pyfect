@@ -3,6 +3,7 @@ input is read. Effect's ``forEach`` is ``suspend(() => ...)`` and, on
 interruption, waits for its workers and keeps their failures."""
 
 import pyfect as fx
+from pyfect.cause import Interrupt
 from pyfect.duration import seconds
 from pyfect.queue import Queue
 from pyfect.testing import run_test as run
@@ -31,6 +32,28 @@ def test_an_external_interrupt_keeps_a_worker_defect():
     assert isinstance(ex, fx.Failure)
     assert ex.cause.has_interrupts
     assert ex.cause.defects == (defect,)
+
+
+def test_unbounded_concurrency_forks_even_a_single_item():
+    """Effect's ``forEach`` picks the sequential loop by the concurrency
+    option alone (``resolveConcurrency(c) === 1``), never by how many items
+    there are: one item under ``"unbounded"`` still runs in a child fiber, so an
+    outside interrupt reports only the caller's interruption, not the child's
+    own interrupt from its finalizer. Found by tests/runtime_diff."""
+
+    @fx.gen
+    def program():
+        child = fx.never.ensuring(fx.interrupt())
+        fiber = yield from fx.for_each([0], lambda _: child, concurrency="unbounded").fork()
+        yield from fx.yield_now()
+        yield from fiber.interrupt()
+        return fiber.id, (yield from fiber.await_exit())
+
+    fiber_id, ex = run(program)
+    assert isinstance(ex, fx.Failure)
+    interruptors = [r.fiber_id for r in ex.cause.reasons if isinstance(r, Interrupt)]
+    assert fiber_id not in interruptors
+    assert len(ex.cause.reasons) == 1
 
 
 def test_an_external_interrupt_keeps_a_recorded_sibling_failure():

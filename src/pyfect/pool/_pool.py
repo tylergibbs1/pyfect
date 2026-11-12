@@ -508,7 +508,7 @@ class Pool[A = Unsubscripted, E = Never]:
 
     def _wake_waiters(self, fiber: Fiber[Any, Any], count: int) -> None:
         state = self.state
-        state.waiters.wake(fiber._scheduler, count, lambda: state.available_head is not None)
+        state.waiters.wake(fiber.dispatcher(), count, lambda: state.available_head is not None)
 
     # --- sizing ---------------------------------------------------------------
 
@@ -561,7 +561,7 @@ class Pool[A = Unsubscripted, E = Never]:
         # done by then; here it resumes later, so if the pool still needs to
         # grow, the borrowers retry and start the next resize.
         if self._target_size() > self._active_size():
-            self.state.waiters.wake_all(fiber._scheduler)
+            self.state.waiters.wake_all(fiber.dispatcher())
         return _VOID
 
     def _resize_loop(self) -> Effect[None]:
@@ -616,7 +616,7 @@ class Pool[A = Unsubscripted, E = Never]:
             # A failed acquisition wakes everyone to retry it. A new item
             # serves as many waiters as it has slots.
             if isinstance(item.exit, Failure):
-                self.state.waiters.wake_all(fiber._scheduler)
+                self.state.waiters.wake_all(fiber.dispatcher())
             else:
                 self._wake_waiters(fiber, self.config.concurrency)
             return _VOID

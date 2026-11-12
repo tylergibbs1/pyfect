@@ -68,21 +68,26 @@ from pyfect._core import (
 )
 from pyfect._interrupt_reason import closed
 from pyfect._metric_ref import FiberRuntimeMetrics
+from pyfect._priority_buckets import PriorityBuckets
 from pyfect._stack_frame import CurrentStackFrame, InterruptorStackTrace, StackFrame, StackTrace
 from pyfect._tracer_ref import CurrentTracer
-from pyfect._wake_tracking import Tracking
+from pyfect._wake_tracking import Tracking, WakeTracker
 from pyfect.cause import Cause
 from pyfect.cause import interrupt as interrupt_cause
 from pyfect.context import Context, Reference, Tag
+from pyfect.duration import Duration
 from pyfect.exit import Exit, Failure, Success
 from pyfect.exit import die as exit_die
 from pyfect.scheduler import (
     BoundScheduler,
+    Cancel,
     CurrentScheduler,
     EffectScheduler,
     MaxOpsBeforeYield,
     PreventSchedulerYield,
     Scheduler,
+    SyncOnlyScheduler,
+    Task,
 )
 
 if TYPE_CHECKING:
@@ -261,6 +266,7 @@ class Fiber(Generic[A_co, E_co]):
         "_async_context",
         "_children",
         "_ctx",
+        "_dispatcher",
         "_exit",
         "_interrupt",
         "_interruptible",
@@ -314,6 +320,7 @@ class Fiber(Generic[A_co, E_co]):
         # it resumes in (Effect's captured async context), or that started
         # it, when its first run is scheduled (see _start).
         self._async_context: contextvars.Context | None = None
+        self._dispatcher: FiberDispatcher | None = None
         self._set_context(context)
         if self._runtime_metrics is not None:
             self._runtime_metrics.record_fiber_start(self._ctx)
@@ -484,15 +491,34 @@ class Fiber(Generic[A_co, E_co]):
         """Whether this thread runs this fiber's run now: one of its fibers
         is running here, or its scheduler is running tasks here. Resumes
         and interrupts from here run the fiber at once."""
-        run = self._run_scheduler
-        return current_run_scheduler() is run or (isinstance(run, Tracking) and run.runs_here())
+        return _runs_here(self._run_scheduler)
+
+    def dispatcher(self) -> Scheduler:
+        """Where this fiber's tasks wait (Effect's ``fiber.currentDispatcher``):
+        the children it forks without starting them, its yields, the wakes
+        it makes. On the run's own scheduler that is the fiber's own
+        ``FiberDispatcher``; a provided scheduler, or ``run_sync``'s, keeps
+        them itself."""
+        scheduler = self._scheduler
+        if scheduler is not self._run_scheduler or isinstance(scheduler, SyncOnlyScheduler):
+            return scheduler
+        found = self._dispatcher
+        if found is None or found.run is not scheduler:
+            found = self._dispatcher = FiberDispatcher(scheduler)
+        return found
 
     def _interruptor_annotations(self) -> Context | None:
         """What an interruption this fiber sends records about it."""
         frame = self._stack_frame
         return None if frame is None else Context.make(InterruptorStackTrace, frame)
 
-    def _start(self, effect: Effect[Any, Any, Any], *, caller_drives: bool = False) -> None:
+    def _start(
+        self,
+        effect: Effect[Any, Any, Any],
+        *,
+        caller_drives: bool = False,
+        on: Scheduler | None = None,
+    ) -> None:
         """Schedule the fiber's first run, in a copy of the caller's
         ``contextvars``, not in the context of whatever drains the scheduler
         then: a scheduler is shared by other callers' runs (a
@@ -500,10 +526,11 @@ class Fiber(Generic[A_co, E_co]):
         not leak into another's. With ``caller_drives`` (``run_sync``,
         ``run_blocking``) the caller drives the scheduler itself before it
         returns, so the run is in the caller's own context, as Effect's
-        synchronous start is."""
+        synchronous start is. A forked fiber's start waits ``on`` its
+        parent's dispatcher, as in Effect."""
         if not caller_drives:
             self._async_context = contextvars.copy_context()
-        self._scheduler.schedule(lambda: self._drive(effect))
+        (on or self._scheduler).schedule(lambda: self._drive(effect))
 
     def _push(self, frame: Frame) -> None:
         self._stack.append(frame)
@@ -617,7 +644,7 @@ class Fiber(Generic[A_co, E_co]):
                 self._ops_on_resume = yielded.ops
                 self._drive(yielded.step)
 
-        self._scheduler.schedule(go_on, priority)
+        self.dispatcher().schedule(go_on, priority)
 
     def _continue(self, frame: Frame, ex: Exit[Any, Any]) -> Step:
         hook = self._tracer_hook
@@ -719,7 +746,7 @@ class Fiber(Generic[A_co, E_co]):
         if start_immediately:
             child._drive_first(effect)
         else:
-            child._start(effect)
+            child._start(effect, on=self.dispatcher())
         return child
 
     def _after_started(self, then: Step) -> Step:
@@ -976,6 +1003,76 @@ def _into_run(context: Context, run_scheduler: Scheduler) -> Context:
         if not found or given is not earlier:
             return in_run
     return in_run.add(CurrentScheduler, run_scheduler)
+
+
+def _runs_here(run: Scheduler) -> bool:
+    """Whether this thread runs ``run`` now: one of its fibers is running
+    here, or it is running its tasks here."""
+    return current_run_scheduler() is run or (isinstance(run, Tracking) and run.runs_here())
+
+
+class FiberDispatcher:
+    """One fiber's tasks on the run's own scheduler, as the dispatcher Effect's
+    default ``MixedScheduler`` makes for each fiber: they run together in one
+    task of the run, queued when the first of them arrives, so a task that
+    comes while that one is pending joins it, ahead of whatever other fibers
+    queued since. The test clock counts each task as it is queued. A task
+    from another thread goes through the run first, so only the run's thread
+    touches the batch."""
+
+    __slots__ = ("_queued", "_tasks", "run")
+
+    def __init__(self, run: Scheduler) -> None:
+        self.run = run
+        self._tasks = PriorityBuckets()
+        self._queued = False  # pragma: no mutate, falsy either way
+
+    def schedule(self, task: Task, priority: int = 0) -> None:
+        run = self.run
+        if not _runs_here(run):
+            run.schedule(lambda: self.schedule(task, priority))
+            return
+        if isinstance(run, Tracking):
+            task = run._tracked(task)
+        self._tasks.schedule_task(task, priority)
+        if not self._queued:
+            self._queued = True
+            run.schedule(self._run_batch)
+
+    def runs_here(self) -> bool:
+        return _runs_here(self.run)
+
+    def _run_batch(self) -> None:
+        self._queued = False  # pragma: no mutate, falsy either way
+        batch = self._tasks.drain()
+        for at, (_, tasks) in enumerate(batch):
+            for i, task in enumerate(tasks):
+                try:
+                    task()
+                except BaseException:
+                    # A KeyboardInterrupt, say: the tasks after it still run.
+                    self._requeue(
+                        [(p, ts[i + 1 :] if j == 0 else ts) for j, (p, ts) in enumerate(batch[at:])]
+                    )
+                    raise
+
+    def _requeue(self, left: list[tuple[int, list[Task]]]) -> None:
+        """Put the tasks a raise cut off ahead of those queued since."""
+        for priority, tasks in left + self._tasks.drain():
+            for task in tasks:
+                self._tasks.schedule_task(task, priority)
+        if self._tasks.buckets and not self._queued:
+            self._queued = True
+            self.run.schedule(self._run_batch)
+
+    def call_later(self, delay: Duration, task: Task, *, daemon: bool = False) -> Cancel:
+        return self.run.call_later(delay, task, daemon=daemon)
+
+    def track(self, tracker: WakeTracker, f: Callable[[], None]) -> None:
+        self.run.track(tracker, f)
+
+    def outside_work(self) -> WakeTracker:
+        return self.run.outside_work()
 
 
 def root_fiber(scheduler: Scheduler, context: Context) -> Fiber[Any, Any]:

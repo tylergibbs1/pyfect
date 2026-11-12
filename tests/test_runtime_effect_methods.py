@@ -229,7 +229,9 @@ def test_restore_inside_an_uninterruptible_region_keeps_the_inner_effect_uninter
     assert isinstance(ex, fx.Failure)
 
 
-def test_yield_now_resumes_before_a_later_yield_at_priority_zero():
+def test_yields_of_sibling_fibers_resume_in_the_order_they_yielded():
+    """Priorities order tasks within one fiber's dispatcher; these are three
+    fibers, so they resume in order (Node: default, zero, minus one)."""
     order: list[str] = []
 
     def yielding(label: str, effect: fx.Effect[None]) -> fx.Effect[None]:
@@ -243,4 +245,4 @@ def test_yield_now_resumes_before_a_later_yield_at_priority_zero():
         discard=True,
     )
     fx.run_blocking(program)
-    assert order == ["minus one", "default", "zero"]
+    assert order == ["default", "zero", "minus one"]

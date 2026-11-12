@@ -21,6 +21,16 @@
   server existed only as `pyfect.socket.ws.make_server` / `layer_server`, where a dogfood app
   looking for Effect's names did not find it; a test now checks that every `NodeSocketServer`
   export is in `pyfect.socket.server`. Found by dogfooding (lantern).
+- A differential tester of the runtime against Effect 4.1.2 (`tests/runtime_diff`). Hypothesis
+  generates programs in a small language (succeed, fail, die, flat maps and catches; forks,
+  joins, interrupts, races and timeouts; resources, scopes and finalizers; sleeps on the test
+  clock, concurrency-limited `for_each`, retries and repeats on schedules; queue, deferred and
+  semaphore handoffs; stream pipelines), each step logging an event. Each program runs in
+  pyfect and, under Node, in Effect, and the two must agree on the exit, the shape of its cause
+  and the order of every event. A checked-in corpus of 506 programs with Effect's answers
+  replays in every pytest run without Node; `python -m runtime_diff` (from `tests/`) grows or
+  refreshes it and surveys fresh programs. The `fuzz` workflow compares 300 fresh programs
+  with Node on every push and 20,000 weekly.
 
 ### Fixed
 
@@ -68,6 +78,18 @@
   while paused, as a paused `ws` socket in Effect, until it is resumed or closed on this side.
   So a short-lived app that reported its spans to a DevTools server and exited before the
   server's `run` took the connection lost them all. Found while porting the DevTools docs.
+- Each fiber queues its tasks in its own dispatcher, as Effect's default scheduler does
+  (`fiber.currentDispatcher`): the children it forks without starting them, its yields and the
+  wakes it makes (queues, semaphores, latches, pools, transactions) run together in one task,
+  so a task joins its fiber's pending batch ahead of tasks other fibers queued since. All of a
+  run's tasks used to wait in one queue, so forks, yields and wakes could run in a different
+  order than in Effect. `yield_now_with` priorities order tasks within one fiber's batch, as in
+  Effect, not across fibers. A test fails if runtime code queues a task on the run's scheduler
+  directly instead of on a fiber's dispatcher. Found by the runtime differential tester.
+- `for_each` with `concurrency="unbounded"` (or any limit above 1) over a single item forks it,
+  as Effect does; it used to run it in place, so the item's own interruption stayed in the
+  cause. Concurrency is resolved once, as Effect's `resolveConcurrency`. Found by the runtime
+  differential tester.
 
 ### Docs
 
@@ -85,6 +107,9 @@
   `server.address` come from (the config's `database` and `host`, not `url`, as in Effect).
 - A DevTools page: the client layers, what the protocol carries, and serving the DevTools side
   on `socket.server.layer_web_socket`.
+- PARITY §4 records an Effect bug not copied: a fiber that ends while interrupted waits for a
+  child that ignores interrupts interruptibly, so its exit becomes the bare interruption and a
+  finalizer's defect is lost. pyfect keeps the exit.
 
 ## 0.6.1 (2026-11-12)
 

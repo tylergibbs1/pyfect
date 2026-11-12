@@ -5,6 +5,11 @@ name: fuzz
 # fuzzes every target for 30 seconds; the weekly run (and a manual one) for 20 minutes,
 # growing a cached corpus between runs. A crash fails the job and is uploaded: minimize it,
 # add it to tests/fuzz/corpus and tests/fuzz/test_regressions.py, then fix it.
+#
+# runtime-differential runs freshly generated programs (tests/runtime_diff) in pyfect and in
+# Effect 4.1.2 under Node, comparing exits, cause shapes and event order: 300 programs per
+# push, 20000 weekly. A difference fails the job with Hypothesis' shrunk program and its seed:
+# add the program to tests/runtime_diff/corpus.json (python -m runtime_diff --add) and fix it.
 
 on:
   push:
@@ -17,6 +22,9 @@ on:
       seconds:
         description: Seconds per target
         default: "1200"
+      programs:
+        description: Generated programs the runtime differential compares
+        default: "20000"
 
 permissions:
   contents: read
@@ -64,3 +72,32 @@ jobs:
           name: fuzz-crashes-${{ matrix.group }}
           path: .fuzz/crashes
           if-no-files-found: ignore
+
+  runtime-differential:
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 330 || 30 }}
+    env:
+      PROGRAMS: ${{ inputs.programs || (github.event_name == 'schedule' && '20000') || '300' }}
+      EFFECT_COMMIT: 506eef143bcc1750ce58920aac1e45da7265d103 # Effect 4.1.2, as ci.yml's
+      PYFECT_EFFECT_REF: ${{ github.workspace }}/.effect
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+
+      - name: Check out Effect 4.1.2
+        run: |
+          git init -q .effect
+          git -C .effect fetch -q --depth 1 https://github.com/Effect-TS/effect.git "$EFFECT_COMMIT"
+          git -C .effect checkout -q FETCH_HEAD
+
+      - name: Install
+        run: uv sync --locked --python 3.13
+
+      - name: Compare generated programs with Effect
+        working-directory: tests
+        run: uv run --no-sync python -m runtime_diff --fresh "$PROGRAMS" --max-leaves 30
