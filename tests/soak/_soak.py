@@ -84,7 +84,7 @@ def _program(state: _State, pem: Pem) -> fx.Effect[None, Any]:
     def main():
         server = yield from HttpServer()
         assert isinstance(server.address, InetAddressV4)
-        base = f"https://localhost:{server.address.port}"
+        base = _http.base_url(server.address)
         client = yield from HttpClient()
         sql = yield from SqlClient()
         yield from sql.unsafe(_data.SCHEMA)

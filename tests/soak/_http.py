@@ -16,6 +16,7 @@ from pyfect.http.client import HttpClientService
 from pyfect.http.error import HttpClientError
 from pyfect.http.server import HttpServer
 from pyfect.http.server_request import HttpServerRequest, ServerRequest
+from pyfect.net.net_address import InetAddressV4
 from pyfect.scope import scoped
 from pyfect.socket import CloseEvent, SocketError, make_web_socket
 from pyfect.socket import ws as ws_platform
@@ -75,6 +76,12 @@ routes = layer.merge(
     router.add("GET", "/ws", scoped(_echo())),
 )
 app = router.serve(routes, disable_logger=True, disable_listen_log=True)
+
+
+def base_url(address: InetAddressV4) -> str:
+    """The server's URL at the address it listens on (a host name may also resolve to an
+    address nobody listens on, see ``test_addresses.py``)."""
+    return f"https://{address}"
 
 
 def server_layer(pem: Pem) -> fx.Layer[Any, Any]:
