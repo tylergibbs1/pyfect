@@ -77,4 +77,40 @@ renamed zone, so `date_time.zone_named("Asia/Kolkata")` is `Asia/Calcutta`, `EST
 `America/Panama`, `Etc/UTC` is `UTC` and `+0530` is `+05:30`; an id ICU doesn't know gives
 `None`.
 
+## Formatting dates
+
+`date_time.intl` is Effect's `DateTime.format`, `formatUtc` and `formatLocal`, which print
+what `Intl.DateTimeFormat` prints under Node. `format` writes a datetime in its own zone,
+`format_utc` in UTC (even with a `time_zone`, as Effect's does) and `format_local` in the
+system's zone or `time_zone`. The options are `Intl`'s: `date_style` and `time_style`, or the
+fields `weekday`, `year`, `month`, `day`, `hour`, `minute` and `second`; mixing a style with a
+field is a `TypeError`, as in `Intl`. With no `locale`, or one ICU lacks, the locale is the
+environment's (`LC_ALL`, `LC_MESSAGES`, `LANG`), as Node's is.
+
+<CodeOutput>
+
+<include meta='title="intl.py"'>../../snippets/schedules/intl.py</include>
+
+<include lang="text">../../snippets/schedules/intl.out</include>
+
+</CodeOutput>
+
+The text is Node's because the work is Node's, ported: V8's option handling, ICU's pattern
+generator, its date formatter and zone names, and its Gregorian, Buddhist and Persian
+calendars, reading the data ICU ships. That data is pinned to one Node: ICU 78.3 and the
+CLDR 48.0 release it is built from, as Node 24.22.1 has them, with ICU's metazone table for
+tz 2026e. A Node with another ICU can print other text for the same date (CLDR changes names
+and patterns between releases), so the pin moves only with a regenerated data file
+(`scripts/gen_intl_cldr.py`) and regenerated answers (`scripts/gen_intl_answers.py`), and
+`tests/oracle/test_intl_differential.py` checks over 33,000 cases against that Node's
+answers.
+
+One known difference remains, and the test checks it still differs:
+
+- **calendar not ported**: a locale asking for a calendar other than Gregorian, Buddhist and
+  Persian with `-u-ca-` (`ja-JP-u-ca-japanese`, `ar-SA-u-ca-islamic-umalqura`,
+  `he-IL-u-ca-hebrew`, `zh-CN-u-ca-chinese`, `en-US-u-ca-roc`, `am-ET-u-ca-ethiopic`,
+  `hi-IN-u-ca-indian`) raises `ValueError`, where `Intl` formats in that calendar. No locale's
+  default calendar is one of them.
+
 Reference: [`pyfect.schedule`](/docs/reference/schedule), [`pyfect.cron`](/docs/reference/cron).

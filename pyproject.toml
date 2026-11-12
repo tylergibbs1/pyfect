@@ -63,9 +63,8 @@ server = [
 http2 = [
     "hypercorn>=0.18",
 ]
-intl = [
-    "babel>=2.18",
-]
+# Deprecated: date_time.intl needs nothing extra now.
+intl = []
 regex = [
     "regex>=2024.11.6",
 ]
