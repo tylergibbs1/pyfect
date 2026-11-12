@@ -64,7 +64,11 @@
   app it serves, so a client that waited for the port got a 503 while a slow layer (telemetry,
   a database pool) was still starting. A WebSocket upgrade waits the same way instead of
   closing with 1013. The test runs on every server built on the shared ASGI listener, and
-  fails if a new one is not added to it. Found by dogfooding (lantern).
+  fails if a new one is not added to it. When the server closes without an app ever having
+  been served, the requests still waiting get an empty 503 at once (Node's `server.close`
+  would wait for them for ever); closing used to take the engine's graceful timeout (about
+  20 s on uvicorn, longer on hypercorn) and log a cancelled task's traceback. Found by
+  dogfooding (lantern).
 - `S.Struct` of a parameterized generic TypedDict (`S.Struct(Body[Inner])`) has the TypedDict's
   keys with the type arguments in place, also as another key's annotation and in
   `S.TaggedStruct`. `get_type_hints` of the alias is empty, so the struct had no keys at all

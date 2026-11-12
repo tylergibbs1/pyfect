@@ -77,12 +77,16 @@ class Dispatch:
     arrives while no app is served waits for one, as a request reaching
     ``NodeHttpServer`` before ``serve`` adds its ``request`` listener stays
     pending: the socket is bound before the app's layers are built, so an
-    open port does not mean the app is ready."""
+    open port does not mean the app is ready. Once the server closes
+    (``close``), no app will come: the requests still waiting, and any later
+    one without an app, get an empty 503 at once, so shutdown never waits for
+    them. (Node's ``server.close`` would wait for such a connection for ever.)"""
 
-    __slots__ = ("_current", "_lock", "_waiting")
+    __slots__ = ("_closed", "_current", "_lock", "_waiting")
 
     def __init__(self) -> None:
         self._current: AsgiHandler | None = None
+        self._closed = False
         self._lock = threading.Lock()
         self._waiting: set[tuple[asyncio.AbstractEventLoop, asyncio.Future[None]]] = set()
 
@@ -90,6 +94,16 @@ class Dispatch:
         """Serve ``handler``, waking the requests waiting for an app."""
         with self._lock:
             self._current = handler
+        self._wake_all()
+
+    def close(self) -> None:
+        """The server is closing: release the requests waiting for an app."""
+        with self._lock:
+            self._closed = True
+        self._wake_all()
+
+    def _wake_all(self) -> None:
+        with self._lock:
             waiting, self._waiting = self._waiting, set()
         for loop, waiter in waiting:
             loop.call_soon_threadsafe(_wake, waiter)
@@ -100,12 +114,15 @@ class Dispatch:
             if self._current is handler:
                 self._current = None
 
-    async def _handler(self) -> AsgiHandler:
+    async def _handler(self) -> AsgiHandler | None:
+        """The app's handler once there is one; ``None`` once closed."""
         loop = asyncio.get_running_loop()
         while True:
             with self._lock:
                 if self._current is not None:
                     return self._current
+                if self._closed:
+                    return None
                 waiter = (loop, loop.create_future())
                 self._waiting.add(waiter)
             try:
@@ -120,7 +137,20 @@ class Dispatch:
             if scope["type"] not in ("http", "websocket"):
                 return  # hypercorn's lifespan: unsupported, so it goes on
             handler = await self._handler()
+        if handler is None:
+            await _unavailable(scope, send)
+            return
         await handler(scope, receive, send)
+
+
+async def _unavailable(scope: Scope, send: Send) -> None:
+    """The answer to a request no app will serve: the server is closing."""
+    if scope["type"] == "http":
+        headers = [(b"connection", b"close"), (b"content-length", b"0")]
+        await send({"type": "http.response.start", "status": 503, "headers": headers})
+        await send({"type": "http.response.body", "body": b""})
+    else:
+        await send({"type": "websocket.close", "code": 1001})
 
 
 def _wake(waiter: asyncio.Future[None]) -> None:
@@ -304,7 +334,10 @@ def make_listener(
             address = inet_address_from_native_unsafe(host, port)
             return make_server(serve=_serve(dispatch, running), address=address)
 
-        return acquire_release(suspend(start), lambda running, _: running.stop()).map(service)
+        def stop(running: Running, _exit: object) -> Effect[None]:
+            return sync(dispatch.close).and_then(running.stop())
+
+        return acquire_release(suspend(start), stop).map(service)
 
     def close(sock: socket.socket, _exit: object) -> Effect[None]:
         return sync(sock.close)
