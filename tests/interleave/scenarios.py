@@ -22,55 +22,9 @@ from pyfect.exit import Exit, Success
 from pyfect.exit import void as exit_void
 from pyfect.testing import TestClock, adjust
 
+from . import scenarios_fibers, scenarios_resources, scenarios_streams, scenarios_sync
 from ._harness import Problems, Scenario, ThreadBody, World
-
-type AnyFiber = fx.Fiber[Any, Any]
-
-
-class Slot[T]:
-    """A value a fiber hands to a simulated thread (or to a check)."""
-
-    def __init__(self) -> None:
-        self.value: T | None = None
-
-    def set(self, value: T) -> T:
-        self.value = value
-        return value
-
-    def get(self) -> T:
-        assert self.value is not None, "read before it was set"
-        return self.value
-
-
-def _interrupt_from_thread(w: World, name: str, target: Slot[AnyFiber]) -> None:
-    """A simulated thread that interrupts ``target`` once it exists."""
-
-    def body() -> ThreadBody:
-        yield lambda: target.value is not None
-        target.get().interrupt_as_unsafe(None)
-
-    w.thread(name, body)
-
-
-def _resource(w: World, name: str) -> fx.Effect[None, Never, scope.Scope]:
-    """Counts ``acquire <name>`` and, once released, ``release <name>``."""
-    return scope.acquire_release(w.bump(f"acquire {name}"), lambda _, __: w.bump(f"release {name}"))
-
-
-def _balanced(w: World, *names: str) -> Callable[[], Problems]:
-    """Each named resource was released exactly as often as acquired, at
-    most once."""
-
-    def check() -> Problems:
-        problems: list[str] = []
-        for name in names:
-            acquired, released = w.counts[f"acquire {name}"], w.counts[f"release {name}"]
-            if acquired > 1 or released != acquired:
-                problems.append(f"{name}: acquired {acquired}, released {released}")
-        return problems
-
-    return check
-
+from ._kit import AnyFiber, Slot, balanced, interrupt_from_thread, resource
 
 # --- Queue -----------------------------------------------------------------------------
 
@@ -99,7 +53,7 @@ def _queue_take_interrupt(w: World) -> None:
         yield from offers.interrupt()
 
     w.fork(main)
-    _interrupt_from_thread(w, "interrupter", second)
+    interrupt_from_thread(w, "interrupter", second)
 
     def check() -> Problems:
         left = queue.get().size_unsafe()
@@ -132,7 +86,7 @@ def _queue_shutdown(w: World) -> None:
         yield from offers.await_exit()
 
     w.fork(main)
-    _interrupt_from_thread(w, "interrupter", taker)
+    interrupt_from_thread(w, "interrupter", taker)
 
     def check() -> Problems:
         if taken != sorted(set(taken)) or not set(taken) <= set(offered):
@@ -178,7 +132,7 @@ def _semaphore(w: World) -> None:
         yield from third.await_exit()
 
     w.fork(main)
-    _interrupt_from_thread(w, "interrupter", second)
+    interrupt_from_thread(w, "interrupter", second)
 
     def check() -> Problems:
         free = sem.get()._free
@@ -228,7 +182,7 @@ def _deferred(w: World) -> None:
         yield from third.await_exit()
 
     w.fork(main)
-    _interrupt_from_thread(w, "interrupter", second)
+    interrupt_from_thread(w, "interrupter", second)
 
     def check() -> Problems:
         succeeded = sorted(name for name, ex in exits.items() if isinstance(ex, Success))
@@ -252,15 +206,15 @@ def _join_interrupt(w: World) -> None:
 
     @fx.gen
     def main():
-        h = holder.set((yield from fx.scoped(_resource(w, "r").and_then(fx.never)).fork()))
+        h = holder.set((yield from fx.scoped(resource(w, "r").and_then(fx.never)).fork()))
         joiner = yield from h.await_exit().map(joined.append).fork()
         yield from fx.yield_now()
         yield from h.interrupt()
         yield from joiner.await_exit()
 
     w.fork(main)
-    _interrupt_from_thread(w, "interrupter", holder)
-    w.check(_balanced(w, "r"))
+    interrupt_from_thread(w, "interrupter", holder)
+    w.check(balanced(w, "r"))
 
     def check() -> Problems:
         if len(joined) != 1 or joined[0] is not holder.get()._exit:
@@ -274,7 +228,7 @@ def _join_interrupt(w: World) -> None:
 
 
 def _side(w: World, name: str, delay: str) -> fx.Effect[str]:
-    return fx.scoped(_resource(w, name).and_then(fx.sleep(delay))).as_(name)
+    return fx.scoped(resource(w, name).and_then(fx.sleep(delay))).as_(name)
 
 
 def _race(w: World) -> None:
@@ -295,8 +249,8 @@ def _race(w: World) -> None:
         yield from all_of.await_exit()
 
     w.fork(main)
-    _interrupt_from_thread(w, "interrupter", racing)
-    w.check(_balanced(w, "a", "b", "c", "d"))
+    interrupt_from_thread(w, "interrupter", racing)
+    w.check(balanced(w, "a", "b", "c", "d"))
 
     def check() -> Problems:
         # ``d`` sleeps less than ``c``, but its sleep may start late (a
@@ -323,7 +277,7 @@ def _for_each(w: World) -> None:
     names = [str(i) for i in range(4)]
 
     def item(name: str) -> fx.Effect[str]:
-        return fx.scoped(_resource(w, name).and_then(fx.yield_now())).as_(name)
+        return fx.scoped(resource(w, name).and_then(fx.yield_now())).as_(name)
 
     @fx.gen
     def main():
@@ -331,8 +285,8 @@ def _for_each(w: World) -> None:
         yield from each.get().await_exit()
 
     w.fork(main)
-    _interrupt_from_thread(w, "interrupter", each)
-    w.check(_balanced(w, *names))
+    interrupt_from_thread(w, "interrupter", each)
+    w.check(balanced(w, *names))
 
     def check() -> Problems:
         ex = each.get()._exit
@@ -376,10 +330,10 @@ def _pool(w: World) -> None:
         yield from borrower.get().await_exit()
 
     w.fork(fx.scoped(in_scope))
-    _interrupt_from_thread(w, "interrupter", borrower)
+    interrupt_from_thread(w, "interrupter", borrower)
 
     def check() -> Problems:
-        return _balanced(w, *(str(i) for i in made))()
+        return balanced(w, *(str(i) for i in made))()
 
     w.check(check)
 
@@ -408,7 +362,7 @@ def _pubsub(w: World) -> None:
         yield from publisher.await_exit()
 
     w.fork(main)
-    _interrupt_from_thread(w, "interrupter", subscriber)
+    interrupt_from_thread(w, "interrupter", subscriber)
 
     def check() -> Problems:
         if seen != sorted(set(seen)) or not set(seen) <= {1, 2, 3}:
@@ -431,7 +385,7 @@ def _scope_close_fork(w: World) -> None:
     def main():
         sc = yield from scope.make()
         forker = (
-            yield from scope.fork_in(fx.scoped(_resource(w, "r").and_then(fx.never)), sc)
+            yield from scope.fork_in(fx.scoped(resource(w, "r").and_then(fx.never)), sc)
             .map(child.set)
             .fork()
         )
@@ -441,7 +395,7 @@ def _scope_close_fork(w: World) -> None:
         yield from child.get().await_exit()
 
     w.fork(main)
-    w.check(_balanced(w, "r"))
+    w.check(balanced(w, "r"))
 
 
 # --- TestClock ---------------------------------------------------------------------------------
@@ -470,7 +424,7 @@ def _test_clock(w: World) -> None:
         yield from third.get().await_exit()
 
     w.fork(main.pipe(fx.provide(TestClock.layer())))
-    _interrupt_from_thread(w, "interrupter", third)
+    interrupt_from_thread(w, "interrupter", third)
 
     def check() -> Problems:
         names = [n for n, _ in woke]
@@ -505,7 +459,7 @@ def _managed_runtime(w: World) -> None:
     runs ``run_sync`` and then disposes it while they may still run. The layer is built
     once and released once, and each run reads its own caller's
     ``contextvars``."""
-    built = layer.effect(Greeting, _resource(w, "layer").as_("hi"))
+    built = layer.effect(Greeting, resource(w, "layer").as_("hi"))
     runtime = fx.ManagedRuntime.make(built)
     runtime._sync = w.scheduler
     reads: list[tuple[str, str]] = []
@@ -542,7 +496,7 @@ def _managed_runtime(w: World) -> None:
     w.thread("callback", calling_back)
     w.thread("blocking", blocking)
     w.thread("dispose", disposing)
-    w.check(_balanced(w, "layer"))
+    w.check(balanced(w, "layer"))
 
     def check() -> Problems:
         wrong = [(caller, seen) for caller, seen in reads if caller != seen]
@@ -688,7 +642,15 @@ BASE = [
     Scenario("contextvars", _contextvars),
     Scenario("cross_thread_resume", _cross_thread_resume),
 ]
+# The primitives' own scenarios, one module per family.
+ALL_BASE = [
+    *BASE,
+    *scenarios_sync.SCENARIOS,
+    *scenarios_resources.SCENARIOS,
+    *scenarios_fibers.SCENARIOS,
+    *scenarios_streams.SCENARIOS,
+]
 # Each also runs with every step a possible pause (as tests/test_decided_results.py
 # sweeps), where most interleavings live.
-SCENARIOS = [variant for base in BASE for variant in (base, base.with_ops(1), base.with_ops(3))]
+SCENARIOS = [variant for base in ALL_BASE for variant in (base, base.with_ops(1), base.with_ops(3))]
 BY_NAME = {s.name: s for s in SCENARIOS}

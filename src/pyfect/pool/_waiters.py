@@ -57,6 +57,20 @@ class PoolWaiters:
     def __contains__(self, waiter: Waiter) -> bool:
         return waiter in self._line
 
+    def is_next(self, waiter: Waiter) -> bool:
+        """Whether ``waiter`` may take an available item now: a newcomer
+        only when the line is empty; a waiter in line (woken, retrying)
+        once nobody asleep is ahead of it, as the wake-ups that came while
+        it was awake skipped it."""
+        if waiter not in self._line:
+            return not self._line
+        for other in self._line:
+            if other is waiter:
+                return True
+            if other.is_sleeping:
+                return False
+        return True
+
     def park(self, waiter: Waiter, resume: Resume) -> None:
         """Sleep until woken. A waiter already in line keeps its place."""
         waiter.resume = resume
