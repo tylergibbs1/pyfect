@@ -16,13 +16,9 @@ versions.
 
 Do not open a public issue, pull request or discussion for a vulnerability.
 
-Report it privately, either way:
-
-- through GitHub's security advisories: open
-  <https://github.com/tylergibbs1/pyfect/security/advisories/new> (Security tab, then
-  "Report a vulnerability"), or
-- by email to **SECURITY-CONTACT-PLACEHOLDER** (the maintainer has not chosen this address
-  yet; until it is filled in, use the advisory form).
+Report it privately through GitHub's private vulnerability reporting: open
+<https://github.com/tylergibbs1/pyfect/security/advisories/new> (Security tab, then
+"Report a vulnerability"). Only the maintainer sees the report.
 
 Include:
 
