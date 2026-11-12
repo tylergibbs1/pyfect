@@ -14,6 +14,7 @@ from zoneinfo import ZoneInfo
 from pyfect.date_time._icu_zones import CANONICAL
 from pyfect.date_time._intl import _pattern
 from pyfect.date_time._intl._data import STYLES, locale_data
+from pyfect.date_time._intl._daylight import is_daylight
 from pyfect.date_time._intl._fields import CalendarName, fields
 from pyfect.date_time._intl._generator import Generator, simple_format, skeleton_of
 from pyfect.date_time._intl._locale import HourChar, Resolved, resolve
@@ -206,8 +207,7 @@ def zone_at(zone: tzinfo, instant: datetime) -> ZoneAt | None:
         icu = CANONICAL.get(key)
         if icu is None:
             return None
-        dst = local.dst()
-        daylight = dst is not None and dst.total_seconds() != 0
+        daylight = is_daylight(zone, instant.astimezone(UTC))
         return ZoneAt("Etc/UTC" if icu == "UTC" else icu, seconds, daylight=daylight)
     if isinstance(zone, timezone) and seconds == 0:
         return ZoneAt("Etc/GMT", 0, daylight=False)

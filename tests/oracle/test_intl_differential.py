@@ -18,7 +18,7 @@ import shutil
 import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, tzinfo
 from pathlib import Path
 from typing import cast
 from zoneinfo import ZoneInfo
@@ -171,3 +171,28 @@ def test_a_zone_read_from_a_file_without_a_name_formats_with_its_offset() -> Non
         zone = ZoneInfo.from_file(file)
     moment = datetime(2024, 3, 15, 12, 4, 6, tzinfo=UTC).astimezone(zone)
     assert intl.format(moment, locale="en-US", time_style="long") == "9:04:06 PM GMT+9"
+
+
+class _IrishMainData(tzinfo):
+    """Europe/Dublin as tz's main data writes it (what Linux ships): summer
+    time is standard, winter time a negative save."""
+
+    def utcoffset(self, dt: datetime | None) -> timedelta:
+        return timedelta(hours=1) if dt is not None and 4 <= dt.month <= 9 else timedelta(0)
+
+    def dst(self, dt: datetime | None) -> timedelta:
+        return timedelta(0) if dt is not None and 4 <= dt.month <= 9 else timedelta(hours=-1)
+
+    def tzname(self, dt: datetime | None) -> str:
+        return "IST" if dt is not None and 4 <= dt.month <= 9 else "GMT"
+
+
+@pytest.mark.parametrize(("month", "daylight"), [(1, False), (7, True)])
+def test_daylight_is_icus_whichever_tz_data_python_reads(month: int, daylight: bool) -> None:
+    # ICU's zones are tz's rearguard data, where Irish summer time is daylight
+    # time (Node: "Irish Standard Time" in July, "Greenwich Mean Time" in
+    # January). The differential test checks the system's data, which is
+    # rearguard on macOS and main on Linux; this checks main data everywhere.
+    from pyfect.date_time._intl._daylight import is_daylight
+
+    assert is_daylight(_IrishMainData(), datetime(2026, month, 15, tzinfo=UTC)) is daylight
