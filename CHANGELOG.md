@@ -31,6 +31,12 @@
   passed verbatim now, as Node's `windowsVerbatimArguments` does. The new Windows CI job runs
   a batch file this way.
 
+### Docs
+
+- http-server.mdx: the `layer_test` client sends every request to the test server, absolute
+  URLs included, with the whole URL as the path (`/http://api.example/graphql`), as Effect's
+  `layerTestClient` does.
+
 ## 0.6.1 (2026-11-12)
 
 ### Added
