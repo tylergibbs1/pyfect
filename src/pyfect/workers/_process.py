@@ -32,6 +32,9 @@ from pyfect.workers._port import (
 )
 
 CHANNEL_ENV = "PYFECT_WORKER_FD"
+PARENT_ENV = "PYFECT_WORKER_PARENT"
+"""The pid of the process that passed the channel: a process another one
+started with the variables inherited reads no pickles from its descriptor."""
 
 _FLUSH_TIMEOUT = 5.0
 """How long a worker process waits at exit for its last replies to be
@@ -93,6 +96,7 @@ class ProcessWorker(WorkerHandle):
         try:
             env = dict(os.environ if self.env is None else self.env)
             env[CHANNEL_ENV] = str(child.fileno())
+            env[PARENT_ENV] = str(os.getpid())
             popen = subprocess.Popen(
                 [self.executable or sys.executable, *self.args],
                 pass_fds=(child.fileno(),),
@@ -142,13 +146,14 @@ _parent: list[_ProcessParent] = []
 
 def current_parent() -> ParentPort | None:
     """The parent of the worker process this code runs in, if any. The
-    channel's variable is taken out of the environment, so processes this
-    one starts do not see it."""
+    channel's variables are taken out of the environment, so processes this
+    one starts do not see them."""
     with _lock:
         if _parent:
             return _parent[0]
         fd = os.environ.pop(CHANNEL_ENV, None)
-        if fd is None:
+        parent_pid = os.environ.pop(PARENT_ENV, None)
+        if fd is None or parent_pid != str(os.getppid()):
             return None
         port = _ProcessParent(socket.socket(fileno=int(fd)))
         _parent.append(port)
