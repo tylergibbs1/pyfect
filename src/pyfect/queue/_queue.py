@@ -21,6 +21,7 @@ from pyfect._core import (
     uninterruptible_mask,
 )
 from pyfect._effect_args import require_effect
+from pyfect._effect_base import Decided
 from pyfect._fiber import FiberDispatcher, current_fiber
 from pyfect._primitives import _SuspendTake
 from pyfect._waiters import WaitList
@@ -39,6 +40,10 @@ type Strategy = Literal["suspend", "dropping", "sliding"]
 
 _TRUE: Effect[bool] = _FromExit(Success(True))
 _FALSE: Effect[bool] = _FromExit(Success(False))
+# An offer's result as Effect's ``offer`` hands it on: an op of its own after
+# the one that added the item, made once, as this is the hot path.
+_ADDED: Exit[bool, Never] = Decided(True)
+_REFUSED: Exit[bool, Never] = Decided(False)
 
 
 class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
@@ -126,7 +131,7 @@ class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
                     resume(_FALSE)
                 return None
 
-        def attempt() -> Effect[bool]:
+        def attempt() -> Effect[bool] | Exit[bool, Never]:
             # As Effect's ``offer``: an item that fits is added in this step,
             # and only a full suspending queue parks the offer. ``acquire``
             # rather than ``with``: this is the hot path, and it is cheaper.
@@ -134,14 +139,14 @@ class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
             lock.acquire()
             try:
                 if self._offer(item):
-                    return _TRUE
+                    return _ADDED
                 if isinstance(self._state, st.Open) and self._strategy == "suspend":
                     return _Callback(register)
-                return _FALSE
+                return _REFUSED
             finally:
                 lock.release()
 
-        return _Suspend(attempt)
+        return _SuspendTake(attempt)
 
     def flush(self) -> Effect[None]:
         """Wake the takers that can go on now, not in a scheduled task."""
@@ -279,12 +284,12 @@ class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
 
         # As Effect's ``take``: an item there is taken in this op; otherwise
         # wait, then take again.
-        def attempt() -> Effect[A, E]:
+        def attempt() -> Effect[A, E] | Exit[A, E]:
             lock = self._lock  # ``acquire`` rather than ``with``, as in ``offer``
             lock.acquire()
             try:
                 ex = self._take()
-                return self._wait_then(1, take) if ex is None else _FromExit(ex)
+                return self._wait_then(1, take) if ex is None else ex
             finally:
                 lock.release()
 

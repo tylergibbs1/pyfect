@@ -52,7 +52,8 @@ class Frame:
     ``succeed_with``, which the loop may pause before."""
 
     __slots__ = ()
-    # ``run_known``'s wrapper sets it: the loop must not pause before it.
+    # ``run_known``'s wrapper of a failure sets it: an interrupt that lands
+    # in a pause before it waits until it has reached its continuation.
     _holds_decided: ClassVar[bool] = False
 
     def _on_success(self, value: Any, fiber: Fiber[Any, Any]) -> Step:
@@ -68,6 +69,17 @@ class HandedOn(Success[Any]):
     counts it as an op, and every ``_INLINE_STEPS``-th one goes back
     through the loop, where the fiber may yield. Only the loop sees it: it
     never becomes a fiber's exit."""
+
+    __slots__ = ()
+
+
+@final
+class Decided(Success[Any]):
+    """A success a step has just claimed (``run_known``), on its way to its
+    continuation as Effect's exit op: the loop counts it as an op and may
+    pause before it, but an interrupt that lands in that pause waits until
+    it has reached its continuation. Only the loop sees it: it never
+    becomes a fiber's exit."""
 
     __slots__ = ()
 

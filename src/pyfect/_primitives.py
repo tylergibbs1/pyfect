@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any, Never, Protocol, cast, final
 
 from pyfect._cause_election import finalizer_cause
 from pyfect._core import Effect, Frame, Step
-from pyfect._effect_base import succeed_with
+from pyfect._effect_base import Decided, succeed_with
 from pyfect.cause import Cause
 from pyfect.cause import die as die_cause
 from pyfect.exit import Exit, Failure, Success
@@ -84,9 +84,10 @@ def run_known(eff: Effect[Any, Any, Any]) -> Step:
     the next op."""
     # ``known_exit``, inlined: this runs for every suspended step.
     if isinstance(eff, _Succeed):
-        return _Decided(Success(eff.value))
+        return Decided(eff.value)
     if isinstance(eff, _FromExit):
-        return _Decided(eff.outcome)
+        outcome = eff.outcome
+        return Decided(outcome.value) if isinstance(outcome, Success) else _Decided(outcome)
     if isinstance(eff, _FailCause):
         return _Decided(Failure(eff.cause))
     return eff
@@ -94,7 +95,7 @@ def run_known(eff: Effect[Any, Any, Any]) -> Step:
 
 @final
 class _Decided(Effect[Any, Any, Any]):
-    """A claimed result on its way to its continuation (``run_known``)."""
+    """A claimed failure on its way to its continuation (``run_known``)."""
 
     __slots__ = ("outcome",)
     _holds_decided = True
@@ -495,19 +496,23 @@ class _GenFrame(Effect[Any, Any, Any]):
 
 @final
 class _SuspendTake[A, E, R](Effect[A, E, R]):
-    """Effect's ``suspendTake``: ``thunk()``, and if that is nothing but its
-    outcome (``known_exit``), that outcome in this same op, so something it
-    took reaches its continuation with no op, and no pause, in between."""
+    """Effect's ``suspendTake``: ``thunk()``, and if that is an outcome (an
+    ``Exit``, or an effect that is nothing but one, ``known_exit``), that
+    outcome in this same op, so something it took reaches its continuation
+    with no op, and no pause, in between. A ``Decided`` exit is Effect's
+    ``suspend`` of an exit instead: the loop counts it as the next op."""
 
     __slots__ = ("thunk",)
 
-    def __init__(self, thunk: Callable[[], Effect[A, E, R]]) -> None:
+    def __init__(self, thunk: Callable[[], Effect[A, E, R] | Exit[A, E]]) -> None:
         self.thunk = thunk
 
     def _step(self, fiber: Fiber[Any, Any]) -> Step:
-        eff = self.thunk()
-        known = known_exit(eff)
-        return eff if known is None else known
+        result = self.thunk()
+        if not isinstance(result, Effect):
+            return result
+        known = known_exit(result)
+        return result if known is None else known
 
 
 @final

@@ -67,7 +67,7 @@ from pyfect._core import (
     _WithFiber,
     run_known,
 )
-from pyfect._effect_base import HandedOn
+from pyfect._effect_base import Decided, HandedOn
 from pyfect._interrupt_reason import closed
 from pyfect._metric_ref import FiberRuntimeMetrics
 from pyfect._primitives import known_exit
@@ -679,7 +679,7 @@ class Fiber(Generic[A_co, E_co]):
                 # Parked or paused: resume in this context, not the waker's.
                 self._async_context = contextvars.copy_context() if parked_in is None else parked_in
 
-    def _loop(self, start: Step) -> None:
+    def _loop(self, start: Step) -> None:  # noqa: PLR0912
         cur: Step = start
         # Ops are counted as Effect's ``currentOpCount``: one per effect
         # stepped, and one per success a frame hands on with
@@ -713,6 +713,11 @@ class Fiber(Generic[A_co, E_co]):
                 except BaseException as exc:
                     cur = self._raised(exc)
             elif isinstance(cur, _EXITS):
+                # A claimed success is Effect's exit op.
+                if type(cur) is Decided:
+                    ops += 1
+                    if ops >= self._ops_budget and self._pause_due(cur, ops):
+                        return
                 if not self._stack:
                     nxt = self._finish(cur)
                     if nxt is None:
@@ -762,12 +767,15 @@ class Fiber(Generic[A_co, E_co]):
         # Effect pauses with ``flatMap(yieldNow, () => cur)``: the resumed
         # run counts that continuation as its first op and ``cur`` as its
         # second. An exit ``cur`` is a frame's ``succeed_with`` at the
-        # inline limit, which Effect hands back to the loop as an op.
+        # inline limit, which Effect hands back to the loop as an op, or a
+        # claimed success, Effect's exit op.
         resumed = 1
-        if isinstance(cur, HandedOn):
+        decided = isinstance(cur, Effect) and cur._holds_decided
+        if isinstance(cur, HandedOn | Decided):
+            # A claimed success is an op too, which the resumed run counts.
+            decided = type(cur) is Decided
             cur = Success(cur.value)
             resumed += 1
-        decided = isinstance(cur, Effect) and cur._holds_decided
         self._queue_yielded(_Yielded(cur, ops=resumed, decided=decided), 0)
         return True
 
@@ -865,7 +873,7 @@ class Fiber(Generic[A_co, E_co]):
 
     def _finish(self, ex: Exit[Any, Any]) -> Step | None:
         """The stack is empty. Interrupt children first; then complete."""
-        if type(ex) is HandedOn:
+        if type(ex) is HandedOn or type(ex) is Decided:
             ex = Success(ex.value)
         elif self._stack_frame is not None and isinstance(ex, Failure):
             ex = self._in_frame(ex, self._stack_frame)

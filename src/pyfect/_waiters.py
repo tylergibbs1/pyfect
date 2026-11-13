@@ -37,6 +37,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from pyfect._core import Effect, _Callback, _Succeed, _Sync
+from pyfect._fiber import current_run_scheduler
 
 if TYPE_CHECKING:
     from pyfect._fiber import Fiber
@@ -57,6 +58,10 @@ class _Waiter:
         self.fiber = fiber
 
 
+_MIXED = object()
+"""A wait list's waiters belong to several runs, or one has no fiber."""
+
+
 def unlocked(lock: Lock, wakes: list[Callable[[], None]]) -> None:
     """Call ``wakes`` with ``lock``, which the caller holds, let go meanwhile: a woken
     fiber of the run on this thread runs at once and may take it."""
@@ -72,8 +77,6 @@ def unlocked(lock: Lock, wakes: list[Callable[[], None]]) -> None:
 
 def of_this_run(fiber: Fiber[Any, Any] | None) -> bool:
     """Whether ``fiber`` belongs to the run of the fiber running on this thread."""
-    from pyfect._fiber import current_run_scheduler
-
     return fiber is not None and fiber._run_scheduler is current_run_scheduler()
 
 
@@ -102,13 +105,16 @@ def wake_soon(task: Callable[[], None]) -> None:
 class WaitList:
     """Fibers waiting on ``lock``'s primitive. Call the notifiers holding ``lock``."""
 
-    __slots__ = ("_lock", "_soon", "_waiters")
+    __slots__ = ("_lock", "_run", "_soon", "_waiters")
 
     def __init__(self, lock: Lock) -> None:
         self._lock = lock
         self._waiters: deque[_Waiter] = deque()
         # Whether a ``notify_ready_soon`` task is pending.
         self._soon = False  # pragma: no mutate, falsy either way
+        # The run every waiter belongs to, or ``_MIXED``: a notifier of that run
+        # has no waiter of another run to wake now, and skips looking for one.
+        self._run: object = _MIXED
 
     def wait(self, ready: Callable[[], bool]) -> Effect[None]:
         """Park until notified, or not at all if ``ready()`` already holds."""
@@ -120,7 +126,13 @@ class WaitList:
                 if ready():
                     resume(_Succeed(None))
                     return None
-                waiter = _Waiter(ready, lambda: resume(_Succeed(None)), current_fiber())
+                fiber = current_fiber()
+                waiter = _Waiter(ready, lambda: resume(_Succeed(None)), fiber)
+                run = _MIXED if fiber is None else fiber._run_scheduler
+                if not self._waiters:
+                    self._run = run
+                elif self._run is not run:
+                    self._run = _MIXED
                 self._waiters.append(waiter)
             return _Sync(lambda: self._discard(waiter))
 
@@ -154,8 +166,9 @@ class WaitList:
         most calls (an offer with no taker) skip."""
         if not self._waiters:
             return
-        foreign = self._take(lambda waiter: not of_this_run(waiter.fiber))
-        unlocked(self._lock, [waiter.wake for waiter in foreign])
+        if self._run is _MIXED or self._run is not current_run_scheduler():
+            foreign = self._take(lambda waiter: not of_this_run(waiter.fiber))
+            unlocked(self._lock, [waiter.wake for waiter in foreign])
         if self._soon or not self._waiters:
             return
         self._soon = True
