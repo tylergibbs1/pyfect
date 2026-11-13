@@ -96,7 +96,7 @@ def wake_soon(task: Callable[[], None]) -> None:
     if fiber is None:
         task()
     else:
-        fiber.dispatcher().schedule(task)
+        fiber._queue(task)
 
 
 class WaitList:
@@ -140,11 +140,12 @@ class WaitList:
         self._waiters = parked
         return ready
 
-    def notify_ready_soon(self, scheduler: Scheduler | None = None) -> None:
-        """``notify_ready`` in a task on ``scheduler``, else as ``wake_soon``;
-        several calls before it runs share it, as Effect's
+    def notify_ready_soon(self, where: Callable[[], Scheduler | None] | None = None) -> None:
+        """``notify_ready`` in a task on the scheduler ``where`` gives, else as
+        ``wake_soon``; several calls before it runs share it, as Effect's
         ``scheduleReleaseTaker``. Waiters of other runs are woken now, through
-        their own runs."""
+        their own runs. ``where`` is asked only when a task is queued, which
+        most calls (an offer with no taker) skip."""
         if not self._waiters:
             return
         foreign = self._take(lambda waiter: not of_this_run(waiter.fiber))
@@ -152,6 +153,7 @@ class WaitList:
         if self._soon or not self._waiters:
             return
         self._soon = True
+        scheduler = None if where is None else where()
 
         def flush() -> None:
             with self._lock:
@@ -174,7 +176,7 @@ class WaitList:
             # whichever fiber offers: under a ``run_sync`` the root flushes it.
             fiber._scheduler.schedule_as_root(flush)
         else:
-            fiber.dispatcher().schedule(flush)
+            fiber._queue(flush)
 
     def notify_all(self) -> None:
         waiters, self._waiters = self._waiters, deque()

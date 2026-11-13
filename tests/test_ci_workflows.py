@@ -30,7 +30,10 @@ def test_ci_runs_the_check_in_claude_md():
 
 
 def test_ci_gates_benchmarks_and_free_threaded():
-    assert "gate.py" in _job("ci.yml", "benchmarks")
+    job = _job("ci.yml", "benchmarks")
+    assert "gate.py" in job
+    # The comparison with the branch base needs the history to find it.
+    assert "python compare.py\n" in job and "fetch-depth: 0" in job
     assert "3.14t" in _job("ci.yml", "free-threaded")
 
 

@@ -231,7 +231,7 @@ class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
                 case st.Open(takers=takers, offers=offers, awaiters=awaiters):
                     self._state = st.Closing(takers, offers, awaiters, cause)
                     # A batch take waiting for its minimum can now drain the rest.
-                    takers.notify_ready_soon(self._waker())
+                    takers.notify_ready_soon(self._waker)
                     self._finish_if_drained()
                     return True
                 case st.Closing() | st.Done():
@@ -457,7 +457,7 @@ class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
         if now:
             takers.notify_ready()
         else:
-            takers.notify_ready_soon(self._waker())
+            takers.notify_ready_soon(self._waker)
 
     def _shut(self, cause: Cause[E], offers: deque[st.Offer[A]]) -> None:
         self._items.clear()

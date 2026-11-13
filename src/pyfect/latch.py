@@ -133,13 +133,15 @@ class Latch:
         """Hand the waiters of this run to a flush task on ``fiber``'s
         dispatcher (Effect's latch); the waiters of other runs, returned, are
         resumed now, through their own runs, which do not wait on this one."""
+        if not self._waiters:
+            return []
         here = [parked for parked in self._waiters if of_this_run(parked.fiber)]
         now = [parked for parked in self._waiters if not of_this_run(parked.fiber)]
         self._waiters = []
         if here:
             if self._scheduled is None:
                 self._scheduled = here
-                fiber.dispatcher().schedule(self._flush_scheduled)
+                fiber._queue(self._flush_scheduled)
             else:
                 self._scheduled.extend(here)
         return now
