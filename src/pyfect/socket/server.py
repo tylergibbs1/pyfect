@@ -37,7 +37,7 @@ from pyfect.socket._connection import Connection
 from pyfect.socket._loop import get_loop, run
 from pyfect.socket._net import from_connection
 from pyfect.socket._socket import PemInput, TlsUpgradeOptions
-from pyfect.socket._tls import server_context
+from pyfect.socket._tls import ServerSide, server_context
 
 if TYPE_CHECKING:
     # The websockets extra is imported only by ``make_web_socket``; ruff misses the
@@ -154,7 +154,7 @@ class _NetIncoming:
         opened = acquire_release(
             succeed(self._conn), lambda c, _: sync(lambda: c.close(graceful=True))
         )
-        socket = from_connection(opened, tls_server=True)
+        socket = from_connection(opened, upgrade_side=ServerSide())
         return handler(socket).as_void().catch_cause(report_unhandled)
 
     def release(self) -> None:

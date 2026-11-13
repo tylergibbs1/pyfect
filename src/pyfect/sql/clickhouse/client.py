@@ -163,7 +163,13 @@ class ClickhouseClient(Tag[ClickhouseClientService], key="@effect/sql-clickhouse
     """The ClickHouse client service."""
 
 
-_escape = default_escape('"')
+_quote = default_escape('"')
+
+
+def _escape(name: str) -> str:
+    """A ``"quoted"`` name. ClickHouse reads a backslash in a quoted name as an escape
+    (Effect's client leaves it alone), so it is doubled before the quotes are."""
+    return _quote(name.replace("\\", "\\\\"))
 
 
 def _placeholder_type(value: object) -> str:

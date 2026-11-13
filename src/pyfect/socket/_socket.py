@@ -34,7 +34,9 @@ type PemInput = str | bytes
 class TlsUpgradeOptions:
     """How to upgrade a connection to TLS. ``key`` and ``cert`` (PEM) go
     together; a server needs both. ``servername`` is the client's SNI name
-    and the name its certificate check expects."""
+    and the name its certificate check expects; without it, a client checks
+    the host name it connected to, else ``localhost`` (for an IP literal, a
+    Unix or an adopted socket), as Node does."""
 
     servername: str | None = None
     key: Redacted[PemInput] | Sequence[Redacted[PemInput]] | None = None

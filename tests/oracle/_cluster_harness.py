@@ -76,6 +76,7 @@ from pyfect.socket._connection import Connection
 from pyfect.socket._errors import read_error
 from pyfect.socket._loop import get_loop
 from pyfect.socket._net import connecting, from_connection
+from pyfect.socket._tls import client_side
 from pyfect.socket.server import SocketServer
 from pyfect.sql.client import SqlClient, SqlClientService
 from pyfect.sql.connection import Connection as SqlConnection
@@ -468,7 +469,9 @@ def tracked_client_protocol(
                 )
                 return connection
 
-            socket = from_connection(open_tracked, open_timeout="1 second")
+            socket = from_connection(
+                open_tracked, upgrade_side=client_side(None), open_timeout="1 second"
+            )
             return (
                 rpc_client.make_protocol_socket()
                 .pipe(fx.provide_service(Socket, socket))

@@ -62,6 +62,7 @@ from pyfect.socket import (
 )
 from pyfect.socket._connection import Connection
 from pyfect.socket._net import from_connection
+from pyfect.socket._tls import client_side
 
 FIXTURES = Path(__file__).parent / "fixtures" / "tls"
 CERT = (FIXTURES / "cert.pem").read_text()
@@ -548,9 +549,9 @@ def test_batches_synchronous_duplex_drains_and_completes_in_order(chunk_size: fl
     conn.eof_received()
     opened: Effect[Connection, SocketError, Scope] = succeed(conn)
     sock = (
-        from_connection(opened)
+        from_connection(opened, upgrade_side=client_side(None))
         if chunk_size is None
-        else from_connection(opened, chunk_size=chunk_size)
+        else from_connection(opened, upgrade_side=client_side(None), chunk_size=chunk_size)
     )
     reader = yield from sock.reader
     limit = len(data) if chunk_size == math.inf else int(chunk_size or 4096)

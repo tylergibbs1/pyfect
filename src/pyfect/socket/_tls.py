@@ -5,10 +5,12 @@ asks for a client certificate when ``request_cert`` is set."""
 
 from __future__ import annotations
 
+import ipaddress
 import os
 import ssl
 import tempfile
 from collections.abc import Sequence
+from dataclasses import dataclass
 
 from pyfect import redacted
 from pyfect.redacted import Redacted
@@ -16,7 +18,36 @@ from pyfect.socket._socket import PemInput, TlsUpgradeOptions
 
 DEFAULT_SERVERNAME = "localhost"
 """The name a client checks the certificate against without a
-``servername`` (Node's default ``host``)."""
+``servername`` or a connected host name (Node's default ``host``)."""
+
+
+@dataclass(frozen=True, slots=True)
+class ClientSide:
+    """A socket whose TLS upgrades are clients checking the certificate
+    against ``servername``, else ``host``. Make one with ``client_side``."""
+
+    host: str
+
+
+@dataclass(frozen=True, slots=True)
+class ServerSide:
+    """A socket whose TLS upgrades take the server side."""
+
+
+type UpgradeSide = ClientSide | ServerSide
+
+
+def client_side(host: str | None) -> ClientSide:
+    """The client side of a socket connected to ``host`` (``None``: a Unix or
+    adopted socket). As Node records ``socket._host`` only for a name it looked
+    up, an IP literal falls back to ``localhost`` too."""
+    if host is None:
+        return ClientSide(DEFAULT_SERVERNAME)
+    try:
+        ipaddress.ip_address(host)
+    except ValueError:
+        return ClientSide(host)
+    return ClientSide(DEFAULT_SERVERNAME)
 
 
 def _pem(value: PemInput) -> str:

@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.6.3 (unreleased)
+## 0.6.4 (unreleased)
 
 ### Deprecated
 
@@ -49,6 +49,21 @@
 - `retry_transient` reads a `Retry-After` HTTP date against the schedule's clock in epoch
   milliseconds, as Effect's `retryAfterOf(input, now)`. It multiplied the time by 1000 first, so
   a date in the future read as long past and the retry did not wait for it.
+
+## 0.6.3 (2026-11-13)
+
+### Fixed
+
+- `RpcGroupWith[M]` wraps every procedure of the group in `M`, as Effect's
+  `RpcGroup.middleware` does: those it inherits from merged groups
+  (`class Api(Public, RpcGroupWith[M])`) and those declared in its subclasses. They were
+  served without the group middleware, on the server and the client, while pyright typed
+  them as wrapped, so an app relying on a group middleware for authentication left those
+  procedures open: upgrade. `Group.rpcs` is now the one source of a group's procedures, with
+  the middleware applied, and each RPC attribute of a group class reads it, so the procedure a
+  handler is given for is the one served. `RpcGroupWith[A | B]` wraps in `A` then `B` (a
+  union was kept as one invalid middleware), and a group that is two different
+  `RpcGroupWith`s, which pyright refuses, is a `TypeError`.
 - `json_patch.get` gives `[]` for two NaN floats that are different objects (`inf - inf` and
   `inf * 0`), as Effect's `Object.is` does; it gave a `replace`. Numbers are compared by
   `pyfect._js.same_json_value`, and `tests/test_object_is_guard.py` keeps hand-written sign
@@ -70,6 +85,55 @@
   shutdown waited for it. Once both sides have ended, the connection closes (after `ws`'s 30
   second `closeTimeout` if the client never ends its side), and the handler is interrupted as
   a client abort. Found by dogfooding (stockroom).
+- `uvicorn_server` no longer trusts `X-Forwarded-For` and `X-Forwarded-Proto`: it sets
+  uvicorn's `proxy_headers` to `False`, so a request's `remote_address`, `peer_address` and URL
+  scheme are the socket's, as with `live_server`, `hypercorn_server` and Effect's Node server.
+  uvicorn's default took them from any peer in `FORWARDED_ALLOW_IPS` (loopback unless set),
+  ahead of the app's own `x_forwarded_headers`. To trust a proxy, use `x_forwarded_headers`
+  with its addresses, or opt back in to uvicorn's handling with
+  `uvicorn_server.layer(config={"proxy_headers": True, "forwarded_allow_ips": ...})`.
+  `tests/test_server_transport_peer.py` checks every server adapter.
+- A client TLS upgrade (`reader.upgrade`) on a `make_net` socket without a `servername`
+  checks the server certificate against the host it connected to, as Node's `tls.connect`
+  under Effect's `NodeSocket` does and as `make_tls` already did. It checked `localhost`, so a
+  certificate issued for `localhost` was accepted for any host. For an IP literal, a Unix or an
+  adopted socket the name is still `localhost`, as in Node. The side a socket upgrades as (a
+  server, or a client with its host) is now required where sockets are built, so a new kind of
+  socket cannot leave it out.
+- `console_json`, `format_json`, OpenTelemetry span events, log records and attributes, the
+  OTLP exporters and the DevTools client hide what `CurrentRedactedNames` names in `Headers`,
+  `UrlParams`, requests, responses and HTTP client errors, as `console_pretty` and
+  `console_logfmt` did for errors. Their JSON walked a value's entries, fields or exception
+  attributes before its own `to_json`, so logging an HTTP error or request (for example with
+  `catch_all(log_error)`) wrote authorization, cookie and URL signature values, and the
+  underlying httpx request, as they were. As in Effect's `formatJson` and `format`, a value's
+  redacted form (`Redactable`, here `__redacted__`) and then its own `to_json` come first,
+  wherever it is nested; `pyfect._json_text.stringify` writes a value's `to_json` before its
+  mapping entries too, as `JSON.stringify` calls `toJSON`. `pretty` and `logfmt` now also redact
+  `Headers` and `UrlParams` logged directly. `tests/test_log_redaction.py` logs each redacting
+  type through every logger and exporter, and `tests/test_log_redaction_guard.py` keeps sinks
+  from walking values themselves and every type that redacts giving its redacted form.
+- Security: ClickHouse names could end their quotes early. A name given to `sql.identifier`,
+  a key of a record given to `sql.insert` or `sql.update`, or the column of `sql.in_` was
+  quoted by doubling `"` only, but ClickHouse reads a backslash in a quoted name as an escape,
+  so a name holding a backslash could close the quotes and the rest of it ran as SQL.
+  Backslashes are now doubled too. Effect's ClickHouse client quotes names the same unsafe way;
+  pyfect deliberately differs here. Apps that pass user input as names on ClickHouse should
+  upgrade.
+- Security: MySQL values written into the statement text could end their literal early when the
+  session's `sql_mode` has `NO_BACKSLASH_ESCAPES`. That covers `.stream`, `.unprepared` and every
+  statement under `disable_prepared_statements=True`. Text was written for the session's mode
+  only for a top-level `str`: `bytes`, the items of a `tuple`, and values of other types
+  written as text (a `UUID`, an enum, any object) were always backslash-escaped, which that
+  mode reads as plain text, so the rest of the value ran as SQL. Every value holding text is now
+  written for the session's mode, and bytes as `X'hex'`, as mysql2 writes a Buffer. Apps that
+  bind user input on these paths against a server in that mode should upgrade.
+- `tests/oracle/test_sql_hostile_round_trip.py` round-trips generated names and values full of
+  quotes, backslashes, comment markers, NUL and other Unicode through `sql.identifier`,
+  `sql.insert` / `sql.update` keys, `sql.in_` and every binding path (prepared, unprepared,
+  stream) on a real server of each dialect (PostgreSQL, MySQL in each of its quoting modes, SQL
+  Server, SQLite, libSQL, ClickHouse, and D1 on its SQLite stand-in), and asserts each comes back
+  unchanged with no other column or row.
 
 ### Docs
 
