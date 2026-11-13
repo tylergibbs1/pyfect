@@ -180,7 +180,7 @@ _SCHEDULE_BOTH: dict[str, Spelling] = dict.fromkeys(("jittered", "passthrough"),
 SCHEDULE: dict[str, Spelling] = _SCHEDULE_METHODS | _SCHEDULE_BOTH
 
 # Not combinators: ``pipe`` itself, and the frame flag every effect carries.
-_NOT_COMBINATORS = frozenset({"pipe", "claims"})
+_NOT_COMBINATORS = frozenset({"pipe"})
 
 
 def _methods(cls: type) -> set[str]:

@@ -65,8 +65,6 @@ class _GiveBackOnFailure(Frame):
     as Effect's ``take`` does."""
 
     __slots__ = ("armed", "release")
-    # Right below the claim: the permits reach the caller with no pause.
-    claims = True
 
     def __init__(self, release: Callable[[], object]) -> None:
         self.release = release

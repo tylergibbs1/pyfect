@@ -731,7 +731,12 @@ def _retry_spaced(w: World) -> None:
             ex = _exit_of(fiber)
             if times != expected[: len(times)]:
                 problems.append(f"{name} ran at {times}")
-            if isinstance(ex, Failure) and _reasons(ex.cause) == [Fail("e")]:
+            # An interrupt landing as the last failure leaves the fiber is
+            # added to it, as Effect's failure exits add a pending one.
+            failed = isinstance(ex, Failure) and [
+                r for r in _reasons(ex.cause) if not isinstance(r, tuple)
+            ] == [Fail("e")]
+            if failed:
                 if times != expected:
                     problems.append(f"{name} gave up after {times}")
             elif not _interrupted_only(ex):

@@ -36,7 +36,7 @@ class CountingScheduler:
 
 def _two_workers(log: list[str]) -> fx.Effect[None]:
     def worker(name: str) -> fx.Effect[None]:
-        return fx.for_each(range(3), lambda i: fx.sync(lambda: log.append(f"{name}{i}"))).as_void()
+        return fx.for_each(range(6), lambda i: fx.sync(lambda: log.append(f"{name}{i}"))).as_void()
 
     @fx.gen
     def program():
@@ -48,7 +48,10 @@ def _two_workers(log: list[str]) -> fx.Effect[None]:
     return program
 
 
-_SEQUENTIAL = ["a0", "a1", "a2", "b0", "b1", "b2"]
+_SEQUENTIAL = [f"{name}{i}" for name in "ab" for i in range(6)]
+# Effect 4.1.2's order for the same program under ``MaxOpsBeforeYield`` 1
+# (run as 3, the smallest budget Effect does not livelock under).
+_INTERLEAVED = ["a0", "a1", "a2", "b0", "a3", "b1", "a4", "b2", "a5", "b3", "b4", "b5"]
 
 
 def test_the_run_functions_provide_the_scheduler_they_run_on():
@@ -76,8 +79,7 @@ def test_a_provided_scheduler_runs_the_tasks_of_that_effect_and_its_children():
 def test_a_provided_budget_makes_fibers_yield_to_each_other():
     log: list[str] = []
     yield from _two_workers(log).pipe(fx.provide_service(fx.MaxOpsBeforeYield, 1))
-    assert sorted(log) == _SEQUENTIAL
-    assert log != _SEQUENTIAL
+    assert log == _INTERLEAVED
 
 
 @testing.effect
@@ -93,7 +95,7 @@ def test_the_budget_returns_to_the_outer_one_after_the_effect():
     outer: list[str] = []
     yield from _two_workers(inner).pipe(fx.provide_service(fx.MaxOpsBeforeYield, 1))
     yield from _two_workers(outer)
-    assert inner != _SEQUENTIAL
+    assert inner == _INTERLEAVED
     assert outer == _SEQUENTIAL
 
 

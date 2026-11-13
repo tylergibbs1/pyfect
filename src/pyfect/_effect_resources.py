@@ -15,6 +15,7 @@ from pyfect._cause_election import finalizer_cause
 from pyfect._effect_args import require_effect
 from pyfect._effect_base import A_co, E_co, EffectBase, R_co, Step, as_effect
 from pyfect.cause import Cause
+from pyfect.cause import die as die_cause
 from pyfect.exit import Exit, Failure, Success
 from pyfect.result import Ok, Result
 
@@ -42,17 +43,14 @@ class ResourceMethods(EffectBase[A_co, E_co, R_co]):
         stays as interruptible as the fiber is: ``f`` is still called, but an
         interrupted fiber does not run the effect it returns."""
 
-        def run(ex: Exit[A_co, E_co]) -> Effect[object, E2, R2]:
-            after = f(ex)
-            return _core._Succeed(None) if after is None else after
+        def finish(ex: Exit[A_co, E_co]) -> Step:
+            # As Effect's ``OnExit`` frame: no finalizer hands ``ex`` straight on.
+            after = _call_user_now(f, ex)
+            return _core._FromExit(ex) if after is None else _run_finalizer(after, ex)
 
         effect = as_effect(self)
         if not interruptible:
-            return _on_exit(effect, run)
-
-        def finish(ex: Exit[A_co, E_co]) -> Step:
-            return _run_finalizer(run(ex), ex)
-
+            return _core._OnExit(effect, finish)
         return _core._MatchCause(effect, lambda c: finish(Failure(c)), lambda a: finish(Success(a)))
 
     def ensuring[R2 = Never](
@@ -152,22 +150,40 @@ def _on_exit[A, E, R, E2, R2](
 ) -> Effect[A, E | E2, R | R2]:
     """Run ``f(exit)`` uninterruptibly after ``eff``; a failure of ``f``
     adds its cause to the result."""
-    return _core._OnExit(eff, lambda ex: _run_finalizer(_call_user(f, ex), ex))
+    return _core._OnExit(eff, lambda ex: _run_finalizer(_call_user_now(f, ex), ex))
 
 
 def _call_user[*Ts, A, E, R](f: Callable[[*Ts], Effect[A, E, R]], *args: *Ts) -> Effect[A, E, R]:
     """Call user code when the effect runs, not when it is built. A raise
     then becomes a defect at that point of the program, inside whatever
     finalizer or region surrounds it. Resource and finalizer combinators
-    call every user callback through this."""
+    call every user callback through this, or through ``_call_user_now``."""
     return _core._Suspend(lambda: f(*args))
 
 
+def _call_user_now[*Ts, T](f: Callable[[*Ts], T], *args: *Ts) -> T | Effect[Never, Any]:
+    """``_call_user`` for a frame that is already running, which calls user
+    code at once, as Effect's frames do (no op of its own): a raise is a
+    defect right here. Ctrl-C goes on to the loop (``Fiber._raised``)."""
+    try:
+        return f(*args)
+    except KeyboardInterrupt:
+        raise
+    except BaseException as exc:
+        return _core._FailCause(die_cause(exc))
+
+
 def _run_finalizer(finalizer: Effect[object, Any, Any], ex: Exit[Any, Any]) -> Step:
-    """Run ``finalizer``, then end with ``ex``. A failing finalizer adds
-    its cause to the result."""
+    """Run ``finalizer``, then end with ``ex`` (Effect's ``OnExit`` frame:
+    ``flatMap(finalizer, () => exit)``, the finalizer's cause combined with
+    a failed ``ex``'s by ``combineFinalizerCause``)."""
+    if isinstance(ex, Failure):
 
-    def after_failure(fin_cause: Cause[Any]) -> Effect[Any, Any, Any]:
-        return _core._FailCause(finalizer_cause(ex, fin_cause))
+        def after_failure(fin_cause: Cause[Any]) -> Effect[Any, Any, Any]:
+            return _core._FailCause(finalizer_cause(ex, fin_cause))
 
-    return _core._MatchCause(finalizer, after_failure, lambda _: _core._FromExit(ex))
+        finalizer = _core._MatchCause(finalizer, after_failure, None)
+    return _core._FlatMap(finalizer, lambda _: _core._FromExit(ex))
+
+
+__all__ = ["ResourceMethods", "_call_user", "_call_user_now", "_on_exit", "_run_finalizer"]

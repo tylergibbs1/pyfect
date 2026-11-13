@@ -43,6 +43,7 @@ from pyfect._effect_args import require_effect
 from pyfect._fiber import Fiber, current_run_scheduler
 from pyfect._fn import Gen, fn, fn_untraced, fn_untraced_eager
 from pyfect._os_wait import os_wait
+from pyfect._primitives import _While
 from pyfect._root import loop_running_here, run_loop
 from pyfect.cause import Cause
 from pyfect.cause import die as die_cause
@@ -213,17 +214,7 @@ def while_loop[A, E = Never, R = Never](
 ) -> Effect[None, E, R]:
     """Run ``body`` while ``while_()`` holds, giving each value to ``step``;
     the stack does not grow."""
-
-    def loop() -> Effect[None, E, R]:
-        if not while_():
-            return _Succeed(None)
-        return body().flat_map(_after)
-
-    def _after(a: A) -> Effect[None, E, R]:
-        step(a)
-        return _Suspend(loop)
-
-    return _Suspend(loop)
+    return _While(while_, body, step)
 
 
 def _js_falsy(value: object) -> bool:

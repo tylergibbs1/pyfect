@@ -123,10 +123,12 @@ class Effect(
         return _FlatMap(self, lambda a: _Map(f(a), lambda _: a))
 
     def as_[B](self, value: B) -> Effect[B, E_co, R_co]:
-        return _Map(self, lambda _: value)
+        # Effect's ``as`` continues with ``succeed(value)``, an op of its own.
+        done = _Succeed(value)
+        return _FlatMap(self, lambda _: done)
 
     def as_void(self) -> Effect[None, E_co, R_co]:
-        return _Map(self, _to_none)
+        return _FlatMap(self, _to_void)
 
     def zip[B, E2 = Never, R2 = Never](
         self, that: Effect[B, E2, R2], *, concurrent: bool = False
@@ -283,6 +285,10 @@ class Effect(
         return self.filter_map_or_else(filter, lambda x: _fail(or_fail_with(x)))
 
 
+def _to_void(_: object) -> Effect[None]:
+    return _VOID
+
+
 def _to_none(_: object) -> None:
     return None
 
@@ -329,6 +335,8 @@ from pyfect._primitives import (  # noqa: E402
     run_known,
     uninterruptible_mask,
 )
+
+_VOID: Effect[None] = _Succeed(None)
 
 __all__ = [
     "SUSPEND",

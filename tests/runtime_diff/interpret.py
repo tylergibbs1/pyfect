@@ -439,13 +439,9 @@ class _Run:
         @fx.gen
         def go() -> Generator[Eff, Any, object]:
             queue = yield from fx.Queue[int].bounded(capacity)
-            producer = (
-                yield from fx.for_each(
-                    range(items), lambda i: queue.offer(i).and_then(at("offered", i))
-                )
-                .as_void()
-                .fork()
-            )
+            producer = yield from fx.for_each(
+                range(items), lambda i: queue.offer(i).and_then(at("offered", i)), discard=True
+            ).fork()
 
             def take(_: int) -> Eff:
                 return queue.take().tap(lambda v: at("took", v))
@@ -490,14 +486,19 @@ class _Run:
         return go
 
 
-def answer(program: Expr) -> Json:
-    """Run ``program`` as the oracle does and answer as it does."""
+def answer(program: Expr, budget: int) -> Json:
+    """Run ``program`` under ``MaxOpsBeforeYield`` ``budget`` as the oracle
+    does and answer as it does."""
     run = _Run()
 
     @fx.gen
     def main() -> Generator[Eff, Any, Json]:
         # Started by clock wakes, so the test clock's adjust waits for all of their work.
-        fiber = yield from fx.sleep(_millis(1)).and_then(run.run(program, "")).fork_daemon()
+        # Only the program runs under the budget: the harness and the test clock never yield.
+        budgeted = fx.sleep(_millis(1)).and_then(run.run(program, ""))
+        fiber = yield from budgeted.pipe(
+            fx.provide_service(fx.MaxOpsBeforeYield, budget)
+        ).fork_daemon()
         yield from testing.adjust("1 hour")
         stuck = fiber.poll_unsafe() is None
         if stuck:

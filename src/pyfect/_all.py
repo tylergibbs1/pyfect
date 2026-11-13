@@ -12,7 +12,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from typing import Any, Literal, Never, overload
 
-from pyfect._concurrency import Concurrency, for_each
+from pyfect._concurrency import Concurrency, _as_is, for_each_into
 from pyfect._core import Effect, _Suspend
 from pyfect._effect_args import require_effects
 from pyfect.result import Result
@@ -170,8 +170,7 @@ def all(
 ) -> Effect[Any, Any, Any]:
     """Run effects and collect their results as a tuple, in order."""
     require_effects(effects, "effects")
-    collected = for_each(effects, _step_for(mode), concurrency=concurrency)
-    return collected.as_void() if discard else collected.map(tuple)
+    return for_each_into(effects, _step_for(mode), concurrency, None if discard else tuple)
 
 
 @overload
@@ -218,14 +217,16 @@ def all_dict(
     effect runs."""
     step = _step_for(mode)
 
-    def start() -> Effect[Any, Any, Any]:
-        keys = list(effects)
-        collected = for_each([effects[k] for k in keys], step, concurrency=concurrency)
-        if discard:
-            return collected.as_void()
-        return collected.map(lambda values: dict(zip(keys, values, strict=True)))
+    # As Effect's ``all`` of a record: the values, discarded, or each value
+    # paired with its key inside its own effect.
+    if discard:
+        return for_each_into(effects.values(), step, concurrency, None)
 
-    return _Suspend(start)
+    def keyed(entry: tuple[Any, Effect[Any, Any, Any]]) -> Effect[Any, Any, Any]:
+        key, eff = entry
+        return step(eff).map(lambda value: (key, value))
+
+    return _Suspend(lambda: for_each_into(effects.items(), keyed, concurrency, _as_is).map(dict))
 
 
 def _step_for(

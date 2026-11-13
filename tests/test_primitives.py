@@ -341,3 +341,25 @@ def test_a_queue_taker_paused_before_it_parks_still_sees_the_offer():
         for _ in range(50):
             yield from fx.yield_now()
         assert taker.poll_unsafe() is not None, budget
+
+
+def test_an_uninterruptible_region_is_uninterruptible_again_after_an_interruptible_mask():
+    done: list[str] = []
+
+    @fx.gen
+    def program():
+        started = yield from fx.Deferred[None].make()
+        body = (
+            fx.interruptible_mask(lambda _: fx.void)
+            .and_then(started.succeed(None))
+            .and_then(fx.yield_now())
+            .and_then(fx.sync(lambda: done.append("after")))
+        )
+        child = yield from body.uninterruptible().fork()
+        yield from started.wait()
+        yield from child.interrupt()
+        return (yield from child.await_exit())
+
+    exit_ = run(program)
+    assert done == ["after"]
+    assert isinstance(exit_, fx.exit.Failure)

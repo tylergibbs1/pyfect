@@ -57,6 +57,7 @@ from pyfect.testing._clock import (
     adjust,
     set_time,
     test_clock,
+    test_clock_with,
     with_live,
 )
 from pyfect.testing._console import (
@@ -111,6 +112,7 @@ __all__ = [
     "run_test_exit",
     "set_time",
     "test_clock",
+    "test_clock_with",
     "test_console",
     "with_live",
 ]

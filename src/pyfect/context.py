@@ -43,9 +43,8 @@ from typing import (
     overload,
 )
 
-from pyfect._core import Effect, Step
+from pyfect._core import Effect, Step, _FailCause, _Succeed
 from pyfect.cause import Cause, Die
-from pyfect.exit import Failure, Success
 from pyfect.option import Option, Some
 
 if TYPE_CHECKING:
@@ -82,10 +81,12 @@ class ServiceEffect(Effect[S_inv, Never, T_co]):
         self.tag = tag
 
     def _step(self, fiber: Fiber[Any, Any]) -> Step:
+        # Effect's service key steps to ``exitSucceed(service)``, an op of
+        # its own; a missing one throws, which its loop makes ``exitDie``.
         found, value = fiber._context.lookup(self.tag)
         if found:
-            return Success(value)
-        return Failure(Cause((Die(MissingServiceError(self.tag.key)),)))
+            return _Succeed(value)
+        return _FailCause(Cause((Die(MissingServiceError(self.tag.key)),)))
 
 
 def _require_base_parents(cls: type[Tag[Any]]) -> None:

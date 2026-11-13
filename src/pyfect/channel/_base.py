@@ -12,9 +12,9 @@ it).
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any, Generic, Never, Self, TypeIs, TypeVar, cast
+from typing import TYPE_CHECKING, Any, Generic, Never, Self, TypeIs, TypeVar, cast, final
 
-from pyfect._core import Effect, _FailCause, _MatchCause, _Suspend
+from pyfect._core import Effect, Step, _FailCause, _MatchCause, _Succeed
 from pyfect._effect_args import wrong_argument
 from pyfect.cause import fail as fail_cause
 from pyfect.errors import Done
@@ -22,6 +22,7 @@ from pyfect.exit import Success
 from pyfect.scope import CloseableScope
 
 if TYPE_CHECKING:
+    from pyfect._fiber import Fiber
     from pyfect.channel._channel import Channel
 
 OutElem_co = TypeVar("OutElem_co", covariant=True)
@@ -54,8 +55,7 @@ class ChannelBase(
         that fails or raises gives a pull failing with that cause. Building
         waits until the effect runs, so channels nested thousands deep build
         on the fiber's stack, not Python's."""
-        build = self._build
-        return _MatchCause(_Suspend(lambda: build(upstream, scope)), _pull_failing, None)
+        return _Build(self._build, upstream, scope)
 
     def pipe[B](self, f: Callable[[Self], B], /) -> B:
         """Apply ``f`` to this channel (one step; see ``Effect.pipe``)."""
@@ -90,3 +90,23 @@ def require_channel(value: object, name: str) -> None:
 
 def _pull_failing(cause: Any) -> Success[AnyPull]:
     return Success(_FailCause(cause))
+
+
+_PULL_FAILING = _MatchCause(_Succeed(None), _pull_failing, None)
+
+
+@final
+class _Build(Effect[AnyPull, Never, Any]):
+    """Effect's ``catchCause(transform(upstream, scope), ...)``, one op:
+    the recovery frame, then the build's effect."""
+
+    __slots__ = ("build", "scope", "upstream")
+
+    def __init__(self, build: Transform, upstream: AnyPull, scope: CloseableScope) -> None:
+        self.build = build
+        self.upstream = upstream
+        self.scope = scope
+
+    def _step(self, fiber: Fiber[Any, Any]) -> Step:
+        fiber._stack.append(_PULL_FAILING)
+        return self.build(self.upstream, self.scope)

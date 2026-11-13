@@ -12,7 +12,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Literal, Never, overload
 
 from pyfect import _core
-from pyfect._effect_base import A_co, E_co, EffectBase, R_co, as_effect
+from pyfect._effect_base import A_co, E_co, EffectBase, R_co, Step, as_effect
 from pyfect._tags import Tags
 from pyfect.cause import Cause, Fail
 from pyfect.cause import die as die_cause
@@ -316,14 +316,14 @@ def _succeed_none(_: object) -> Effect[None]:
     return _core._Succeed(None)
 
 
-def _recovering(
-    f: Callable[[Any], Effect[Any, Any, Any]],
-) -> Callable[[Cause[Any]], Effect[Any, Any, Any]]:
+def _recovering[S: Step](
+    f: Callable[[Any], S],
+) -> Callable[[Cause[Any]], S | Effect[Never, Any, Any]]:
     """A failure handler that passes the recoverable typed error to ``f``.
     Every typed recovery goes through this, so a defect always wins: the
     cause is then re-failed with its typed errors elected to defects."""
 
-    def handle(cause: Cause[Any]) -> Effect[Any, Any, Any]:
+    def handle(cause: Cause[Any]) -> S | Effect[Never, Any, Any]:
         found = cause.find_recoverable_error()
         return f(found.error) if isinstance(found, Fail) else _core._FailCause(found)
 

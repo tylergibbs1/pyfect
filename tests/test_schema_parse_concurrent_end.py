@@ -13,7 +13,7 @@ from pyfect.deferred import Deferred
 from pyfect.exit import Failure
 from pyfect.schema import getter as G
 from pyfect.schema import transformation as T
-from pyfect.schema.issue import Composite, InvalidValue, format_issue
+from pyfect.schema.issue import InvalidValue
 
 
 def _decoding(getter: G.Getter[str, str]) -> S.Bottom[str, str]:
@@ -28,17 +28,21 @@ def _echo(value: str, _: object) -> fx.Effect[str]:
     return fx.sync(lambda: value)
 
 
+# Each child starts at once (Effect's ``forkUnsafe`` with ``startImmediately``).
+# The second wakes the first, which runs at once, nested in the second's run, and
+# ends the parse; the second's own failure, still in that run, is not added. The
+# outcomes were recorded from Effect 4.1.2 under Node with the same schemas.
+
+
 @testing.effect
-def test_a_child_that_dies_after_the_parse_ended_adds_its_defect():
-    boom = RuntimeError("boom")
+def test_a_child_that_wakes_the_deciding_one_and_dies_adds_nothing():
     released = yield from Deferred[None].make()
 
     def mismatch(value: str, _: object) -> fx.Effect[str, InvalidValue]:
         return released.wait().and_then(fx.fail(InvalidValue({"message": "bad"})))
 
     def release_then_die(value: str, _: object) -> fx.Effect[str]:
-        # Uninterruptible: it dies even though the mismatch it wakes ends the parse.
-        return released.succeed(None).and_then(fx.die(boom)).uninterruptible()
+        return released.succeed(None).and_then(fx.die(RuntimeError("boom"))).uninterruptible()
 
     schema = S.Tuple(
         _decoding(G.transform_effect(mismatch)), _decoding(G.transform_effect(release_then_die))
@@ -46,17 +50,12 @@ def test_a_child_that_dies_after_the_parse_ended_adds_its_defect():
     exit = yield from S.decode_unknown_effect(schema)(("a", "b"), concurrency=2).exit()
 
     assert isinstance(exit, Failure)
-    reasons = exit.cause.reasons
-    assert all(isinstance(r, Die) for r in reasons)
-    defects = [r.defect for r in reasons if isinstance(r, Die)]
-    assert defects[1:] == [boom]
-    issue = defects[0]
-    assert isinstance(issue, Composite)
-    assert format_issue(issue) == "bad\n  at [0]"
+    assert _messages(exit.cause) == ["bad\n  at [0]"]
+    assert not any(isinstance(r, Die) for r in exit.cause.reasons)
 
 
 @testing.effect
-def test_a_child_that_mismatches_after_the_parse_ended_adds_its_issue():
+def test_a_child_that_wakes_the_deciding_one_and_mismatches_adds_nothing():
     released = yield from Deferred[None].make()
 
     def first(value: str, _: object) -> fx.Effect[str, InvalidValue]:
@@ -73,8 +72,7 @@ def test_a_child_that_mismatches_after_the_parse_ended_adds_its_issue():
     exit = yield from S.decode_unknown_effect(schema)(("a", "b"), concurrency=2).exit()
 
     assert isinstance(exit, Failure)
-    # As in Effect, the late child's own failure, not placed at its index.
-    assert _messages(exit.cause) == ["first\n  at [0]", "second"]
+    assert _messages(exit.cause) == ["first\n  at [0]"]
 
 
 def test_synchronous_children_after_the_last_effectful_one_are_parsed_once():

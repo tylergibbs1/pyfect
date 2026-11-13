@@ -347,10 +347,10 @@ def _pausing_on_no_permits(
 def test_interrupting_an_immediately_satisfied_take_before_completion_restores_permits():
     """interrupting an immediately satisfied take before completion restores permits
 
-    pyfect's claim reaches its continuation with no pause (CLAUDE.md, decided
-    results), so there is no such moment: the take is over when it forks, keeping
-    its permit, and Effect's scenario cannot arise. The sweep of budgets in
-    test_partitioned_semaphore.py interrupts every step there is."""
+    As in Effect, the scheduler is asked (and says yes) before the op that hands
+    the take's result on. The interrupt that lands in that pause waits until the
+    claimed permit has reached the take's continuation (CLAUDE.md, decided
+    results), which gives it back as the take fails."""
     sem = yield from PartitionedSemaphore[str].make(1)
     tasks: list[Callable[[], None]] = []
     should_yield, paused = _pausing_on_no_permits(sem)
@@ -360,10 +360,7 @@ def test_interrupting_an_immediately_satisfied_take_before_completion_restores_p
         .pipe(_on(_Custom(should_yield, tasks)))
         .fork(start_immediately=True)
     )
-    if not paused[0]:
-        assert taker.poll_unsafe() == Success(None)
-        assert (yield from sem.available) == 0
-        return
+    assert paused[0]
     taker.interrupt_as_unsafe(None)
     _drain(tasks)
     exit_ = yield from taker.await_exit()
@@ -394,6 +391,9 @@ def test_competing_takes_cannot_acquire_the_same_permit_across_scheduler_yields(
         second = yield from sem.take("second", 1).fork(start_immediately=True)
         assert (yield from sem.available) >= 0
         _drain(tasks)
+        # A fiber resumed by a task run inside this fiber runs right after
+        # this run (``Fiber._drive``), where Effect runs it in the task.
+        yield from fx.yield_now()
 
         first_ok = isinstance(first.poll_unsafe(), Success)
         second_ok = isinstance(second.poll_unsafe(), Success)

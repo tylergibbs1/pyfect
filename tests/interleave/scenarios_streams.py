@@ -176,8 +176,13 @@ def _stream_broadcast(w: World) -> None:
         yield from victim.get().await_exit()
 
     w.fork(fx.scoped(main))
+    # The reader can run (and read) before ``main`` stores its fiber: ``main``
+    # may yield before the op handing the fork on, as Effect's fibers do.
     from_thread(
-        w, "interrupter", lambda: victim.get().interrupt_as_unsafe(None), when=lambda: bool(cut)
+        w,
+        "interrupter",
+        lambda: victim.get().interrupt_as_unsafe(None),
+        when=lambda: bool(cut) and victim.is_set(),
     )
     w.check(balanced(w, "up"))
 

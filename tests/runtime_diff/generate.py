@@ -1,9 +1,10 @@
 """Hypothesis strategies for programs (program.py).
 
-Programs stay small (``max_leaves``) so they run in milliseconds and never
-come near a fiber's step budget: both interpreters also lift
-``MaxOpsBeforeYield``, so no event order depends on where a budget runs out
-(GitHub issue #6).
+Programs stay small (``max_leaves``) so they run in milliseconds. Each runs
+under a ``MaxOpsBeforeYield`` (``budgets``): mostly small ones, so fibers run
+out of budget and yield mid-program and the event order shows where, as well
+as Effect's default and none at all. Under 3 Effect's fibers never get past
+their first yield, so budgets start there.
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ from .program import (
     AcquireUseRelease,
     All,
     Buffer,
+    Case,
     Catch,
     CatchCause,
     CatchDefect,
@@ -95,7 +97,7 @@ _SCHEDULES: st.SearchStrategy[Schedule] = st.one_of(
 )
 
 
-def _weighted(*choices: tuple[int, st.SearchStrategy[Expr]]) -> st.SearchStrategy[Expr]:
+def _weighted[T](*choices: tuple[int, st.SearchStrategy[T]]) -> st.SearchStrategy[T]:
     """``one_of`` with each strategy ``weight`` times as likely."""
     return st.one_of(*(strategy for weight, strategy in choices for _ in range(weight)))
 
@@ -205,6 +207,21 @@ def _numbered(program: Expr) -> Expr:
         return value
 
     return cast("Expr", walk(program))
+
+
+# Effect's default (2048) and its "never yield" (Number.MAX_SAFE_INTEGER), then small
+# budgets, which a program of a few leaves runs out of, including each side of the
+# 32-op inline limit.
+_BUDGETS: st.SearchStrategy[int] = _weighted(
+    (1, st.sampled_from([2048, 2**53 - 1])),
+    (4, st.integers(3, 40)),
+    (1, st.integers(41, 200)),
+)
+
+
+def cases(max_leaves: int = 12) -> st.SearchStrategy[Case]:
+    """``programs`` paired with a budget each."""
+    return st.tuples(programs(max_leaves), _BUDGETS)
 
 
 def programs(max_leaves: int = 12) -> st.SearchStrategy[Expr]:

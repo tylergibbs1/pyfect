@@ -8,22 +8,35 @@ import math
 import sys
 import warnings
 from collections.abc import Callable, Generator
-from typing import Any, Never
+from functools import partial
+from typing import Any, Never, cast
 
-from pyfect._core import Effect, _Callback, _Gen, _Succeed, _Sync, _WithFiber, _YieldNow
+from pyfect._concurrency import timeout_or_else
+from pyfect._core import (
+    Effect,
+    _Callback,
+    _FlatMap,
+    _Gen,
+    _Succeed,
+    _Suspend,
+    _Sync,
+    _WithFiber,
+    _YieldNow,
+)
 from pyfect._effect_args import require_effect
-from pyfect._fiber import Fiber
-from pyfect._timer_heap import TimerHeap
+from pyfect._fiber import Fiber, current_fiber
+from pyfect._timer_heap import TimerEntry, TimerHeap
 from pyfect._timestamps import millis_to_nanos
 from pyfect._wake_tracking import WakeTracker
 from pyfect.clock import Clock, ClockService, LiveClock
 from pyfect.duration import Duration, from_input_unsafe, nanos_or_infinite
 from pyfect.duration import Input as DurationInput
 from pyfect.effect import provide_service
+from pyfect.latch import Latch
 from pyfect.layer import Layer
 from pyfect.layer import effect as layer_effect
 from pyfect.scheduler import Cancel, Scheduler, Task
-from pyfect.scope import Scope, add_finalizer
+from pyfect.scope import Scope, acquire_use_release, add_finalizer
 from pyfect.semaphore import Semaphore
 
 
@@ -110,6 +123,25 @@ class _NotAdvanced:
             self._cancel()
 
 
+def _when_idle(tracker: WakeTracker, resume: Callable[[Effect[None]], None]) -> Effect[None] | None:
+    if not tracker.pending:
+        resume(_Succeed(None))
+        return None
+    return _Sync(tracker.when_idle(lambda: resume(_Succeed(None))))
+
+
+def _warn_busy() -> Effect[None]:
+    return _Sync(lambda: warnings.warn(_WAKE_WARNING, BusyFiberWarning, stacklevel=1))
+
+
+def _open(latch: Latch) -> None:
+    latch.open_unsafe()
+
+
+def _void() -> Effect[None]:
+    return _Succeed(None)
+
+
 class TestClock:
     """A clock that only moves when told to, with ``adjust`` or
     ``set_time``. Each move wakes due sleepers in order and waits for the
@@ -147,6 +179,11 @@ class TestClock:
         self._live = live or LiveClock()
         self._not_advanced = _NotAdvanced()
         self._moving = Semaphore(1)
+        # Effect's ``warningStart`` and ``warningDone``, op for op; the
+        # warning itself is ``_not_advanced``'s timer.
+        warning_permit = Semaphore(1)
+        self._warning_start: Effect[None] = warning_permit.with_permits(_Suspend(_void))
+        self._warning_done: Effect[None] = warning_permit.with_permits(_Suspend(self._stop_waiting))
 
     @staticmethod
     def layer(*, warning_delay: DurationInput = "1 second") -> Layer[Never]:
@@ -179,19 +216,26 @@ class TestClock:
         return self._monotonic_ns
 
     def sleep(self, duration: Duration) -> Effect[None]:
-        def body(fiber: Fiber[Any, Any]) -> Effect[None]:
-            def register(resume: Callable[[Effect[None]], None]) -> Effect[None] | None:
-                end = _add_nanos(self._timestamp_ns, nanos_or_infinite(duration))
-                if end <= self._timestamp_ns:
-                    resume(_Succeed(None))
-                    return None
-                self._not_advanced.arm(fiber._scheduler, self._warning_delay)
-                sleeper = self._sleepers.push(end, lambda: resume(_Succeed(None)))
-                return _Sync(sleeper.cancel)
+        # Effect's TestClock sleep, op for op: a generator that acquires a
+        # sleeper, waits on its latch and always removes it.
+        def body() -> Generator[Effect[Any], Any]:
+            end = _add_nanos(self._timestamp_ns, nanos_or_infinite(duration))
+            if end <= self._timestamp_ns:
+                return
+            yield from acquire_use_release(
+                _Sync(lambda: self._add_sleeper(end)),
+                lambda entry: self._warning_start.and_then(entry[0].wait()),
+                lambda entry, _: _Sync(entry[1].cancel),
+            )
 
-            return _Callback(register)
+        return _Gen(body)
 
-        return _WithFiber(body)
+    def _add_sleeper(self, end: float) -> tuple[Latch, TimerEntry[Callable[[], None]]]:
+        # Run by ``sleep`` on its fiber.
+        fiber = cast("Fiber[Any, Any]", current_fiber())
+        self._not_advanced.arm(fiber._scheduler, self._warning_delay)
+        latch = Latch()
+        return latch, self._sleepers.push(end, partial(_open, latch))
 
     # --- moving time ------------------------------------------------------------------
 
@@ -225,15 +269,16 @@ class TestClock:
         """How many fibers are sleeping on this clock."""
         return len(self._sleepers)
 
+    def _stop_waiting(self) -> Effect[None]:
+        self._not_advanced.disarm()
+        return _Succeed(None)
+
     def _move(self, step: Callable[[float], float]) -> Effect[None]:
-        def body(fiber: Fiber[Any, Any]) -> Effect[None]:
-            self._not_advanced.disarm()
-            scheduler = fiber._scheduler
-            return self._moving.with_permits(_Gen(lambda: self._run(scheduler, step)))
+        # As Effect's ``warningDone.pipe(andThen(run(step)))``.
+        return self._warning_done.and_then(self._moving.with_permits(_Gen(lambda: self._run(step))))
 
-        return _WithFiber(body)
-
-    def _run(self, scheduler: Scheduler, step: Callable[[float], float]) -> Generator[Effect[None]]:
+    def _run(self, step: Callable[[float], float]) -> Generator[Effect[None]]:
+        scheduler = cast("Fiber[Any, Any]", current_fiber())._scheduler
         # As Effect: let the fibers that are ready run once before moving.
         settled = yield from _YieldNow().fork()
         yield from settled.await_exit()
@@ -243,13 +288,35 @@ class TestClock:
             popped = self._sleepers.pop()
             assert popped is not None
             self._advance_to(when)
-            tracker = WakeTracker()
-            scheduler.track(tracker, popped[1])
-            if tracker.pending:
-                yield from self._wait_or_warn(scheduler, tracker.when_idle, _WAKE_WARNING)
-            yield from self._outside_done(scheduler)
-            yield from _YieldNow()
+            yield from self._wake(scheduler, popped[1])
         self._advance_to(end)
+
+    def _wake(self, scheduler: Scheduler, wake: Callable[[], None]) -> Effect[None]:
+        """Effect's ``wake``: wake one sleeper, wait for the work it starts
+        (racing a live ``warning_delay``), then yield."""
+
+        def go() -> Effect[None]:
+            tracker = WakeTracker()
+            scheduler.track(tracker, wake)
+            if not tracker.pending:
+                return self._yield_when_outside_done(scheduler)
+            wait = timeout_or_else(
+                _Callback(partial(_when_idle, tracker)), self._warning_delay, _warn_busy
+            )
+            return _FlatMap(
+                self.with_live(wait), lambda _: self._yield_when_outside_done(scheduler)
+            )
+
+        return _Suspend(go)
+
+    def _yield_when_outside_done(self, scheduler: Scheduler) -> Effect[None]:
+        if not scheduler.outside_work().pending:
+            return _YieldNow()
+        return _Gen(lambda: self._outside_then_yield(scheduler))
+
+    def _outside_then_yield(self, scheduler: Scheduler) -> Generator[Effect[None]]:
+        yield from self._outside_done(scheduler)
+        yield from _YieldNow()
 
     def _outside_done(self, scheduler: Scheduler) -> Generator[Effect[None]]:
         """Wait for work fibers handed to other threads, and for the fibers
@@ -304,29 +371,36 @@ class TestClock:
         return _Callback(register)
 
 
-def test_clock() -> Effect[TestClock]:
-    """The ``TestClock`` the effect runs with; dies if the clock is live."""
+def test_clock_with[A, E, R](f: Callable[[TestClock], Effect[A, E, R]]) -> Effect[A, E, R]:
+    """``f`` of the ``TestClock`` the effect runs with (Effect's
+    ``testClockWith``); dies if the clock is live."""
 
-    def check(clock: ClockService) -> Effect[TestClock]:
+    def body(fiber: Fiber[Any, Any]) -> Effect[A, E, R]:
+        clock = fiber.get_ref(Clock)
         if not isinstance(clock, TestClock):
             raise TypeError(
                 "no TestClock in context; run the effect with a pyfect.testing runner "
                 "or provide TestClock.layer()"
             )
-        return _Succeed(clock)
+        return f(clock)
 
-    return Clock().flat_map(check)
+    return _WithFiber(body)
+
+
+def test_clock() -> Effect[TestClock]:
+    """The ``TestClock`` the effect runs with; dies if the clock is live."""
+    return test_clock_with(_Succeed)
 
 
 def adjust(duration: DurationInput) -> Effect[None]:
     """Move the test clock forward by ``duration``."""
-    return test_clock().flat_map(lambda c: c.adjust(duration))
+    return test_clock_with(lambda c: c.adjust(duration))
 
 
 def set_time(timestamp: float) -> Effect[None]:
     """Set the test clock's wall time to ``timestamp`` (milliseconds since
     the epoch, as Effect's ``TestClock.setTime``)."""
-    return test_clock().flat_map(lambda c: c.set_time(timestamp))
+    return test_clock_with(lambda c: c.set_time(timestamp))
 
 
 def with_live[A, E, R](eff: Effect[A, E, R]) -> Effect[A, E, R]:

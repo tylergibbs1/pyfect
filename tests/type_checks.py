@@ -10941,3 +10941,15 @@ def check_listed_entity_handlers() -> None:
     Counter.to_layer(some)  # pyright: ignore[reportArgumentType]
     some.handle(Counter.increment)(_one)  # pyright: ignore[reportCallIssue]
     Counter.to_layer_effect(fx.succeed(some))  # pyright: ignore[reportArgumentType]
+
+
+def check_for_each_discard() -> None:
+    def item(n: int) -> fx.Effect[str, KeyError]:
+        return fx.succeed(str(n))
+
+    assert_type(fx.for_each([1, 2], item), fx.Effect[list[str], KeyError, Never])
+    assert_type(fx.for_each([1, 2], item, discard=True), fx.Effect[None, KeyError, Never])
+    assert_type(
+        fx.for_each([1, 2], item, concurrency="unbounded", discard=False),
+        fx.Effect[list[str], KeyError, Never],
+    )

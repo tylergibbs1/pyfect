@@ -1,7 +1,8 @@
 // Effect 4.1.2's side of the runtime differential tester (tests/runtime_diff):
 //   node tests/runtime_diff/effect_interpreter.ts PROGRAMS.json > ANSWERS.json
 //   node tests/runtime_diff/effect_interpreter.ts --serve   (a program per stdin line, an answer per line)
-// PROGRAMS.json is a list of programs in program.py's JSON form; each answer is
+// PROGRAMS.json is a list of cases, {"program": ..., "budget": n}: a program in program.py's
+// JSON form and the MaxOpsBeforeYield it runs under. Each answer is
 // {"exit": ..., "log": [...], "stuck": bool}, what interpret.py computes in pyfect.
 // Reads Effect's sources from $PYFECT_EFFECT_REF (an Effect 4.1.2 checkout). Node 24 runs
 // TypeScript. Keep it in step with interpret.py: the two must build the same program.
@@ -74,7 +75,7 @@ const millis = (ms: number) => `${ms} millis`
 const range = (n: number) => Array.from({ length: n }, (_, i) => i)
 const concurrency = (c: Json) => (c === null ? {} : { concurrency: c })
 
-function runProgram(program: Node) {
+function runProgram(program: Node, budget: number) {
   const log: Array<Json> = []
   const attempts = new Map<string, number>()
 
@@ -266,7 +267,8 @@ function runProgram(program: Node) {
       case "All":
         return Effect.all(e.items.map((item: Node) => run(item, ctx)), { ...concurrency(e.concurrency), mode: e.mode })
       case "TimeoutOption":
-        return Effect.timeoutOption(run(e.body, ctx), millis(e.ms))
+        // The map is interpret.py's: pyfect's none is None, so it names the option there.
+        return Effect.map(Effect.timeoutOption(run(e.body, ctx), millis(e.ms)), (o: unknown) => o)
       case "Exited":
         return Effect.flatMap(Effect.exit(run(e.body, ctx)), (x: unknown) => {
           const found = exit(x)
@@ -325,7 +327,10 @@ function runProgram(program: Node) {
 
   const main = Effect.gen(function*() {
     // Started by clock wakes, so the test clock's adjust waits for all of their work.
-    const fiber = yield* Effect.forkDetach(Effect.andThen(Effect.sleep(millis(1)), run(program, "")))
+    // Only the program runs under the budget: the harness and the test clock never yield.
+    const fiber = yield* Effect.forkDetach(
+      Effect.provideService(Effect.andThen(Effect.sleep(millis(1)), run(program, "")), References.MaxOpsBeforeYield, budget)
+    )
     yield* TestClock.adjust("1 hour")
     const stuck = fiber.pollUnsafe() === undefined
     if (stuck) {
@@ -343,22 +348,24 @@ function runProgram(program: Node) {
   )
 }
 
-const answer = async (program: Node): Promise<Json> => {
+type Case = { program: Node; budget: number }
+
+const answer = async ({ program, budget }: Case): Promise<Json> => {
   try {
-    return await runProgram(program)
+    return await runProgram(program, budget)
   } catch (error) {
     return { crashed: String(error) }
   }
 }
 
 if (process.argv[2] === "--serve") {
-  // One program per line in, one answer per line out, for as long as stdin is open.
+  // One case per line in, one answer per line out, for as long as stdin is open.
   for await (const line of createInterface({ input: process.stdin })) {
     process.stdout.write(JSON.stringify(await answer(JSON.parse(line))) + "\n")
   }
 } else {
-  const programs: Array<Node> = JSON.parse(readFileSync(process.argv[2], "utf8"))
+  const cases: Array<Case> = JSON.parse(readFileSync(process.argv[2], "utf8"))
   const answers: Array<Json> = []
-  for (const program of programs) answers.push(await answer(program))
+  for (const one of cases) answers.push(await answer(one))
   console.log(JSON.stringify(answers))
 }

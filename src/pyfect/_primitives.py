@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any, Never, Protocol, cast, final
 
 from pyfect._cause_election import finalizer_cause
 from pyfect._core import Effect, Frame, Step
+from pyfect._effect_base import succeed_with
 from pyfect.cause import Cause
 from pyfect.cause import die as die_cause
 from pyfect.exit import Exit, Failure, Success
@@ -75,19 +76,34 @@ def known_exit[A, E](eff: Effect[A, E, Any]) -> Exit[A, E] | None:
 
 
 def run_known(eff: Effect[Any, Any, Any]) -> Step:
-    """``eff``'s outcome if it is nothing but that (``known_exit``), else
-    ``eff``. A step or continuation that has just claimed state returns
-    this, so the claimed result reaches its continuation in the same step:
-    returned as an effect, it would run in a later step, and a yield in
-    between could let an interrupt drop it."""
+    """``eff``, as the next step, but one the fiber never yields before if
+    it is nothing but its outcome (``known_exit``). A step or continuation
+    that has just claimed state returns this: Effect would hand the claimed
+    result on as an op of its own, where a yield could let an interrupt
+    drop it. The op still counts, as in Effect; only the yield waits for
+    the next op."""
     # ``known_exit``, inlined: this runs for every suspended step.
     if isinstance(eff, _Succeed):
-        return Success(eff.value)
+        return _Decided(Success(eff.value))
     if isinstance(eff, _FromExit):
-        return eff.outcome
+        return _Decided(eff.outcome)
     if isinstance(eff, _FailCause):
-        return Failure(eff.cause)
+        return _Decided(Failure(eff.cause))
     return eff
+
+
+@final
+class _Decided(Effect[Any, Any, Any]):
+    """A claimed result on its way to its continuation (``run_known``)."""
+
+    __slots__ = ("outcome",)
+    _holds_decided = True
+
+    def __init__(self, ex: Exit[Any, Any]) -> None:
+        self.outcome = ex
+
+    def _step(self, fiber: Fiber[Any, Any]) -> Step:
+        return self.outcome
 
 
 @final
@@ -132,7 +148,7 @@ class _Map(Effect[Any, Any, Any]):
         return self.inner
 
     def _on_success(self, value: Any, fiber: Fiber[Any, Any]) -> Step:
-        return Success(self.f(value))
+        return succeed_with(self.f(value))
 
 
 @final
@@ -260,6 +276,9 @@ class _SetInterruptible[A, E, R](Effect[A, E, R]):
 
 @final
 class _RestoreInterruptible(Frame):
+    """Effect's ``setInterruptible``: becoming interruptible again with an
+    interrupt pending turns a success into it and adds it to a failure."""
+
     __slots__ = ("flag",)
 
     def __init__(self, flag: bool) -> None:
@@ -267,10 +286,16 @@ class _RestoreInterruptible(Frame):
 
     def _on_success(self, value: Any, fiber: Fiber[Any, Any]) -> Step:
         fiber._interruptible = self.flag
+        interrupt = fiber._interrupt
+        if interrupt is not None and self.flag:
+            return _FailCause(interrupt)
         return Success(value)
 
     def _on_failure(self, cause: Cause[Any], fiber: Fiber[Any, Any]) -> Step:
         fiber._interruptible = self.flag
+        interrupt = fiber._interrupt
+        if interrupt is not None and self.flag:
+            return Failure(cause.add_interrupts(interrupt))
         return Failure(cause)
 
 
@@ -323,6 +348,9 @@ class _Locally[A, E, R](Effect[A, E, R]):
 
 @final
 class _RestoreContext(Frame):
+    """Effect's ``updateContext`` finalizer, an ``OnExit`` frame: it hands
+    the exit back to the loop, an op of its own."""
+
     __slots__ = ("context",)
 
     def __init__(self, context: Context) -> None:
@@ -330,11 +358,11 @@ class _RestoreContext(Frame):
 
     def _on_success(self, value: Any, fiber: Fiber[Any, Any]) -> Step:
         fiber._set_context(self.context)
-        return Success(value)
+        return _Succeed(value)
 
     def _on_failure(self, cause: Cause[Any], fiber: Fiber[Any, Any]) -> Step:
         fiber._set_context(self.context)
-        return Failure(cause)
+        return _FailCause(cause)
 
 
 @final
@@ -361,7 +389,9 @@ class _Fork[A, E, R](Effect[Any, Never, R]):
             start_immediately=self.start_immediately,
             uninterruptible=self.start_uninterruptible,
         )
-        return fiber._after_started(Success(child))
+        # Effect's ``fork*`` is ``withFiber`` continuing with
+        # ``succeed(fiber)``, an op of its own.
+        return fiber._after_started(_Succeed(child))
 
 
 @final
@@ -391,6 +421,9 @@ class _YieldNow(Effect[None, Never, Never]):
 
 @final
 class _Gen[A, E, R](Effect[A, E, R]):
+    """Effect's ``gen``: ``suspend(() => fromIteratorUnsafe(body()))``, so
+    the generator made here starts in an op of its own (``_GenFrame``)."""
+
     __slots__ = ("factory",)
 
     def __init__(self, factory: Callable[[], Generator[Effect[Any, E, R], Any, A]]) -> None:
@@ -402,16 +435,18 @@ class _Gen[A, E, R](Effect[A, E, R]):
             return Failure(
                 die_cause(TypeError(f"gen expected a generator, got {type(gen).__name__}"))
             )
-        return _GenFrame(cast("Generator[Effect[Any, Any, Any], Any, Any]", gen))._on_success(
-            None, fiber
-        )
+        return _GenFrame(cast("Generator[Effect[Any, Any, Any], Any, Any]", gen))
 
 
 @final
-class _GenFrame(Frame):
-    """One running generator. It is resumed with each yielded effect's
-    value. On failure it is closed, so ``finally`` and ``with`` blocks run.
-    (They cannot yield effects; use ``ensuring`` for effectful cleanup.)
+class _GenFrame(Effect[Any, Any, Any]):
+    """One running generator (Effect's ``fromIteratorUnsafe``), resumed with
+    each yielded effect's value. Yielded successes that are nothing but
+    their value go straight back in, in the same op, as in Effect; the
+    generator's return value and a yielded failure go back through the
+    loop, an op each. On failure it is closed, so ``finally`` and ``with``
+    blocks run. (They cannot yield effects; use ``ensuring`` for effectful
+    cleanup.)
     """
 
     __slots__ = ("gen",)
@@ -419,13 +454,27 @@ class _GenFrame(Frame):
     def __init__(self, gen: Generator[Effect[Any, Any, Any], Any, Any]) -> None:
         self.gen = gen
 
+    def _step(self, fiber: Fiber[Any, Any]) -> Step:
+        return self._on_success(None, fiber)
+
     def _on_success(self, value: Any, fiber: Fiber[Any, Any]) -> Step:
-        try:
-            nxt = self.gen.send(value)
-        except StopIteration as stop:
-            return Success(stop.value)
-        fiber._stack.append(self)
-        return nxt
+        send = self.gen.send
+        while True:
+            try:
+                nxt = send(value)
+            except StopIteration as stop:
+                return _Succeed(stop.value)
+            kind = type(nxt)
+            if kind is _Succeed:
+                value = cast("_Succeed[Any]", nxt).value
+                continue
+            if kind is _FromExit:
+                outcome = cast("_FromExit[Any, Any]", nxt).outcome
+                if isinstance(outcome, Success):
+                    value = outcome.value
+                    continue
+            fiber._stack.append(self)
+            return nxt
 
     def _on_failure(self, cause: Cause[Any], fiber: Fiber[Any, Any]) -> Step:
         try:
@@ -437,6 +486,55 @@ class _GenFrame(Frame):
             # is a failing finalizer.
             return Failure(finalizer_cause(Failure(cause), die_cause(exc)))
         return Failure(cause)
+
+
+@final
+class _SuspendTake[A, E, R](Effect[A, E, R]):
+    """Effect's ``suspendTake``: ``thunk()``, and if that is nothing but its
+    outcome (``known_exit``), that outcome in this same op, so something it
+    took reaches its continuation with no op, and no pause, in between."""
+
+    __slots__ = ("thunk",)
+
+    def __init__(self, thunk: Callable[[], Effect[A, E, R]]) -> None:
+        self.thunk = thunk
+
+    def _step(self, fiber: Fiber[Any, Any]) -> Step:
+        eff = self.thunk()
+        known = known_exit(eff)
+        return eff if known is None else known
+
+
+@final
+class _While[A, E, R](Effect[None, E, R]):
+    """Effect's ``whileLoop``: run ``body()`` while ``cond()`` holds, giving
+    each value to ``step``. One op to start; each round's body is the next
+    op, as the frame is its own continuation."""
+
+    __slots__ = ("body", "cond", "step")
+
+    def __init__(
+        self,
+        cond: Callable[[], bool],
+        body: Callable[[], Effect[A, E, R]],
+        step: Callable[[A], None],
+    ) -> None:
+        self.cond = cond
+        self.body = body
+        self.step = step
+
+    def _step(self, fiber: Fiber[Any, Any]) -> Step:
+        if self.cond():
+            fiber._stack.append(self)
+            return self.body()
+        return _VOID_EXIT
+
+    def _on_success(self, value: Any, fiber: Fiber[Any, Any]) -> Step:
+        self.step(value)
+        return self._step(fiber)
+
+
+_VOID_EXIT: Effect[None] = _Succeed(None)
 
 
 # --- interruptibility regions -------------------------------------------------
@@ -455,9 +553,12 @@ def uninterruptible_mask[A, E, R](f: Callable[[Restore], Effect[A, E, R]]) -> Ef
     ``restore(...)`` then starts interruptible, like any forked fiber."""
 
     def body(fiber: Fiber[Any, Any]) -> Effect[A, E, R]:
+        # Effect's ``uninterruptibleMask``: one op, ``f`` called in it.
         if not fiber._interruptible:
-            return _Suspend(lambda: f(_keep_interruptibility))
-        return _SetInterruptible(_Suspend(lambda: f(_interruptible)), False)
+            return f(_keep_interruptibility)
+        fiber._push(_RestoreInterruptible(True))
+        fiber._interruptible = False
+        return f(_interruptible)
 
     return _WithFiber(body)
 
@@ -470,8 +571,10 @@ def interruptible_mask[A, E, R](f: Callable[[Restore], Effect[A, E, R]]) -> Effe
     def body(fiber: Fiber[Any, Any]) -> Effect[A, E, R]:
         if fiber._interruptible:
             return f(_keep_interruptibility)
+        fiber._push(_RestoreInterruptible(False))
+        fiber._interruptible = True
         # As in Effect, ``f`` runs even when an interrupt is already waiting.
-        return _SetInterruptible(f(_uninterruptible), True)
+        return f(_uninterruptible)
 
     return _WithFiber(body)
 

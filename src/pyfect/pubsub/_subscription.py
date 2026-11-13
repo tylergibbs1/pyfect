@@ -195,8 +195,6 @@ class _Collect[A, X](Frame):
     subscription for the next take."""
 
     __slots__ = ("again", "hub", "poller", "reader", "then")
-    # Collecting claims the message; it reaches the caller with no pause.
-    claims = True
 
     def __init__(
         self,

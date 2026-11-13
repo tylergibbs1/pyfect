@@ -13,6 +13,7 @@ some fail.
 from __future__ import annotations
 
 from collections.abc import Callable
+from functools import partial
 from typing import Any, Literal, Never, overload
 
 from pyfect._concurrency import for_each
@@ -23,6 +24,7 @@ from pyfect._core import (
     _FromExit,
     _Gen,
     _Locally,
+    _RestoreInterruptible,
     _Succeed,
     _Suspend,
     _Sync,
@@ -30,12 +32,15 @@ from pyfect._core import (
     uninterruptible_mask,
 )
 from pyfect._effect_args import require_effect
+from pyfect._effect_resources import _call_user_now
 from pyfect._fiber import Fiber, Uninterruptible
 from pyfect._interrupt_reason import closed
 from pyfect.context import Tag
 from pyfect.exit import Exit, as_void_all
 
 type Finalizer = Callable[[Exit[Any, Any]], Effect[object, Never, Any]]
+
+_VOID: Effect[None] = _Succeed(None)
 
 
 type Strategy = Literal["sequential", "parallel"]
@@ -91,7 +96,7 @@ class CloseableScope:
             # As Effect's ``provideContext``: the closing fiber's services,
             # overridden by those in scope at registration.
             def finalizer(ex: Exit[Any, Any]) -> Effect[object, Never, Any]:
-                return _Locally(_call_user(f, ex), lambda current: current.merge(ctx))
+                return _Locally(_call_user_now(f, ex), lambda current: current.merge(ctx))
 
             if self._closed is not None:
                 return finalizer(self._closed).as_void()
@@ -118,13 +123,28 @@ class CloseableScope:
         )
         fiber.add_observer_unsafe(lambda _: self._remove(fiber))
 
+    def _add_finalizer_exit(self, f: Finalizer) -> Effect[object, Never, Any]:
+        """Register ``f``, or run it now if the scope is closed (the body of
+        Effect's ``scopeAddFinalizerExit``)."""
+        if self._closed is not None:
+            return f(self._closed)
+        self._add(object(), f)
+        return _VOID
+
     def close(self, ex: Exit[Any, Any]) -> Effect[None]:
         """Run every finalizer, last added first (all at once in a parallel
         scope). Closing twice is a no-op."""
 
         # Uninterruptible before the scope is marked closed, so an interrupt
-        # can't land between marking it and running its finalizers.
-        return _Suspend(lambda: self.close_unsafe(ex) or _Succeed(None)).uninterruptible()
+        # can't land between marking it and running its finalizers (Effect's
+        # ``withFiber`` with ``fiberEnterUninterruptibleUnsafe``).
+        def body(fiber: Fiber[Any, Any]) -> Effect[None]:
+            if fiber._interruptible:
+                fiber._push(_RestoreInterruptible(True))
+                fiber._interruptible = False
+            return self.close_unsafe(ex) or _Succeed(None)
+
+        return _WithFiber(body)
 
     def close_unsafe(self, ex: Exit[Any, Any]) -> Effect[None] | None:
         """Mark the scope closed now and return the effect that runs its
@@ -286,13 +306,22 @@ def acquire_release[A, E = Never, RR = Never](
     scope."""
     require_effect(acquire, "acquire")
 
-    def body():
-        a = yield from acquire
-        scope = yield from Scope()
-        yield from scope.add_finalizer(lambda ex: release(a, ex))
-        return a
+    # Effect's op for op: ``contextWith``, ``uninterruptibleMask``, the
+    # scope, then ``tap`` adding the finalizer (``scopeAddFinalizerExit``).
+    def with_context(fiber: Fiber[Any, Any]) -> Effect[A, E, RR | Scope]:
+        ctx = fiber._context
 
-    return _Gen(body).uninterruptible()
+        def add(scope: CloseableScope, a: A) -> Effect[object]:
+            def finalizer(ex: Exit[Any, Any]) -> Effect[object, Never, Any]:
+                return _Locally(_call_user_now(release, a, ex), lambda current: current.merge(ctx))
+
+            return _Suspend(lambda: scope._add_finalizer_exit(finalizer))
+
+        return uninterruptible_mask(
+            lambda _: Scope().flat_map(lambda scope: acquire.tap(partial(add, scope)))
+        )
+
+    return _WithFiber(with_context)
 
 
 def acquire_use_release[A, B, EE = Never, RR = Never](
@@ -305,7 +334,9 @@ def acquire_use_release[A, B, EE = Never, RR = Never](
     require_effect(acquire, "acquire")
     return uninterruptible_mask(
         lambda restore: acquire.flat_map(
-            lambda a: restore(_call_user(use, a)).on_exit_primitive(lambda ex: release(a, ex))
+            lambda a: _call_user(lambda: restore(use(a))).on_exit_primitive(
+                lambda ex: release(a, ex)
+            )
         )
     )
 

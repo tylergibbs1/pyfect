@@ -12,6 +12,9 @@
 
 ### Added
 
+- `pyfect.testing.test_clock_with(f)`, Effect's `TestClock.testClockWith`.
+- `for_each(..., discard=True)`, Effect's `forEach` `discard` option: runs every item and
+  keeps no results.
 - An `audit` workflow checks `uv.lock` and `website/bun.lock` against known vulnerabilities
   (OSV) on every push and weekly, and `tests/test_workflow_security.py` keeps every
   workflow's actions pinned to commits, read-only by default, off `pull_request_target`, and
@@ -47,6 +50,28 @@
 
 ### Fixed
 
+- Fibers yield where Effect's do under `MaxOpsBeforeYield` (#6): ops are counted and the
+  budget checked as in Effect 4.1.2's run loop. A run counts from zero, the check comes before
+  every op (a budget under 3 livelocks in Effect, so pyfect runs it as 3), a resumed run counts
+  the yield's continuation and the paused op, every 32nd `map` (Effect's `succeedWith`) goes
+  back through the loop, and exits handed straight to a continuation are free. The combinators
+  that run under it are built as Effect's are, op for op: `for_each` and `all` (one child per
+  item, Effect's `iterateConcurrentImpl`, and a `whileLoop` one at a time), `while_loop`,
+  `as_`/`as_void`, `on_exit`, `acquire_release`, `acquire_use_release` and the masks, `race`
+  and `race_all`, `match`/`match_cause`/`option`/`exit`/`result`, semaphore `with_permits`,
+  `release` and `resize`, `Scope.close`, `Fiber.interrupt` and `await_exit`, a channel's build,
+  the clock accessors (`clockWith`), the live and test clocks' `sleep` and `TestClock.adjust`,
+  queue `take` and `poll` (`suspendTake`), queue constructors and `fork`. A failing op meeting
+  an interrupt keeps its cause and gains the interrupt, and an interrupted wait runs its
+  canceler as Effect's `asyncFinalizer` does. Two fibers under a small budget now interleave
+  exactly as in Effect (`tests/oracle/test_max_ops_interleaving.py`, recorded from Node), and
+  the runtime differential tester runs its programs (not its harness) under budgets from 3 to
+  200 rather than an unlimited one: 43 of 3000 generated cases still differ, from 947 before,
+  all but 7 inside a stream or a `repeat`/`retry` schedule, whose internals are not yet built
+  op for op. A result a step claimed (a taken permit or item) that the fiber pauses before now
+  reaches its continuation before an interrupt that landed in the pause, as in Effect, and a
+  raising `should_yield` is a defect rather than Effect's endless retry. Interleavings change
+  under the default budget (2048) too, since fibers now yield at other ops.
 - `S.Finite` and `S.is_finite` read an `int` as a JavaScript number, so one past the largest
   double (a 400-digit JSON literal, which `JSON.parse` reads as `Infinity`) is not finite, as
   in Effect. `jwt.verify` checks `exp`, `nbf` and `iat` with `S.Finite`, so a token signed

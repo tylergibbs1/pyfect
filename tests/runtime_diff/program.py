@@ -6,7 +6,9 @@ effect and ``effect_interpreter.ts`` into an Effect 4.1.2 one. Every node has an
 defects it raises. Values are JSON: ints, lists and ``null``.
 
 ``to_json`` / ``from_json`` give the form both interpreters read: each node is an
-object with its ``op`` and its fields, under the same names.
+object with its ``op`` and its fields, under the same names. A ``Case`` is a
+program with the ``MaxOpsBeforeYield`` both runtimes run it under, so where a
+fiber runs out of budget and yields is compared too.
 """
 
 from __future__ import annotations
@@ -538,6 +540,9 @@ type StreamOp = (
 )
 
 type Node = Expr | Schedule | Source | StreamOp | Resource
+
+type Case = tuple[Expr, int]
+"""A program and the ``MaxOpsBeforeYield`` it runs under."""
 
 NODES: dict[str, type[Node]] = {
     cls.__name__: cls

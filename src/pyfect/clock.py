@@ -13,11 +13,11 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
-from typing import Any, Never, Protocol
+from typing import Any, Never, Protocol, cast
 
-from pyfect._core import Effect, _Callback, _Gen, _Succeed, _Sync, _WithFiber, _YieldNow
+from pyfect._core import Effect, _Callback, _Succeed, _Sync, _WithFiber, _YieldNow
 from pyfect._effect_args import require_effect
-from pyfect._fiber import Fiber
+from pyfect._fiber import Fiber, current_fiber
 from pyfect.context import Reference
 from pyfect.duration import Duration, from_input_unsafe, nanos
 from pyfect.duration import Input as DurationInput
@@ -75,14 +75,12 @@ class LiveClock:
         if not duration.is_finite():
             return never
 
-        def body(fiber: Fiber[Any, Any]) -> Effect[None]:
-            def register(resume: Callable[[Effect[None]], None]) -> Effect[None]:
-                cancel = fiber._scheduler.call_later(duration, lambda: resume(_Succeed(None)))
-                return _Sync(cancel)
+        # As Effect: a callback, its timer on the fiber's scheduler.
+        def register(resume: Callable[[Effect[None]], None]) -> Effect[None]:
+            scheduler = cast("Fiber[Any, Any]", current_fiber())._scheduler
+            return _Sync(scheduler.call_later(duration, lambda: resume(_Succeed(None))))
 
-            return _Callback(register)
-
-        return _WithFiber(body)
+        return _Callback(register)
 
 
 class Clock(Reference[ClockService]):
@@ -94,18 +92,18 @@ class Clock(Reference[ClockService]):
 def sleep(duration: DurationInput) -> Effect[None]:
     """Wait for ``duration`` on the ``Clock`` (a duration such as ``"5 seconds"``)."""
     parsed = from_input_unsafe(duration)
-    return Clock().flat_map(lambda c: c.sleep(parsed))
+    return clock_with(lambda c: c.sleep(parsed))
 
 
 def current_time_millis() -> Effect[float]:
     """Wall-clock time, milliseconds since the epoch (Effect's
     ``currentTimeMillis``), a ``float`` on every clock."""
-    return Clock().map(lambda c: c.current_time_millis_unsafe())
+    return clock_with(lambda c: _Sync(c.current_time_millis_unsafe))
 
 
 def monotonic() -> Effect[float]:
     """Monotonic time in seconds."""
-    return Clock().map(lambda c: c.monotonic_unsafe())
+    return clock_with(lambda c: _Sync(c.monotonic_unsafe))
 
 
 def now_millis_unsafe(clock: ClockService) -> int:
@@ -117,19 +115,19 @@ def now_millis_unsafe(clock: ClockService) -> int:
 
 def now_nanos() -> Effect[int]:
     """Wall-clock time, whole nanoseconds since the epoch."""
-    return Clock().map(lambda c: c.now_nanos_unsafe())
+    return clock_with(lambda c: _Sync(c.now_nanos_unsafe))
 
 
 def monotonic_nanos() -> Effect[int]:
     """Monotonic time in whole nanoseconds."""
-    return Clock().map(lambda c: c.monotonic_nanos_unsafe())
+    return clock_with(lambda c: _Sync(c.monotonic_nanos_unsafe))
 
 
 def clock_with[A, E = Never, R = Never](
     f: Callable[[ClockService], Effect[A, E, R]],
 ) -> Effect[A, E, R]:
-    """Run ``f`` with the current clock."""
-    return Clock().flat_map(f)
+    """Run ``f`` with the current clock (one op, as Effect's ``clockWith``)."""
+    return _WithFiber(lambda fiber: f(fiber.get_ref(Clock)))
 
 
 def timed[A, E, R](eff: Effect[A, E, R]) -> Effect[tuple[Duration, A], E, R]:
@@ -137,13 +135,11 @@ def timed[A, E, R](eff: Effect[A, E, R]) -> Effect[tuple[Duration, A], E, R]:
     whole monotonic nanoseconds."""
     require_effect(eff, "eff")
 
-    def body():
-        start = yield from monotonic_nanos()
-        value = yield from eff
-        end = yield from monotonic_nanos()
-        return (nanos(end - start), value)
+    def body(clock: ClockService) -> Effect[tuple[Duration, A], E, R]:
+        start = clock.monotonic_nanos_unsafe()
+        return eff.map(lambda a: (nanos(clock.monotonic_nanos_unsafe() - start), a))
 
-    return _Gen(body)
+    return clock_with(body)
 
 
 __all__ = [

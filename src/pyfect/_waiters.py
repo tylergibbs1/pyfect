@@ -78,13 +78,13 @@ class WaitList:
         return _Callback(register)
 
     def notify_ready(self) -> None:
-        """Wake every waiter whose condition holds now."""
-        ready: list[_Waiter] = []
-        parked: deque[_Waiter] = deque()
-        for waiter in self._waiters:
-            (ready if waiter.ready() else parked).append(waiter)  # pragma: no mutate, wakes retry
-        self._waiters = parked
-        for waiter in ready:
+        """Wake, in order, each waiter whose condition holds when its turn
+        comes (Effect's ``releaseTakers``): a woken fiber runs at once and
+        may change what the waiters behind it see."""
+        for waiter in list(self._waiters):
+            if waiter not in self._waiters or not waiter.ready():
+                continue
+            self._waiters.remove(waiter)
             waiter.wake()
 
     def notify_ready_soon(self, scheduler: Scheduler | None = None) -> None:

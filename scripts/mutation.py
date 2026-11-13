@@ -85,6 +85,10 @@ _RUNTIME_TESTS = (
     "oracle/test_semaphore.py",
     "oracle/test_latch.py",
     "oracle/test_scheduler.py",
+    "oracle/test_max_ops_interleaving.py",
+    "oracle/test_custom_dispatchers.py",
+    "test_scheduler_references.py",
+    "test_tracing.py",
     "oracle/test_context_vars_resume.py",
 )
 
@@ -124,7 +128,7 @@ _SCHEMA_DESELECT = tuple(
 
 GROUPS: dict[str, Group] = {
     "runtime": Group(
-        sources=("_fiber.py", "_core.py", "_primitives.py", "_waiters.py"),
+        sources=("_fiber.py", "_core.py", "_primitives.py", "_waiters.py", "_for_each.py"),
         tests=_RUNTIME_TESTS,
         deselect=(
             "interleave/test_harness.py::test_a_simulated_thread_resumes_through_the_scheduler",

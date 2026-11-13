@@ -7,11 +7,11 @@ is interrupted at each point where it gives the scheduler a turn (a yield
 or a step-budget pause). Whatever it claimed must reach its own
 continuation, or stay where it was. A primitive breaks this by returning
 the claimed value as an effect for a later step (``_Succeed``) instead of
-an ``Exit``, by claiming in one step and returning in another, or by
-claiming in a frame not marked ``claims``. The loop may pause before a
-continuation only every ``_INLINE_STEPS`` steps, which a sweep rarely
-lines up with a frame's exit, so each case also runs with every
-continuation a possible pause.
+an ``Exit`` or ``run_known(...)``, by claiming in one step and returning in
+another, or by handing it on with ``succeed_with``. The loop may pause
+before a ``succeed_with`` continuation only every ``_INLINE_STEPS`` of
+them, which a sweep rarely lines up with a frame's exit, so each case also
+runs with every continuation a possible pause.
 """
 
 from collections.abc import Callable, Sequence

@@ -11,27 +11,32 @@ from __future__ import annotations
 
 import sys
 from collections.abc import Callable, Iterable
-from typing import Any, Literal, Never
+from typing import Any, Literal, Never, overload
 
-from pyfect._cause_election import late_sibling_cause, race_failure_cause
+from pyfect._cause_election import race_failure_cause
 from pyfect._core import (
     Effect,
     _Callback,
     _FailCause,
     _FromExit,
-    _Gen,
     _Succeed,
-    _Suspend,
     _WithFiber,
 )
 from pyfect._effect_args import require_effects
-from pyfect._fiber import Fiber, interrupt_all
+from pyfect._effect_base import Step
+from pyfect._effect_resources import _run_finalizer
+from pyfect._fiber import Fiber
+from pyfect._fiber_all import interrupt_all
+from pyfect._for_each import for_each_into as _for_each_into
+from pyfect._primitives import _OnExit
 from pyfect.cause import Cause, Interrupt, fail
 from pyfect.duration import Input as DurationInput
 from pyfect.duration import from_input_unsafe
 from pyfect.errors import TimeoutException
-from pyfect.exit import Exit, Failure, Success
+from pyfect.exit import Exit, Success
 from pyfect.option import Option, Some
+
+_VOID: Effect[None] = _Succeed(None)
 
 type Concurrency = int | Literal["unbounded"] | None
 """``None`` runs one at a time; an ``int`` caps how many run at once."""
@@ -52,133 +57,62 @@ def _drop_own_interrupts(causes: list[Cause[Any]], by: int) -> Cause[Any]:
     )
 
 
-def _with_late_failure(failure: Cause[Any] | None, late: Cause[Any]) -> Cause[Any] | None:
-    """Add a failure that came after the first (or after the caller was
-    interrupted): its interrupts are dropped, as Effect's ``forEach`` does,
-    since they only report how the sibling was stopped."""
-    reasons = tuple(r for r in late.reasons if not isinstance(r, Interrupt))
-    if not reasons:
-        return failure
-    return Cause(reasons) if failure is None else late_sibling_cause(failure, Cause(reasons))
-
-
+@overload
 def for_each[T, B, E = Never, R = Never](
     items: Iterable[T],
     f: Callable[[T], Effect[B, E, R]],
     *,
     concurrency: Concurrency = None,
-) -> Effect[list[B], E, R]:
-    """Run ``f`` on every item and collect the results in order.
+    discard: Literal[False] = False,
+) -> Effect[list[B], E, R]: ...
+@overload
+def for_each[T, E = Never, R = Never](
+    items: Iterable[T],
+    f: Callable[[T], Effect[object, E, R]],
+    *,
+    concurrency: Concurrency = None,
+    discard: Literal[True],
+) -> Effect[None, E, R]: ...
+def for_each(
+    items: Iterable[Any],
+    f: Callable[[Any], Effect[Any, Any, Any]],
+    *,
+    concurrency: Concurrency = None,
+    discard: bool = False,
+) -> Effect[Any, Any, Any]:
+    """Run ``f`` on every item and collect the results in order, or with
+    ``discard`` succeed with ``None`` and keep none.
 
     With ``concurrency``, up to that many run at once. The first failure
     interrupts the rest. ``items`` is read each time the effect runs.
     """
+    return for_each_into(items, f, concurrency, None if discard else _as_is)
+
+
+def for_each_into[T, B, X, E, R](
+    items: Iterable[T],
+    f: Callable[[T], Effect[B, E, R]],
+    concurrency: Concurrency,
+    collect: Callable[[list[B]], X] | None,
+) -> Effect[X, E, R]:
+    """``for_each``, ending with ``collect(results)``, or with ``None`` and
+    no results kept if ``collect`` is ``None`` (Effect's ``discard``)."""
     limit = 1 if concurrency is None else _resolve_concurrency(concurrency)
-    if limit == 1:
-        return _for_each_sequential(items, f)
-    return _Suspend(lambda: _for_each_concurrent(list(items), f, limit))
+    return _for_each_into(items, f, limit, collect)
 
 
-def _for_each_sequential[T, B, E, R](
-    items: Iterable[T], f: Callable[[T], Effect[B, E, R]]
-) -> Effect[list[B], E, R]:
-    def loop():
-        out: list[B] = []
-        for item in items:
-            out.append((yield from f(item)))  # noqa: PERF401 - yield is not allowed in comprehensions
-        return out
-
-    return _Gen(loop)
-
-
-def _for_each_concurrent[T, B, E, R](
-    items: list[T], f: Callable[[T], Effect[B, E, R]], limit: int
-) -> Effect[list[B], E, R]:
-    def body(parent: Fiber[Any, Any]) -> Effect[list[B], E, R]:
-        n = len(items)
-        if n == 0:
-            return _Succeed([])
-        results: list[Any] = [None] * n
-        next_index = 0
-        # Once an item fails (or the caller is interrupted), no worker takes
-        # another item, as Effect's forEach starts no item after its
-        # terminal exit; this matters where the workers cannot be
-        # interrupted (inside ``uninterruptible``).
-        stopped = False
-        # The first failure's cause, then what later failures add.
-        failure: Cause[Any] | None = None
-
-        def worker():
-            nonlocal next_index
-            while not stopped and next_index < n:
-                i = next_index
-                next_index += 1
-                results[i] = yield from f(items[i])
-
-        def register(resume: Callable[[Effect[Any, Any, Any]], None]) -> Effect[None]:
-            workers: list[Fiber[Any, Any]] = []
-            remaining = 0
-            forking = True
-
-            def result() -> Effect[Any, Any, Any]:
-                return _Succeed(results) if failure is None else _FailCause(failure)
-
-            def observer(ex: Exit[Any, Any]) -> None:
-                # Record first: interrupting siblings finishes them (and
-                # re-enters this observer) before the loop below returns.
-                nonlocal remaining, stopped, failure
-                remaining -= 1
-                failed_first = False
-                if isinstance(ex, Failure):
-                    if not stopped:
-                        stopped = failed_first = True
-                        failure = ex.cause
-                    else:
-                        failure = _with_late_failure(failure, ex.cause)
-                if remaining == 0 and not forking:
-                    resume(result())
-                elif failed_first:
-                    for w in workers:
-                        w.interrupt_as_unsafe(parent.id, parent._interruptor_annotations())
-
-            # Started at once, as in Effect, each as interruptible as the
-            # parent; a worker runs before the next is forked, so once an
-            # item has failed no further worker starts.
-            for _ in range(min(limit, n)):
-                if stopped or next_index >= n:
-                    break
-                w = parent._fork(
-                    _Gen(worker), daemon=False, start_immediately=True, uninterruptible="inherit"
-                )
-                workers.append(w)
-                remaining += 1
-                w.add_observer_unsafe(observer)
-            forking = False
-            if remaining == 0:
-                resume(result())
-
-            def cancel() -> Effect[None]:
-                # Interrupted from outside: report what the workers did too.
-                nonlocal stopped
-                stopped = True
-                return interrupt_all(
-                    workers, parent.id, parent._interruptor_annotations()
-                ).and_then(_Suspend(report))
-
-            def report() -> Effect[None]:
-                return _Succeed(None) if failure is None else _FailCause(failure)
-
-            return _Suspend(cancel)
-
-        return _Callback(register)
-
-    return _WithFiber(body)
+def _as_is[T](x: T) -> T:
+    return x
 
 
 # --- racing -------------------------------------------------------------------
 
 
 def _race(effects: list[Effect[Any, Any, Any]], *, first_exit_wins: bool) -> Effect[Any, Any, Any]:
+    """Effect's ``raceAll`` and ``raceAllFirst``: ``withFiber``, an exit
+    hook on the caller's stack (``onExitUnsafe``, no op), and a callback
+    that forks every racer at once."""
+
     def body(parent: Fiber[Any, Any]) -> Effect[Any, Any, Any]:
         fibers: list[Fiber[Any, Any]] = []
 
@@ -206,18 +140,23 @@ def _race(effects: list[Effect[Any, Any, Any]], *, first_exit_wins: bool) -> Eff
             for e in effects:
                 if decided:
                     break
-                f = parent._fork(e, daemon=False, start_immediately=True)
+                f = parent._fork(e, daemon=True, start_immediately=True)
                 fibers.append(f)
                 f.add_observer_unsafe(observer)
 
-        def stop_losers(_: Exit[Any, Any]) -> Effect[None]:
+        def stop_losers(ex: Exit[Any, Any]) -> Step:
             # However the race ends, won, lost or interrupted (also in a
             # pause after the winner resumed it), as Effect's ``onExitUnsafe``
             # hook in ``raceAll``: never in the effect handed to ``resume``,
-            # which an interrupt can skip.
-            return interrupt_all(fibers, parent.id, parent._interruptor_annotations())
+            # which an interrupt can skip. With every racer done, the exit
+            # goes straight on.
+            live = [f for f in fibers if f._exit is None]
+            if not live:
+                return _FromExit(ex)
+            return _run_finalizer(interrupt_all(live), ex)
 
-        return _Callback(register).on_exit(stop_losers)
+        parent._push(_OnExit(_VOID, stop_losers))
+        return _Callback(register)
 
     return _WithFiber(body)
 

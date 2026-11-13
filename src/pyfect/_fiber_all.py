@@ -101,20 +101,23 @@ def interrupt_all_as(fibers: Iterable[Fiber[Any, Any]], by: int | None) -> Effec
     of them to finish. Each fiber is interrupted as it is drawn from
     ``fibers``, so a lazy iterable sees what earlier interrupts changed."""
 
-    def body(me: Fiber[Any, Any]) -> Effect[None]:
-        annotations = me._interruptor_annotations()
-        interrupted: list[Fiber[Any, Any]] = []
-        for fiber in fibers:
-            fiber.interrupt_as_unsafe(by, annotations)
-            interrupted.append(fiber)
-        return await_all(interrupted).as_void()
-
-    return _WithFiber(body)
+    return _WithFiber(lambda me: _interrupt_and_await(me, fibers, by))
 
 
 def interrupt_all(fibers: Iterable[Fiber[Any, Any]]) -> Effect[None]:
     """Interrupt every fiber, then wait for all of them to finish."""
-    return _WithFiber(lambda me: interrupt_all_as(fibers, me.id))
+    return _WithFiber(lambda me: _interrupt_and_await(me, fibers, me.id))
+
+
+def _interrupt_and_await(
+    me: Fiber[Any, Any], fibers: Iterable[Fiber[Any, Any]], by: int | None
+) -> Effect[None]:
+    annotations = me._interruptor_annotations()
+    interrupted: list[Fiber[Any, Any]] = []
+    for fiber in fibers:
+        fiber.interrupt_as_unsafe(by, annotations)
+        interrupted.append(fiber)
+    return await_all(interrupted).as_void()
 
 
 def await_all_children[A, E, R](eff: Effect[A, E, R]) -> Effect[A, E, R]:

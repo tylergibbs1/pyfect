@@ -187,3 +187,49 @@ def test_timeout_produces_a_useful_error_message():
     assert isinstance(error, fx.TimeoutException)
     assert error.duration == millis(1500)
     assert str(error) == "Operation timed out after '1s 500ms'"
+
+
+@pytest.mark.parametrize("concurrency", [None, 2, "unbounded"])
+def test_for_each_discard_runs_every_item_and_keeps_none(concurrency: fx.Concurrency):
+    seen: list[int] = []
+    effect = fx.for_each(
+        range(4),
+        lambda n: fx.sync(lambda: seen.append(n)).as_(n),
+        concurrency=concurrency,
+        discard=True,
+    )
+    assert run(effect) is None
+    assert seen == [0, 1, 2, 3]
+
+
+@pytest.mark.parametrize("concurrency", [2, "unbounded"])
+def test_concurrent_for_each_makes_each_items_effect_once(concurrency: fx.Concurrency):
+    made: list[int] = []
+
+    def item(i: int) -> fx.Effect[int]:
+        made.append(i)
+        return fx.yield_now().as_(i)
+
+    assert run(fx.for_each(range(4), item, concurrency=concurrency)) == [0, 1, 2, 3]
+    assert made == [0, 1, 2, 3]
+
+
+def test_a_failing_item_interrupts_its_siblings_as_the_caller():
+    exits: list[fx.Exit[object, object]] = []
+
+    def item(i: int) -> fx.Effect[object, str]:
+        if i == 1:
+            return fx.yield_now().and_then(fx.fail("boom"))
+        return fx.never.on_exit(lambda ex: fx.sync(lambda: exits.append(ex)))
+
+    @fx.gen
+    def program():
+        me = yield from fx.fiber_id()
+        result = yield from fx.for_each(range(2), item, concurrency=2).exit()
+        return me, result
+
+    me, result = run(program)
+    assert isinstance(result, fx.exit.Failure)
+    [sibling] = exits
+    assert isinstance(sibling, fx.exit.Failure)
+    assert [r.fiber_id for r in sibling.cause.reasons if isinstance(r, fx.cause.Interrupt)] == [me]
