@@ -34,21 +34,30 @@ class _Live:
         self.released = 0
         self.dead_uses = 0
         self.most_live = 0
+        # The newest resource acquired for each key, and each resource's key.
+        self.newest: dict[object, int] = {}
+        self.key_of: dict[int, object] = {}
+        self.stale_uses = 0
 
-    def _add(self) -> int:
+    def _add(self, key: object) -> int:
         with self._lock:
             self.acquired += 1
-            self.live.add(self.acquired)
+            n = self.acquired
+            self.live.add(n)
             self.most_live = max(self.most_live, len(self.live))
-            return self.acquired
+            self.newest[key] = n
+            self.key_of[n] = key
+            return n
 
     def _remove(self, n: int) -> None:
         with self._lock:
             self.released += 1
             self.live.discard(n)
 
-    def acquire(self) -> fx.Effect[int, Any, fx.Scope]:
-        return fx.acquire_release(fx.sync(self._add), lambda n, _: fx.sync(lambda: self._remove(n)))
+    def acquire(self, key: object = None) -> fx.Effect[int, Any, fx.Scope]:
+        return fx.acquire_release(
+            fx.sync(lambda: self._add(key)), lambda n, _: fx.sync(lambda: self._remove(n))
+        )
 
     def use(self, n: int) -> fx.Effect[None]:
         """Note a use of ``n``, which must be live, across a yield."""
@@ -60,9 +69,23 @@ class _Live:
 
         return fx.sync(check).and_then(fx.yield_now()).and_then(fx.sync(check))
 
+    def use_current(self, n: int) -> fx.Effect[None]:
+        """``use(n)``, where ``n`` must also be the newest resource of its key: while one
+        is held, getting its key joins it rather than acquiring another (``RcRef``,
+        ``RcMap``). Older ones may still be live, their releases running: in Effect the
+        key is free again once its last holder lets go, before the release has run."""
+
+        def check() -> None:
+            with self._lock:
+                if self.newest[self.key_of[n]] != n:
+                    self.stale_uses += 1
+
+        return fx.sync(check).and_then(self.use(n)).and_then(fx.sync(check))
+
     def balanced(self) -> list[str]:
         return (
             expect("uses of a released resource", self.dead_uses, 0)
+            + expect("uses while a newer resource of the key was acquired", self.stale_uses, 0)
             + expect("resources still live", sorted(self.live), [])
             + expect("releases", self.released, self.acquired)
         )
@@ -244,15 +267,12 @@ def _rc_ref_case(idle: str | None) -> Callable[[], list[str]]:
         def go(ref: fx.RcRef[int]) -> list[str]:
             def work(_: int) -> None:
                 for _ in range(N):
-                    fx.run_blocking(fx.scoped(ref.get().flat_map(live.use)))
+                    fx.run_blocking(fx.scoped(ref.get().flat_map(live.use_current)))
 
             return on_threads(work)
 
         made = fx.RcRef.make(live.acquire(), idle_time_to_live=idle)
-        problems = _owned(made, go) + live.balanced()
-        return problems + (
-            [f"{live.most_live} resources live at once"] if live.most_live > 2 else []
-        )
+        return _owned(made, go) + live.balanced()
 
     return run
 
@@ -260,21 +280,14 @@ def _rc_ref_case(idle: str | None) -> Callable[[], list[str]]:
 def _rc_map_case(idle: str | None) -> Callable[[], list[str]]:
     def run() -> list[str]:
         live = _Live()
-        keys: dict[int, set[int]] = {}
-        lock = threading.Lock()
 
         def lookup(key: int) -> fx.Effect[int, Any, fx.Scope]:
-            def note(n: int) -> int:
-                with lock:
-                    keys.setdefault(key, set()).add(n)
-                return n
-
-            return live.acquire().map(note)
+            return live.acquire(key)
 
         def go(rc_map: fx.RcMap[int, int]) -> list[str]:
             def work(i: int) -> None:
                 for k in range(N):
-                    fx.run_blocking(fx.scoped(rc_map.get((i + k) % 4).flat_map(live.use)))
+                    fx.run_blocking(fx.scoped(rc_map.get((i + k) % 4).flat_map(live.use_current)))
 
             return on_threads(work)
 
@@ -320,14 +333,14 @@ def _layer_map_case() -> list[str]:
                 built[key] += 1
             return n
 
-        return layer.effect(_Tenant, live.acquire().map(count))
+        return layer.effect(_Tenant, live.acquire(key).map(count))
 
     def go(layer_map: fx.LayerMap[int, _Tenant]) -> list[str]:
         def work(i: int) -> None:
             for k in range(N):
                 key = (i + k) % 4
                 eff = layer_map.context_effect(key).flat_map(
-                    lambda ctx: live.use(ctx.get_unsafe(_Tenant))
+                    lambda ctx: live.use_current(ctx.get_unsafe(_Tenant))
                 )
                 fx.run_blocking(fx.scoped(eff))
 

@@ -4,6 +4,13 @@
 
 ### Fixed
 
+- `tests/cross_run`'s `RcRef.get` case failed now and then on CI with "3 resources live at
+  once": it allowed at most 2, which is wrong for `RcRef` and `RcMap` (and so `LayerMap`). As
+  in Effect 4.1.2, the key is free again once its last holder lets go, before that holder's
+  release has run, so a `get` meanwhile acquires afresh and any number of releases can still
+  be running. Run under Node, Effect holds 3 at once when two releases wait on a gate, and so
+  does pyfect (`tests/test_resource_edges.py` pins both). The cases now check what does hold:
+  while a resource is held, no newer one is acquired for its key.
 - `json_patch.get` gives `[]` for two NaN floats that are different objects (`inf - inf` and
   `inf * 0`), as Effect's `Object.is` does; it gave a `replace`. Numbers are compared by
   `pyfect._js.same_json_value`, and `tests/test_object_is_guard.py` keeps hand-written sign

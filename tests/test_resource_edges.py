@@ -1,7 +1,8 @@
 """Resource edge cases Effect's tests leave out. Each expected value was
 checked by running the same program against Effect's TS source under Node."""
 
-from typing import Never
+from collections.abc import Callable, Generator
+from typing import Any, Never
 
 import pyfect as fx
 from pyfect import layer, testing
@@ -152,3 +153,62 @@ def test_rc_map_keeps_an_interrupted_lookups_scope_until_its_borrower_lets_go():
     assert (finalized, (yield from rc_map.has("k"))) == (False, False)
     yield from borrower.close(fx.Success(None))
     assert finalized
+
+
+type _Get = fx.Effect[int, Never, fx.Scope]
+
+
+def _overlapping_releases(
+    make_get: Callable[[_Get], fx.Effect[_Get, Never, fx.Scope]],
+) -> fx.Effect[tuple[int, int, int], Never, fx.Scope]:
+    """Two holders in turn let go, each release waiting on a gate; a third caller then gets."""
+
+    def program() -> Generator[Any, Any, tuple[int, int, int]]:
+        live: set[int] = set()
+        counts = [0, 0]  # acquired, most live
+        gate = yield from fx.Latch.make()
+
+        def add() -> int:
+            counts[0] += 1
+            live.add(counts[0])
+            counts[1] = max(counts[1], len(live))
+            return counts[0]
+
+        acquire = fx.acquire_release(
+            fx.sync(add), lambda i, _: gate.wait().and_then(fx.sync(lambda: live.discard(i)))
+        )
+        get = yield from make_get(acquire)
+        yield from fx.scoped(get).fork()
+        yield from fx.yield_now()
+        yield from fx.scoped(get).fork()
+        yield from fx.yield_now()
+        c = yield from get
+        live_during = len(live)
+        yield from gate.open()
+        yield from fx.yield_now()
+        return c, live_during, counts[1]
+
+    return fx.gen(program)
+
+
+@testing.effect
+def test_rc_ref_get_during_releases_acquires_afresh():
+    # Effect 4.1.2 under Node: {"c":3,"liveDuring":3,"most":3}. The state is empty once the
+    # last reference goes, before its release has run, so releases still running overlap.
+    got = yield from fx.scoped(
+        _overlapping_releases(lambda acquire: fx.RcRef.make(acquire).map(lambda r: r.get()))
+    )
+    assert got == (3, 3, 3)
+
+
+@testing.effect
+def test_rc_map_get_during_releases_acquires_afresh():
+    # Effect 4.1.2 under Node: {"c":3,"liveDuring":3,"most":3}, as for RcRef.
+    def make_get(acquire: _Get) -> fx.Effect[_Get, Never, fx.Scope]:
+        def lookup(_: str) -> _Get:
+            return acquire
+
+        return fx.RcMap.make(lookup).map(lambda m: m.get("k"))
+
+    got = yield from fx.scoped(_overlapping_releases(make_get))
+    assert got == (3, 3, 3)
