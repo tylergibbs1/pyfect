@@ -66,3 +66,15 @@ def test_compiling_a_fragment_nested_with_other_numbering_keeps_its_own_cached()
 
     assert nested.compile()[0].endswith("RETURNING $2 AS label, $3 AS extra")
     assert returning.compile() == ("$1 AS label", ("label",))
+
+
+def test_clickhouse_doubles_backslashes_in_names():
+    """ClickHouse reads ``\\"`` in a quoted name as an escaped quote, so a name's
+    backslashes are doubled before its quotes, and the name cannot end its quotes early."""
+    from pyfect.sql import clickhouse
+
+    sql = _constructor(clickhouse.make_compiler())
+    compiled = sql("SELECT 1 AS {}", sql.identifier('a\\" , 1 AS b --')).compile()
+    assert compiled == ('SELECT 1 AS "a\\\\"" , 1 AS b --"', ())
+    record = sql("INSERT INTO t {}", sql.insert({"k\\": 1})).compile()
+    assert record[0] == 'INSERT INTO t ("k\\\\") VALUES ({p1: Int64})'
