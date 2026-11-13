@@ -52,7 +52,7 @@ def wake_soon(task: Callable[[], None]) -> None:
     if fiber is None:
         task()
     else:
-        fiber.dispatcher().schedule(task)
+        fiber._queue(task)
 
 
 class WaitList:
@@ -87,13 +87,15 @@ class WaitList:
         for waiter in ready:
             waiter.wake()
 
-    def notify_ready_soon(self, scheduler: Scheduler | None = None) -> None:
-        """``notify_ready`` in a task on ``scheduler``, else as ``wake_soon``;
-        several calls before it runs share it, as Effect's
-        ``scheduleReleaseTaker``."""
+    def notify_ready_soon(self, where: Callable[[], Scheduler | None] | None = None) -> None:
+        """``notify_ready`` in a task on the scheduler ``where`` gives, else as
+        ``wake_soon``; several calls before it runs share it, as Effect's
+        ``scheduleReleaseTaker``. ``where`` is asked only when a task is
+        queued, which most calls (an offer with no taker) skip."""
         if self._soon or not self._waiters:
             return
         self._soon = True
+        scheduler = None if where is None else where()
 
         def flush() -> None:
             self._soon = False  # pragma: no mutate, falsy either way

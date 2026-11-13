@@ -71,6 +71,12 @@ class TimerHeap[T]:
         assert value is not None
         return when, value
 
+    def any_due(self, now: float) -> bool:
+        """Whether an entry, perhaps cancelled, is due by ``now``: one
+        comparison, for the scheduler to ask every turn before ``pop_due``."""
+        entries = self._entries
+        return bool(entries) and entries[0][0] <= now
+
     def pop_due(self, now: float) -> list[T]:
         """Every entry due by ``now``, earliest first."""
         due: list[T] = []

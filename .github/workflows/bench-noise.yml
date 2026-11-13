@@ -1,0 +1,32 @@
+name: bench-noise
+
+# Temporary: the spread of benchmarks/compare.py on CI runners, to set its tolerances.
+on:
+  push:
+    branches: [dispatch-perf]
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        base: [self-1, self-2, self-3, self-4, self-5, self-6, v061-1, v061-2, v061-3, main-1, main-2, main-3]
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+      - name: Compare
+        working-directory: benchmarks
+        run: |
+          case "${{ matrix.base }}" in
+            self-*) base=HEAD ;;
+            v061-*) base=f856cf92 ;;
+            main-*) base=5cf1e1dd ;;
+          esac
+          uv run --python 3.13 python compare.py --base "$base" --case fork-heavy --case "queue offer/take" --case "map + filter" || true
