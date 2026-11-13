@@ -212,7 +212,7 @@ def test_a_generic_signature_keeps_its_type_parameters(reference: Tree):
     assert make["signature"].startswith("[K: AnyPersistable, A, E, R = Never](lookup: ")
     assert make["source"].startswith("@overload\ndef make[K: AnyPersistable, A, E, R = Never](")
     for_each = modules_of(reference)["pyfect"]["functions"]["for_each"]
-    assert for_each["signature"].startswith("[T, B, E = Never, R = Never](items, f")
+    assert for_each["signature"].startswith("[T, B, E = Never, R = Never](items: Iterable[T], f: ")
 
 
 def test_a_generic_class_shows_its_type_parameters(reference: Tree):
