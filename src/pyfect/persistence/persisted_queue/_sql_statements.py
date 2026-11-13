@@ -15,6 +15,7 @@ from pyfect.cause import Cause
 from pyfect.duration import Duration
 from pyfect.effect import gen, sync, void
 from pyfect.persistence._columns import column_int
+from pyfect.persistence._sql_keys import key_equals
 from pyfect.persistence.persistence._sql import SQL_CLEANUP_BATCH_SIZE
 from pyfect.schedule import Schedule
 from pyfect.scope import Scope, scoped
@@ -158,7 +159,8 @@ def offer_statement(dialect: Dialect, table_name: str) -> OfferStatement:
         offer_sql = (
             "SET XACT_ABORT OFF; BEGIN TRY IF NOT EXISTS (SELECT 1 FROM "
             f"{escaped} WITH (READCOMMITTEDLOCK, FORCESEEK, INDEX({index})) "
-            "WHERE id = @id AND queue_name = @name) "
+            "WHERE id = @id AND queue_name = @name "
+            "AND DATALENGTH(id) = DATALENGTH(@id) AND DATALENGTH(queue_name) = DATALENGTH(@name)) "
             f"INSERT INTO {escaped} (id, queue_name, element, state, attempts, visible_at, "
             "created_at, updated_at) VALUES (@id, @name, @element, 'pending', 0, @visible_at, "
             "SYSDATETIME(), SYSDATETIME()); END TRY BEGIN CATCH "
@@ -262,7 +264,7 @@ def poll_statement(dialect: Dialect, table_name: str, expires_at: Fragment) -> P
         return lambda name, max_attempts, size, lock: sql(
             "WITH cte AS (SELECT TOP {size} sequence FROM {table} "
             "WITH (UPDLOCK, READPAST, ROWLOCK) "
-            "WHERE queue_name = {name} AND state = 'pending' AND attempts < {max_attempts} "
+            "WHERE {queue} AND state = 'pending' AND attempts < {max_attempts} "
             "AND visible_at <= {now} AND (acquired_at IS NULL OR acquired_at < {expires_at}) "
             "ORDER BY visible_at ASC, sequence ASC) "
             "UPDATE q SET acquired_at = {now}, acquired_by = {lock}, attempts = q.attempts + 1 "
@@ -271,7 +273,7 @@ def poll_statement(dialect: Dialect, table_name: str, expires_at: Fragment) -> P
             table=table,
             now=now,
             lock=lock,
-            name=name,
+            queue=key_equals(sql, "queue_name", name),
             max_attempts=max_attempts,
             expires_at=expires_at,
             size=sql.unsafe(str(size)),

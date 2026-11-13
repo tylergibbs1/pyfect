@@ -21,8 +21,9 @@ from pyfect.sql.statement import Fragment
 
 MYSQL_KEY: Final = "VARBINARY(764)"
 """191 four-byte characters, as the ``VARCHAR(191)`` it replaces."""
-MSSQL_KEY: Final = "NVARCHAR(450) COLLATE Latin1_General_100_BIN2"
-MSSQL_PAIR_KEY: Final = "NVARCHAR(191) COLLATE Latin1_General_100_BIN2"
+MSSQL_BINARY_COLLATION: Final = "Latin1_General_100_BIN2"
+MSSQL_KEY: Final = f"NVARCHAR(450) COLLATE {MSSQL_BINARY_COLLATION}"
+MSSQL_PAIR_KEY: Final = f"NVARCHAR(191) COLLATE {MSSQL_BINARY_COLLATION}"
 """Each half of a two-column key (the index key stays under 900 bytes)."""
 
 

@@ -19,7 +19,8 @@ from pyfect.exit import Exit, Success
 from pyfect.layer import Layer
 from pyfect.layer import effect as layer_effect
 from pyfect.logger import log_warning
-from pyfect.persistence._columns import column_int
+from pyfect.persistence._columns import column_int, column_text
+from pyfect.persistence._sql_keys import key_equals
 from pyfect.persistence.persisted_queue._error import PersistedQueueError, dead_letter_from_cause
 from pyfect.persistence.persisted_queue._mailbox import Mailbox, run_poller, take_from
 from pyfect.persistence.persisted_queue._sql_migrations import migrations
@@ -102,11 +103,11 @@ def _lookup(  # noqa: PLR0917
             "UPDATE {} SET state = 'failed', acquired_at = NULL, acquired_by = NULL, "
             "updated_at = {}, "
             "last_failure = COALESCE(last_failure, 'Lock expired after final attempt') "
-            "WHERE queue_name = {} AND state = 'pending' AND attempts >= {} "
+            "WHERE {} AND state = 'pending' AND attempts >= {} "
             "AND (acquired_at IS NULL OR acquired_at < {})",
             sql.identifier(table_name),
             dialect.now,
-            name,
+            key_equals(sql, "queue_name", name),
             max_attempts,
             expires_at,
         )
@@ -118,7 +119,7 @@ def _lookup(  # noqa: PLR0917
                 elements = [
                     Element(
                         sequence=_sequence(row["sequence"]),
-                        id=str(row["id"]),
+                        id=column_text(row["id"]),
                         element=str(row["element"]),
                         attempts=column_int(row["attempts"]),
                         lock=lock,

@@ -1,6 +1,8 @@
-"""The migrations of the SQL queue table, as Effect's: ``0001`` makes the
-first schema (a ``completed`` flag), ``0002`` upgrades it to ``state``
-and ``visible_at`` with a partial index for pollers."""
+"""The migrations of the SQL queue table. ``0001`` and ``0002`` are
+Effect's: ``0001`` makes the first schema (a ``completed`` flag), ``0002``
+upgrades it to ``state`` and ``visible_at`` with a partial index for
+pollers. ``0003`` is pyfect's: element ids and queue names compare exactly
+on MySQL and SQL Server (``persistence._sql_keys``)."""
 
 from __future__ import annotations
 
@@ -8,7 +10,8 @@ from collections.abc import Generator
 from typing import Any
 
 from pyfect._core import Effect
-from pyfect.effect import gen
+from pyfect.effect import gen, void
+from pyfect.persistence._sql_keys import MSSQL_BINARY_COLLATION
 from pyfect.sql import migrator
 from pyfect.sql.client import SqlClient, SqlClientService
 from pyfect.sql.error import SqlError
@@ -310,10 +313,76 @@ def _upgrade(table_name: str) -> Effect[object, object, SqlClient]:
     return gen(body)
 
 
+def _exact_ids_mysql(sql: SqlClientService, table_name: str) -> Effect[object, SqlError]:
+    """``VARBINARY`` keeps every byte of the ``VARCHAR(255)`` (1020 bytes
+    of ``utf8mb4``); the indexes on the columns are rebuilt with them."""
+    return sql(
+        "ALTER TABLE {} MODIFY COLUMN id VARBINARY(1020) NOT NULL, "
+        "MODIFY COLUMN queue_name VARBINARY(1020) NOT NULL",
+        sql.identifier(table_name),
+    )
+
+
+def _exact_ids_mssql(sql: SqlClientService, table_name: str) -> Effect[object, SqlError]:
+    """A ``BIN2`` collation, and the columns' lengths in the unique index:
+    SQL Server ignores trailing spaces in a unique index under every
+    collation, so ``job`` and ``job `` would be one id. The indexes on the
+    columns are dropped first, since a column in an index cannot change."""
+    table = sql.identifier(table_name)
+    id_index = sql.identifier(f"idx_{table_name}_id")
+    take_index = sql.identifier(f"idx_{table_name}_take")
+    collation = sql.literal(MSSQL_BINARY_COLLATION)
+
+    def body() -> Generator[Any, Any]:
+        yield from sql("DROP INDEX {} ON {}", id_index, table)
+        yield from sql("DROP INDEX {} ON {}", take_index, table)
+        for column in ("id", "queue_name"):
+            yield from sql(
+                "ALTER TABLE {} ALTER COLUMN {} NVARCHAR(255) COLLATE {} NOT NULL",
+                table,
+                sql.identifier(column),
+                collation,
+            )
+        yield from sql(
+            "ALTER TABLE {} ADD id_length AS DATALENGTH(id), "
+            "queue_name_length AS DATALENGTH(queue_name)",
+            table,
+        )
+        yield from sql(
+            "CREATE UNIQUE INDEX {} ON {} (id, queue_name, id_length, queue_name_length)",
+            id_index,
+            table,
+        )
+        yield from sql(
+            "CREATE INDEX {} ON {} (queue_name, visible_at) WHERE state = 'pending'",
+            take_index,
+            table,
+        )
+
+    return gen(body)
+
+
+def _exact_ids(table_name: str) -> Effect[object, object, SqlClient]:
+    """PostgreSQL and SQLite already compare these columns exactly."""
+
+    def body() -> Generator[Any, Any]:
+        sql = (yield from SqlClient()).without_transforms()
+        yield from sql.on_dialect_or_else(
+            mysql=lambda: _exact_ids_mysql(sql, table_name),
+            mssql=lambda: _exact_ids_mssql(sql, table_name),
+            or_else=lambda: void,
+        )
+
+    return gen(body)
+
+
 def migrations(table_name: str) -> migrator.Loader:
+    """Deployed databases have run the earlier migrations: a change to the
+    schema is a new one, never an edit of an old one."""
     return migrator.from_record(
         {
             "0001_create_table": _create(table_name),
             "0002_upgrade_schema": _upgrade(table_name),
+            "0003_exact_ids": _exact_ids(table_name),
         }
     )

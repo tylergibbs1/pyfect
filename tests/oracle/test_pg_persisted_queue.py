@@ -306,6 +306,8 @@ def test_runs_fresh_install_migrations_once(pg_server: PgServer) -> None:
         assert [(row["migration_id"], row["name"]) for row in migrations] == [
             (1, "create_table"),
             (2, "upgrade_schema"),
+            # pyfect's own, a no-op on PostgreSQL (PARITY section 4)
+            (3, "exact_ids"),
         ]
 
         indexes = yield from sql(

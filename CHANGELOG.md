@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.6.4 (unreleased)
+
+### Fixed
+
+- The SQL `PersistedQueue` store compares element ids and queue names exactly on MySQL and
+  SQL Server, as the memory, Redis, SQLite and PostgreSQL stores do (GitHub issue #1). The
+  tables kept the server's default collation, which on MySQL ignores case and accents (and
+  on `PAD SPACE` collations trailing spaces) and on SQL Server ignores case and trailing
+  spaces, so an offer whose id differed from a stored one only in those was dropped as a
+  duplicate, and a queue's poller claimed the elements of a queue whose name differed only
+  in them. A new migration (`0003_exact_ids`, run by `make_store_sql` / `layer_store_sql` on
+  start, existing rows kept) makes both columns `VARBINARY` on MySQL and
+  `Latin1_General_100_BIN2` on SQL Server, where the unique index and every comparison also
+  count their lengths. `tests/oracle/test_sql_exact_key_columns.py` builds every pyfect SQL
+  schema on both servers and fails if a key column compares inexactly.
+
 ## 0.6.3 (2026-11-13)
 
 ### Fixed
