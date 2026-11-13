@@ -190,6 +190,25 @@
   weak-keyed table and `weakref.finalize` in pyfect is now listed with what makes it free
   (`tests/test_weak_tables.py`), so a new one is checked before it lands.
 
+### Performance
+
+- Forking and yielding cost what they did in 0.6.1 again. The per-fiber dispatchers added in
+  this release made `benchmarks/streams.py`'s fork-heavy case 30 to 37% slower: each fiber
+  allocated a dispatcher and a batch, and each task went through a thread check and an extra
+  scheduling hop. A fiber now keeps its batch in its own slots, a batch of one task allocates
+  nothing (a yield is held as is), and the fiber's own yields, forks and wakes queue without
+  the thread check; Effect's ordering is unchanged. A queue asks for its waker only when it
+  wakes a taker, and the scheduler checks for due timers with one comparison per turn, as it
+  did before the soak's `TimerHeap`. On CI, alternating on one runner: fork-heavy x0.90 to
+  x0.98 of 0.6.1 (x0.57 to x0.66 of the release branch before this), queue offer/take x1.02
+  to x1.07, map + filter unchanged.
+- `benchmarks/compare.py` compares a commit with its branch base (the merge base with
+  `origin/main`, or the first parent on `main`), alternating the two on one machine, and CI
+  runs it after the gate: fork-heavy and queue fail beyond x1.10 of the base, set from twelve
+  CI runners comparing a commit with itself (x0.93 to x1.04), and the other cases beyond
+  x1.25. The gate's x1.6
+  against a fixed baseline had let the x1.37 through, as runners differ by that much.
+
 ### Docs
 
 - `SECURITY.md` names the supported release, response times and scope, with a placeholder
