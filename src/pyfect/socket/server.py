@@ -258,7 +258,7 @@ def make_web_socket(
     ``websockets`` extra). A handler gets each connection as a ``Socket``,
     the native socket as ``WebSocket`` and the upgrade request as
     ``IncomingMessage``. ``serve_options`` go to ``websockets``' ``serve``
-    (``process_request``, ``subprotocols``, ``max_size``, 16 MiB by
+    (``process_request``, ``subprotocols``, ``max_size``, 100 MiB by
     default, ...). A handshake whose ``Origin`` ``AllowedOrigins`` does not
     allow (same-origin by default; a client without ``Origin``, such as
     the DevTools client, is allowed) is refused with 403 before

@@ -276,6 +276,28 @@ def js_stringify(value: object) -> str:
     return stringify(value, null_non_finite=True)
 
 
+def js_object_form(value: object) -> object:
+    """What ``JSON.stringify`` writes for an object with no ``toJSON``: its own enumerable
+    properties, here its instance fields (``vars``, without dunder names), and ``{}`` when it
+    has none (an ``Error``'s message and stack are not enumerable either)."""
+    fields: object = getattr(value, "__dict__", None)
+    if not isinstance(fields, dict):
+        return {}
+    items = cast("dict[object, object]", fields).items()
+    return {k: v for k, v in items if isinstance(k, str) and not k.startswith("__")}
+
+
+def js_json_value(value: object) -> Json:
+    """``JSON.parse(JSON.stringify(value))``, for a value sent where Effect writes any value
+    with ``JSON.stringify`` (the DevTools): an object with no JSON form as its fields
+    (``js_object_form``), ``NaN`` and the infinities as ``null``. A value ``JSON.stringify``
+    throws for (a cycle) is its ``str``, so one value never fails the message it is in."""
+    try:
+        return parse(stringify(value, default=js_object_form, null_non_finite=True))
+    except STRINGIFY_ERRORS:
+        return str(value)
+
+
 class _NeedsWriter(Exception):
     """A value ``json.dumps`` would not write as JavaScript does."""
 

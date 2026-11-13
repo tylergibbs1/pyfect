@@ -67,10 +67,15 @@ class HttpApiGroup(Tag[GroupService], Generic[M_co, MT_co], base=True):
     ) -> None:
         _refuse_reserved_names(cls)
         if identifier is None:
-            # A derived group: the methods below set its endpoints. It is
-            # the same tag as the group it derives from (typed ``type[Self]``,
-            # looked up through ``origin``).
+            # A derived group: the same tag as the group it derives from (typed
+            # ``type[Self]``, looked up through ``origin``), serving that group's endpoints
+            # and those its own body declares; the methods below set the endpoints of the
+            # groups they derive.
+            _refuse_merge(cls)
             super().__init_subclass__(key=cls.key, _alias=True, **kwargs)
+            own = _own_endpoints(cls)
+            if own:
+                cls.endpoints = _wrapped(cls, {**cls.endpoints, **own})
             return
         super().__init_subclass__(key=_KEY_PREFIX + identifier, **kwargs)
         cls.identifier = identifier
@@ -80,11 +85,7 @@ class HttpApiGroup(Tag[GroupService], Generic[M_co, MT_co], base=True):
         endpoints: dict[str, AnyEndpoint] = {}
         for base in reversed(cls.__mro__[1:]):
             endpoints |= getattr(base, "endpoints", {})
-        for value in vars(cls).values():
-            if isinstance(value, HttpApiEndpoint):
-                endpoint = cast("AnyEndpoint", value)
-                endpoints[endpoint.identifier] = endpoint
-        cls.endpoints = _wrapped(cls, endpoints)
+        cls.endpoints = _wrapped(cls, endpoints | _own_endpoints(cls))
 
     def method(self, identifier: str, /) -> Any:
         """On a client's group, the client method of the endpoint
@@ -182,6 +183,31 @@ def _refuse_reserved_names(cls: type) -> None:
             )
 
 
+def _own_endpoints(cls: type) -> dict[str, AnyEndpoint]:
+    """The endpoints declared in ``cls``'s own body, by identifier."""
+    return {
+        cast("AnyEndpoint", value).identifier: cast("AnyEndpoint", value)
+        for value in vars(cls).values()
+        if isinstance(value, HttpApiEndpoint)
+    }
+
+
+def _refuse_merge(cls: type) -> None:
+    """A group without an identifier is the tag of the one group it derives from, so it
+    cannot serve the endpoints of two (pyright refuses such bases as well)."""
+    groups = [
+        base.__name__
+        for base in cls.__bases__
+        if issubclass(base, HttpApiGroup) and base is not HttpApiGroup
+    ]
+    if len(groups) > 1:
+        raise TypeError(
+            f"{cls.__name__} has no identifier, so it is the tag of one group's handlers, but "
+            f"it derives from {' and '.join(groups)}: declare one group with all their "
+            "endpoints (or add the HttpApi both groups)"
+        )
+
+
 def _wrapped(cls: type, endpoints: Mapping[str, AnyEndpoint]) -> Mapping[str, AnyEndpoint]:
     """``endpoints`` each wrapped by the middleware ``cls`` declares. Every
     assignment of a group's ``endpoints`` goes through here, so no class
@@ -197,11 +223,25 @@ def _wrapped(cls: type, endpoints: Mapping[str, AnyEndpoint]) -> Mapping[str, An
 
 
 def _declared_middlewares(cls: type) -> tuple[AnyMiddleware, ...]:
-    """The middleware classes of ``class G(HttpApiGroup[M])``."""
-    for base in getattr(cls, "__orig_bases__", ()):
-        if get_origin(base) is HttpApiGroup:
-            return _middleware_classes(get_args(base)[0])
-    return ()
+    """The middleware classes of the ``HttpApiGroup[M]`` that ``cls`` is: declared on it or
+    on the group it derives from, as pyright reads it (a bare ``HttpApiGroup`` declares
+    none). Two different declarations are refused, as pyright refuses the bases."""
+    found: tuple[AnyMiddleware, ...] | None = None
+    for klass in cls.__mro__:
+        for base in types.get_original_bases(klass):
+            if base is HttpApiGroup:
+                declared: tuple[AnyMiddleware, ...] = ()
+            elif get_origin(base) is HttpApiGroup:
+                declared = _middleware_classes(get_args(base)[0])
+            else:
+                continue
+            if found is not None and found != declared:
+                raise TypeError(
+                    f"{cls.__name__} derives from groups with different middleware: "
+                    "declare one group with all of their endpoints"
+                )
+            found = declared
+    return found or ()
 
 
 def _middleware_classes(argument: object) -> tuple[AnyMiddleware, ...]:

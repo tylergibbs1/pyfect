@@ -6,6 +6,7 @@ from __future__ import annotations
 from typing import Any, Never, cast
 
 from pyfect import stream
+from pyfect._catch import catch_tag
 from pyfect._concurrency import for_each
 from pyfect._core import Effect
 from pyfect._fiber import Fiber
@@ -14,11 +15,13 @@ from pyfect.ai._mcp.core import McpServer
 from pyfect.ai._mcp.dispatch import Connection, ServerInfo, error_response
 from pyfect.ai.mcp_protocol import Registry
 from pyfect.ai.mcp_schema import InvalidRequest, JsonObject, ParseError
-from pyfect.effect import gen, provide_service, succeed, suspend, sync
+from pyfect.channel import LineTooLongError
+from pyfect.effect import die, gen, provide_service, succeed, suspend, sync
 from pyfect.errors import Done
 from pyfect.logger import CurrentLogLevel, LogToStderr
 from pyfect.platform_error import PlatformError
 from pyfect.queue import Queue
+from pyfect.rpc.serialization import DEFAULT_MAX_BUFFER_SIZE, MaxBufferSizeExceeded
 from pyfect.stdio import Stdio
 
 _VOID: Effect[None] = succeed(None)
@@ -31,6 +34,10 @@ def _encode(message: JsonObject) -> str:
 
 def _await_batch(fiber: Fiber[None, Never]) -> Effect[object]:
     return fiber.await_exit()
+
+
+def _too_long(error: LineTooLongError) -> Effect[Never]:
+    return die(MaxBufferSizeExceeded(max_buffer_size=error.max_length))
 
 
 def serve(info: ServerInfo, registry: Registry) -> Effect[None, PlatformError, McpServer | Stdio]:
@@ -88,7 +95,13 @@ def serve(info: ServerInfo, registry: Registry) -> Effect[None, PlatformError, M
 
         writer = yield from stream.from_queue(lines).run(io.stdout()).fork()
         server.connect(connection)
-        reading = io.stdin.decode_text().split_lines().run_for_each(receive)
+        # A line past 16 MiB ends the server, as Effect's NDJSON-RPC framing does.
+        reading = (
+            io.stdin.decode_text()
+            .split_lines_within(DEFAULT_MAX_BUFFER_SIZE)
+            .run_for_each(receive)
+            .pipe(catch_tag(LineTooLongError, _too_long))
+        )
         finished = suspend(lambda: for_each(list(batches), _await_batch)).as_void()
         serving = yield from (
             reading.and_then(connection.drain())

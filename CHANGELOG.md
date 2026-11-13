@@ -1,5 +1,65 @@
 # Changelog
 
+## 0.6.4 (unreleased)
+
+### Fixed
+
+- ClickHouse map settings (`additional_table_filters` and the other `Map(String, String)`
+  settings given to `with_clickhouse_settings` or `insert_query`) escape quotes and
+  backslashes in their keys and values. They were written as `{'k':'v'}` as they were, as
+  `@clickhouse/client` writes them, so a filter holding a string literal was refused by the
+  server, and a key or value with a quote ended its literal early, letting the rest be read as
+  more of the map. Every ClickHouse literal the driver writes now goes through one quoting
+  function, and `tests/test_clickhouse_quoting.py` keeps hand-written quoting out of the
+  driver; the round trip runs on a real server.
+- A MySQL connection that failed part way through reading a result is closed, so the pool
+  replaces it. A failure other than the server's own error (a lost connection, a value that
+  could not be read) left the rest of the result unread on a connection the pool kept, so the
+  next statement on it failed with "Packet sequence number wrong", or read the old result.
+  `tests/oracle/test_mysql_failed_reads.py` fails every packet of a result in turn, on the
+  prepared, text and stream paths, and runs the next statement on the pool after each.
+- MySQL text that is not valid UTF-8 reads as U+FFFD for each bad sequence, as mysql2 reads
+  it. Bytes bound on the prepared path and selected back (`SELECT ? AS b`) come back as text
+  in the connection's character set, and asyncmy's strict decoding failed the statement (and,
+  before the fix above, broke the connection).
+- The DevTools client sends a batch holding a value with no JSON form of its own. A span
+  attribute that was an exception without `to_json` (or any other such object) stopped the
+  whole batch from being sent; each attribute value is now written as Effect's
+  `JSON.stringify` writes it, an object as its instance fields (`{}` for a plain exception),
+  and a value it would throw for (one that holds itself) as its `str`. An OTLP list attribute
+  that holds itself is written as its text, where it overflowed the stack and lost its batch.
+  `tests/test_exporter_hostile_values.py` runs every exporter over such values.
+- An `HttpApiGroup` subclass without an identifier (`class Sub(Admin)`) serves the endpoints
+  declared in its body, behind the middleware its group declares, as pyright types them; they
+  were left out, so the client methods pyright gave them had no route. A group without an
+  identifier that derives from two groups (`class Mixed(Public, Admin)`, which pyright
+  refuses) is a `TypeError` where it served only the first group's endpoints. The declared
+  middleware is read along the class's MRO instead of an inherited `__orig_bases__`.
+  `tests/test_http_api_group_middleware.py` checks that every group class serves each endpoint
+  attribute it has.
+- The MCP stdio server stops at a line past 16 MiB, as Effect's NDJSON-RPC framing does; it
+  held a line without a break however long it grew.
+- The docstrings of `socket.ws.web_socket_constructor`, `layer_web_socket_constructor` and
+  `socket.server` give the default message size limit, 100 MiB; they said 16 MiB.
+
+### Added
+
+- `Stream.split_lines_within(max_length)`, as `channel.split_lines_within`: a line longer
+  than `max_length` characters fails the stream with `LineTooLongError` as soon as that much
+  of it has arrived. `split_lines` holds a line until its break arrives, so a peer that never
+  sends one grows memory without bound (32 MiB without a newline peaked at 64 MiB).
+- `max_line_length` on `ndjson.decode_string`, `duplex_string`, `decode_schema_string` and
+  `duplex_schema_string`, failing with `"LineTooLarge"`, as `max_line_bytes` does for the byte
+  decoders. Both stay unbounded by default, as in Effect.
+
+### Docs
+
+- The streams guide lists every framing decoder's limit and default under "Input from a
+  peer", and says that input from a peer you do not control needs one. The HTTP server's
+  security defaults name the 16 KiB request head limit, the chunk and trailer limits, the
+  100 MiB WebSocket message limit and the multipart `MaxFieldSize`, `MaxFileSize` and
+  `MaxParts`.
+
 ## 0.6.3 (2026-11-13)
 
 ### Fixed

@@ -10,6 +10,7 @@ from pyfect.channel import Channel
 from pyfect.channel import decode_text as channel_decode_text
 from pyfect.channel import encode_text as channel_encode_text
 from pyfect.channel import split_lines as channel_split_lines
+from pyfect.channel import split_lines_within as channel_split_lines_within
 from pyfect.channel._base import require_channel
 from pyfect.stream._base import AnyStream
 from pyfect.stream._stream import Stream
@@ -40,4 +41,9 @@ def encode_text(self: AnyStream) -> AnyStream_:
 
 def split_lines(self: AnyStream) -> AnyStream_:
     splitter: AnyChannel = channel_split_lines()
+    return Stream(self._channel.pipe_to(splitter))
+
+
+def split_lines_within(self: AnyStream, max_length: int) -> AnyStream_:
+    splitter: AnyChannel = channel_split_lines_within(max_length)
     return Stream(self._channel.pipe_to(splitter))

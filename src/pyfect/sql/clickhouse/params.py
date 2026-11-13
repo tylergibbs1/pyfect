@@ -66,6 +66,11 @@ def _unix_seconds(value: datetime) -> str:
     return text if fraction == 0 else f"{text}.{fraction:06d}"
 
 
+def _quote(text: str) -> str:
+    """``text`` as a ClickHouse string literal, the one place quotes are written."""
+    return "'" + text.translate(_ESCAPES) + "'"
+
+
 def _in_container(value: object) -> str:
     match value:
         case None:
@@ -73,12 +78,12 @@ def _in_container(value: object) -> str:
         case bool():
             return "TRUE" if value else "FALSE"
         case str() | uuid.UUID():
-            return f"'{str(value).translate(_ESCAPES)}'"
+            return _quote(str(value))
         case datetime():
             _unix_seconds(value)  # rejects a naive datetime
-            return f"'{value.astimezone(UTC).date().isoformat()}'"
+            return _quote(value.astimezone(UTC).date().isoformat())
         case date():
-            return f"'{value.isoformat()}'"
+            return _quote(value.isoformat())
         case _:
             return format_query_param(value)
 
@@ -124,7 +129,8 @@ def format_query_param(value: object) -> str:  # noqa: PLR0911, PLR0912
 
 def format_setting(value: Setting) -> str:
     """``value`` as the text of a setting (``@clickhouse/client``'s
-    ``formatQuerySettings``)."""
+    ``formatQuerySettings``). A map's keys and values are string literals, with quotes and
+    backslashes escaped (``@clickhouse/client`` writes them as they are)."""
     match value:
         case bool():
             return "1" if value else "0"
@@ -133,7 +139,7 @@ def format_setting(value: Setting) -> str:
         case str():
             return value
         case _:
-            return "{" + ",".join(f"'{k}':'{v}'" for k, v in value.items()) + "}"
+            return "{" + ",".join(f"{_quote(k)}:{_quote(v)}" for k, v in value.items()) + "}"
 
 
 def type_of(value: object) -> str:  # noqa: PLR0911

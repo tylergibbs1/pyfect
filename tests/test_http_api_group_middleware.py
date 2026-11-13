@@ -8,6 +8,7 @@
 from typing import Any, Never
 
 import pytest
+from _subclasses import subclasses
 from oracle._http_api import api_layer, run_served
 
 from pyfect import effect, layer, redacted
@@ -125,3 +126,98 @@ def test_group_endpoints_are_only_assigned_through_the_middleware_funnel() -> No
     assert len(assignments) >= 2
     for node in assignments:
         assert funnelled(node.value), ast.unparse(node)
+
+
+# --- the served set is the declared set ------------------------------------------
+
+
+class Public(HttpApiGroup, identifier="public"):
+    p = ep.get("p", "/p", success=S.String)
+
+
+class Sub(Admin):
+    """No identifier: the tag of Admin's handlers, with one more endpoint."""
+
+    s = ep.post("s", "/s", success=S.String)
+
+
+class Deeper(Sub):
+    d = ep.post("d", "/d", success=S.String)
+
+
+@pytest.mark.parametrize("group", [Sub, Deeper])
+def test_a_subclass_serves_every_endpoint_it_declares_with_the_declared_middleware(
+    group: type[Admin],
+) -> None:
+    """Endpoints declared in a subclass's body are served, each wrapped by the middleware the
+    group declares on a base (as pyright types them)."""
+    declared = {
+        value.identifier
+        for klass in group.__mro__
+        for value in vars(klass).values()
+        if isinstance(value, ep.HttpApiEndpoint)
+    }
+    assert set(group.endpoints) == declared
+    for endpoint in group.endpoints.values():
+        assert endpoint.middlewares == (Gate,), (group.__name__, endpoint.identifier)
+
+
+def test_a_subclass_endpoint_is_served_behind_the_declared_middleware() -> None:
+    api = HttpApi.make("X").add(Sub)
+    calls: list[str] = []
+
+    def handle(name: str) -> Any:
+        def run(_ctx: Any) -> Any:
+            calls.append(name)
+            return effect.succeed(name)
+
+        return run
+
+    live = builder.group(
+        api,
+        Sub,
+        lambda h: h.handle(Sub.a)(handle("a")).handle(Sub.s)(handle("s")),
+    )
+
+    def bearer(effect_: Any, options: Any) -> Any:
+        if redacted.value(options.credential) == "ok":
+            return effect_
+        return effect.fail(api_error.Unauthorized())
+
+    gate = layer.succeed(Gate, {"bearer": bearer})
+
+    def program() -> Any:
+        denied = yield from http_client.post("/s")
+        allowed = yield from http_client.post("/s", headers={"authorization": "Bearer ok"})
+        return denied.status, allowed.status
+
+    assert run_served(api_layer(api, live, gate), effect.gen(program)) == (401, 200)
+    assert calls == ["s"]
+
+
+def test_merging_groups_without_an_identifier_is_refused() -> None:
+    """A group without an identifier is the tag of one group's handlers, so it cannot merge
+    two groups (pyright refuses these bases too)."""
+    with pytest.raises(TypeError, match="identifier"):
+
+        class Mixed(Public, Admin):  # pyright: ignore[reportGeneralTypeIssues, reportUnusedClass]
+            pass
+
+
+def test_every_group_serves_each_endpoint_attribute_it_has() -> None:
+    """Each endpoint attribute a group class has, its own or inherited (what pyright types as
+    a client method), is served by it, behind the middleware it declares: checked for every
+    group class defined so far, the docs' and other tests' included."""
+    for group in subclasses(HttpApiGroup):
+        if "_is_refused.<locals>" in group.__qualname__:
+            continue  # created, then refused by its __init_subclass__
+        served = group.endpoints
+        for klass in group.__mro__:
+            for name, value in vars(klass).items():
+                if isinstance(value, ep.HttpApiEndpoint):
+                    assert value.identifier in served, (group.__qualname__, name)
+                    endpoint = served[value.identifier]
+                    assert set(value.middlewares) <= set(endpoint.middlewares), (
+                        group.__qualname__,
+                        name,
+                    )

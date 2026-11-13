@@ -216,3 +216,59 @@ def test_sends_short_lived_span_once_in_each_state():
         )
     )
     assert [s["status"]["_tag"] for s in spans] == ["Started", "Ended"]
+
+
+class _Unserializable(Exception):
+    """An exception with no ``to_json``: ``JSON.stringify`` writes an ``Error`` as its own
+    enumerable properties."""
+
+    def __init__(self) -> None:
+        super().__init__("boom")
+        self.code = 7
+
+
+@testing.effect
+def test_a_value_with_no_json_form_does_not_drop_the_batch():
+    """(pyfect) a span attribute or log value with no JSON form is written as JSON.stringify
+    writes an object (its own fields), and the rest of its batch is still sent"""
+    messages: list[Any] = []
+    received = Deferred[None]()
+
+    def write(chunk: bytes | str | CloseEvent) -> Any:
+        def record() -> bool:
+            if isinstance(chunk, CloseEvent):
+                return False
+            messages.extend(m for m in _lines(chunk) if m["_tag"] in ("Span", "SpanEvent"))
+            return any(m.get("name") == "after" and m["_tag"] == "Span" for m in messages)
+
+        return fx.sync(record).flat_map(
+            lambda done: received.succeed(None).as_void() if done else fx.void
+        )
+
+    socket = make_socket(connection(), _writer(write))
+
+    def program():
+        def inside():
+            yield from fx.annotate_current_span("error", _Unserializable())
+            yield from fx.annotate_current_span("plain", object())
+            yield from fx.log_info("failed", _Unserializable())
+
+        yield from fx.gen(inside).with_span("child")
+        yield from fx.void.with_span("after")
+        yield from received.wait()
+
+    yield from fx.gen(program).pipe(
+        fx.provide(
+            devtools_client.layer_tracer.pipe(fx.layer.provide(fx.layer.succeed(Socket, socket)))
+        )
+    )
+    ended = next(
+        m
+        for m in messages
+        if m["_tag"] == "Span" and m["name"] == "child" and m["status"]["_tag"] == "Ended"
+    )
+    attributes = dict(ended["attributes"])  # a ``Map``, written as its entries
+    assert attributes["error"] == {"code": 7}
+    assert attributes["plain"] == {}
+    [event] = [m for m in messages if m["_tag"] == "SpanEvent"]
+    assert json.loads(event["name"])[0] == "failed"

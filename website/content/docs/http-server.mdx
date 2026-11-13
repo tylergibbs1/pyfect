@@ -156,7 +156,10 @@ app needs more room.
   at `MaxBodySize`, 10 MiB by default, with a 413. Provide a larger `ByteSize`, or `None`, on
   the routes that need it. A streamed body (`request.stream`) is read as far as the handler
   reads it.
-- `live_server.layer` closes a connection whose request has not fully arrived after
+- `live_server.layer` answers 431 to a request head (request line and headers) past 16 KiB,
+  as Node does, reads chunk size lines of at most 4 KiB and trailers of at most 16 KiB, and
+  takes WebSocket messages of up to `websocket_max_message_size` (100 MiB by default, as `ws`).
+  It closes a connection whose request has not fully arrived after
   `request_timeout` (300 seconds). It answers 400 to a `Host` that is not a host and port, to
   a request target that is not a path, `*` or an absolute `http(s)` URL, to framing headers
   padded with anything but spaces and tabs, and to malformed trailers or chunk extensions.
@@ -171,7 +174,10 @@ app needs more room.
   `websocket_max_message_size`.
 - The decompression middleware counts every decoded byte against the body limit and accepts
   at most two stacked codings. `router.cors(credentials=True)` needs a list of origins
-  without `*`. A multipart boundary must follow RFC 2046 (1 to 70 characters). A response
+  without `*`. A multipart boundary must follow RFC 2046 (1 to 70 characters). A multipart
+  field is at most `MaxFieldSize` (10 MiB) and a file `MaxFileSize` (no limit but the body's);
+  `MaxParts` is unbounded by default, as in Effect, so set it where a form has a known number
+  of parts. A response
   header with a control character is never sent.
 - In [HttpApi](/docs/http-api), a body without a `Content-Type` gets a 415 instead of being
   read as JSON, and `security_set_cookie` sets `Secure`, `HttpOnly` and `SameSite=Lax`.

@@ -27,8 +27,9 @@ from pyfect._json_text import PARSE_ERRORS, STRINGIFY_ERRORS, Json, parse, strin
 from pyfect._primitives import _FailCause, _Succeed, _Suspend, _Sync
 from pyfect.cause import Cause
 from pyfect.cause import fail as fail_cause
-from pyfect.channel import Channel, from_transform, split_lines
+from pyfect.channel import Channel, from_transform
 from pyfect.channel._base import AnyPull, end_with, require_channel
+from pyfect.channel._text import splitter
 from pyfect.errors import TaggedError
 from pyfect.pull import match_effect
 from pyfect.schema import Codec, ParseOptions, SchemaError
@@ -53,7 +54,7 @@ __all__ = [
 
 type NdjsonErrorReason = Literal["InvalidJson", "InvalidUtf8", "LineTooLarge"]
 """Why a decoder rejected a line: not JSON, not UTF-8 (byte decoders), or
-longer than ``max_line_bytes`` (byte decoders)."""
+longer than ``max_line_bytes`` (byte decoders) or ``max_line_length`` (text decoders)."""
 
 
 @dataclass(eq=False)
@@ -166,13 +167,20 @@ def _flush_nothing(_out: list[Json]) -> None:
     return None
 
 
+def _line_too_long(max_line_length: int) -> NdjsonError:
+    cause = ValueError(f"NDJSON line exceeds max_line_length of {max_line_length}")
+    return NdjsonError("Unpack", cause, reason="LineTooLarge")
+
+
 def decode_string[E = Never, D = None](
-    *, ignore_empty_lines: bool = False
+    *, ignore_empty_lines: bool = False, max_line_length: int | None = None
 ) -> Channel[tuple[Json, ...], E | NdjsonError, D, tuple[str, ...], E, D]:
     """Parse chunks of text as NDJSON. The first line that is not JSON fails
     the channel (``"InvalidJson"``) after the values before it are written;
     blank lines (empty, or only spaces and tabs) fail too unless
-    ``ignore_empty_lines``."""
+    ``ignore_empty_lines``. A line longer than ``max_line_length`` characters fails with
+    ``"LineTooLarge"`` as soon as that much of it has arrived; ``None``, the default, is
+    unbounded, as in Effect, so text from a peer you do not control needs a limit."""
 
     def transform(upstream: AnyPull, scope: CloseableScope) -> Any:
         # ``split_lines`` writes a line after its input has ended only when
@@ -197,7 +205,7 @@ def decode_string[E = Never, D = None](
             return None
 
         return (
-            split_lines()
+            splitter(max_line_length, _line_too_long)
             ._transform(source, scope)
             .map(lambda lines: _decode_pull(lines, step, _flush_nothing))
         )
@@ -294,8 +302,9 @@ def decode[E = Never, D = None](
     skipped. The first bad line fails the channel after the values before
     it are written: ``"InvalidUtf8"``, ``"InvalidJson"``, or
     ``"LineTooLarge"`` as soon as a line passes ``max_line_bytes`` (its
-    bytes without the line break; ``None``, the default, is unbounded),
-    without reading the rest of it."""
+    bytes without the line break; ``None``, the default, is unbounded, as in Effect),
+    without reading the rest of it. Bytes from a peer you do not control need a limit: a
+    line is held until its break arrives."""
     limit = math.inf if max_line_bytes is None else max_line_bytes
 
     def build(upstream: AnyPull) -> AnyPull:
@@ -356,23 +365,26 @@ def duplex_string[OE, OD, ID, R, IE = Never](
     channel: Channel[_Strings, OE, OD, _Strings, IE | NdjsonError, ID, R],
     *,
     ignore_empty_lines: bool = False,
+    max_line_length: int | None = None,
 ) -> Channel[_Values, NdjsonError | OE, OD, _Inputs, IE, ID, R]: ...
 @overload
 def duplex_string[OE, OD, ID, R](
     channel: Channel[_Strings, OE, OD, _Strings, NdjsonError, ID, R],
     *,
     ignore_empty_lines: bool = False,
+    max_line_length: int | None = None,
 ) -> Channel[_Values, NdjsonError | OE, OD, _Inputs, Never, ID, R]: ...
 def duplex_string(
     channel: Channel[Any, Any, Any, Any, Any, Any, Any],
     *,
     ignore_empty_lines: bool = False,
+    max_line_length: int | None = None,
 ) -> Channel[Any, Any, Any, Any, Any, Any, Any]:
-    """``duplex`` for a channel of text."""
+    """``duplex`` for a channel of text (``max_line_length`` as for ``decode_string``)."""
     require_channel(channel, "channel")
     outgoing: Channel[Any, Any, Any, Any, Any, Any, Any] = encode_string()
     incoming: Channel[Any, Any, Any, Any, Any, Any, Any] = decode_string(
-        ignore_empty_lines=ignore_empty_lines
+        ignore_empty_lines=ignore_empty_lines, max_line_length=max_line_length
     )
     return outgoing.pipe_to(channel).pipe_to(incoming)
 
@@ -418,10 +430,13 @@ def decode_schema_string[T, RD, E = Never, D = None](
     /,
     *,
     ignore_empty_lines: bool = False,
+    max_line_length: int | None = None,
     **options: Unpack[ParseOptions],
 ) -> Channel[tuple[T, ...], E | NdjsonError | SchemaError, D, tuple[str, ...], E, D, RD]:
     """``decode_string``, each parsed value then decoded with ``schema``."""
-    lines: _AnyChannel = decode_string(ignore_empty_lines=ignore_empty_lines)
+    lines: _AnyChannel = decode_string(
+        ignore_empty_lines=ignore_empty_lines, max_line_length=max_line_length
+    )
     return lines.pipe_to(channel_schema.decode_unknown(schema, **options))
 
 
@@ -452,11 +467,14 @@ def duplex_schema_string[TI, TO, OE, OD, ID, RR, IE = Never](
     input_schema: Codec[TI, object, object, RR],
     output_schema: Codec[TO, object, RR, object],
     ignore_empty_lines: bool = False,
+    max_line_length: int | None = None,
 ) -> Channel[tuple[TO, ...], NdjsonError | SchemaError | OE, OD, tuple[TI, ...], IE, ID, RR]:
     """``duplex_string`` with values encoded by ``input_schema`` on the way
     in and decoded by ``output_schema`` on the way out."""
     require_channel(channel, "channel")
-    framed: _AnyChannel = duplex_string(channel, ignore_empty_lines=ignore_empty_lines)
+    framed: _AnyChannel = duplex_string(
+        channel, ignore_empty_lines=ignore_empty_lines, max_line_length=max_line_length
+    )
     return channel_schema.duplex_unknown(
         framed, input_schema=input_schema, output_schema=output_schema
     )

@@ -97,6 +97,33 @@ XML, zip and tar, below. As in Effect, `ndjson.decode()` fails the whole stream 
 line that isn't JSON; to skip bad lines, read text lines (`decode_text().split_lines()`) and
 parse each one yourself.
 
+## Input from a peer
+
+A decoder holds the part of a line, event or record it has read until the rest arrives. Text
+from a peer you don't control (a TCP client, a request body, a child process) needs a limit:
+without one, a peer that never sends a line break grows the reader's memory without bound.
+Where Effect has no limit, pyfect's is opt-in too, so pass one at that boundary.
+
+| Decoder | Limit | Default |
+| --- | --- | --- |
+| `Stream.split_lines()`, `channel.split_lines()` | use `split_lines_within(max_length)`, which fails with `LineTooLongError` | none |
+| `ndjson.decode()`, `decode_schema()`, `duplex()`, `duplex_schema()` | `max_line_bytes` | none |
+| `ndjson.decode_string()` and the other `_string` decoders | `max_line_length` (characters) | none |
+| `sse.decode()`, `sse.make_parser()` | `max_event_size` | 10 MiB |
+| `csv.decode()`, `csv.decode_string()` | `max_record_size` | 1 MiB |
+| `xml.decode()`, `xml.decode_string()` | `max_token_size`, `max_depth`, `max_element_size` | 10 MiB, 1024, 16 MiB |
+| `json_array.decode()`, `json_array.decode_string()` | `max_element_size` | 16 MiB |
+| `schema_binary.parser()`, `decode()` | `max_frame_size` | none (16 MiB under RPC) |
+| RPC `serialization.layer_ndjson` | `max_buffer_size` | 16 MiB |
+
+A line past the limit fails the stream as soon as that much of it has arrived, without reading
+the rest. The MCP stdio server stops at a 16 MiB line, as Effect's does. The HTTP server's own
+limits are in [Security defaults](/docs/http-server#security-defaults).
+
+<include meta='title="line_limits.py"'>../../snippets/streams/line_limits.py</include>
+
+<include lang="text">../../snippets/streams/line_limits.out</include>
+
 ## Custom operators
 
 When no operator fits, write one as a `Channel` and run the stream through it with

@@ -5,6 +5,7 @@ non-empty arrays) and passes upstream's failure and end through."""
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any, Never
 
 from pyfect._core import Effect, _FailCause, _Succeed, _Suspend, _Sync
@@ -125,7 +126,11 @@ class LineTooLongError(Exception):
         self.max_length = max_length
 
 
-def _splitter(max_length: int | None) -> Channel[Any, Any, Any, Any, Any, Any, Any]:
+def splitter(
+    max_length: int | None, too_long: Callable[[int], object] = LineTooLongError
+) -> Channel[Any, Any, Any, Any, Any, Any, Any]:
+    """The line splitter, failing with ``too_long(max_length)`` past ``max_length``."""
+
     def transform(upstream: AnyPull, _scope: CloseableScope) -> Effect[AnyPull]:
         def build() -> AnyPull:
             lines = _LineSplitter()
@@ -137,7 +142,7 @@ def _splitter(max_length: int | None) -> Channel[Any, Any, Any, Any, Any, Any, A
                     lines.pending_length > max_length
                     or any(len(line) > max_length for line in split)
                 ):
-                    return _FailCause(fail_cause(LineTooLongError(max_length)))
+                    return _FailCause(fail_cause(too_long(max_length)))
                 return _Succeed(split) if split else pull_or_flush
 
             def done(leftover: Any) -> AnyPull:
@@ -164,7 +169,7 @@ def _splitter(max_length: int | None) -> Channel[Any, Any, Any, Any, Any, Any, A
 def split_lines[E = Never, D = None]() -> Channel[tuple[str, ...], E, D, tuple[str, ...], E, D]:
     """Split chunks of text into lines, without their line breaks; the
     text after the last break is the last line."""
-    return _splitter(None)
+    return splitter(None)
 
 
 def split_lines_within[E = Never, D = None](
@@ -173,4 +178,4 @@ def split_lines_within[E = Never, D = None](
     """``split_lines`` for text from a peer you do not control: a line
     longer than ``max_length`` characters fails with ``LineTooLongError``
     as soon as that much of it has arrived, so memory stays bounded."""
-    return _splitter(max_length)
+    return splitter(max_length)

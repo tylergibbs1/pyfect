@@ -326,8 +326,8 @@ def _closed_while_connecting() -> Exception:
 def web_socket_constructor(
     *, max_message_size: int | None = DEFAULT_MAX_MESSAGE_SIZE
 ) -> WebSocketConstructorService:
-    """``WsWebSocket.connect`` with ``max_message_size`` (16 MiB by default,
-    what pyfect's servers take; ``None``: no limit)."""
+    """``WsWebSocket.connect`` with ``max_message_size`` (100 MiB by default, as ``ws``'s
+    ``maxPayload``, what pyfect's servers take; ``None``: no limit)."""
 
     def construct(url: str, options: WebSocketClientOptions) -> WebSocketLike:
         return WsWebSocket.connect(url, options, max_message_size=max_message_size)
@@ -347,7 +347,7 @@ def layer_web_socket_constructor_with(
 
 layer_web_socket_constructor: Layer[WebSocketConstructor] = layer_web_socket_constructor_with()
 """``WebSocketConstructor`` on the ``websockets`` client (messages up to
-16 MiB)."""
+100 MiB)."""
 
 
 def layer_web_socket(

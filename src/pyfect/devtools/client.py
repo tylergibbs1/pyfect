@@ -13,6 +13,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any, Never
 
 from pyfect._core import Effect
+from pyfect._json_text import js_json_value
 from pyfect._tracer_ref import CurrentTracer
 from pyfect.context import Context, Tag
 from pyfect.deferred import Deferred
@@ -211,6 +212,13 @@ def _status(status: SpanStatus) -> D.SpanStatus:
     return {"_tag": "Started", "startTime": status.start_time}
 
 
+def _json_attributes(attributes: Mapping[str, object]) -> dict[str, object]:
+    """Each value as ``JSON.stringify`` writes it, one by one, so a value with no JSON form
+    of its own (an exception) is sent as its fields, as in Effect, and never stops the batch
+    it is in from being written."""
+    return {key: js_json_value(value) for key, value in attributes.items()}
+
+
 def _snapshot(span: Span) -> D.Span:
     from pyfect.option import Some
 
@@ -221,7 +229,7 @@ def _snapshot(span: Span) -> D.Span:
         "traceId": span.trace_id,
         "name": span.name,
         "sampled": span.sampled,
-        "attributes": dict(span.attributes),
+        "attributes": _json_attributes(span.attributes),
         "status": _status(span.status),
         "parent": None if parent is None else Some(parent),
     }
@@ -297,7 +305,7 @@ class _DevToolsSpan:
                 "spanId": self.span_id,
                 "name": name,
                 "startTime": start_time,
-                "attributes": None if attributes is None else dict(attributes),
+                "attributes": None if attributes is None else _json_attributes(attributes),
             }
         )
         self._span.event(name, start_time, attributes)

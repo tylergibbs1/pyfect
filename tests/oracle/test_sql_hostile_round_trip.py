@@ -496,6 +496,43 @@ def test_clickhouse_round_trips_hostile_names_and_values(
     _check(_CLICKHOUSE, _clickhouse(clickhouse_server), name, value)
 
 
+def _clickhouse_literal(value: str) -> str:
+    return "'" + value.replace("\\", "\\\\").replace("'", "\\'") + "'"
+
+
+@_SETTINGS
+@_known_examples
+@given(name=_NAMES, value=_VALUES)
+def test_clickhouse_map_settings_round_trip_hostile_keys_and_values(
+    clickhouse_server: ClickhouseServer, name: str, value: str
+):
+    """(pyfect) clickhouse: a map setting's hostile keys and values reach the server as written
+
+    ``additional_table_filters`` is a ``Map(String, String)`` setting: its key names the table and
+    its value is a filter whose literal holds the hostile value, so the filter keeps exactly the
+    matching row only if both reach the server unchanged."""
+    from pyfect.sql import clickhouse
+
+    table = "hostile_" + uuid.uuid4().hex[:12]
+
+    def body() -> Generator[Any, Any]:
+        sql = yield from clickhouse.ClickhouseClient()
+        t = sql.identifier(table)
+        yield from fx.acquire_release(
+            sql("CREATE TABLE {} (id Int32, v String) ENGINE = MergeTree ORDER BY id", t),
+            lambda _, __: sql("DROP TABLE {}", t).ignore(),
+        )
+        rows = sql.insert([{"id": 1, "v": value}, {"id": 2, "v": value + "x"}])
+        yield from sql.as_command(sql("INSERT INTO {} {}", t, rows))
+        filters = {table: f"v = {_clickhouse_literal(value)}", name: "1 = 0"}
+        selected = sql.with_clickhouse_settings(
+            sql("SELECT id FROM {} ORDER BY id", t), {"additional_table_filters": filters}
+        )
+        assert _rows((yield from selected)) == [{"id": 1}]
+
+    _run(_clickhouse(clickhouse_server), body)
+
+
 def test_every_dialect_is_checked():
     """(pyfect) every SQL dialect pyfect ships has a hostile round trip here"""
     import pkgutil

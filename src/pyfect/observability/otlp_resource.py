@@ -208,17 +208,25 @@ def _int_value(value: int) -> int | str:
     return value if -_MAX_SAFE_INTEGER <= value <= _MAX_SAFE_INTEGER else str(value)
 
 
-def unknown_to_attribute_value(value: object) -> AnyValue:  # noqa: PLR0911
+def unknown_to_attribute_value(value: object) -> AnyValue:
     """``value`` as an OTLP ``AnyValue``: lists and tuples item by item,
     strings and booleans as they are, an ``int`` in the int64 range as
     ``intValue`` (past it as ``stringValue``, as Effect writes a
     ``bigint``), a whole ``float`` in that range as ``intValue`` (a
     JavaScript number is an integer when whole), other floats as
-    ``doubleValue``, and anything else as text (Effect's ``format``)."""
+    ``doubleValue``, and anything else as text (Effect's ``format``). A list that holds
+    itself is its text too (Effect's recursion overflows the stack, losing the batch)."""
+    return _attribute_value(value, frozenset())
+
+
+def _attribute_value(value: object, ancestors: frozenset[int]) -> AnyValue:  # noqa: PLR0911
     match value:
         case list() | tuple():
             items = cast("Iterable[object]", value)
-            return {"arrayValue": {"values": [unknown_to_attribute_value(v) for v in items]}}
+            if id(items) in ancestors:
+                return {"stringValue": format_unknown(items)}
+            inner = ancestors | {id(items)}
+            return {"arrayValue": {"values": [_attribute_value(v, inner) for v in items]}}
         case str():
             return {"stringValue": value}
         case bool():

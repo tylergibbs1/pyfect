@@ -3,6 +3,7 @@ unknown)."""
 
 from __future__ import annotations
 
+import codecs
 from collections.abc import Awaitable, Callable, Mapping
 from typing import Any, Protocol, cast
 
@@ -150,12 +151,47 @@ def connect_keywords(options: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+_REPLACING_UTF8 = "pyfect_mysql_utf8"
+
+
+def _replacing_utf8(name: str) -> codecs.CodecInfo | None:
+    if name != _REPLACING_UTF8:
+        return None
+    return codecs.CodecInfo(
+        name=_REPLACING_UTF8,
+        encode=lambda text, errors="strict": codecs.utf_8_encode(text, errors),
+        decode=lambda data, errors="strict": codecs.utf_8_decode(data, "replace", True),
+    )
+
+
+codecs.register(_replacing_utf8)
+
+
 async def connect(options: Mapping[str, Any]) -> RawConnection:
+    """A connection whose UTF-8 text reads bytes that are not UTF-8 as U+FFFD, as mysql2
+    does (Node's ``Buffer.toString``). asyncmy's own decoding fails part way through a
+    result, so a parameter's bytes echoed back as text (``SELECT ? AS b``) failed the
+    statement."""
     connecting = cast(
         "Callable[..., Awaitable[object]]",
         asyncmy.connect,  # pyright: ignore[reportUnknownMemberType]
     )
-    return cast("RawConnection", await connecting(**options))
+    conn: Any = await connecting(**options)
+    if conn._encoding == "utf8":
+        conn._encoding = _REPLACING_UTF8
+    return cast("RawConnection", conn)
+
+
+def begin_command(conn: RawConnection) -> None:
+    """Note that no part of the next command has been sent yet (see ``command_sent``)."""
+    cast("Any", conn)._next_seq_id = 0
+
+
+def command_sent(conn: RawConnection) -> bool:
+    """Whether the command begun with ``begin_command`` has been written: asyncmy sets the
+    sequence id past 0 once it writes the command's first packet. A failure before that left
+    the connection in step; one after it, unless the server's own error packet, did not."""
+    return cast("Any", conn)._next_seq_id != 0
 
 
 __all__ = [
@@ -164,6 +200,8 @@ __all__ = [
     "PreparedStatement",
     "RawConnection",
     "Result",
+    "begin_command",
+    "command_sent",
     "connect",
     "connect_keywords",
     "end_unbuffered_result",

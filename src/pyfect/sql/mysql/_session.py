@@ -102,6 +102,14 @@ class Session:
         self.broken = True
         self.raw.close()
 
+    def _failed(self, error: Exception) -> None:
+        """A command failed. Before it was sent, or with the server's own error packet, the
+        connection is in step and goes on; any other failure (the connection lost, a value
+        that could not be read) stopped part way through the response, so the connection is
+        closed and the pool replaces it."""
+        if _asyncmy.command_sent(self.raw) and not _asyncmy.is_server_error(error):
+            self._cut_short()
+
     # --- statements -----------------------------------------------------------
 
     async def _prepared(self, sql: str) -> PreparedStatement:
@@ -110,6 +118,7 @@ class Session:
         if found is not None:
             statements.move_to_end(sql)
             return found
+        _asyncmy.begin_command(self.raw)
         prepared = await self.raw.prepare(sql)
         statements[sql] = prepared
         if len(statements) > _STATEMENT_CACHE_SIZE:
@@ -121,7 +130,9 @@ class Session:
         self, sql: str, params: Sequence[object], as_tuples: bool
     ) -> list[ResultSet]:
         prepared = await self._prepared(sql)
-        result = await prepared.execute(_parameters(params))
+        parameters = _parameters(params)
+        _asyncmy.begin_command(self.raw)
+        result = await prepared.execute(parameters)
         description = result.description
         if description is None:
             return [_header(result.affected_rows, result.insert_id)]
@@ -146,6 +157,7 @@ class Session:
         cursor = _asyncmy.text_cursor(self.raw, as_tuples=as_tuples)
         results: list[ResultSet] = []
         try:
+            _asyncmy.begin_command(self.raw)
             await cursor.execute(text)
             while True:
                 if cursor.description is None:
@@ -154,11 +166,13 @@ class Session:
                     results.append(list(await cursor.fetchall()))
                 if not await cursor.nextset():
                     break
-        except Exception:
-            # A failed statement leaves the connection in step, so what
+        except Exception as error:
+            self._failed(error)
+            # A statement the server failed leaves the connection in step, so what
             # follows it can be read past.
-            with contextlib.suppress(Exception):
-                await cursor.close()
+            if self.usable:
+                with contextlib.suppress(Exception):
+                    await cursor.close()
             raise
         await cursor.close()
         return results
@@ -175,6 +189,9 @@ class Session:
                 return await self._query(sql, params, as_tuples)
             except asyncio.CancelledError:
                 self._cut_short()
+                raise
+            except Exception as error:
+                self._failed(error)
                 raise
             finally:
                 await self._settled()
@@ -197,13 +214,17 @@ class Session:
         self._running = asyncio.current_task()
         try:
             cursor = _asyncmy.stream_cursor(self.raw)
-            await cursor.execute(self._bound(sql, params))
+            text = self._bound(sql, params)
+            _asyncmy.begin_command(self.raw)
+            await cursor.execute(text)
         except asyncio.CancelledError:
             self._cut_short()
             await self._settled()
             self._lock.release()
             raise
-        except BaseException:
+        except BaseException as error:
+            if isinstance(error, Exception):
+                self._failed(error)
             await self._settled()
             self._lock.release()
             raise

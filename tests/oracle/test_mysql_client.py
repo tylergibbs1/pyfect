@@ -115,6 +115,8 @@ class _FakeStatement:
 class _FakeConnection:
     connected = True
     server_status = 0
+    _encoding = "utf8"
+    _next_seq_id = 0
 
     def __init__(self, calls: list[str]) -> None:
         self._calls = calls
@@ -623,3 +625,20 @@ def test_text_statements_write_lists_and_set_dicts_as_mysql2_does(mysql_server: 
         yield from sql("DROP TABLE text_params")
 
     yield from _with_client(mysql_server, body, disable_prepared_statements=True)
+
+
+@testing.effect
+def test_non_utf8_bytes_selected_on_the_prepared_path_keep_the_connection(
+    mysql_server: MysqlServer,
+):
+    """(pyfect) bytes that are not UTF-8, selected back through a prepared statement, come back
+    as mysql2 gives them, and the connection serves the next statement"""
+    data = b"\xff\xfe\x00'\\"
+
+    def body():
+        sql = yield from SqlClient()
+        rows = yield from sql("SELECT {} AS b", data).timeout("5 seconds")
+        assert rows == [{"b": "\ufffd\ufffd\x00'\\"}]
+        assert (yield from sql("SELECT 1 AS one").timeout("5 seconds")) == [{"one": 1}]
+
+    yield from _with_client(mysql_server, body, max_connections=1)

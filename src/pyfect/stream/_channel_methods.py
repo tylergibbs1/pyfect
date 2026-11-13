@@ -1,6 +1,7 @@
 """``Stream`` methods that pipe a stream through a channel: any channel
 (``pipe_through_channel``), and the text channels (``decode_text``,
-``encode_text``, ``split_lines``). The work is in ``pyfect.stream._text``."""
+``encode_text``, ``split_lines``, ``split_lines_within``). The work is in
+``pyfect.stream._text``."""
 
 from __future__ import annotations
 
@@ -9,7 +10,7 @@ from typing import TYPE_CHECKING, Never
 from pyfect.stream._base import A_co, E_co, R_co, StreamBase
 
 if TYPE_CHECKING:
-    from pyfect.channel import Channel
+    from pyfect.channel import Channel, LineTooLongError
     from pyfect.stream._stream import Stream
 
 
@@ -60,3 +61,14 @@ class ChannelMethods(StreamBase[A_co, E_co, R_co]):
         from pyfect.stream import _text
 
         return _text.split_lines(self)
+
+    def split_lines_within[E, R](
+        self: ChannelMethods[str, E, R], max_length: int
+    ) -> Stream[str, E | LineTooLongError, R]:
+        """``split_lines`` for text from a peer you do not control: a line longer than
+        ``max_length`` characters fails the stream with ``LineTooLongError`` as soon as that
+        much of it has arrived, so memory stays bounded (``split_lines`` holds a line until
+        its break arrives, however long)."""
+        from pyfect.stream import _text
+
+        return _text.split_lines_within(self, max_length)

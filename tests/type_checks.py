@@ -3702,6 +3702,8 @@ def check_stream_text_and_framers(
     assert_type(data.decode_text("latin-1"), _St[str, ValueError, Replica])
     assert_type(text.encode_text(), _St[bytes, ValueError])
     assert_type(text.split_lines(), _St[str, ValueError])
+    assert_type(text.split_lines_within(1024), _St[str, ValueError | channel.LineTooLongError])
+    plain.split_lines_within(1)  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
     plain.decode_text()  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
     plain.split_lines()  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
     data.encode_text()  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
