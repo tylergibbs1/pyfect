@@ -4,6 +4,27 @@
 
 ### Fixed
 
+- Security: ClickHouse names could end their quotes early. A name given to `sql.identifier`,
+  a key of a record given to `sql.insert` or `sql.update`, or the column of `sql.in_` was
+  quoted by doubling `"` only, but ClickHouse reads a backslash in a quoted name as an escape,
+  so a name holding a backslash could close the quotes and the rest of it ran as SQL.
+  Backslashes are now doubled too. Effect's ClickHouse client quotes names the same unsafe way;
+  pyfect deliberately differs here. Apps that pass user input as names on ClickHouse should
+  upgrade.
+- Security: MySQL values written into the statement text could end their literal early when the
+  session's `sql_mode` has `NO_BACKSLASH_ESCAPES`. That covers `.stream`, `.unprepared` and every
+  statement under `disable_prepared_statements=True`. Text was written for the session's mode
+  only for a top-level `str`: `bytes`, the items of a `tuple`, and values of other types
+  written as text (a `UUID`, an enum, any object) were always backslash-escaped, which that
+  mode reads as plain text, so the rest of the value ran as SQL. Every value holding text is now
+  written for the session's mode, and bytes as `X'hex'`, as mysql2 writes a Buffer. Apps that
+  bind user input on these paths against a server in that mode should upgrade.
+- `tests/oracle/test_sql_hostile_round_trip.py` round-trips generated names and values full of
+  quotes, backslashes, comment markers, NUL and other Unicode through `sql.identifier`,
+  `sql.insert` / `sql.update` keys, `sql.in_` and every binding path (prepared, unprepared,
+  stream) on a real server of each dialect (PostgreSQL, MySQL in each of its quoting modes, SQL
+  Server, SQLite, libSQL, ClickHouse, and D1 on its SQLite stand-in), and asserts each comes back
+  unchanged with no other column or row.
 - `json_patch.get` gives `[]` for two NaN floats that are different objects (`inf - inf` and
   `inf * 0`), as Effect's `Object.is` does; it gave a `replace`. Numbers are compared by
   `pyfect._js.same_json_value`, and `tests/test_object_is_guard.py` keeps hand-written sign
