@@ -25,6 +25,14 @@
   shutdown waited for it. Once both sides have ended, the connection closes (after `ws`'s 30
   second `closeTimeout` if the client never ends its side), and the handler is interrupted as
   a client abort. Found by dogfooding (stockroom).
+- `uvicorn_server` no longer trusts `X-Forwarded-For` and `X-Forwarded-Proto`: it sets
+  uvicorn's `proxy_headers` to `False`, so a request's `remote_address`, `peer_address` and URL
+  scheme are the socket's, as with `live_server`, `hypercorn_server` and Effect's Node server.
+  uvicorn's default took them from any peer in `FORWARDED_ALLOW_IPS` (loopback unless set),
+  ahead of the app's own `x_forwarded_headers`. To trust a proxy, use `x_forwarded_headers`
+  with its addresses, or opt back in to uvicorn's handling with
+  `uvicorn_server.layer(config={"proxy_headers": True, "forwarded_allow_ips": ...})`.
+  `tests/test_server_transport_peer.py` checks every server adapter.
 
 ### Docs
 
