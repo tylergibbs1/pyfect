@@ -4,6 +4,16 @@
 
 ### Fixed
 
+- `RpcGroupWith[M]` wraps every procedure of the group in `M`, as Effect's
+  `RpcGroup.middleware` does: those it inherits from merged groups
+  (`class Api(Public, RpcGroupWith[M])`) and those declared in its subclasses. They were
+  served without the group middleware, on the server and the client, while pyright typed
+  them as wrapped, so an app relying on a group middleware for authentication left those
+  procedures open: upgrade. `Group.rpcs` is now the one source of a group's procedures, with
+  the middleware applied, and each RPC attribute of a group class reads it, so the procedure a
+  handler is given for is the one served. `RpcGroupWith[A | B]` wraps in `A` then `B` (a
+  union was kept as one invalid middleware), and a group that is two different
+  `RpcGroupWith`s, which pyright refuses, is a `TypeError`.
 - `json_patch.get` gives `[]` for two NaN floats that are different objects (`inf - inf` and
   `inf * 0`), as Effect's `Object.is` does; it gave a `replace`. Numbers are compared by
   `pyfect._js.same_json_value`, and `tests/test_object_is_guard.py` keeps hand-written sign

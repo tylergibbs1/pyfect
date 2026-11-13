@@ -14,7 +14,7 @@ calling the RPC.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
 from typing import (
     TYPE_CHECKING,
@@ -123,8 +123,13 @@ class AnyRpc:
     def is_stream(self) -> bool:
         return isinstance(self.success_schema, StreamSchema)
 
-    def _client_method(self, instance: object) -> Any:
-        """On a client (a group instance), the method calling this RPC."""
+    def _read(self, instance: object, owner: type[object]) -> Any:
+        """This RPC as an attribute: on a group (or entity) class, the
+        procedure it serves under this tag (wrapped by its middleware); on a
+        client (an instance), the method calling it."""
+        if instance is None:
+            served: Mapping[str, AnyRpc] | None = getattr(owner, "rpcs", None)
+            return self if served is None else served.get(self.tag, self)
         methods: dict[str, Any] | None = getattr(instance, "_rpc_methods", None)
         return self if methods is None else methods.get(self.tag, self)
 
@@ -194,7 +199,7 @@ class Rpc(AnyRpc, Generic[P_co, S_co, E_co, M_co, MT_co, Tag_co]):
     @overload
     def __get__(self, instance: object, owner: type[object], /) -> Self: ...
     def __get__(self, instance: object, owner: type[object], /) -> Any:
-        return self._client_method(instance)
+        return self._read(instance, owner)
 
     def middleware[T: RpcMiddleware[Any, Any, Any]](
         self, middleware: type[T], /
@@ -264,7 +269,7 @@ class StreamRpc(AnyRpc, Generic[P_co, A_co, E_co, M_co, MT_co, Tag_co]):
     @overload
     def __get__(self, instance: object, owner: type[object], /) -> Self: ...
     def __get__(self, instance: object, owner: type[object], /) -> Any:
-        return self._client_method(instance)
+        return self._read(instance, owner)
 
     def middleware[T: RpcMiddleware[Any, Any, Any]](
         self, middleware: type[T], /

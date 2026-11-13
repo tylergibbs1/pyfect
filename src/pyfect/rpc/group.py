@@ -28,6 +28,7 @@ from typing import (
     Never,
     Self,
     TypeVar,
+    Union,
     cast,
     get_args,
     get_origin,
@@ -45,7 +46,7 @@ from pyfect.layer import effect_context as layer_effect_context
 from pyfect.queue import Dequeue
 from pyfect.rpc._rpc import AnyRpc, HandlerEntry, Rpc, RpcRequest, StreamRpc, handler_tag
 from pyfect.rpc._tags import Tags_contra, check_listed_tags
-from pyfect.rpc.middleware import RpcMiddleware
+from pyfect.rpc.middleware import AnyMiddleware, RpcMiddleware
 from pyfect.scope import Scope
 from pyfect.stream import Stream
 
@@ -295,22 +296,15 @@ class RpcGroup(Generic[Tags_contra]):
     against the list when it is defined."""
 
     rpcs: ClassVar[Mapping[str, AnyRpc]] = {}
-    _wraps_rpcs: ClassVar[bool] = False
+    """The group's procedures, each wrapped by the group middleware: what is
+    served, what a client calls, and what each RPC attribute of the class
+    reads (the one source of all three)."""
     _rpc_methods: dict[str, Any]
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)
-        for base in types.get_original_bases(cls):
-            origin = get_origin(base)
-            if isinstance(origin, type) and issubclass(origin, RpcGroup) and origin._wraps_rpcs:
-                _add_middleware(cls, get_args(base)[0])
-        found: dict[str, AnyRpc] = {}
-        for klass in reversed(cls.__mro__):
-            for value in vars(klass).values():
-                if isinstance(value, AnyRpc):
-                    found[value.tag] = value
-        cls.rpcs = found
-        check_listed_tags(cls, RpcGroup, found)
+        cls.rpcs = _procedures(cls, _group_middlewares(cls))
+        check_listed_tags(cls, RpcGroup, cls.rpcs)
 
     @classmethod
     def handlers(cls) -> Handlers[Self, Never, Tags_contra]:
@@ -371,9 +365,60 @@ def _attribute_of(group: type, rpc: AnyRpc) -> str:
     """The attribute name ``rpc`` has on ``group`` (its tag if none)."""
     for klass in group.__mro__:
         for name, value in vars(klass).items():
-            if value is rpc:
+            if isinstance(value, AnyRpc) and value.tag == rpc.tag:
                 return name
     return rpc.tag
+
+
+def _procedures(group: type, middlewares: tuple[AnyMiddleware, ...]) -> Mapping[str, AnyRpc]:
+    """Every RPC declared on ``group`` or a base (the most derived winning a
+    tag), each wrapped by ``middlewares`` after its own (Effect's
+    ``RpcGroup.merge`` then ``.middleware``)."""
+    declared: dict[str, AnyRpc] = {}
+    for klass in reversed(group.__mro__):
+        for value in vars(klass).values():
+            if isinstance(value, AnyRpc):
+                declared[value.tag] = value
+    return {tag: _wrapped(rpc, middlewares) for tag, rpc in declared.items()}
+
+
+def _wrapped(rpc: AnyRpc, middlewares: tuple[AnyMiddleware, ...]) -> AnyRpc:
+    for middleware in middlewares:
+        rpc = rpc.with_middleware(middleware)
+    return rpc
+
+
+def _group_middlewares(group: type) -> tuple[AnyMiddleware, ...]:
+    """The middleware of the ``RpcGroupWith[M]`` that ``group`` is: declared on
+    it or a base, as pyright reads it. Two different ones are refused, as
+    pyright refuses the bases."""
+    found: tuple[AnyMiddleware, ...] | None = None
+    for klass in group.__mro__:
+        for base in types.get_original_bases(klass):
+            origin = get_origin(base)
+            if not (isinstance(origin, type) and "_wraps_group" in vars(origin)):
+                continue
+            declared = _middleware_classes(get_args(base)[0])
+            if found is not None and found != declared:
+                raise TypeError(
+                    f"{group.__name__} is both RpcGroupWith[{_names(found)}] and "
+                    f"RpcGroupWith[{_names(declared)}]: give one RpcGroupWith[A | B], or "
+                    "list the wrapped RPCs as attributes of a group without middleware"
+                )
+            found = declared
+    return found or ()
+
+
+def _middleware_classes(argument: object) -> tuple[AnyMiddleware, ...]:
+    if get_origin(argument) in (Union, types.UnionType):
+        return tuple(m for arg in get_args(argument) for m in _middleware_classes(arg))
+    if isinstance(argument, type) and issubclass(argument, RpcMiddleware):
+        return (cast("AnyMiddleware", argument),)
+    raise TypeError(f"RpcGroupWith[...] takes middleware classes, got {argument!r}")
+
+
+def _names(middlewares: tuple[AnyMiddleware, ...]) -> str:
+    return " | ".join(m.__qualname__ for m in middlewares)
 
 
 class HandlerOf[T](ServiceMarker):
@@ -418,21 +463,19 @@ def access_handler[P, S, E](
     )
 
 
-def _add_middleware(group: type[RpcGroup], middleware: Any) -> None:
-    for name, value in list(vars(group).items()):
-        if isinstance(value, AnyRpc):
-            setattr(group, name, value.with_middleware(middleware))
-
-
 class RpcGroupWith(RpcGroup[Tags_contra], Generic[GM_co, Tags_contra]):
     """A group whose RPCs are all wrapped by ``GM`` (Effect's
     ``RpcGroup.middleware``)::
 
         class Users(RpcGroupWith[Auth]):
             get = rpc.make("Users.get", ...)
+
+    It wraps every RPC of the class: its own, those it merges from other
+    groups (``class Api(Users, RpcGroupWith[Auth])``) and those of its
+    subclasses. ``RpcGroupWith[A | B]`` wraps them in ``A`` then ``B``.
     """
 
-    _wraps_rpcs: ClassVar[bool] = True
+    _wraps_group: ClassVar[bool] = True
 
 
 __all__ = [
