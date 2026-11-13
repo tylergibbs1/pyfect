@@ -56,7 +56,9 @@
   still reports as Effect's does. Once `destroy` has run on the log, `synced` fails with the
   new `EventLogDestroyedError` (exported from `pyfect.eventlog.event_log`) instead of
   counting the acks of destroyed entries or waiting for a change stream that does not start
-  again; a journal destroyed directly, not through the log, is not noticed. A property test commits acks and replays in every order on
+  again; a journal destroyed directly, not through the log, is not noticed. `synced`'s error
+  type gains `EventLogDestroyedError`, so code that handles its errors exhaustively must add
+  it. A property test commits acks and replays in every order on
   the memory and SQL journals and checks `synced` sees the end, and never a sequence the log
   lacks. Found by dogfooding (quill).
 - `S.Finite` and `S.is_finite` read an `int` as a JavaScript number, so one past the largest
