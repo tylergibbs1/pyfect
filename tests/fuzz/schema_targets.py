@@ -5,6 +5,7 @@ to itself."""
 
 from __future__ import annotations
 
+import math
 from datetime import datetime
 from typing import Any, NotRequired, TypedDict, cast
 
@@ -89,6 +90,19 @@ def _as_number(value: object) -> object:
     return value
 
 
+def _non_finite_as_null(value: object) -> object:
+    """``value`` as ``JSON.stringify`` writes it and ``JSON.parse`` reads it
+    back: ``NaN`` and infinities as ``None``."""
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    if isinstance(value, dict):
+        items = cast("dict[object, object]", value).items()
+        return {key: _non_finite_as_null(item) for key, item in items}
+    if isinstance(value, (list, tuple)):
+        return [_non_finite_as_null(item) for item in cast("list[object]", value)]
+    return value
+
+
 def _round_trip(schema: Any, value: object) -> None:
     decoded = _decoded(schema, value)
     if decoded is None:
@@ -99,6 +113,10 @@ def _round_trip(schema: Any, value: object) -> None:
         return  # ISO text writes whole minutes, so the instant moves, in Effect too
     encoded = S.encode_unknown_sync(schema)(decoded)
     again = S.decode_unknown_sync(schema)(encoded)
+    if schema is S.UnknownFromJsonString:
+        # A number past the floats (``1e400``) parses to an infinity, which
+        # ``JSON.stringify`` writes ``null``: in Effect too it comes back ``null``.
+        decoded = _non_finite_as_null(decoded)
     if _as_number(again) != _as_number(decoded) and repr(again) != repr(decoded):
         raise Crash(f"{decoded!r} encodes to {encoded!r}, which decodes to {again!r}")
 

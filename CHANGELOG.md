@@ -189,6 +189,13 @@
   is weak at every level, as Effect's is (on the options, then on the API). Every
   weak-keyed table and `weakref.finalize` in pyfect is now listed with what makes it free
   (`tests/test_weak_tables.py`), so a new one is checked before it lands.
+- `S.UnknownFromJsonString`, `S.from_json_string` and the `stringify_json` getter write `NaN`
+  and infinities as `null`, as Effect's `JSON.stringify` does. A JSON number past the largest
+  double (`1e400`, `555555555E555555555555`) decodes to an infinity, in Effect too, but encoding
+  it failed with "Expected a JSON-serializable value", so decode accepted what encode
+  rejected; `S.encode_unknown_sync(S.UnknownFromJsonString)(decoded)` of `[1e400]` is now
+  `"[null]"`. The fuzz differential now compares `UnknownFromJsonString`'s decode and encode
+  with Effect's on the `schema_json` corpus. Found by the `schema_json` fuzz target.
 
 ### Performance
 
