@@ -5,7 +5,7 @@ import json
 import sys
 from pathlib import Path
 
-from gate import _calibration
+from gate import calibrate
 from streams import CASES, best_of
 
 import pyfect
@@ -16,7 +16,7 @@ def main() -> None:
     # PYTHONPATH must win over the installed package, or both sides measure one tree.
     assert Path(pyfect.__file__).resolve().is_relative_to(src), pyfect.__file__
     runs = {name: run for name, _, run in CASES}
-    calibration = best_of(_calibration)
+    calibration = best_of(calibrate)
     print(json.dumps({name: best_of(runs[name]) / calibration for name in names}))
 
 

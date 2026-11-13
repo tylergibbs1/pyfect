@@ -79,6 +79,7 @@ from pyfect.duration import Duration
 from pyfect.exit import Exit, Failure, Success
 from pyfect.exit import die as exit_die
 from pyfect.scheduler import (
+    AsyncioScheduler,
     BoundScheduler,
     Cancel,
     CurrentScheduler,
@@ -87,6 +88,7 @@ from pyfect.scheduler import (
     PreventSchedulerYield,
     Scheduler,
     SyncOnlyScheduler,
+    SyncScheduler,
     Task,
 )
 
@@ -108,6 +110,9 @@ _INLINE_STEPS = 32
 _MAX_NESTED_RUNS = 16
 
 _EXITS = (Success, Failure)
+
+type RunScheduler = SyncScheduler | AsyncioScheduler
+"""The schedulers pyfect runs fibers on: each fiber of one keeps its own batch."""
 
 _fiber_ids = itertools.count(1)
 _resume_lock = threading.Lock()
@@ -323,7 +328,7 @@ class Fiber(Generic[A_co, E_co]):
         # it resumes in (Effect's captured async context), or that started
         # it, when its first run is scheduled (see _start).
         self._async_context: contextvars.Context | None = None
-        self._batch_first: Task | None = None
+        self._batch_first: Task | _Yielded | None = None
         self._batch: list[Task] | None = None
         self._batch_others: PriorityBuckets | None = None
         self._set_context(context)
@@ -491,7 +496,7 @@ class Fiber(Generic[A_co, E_co]):
         self._tracer_hook: ContextHook | None = view.tracer_hook
         self._runtime_metrics: FiberRuntimeMetricsService | None = view.runtime_metrics
         self._stack_frame: StackFrame | None = view.stack_frame
-        self._batch_run: Tracking | None = view.batch_run
+        self._batch_run: RunScheduler | None = view.batch_run
 
     def _on_run_thread(self) -> bool:
         """Whether this thread runs this fiber's run now: one of its fibers
@@ -545,6 +550,8 @@ class Fiber(Generic[A_co, E_co]):
         """The pending batch in order: lower priorities, then 0, then higher."""
         first, more, others = self._batch_first, self._batch, self._batch_others
         self._batch_first = self._batch = self._batch_others = None
+        if isinstance(first, _Yielded):
+            first = self._go_on(first)
         ready = ([] if first is None else [first]) + (more or [])
         if others is None:
             return ready
@@ -560,7 +567,9 @@ class Fiber(Generic[A_co, E_co]):
         if self._batch is None and self._batch_others is None:
             # One task: nothing after it for a raise to cut off.
             self._batch_first = None
-            if first is not None:
+            if isinstance(first, _Yielded):
+                self._resume_yielded(first)
+            elif first is not None:
                 first()
             return
         batch = self._take_batch()
@@ -714,13 +723,6 @@ class Fiber(Generic[A_co, E_co]):
 
     def _queue_yielded(self, yielded: _Yielded, priority: int = 0) -> None:
         self._yielded = yielded
-
-        def go_on() -> None:
-            if self._yielded is yielded:
-                self._yielded = None
-                self._ops_on_resume = yielded.ops
-                self._drive(yielded.step)
-
         run = self._batch_run
         if (
             run is not None
@@ -729,10 +731,27 @@ class Fiber(Generic[A_co, E_co]):
             and self._batch_others is None
         ):
             # ``_queue``'s commonest case, inline: a yield starting a batch.
-            self._batch_first = go_on
+            # The batch holds the yield itself, which ``_run_batch`` resumes
+            # with no task made for it.
+            self._batch_first = yielded
             run.schedule(self._run_batch)
         else:
-            self._queue(go_on, priority)
+            self._queue(self._go_on(yielded), priority)
+
+    def _go_on(self, yielded: _Yielded) -> Task:
+        """The task resuming the fiber after ``yielded``: nothing if an
+        interrupt took it over meanwhile."""
+
+        def go_on() -> None:
+            self._resume_yielded(yielded)
+
+        return go_on
+
+    def _resume_yielded(self, yielded: _Yielded) -> None:
+        if self._yielded is yielded:
+            self._yielded = None
+            self._ops_on_resume = yielded.ops
+            self._drive(yielded.step)
 
     def _continue(self, frame: Frame, ex: Exit[Any, Any]) -> Step:
         hook = self._tracer_hook
@@ -1041,9 +1060,8 @@ class _RunView:
     runtime_metrics: FiberRuntimeMetricsService | None
     stack_frame: StackFrame | None
     # The run whose fibers keep their own batches (``Fiber._queue``): only
-    # the run's own scheduler (pyfect's are all ``Tracking``), not a provided
-    # one nor ``run_sync``'s.
-    batch_run: Tracking | None
+    # the run's own scheduler, not a provided one nor ``run_sync``'s.
+    batch_run: RunScheduler | None
 
     @staticmethod
     def of(given: Context, run_scheduler: Scheduler) -> _RunView:
@@ -1070,7 +1088,7 @@ class _RunView:
         batch_run = (
             run_scheduler
             if scheduler is run_scheduler
-            and isinstance(run_scheduler, Tracking)
+            and isinstance(run_scheduler, SyncScheduler | AsyncioScheduler)
             and not isinstance(run_scheduler, SyncOnlyScheduler)
             else None
         )

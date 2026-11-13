@@ -28,7 +28,7 @@ class _Box:
         self.value = value
 
 
-def _calibration() -> int:
+def calibrate() -> int:
     """Interpreter work of the same kind as a fiber step: generators, objects, dicts, calls."""
 
     def boxes(n: int):
@@ -54,7 +54,7 @@ def _ratio(run: Callable[[], object], calibration: float, limit: float | None) -
     for _ in range(ATTEMPTS - 1):
         if limit is None or ratio <= limit:
             break
-        ratio = min(ratio, best_of(run) / best_of(_calibration))
+        ratio = min(ratio, best_of(run) / best_of(calibrate))
     return ratio
 
 
@@ -67,7 +67,7 @@ def main() -> int:
     baseline = _read_baseline()
     flavour = _flavour()
     expected = baseline.get(flavour, {})
-    calibration = best_of(_calibration)
+    calibration = best_of(calibrate)
     ratios: dict[str, float] = {}
     slower: list[str] = []
     print(f"{flavour}: calibration {calibration * 1e3:.1f} ms")

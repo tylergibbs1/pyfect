@@ -401,7 +401,8 @@ class SyncScheduler(Tracking):
 
     def _move_due_timers(self) -> None:
         now = time.monotonic()
-        if not self._timers.any_due(now):
+        entries = self._timers.entries
+        if not entries or entries[0][0] > now:
             return
         for timer in self._timers.pop_due(now):
             self._ready.append(timer.task)
