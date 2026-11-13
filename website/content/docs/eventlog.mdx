@@ -115,6 +115,11 @@ entry the server held when asked. Effect has no such call; pyfect adds it (with 
 `EventLog.LatestSequence` RPC it asks the server through), so a test or a script can sync
 and then check, without sleeping.
 
+After `log.destroy`, `log.synced` fails with `EventLogDestroyedError`: the journal is empty,
+and the remotes do not send their entries again (Effect does not restart them either), so
+the log can never catch up. `synced` knows of a destroy made through the log; a journal
+destroyed directly through `EventJournal` is not noticed.
+
 Payloads, entries and the write and change frames are
 [SchemaBinary](/docs/streams#schemabinary) frames with Effect's bytes.
 

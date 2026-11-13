@@ -162,7 +162,7 @@ def _synced_against_a_remote_that_skips_own_writes(
     journal: str, then: fx.Effect[Any, Any, L.EventLog] = fx.void
 ) -> fx.Exit[Any, Any]:
     """Writes n2, waits for ``synced`` (the remote's n1 replays only after n2's acks
-    commit), runs ``then`` and gives the log's entries and what ``then`` gave."""
+    commit), and gives the log's entries then and what ``then``, run next, gives."""
 
     @fx.fn
     def body():
@@ -176,8 +176,8 @@ def _synced_against_a_remote_that_skips_own_writes(
         yield from registry.register_remote(_OwnWritesNotEchoed(other, changes).service)
         yield from log.write(NoteAdded, {"id": "n2", "text": "eggs"})
         yield from log.synced
-        after = yield from then
-        return _texts((yield from log.entries)), after
+        entries = _texts((yield from log.entries))
+        return entries, (yield from then)
 
     handlers = L.group(Notes, lambda h: h.handle(NoteAdded, lambda _: fx.void))
     log = L.layer(L.schema(Notes), handlers).pipe(
@@ -195,21 +195,21 @@ def test_synced_succeeds_when_its_acks_commit_before_the_replay(journal: str) ->
     assert exit == fx.Success((["n1", "n2"], None))
 
 
-def test_synced_after_destroy_does_not_count_the_acks_of_destroyed_entries() -> None:
-    # destroy empties the journal and resets its cursor; the remote still holds n1 and n2,
-    # which the log no longer has, so synced must not succeed (Effect does not restart the
-    # change stream on destroy, so nothing re-applies them: it waits).
+@pytest.mark.parametrize("journal", _journals())
+def test_synced_fails_once_the_log_is_destroyed(journal: str) -> None:
+    # destroy empties the journal and resets its cursors, and the change stream does not
+    # start again (as in Effect), so the log can never catch up: synced says so, rather
+    # than count the acks of destroyed entries or a cursor that jumps over missing ones.
     @fx.fn
     def destroy_then_sync():
         log = yield from L.EventLog()
         yield from log.destroy
-        return (yield from log.synced.timeout("1 second").exit())
+        return (yield from log.synced.timeout("5 seconds").flip())
 
-    exit = _synced_against_a_remote_that_skips_own_writes("memory", destroy_then_sync())
+    exit = _synced_against_a_remote_that_skips_own_writes(journal, destroy_then_sync())
     assert isinstance(exit, fx.Success), exit
-    entries, synced = exit.value
-    assert entries == []
-    assert not isinstance(synced, fx.Success), synced
+    _, error = exit.value
+    assert isinstance(error, L.EventLogDestroyedError), error
 
 
 # --- each storage reports its latest sequence ---------------------------------------

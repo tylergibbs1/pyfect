@@ -33,6 +33,7 @@ from pyfect.context import Context, Reference, Tag
 from pyfect.effect import (
     context,
     die,
+    fail,
     gen,
     provide_context,
     provide_service,
@@ -41,6 +42,7 @@ from pyfect.effect import (
     sync,
 )
 from pyfect.encoding.schema_binary import to_codec_strict
+from pyfect.errors import TaggedError
 from pyfect.eventlog._compactor import CompactFn, CompactWrite, RegisteredCompactor
 from pyfect.eventlog._conflicts import set_anchor
 from pyfect.eventlog._identity import Identity, IdentityService
@@ -104,6 +106,7 @@ __all__ = [
     "CurrentStoreId",
     "EventJournalError",
     "EventLog",
+    "EventLogDestroyedError",
     "EventLogSchema",
     "EventLogService",
     "HandlerFn",
@@ -773,6 +776,12 @@ _SYNCED_POLL = "10 millis"
 # --- the log -------------------------------------------------------------------------
 
 
+class EventLogDestroyedError(TaggedError):
+    """``EventLogService.synced`` was asked of a log whose ``destroy`` has run (a pyfect
+    addition): its journal is empty and its remotes do not send their entries again,
+    so it can never be in sync."""
+
+
 class EventLogService:
     """What an event log does (Effect's ``EventLog`` service)."""
 
@@ -781,7 +790,7 @@ class EventLogService:
         write_events: Callable[[Sequence[tuple[str, object]]], Effect[list[object], object]],
         entries: Effect[list[Entry], EventJournalError],
         destroy: Effect[None, EventJournalError],
-        synced: Effect[None, EventJournalError | EventLogRemoteError],
+        synced: Effect[None, EventJournalError | EventLogRemoteError | EventLogDestroyedError],
         compact: Callable[
             [RemoteId | None], Effect[list[CompactOutcome], EventJournalError | EventLogRemoteError]
         ],
@@ -794,7 +803,9 @@ class EventLogService:
         """Succeeds once every registered remote has acknowledged the
         entries written so far and the log has applied the remote's
         changes up to the latest it stored when asked (a pyfect addition).
-        A remote that cannot tell its latest sequence is only uploaded to."""
+        A remote that cannot tell its latest sequence is only uploaded to. Fails
+        with ``EventLogDestroyedError`` once ``destroy`` has run on this log; a
+        journal destroyed directly, not through the log, is not noticed."""
 
     def compact(
         self, *, remote_id: RemoteId | None = None
@@ -905,10 +916,12 @@ def _uploader(
                 acks=[RemoteAck(ack.entry_id, ack.sequence) for ack in acks],
                 first_sequence=remote.first_sequence,
             )
-            cursor = journal.next_remote_sequence(remote.id)
+            sequences = [ack.sequence for ack in acks]
             return (
-                with_lock(written)
-                .and_then(own_acks.advance(remote.id, cursor, [ack.sequence for ack in acks]))
+                with_lock(written.and_then(journal.next_remote_sequence(remote.id)))
+                .flat_map(
+                    lambda cursor: sync(lambda: own_acks.advance(remote.id, cursor, sequences))
+                )
                 .as_void()
             )
 
@@ -930,26 +943,38 @@ def _synced(
     store_id: StoreId,
     upload_to: _Upload,
     own_acks: OwnAcks,
-) -> Effect[None, EventJournalError | EventLogRemoteError]:
+) -> Effect[None, EventJournalError | EventLogRemoteError | EventLogDestroyedError]:
+    # Checked after every read it vouches for, so a destroy that overtakes a read fails it.
+    alive: Effect[None, EventLogDestroyedError] = suspend(
+        lambda: fail(EventLogDestroyedError()) if own_acks.destroyed else succeed(None)
+    )
+
     def sync_remote(
         remote: EventLogRemoteService,
-    ) -> Effect[None, EventJournalError | EventLogRemoteError]:
+    ) -> Effect[None, EventJournalError | EventLogRemoteError | EventLogDestroyedError]:
         latest_sequence = remote.latest_sequence
 
         def body():
+            yield from alive
             # Uploaded first, so the latest sequence covers this log's entries.
             yield from upload_to(remote)
             if latest_sequence is None:
-                return
+                return (yield from alive)
             latest = yield from latest_sequence(identity=identity, store_id=store_id)
             if latest is None:
-                return
-            # The remote never sends this log's own writes back on this connection.
-            cursor = journal.next_remote_sequence(remote.id)
-            while (yield from own_acks.advance(remote.id, cursor)) <= latest:
+                return (yield from alive)
+            while True:
+                cursor = yield from journal.next_remote_sequence(remote.id)
+                yield from alive
+                # The remote never sends this log's own writes back on this connection.
+                if own_acks.advance(remote.id, cursor) > latest:
+                    return
                 yield from sleep(_SYNCED_POLL)
 
-        return gen(body)
+        # A destroyed SQL journal fails its reads instead.
+        return gen(body).map_error(
+            lambda error: EventLogDestroyedError() if own_acks.destroyed else error
+        )
 
     return suspend(lambda: for_each(list(registry.remotes.values()), sync_remote).as_void())
 
@@ -1067,7 +1092,7 @@ def _make():
     return EventLogService(
         write_events,
         journal.entries,
-        own_acks.forgetting(journal.destroy),
+        own_acks.destroying(journal.destroy),
         _synced(
             registry=registry,
             journal=journal,

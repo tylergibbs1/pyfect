@@ -96,14 +96,14 @@ def _seen_sequences(
         if kind == "ack":
             acks = [RemoteAck(entries[s].id, s) for s in sequences]
             yield from journal.write_remote_acks(remote_id=remote, acks=acks)
-            yield from own_acks.advance(remote, journal.next_remote_sequence(remote), sequences)
+            own_acks.advance(remote, (yield from journal.next_remote_sequence(remote)), sequences)
         else:
             batch = [RemoteEntry(remote_sequence=s, entry=entries[s]) for s in sequences]
             yield from journal.write_from_remote(
                 remote_id=remote, entries=batch, effect=lambda _: fx.void
             )
             held.update(sequences)
-        sequence = yield from own_acks.advance(remote, journal.next_remote_sequence(remote))
+        sequence = own_acks.advance(remote, (yield from journal.next_remote_sequence(remote)))
         first_missing = next(s for s in range(len(history.own) + 1) if s not in held)
         seen.append((sequence, first_missing))
     return seen
