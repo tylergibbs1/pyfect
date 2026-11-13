@@ -40,6 +40,19 @@
   adopted socket the name is still `localhost`, as in Node. The side a socket upgrades as (a
   server, or a client with its host) is now required where sockets are built, so a new kind of
   socket cannot leave it out.
+- `console_json`, `format_json`, OpenTelemetry span events, log records and attributes, the
+  OTLP exporters and the DevTools client hide what `CurrentRedactedNames` names in `Headers`,
+  `UrlParams`, requests, responses and HTTP client errors, as `console_pretty` and
+  `console_logfmt` did for errors. Their JSON walked a value's entries, fields or exception
+  attributes before its own `to_json`, so logging an HTTP error or request (for example with
+  `catch_all(log_error)`) wrote authorization, cookie and URL signature values, and the
+  underlying httpx request, as they were. As in Effect's `formatJson` and `format`, a value's
+  redacted form (`Redactable`, here `__redacted__`) and then its own `to_json` come first,
+  wherever it is nested; `pyfect._json_text.stringify` writes a value's `to_json` before its
+  mapping entries too, as `JSON.stringify` calls `toJSON`. `pretty` and `logfmt` now also redact
+  `Headers` and `UrlParams` logged directly. `tests/test_log_redaction.py` logs each redacting
+  type through every logger and exporter, and `tests/test_log_redaction_guard.py` keeps sinks
+  from walking values themselves and every type that redacts giving its redacted form.
 
 ### Docs
 

@@ -129,6 +129,11 @@ class UrlParams:
             for name, value in self.params
         ]
 
+    def __redacted__(self) -> dict[str, object]:
+        """The pairs with the values of ``CurrentRedactedNames`` hidden, as
+        logs and traces show them (Effect's ``Redactable``)."""
+        return {"_id": "UrlParams", "params": dict(self.redact(current_redacted_names()))}
+
     def to_json(self) -> dict[str, object]:
         return {
             "_id": "UrlParams",
