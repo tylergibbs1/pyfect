@@ -31,13 +31,14 @@ MEASURE = Path(__file__).with_name("_measure.py")
 # with itself (bench-noise runs 43357391286 and 43358456044, 5 rounds each, Python 3.13) put
 # every case within x0.93 to x1.04 of itself: fork-heavy x0.96-1.03, queue x0.94-1.03, map +
 # filter x0.93-1.04. x1.10 is more than twice the largest of those; the per-fiber dispatchers'
-# x1.37 fork-heavy regression, which the gate's 1.6 let through, fails it by far.
+# x1.37 fork-heavy regression, which the gate's 1.6 let through, fails it by far. map +
+# filter keeps the default: run 43363222313 put it at x1.098 of a base whose code path it
+# shares, so its spread is wider than those twelve runs showed.
 TOLERANCE: dict[str, float] = {
     "fork-heavy": 1.10,
     "queue offer/take": 1.10,
-    "map + filter": 1.10,
 }
-# The group_by_key cases' spread was not measured; until it is, they get the room of x1.25.
+# The other cases' spread is wider or not measured; they get the room of x1.25.
 DEFAULT_TOLERANCE = 1.25
 
 

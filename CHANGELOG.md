@@ -190,8 +190,9 @@
   to x1.07, map + filter unchanged.
 - `benchmarks/compare.py` compares a commit with its branch base (the merge base with
   `origin/main`, or the first parent on `main`), alternating the two on one machine, and CI
-  runs it after the gate: fork-heavy, queue and map + filter fail beyond x1.10 of the base,
-  set from twelve CI runners comparing a commit with itself (x0.93 to x1.04). The gate's x1.6
+  runs it after the gate: fork-heavy and queue fail beyond x1.10 of the base, set from twelve
+  CI runners comparing a commit with itself (x0.93 to x1.04), and the other cases beyond
+  x1.25. The gate's x1.6
   against a fixed baseline had let the x1.37 through, as runners differ by that much.
 
 ### Docs
