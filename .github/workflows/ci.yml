@@ -101,7 +101,8 @@ jobs:
 
   free-threaded:
     # QA concurrency 2: a cross-thread resume racing registration hung only
-    # without the GIL. Runs the stress and the runtime suites on CPython 3.14t.
+    # without the GIL. Runs the stress, the shared-state primitives shared by runs
+    # on several threads (tests/cross_run) and the runtime suites on CPython 3.14t.
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -123,6 +124,7 @@ jobs:
         run: >
           "$RUNNER_TEMP/ft/bin/python" -m pytest -q -p no:cacheprovider
           tests/test_free_threaded.py
+          tests/cross_run
           tests/test_run_caller_context.py
           tests/test_concurrency.py
           tests/test_decided_results.py

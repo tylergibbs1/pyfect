@@ -455,13 +455,29 @@ class Fiber(Generic[A_co, E_co]):
         self, observer: Callable[[Exit[A_co, E_co]], None]
     ) -> Callable[[], None]:
         """Call ``observer`` with the exit once the fiber is done (at once if
-        it already is). Returns a function that removes the observer. Must
-        be called on the scheduler thread."""
+        it already is), exactly once, from any thread. Returns a function
+        that removes the observer."""
         if self._exit is not None:
             observer(self._exit)
             return _no_op
-        self._observers.append(observer)
-        return lambda: self._remove_observer(observer)
+        # The fiber may finish on another thread (its run's) between the
+        # check and the append, and the finish may or may not see the
+        # append: whichever of the two pops ``once`` first calls it.
+        once = [observer]
+
+        def call(ex: Exit[A_co, E_co]) -> None:
+            try:
+                f = once.pop()
+            except IndexError:
+                return
+            f(ex)
+
+        self._observers.append(call)
+        ex = self._exit
+        if ex is not None:
+            call(ex)
+            return _no_op
+        return lambda: self._remove_observer(call)
 
     # --- runtime internals --------------------------------------------------
 
@@ -715,7 +731,9 @@ class Fiber(Generic[A_co, E_co]):
         if self._parent is not None:
             self._parent._children.pop(self, None)
         observers, self._observers = self._observers, []
-        for observer in observers:
+        # A copy: a waiter of another run may take its observer out of the
+        # list meanwhile, and a list shrinking under its loop skips one.
+        for observer in tuple(observers) if observers else ():
             # As Effect: a raise stops the observers after it.
             observer(ex)
         return None

@@ -16,6 +16,7 @@ from plain code, as Effect's ``FiberMap.runtime``.
 from __future__ import annotations
 
 import asyncio
+import threading
 from collections.abc import Hashable, Iterator
 from typing import Any, Generic, Never, TypeVar
 
@@ -75,10 +76,13 @@ E_co = TypeVar("E_co", covariant=True, default=object)
 class FiberMap(Generic[K, A_co, E_co]):
     """Make one with ``FiberMap[K, A, E].make()`` inside a scope."""
 
-    __slots__ = ("_state", "deferred")
+    __slots__ = ("_lock", "_state", "deferred")
 
     def __init__(self) -> None:
         self._state: _Open[K, A_co, E_co] | None = _Open()  # None once the scope has closed
+        # Runs on other threads share a map: its keys and owned fibers change
+        # holding this; no fiber is interrupted or observed while it is held.
+        self._lock = threading.Lock()
         # Completed by the first reported failure, or when the scope closes.
         # Typed as Effect's ``Deferred<void, unknown>``, so the class stays covariant.
         self.deferred: Deferred[None, Any] = Deferred()
@@ -103,14 +107,15 @@ class FiberMap(Generic[K, A_co, E_co]):
         return cls.make().flat_map(lambda m: m.runtime_async(*tags))
 
     def __iter__(self) -> Iterator[tuple[K, Fiber[A_co, E_co]]]:
-        if self._state is None:
-            return iter(())
-        return iter([(key, entry.fiber) for key, entry in self._state.by_key.items()])
+        return iter([(key, entry.fiber) for key, entry in self._entries()])
+
+    def _entries(self) -> list[tuple[K, _Entry[A_co, E_co]]]:
+        with self._lock:
+            return [] if self._state is None else list(self._state.by_key.items())
 
     def __repr__(self) -> str:
-        if self._state is None:
-            return "FiberMap(closed)"
-        return f"FiberMap(size={len(self._state.by_key)})"
+        state = self._state
+        return "FiberMap(closed)" if state is None else f"FiberMap(size={len(state.by_key)})"
 
     def set_unsafe[XA, XE](
         self: FiberMap[K, XA, XE],
@@ -122,36 +127,48 @@ class FiberMap(Generic[K, A_co, E_co]):
     ) -> None:
         """Put a running fiber under ``key``, interrupting the one there
         (or, with ``only_if_missing``, interrupting ``fiber`` instead). Into
-        a closed map the fiber is interrupted. Call on the scheduler
-        thread."""
-        state = self._state
-        if state is None:
-            fiber.interrupt_as_unsafe(INTERNAL_FIBER_ID, closed("FiberMap"))
-            return
-        entry = state.by_key.get(key)
-        if entry is not None and entry.fiber is fiber:
-            return
-        if entry is not None and only_if_missing:
-            fiber.interrupt_as_unsafe(INTERNAL_FIBER_ID)
-            return
-        state.owned[fiber] = None
-        if entry is None:
-            state.by_key[key] = _Entry(fiber)
-        else:
-            # Install the replacement before the interrupt can re-enter the
-            # map through a finalizer.
-            previous, entry.fiber = entry.fiber, fiber
-            previous.interrupt_as_unsafe(INTERNAL_FIBER_ID)
+        a closed map the fiber is interrupted."""
+        previous: Fiber[XA, XE] | None = None
+        with self._lock:
+            state = self._state
+            entry = None if state is None else state.by_key.get(key)
+            if state is None:
+                outcome = "closed"
+            elif entry is not None and entry.fiber is fiber:
+                outcome = "there"
+            elif entry is not None and only_if_missing:
+                outcome = "refused"
+            else:
+                outcome = "set"
+                state.owned[fiber] = None
+                if entry is None:
+                    state.by_key[key] = _Entry(fiber)
+                else:
+                    # Install the replacement before the interrupt can re-enter
+                    # the map through a finalizer.
+                    previous, entry.fiber = entry.fiber, fiber
+        match outcome:
+            case "closed":
+                fiber.interrupt_as_unsafe(INTERNAL_FIBER_ID, closed("FiberMap"))
+                return
+            case "there":
+                return
+            case "refused":
+                fiber.interrupt_as_unsafe(INTERNAL_FIBER_ID)
+                return
+            case "set":
+                if previous is not None:
+                    previous.interrupt_as_unsafe(INTERNAL_FIBER_ID)
 
         def observer(ex: Exit[XA, XE]) -> None:
-            state = self._state
-            if state is None:
-                return
-            state.owned.pop(fiber, None)
-            entry = state.by_key.get(key)
-            if entry is not None and entry.fiber is fiber:
-                del state.by_key[key]
-            if reports_failure(ex, propagate_interruption):
+            with self._lock:
+                state = self._state
+                if state is not None:
+                    state.owned.pop(fiber, None)
+                    entry = state.by_key.get(key)
+                    if entry is not None and entry.fiber is fiber:
+                        del state.by_key[key]
+            if state is not None and reports_failure(ex, propagate_interruption):
                 self.deferred.done_unsafe(ex)
 
         fiber.add_observer_unsafe(observer)
@@ -174,14 +191,16 @@ class FiberMap(Generic[K, A_co, E_co]):
         )
 
     def get_unsafe(self, key: K) -> Fiber[A_co, E_co] | None:
-        entry = None if self._state is None else self._state.by_key.get(key)
+        state = self._state
+        entry = None if state is None else state.by_key.get(key)
         return None if entry is None else entry.fiber
 
     def get(self, key: K) -> Effect[Fiber[A_co, E_co] | None]:
         return _Sync(lambda: self.get_unsafe(key))
 
     def has_unsafe(self, key: K) -> bool:
-        return self._state is not None and key in self._state.by_key
+        state = self._state
+        return state is not None and key in state.by_key
 
     def has(self, key: K) -> Effect[bool]:
         return _Sync(lambda: self.has_unsafe(key))
@@ -202,7 +221,7 @@ class FiberMap(Generic[K, A_co, E_co]):
             if self._state is None:
                 return _Succeed(None)
             return Fiber.interrupt_all_as(
-                (entry.fiber for _, entry in live_items(self._state.by_key)),
+                (entry.fiber for _, entry in live_items(self._entries)),
                 INTERNAL_FIBER_ID,
             )
 
@@ -256,7 +275,7 @@ class FiberMap(Generic[K, A_co, E_co]):
         return self.runtime(*tags).map(FiberMapAsyncRuntime)
 
     def size(self) -> Effect[int]:
-        return _Sync(lambda: 0 if self._state is None else len(self._state.by_key))
+        return _Sync(lambda: len(self._entries()))
 
     def join(self) -> Effect[None, E_co]:
         """Wait for the first reported failure and fail with it; succeed
@@ -267,18 +286,19 @@ class FiberMap(Generic[K, A_co, E_co]):
         """Wait until no key holds a fiber (or the map is closed)."""
 
         def loop():
-            while self._state is not None and self._state.by_key:
-                yield from next(iter(self._state.by_key.values())).fiber.await_exit()
+            while entries := self._entries():
+                yield from entries[0][1].fiber.await_exit()
 
         return _Gen(loop)
 
     def _close(self) -> Effect[None]:
         def body() -> Effect[None]:
-            state = self._state
+            with self._lock:
+                state, self._state = self._state, None
+                owned = [] if state is None else list(state.owned)
             if state is None:
                 return _Succeed(None)
-            self._state = None
-            return self.deferred.into(Fiber.interrupt_all(list(state.owned))).as_void()
+            return self.deferred.into(Fiber.interrupt_all(owned)).as_void()
 
         return _Suspend(body)
 

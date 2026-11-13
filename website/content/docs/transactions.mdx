@@ -5,7 +5,8 @@ description: "Change several values atomically with TxRef, tx and tx_retry."
 
 `fx.tx(eff)` runs `eff` as a transaction. It reads and writes `TxRef`s through a journal,
 then commits every write at once. If another fiber changed a ref the transaction read before
-it could commit, the body runs again. No locks are held, so transactions don't deadlock and
+it could commit, the body runs again. No lock is held while a body runs (checking and
+committing take a process-wide lock for an instant), so transactions don't deadlock and
 compose freely: a `tx` inside another `tx` joins the outer one.
 
 ## TxRef
@@ -47,6 +48,14 @@ discards every write the transaction made, so a failed withdrawal undoes the dep
 it. Two hundred transfers run concurrently, and the total balance stays the same.
 
 <include meta='title="bank.py"'>../../snippets/transactions/bank.py</include>
+
+## Sharing refs between runs
+
+`TxRef`s, and every transactional collection below, can live at module level and be used by
+runs on several threads at once, such as `fx.run_blocking` calls from the threads of a web
+server (see [Threads](/docs/threads#sharing-state-between-runs)). Commits from every run go
+one at a time, so a transaction never commits over a write it did not see, and a fiber
+waiting in `tx_retry` in one run wakes when a run on another thread commits to a ref it read.
 
 ## Transactional collections
 

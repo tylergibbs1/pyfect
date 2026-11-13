@@ -39,8 +39,7 @@ def check_capacity(capacity: int) -> int:
 def offer[A, E](queue: Queue[A, E], items: Sequence[A], behind: Callable[[], E]) -> bool:
     """Add ``items`` to ``queue`` (a ``Queue.dropping(capacity)``) without
     waiting; when they do not all fit, fail
-    ``queue`` with ``behind()`` and give ``False``: stop delivering. Call on
-    the queue's fibers' scheduler thread."""
+    ``queue`` with ``behind()`` and give ``False``: stop delivering."""
     if not queue.offer_all_unsafe(items):
         return True
     queue.fail_cause_unsafe(fail_cause(behind()))

@@ -5,7 +5,8 @@ minute for keys left idle."""
 from __future__ import annotations
 
 import math
-from collections.abc import Generator
+import threading
+from collections.abc import Callable, Generator
 from dataclasses import dataclass
 from typing import Any, Final, Never
 
@@ -68,9 +69,12 @@ class _Adaptive:
 class MemoryRateLimiterStore:
     """Counters in dicts, read on the ``Clock``."""
 
-    __slots__ = ("_adaptive", "_buckets", "_counters")
+    __slots__ = ("_adaptive", "_buckets", "_counters", "_lock")
 
     def __init__(self) -> None:
+        # Runs on other threads may share a store: each operation reads and
+        # changes its counters holding this.
+        self._lock = threading.Lock()
         self._counters: dict[str, _Counter] = {}
         self._buckets: dict[str, _Bucket] = {}
         self._adaptive: dict[str, _Adaptive] = {}
@@ -90,7 +94,7 @@ class MemoryRateLimiterStore:
             counter.expires_at += refill_rate_millis * tokens
             return counter.count, counter.expires_at - now
 
-        return clock_with(lambda clock: sync(lambda: run(clock)))
+        return clock_with(lambda clock: sync(lambda: self._locked(lambda: run(clock))))
 
     def token_bucket(
         self,
@@ -122,7 +126,11 @@ class MemoryRateLimiterStore:
             )
             return new_count, max(0, now - bucket.last_refill)
 
-        return clock_with(lambda clock: sync(lambda: run(clock)))
+        return clock_with(lambda clock: sync(lambda: self._locked(lambda: run(clock))))
+
+    def _locked[T](self, f: Callable[[], T]) -> T:
+        with self._lock:
+            return f()
 
     def _state(self, key: str, now: float) -> _Adaptive | None:
         state = self._adaptive.get(key)
@@ -172,7 +180,7 @@ class MemoryRateLimiterStore:
                 case "inactive":
                     return AdaptiveConsumeResult(zero, state.epoch, state.phase)
 
-        return clock_with(lambda clock: sync(lambda: run(clock)))
+        return clock_with(lambda clock: sync(lambda: self._locked(lambda: run(clock))))
 
     def adaptive_feedback(
         self, *, key: str, epoch: int, tokens: float, status: int, retry_after: Duration | None
@@ -216,7 +224,7 @@ class MemoryRateLimiterStore:
                 case "inactive":
                     pass
 
-        return clock_with(lambda clock: sync(lambda: run(clock)))
+        return clock_with(lambda clock: sync(lambda: self._locked(lambda: run(clock))))
 
     def sweep(self, now: float) -> None:
         """Drop every entry expired at ``now``."""

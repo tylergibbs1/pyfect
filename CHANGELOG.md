@@ -47,6 +47,46 @@
 
 ### Fixed
 
+- Shared-state types shared by runs on different threads (`fx.run_blocking` from a thread pool,
+  `ThreadWorker`s, a `ManagedRuntime` per thread) lost updates, handed out items twice and left
+  waiters asleep. Each operation counted on one fiber step being atomic, which holds for one
+  run's fibers but not for runs on other threads, on 3.14t or with the GIL. Eight threads
+  making 10,000 runs each of `fx.tx(ref.update(+1))` on one `TxRef` ended near 69,000 of 80,000
+  on 3.14t (two transactions checked the same version and both committed; a `TxHashMap` of
+  stock sold 106 items it did not have), and `Ref.update` lost updates the same way. Now each
+  primitive holds a lock of its own while it reads and changes its state, and lets it go to
+  resume a fiber; transactions check and commit under one process-wide lock. Effect's deferred
+  wake-ups (a queue's taker, a semaphore's waiter, a latch's) were queued on the waking run,
+  which never ran them once its root fiber ended, so a waiter in another run slept forever;
+  they now go through the waiter's own run. `tests/cross_run` shares every such type between
+  eight threads' runs on both builds (the free-threaded CI job runs it too), forces the `Ref`
+  and wake-up races to happen every time, and fails when a public class whose effects change
+  its own state has no case there. Docs: [Threads](/docs/threads#sharing-state-between-runs)
+  states the contract. Found by dogfooding (stockroom).
+  What went wrong where, before (both builds unless noted):
+  - `Ref` read-modify-writes lost updates, `get_and_set` handed a value back twice (3.14t).
+    The update function now runs once, holding the ref's lock.
+  - `TxRef` lost commits, transfers between two refs changed their sum, a `tx_retry` waiter
+    missed a commit from another run, and so every `Tx*` collection broke: `TxHashMap` sold
+    more than its stock, `TxQueue` and `TxPriorityQueue` handed items out twice, `TxSemaphore`
+    and `TxReentrantLock` let holders overlap, `TxDeferred` completed twice.
+  - `Semaphore`, `SynchronizedRef`, `SubscriptionRef`, `Latch`, `Queue` (bounded, unbounded,
+    rendezvous), `PubSub` (every strategy, and with replay) and `PartitionedSemaphore` hung on
+    lost wake-ups and let holders overlap; `Deferred` lost a waiter on 3.14t.
+  - `Pool` hung, also because its resize fiber was forked on the borrower's short run; it now
+    forks on the run that made the pool. `Cache`, `ScopedCache`, `fx.cached` and a resolver's
+    `with_cache` ran a lookup twice or raised `KeyError`. `RcRef` and `RcMap` used a released
+    resource or hung on an idle time to live, whose timer ran on the releasing caller's run;
+    it now runs on the run that made them.
+  - `FiberMap` and `FiberHandle` lost a fiber set from two runs at once, `FiberSet` missed an
+    add racing its close, a scope lost finalizers and forks added while it closed (or raised
+    "dictionary changed size"), and an observer added to a fiber finishing on another thread
+    was never called.
+  - Metrics lost increments (counters, gauges, frequencies, histograms, summaries), two runs
+    could get different `Reference` defaults (and so two metric registries),
+    `MutableHashMap.modify` lost updates, a shared `SnowflakeGenerator` handed out the same
+    snowflake twice and `MemoryRateLimiterStore` lost tokens.
+
 - `S.Finite` and `S.is_finite` read an `int` as a JavaScript number, so one past the largest
   double (a 400-digit JSON literal, which `JSON.parse` reads as `Infinity`) is not finite, as
   in Effect. `jwt.verify` checks `exp`, `nbf` and `iat` with `S.Finite`, so a token signed

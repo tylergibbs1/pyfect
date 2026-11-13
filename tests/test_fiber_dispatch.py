@@ -11,13 +11,13 @@ from pathlib import Path
 
 SRC = Path(__file__).parent.parent / "src" / "pyfect"
 
-# (module, function): a resume, an interrupt or a transaction's wake from
+# (module, function): a resume, an interrupt or a deferred wake of a waiter from
 # another thread, and the runs a raising drain left over, which no fiber queued.
 _FROM_OTHER_THREADS = {
     ("_fiber.py", "resume"),
     ("_fiber.py", "interrupt_as_unsafe"),
     ("_fiber.py", "_drain"),
-    ("transaction.py", "wake_later"),
+    ("_waiters.py", "wake_soon_from_here"),
 }
 
 

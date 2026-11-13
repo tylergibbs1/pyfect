@@ -153,11 +153,9 @@ def update_service_scoped[S, T](
             return _Suspend(put_back)
 
         scope = fiber._context.get_unsafe(Scope)
-        if scope._closed is not None:
-            return finalizer(scope._closed)
         # Not ``add_finalizer``: it restores the closing fiber's services
         # afterwards, which would undo the put-back when this fiber closes.
-        scope._add(object(), finalizer)
-        return _VOID
+        ended = scope._add(object(), finalizer)
+        return _VOID if ended is None else finalizer(ended)
 
     return _WithFiber(update).uninterruptible()

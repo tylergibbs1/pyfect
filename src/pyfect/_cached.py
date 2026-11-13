@@ -5,11 +5,15 @@ caller that started it), so callers can leave without killing a run others
 still wait on. Each caller waiting on a run is counted; when the last one
 leaves before the run is done, the run is interrupted and detached, so the
 next caller starts afresh. An interrupted run is never cached.
+
+Runs on other threads share a cache: its fields change holding its lock,
+and a run starts only once the lock is let go (starting runs the source).
 """
 # pyright: reportPrivateUsage=false
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Callable
 from typing import Any, Final
 
@@ -78,7 +82,7 @@ class _Run:
 
 
 class _Cache[A, E, R]:
-    __slots__ = ("current", "exit", "expires_at", "get", "invalidate", "source", "ttl")
+    __slots__ = ("current", "exit", "expires_at", "get", "invalidate", "lock", "source", "ttl")
 
     def __init__(self, source: Effect[A, E, R], ttl: Callable[[Exit[A, E]], Duration]) -> None:
         self.source = source
@@ -86,22 +90,24 @@ class _Cache[A, E, R]:
         self.exit: Exit[A, E] | None = None
         self.expires_at: int | float = 0  # monotonic nanoseconds
         self.current: _Run | None = None
+        self.lock = threading.Lock()
         self.get: Effect[A, E, R] = _WithFiber(self._get)
         self.invalidate: Effect[None] = _Sync(self._invalidate)
 
     def _get(self, fiber: Fiber[Any, Any]) -> Effect[A, E, R]:
-        run = self.current
-        if run is not None:
-            # A run reading its own cache is not an awaiter: counting it
-            # would keep the run alive after every real caller left.
-            return run.fiber.join() if run.fiber is fiber else self._join(fiber, run)
         clock: ClockService = fiber._context.lookup(Clock)[1]
-        if self.exit is not None and (clock.monotonic_nanos_unsafe() < self.expires_at):
-            return _FromExit(self.exit)
-        self.exit = None
-        run = _Run(Fiber(fiber._run_scheduler, fiber._context, None))
-        self.current = run
-        joined = self._join(fiber, run)
+        with self.lock:
+            run = self.current
+            if run is not None:
+                # A run reading its own cache is not an awaiter: counting it
+                # would keep the run alive after every real caller left.
+                return run.fiber.join() if run.fiber is fiber else self._join(fiber, run)
+            if self.exit is not None and (clock.monotonic_nanos_unsafe() < self.expires_at):
+                return _FromExit(self.exit)
+            self.exit = None
+            run = _Run(Fiber(fiber._run_scheduler, fiber._context, None))
+            self.current = run
+            joined = self._join(fiber, run)
         # Started at once, as in Effect: it runs right after this fiber parks.
         run.fiber._drive_first(
             self.source.on_exit(lambda ex: _Sync(lambda: self._publish(run, ex, clock)))
@@ -109,34 +115,38 @@ class _Cache[A, E, R]:
         return joined
 
     def _join(self, fiber: Fiber[Any, Any], run: _Run) -> Effect[A, E, R]:
+        """Call holding the lock."""
         run.awaiters += 1
         fiber._push(_LeaveRun(self, run))
         return run.fiber.join()
 
     def _publish(self, run: _Run, ex: Exit[A, E], clock: ClockService) -> None:
-        run.done = True
-        if self.current is not run:
-            return  # invalidated: callers already on it get its exit, nobody else
-        self.current = None
-        if isinstance(ex, Failure) and ex.cause.has_interrupts:
-            return  # abandoned, not a result
-        ttl = self.ttl(ex)
-        self.expires_at = clock.monotonic_nanos_unsafe() + nanos_or_infinite(ttl)
-        self.exit = ex
+        with self.lock:
+            run.done = True
+            if self.current is not run:
+                return  # invalidated: callers already on it get its exit, nobody else
+            self.current = None
+            if isinstance(ex, Failure) and ex.cause.has_interrupts:
+                return  # abandoned, not a result
+            ttl = self.ttl(ex)
+            self.expires_at = clock.monotonic_nanos_unsafe() + nanos_or_infinite(ttl)
+            self.exit = ex
 
     def leave(self, run: _Run) -> Effect[None] | None:
         """A caller stopped waiting on ``run``. Gives the effect that
         abandons the run if that caller was the last one."""
-        run.awaiters -= 1
-        if run.awaiters > 0 or run.done:
-            return None
-        if self.current is run:
-            self.current = None
+        with self.lock:
+            run.awaiters -= 1
+            if run.awaiters > 0 or run.done:
+                return None
+            if self.current is run:
+                self.current = None
         return run.fiber.interrupt()
 
     def _invalidate(self) -> None:
-        self.current = None
-        self.exit = None
+        with self.lock:
+            self.current = None
+            self.exit = None
 
 
 class _LeaveRun(Frame):
