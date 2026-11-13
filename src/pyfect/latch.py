@@ -15,7 +15,7 @@ import threading
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
-from pyfect._core import Effect, _Callback, _Succeed, _Sync, _WithFiber
+from pyfect._core import WOKEN, Effect, _Callback, _Succeed, _Sync, _WithFiber
 from pyfect._effect_args import require_effect
 from pyfect._fiber import current_fiber
 from pyfect._waiters import of_this_run
@@ -164,7 +164,7 @@ class _Parked:
 
 def _resume_all(waiters: list[_Parked]) -> None:
     for parked in waiters:
-        parked.resume(_VOID)
+        parked.resume(WOKEN)
 
 
 __all__ = ["Latch"]

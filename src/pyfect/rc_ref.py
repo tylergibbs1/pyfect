@@ -41,6 +41,7 @@ from pyfect._root import new_root, start_root
 from pyfect._unsubscripted import Unsubscripted
 from pyfect.clock import sleep
 from pyfect.context import Context
+from pyfect.deferred import Deferred
 from pyfect.duration import Duration, from_input_unsafe
 from pyfect.duration import Input as DurationInput
 from pyfect.effect import interrupt
@@ -83,7 +84,20 @@ class _Acquired[A]:
         self.idle = 0
 
 
-type _State[A] = _Acquiring[A] | _Acquired[A] | Literal["empty", "closed"]
+class _Releasing:
+    """The last reference went and the resource is being released. In
+    Effect a release that does not suspend ends before any other fiber
+    runs, so a get from another run waits for it; one from the run
+    releasing it acquires afresh, as in Effect."""
+
+    __slots__ = ("done", "run")
+
+    def __init__(self, run: Scheduler) -> None:
+        self.run = run
+        self.done: Deferred[None] = Deferred()
+
+
+type _State[A] = _Acquiring[A] | _Acquired[A] | _Releasing | Literal["empty", "closed"]
 
 
 class RcRef(Generic[A_co, E_co]):
@@ -188,7 +202,9 @@ class RcRef(Generic[A_co, E_co]):
         state = self._state
         if isinstance(state, _Acquired):
             return f"RcRef(acquired, refs={state.ref_count})"
-        return f"RcRef({'acquiring' if isinstance(state, _Acquiring) else state})"
+        if isinstance(state, _Acquiring):
+            return "RcRef(acquiring)"
+        return f"RcRef({'releasing' if isinstance(state, _Releasing) else state})"
 
     def _get_state(self, fiber: Fiber[Any, Any], restore: Restore) -> Effect[_Acquired[A_co], E_co]:
         with self._lock:
@@ -202,6 +218,9 @@ class RcRef(Generic[A_co, E_co]):
             if isinstance(state, _Acquiring):
                 state.awaiters += 1
                 return self._await_acquiring(state, restore)
+            if isinstance(state, _Releasing) and state.run is not fiber._run_scheduler:
+                again = _WithFiber(lambda current: self._get_state(current, restore))
+                return restore(state.done.wait()).and_then(again)
             acquiring, start = self._acquiring(fiber)
             self._state = acquiring
         start()
@@ -269,7 +288,7 @@ class RcRef(Generic[A_co, E_co]):
                 return _VOID
             if ttl is None or state.invalidated:
                 if self._state is state:
-                    self._state = "empty"
+                    return self._released(state, fiber._run_scheduler)
                 return state.scope.close(_DONE)
             if not ttl.is_finite():
                 return _VOID
@@ -280,9 +299,9 @@ class RcRef(Generic[A_co, E_co]):
             with self._lock:
                 if self._state is not state or state.ref_count or state.idle != idle:
                     return _VOID
-                self._state = "empty"
+                release = self._released(state, self._owner)
             # Nobody waits for this release: report its failure (Effect 4.1.2).
-            return state.scope.close(_DONE).catch_cause(
+            return release.catch_cause(
                 lambda cause: log_unhandled("Unhandled error in RcRef finalizer", cause)
             )
 
@@ -304,6 +323,20 @@ class RcRef(Generic[A_co, E_co]):
         if stale:
             timer.interrupt_as_unsafe(None)
         return _VOID
+
+    def _released(self, state: _Acquired[A_co], run: Scheduler) -> Effect[None]:
+        """Release the current resource, which nobody holds, from ``run``.
+        Call holding the lock."""
+        releasing = _Releasing(run)
+        self._state = releasing
+
+        def finish() -> None:
+            with self._lock:
+                if self._state is releasing:
+                    self._state = "empty"
+            releasing.done.done_unsafe(_DONE)
+
+        return state.scope.close(_DONE).ensuring(_Sync(finish))
 
     def _close(self) -> Effect[None]:
         with self._lock:

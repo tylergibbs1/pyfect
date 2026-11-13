@@ -8,6 +8,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Never
 
 from pyfect._core import (
+    WOKEN,
     Effect,
     Restore,
     _Callback,
@@ -275,7 +276,7 @@ class Semaphore:
                     waiter.resume = resume
                     waiter.fiber = current_fiber()
             if ready:
-                resume(_Succeed(None))
+                resume(WOKEN)
 
         return register
 
@@ -328,7 +329,7 @@ type _Resume = Callable[[Effect[None]], None]
 
 def _resume_all(resumes: list[_Resume]) -> None:
     for resume in resumes:
-        resume(_Succeed(None))
+        resume(WOKEN)
 
 
 __all__ = ["Semaphore"]

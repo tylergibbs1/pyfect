@@ -61,11 +61,13 @@ from pyfect._core import (
     _Callback,
     _FromExit,
     _RestoreInterruptible,
+    _Retry,
     _run_finalizer,
     _Succeed,
     _Sync,
     _WithFiber,
     run_known,
+    woken_with,
 )
 from pyfect._interrupt_reason import closed
 from pyfect._metric_ref import FiberRuntimeMetrics
@@ -193,9 +195,13 @@ class _Wait:
 
     The wait lets go of its fiber once claimed: ``resume`` is handed to the
     outside (a future's callbacks, a listener list), which may keep it
-    after it fired, and must not keep the fiber, and its result, alive."""
+    after it fired, and must not keep the fiber, and its result, alive.
 
-    __slots__ = ("canceler", "done", "fiber", "registering", "sync_result")
+    ``woken``: claimed by a ``_Retry``, which decides nothing until it runs
+    in the fiber's own step, so it keeps the canceler and loses to an
+    interrupt that reaches the fiber first (``Fiber._resume``)."""
+
+    __slots__ = ("canceler", "done", "fiber", "registering", "sync_result", "woken")
 
     def __init__(self, fiber: Fiber[Any, Any]) -> None:
         self.fiber: Fiber[Any, Any] | None = fiber
@@ -203,6 +209,7 @@ class _Wait:
         self.registering = True
         self.sync_result: Effect[Any, Any, Any] | None = None
         self.canceler: Effect[Any, Any, Any] | None = None
+        self.woken = False  # pragma: no mutate, falsy until claimed
 
     def claim(self) -> bool:
         with _resume_lock:
@@ -226,7 +233,10 @@ class _Wait:
                 return
             self.done = True
             self.fiber = None
-            self.canceler = None
+            if isinstance(effect, _Retry):
+                self.woken = True
+            else:
+                self.canceler = None
             if self.registering:
                 self.sync_result = effect
                 return
@@ -247,6 +257,27 @@ class _Yielded:
         self.step = step
         # The steps the resumed run starts with spent (see ``Fiber._pause``).
         self.ops = ops
+
+
+class _CancelIfFailed(Frame):
+    """Below a wake-up (``_Retry``): if the fiber fails before the wake-up
+    decides anything (an interrupt that reached it first), run the wait's
+    canceler, uninterruptibly, so a parked entry it left is taken back."""
+
+    __slots__ = ("canceler",)
+    # Passes the wake-up's claimed result straight on.
+    claims = True
+
+    def __init__(self, canceler: Effect[Any, Any, Any]) -> None:
+        self.canceler = canceler
+
+    def _on_success(self, value: Any, fiber: Fiber[Any, Any]) -> Step:
+        return Success(value)
+
+    def _on_failure(self, cause: Cause[Any], fiber: Fiber[Any, Any]) -> Step:
+        fiber._push(_RestoreInterruptible(fiber._interruptible))
+        fiber._interruptible = False  # pragma: no mutate, falsy either way
+        return _run_finalizer(self.canceler, Failure(cause))
 
 
 class _ReturnExit(Frame):
@@ -350,7 +381,7 @@ class Fiber(Generic[A_co, E_co]):
                 return None
 
             def observer(ex: Exit[Any, Any]) -> None:
-                resume(_Succeed(ex))
+                resume(woken_with(_Succeed(ex)))
 
             self._observers.append(observer)
             if self._exit is not None:
@@ -914,9 +945,15 @@ class Fiber(Generic[A_co, E_co]):
         """Run a claimed resume now. In Effect a resume runs the fiber at
         once, so an interrupt that arrived while another thread's resume
         was queued lands only once the resumed run has finished, parked or
-        yielded."""
+        yielded. A wake-up (``_Retry``) decides nothing until it runs, so an
+        interrupt that arrived first wins over it, at its first step, and
+        the wait's canceler runs."""
+        # The wait lets go of its canceler, which may keep what it waited on.
+        canceler, wait.canceler = wait.canceler, None
         if self._waiting is wait:
             self._waiting = None
+            if wait.woken and canceler is not None:
+                self._push(_CancelIfFailed(canceler))
             self._evaluate(effect)
         deferred, self._interrupts_after_resume = self._interrupts_after_resume, []
         for by, interruptor in deferred:
@@ -928,13 +965,17 @@ class Fiber(Generic[A_co, E_co]):
         wait = self._waiting
         if wait is not None and self._interruptible and self._phase != "running":
             if not wait.claim():
-                self._interrupts_after_resume.append((by, annotations))
+                if wait.woken:
+                    # The queued wake-up meets it at its first step.
+                    self._record_interrupt(by, annotations)
+                else:
+                    self._interrupts_after_resume.append((by, annotations))
                 return
             self._record_interrupt(by, annotations)
             step = self._abandon_wait(wait)
             self._evaluate(step)
             return
-        if wait is not None and wait.done:
+        if wait is not None and wait.done and not wait.woken:
             self._interrupts_after_resume.append((by, annotations))
             return
         interrupt = self._record_interrupt(by, annotations)

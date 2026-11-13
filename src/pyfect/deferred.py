@@ -30,6 +30,7 @@ from pyfect._core import (
     _Sync,
     _WithFiber,
     uninterruptible_mask,
+    woken_with,
 )
 from pyfect._effect_args import require_effect
 from pyfect.cause import Cause
@@ -149,8 +150,9 @@ class Deferred[A, E = Never]:
                 return False
             self._effect = effect
             waiters, self._waiters = self._waiters, []
+        woken = woken_with(effect)
         for resume in waiters:
-            resume(effect)
+            resume(woken)
         return True
 
 

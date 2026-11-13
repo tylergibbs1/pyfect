@@ -20,14 +20,12 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
-from pyfect._core import Effect, _Succeed
+from pyfect._core import WOKEN, Effect
 from pyfect._waiters import Lock, of_this_run, unlocked
 from pyfect.scheduler import Scheduler
 
 if TYPE_CHECKING:
     from pyfect._fiber import Fiber
-
-_VOID: Effect[None] = _Succeed(None)
 
 type Resume = Callable[[Effect[None, Any]], None]
 
@@ -55,7 +53,7 @@ class Waiter:
         if resume is None:
             return None
         self.resume = None
-        result = _VOID if failure is None else failure
+        result = WOKEN if failure is None else failure
         return lambda: resume(result)
 
     @property

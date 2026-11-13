@@ -137,8 +137,8 @@ class Cache[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never, R = Never
 
         def body(fiber: Fiber[Any, Any]) -> Effect[Option[A], E]:
             with self._lock:
-                entry = self._find(fiber, key, touch=True)
-            return _Succeed(None) if entry is None else entry.await_from(fiber).map(Some)
+                entry = self._find(fiber, key, touch=True, join=True)
+            return _Succeed(None) if entry is None else entry.await_joined(fiber).map(Some)
 
         return _WithFiber(body)
 
@@ -194,7 +194,7 @@ class Cache[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never, R = Never
 
         def body(fiber: Fiber[Any, Any]) -> Effect[bool]:
             with self._lock:
-                entry = self._find(fiber, key, touch=False)
+                entry = self._find(fiber, key, touch=False, join=True)
             if entry is None:
                 return _Succeed(False)
 
@@ -207,7 +207,7 @@ class Cache[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never, R = Never
                     del self._entries[key]
                     return True
 
-            return entry.await_from(fiber).map(check).catch_cause(lambda _: _Succeed(False))
+            return entry.await_joined(fiber).map(check).catch_cause(lambda _: _Succeed(False))
 
         return _WithFiber(body)
 
@@ -264,7 +264,7 @@ class Cache[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never, R = Never
         # out as it ends, so it is never cached.
         found = self._touch_or_insert(fiber, key)
         if isinstance(found, _Entry):
-            return found.await_from(fiber)
+            return found.await_joined(fiber)
         entry, start = found
         clock = clock_of(fiber)
 
@@ -278,7 +278,7 @@ class Cache[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never, R = Never
 
         entry.fiber.add_observer_unsafe(observe)
         start()
-        return entry.await_from(fiber)
+        return entry.await_joined(fiber)
 
     def _touch_or_insert(
         self, fiber: Fiber[Any, Any], key: K
@@ -290,6 +290,7 @@ class Cache[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never, R = Never
             found = entries.pop(key, None)
             if found is not None and not is_expired(found.expires_at, _now(fiber)):
                 entries[key] = found
+                found.awaiters += 1
                 return found
             entry, start = self._entry(fiber, key)
             entries[key] = entry
@@ -325,7 +326,7 @@ class Cache[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never, R = Never
                     self._evict_overflow()
 
         entry.fiber.add_observer_unsafe(observe)
-        return entry.await_from(fiber)
+        return entry.await_joined(fiber)
 
     def _entry(self, fiber: Fiber[Any, Any], key: K) -> tuple[_Entry[A, E], Callable[[], None]]:
         """An entry and the call that starts its lookup: at once, up to its
@@ -352,9 +353,12 @@ class Cache[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never, R = Never
 
         return entry, lambda: start_root(lookup_fiber, lookup.on_exit(decide_time_to_live))
 
-    def _find(self, fiber: Fiber[Any, Any], key: K, *, touch: bool) -> _Entry[A, E] | None:
+    def _find(
+        self, fiber: Fiber[Any, Any], key: K, *, touch: bool, join: bool = False
+    ) -> _Entry[A, E] | None:
         """The unexpired entry for ``key`` (an expired one is dropped);
-        ``touch`` makes it the most recently used. Call holding the lock."""
+        ``touch`` makes it the most recently used; ``join`` counts the caller
+        as waiting on it (then ``await_joined`` it). Call holding the lock."""
         entries = self._entries
         entry = entries.get(key)
         if entry is None:
@@ -365,6 +369,8 @@ class Cache[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never, R = Never
         if touch:
             del entries[key]
             entries[key] = entry
+        if join:
+            entry.awaiters += 1
         return entry
 
     def _live(self, fiber: Fiber[Any, Any]) -> list[tuple[K, _Entry[A, E]]]:
@@ -403,7 +409,7 @@ class _Entry[A, E]:
         self.fiber = fiber
         # The cache's.
         self.lock = lock
-        self.awaiters = 0
+        self.awaiters = 1  # the caller that makes it
         self.expires_at: int | None = None
         # Set as the lookup ends; stays zero if ``time_to_live`` raised.
         self.time_to_live: Duration = zero
@@ -413,19 +419,23 @@ class _Entry[A, E]:
 
     def wait(self) -> Effect[A, E]:
         """Wait for the lookup as one more caller (Effect's ``entry.await``)."""
-        return _WithFiber(self.await_from)
 
-    def await_from(self, fiber: Fiber[Any, Any]) -> Effect[A, E]:
-        """``fiber`` waits for the lookup. It is counted in the same step,
-        so it leaves however its wait ends, even interrupted before
-        starting."""
-        ex = self.fiber.poll_unsafe()
-        if ex is not None:
-            return _FromExit(ex)
-        with self.lock:
-            self.awaiters += 1
+        def join(fiber: Fiber[Any, Any]) -> Effect[A, E]:
+            with self.lock:
+                self.awaiters += 1
+            return self.await_joined(fiber)
+
+        return _WithFiber(join)
+
+    def await_joined(self, fiber: Fiber[Any, Any]) -> Effect[A, E]:
+        """``fiber`` waits for the lookup (Effect's ``entry.await``). It was
+        counted holding the lock that found or made the entry, as Effect
+        finds and counts in one step: a caller leaving in between would
+        otherwise see nobody waiting and interrupt the lookup this one
+        joins. It leaves however its wait ends."""
         fiber._push(_Leave(self))
-        return self.fiber.join()
+        ex = self.fiber.poll_unsafe()
+        return self.fiber.join() if ex is None else _FromExit(ex)
 
     def leave(self) -> Effect[None] | None:
         """A caller stopped waiting. Gives the effect that abandons the

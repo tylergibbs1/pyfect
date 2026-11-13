@@ -302,6 +302,7 @@ def _pair[A, B](a: A, b: B) -> tuple[A, B]:
 # The primitives subclass ``Effect``, so they load after it. The methods above
 # use them only when called, and other modules import them from here.
 from pyfect._primitives import (  # noqa: E402
+    WOKEN,
     Register,
     Restore,
     _AfterStarted,
@@ -319,6 +320,7 @@ from pyfect._primitives import (  # noqa: E402
     _OnExit,
     _RestoreContext,
     _RestoreInterruptible,
+    _Retry,
     _SetInterruptible,
     _Succeed,
     _Suspend,
@@ -328,10 +330,12 @@ from pyfect._primitives import (  # noqa: E402
     interruptible_mask,
     run_known,
     uninterruptible_mask,
+    woken_with,
 )
 
 __all__ = [
     "SUSPEND",
+    "WOKEN",
     "Effect",
     "Frame",
     "Register",
@@ -352,6 +356,7 @@ __all__ = [
     "_OnExit",
     "_RestoreContext",
     "_RestoreInterruptible",
+    "_Retry",
     "_SetInterruptible",
     "_Succeed",
     "_Suspend",
@@ -369,4 +374,5 @@ __all__ = [
     "interruptible_mask",
     "run_known",
     "uninterruptible_mask",
+    "woken_with",
 ]

@@ -19,6 +19,7 @@ from collections.abc import Callable, Generator, Sequence
 from typing import TYPE_CHECKING, Any, Never, cast
 
 from pyfect._core import (
+    WOKEN,
     Effect,
     Frame,
     Step,
@@ -178,8 +179,10 @@ class Subscription[A]:
                 if reader.unsubscribed or hub.ended is not None:
                     resume(_VOID)
                     return None
-                # Woken holding the hub's lock, which it lets go meanwhile.
-                poller._wake = lambda: unlocked(lock, [lambda: resume(_VOID)])
+                # Woken holding the hub's lock, which it lets go meanwhile. The
+                # message waits in the subscription (``_Collect``), so an interrupt
+                # reaching the take first still wins.
+                poller._wake = lambda: unlocked(lock, [lambda: resume(WOKEN)])
                 subscribers = hub.subscribers
                 if reader.backing not in subscribers:
                     subscribers[reader.backing] = pollers

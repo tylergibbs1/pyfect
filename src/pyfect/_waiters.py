@@ -3,7 +3,10 @@
 Waiters are woken to *retry*, never handed a value: whatever they wait
 for is taken in their own step. That way an interrupt that lands between
 the wake-up and the retry cannot lose anything. Spurious wake-ups are
-harmless: a woken fiber that finds nothing simply waits again.
+harmless: a woken fiber that finds nothing simply waits again. Wake with
+``WOKEN`` (or another ``_Retry``): an interrupt that reaches the fiber
+before the wake-up runs then wins over it, which matters when the wake-up
+comes from another thread's run and waits in the fiber's own.
 
 ``wait`` takes the condition the caller is waiting for and checks it again as
 the fiber parks: a fiber can pause between its own check and the park, and a
@@ -36,7 +39,7 @@ from collections import deque
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
-from pyfect._core import Effect, _Callback, _Succeed, _Sync
+from pyfect._core import WOKEN, Effect, _Callback, _Sync
 
 if TYPE_CHECKING:
     from pyfect._fiber import Fiber
@@ -118,9 +121,9 @@ class WaitList:
 
             with self._lock:
                 if ready():
-                    resume(_Succeed(None))
+                    resume(WOKEN)
                     return None
-                waiter = _Waiter(ready, lambda: resume(_Succeed(None)), current_fiber())
+                waiter = _Waiter(ready, lambda: resume(WOKEN), current_fiber())
                 self._waiters.append(waiter)
             return _Sync(lambda: self._discard(waiter))
 

@@ -6,12 +6,12 @@ from __future__ import annotations
 
 from collections import deque
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from pyfect._core import Effect, _Callback, _FailCause, _Succeed, _Sync, _WithFiber
-from pyfect._fiber import _MAX_NESTED_RUNS, Fiber
-from pyfect._waiters import Lock, unlocked
+from pyfect._core import Effect, _Callback, _FailCause, _Retry, _Succeed, _Sync, _WithFiber
+from pyfect._fiber import _MAX_NESTED_RUNS, Fiber, current_fiber
+from pyfect._waiters import Lock, of_this_run, unlocked
 from pyfect.cause import interrupt as interrupt_cause
 from pyfect.option import Option
 from pyfect.pubsub._atomic import Atomic
@@ -30,18 +30,22 @@ def _interrupt_self() -> Effect[bool]:
 class _Publish[A]:
     """A parked publish (Effect keeps one ``(value, deferred, last)`` entry
     per message). ``items[admitted:]`` still wait. ``outcome`` is set when
-    it ended before its fiber was resumable. ``lock`` is the hub's."""
+    it ended before its fiber was resumable, or while it was woken to publish
+    its messages itself (``woken``, see ``BackPressureStrategy._admit``).
+    ``lock`` is the hub's."""
 
     items: list[A]
     lock: Lock
     admitted: int = 0
     resume: Callable[[Effect[bool]], None] | None = None
     outcome: Effect[bool] | None = None
+    fiber: Fiber[Any, Any] | None = field(default_factory=current_fiber)
+    woken: bool = False
 
     def complete(self, outcome: Effect[bool]) -> None:
         """Call holding ``lock``; it is let go while the publisher resumes."""
         resume = self.resume
-        if resume is None:
+        if resume is None or self.woken:
             self.outcome = outcome
         else:
             unlocked(self.lock, [lambda: resume(outcome)])
@@ -107,7 +111,7 @@ class BackPressureStrategy[A](Strategy[A]):
                     resume(entry.outcome)
                     return None
                 entry.resume = resume
-            return _Sync(lambda: self._leave(entry))
+            return _Sync(lambda: self._leave(entry, pubsub, subscribers))
 
         return _Callback(register)
 
@@ -128,8 +132,17 @@ class BackPressureStrategy[A](Strategy[A]):
     def _admit(self, pubsub: Atomic[A], subscribers: Subscribers[A]) -> None:
         # ``self.publishers`` is read again after each resume: a run on
         # another thread may have ended or shut the hub down meanwhile.
+        # A parked publisher of another run is woken to publish its messages
+        # itself, in its own step, where its run decides whether an interrupt
+        # (a timeout) came first; it keeps its place meanwhile.
         while (publishers := self.publishers) and not pubsub.is_full():
             entry = publishers[0]
+            if entry.woken:
+                return
+            resume = entry.resume
+            if resume is not None and not of_this_run(entry.fiber):
+                self._wake(entry, resume, pubsub, subscribers)
+                return
             published = pubsub.publish(entry.items[entry.admitted])
             last = False
             if published:
@@ -147,9 +160,64 @@ class BackPressureStrategy[A](Strategy[A]):
         if entry in self.publishers:
             self.publishers.remove(entry)
 
-    def _leave(self, entry: _Publish[A]) -> None:
+    def _wake(
+        self,
+        entry: _Publish[A],
+        resume: Callable[[Effect[bool]], None],
+        pubsub: Atomic[A],
+        subscribers: Subscribers[A],
+    ) -> None:
+        entry.woken = True
+        retry = _Retry(lambda: self._publish_own(entry, pubsub, subscribers))
+        unlocked(entry.lock, [lambda: resume(retry)])
+
+    def _publish_own(
+        self, entry: _Publish[A], pubsub: Atomic[A], subscribers: Subscribers[A]
+    ) -> Effect[bool]:
+        """A woken publisher publishes what fits, in its own step."""
+        with entry.lock:
+            if entry not in self.publishers:
+                return entry.outcome or _FALSE  # ended or shut down meanwhile
+            while entry.admitted < len(entry.items) and not pubsub.is_full():
+                if not pubsub.publish(entry.items[entry.admitted]):
+                    break
+                entry.admitted += 1
+            self.complete_subscribers_unsafe(pubsub, subscribers)
+            if entry.admitted < len(entry.items):
+                return _Callback(
+                    lambda resume: self._park_again(entry, resume, pubsub, subscribers)
+                )
+            self._remove(entry)
+            self.on_pubsub_empty_space_unsafe(pubsub, subscribers)
+            return _TRUE
+
+    def _park_again(
+        self,
+        entry: _Publish[A],
+        resume: Callable[[Effect[bool]], None],
+        pubsub: Atomic[A],
+        subscribers: Subscribers[A],
+    ) -> Effect[None] | None:
+        """Park a woken publisher again in its place."""
+        with entry.lock:
+            if entry in self.publishers:
+                entry.resume = resume
+                entry.fiber = current_fiber()
+                entry.woken = False
+                # Room may have come while it was woken.
+                self.on_pubsub_empty_space_unsafe(pubsub, subscribers)
+                return _Sync(lambda: self._leave(entry, pubsub, subscribers))
+            outcome = entry.outcome or _FALSE
+        resume(outcome)
+        return None
+
+    def _leave(self, entry: _Publish[A], pubsub: Atomic[A], subscribers: Subscribers[A]) -> None:
+        """An interrupted publish leaves. A woken one was holding up the
+        publishers behind it."""
         with entry.lock:
             self._remove(entry)
+            if entry.woken:
+                self.on_pubsub_empty_space_unsafe(pubsub, subscribers)
 
     def _end_publishers(self) -> None:
         """The hub ended: every waiting publish returns ``False``."""

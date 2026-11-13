@@ -12,8 +12,19 @@ claiming in a frame not marked ``claims``. The loop may pause before a
 continuation only every ``_INLINE_STEPS`` steps, which a sweep rarely
 lines up with a frame's exit, so each case also runs with every
 continuation a possible pause.
+
+Each case with a ``wake`` also runs across threads: the wake runs in a run of
+its own on another thread while the target's run is busy, so the wake-up waits
+in the target's run, and the target is then interrupted, which reaches it
+first. A wake-up decides nothing, so the interrupt wins and nothing is claimed
+for the target; a primitive that decides for a parked fiber of another run (an
+offer admitted for it, a message published for it) loses what it decided when
+the target's timeout came first. The dogfood contention soak on 0.6.2 lost
+taken items this way, and reported offers and publishes that went in as timed
+out.
 """
 
+import threading
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Any
@@ -387,6 +398,99 @@ def _encoded(encode: Callable[[], Any], entry: Any) -> bytes:
     return fx.run_blocking(made)
 
 
+def _offer_case(
+    offer: Callable[[fx.Queue[int], list[Any]], fx.Effect[Any]],
+) -> _Case:
+    """An offer to a full queue, woken by a take. What must hold: the item
+    went in exactly when the caller saw it go in."""
+
+    def setup() -> fx.Effect[fx.Queue[int]]:
+        return fx.Queue[int].bounded(1).tap(lambda q: q.offer(0))
+
+    def check(q: fx.Queue[int], seen: list[Any]) -> fx.Effect[str | None]:
+        def verdict(left: list[int]) -> str | None:
+            went_in = [x for x in left if x == 1]
+            return None if went_in == seen else f"saw {seen}, left {left}"
+
+        return q.clear().map(verdict)
+
+    def wake(q: fx.Queue[int]) -> fx.Effect[Any]:
+        return _once_parked(q.take())
+
+    return _Case(setup, offer, check, wake)
+
+
+def _publish_case() -> _Case:
+    """A publish to a full back-pressure hub, woken by a take: the message
+    reached the subscriber exactly when the caller saw it published."""
+
+    def setup() -> fx.Effect[Any, Any, Any]:
+        @fx.gen
+        def made():
+            ps = yield from fx.PubSub[int].bounded(1)
+            sub = yield from ps.subscribe()
+            yield from ps.publish(0)
+            return ps, sub
+
+        return made
+
+    def op(state: tuple[fx.PubSub[int], Any], seen: list[Any]) -> fx.Effect[Any]:
+        return state[0].publish(1).map(lambda ok: ok and seen.append(1))
+
+    def check(state: Any, seen: list[Any]) -> fx.Effect[str | None]:
+        def verdict(left: Sequence[int]) -> str | None:
+            went_in = [x for x in left if x == 1]
+            return None if went_in == seen else f"saw {seen}, left {list(left)}"
+
+        return state[1].take_up_to(10).map(verdict)
+
+    def wake(state: Any) -> fx.Effect[Any]:
+        return _once_parked(state[1].take())
+
+    return _Case(setup, op, check, wake)
+
+
+def _tx_queue_case() -> _Case:
+    def check(q: fx.TxQueue[int], seen: list[Any]) -> fx.Effect[str | None]:
+        return q.clear().map(
+            lambda left: None if [*seen, *left] == [1] else f"saw {seen}, left {list(left)}"
+        )
+
+    return _Case(
+        fx.TxQueue[int].unbounded,
+        lambda q, seen: q.take().map(seen.append),
+        check,
+        lambda q: _once_parked(q.offer(1)),
+    )
+
+
+def _pool_case() -> _Case:
+    """A borrower waiting for the only item, woken by its return: the item is
+    never stranded, however the borrower ends."""
+
+    def setup() -> fx.Effect[Any, Any, Any]:
+        @fx.gen
+        def made():
+            pool = yield from fx.Pool.make(fx.succeed(7), size=1)
+            holder = yield from fx_scope.make()
+            yield from pool.get().pipe(fx_scope.provide(holder))
+            return pool, holder
+
+        return made
+
+    def op(state: Any, seen: list[Any]) -> fx.Effect[Any]:
+        return fx.scoped(state[0].get().map(seen.append))
+
+    def check(state: Any, seen: list[Any]) -> fx.Effect[str | None]:
+        again = fx.scoped(state[0].get()).timeout_option("2 seconds")
+        return again.map(lambda got: None if got is not None else f"item stranded, saw {seen}")
+
+    def wake(state: Any) -> fx.Effect[Any]:
+        return _once_parked(state[1].close(fx.Success(None)))
+
+    return _Case(setup, op, check, wake)
+
+
 # Not transactions (``TxQueue.take``): as in Effect's ``tx``, the commit runs
 # in an uninterruptible region, and an interrupt that arrives meanwhile fails
 # the caller when the region ends, with the commit applied.
@@ -419,6 +523,13 @@ _CASES: dict[str, _Case] = {
     "semaphore.take_scoped (woken)": _semaphore_take_scoped_case(parked=True),
     "partitioned_semaphore.take (free)": _partitioned_semaphore_case(parked=False),
     "partitioned_semaphore.take (woken)": _partitioned_semaphore_case(parked=True),
+    "queue.offer (full)": _offer_case(
+        lambda q, seen: q.offer(1).map(lambda ok: ok and seen.append(1))
+    ),
+    "queue.offer_all (full)": _offer_case(
+        lambda q, seen: q.offer_all([1]).map(lambda rest: rest or seen.append(1))
+    ),
+    "pubsub.publish (full, back pressure)": _publish_case(),
     "tar body pull": _archive_body_case(
         tar.decode, _encoded(tar.encode, tar.file("a", _ARCHIVE_BODY)), _ARCHIVE_BODY
     ),
@@ -446,3 +557,228 @@ def test_a_claimed_result_survives_an_interrupt_before_any_continuation(
 ):
     monkeypatch.setattr(fiber_module, "_INLINE_STEPS", 1)
     assert _sweep(_CASES[name], budgets=(1, 2), prefixes=range(4))[:3] == []
+
+
+def _from_another_thread(eff: fx.Effect[Any]) -> fx.Effect[None]:
+    """Run ``eff`` in a run of its own on another thread, keeping this run's
+    thread busy meanwhile, so what it wakes here waits in this run."""
+
+    def go() -> None:
+        thread = threading.Thread(target=lambda: fx.run_blocking(eff), daemon=True)
+        thread.start()
+        thread.join(10)
+        assert not thread.is_alive(), "the wake did not finish"
+
+    return fx.sync(go)
+
+
+def _woken_from_another_thread(case: _Case) -> str | None:
+    seen: list[Any] = []
+
+    @fx.gen
+    def program():
+        state = yield from case.setup()
+        target = yield from case.op(state, seen).fork()
+        for _ in range(8):  # let it park
+            yield from fx.yield_now()
+        if target.poll_unsafe() is not None:
+            return "the target did not park"
+        yield from _from_another_thread(case.wake(state))
+        yield from fx.sync(lambda: target.interrupt_as_unsafe(None))
+        ex = yield from target.await_exit()
+        for _ in range(4):
+            yield from fx.yield_now()
+        lost = yield from case.check(state, seen)
+        # Under a timeout the caller sees only that the interrupt won, so
+        # the target must not have claimed anything, or run anything, first.
+        won = isinstance(ex, fx.Failure) and ex.cause.has_interrupts_only
+        if not won:
+            return f"the wake-up won: {ex}"
+        return lost or (f"ran {seen} although interrupted" if seen else None)
+
+    return fx.run_blocking(fx.scoped(program))
+
+
+class _Held:
+    """``hold(gate)`` runs in a run of its own on another thread, holding a
+    permit, a lock or an acquisition until ``release`` (the wake) opens
+    ``gate``."""
+
+    def __init__(self, hold: Callable[[fx.Effect[None]], fx.Effect[Any, Any, Any]]) -> None:
+        entered = threading.Event()
+        self._go = threading.Event()
+
+        def wait() -> None:
+            entered.set()
+            assert self._go.wait(10)
+
+        self._thread = threading.Thread(
+            target=lambda: fx.run_blocking(fx.scoped(hold(fx.sync(wait)))), daemon=True
+        )
+        self._thread.start()
+        assert entered.wait(10)
+
+    def release(self) -> fx.Effect[None]:
+        def go() -> None:
+            self._go.set()
+            self._thread.join(10)
+            assert not self._thread.is_alive()
+
+        return fx.sync(go)
+
+
+def _held_case(
+    make: Callable[[], Any],
+    hold: Callable[[Any, fx.Effect[None]], fx.Effect[Any, Any, Any]],
+    op: Callable[[Any, list[Any]], fx.Effect[Any, Any, Any]],
+    check: Callable[[Any, list[Any]], fx.Effect[str | None]],
+) -> _Case:
+    """``op`` waits for what a run on another thread holds; the wake lets go of it."""
+
+    def setup() -> fx.Effect[tuple[Any, _Held]]:
+        def made() -> tuple[Any, _Held]:
+            shared = make()
+            return shared, _Held(lambda gate: hold(shared, gate))
+
+        return fx.sync(made)
+
+    return _Case(
+        setup,
+        lambda state, seen: op(state[0], seen),
+        lambda state, seen: check(state[0], seen),
+        lambda state: state[1].release(),
+    )
+
+
+def _all_permits_back(
+    sem: fx.Semaphore | fx.PartitionedSemaphore[str], _seen: list[Any]
+) -> fx.Effect[str | None]:
+    return sem.available.map(lambda free: None if free == 1 else f"free {free}")
+
+
+def _permits_or_holder(sem: fx.PartitionedSemaphore[str], seen: list[Any]) -> fx.Effect[str | None]:
+    return sem.available.map(
+        lambda free: None if free + len(seen) == 1 else f"free {free}, saw {seen}"
+    )
+
+
+def _ran(seen: list[Any]) -> fx.Effect[None]:
+    return fx.sync(lambda: seen.append(1))
+
+
+def _subscription_ref_case(update: Callable[[fx.SubscriptionRef[int]], fx.Effect[Any]]) -> _Case:
+    def check(ref: fx.SubscriptionRef[int], seen: list[Any]) -> fx.Effect[str | None]:
+        return ref.get().map(lambda v: None if (v != 0) == bool(seen) else f"value {v}, saw {seen}")
+
+    def hold(ref: fx.SubscriptionRef[int], gate: fx.Effect[None]) -> fx.Effect[None]:
+        return ref.update_effect(gate.as_)
+
+    return _held_case(
+        lambda: fx.SubscriptionRef(0),
+        hold,
+        lambda ref, seen: update(ref).map(lambda _: seen.append(1)),
+        check,
+    )
+
+
+def _rc_ref_case() -> _Case:
+    """Waiting for an acquisition another thread's run started: a get the
+    interrupt won holds no reference."""
+
+    def setup() -> fx.Effect[Any, Any, Any]:
+        started = threading.Event()
+        go = threading.Event()
+
+        def acquire() -> int:
+            started.set()
+            assert go.wait(10)
+            return 1
+
+        @fx.gen
+        def made():
+            ref = yield from fx.RcRef.make(fx.sync(acquire))
+            caller = yield from fx_scope.make()
+            holder = threading.Thread(target=lambda: fx.run_blocking(fx.scoped(ref.get())))
+            holder.start()
+            assert started.wait(10)
+            return ref, caller, go, holder
+
+        return made
+
+    def op(state: Any, seen: list[Any]) -> fx.Effect[Any]:
+        return state[0].get().pipe(fx_scope.provide(state[1])).map(seen.append)
+
+    def wake(state: Any) -> fx.Effect[None]:
+        def go() -> None:
+            state[2].set()
+            state[3].join(10)
+
+        return fx.sync(go)
+
+    def check(state: Any, seen: list[Any]) -> fx.Effect[str | None]:
+        held = "acquired" in repr(state[0])
+        return fx.succeed(None if held == bool(seen) else f"{state[0]!r}, saw {seen}")
+
+    return _Case(setup, op, check, wake)
+
+
+def _pool_use_case() -> _Case:
+    case = _pool_case()
+
+    def op(state: tuple[fx.Pool[int], Any], seen: list[Any]) -> fx.Effect[Any]:
+        return state[0].use(lambda item: fx.sync(lambda: seen.append(item)))
+
+    return _Case(
+        case.setup,
+        op,
+        case.check,
+        case.wake,
+    )
+
+
+_CROSS_THREAD_CASES: dict[str, _Case] = {
+    **{n: c for n, c in _CASES.items() if "parked" in n or "woken" in n or "full" in n},
+    "tx_queue.take (parked)": _tx_queue_case(),
+    "pool.get (parked)": _pool_case(),
+    "pool.use (parked)": _pool_use_case(),
+    "semaphore.with_permits (held)": _held_case(
+        lambda: fx.Semaphore(1),
+        lambda sem, gate: sem.with_permits(gate),
+        lambda sem, seen: sem.with_permits(_ran(seen)),
+        _all_permits_back,
+    ),
+    "partitioned_semaphore.take (held)": _held_case(
+        lambda: fx.PartitionedSemaphore[str](1),
+        lambda sem, gate: sem.with_permits("a", gate),
+        lambda sem, seen: sem.take("b").map(seen.append),
+        _permits_or_holder,
+    ),
+    "partitioned_semaphore.with_permits (held)": _held_case(
+        lambda: fx.PartitionedSemaphore[str](1),
+        lambda sem, gate: sem.with_permits("a", gate),
+        lambda sem, seen: sem.with_permits("b", _ran(seen)),
+        _all_permits_back,
+    ),
+    "subscription_ref.update (held)": _subscription_ref_case(
+        lambda ref: ref.update(lambda v: v + 1)
+    ),
+    "subscription_ref.set (held)": _subscription_ref_case(lambda ref: ref.set(5)),
+    "rc_ref.get (acquiring elsewhere)": _rc_ref_case(),
+    "deferred.wait": _Case(
+        lambda: fx.sync(fx.Deferred[int]),
+        lambda d, seen: d.wait().map(seen.append),
+        lambda _d, _seen: fx.succeed(None),
+        lambda d: d.succeed(1),
+    ),
+    "latch.when_open": _Case(
+        lambda: fx.sync(fx.Latch),
+        lambda latch, seen: latch.when_open(_ran(seen)),
+        lambda _latch, _seen: fx.succeed(None),
+        lambda latch: latch.open(),
+    ),
+}
+
+
+@pytest.mark.parametrize("name", list(_CROSS_THREAD_CASES))
+def test_a_wake_from_another_threads_run_claims_nothing_after_an_interrupt(name: str):
+    assert _woken_from_another_thread(_CROSS_THREAD_CASES[name]) is None

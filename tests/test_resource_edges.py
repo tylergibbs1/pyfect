@@ -1,6 +1,7 @@
 """Resource edge cases Effect's tests leave out. Each expected value was
 checked by running the same program against Effect's TS source under Node."""
 
+import threading
 from typing import Never
 
 import pyfect as fx
@@ -152,3 +153,44 @@ def test_rc_map_keeps_an_interrupted_lookups_scope_until_its_borrower_lets_go():
     assert (finalized, (yield from rc_map.has("k"))) == (False, False)
     yield from borrower.close(fx.Success(None))
     assert finalized
+
+
+def test_rc_ref_get_from_another_run_waits_for_a_release_that_does_not_suspend():
+    """In Effect a release that does not suspend ends before any other fiber
+    runs, so no get acquires a new resource while it runs. A get from a run on
+    another thread, made while the release runs, waits for it."""
+    live = [0]
+    most = [0]
+    got: list[object] = []
+
+    def acquire() -> None:
+        live[0] += 1
+        most[0] = max(most[0], live[0])
+
+    def get_elsewhere(ref: fx.RcRef[None]) -> None:
+        def run() -> None:
+            got.append(fx.run_blocking(fx.scoped(ref.get()).timeout_option("200 millis")))
+
+        thread = threading.Thread(target=run)
+        thread.start()
+        thread.join(10)
+
+    @fx.gen
+    def program():
+        refs: list[fx.RcRef[None]] = []
+
+        def release(_a: None, _ex: fx.Exit[object, object]) -> fx.Effect[None]:
+            def run() -> None:
+                get_elsewhere(refs[0])
+                live[0] -= 1
+
+            return fx.sync(run)
+
+        ref = yield from fx.RcRef.make(fx.acquire_release(fx.sync(acquire), release))
+        refs.append(ref)
+        yield from fx.scoped(ref.get())
+        yield from fx.scoped(ref.get())  # acquires afresh once the release is over
+        return most[0]
+
+    assert fx.run_blocking(fx.scoped(program)) == 1
+    assert got == [None, None]

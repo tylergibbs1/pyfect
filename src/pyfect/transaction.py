@@ -26,6 +26,7 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal, Never, final, overload
 
 from pyfect._core import (
+    WOKEN,
     Effect,
     Restore,
     _Callback,
@@ -333,7 +334,7 @@ def _await_change(state: TransactionMeta) -> Effect[None]:
 
             def wake() -> None:
                 clear()
-                resume(_VOID)
+                resume(WOKEN)
 
             with _COMMIT:
                 if not state._consistent():
@@ -343,7 +344,7 @@ def _await_change(state: TransactionMeta) -> Effect[None]:
                     for ref in refs:
                         ref._pending[key] = lambda: wake_soon_from_here(fiber, wake)
             if stale:
-                resume(_VOID)
+                resume(WOKEN)
                 return None
             return _Sync(clear)
 

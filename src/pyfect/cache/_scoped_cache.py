@@ -188,7 +188,7 @@ class ScopedCache[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never, R =
                         return _Succeed(None)
                     return self._await(key, entry, restore).map(Some)
 
-                return self._find(fiber, key, touch=True).flat_map(then)
+                return self._find(fiber, key, touch=True, join=True).flat_map(then)
 
             return _WithFiber(run)
 
@@ -273,7 +273,7 @@ class ScopedCache[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never, R =
                     waited = self._await(key, entry, restore).flat_map(check)
                     return waited.catch_all(lambda _: _Succeed(False))
 
-                return self._find(fiber, key, touch=False).flat_map(then)
+                return self._find(fiber, key, touch=False, join=True).flat_map(then)
 
             return _WithFiber(run)
 
@@ -346,8 +346,10 @@ class ScopedCache[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never, R =
             if found is not None and not is_expired(found.expires_at, _now(fiber)):
                 del entries[key]
                 entries[key] = hit = found  # the most recently used now
+                hit.awaiters += 1
             else:
                 entries[key] = entry  # an expired entry is replaced in place
+                entry.awaiters = 1
                 evicted = self._overflow(entries)
         if hit is not None:
             return self._await(key, hit, restore)
@@ -383,13 +385,11 @@ class ScopedCache[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never, R =
         return self._await(key, entry, restore)
 
     def _await(self, key: K, entry: _Entry[A, E], restore: Restore) -> Effect[A, E]:
-        """Wait for ``entry`` as one more caller. Counted before the wait
-        starts, so it leaves however the wait ends; the last caller to
-        leave a lookup in progress interrupts it."""
-        if entry.exit is not None:
-            return restore(entry.deferred.wait())
-        with self._lock:
-            entry.awaiters += 1
+        """Wait for ``entry`` as one more caller, counted already, holding
+        the lock that found it (as Effect finds and counts in one step: a
+        caller that left in between would otherwise see nobody waiting and
+        interrupt the lookup this one joins). It leaves however the wait
+        ends; the last caller to leave a lookup in progress interrupts it."""
 
         def leave(_: Exit[A, E]) -> Effect[None]:
             with self._lock:
@@ -448,9 +448,12 @@ class ScopedCache[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never, R =
 
         return restore(provided).exit().flat_map(replace)
 
-    def _find(self, fiber: Fiber[Any, Any], key: K, *, touch: bool) -> Effect[_Entry[A, E] | None]:
+    def _find(
+        self, fiber: Fiber[Any, Any], key: K, *, touch: bool, join: bool = False
+    ) -> Effect[_Entry[A, E] | None]:
         """The unexpired entry for ``key``; an expired one is dropped and
-        closed. ``touch`` makes it the most recently used. Interrupted once
+        closed. ``touch`` makes it the most recently used; ``join`` counts
+        the caller as waiting on it (then ``_await`` it). Interrupted once
         closed."""
         with self._lock:
             entries = self._entries
@@ -462,9 +465,12 @@ class ScopedCache[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never, R =
             expired = is_expired(entry.expires_at, _now(fiber))
             if expired:
                 del entries[key]
-            elif touch:
-                del entries[key]
-                entries[key] = entry
+            else:
+                if touch:
+                    del entries[key]
+                    entries[key] = entry
+                if join:
+                    entry.awaiters += 1
         return _close_evicted(entry).as_(None) if expired else _Succeed(entry)
 
     def _read[B](self, pick: Callable[[K, _Entry[A, E]], B | None]) -> Effect[list[B]]:

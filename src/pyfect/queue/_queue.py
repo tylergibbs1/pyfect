@@ -14,6 +14,7 @@ from pyfect._core import (
     _FailCause,
     _FromExit,
     _Gen,
+    _Retry,
     _Succeed,
     _Suspend,
     _Sync,
@@ -300,7 +301,13 @@ class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
             case st.Open(offers=offers) | st.Closing(offers=offers):
                 if not self._items and not self._takes_from(offers):
                     return None
-                item = self._take_one(offers)
+                if self._items:
+                    item = self._items.popleft()
+                else:
+                    taken = st.take_offer(offers, self._lock, self._wake_offer)
+                    if taken is None:
+                        return None
+                    item = taken
                 self._release()
                 return Success(item)
 
@@ -367,7 +374,10 @@ class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
                         if self._items:
                             items = self._take_buffered(len(self._items))
                         elif self._takes_from(offers):
-                            items = [st.take_offer(offers, self._lock)]
+                            taken = st.take_offer(offers, self._lock, self._wake_offer)
+                            if taken is None:
+                                return _Succeed([])
+                            items = [taken]
                         else:
                             return _Succeed([])
                         self._release()
@@ -482,15 +492,114 @@ class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
         return _Sync(lambda: self._withdraw(entry))
 
     def _withdraw(self, entry: st.Offer[A]) -> None:
-        """An interrupted offer gives up the items not yet admitted."""
+        """An interrupted offer gives up the items not yet admitted. A woken
+        one was holding up the offers behind it, and the takes waiting for
+        them."""
         with self._lock:
             match self._state:
-                case st.Open(offers=offers) | st.Closing(offers=offers):
+                case (
+                    st.Open(offers=offers, takers=takers) | st.Closing(offers=offers, takers=takers)
+                ):
                     if entry in offers:
                         offers.remove(entry)
+                        if entry.woken:
+                            self._release()
+                            takers.notify_ready()
                     self._finish_if_drained()
                 case st.Done():
                     pass
+
+    def _wake_offer(self, entry: st.Offer[A]) -> None:
+        """Wake a parked offer of another run to admit its items itself, in
+        its own step (``_state.admit``)."""
+        match entry:
+            case st.OfferOne() as one:
+                one.resume(_Retry(lambda: self._admit_own_one(one)))
+            case st.OfferMany() as many:
+                many.resume(_Retry(lambda: self._admit_own_many(many)))
+
+    def _room(self) -> int:
+        """How many items a woken offer may add: one at a time on a rendezvous
+        queue, where a take asked for it."""
+        if self._capacity is None:
+            return 2**62
+        if self._capacity <= 0:
+            return 1
+        return max(0, self._capacity - len(self._items))
+
+    def _admit_own_one(self, entry: st.OfferOne[A]) -> Effect[bool]:
+        with self._lock:
+            match self._state:
+                case (
+                    st.Open(offers=offers, takers=takers) | st.Closing(offers=offers, takers=takers)
+                ) if entry in offers:
+                    if self._room() == 0:
+                        return self._park_one_again(entry)
+                    offers.remove(entry)
+                    self._push([entry.item], takers, now=self._is_rendezvous())
+                    self._release()
+                    return _TRUE
+                case _:
+                    return _FALSE  # the queue was shut down
+
+    def _admit_own_many(self, entry: st.OfferMany[A]) -> Effect[list[A]]:
+        with self._lock:
+            match self._state:
+                case (
+                    st.Open(offers=offers, takers=takers) | st.Closing(offers=offers, takers=takers)
+                ) if entry in offers:
+                    n = self._room()
+                    batch = entry.items[entry.admitted : entry.admitted + n]
+                    entry.admitted += len(batch)
+                    if batch:
+                        self._push(batch, takers, now=self._is_rendezvous())
+                    if entry.admitted < len(entry.items):
+                        return self._park_many_again(entry)
+                    offers.remove(entry)
+                    self._release()
+                    return _Succeed([])
+                case _:
+                    return _Succeed(entry.items[entry.admitted :])
+
+    def _park_one_again(self, entry: st.OfferOne[A]) -> Effect[bool]:
+        def register(resume: Callable[[Effect[bool]], None]) -> Effect[None] | None:
+            with self._lock:
+                entry.resume = resume
+                if self._parked_again(entry):
+                    return _Sync(lambda: self._withdraw(entry))
+            resume(_FALSE)  # the queue was shut down
+            return None
+
+        return _Callback(register)
+
+    def _park_many_again(self, entry: st.OfferMany[A]) -> Effect[list[A]]:
+        def register(resume: Callable[[Effect[list[A]]], None]) -> Effect[None] | None:
+            with self._lock:
+                entry.resume = resume
+                if self._parked_again(entry):
+                    return _Sync(lambda: self._withdraw(entry))
+            resume(_Succeed(entry.items[entry.admitted :]))  # the queue was shut down
+            return None
+
+        return _Callback(register)
+
+    def _parked_again(self, entry: st.Offer[A]) -> bool:
+        """Park a woken offer again in its place (the room it was woken for
+        was taken first, or a batch did not fit), unless the queue was shut
+        down. Call holding the lock, with ``entry.resume`` set."""
+        match self._state:
+            case (
+                st.Open(offers=offers, takers=takers) | st.Closing(offers=offers, takers=takers)
+            ) if entry in offers:
+                entry.fiber = current_fiber()
+                entry.woken = False
+                # Room, or a take, may have come while it was woken.
+                self._release()
+                if self._is_rendezvous():
+                    takers.notify_ready()
+                return True
+            case _:
+                return False
 
     def _take_between(self, minimum: int, maximum: int | None) -> Effect[list[A], E]:
         """``maximum=None`` takes every buffered item. The items are taken in
@@ -509,7 +618,10 @@ class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
                         if self._items:
                             items = self._take_buffered(maximum or len(self._items))
                         else:
-                            items = [st.take_offer(offers, self._lock)]
+                            taken = st.take_offer(offers, self._lock, self._wake_offer)
+                            if taken is None:
+                                return self._wait_then(minimum, attempt)
+                            items = [taken]
                         self._release()
                         return _Succeed(items)
 
@@ -542,13 +654,12 @@ class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
 
     def _takes_from(self, offers: deque[st.Offer[A]]) -> bool:
         """Whether a take goes straight to a waiting offer: on a rendezvous
-        queue with nothing buffered."""
-        return self._capacity is not None and self._capacity <= 0 and bool(offers)
+        queue with nothing buffered, unless that offer was woken to add its
+        item itself."""
+        return self._is_rendezvous() and bool(offers) and not offers[0].woken
 
-    def _take_one(self, offers: deque[st.Offer[A]]) -> A:
-        """Buffered items come first; a rendezvous queue then takes straight
-        from the oldest waiting offer."""
-        return self._items.popleft() if self._items else st.take_offer(offers, self._lock)
+    def _is_rendezvous(self) -> bool:
+        return self._capacity is not None and self._capacity <= 0
 
     def _take_buffered(self, n: int) -> list[A]:
         return [self._items.popleft() for _ in range(min(n, len(self._items)))]
@@ -561,7 +672,7 @@ class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
         match self._state:
             case st.Open(offers=offers) | st.Closing(offers=offers):
                 if offers and self._capacity is not None:
-                    st.admit(offers, self._items, self._capacity, self._lock)
+                    st.admit(offers, self._items, self._capacity, self._lock, self._wake_offer)
                 self._finish_if_drained()
             case st.Done():
                 pass

@@ -22,6 +22,7 @@ from collections.abc import Callable, Hashable
 from typing import TYPE_CHECKING, Any
 
 from pyfect._core import (
+    WOKEN,
     Effect,
     Frame,
     Restore,
@@ -64,8 +65,10 @@ class _Waiter:
             resume(_VOID)
 
     def wake(self) -> None:
+        # Its permits are granted, but an interrupt reaching it before it
+        # runs still wins, and ``_give_up`` gives them back.
         if self.resume is not None:
-            self.resume(_VOID)
+            self.resume(WOKEN)
 
 
 class _GiveBackOnFailure(Frame):

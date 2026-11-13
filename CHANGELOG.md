@@ -1,5 +1,40 @@
 # Changelog
 
+## 0.6.4 (unreleased)
+
+### Fixed
+
+- A `timeout` (or any interrupt) of a fiber waiting for something a run on another thread
+  then gave it no longer goes on as if it had not timed out. The woken fiber's resume used to
+  run after its interrupt was already decided, so the caller saw a timeout while the rest
+  happened anyway: `Queue.take_between` took items that were then lost (the dogfood soak on
+  0.6.2 lost 6,586 of 1.95M in 60 minutes on 3.14t; Effect none of 3.1M); `Semaphore.take`
+  and `PartitionedSemaphore.take` kept permits nobody would give back, leaving the semaphore
+  stuck; `with_permits`, `Pool.use` and `Latch.when_open` ran their effect; `Pool.get` and
+  `RcRef.get` kept a lease or a reference; `SubscriptionRef.update` and `set` stored and
+  published; whatever followed a `Deferred.wait` or a fiber's `join` ran. A wake-up now
+  decides nothing until it runs in the woken fiber's own step (`_Retry`, `WOKEN`,
+  `woken_with`), and an interrupt that reaches the fiber first wins over it, as in Effect,
+  where both happen in one order on one thread. Found by dogfooding (soak, gap probe).
+- A `Queue.offer` or `offer_all` to a full queue, and a `PubSub.publish` to a full
+  back-pressure hub, that times out no longer delivers its items anyway (13 of 56 timed-out
+  offers and 135 of 574 timed-out publishes reached a consumer in the soak; Effect: none of
+  6,897). The queue and the hub decided such an offer for the waiting fiber, even one of
+  another run, whose timeout could already have won. They still do for a fiber of their own
+  run, which runs at once as in Effect; a fiber of another run is now woken to add its items
+  itself, in its own step, keeping its place in line meanwhile.
+  `tests/test_decided_results.py` runs every claiming case, and each primitive above, with
+  the wake-up coming from another thread's run. Found by dogfooding (soak).
+- A `ScopedCache.get` or `Cache.get` joining a lookup in progress, just as its only other
+  waiter left (a timeout), failed with `Interrupt` although nobody interrupted it: the cache
+  counted the caller only after letting go of the lock it found the entry under, so the
+  leaving waiter saw nobody waiting and interrupted the lookup. The caller is now counted
+  under that lock, as Effect finds and counts in one step. Found by dogfooding (gap probe).
+- An `RcRef.get` from a run on another thread no longer acquires a new resource while the
+  last one's release runs (20 times in 25 s on 3.14t in the gap probe). In Effect a release
+  that does not suspend ends before any other fiber runs; such a get now waits for it, while
+  a get from the releasing run still acquires afresh, as in Effect.
+
 ## 0.6.3 (2026-11-13)
 
 ### Fixed

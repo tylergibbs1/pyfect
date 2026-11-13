@@ -2,10 +2,15 @@
 Effect's source its tests leave unpinned, and the asyncio runtime."""
 
 import math
-from typing import Never
+from collections.abc import Callable, Generator
+from typing import Any, Never, Protocol
+
+import pytest
 
 import pyfect as fx
 from pyfect import testing
+from pyfect.cache._cache import _Entry as CacheEntry  # pyright: ignore[reportPrivateUsage]
+from pyfect.cache._scoped_cache import ScopedCache
 
 
 class _Service(fx.Tag[int]): ...
@@ -285,3 +290,64 @@ def test_a_raising_time_to_live_in_a_scoped_cache_does_what_effects_does():
     setting = yield from cache.set("b", "v").exit()
     _assert_died_with_the_ttl_raise(setting)
     assert not (yield from cache.has("b"))
+
+
+class _Gets(Protocol):
+    def get(self, key: str, /) -> fx.Effect[int, Any, Any]: ...
+
+
+def _joining_as_the_last_waiter_leaves(
+    make: Callable[[fx.Effect[int]], fx.Effect[_Gets, Any, Any]],
+    patch: Callable[[Callable[[], None]], None],
+) -> fx.Exit[Any, Any]:
+    """A get joins a lookup in progress just as the only other waiter is
+    interrupted, between finding the entry and waiting on it (``patch`` runs
+    the interrupt there). Effect finds and counts the caller in one step, so
+    the leaving waiter sees it and the lookup goes on for it."""
+    gate = fx.Latch()
+
+    @fx.gen
+    def program() -> Generator[fx.Effect[Any, Any, Any], Any, fx.Exit[Any, Any]]:
+        cache = yield from make(gate.when_open(fx.succeed(1)))
+        first = yield from cache.get("a").fork(start_immediately=True)
+        patch(lambda: first.interrupt_as_unsafe(None))
+        second = yield from cache.get("a").fork(start_immediately=True)
+        yield from gate.open()
+        return (yield from second.await_exit())
+
+    return fx.run_blocking(fx.scoped(program))
+
+
+def _once_before(owner: Any, name: str, monkeypatch: pytest.MonkeyPatch) -> Callable[..., None]:
+    def patch(before: Callable[[], None]) -> None:
+        original = getattr(owner, name)
+        pending = [before]
+
+        def wrapped(*args: Any, **kwargs: Any) -> Any:
+            while pending:
+                pending.pop()()
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(owner, name, wrapped)
+
+    return patch
+
+
+def test_a_scoped_get_joining_as_the_last_waiter_leaves_gets_the_value(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    ex = _joining_as_the_last_waiter_leaves(
+        lambda lookup: fx.ScopedCache[str, int].make(lambda _key: lookup, capacity=4),
+        _once_before(ScopedCache, "_await", monkeypatch),
+    )
+    assert ex == fx.Success(1)
+
+
+def test_a_get_joining_as_the_last_waiter_leaves_gets_the_value(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    ex = _joining_as_the_last_waiter_leaves(
+        lambda lookup: fx.Cache[str, int].make(lambda _key: lookup, capacity=4),
+        _once_before(CacheEntry, "await_joined", monkeypatch),
+    )
+    assert ex == fx.Success(1)
