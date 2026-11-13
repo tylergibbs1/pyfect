@@ -8,6 +8,7 @@ import pytest
 
 import pyfect as fx
 from pyfect import cron, semver_range
+from pyfect import schema as S
 from pyfect._binary_codecs import EncodingError
 from pyfect.crypto import key_format, signature
 from pyfect.crypto.crypto_error import CryptoError
@@ -16,6 +17,7 @@ from pyfect.exit import Failure
 from pyfect.http import cookies, origin
 from pyfect.result import Err, Ok
 
+from .schema_targets import schema_json
 from .server_target import http_server
 
 
@@ -104,3 +106,35 @@ def test_pkcs8_of_a_malformed_ed448_key_is_an_invalid_key() -> None:
     error = exit.cause.find_error()
     assert isinstance(error, Ok) and isinstance(error.value, CryptoError), exit.cause.pretty()
     assert error.value.reason.tag == "InvalidKey"
+
+
+_OVERFLOWING_JSON = [
+    ("1e400", "null"),
+    ("-1e400", "null"),
+    ("555555555E555555555555", "null"),
+    ("[1e400]", "[null]"),
+    ('{"a":-1e400}', '{"a":null}'),
+    ('[1, {"b": [1e400]}]', '[1,{"b":[null]}]'),
+]
+
+
+@pytest.mark.parametrize(("text", "encoded"), _OVERFLOWING_JSON)
+def test_json_numbers_past_the_floats_encode_as_json_stringify_writes_infinity(
+    text: str, encoded: str
+) -> None:
+    """``JSON.parse`` reads such a number as an infinity, which Effect's
+    ``UnknownFromJsonString`` keeps; its encode is ``JSON.stringify``, which
+    writes ``null`` for it. pyfect's encode failed ("Expected a
+    JSON-serializable value"), so decode accepted what encode rejected."""
+    decoded = S.decode_unknown_sync(S.UnknownFromJsonString)(text)
+    assert S.encode_unknown_sync(S.UnknownFromJsonString)(decoded) == encoded
+    schema_json(text.encode())
+
+
+@pytest.mark.parametrize("text", ["1e400", "-1e400"])
+def test_a_number_from_json_string_past_the_floats_is_an_infinity_written_null(text: str) -> None:
+    schema = S.from_json_string(S.Number)
+    decoded = S.decode_unknown_sync(schema)(text)
+    assert decoded == float(text)
+    assert S.encode_unknown_sync(schema)(decoded) == "null"
+    assert S.encode_unknown_sync(schema)(float("nan")) == "null"

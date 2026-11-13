@@ -33,6 +33,7 @@ from pyfect import (
     semver_range,
 )
 from pyfect import date_time as DateTime
+from pyfect import schema as S
 from pyfect._binary_codecs import base64_decode, base64_url_decode, hex_decode
 from pyfect.encoding import ini, json5, jsonc, toml, yaml
 from pyfect.http import cookies
@@ -117,6 +118,20 @@ def _zoned(text: str) -> Answer:
     return None if zoned is None else DateTime.format_iso_zoned(zoned)
 
 
+def _json_string(text: str) -> Answer:
+    """``UnknownFromJsonString`` decoded then encoded, the text read back (in
+    a list, so a ``null`` document is no rejection): what Effect's
+    ``JSON.stringify`` writes for the value its ``JSON.parse`` read, an
+    infinity as ``null``."""
+    schema = S.UnknownFromJsonString
+    decoded = S.decode_unknown_result(schema)(text)
+    if not isinstance(decoded, Ok):
+        return None
+    return _ok(
+        S.encode_unknown_result(schema)(decoded.value), lambda t: [_json(_json_text.parse(t))]
+    )
+
+
 ANSWERS_OF: dict[str, Callable[[str], Answer]] = {
     "base64": lambda t: _ok(base64_decode(t), bytes.hex),
     "base64url": lambda t: _ok(base64_url_decode(t), bytes.hex),
@@ -138,6 +153,7 @@ ANSWERS_OF: dict[str, Callable[[str], Answer]] = {
     "glob": _glob,
     "pointer": json_pointer.parse_uri_fragment,
     "cookies": cookies.parse_header,
+    "json_string": _json_string,
 }
 
 # Which parsers each fuzz target's inputs go to, and how a target reads its bytes.
@@ -149,6 +165,7 @@ PARSERS_OF: dict[str, tuple[str, ...]] = {
     "versions": ("semver", "semver_range"),
     "numbers": ("big_decimal", "byte_size"),
     "date_time": ("zone", "zoned"),
+    "schema_json": ("json_string",),
 }
 
 

@@ -47,6 +47,13 @@
 
 ### Fixed
 
+- `S.UnknownFromJsonString`, `S.from_json_string` and the `stringify_json` getter write `NaN`
+  and infinities as `null`, as Effect's `JSON.stringify` does. A JSON number past the largest
+  double (`1e400`, `555555555E555555555555`) decodes to an infinity, in Effect too, but encoding
+  it failed with "Expected a JSON-serializable value", so decode accepted what encode
+  rejected; `S.encode_unknown_sync(S.UnknownFromJsonString)(decoded)` of `[1e400]` is now
+  `"[null]"`. The fuzz differential now compares `UnknownFromJsonString`'s decode and encode
+  with Effect's on the `schema_json` corpus. Found by the `schema_json` fuzz target.
 - `S.Finite` and `S.is_finite` read an `int` as a JavaScript number, so one past the largest
   double (a 400-digit JSON literal, which `JSON.parse` reads as `Infinity`) is not finite, as
   in Effect. `jwt.verify` checks `exp`, `nbf` and `iat` with `S.Finite`, so a token signed
