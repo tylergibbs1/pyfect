@@ -39,18 +39,60 @@ def _modules() -> list[tuple[str, ast.Module]]:
     ]
 
 
+# Python's ``json`` and the libraries modelled on it raise on (or write) ``NaN``
+# and infinities where ``JSON.stringify`` writes ``null`` (GQL-1).
+_JSON_LIBRARIES = {"json", "simplejson", "orjson", "ujson", "rapidjson"}
+
+
+def _imported_modules(node: ast.AST) -> list[str]:
+    """The modules ``node`` imports: an import statement, a call of
+    ``__import__`` / ``import_module`` with a literal name, or
+    ``msgspec.json``."""
+    match node:
+        case ast.Attribute(value=ast.Name(id="msgspec"), attr="json"):
+            return ["msgspec.json"]
+        case ast.Import(names=names):
+            return [alias.name for alias in names]
+        case ast.ImportFrom(module=module):
+            return [module or ""]
+        case ast.Call(func=ast.Name(id="__import__") | ast.Attribute(attr="import_module")):
+            return [
+                arg.value
+                for arg in node.args[:1]
+                if isinstance(arg, ast.Constant) and isinstance(arg.value, str)
+            ]
+        case _:
+            return []
+
+
+def _is_json_library(module: str) -> bool:
+    return module.partition(".")[0] in _JSON_LIBRARIES or module.startswith("msgspec.json")
+
+
 def test_only_json_text_imports_json():
     offenders = [
-        f"{name}:{node.lineno}"
+        f"{name}:{getattr(node, 'lineno', 0)}"
         for name, tree in _modules()
         if name not in _JSON_HOME
         for node in ast.walk(tree)
-        if (
-            isinstance(node, ast.Import) and any(a.name.split(".")[0] == "json" for a in node.names)
-        )
-        or (isinstance(node, ast.ImportFrom) and (node.module or "").split(".")[0] == "json")
+        if any(_is_json_library(str(m)) for m in _imported_modules(node))
     ]
     assert offenders == [], "use pyfect._json_text (parse / stringify / quote)"
+
+
+def test_the_guard_sees_every_way_of_importing_json():
+    source = """
+import json
+import json.decoder
+from json import dumps
+import orjson
+__import__("json")
+importlib.import_module("ujson")
+msgspec.json.encode(x)
+"""
+    found = [m for node in ast.walk(ast.parse(source)) for m in _imported_modules(node)]
+    assert all(_is_json_library(m) for m in found)
+    assert len(found) == 7
 
 
 def _exempt_nodes(tree: ast.Module) -> set[int]:

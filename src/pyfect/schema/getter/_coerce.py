@@ -150,7 +150,7 @@ def stringify_json(
     def run(value: object, options: ParseOptions) -> Exit[str, Issue]:
         try:
             replaced = value if replacer is None else replace_json(value, replacer)
-            return Success(_json.stringify(replaced, indent=space, null_non_finite=True))
+            return Success(_json.stringify(replaced, indent=space))
         except Exception:
             expected = {"expected": "a JSON-serializable value"}
             return fail_exit(InvalidValue(expected, reported(value, options)))

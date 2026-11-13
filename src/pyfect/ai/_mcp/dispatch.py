@@ -159,8 +159,8 @@ def error_response(id: RequestId | None, error: McpError) -> JsonObject:
 
 
 def _encodable_response(id: RequestId, result: Wire) -> JsonObject:
-    """The response carrying ``result``, or an internal error when it is not
-    JSON (a NaN, a value with no JSON form)."""
+    """The response carrying ``result``, or an internal error when it has
+    no JSON form."""
     reply = response(id, result)
     try:
         _json_text.stringify(reply)

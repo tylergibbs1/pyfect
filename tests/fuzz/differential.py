@@ -73,7 +73,7 @@ def _as_js_numbers(value: object) -> object:
 def _json(value: object) -> object:
     """The value as the oracle's ``JSON.parse(JSON.stringify(value))``: objects
     compare without their key order (JavaScript lists integer keys first)."""
-    text = _json_text.stringify(_as_js_numbers(value), null_non_finite=True, default=_date)
+    text = _json_text.stringify(_as_js_numbers(value), default=_date)
     return json.loads(text)
 
 

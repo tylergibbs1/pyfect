@@ -38,8 +38,8 @@ def json(data: bytes) -> None:
     value = raises_only(lambda: _json_text.parse(data), ValueError)
     if value is None:
         return
-    written = _json_text.stringify(value, null_non_finite=True)
-    if _json_text.stringify(_json_text.parse(written), null_non_finite=True) != written:
+    written = _json_text.stringify(value)
+    if _json_text.stringify(_json_text.parse(written)) != written:
         raise Crash(f"JSON does not round-trip: {written!r}")
 
 

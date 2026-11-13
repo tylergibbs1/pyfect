@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import re
 
-from pyfect._json_text import js_stringify
+from pyfect._json_text import stringify
 
 _ASTRAL = re.compile("[\U00010000-\U0010ffff]")
 
@@ -113,7 +113,7 @@ def is_whitespace(text: str) -> bool:
 
 def quoted(value: object) -> str:
     """``JSON.stringify(value)`` for a message."""
-    return js_stringify(value)
+    return stringify(value)
 
 
 PUBID = re.compile(r"[ \r\na-zA-Z0-9\-'()+,./:=?;!*#@$_%]*")

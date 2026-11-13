@@ -165,14 +165,13 @@ def test_ndjson_encode_string_writes_one_string_per_chunk():
 
 
 @testing.effect
-def test_ndjson_rejects_nan_both_ways():
-    """pyfect's own: ``JSON.parse`` rejects ``NaN`` and ``JSON.stringify``
-    writes it as ``null``; ``json.dumps`` would write ``NaN``, which is not
-    JSON, so pyfect fails instead."""
+def test_ndjson_reads_nan_as_invalid_and_writes_it_as_null():
+    """``JSON.parse`` rejects ``NaN`` and ``JSON.stringify`` writes it as
+    ``null`` (Effect 4.1.2 under Node: ``"null\\n"``)."""
     parsed = yield from _run(_bytes("NaN\n").pipe_through_channel(ndjson.decode()))
     assert _unpack(parsed.error) == ("InvalidJson", False)
     written = yield from _run(stream.make(float("nan")).pipe_through_channel(ndjson.encode()))
-    assert isinstance(written.error, ndjson.NdjsonError) and written.error.kind == "Pack"
+    assert written.values == [b"null\n"]
 
 
 @testing.effect

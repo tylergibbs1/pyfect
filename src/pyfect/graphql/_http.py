@@ -111,9 +111,9 @@ def _get(url: str, request: GraphQLRequest, accept: str) -> HttpClientRequest:
     ]
     params: dict[str, str] = {"query": request.query, "operationName": request.operation_name}
     if request.variables is not None:
-        params["variables"] = _json_text.js_stringify(request.variables)
+        params["variables"] = _json_text.stringify(request.variables)
     if request.extensions is not None:
-        params["extensions"] = _json_text.js_stringify(request.extensions)
+        params["extensions"] = _json_text.stringify(request.extensions)
     return (
         http_request.get(path + hash_mark + fragment)
         .set_headers(request.headers)

@@ -79,7 +79,7 @@ def encode_string[E = Never, D = None]() -> Channel[
     tuple[str, ...], E | NdjsonError, D, tuple[object, ...], E, D
 ]:
     """Write each chunk of values as one string of lines, each ending with
-    ``\\n``. A value with no JSON form (a set, an object, ``NaN``) fails
+    ``\\n``. A value with no JSON form (a set, an object) fails
     with a ``"Pack"`` error."""
 
     def encoded(chunk: tuple[object, ...]) -> AnyPull:

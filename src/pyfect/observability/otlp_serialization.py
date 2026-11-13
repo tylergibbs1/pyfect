@@ -90,7 +90,7 @@ def _json_ready(value: object, key: str = "") -> object:
 
 
 def _json_body(data: object) -> _body.HttpBody:
-    return _body.text(_json_text.js_stringify(_json_ready(data)), "application/json")
+    return _body.text(_json_text.stringify(_json_ready(data)), "application/json")
 
 
 def _protobuf_body(data: bytes) -> _body.HttpBody:

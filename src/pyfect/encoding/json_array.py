@@ -146,7 +146,7 @@ def encode_string[E = Never, D = None]() -> Channel[
 ]:
     """Write a stream of values as the text of one JSON array, one string
     per input chunk; no values give ``"[]"``. A value with no JSON form (a
-    set, an object, ``NaN``) fails with an ``"Encode"`` error after the
+    set, an object) fails with an ``"Encode"`` error after the
     text before it is written."""
 
     def build(upstream: AnyPull) -> AnyPull:

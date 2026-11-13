@@ -25,6 +25,18 @@
   shutdown waited for it. Once both sides have ended, the connection closes (after `ws`'s 30
   second `closeTimeout` if the client never ends its side), and the handler is interrupted as
   a client abort. Found by dogfooding (stockroom).
+- `NaN`, `inf` and `-inf` are written `null`, as `JSON.stringify` writes them, wherever
+  Effect writes JSON with it: `ndjson.encode` / `encode_string`, `json_array.encode` /
+  `encode_string`, `WebResponse.json_of`, the `json` and `ndjson` RPC serializations, the SQL, Redis and key-value backing persistence stores, MySQL JSON
+  parameters, ClickHouse `JSONEachRow` inserts and the cache keys of GraphQL resolvers.
+  These raised `ValueError` or failed with an encode error. `pyfect._json_text.stringify`
+  now always writes `null` (its `null_non_finite` flag and `js_stringify` are gone), so no
+  call site can pick the strict form by mistake, as GraphQL variables and
+  `S.UnknownFromJsonString` did before (GQL-1, 0.6.2). Schemas that reject non-finite
+  numbers before writing (`HttpApi` payloads and responses, JWT claims, cluster messages)
+  are unchanged, as in Effect. `tests/test_js_formatting_guard.py` now also catches
+  `json` imported through `__import__` / `importlib` and other JSON libraries (`orjson`,
+  `ujson`, `simplejson`, `rapidjson`, `msgspec.json`).
 
 ### Docs
 

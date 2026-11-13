@@ -739,7 +739,7 @@ def _big_decimal(ctx: _Context, _: L.LeafLayout, value: object, w: W.Writer) -> 
 
 def _json(ctx: _Context, _: L.LeafLayout, value: object, w: W.Writer) -> None:
     try:
-        text = stringify(value, null_non_finite=True)
+        text = stringify(value)
     except STRINGIFY_ERRORS as error:
         expected = "acyclic value" if is_cyclic(value) else "a JSON-serializable value"
         raise ctx.fail(expected, value) from error

@@ -169,7 +169,7 @@ def encode_header(
     )
     value.update(fixed)
     try:
-        text = stringify(value, null_non_finite=True)
+        text = stringify(value)
     except STRINGIFY_ERRORS:
         return invalid_argument("The protected header is not JSON serializable")
     return succeed(base64_url_encode(utf8(text)))
