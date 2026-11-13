@@ -29,6 +29,7 @@ from pyfect.eventlog.event_journal import EntryId, RemoteId, StoreId, make_remot
 from pyfect.eventlog.event_log_encryption import EncryptedBatch, EncryptedRemoteBatch
 from pyfect.eventlog.event_log_message import WriteAck
 from pyfect.persistence._columns import column_bytes, column_int
+from pyfect.persistence._sql_keys import key_equals
 from pyfect.pubsub import PubSub
 from pyfect.rc_map import RcMap
 from pyfect.schedule import fixed
@@ -194,9 +195,9 @@ class _SqlStorage(StorageService):
 
         def body():
             rows = yield from sql(
-                "SELECT public_key, signing_public_key FROM {} WHERE public_key = {}",
+                "SELECT signing_public_key FROM {} WHERE {}",
                 self._bindings,
-                public_key,
+                key_equals(sql, "public_key", public_key),
             )
             if rows:
                 return column_bytes(rows[0]["signing_public_key"])

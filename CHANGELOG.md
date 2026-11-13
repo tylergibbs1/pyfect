@@ -15,6 +15,38 @@
   `Latin1_General_100_BIN2` on SQL Server, where the unique index and every comparison also
   count their lengths. `tests/oracle/test_sql_exact_key_columns.py` builds every pyfect SQL
   schema on both servers and fails if a key column compares inexactly.
+- Security: `sql_event_log_server_encrypted` compares session auth public keys exactly on
+  MySQL and SQL Server (GitHub issue #1). The bindings table kept the server's default
+  collation, so a client could present a public key differing from another client's only in
+  case, accents (MySQL) or trailing spaces, and the server took the other client's binding
+  for its own: a client that bound such a variant first locked the real key's owner out,
+  whose sessions were then checked against the wrong signing key. Stores stay separate (they
+  are keyed by a hash of the exact key), so no entries could be read across keys. Apps running the encrypted event log server on MySQL or
+  SQL Server should upgrade. `public_key` is now in `utf8mb4_0900_bin` on MySQL and in
+  `Latin1_General_100_BIN2` on SQL Server, with its `DATALENGTH` in the primary key and the
+  lookup; an existing bindings table is converted in place when the storage starts, rows
+  kept.
+- `sql_event_log_server_unencrypted` compares store ids, events, primary keys and session
+  auth public keys exactly on MySQL (GitHub issue #1). In the server's default collation,
+  entries written to store `Alice` were numbered and read with store `alice`'s, a batch
+  lookup returned entries of a primary key or event differing only in case, accents or
+  trailing spaces, and public keys differing only in those shared one binding. The columns
+  are now in `utf8mb4_0900_bin` (values stay text, so Effect's storages can share the
+  tables); existing tables are converted in place when the storage starts, rows kept.
+- The SQL cluster storages (`sql_message_storage`, `sql_runner_storage`) compare entity ids,
+  entity types, primary keys, shard ids and runner addresses exactly on MySQL and SQL Server,
+  as on SQLite and PostgreSQL (GitHub issue #1). In the server's default collation a request
+  to entity `alice` was dropped as a duplicate of one to `Alice` (or `alice `), clearing one
+  entity's messages deleted the other's, a runner polling shard group `Alpha` claimed and
+  reset group `alpha`'s messages, and two runners whose addresses differed only in case
+  shared one registration and one set of shard leases. New migrations (message storage
+  `0004_exact_keys`, runner storage `0002_exact_keys`, run on start, existing rows kept) put
+  the columns in `utf8mb4_0900_bin` on MySQL (values stay text, so Effect's runners can share
+  the tables) and in `NVARCHAR` with `Latin1_General_100_BIN2` on SQL Server, where the
+  `message_id` unique index and every entity and primary-key comparison also count lengths.
+  MySQL's advisory locks ignore case in lock names, so shards whose lock names differ only
+  in case now get names of their own (the others keep Effect's). The SQL Server shard lease
+  statement, which no SQL Server could parse, is fixed.
 
 ## 0.6.3 (2026-11-13)
 

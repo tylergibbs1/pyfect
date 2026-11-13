@@ -17,6 +17,8 @@ from typing import LiteralString
 
 from pyfect._core import Effect
 from pyfect.effect import gen
+from pyfect.eventlog._sql_exact_keys import MYSQL_KEY, mssql_exact_primary_key, mysql_exact_columns
+from pyfect.persistence._sql_keys import MSSQL_PAIR_KEY
 from pyfect.sql.client import SqlClientService
 from pyfect.sql.error import SqlError
 from pyfect.sql.statement import Fragment
@@ -140,19 +142,26 @@ def create_global_tables(
             )
             yield from sql(
                 "IF OBJECT_ID({}, N'U') IS NULL CREATE TABLE {} ("
-                "public_key NVARCHAR(191) PRIMARY KEY, signing_public_key VARBINARY(32) NOT NULL)",
+                "public_key {} NOT NULL, "
+                "public_key_length AS DATALENGTH(public_key) PERSISTED NOT NULL, "
+                "signing_public_key VARBINARY(32) NOT NULL, "
+                "PRIMARY KEY (public_key, public_key_length))",
                 bindings_table,
                 bindings,
+                sql.literal(MSSQL_PAIR_KEY),
             )
+            yield from mssql_exact_primary_key(sql, bindings_table, "public_key", MSSQL_PAIR_KEY)
         elif sql.dialect == "mysql":
             yield from sql(
                 "CREATE TABLE IF NOT EXISTS {} (remote_id BINARY(16) PRIMARY KEY)", remote_ids
             )
             yield from sql(
-                "CREATE TABLE IF NOT EXISTS {} (public_key VARCHAR(191) PRIMARY KEY, "
+                "CREATE TABLE IF NOT EXISTS {} (public_key {} PRIMARY KEY, "
                 "signing_public_key BINARY(32) NOT NULL)",
                 bindings,
+                sql.literal(MYSQL_KEY),
             )
+            yield from mysql_exact_columns(sql, bindings_table, {"public_key": MYSQL_KEY})
         else:
             yield from sql("CREATE TABLE IF NOT EXISTS {} (remote_id BLOB PRIMARY KEY)", remote_ids)
             yield from sql(

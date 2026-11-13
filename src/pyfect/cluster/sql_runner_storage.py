@@ -7,16 +7,23 @@ statement on it fails), or, on SQLite and SQL Server (or with
 expire after ``shard_lock_expiration``. Every lock operation has a
 deadline of the effective lock refresh interval.
 
-MySQL and SQL Server statements are ported but not run by the tests.
+On MySQL and SQL Server ``address`` and ``shard_id`` compare exactly, as
+on SQLite and PostgreSQL (migration ``0002``, pyfect's; Effect leaves them
+in the server's collation, which usually ignores case). Both end in
+digits, so a ``BIN2`` collation is exact on SQL Server without comparing
+lengths. MySQL's named locks ignore case, so shards whose Effect lock
+names differ only in case get names of their own (``_mysql_lock_names``).
 """
 
 from __future__ import annotations
 
+import hashlib
 import math
 import random
+from collections import Counter
 from collections.abc import Callable, Generator, Sequence
 from dataclasses import dataclass
-from typing import Any, Never, cast
+from typing import Any, LiteralString, Never, cast
 
 from pyfect import layer as layer_
 from pyfect._core import Effect
@@ -25,6 +32,7 @@ from pyfect._js import text_encode
 from pyfect.cause import Cause
 from pyfect.cluster._resource_ref import ResourceRef
 from pyfect.cluster._shard_lock import effective_interval
+from pyfect.cluster._sql_keys import MSSQL_EXACT_TEXT, MYSQL_EXACT_TEXT
 from pyfect.cluster.cluster_error import PersistenceError
 from pyfect.cluster.runner_storage import (
     RunnerStorage,
@@ -50,6 +58,22 @@ def postgres_lock_namespace(prefix: str) -> int:
     for byte in text_encode(f"effect-cluster:{prefix}"):
         h = ((h ^ byte) * 0x01000193) & 0xFFFFFFFF
     return h - 0x1_0000_0000 if h >= 0x8000_0000 else h
+
+
+def _mysql_lock_names(prefix: str, shard_ids: Sequence[str]) -> dict[str, str]:
+    """Each shard's MySQL lock name: Effect's ``<prefix>.<shard id>``,
+    unless MySQL, which ignores case in lock names, would read it as
+    another shard's. Those shards are named ``<prefix>.<SHA-256 of the
+    shard id>`` (no ``:``, so never an Effect name); the others keep
+    Effect's, so runners of either can share a cluster."""
+    names = {shard_id: f"{prefix}.{shard_id}" for shard_id in shard_ids}
+    folded = Counter(name.lower() for name in names.values())
+    return {
+        shard_id: name
+        if folded[name.lower()] == 1
+        else f"{prefix}.{hashlib.sha256(text_encode(shard_id)).hexdigest()[:40]}"
+        for shard_id, name in names.items()
+    }
 
 
 @dataclass(eq=False, slots=True)
@@ -135,7 +159,6 @@ class _Storage:
         )
         self.lock_numbers: dict[str, int] = {}
         self.shard_index: dict[str, int] = {}
-        self.lock_names: dict[str, str] = {}
         index = 0
         for i, group in enumerate(shard_group_config(config).available):
             base = (i + 1) * 1_000_000
@@ -143,8 +166,8 @@ class _Storage:
                 shard_id = f"{group}:{shard}"
                 self.lock_numbers[shard_id] = base + shard
                 self.shard_index[shard_id] = index
-                self.lock_names[shard_id] = f"{prefix}.{shard_id}"
                 index += 1
+        self.lock_names = _mysql_lock_names(prefix, list(self.shard_index))
 
     # --- helpers ----------------------------------------------------------------------
 
@@ -325,7 +348,7 @@ class _Storage:
         if sql.dialect == "mssql":
             statement = sql(
                 "MERGE {} WITH (HOLDLOCK) AS target "
-                "USING (SELECT * FROM (VALUES {})) AS source (shard_id, address, acquired_at) "
+                "USING (VALUES {}) AS source (shard_id, address, acquired_at) "
                 "ON target.shard_id = source.shard_id "
                 "WHEN MATCHED AND (target.address = source.address OR "
                 "DATEDIFF(SECOND, target.acquired_at, {}) > {}) THEN "
@@ -906,7 +929,88 @@ def migrations(*, prefix: str = "cluster") -> migrator.Loader:
             ),
         )
 
-    return migrator.from_record({"0001_create_tables": gen(create)})
+    def exact_keys() -> Generator[Effect[Any, Any, Any], Any]:
+        sql = (yield from SqlClient()).without_transforms()
+        yield from sql.on_dialect_or_else(
+            mysql=lambda: _exact_keys_mysql(sql, runners_table, locks_table),
+            mssql=lambda: _exact_keys_mssql(sql, runners_table, locks_table),
+            or_else=lambda: void,
+        )
+
+    return migrator.from_record(
+        {"0001_create_tables": gen(create), "0002_exact_keys": gen(exact_keys)}
+    )
+
+
+def _exact_keys_mysql(
+    sql: SqlClientService, runners_table: str, locks_table: str
+) -> Effect[object, SqlError]:
+    def body() -> Generator[Effect[Any, Any, Any], Any]:
+        yield from sql(
+            f"ALTER TABLE {{}} MODIFY address VARCHAR(255) {MYSQL_EXACT_TEXT} NOT NULL",
+            sql.identifier(runners_table),
+        )
+        yield from sql(
+            f"ALTER TABLE {{}} MODIFY shard_id VARCHAR(50) {MYSQL_EXACT_TEXT} NOT NULL, "
+            f"MODIFY address VARCHAR(255) {MYSQL_EXACT_TEXT} NOT NULL",
+            sql.identifier(locks_table),
+        )
+
+    return gen(body)
+
+
+def _mssql_drop_key(
+    sql: SqlClientService, table_name: str, kind: LiteralString
+) -> Effect[object, SqlError]:
+    """Drop the table's ``PRIMARY KEY`` (``PK``) or ``UNIQUE`` (``UQ``)
+    constraint, whose name the server made up."""
+    return sql(
+        "DECLARE @drop NVARCHAR(MAX) = (SELECT N'ALTER TABLE ' "
+        "+ QUOTENAME(OBJECT_SCHEMA_NAME(parent_object_id)) + N'.' "
+        "+ QUOTENAME(OBJECT_NAME(parent_object_id)) + N' DROP CONSTRAINT ' + QUOTENAME(name) "
+        "FROM sys.key_constraints WHERE parent_object_id = OBJECT_ID({}) AND type = {}); "
+        "IF @drop IS NOT NULL EXEC sp_executesql @drop",
+        table_name,
+        kind,
+    )
+
+
+def _exact_keys_mssql(
+    sql: SqlClientService, runners_table: str, locks_table: str
+) -> Effect[object, SqlError]:
+    """``NVARCHAR`` in a ``BIN2`` collation. The keys on the columns are
+    dropped first, since a column in a key cannot change, and made again
+    with names of their own."""
+    runners = sql.identifier(runners_table)
+    locks = sql.identifier(locks_table)
+
+    def body() -> Generator[Effect[Any, Any, Any], Any]:
+        yield from _mssql_drop_key(sql, runners_table, "UQ")
+        yield from sql(
+            f"ALTER TABLE {{}} ALTER COLUMN address NVARCHAR(255) {MSSQL_EXACT_TEXT} NOT NULL",
+            runners,
+        )
+        yield from sql(
+            "ALTER TABLE {} ADD CONSTRAINT {} UNIQUE (address)",
+            runners,
+            sql.identifier(f"{runners_table}_address_key"),
+        )
+        yield from _mssql_drop_key(sql, locks_table, "PK")
+        yield from sql(
+            f"ALTER TABLE {{}} ALTER COLUMN shard_id NVARCHAR(50) {MSSQL_EXACT_TEXT} NOT NULL",
+            locks,
+        )
+        yield from sql(
+            f"ALTER TABLE {{}} ALTER COLUMN address NVARCHAR(255) {MSSQL_EXACT_TEXT} NOT NULL",
+            locks,
+        )
+        yield from sql(
+            "ALTER TABLE {} ADD CONSTRAINT {} PRIMARY KEY (shard_id)",
+            locks,
+            sql.identifier(f"{locks_table}_pkey"),
+        )
+
+    return gen(body)
 
 
 def run_migrations(*, prefix: str = "cluster") -> Effect[None, Never, SqlClient]:

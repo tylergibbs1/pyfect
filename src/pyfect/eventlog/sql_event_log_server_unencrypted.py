@@ -1,11 +1,15 @@
 """Storage of an unencrypted event log server in a SQL database (Effect's
-``eventlog/SqlEventLogServerUnencrypted``), on SQLite or PostgreSQL.
+``eventlog/SqlEventLogServerUnencrypted``), on SQLite, PostgreSQL or MySQL.
 
 Entries of every store share ``entry_table_prefix``, numbered per store
 from 1 by ``<entry_table_prefix>_stores``. Writes lock their store's row,
 so writers in other processes queue; changes are published once the
 outermost transaction commits, and storage-owned transactions hold a
 permit through commit and publication so changes stream in commit order.
+
+On MySQL store ids, events, primary keys and public keys are in a binary
+collation, so they compare exactly whatever the database's
+(``_sql_exact_keys``).
 """
 
 from __future__ import annotations
@@ -17,6 +21,7 @@ from typing import Any, Literal, Never, cast
 from pyfect._context_effects import service_option
 from pyfect._core import Effect
 from pyfect.effect import die, fail, gen, succeed
+from pyfect.eventlog._sql_exact_keys import MYSQL_KEY, MYSQL_TEXT, mysql_exact_columns
 from pyfect.eventlog.event_journal import (
     Entry,
     EntryId,
@@ -132,18 +137,30 @@ def layer_storage(
 
 
 class _Tables:
-    __slots__ = ("bindings", "entries", "entries_name", "remote_id", "stores")
+    __slots__ = (
+        "bindings",
+        "bindings_name",
+        "entries",
+        "entries_name",
+        "remote_id",
+        "stores",
+        "stores_name",
+    )
 
     def __init__(self, sql: SqlClientService, prefix: str, remote_id_table: str) -> None:
         self.entries_name = prefix
         self.entries: Identifier = sql.identifier(prefix)
         self.remote_id: Identifier = sql.identifier(remote_id_table)
-        self.stores: Identifier = sql.identifier(f"{prefix}_stores")
-        self.bindings: Identifier = sql.identifier(f"{prefix}_session_auth_bindings")
+        self.stores_name = f"{prefix}_stores"
+        self.stores: Identifier = sql.identifier(self.stores_name)
+        self.bindings_name = f"{prefix}_session_auth_bindings"
+        self.bindings: Identifier = sql.identifier(self.bindings_name)
 
 
 def _create_mysql_tables(sql: SqlClientService, t: _Tables) -> Effect[None, SqlError]:
     event_key_index = f"{t.entries_name}_event_key_idx"
+    key = sql.literal(MYSQL_KEY)
+    text = sql.literal(MYSQL_TEXT)
 
     def body():
         yield from sql(
@@ -152,11 +169,23 @@ def _create_mysql_tables(sql: SqlClientService, t: _Tables) -> Effect[None, SqlE
             t.remote_id,
         )
         yield from sql(
-            "CREATE TABLE IF NOT EXISTS {} (store_id VARCHAR(191) NOT NULL, "
-            "sequence BIGINT NOT NULL, entry_id BINARY(16) NOT NULL, event TEXT NOT NULL, "
-            "primary_key TEXT NOT NULL, payload BLOB NOT NULL, "
+            "CREATE TABLE IF NOT EXISTS {} (store_id {} NOT NULL, "
+            "sequence BIGINT NOT NULL, entry_id BINARY(16) NOT NULL, event {} NOT NULL, "
+            "primary_key {} NOT NULL, payload BLOB NOT NULL, "
             "PRIMARY KEY (store_id, sequence), UNIQUE (store_id, entry_id))",
             t.entries,
+            key,
+            text,
+            text,
+        )
+        yield from mysql_exact_columns(
+            sql,
+            t.entries_name,
+            {
+                "store_id": MYSQL_KEY,
+                "event": MYSQL_TEXT,
+                "primary_key": MYSQL_TEXT,
+            },
         )
         # Serves the batch lookup in ``entries_after`` on prefixes. MySQL has
         # no ``IF NOT EXISTS`` for indexes: an existing one fails the create.
@@ -180,15 +209,19 @@ def _create_mysql_tables(sql: SqlClientService, t: _Tables) -> Effect[None, SqlE
             .catch_all(unless_exists)
         )
         yield from sql(
-            "CREATE TABLE IF NOT EXISTS {} (store_id VARCHAR(191) PRIMARY KEY, "
+            "CREATE TABLE IF NOT EXISTS {} (store_id {} PRIMARY KEY, "
             "next_sequence BIGINT NOT NULL)",
             t.stores,
+            key,
         )
+        yield from mysql_exact_columns(sql, t.stores_name, {"store_id": MYSQL_KEY})
         yield from sql(
-            "CREATE TABLE IF NOT EXISTS {} (public_key VARCHAR(191) PRIMARY KEY, "
+            "CREATE TABLE IF NOT EXISTS {} (public_key {} PRIMARY KEY, "
             "signing_public_key BINARY(32) NOT NULL)",
             t.bindings,
+            key,
         )
+        yield from mysql_exact_columns(sql, t.bindings_name, {"public_key": MYSQL_KEY})
 
     return gen(body)
 

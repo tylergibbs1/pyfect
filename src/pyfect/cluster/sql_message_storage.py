@@ -7,7 +7,12 @@ the 255-character column), which detects duplicates. ``unprocessed_messages``
 claims the rows it returns by setting ``last_read``; a claim lapses after
 ten minutes.
 
-MySQL and SQL Server statements are ported but not run by the tests.
+On MySQL and SQL Server the key columns (``message_id``, ``shard_id``,
+``entity_type``, ``entity_id``) compare exactly, as on SQLite and
+PostgreSQL (migration ``0004``, pyfect's): MySQL's in ``utf8mb4_0900_bin``,
+SQL Server's in a ``BIN2`` collation, also comparing lengths where a
+trailing space can occur (``persistence._sql_keys``); Effect leaves them in
+the server's collation, which usually ignores case.
 Python's integers are exact, so ids need no ``SafeIntegers``; SHA-256 comes
 from ``hashlib`` (Effect reads a ``Digest`` service).
 """
@@ -16,7 +21,7 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Generator, Mapping, Sequence
-from typing import Any, Never
+from typing import Any, Final, LiteralString, Never
 
 from pyfect import _json_text
 from pyfect import layer as layer_
@@ -25,6 +30,7 @@ from pyfect._effect_args import require_effect
 from pyfect._js import js_length, text_encode
 from pyfect.cause import Cause, Fail
 from pyfect.cluster import snowflake as snowflake_
+from pyfect.cluster._sql_keys import MSSQL_EXACT_TEXT, MYSQL_EXACT_TEXT, key_in
 from pyfect.cluster.cluster_error import PersistenceError
 from pyfect.cluster.entity_address import EntityAddress
 from pyfect.cluster.envelope import Encoded as EnvelopeEncoded
@@ -43,6 +49,7 @@ from pyfect.cluster.reply import ChunkEncoded, Encoded, WithExitEncoded
 from pyfect.cluster.sharding_config import ShardingConfig
 from pyfect.cluster.snowflake import Snowflake
 from pyfect.effect import die, fail_cause, gen, succeed, suspend, void
+from pyfect.persistence._sql_keys import key_equals, mssql_match
 from pyfect.sql import migrator
 from pyfect.sql.client import SqlClient, SqlClientService
 from pyfect.sql.connection import Row
@@ -300,11 +307,11 @@ class _Storage:
 
     def select_by_message_id(self, message_id: str) -> Effect[Sequence[Row], SqlError]:
         return self.sql(
-            "SELECT {} FROM {} m LEFT JOIN {} r ON r.id = m.last_reply_id WHERE m.message_id = {}",
+            "SELECT {} FROM {} m LEFT JOIN {} r ON r.id = m.last_reply_id WHERE {}",
             self.duplicate_columns,
             self.messages,
             self.replies,
-            message_id,
+            key_equals(self.sql, "m.message_id", message_id),
         )
 
     def insert_envelope(
@@ -334,7 +341,7 @@ class _Storage:
         if sql.dialect == "mssql":
             return sql(
                 "MERGE {} WITH (HOLDLOCK) AS target USING (SELECT {} as message_id) AS source "
-                "ON target.message_id = source.message_id WHEN NOT MATCHED THEN INSERT {} "
+                "ON " + mssql_match("message_id") + " WHEN NOT MATCHED THEN INSERT {} "
                 "OUTPUT inserted.id;",
                 self.messages,
                 message_id,
@@ -352,8 +359,8 @@ class _Storage:
                 sql.and_(
                     [
                         sql(f"{prefix}shard_id = {{}}", shard),  # pyright: ignore[reportArgumentType]
-                        sql(f"{prefix}entity_type = {{}}", entity_type),  # pyright: ignore[reportArgumentType]
-                        sql.in_(f"{prefix}entity_id", ids),
+                        key_equals(sql, f"{prefix}entity_type", entity_type),
+                        key_in(sql, f"{prefix}entity_id", ids),
                     ]
                 )
                 for shard, entity_type, ids in _group_addresses(addresses)
@@ -627,7 +634,10 @@ class _Storage:
 
         def select(key: str) -> Effect[Sequence[Row], SqlError]:
             return sql(
-                "SELECT {} FROM {} WHERE message_id = {}", self.id_column, self.messages, key
+                "SELECT {} FROM {} WHERE {}",
+                self.id_column,
+                self.messages,
+                key_equals(sql, "message_id", key),
             )
 
         def legacy(rows: Sequence[Row]) -> Effect[Sequence[Row], SqlError]:
@@ -734,20 +744,19 @@ class _Storage:
 
     def clear_address(self, address: EntityAddress, /) -> Effect[None, PersistenceError]:
         sql = self.sql
+        entity = sql.and_(
+            [
+                key_equals(sql, "entity_type", address.entity_type),
+                key_equals(sql, "entity_id", address.entity_id),
+            ]
+        )
         replies = sql(
-            "DELETE FROM {} WHERE request_id IN (SELECT id FROM {} WHERE entity_type = {} "
-            "AND entity_id = {})",
+            "DELETE FROM {} WHERE request_id IN (SELECT id FROM {} WHERE {})",
             self.replies,
             self.messages,
-            address.entity_type,
-            address.entity_id,
+            entity,
         )
-        messages = sql(
-            "DELETE FROM {} WHERE entity_type = {} AND entity_id = {}",
-            self.messages,
-            address.entity_type,
-            address.entity_id,
-        )
+        messages = sql("DELETE FROM {} WHERE {}", self.messages, entity)
         return _refail(sql.with_transaction(replies.flat_map(lambda _: messages)).as_void())
 
     def reset_shards(self, shard_ids: Sequence[str], /) -> Effect[None, PersistenceError]:
@@ -899,10 +908,62 @@ def _index(sql: SqlClientService, name: str, table: str, columns: str) -> Effect
     )
 
 
+_EXACT_COLUMNS: Final[tuple[tuple[LiteralString, LiteralString, LiteralString], ...]] = (
+    ("message_id", "255", "NULL"),
+    ("shard_id", "50", "NOT NULL"),
+    ("entity_type", "150", "NOT NULL"),
+    ("entity_id", "255", "NOT NULL"),
+)
+
+
+def _exact_keys_mysql(sql: SqlClientService, table: str) -> Effect[object, SqlError]:
+    columns = ", ".join(
+        f"MODIFY {name} VARCHAR({width}) {MYSQL_EXACT_TEXT} {null}"
+        for name, width, null in _EXACT_COLUMNS
+    )
+    return sql("ALTER TABLE {} " + columns, sql.identifier(table))
+
+
+def _exact_keys_mssql(sql: SqlClientService, table: str) -> Effect[object, SqlError]:
+    """``NVARCHAR`` in a ``BIN2`` collation; ``message_id``'s length is in
+    its unique index, which ignores trailing spaces under every collation.
+    The indexes on the columns are dropped first: a column in an index
+    cannot change."""
+    messages = sql.identifier(table)
+    message_id_index = sql.identifier(f"{table}_message_id_idx")
+    shard_index = sql.identifier(f"{table}_shard_idx")
+
+    def body() -> Generator[Effect[Any, Any, Any], Any]:
+        yield from sql("DROP INDEX {} ON {}", message_id_index, messages)
+        yield from sql("DROP INDEX {} ON {}", shard_index, messages)
+        for name, width, null in _EXACT_COLUMNS:
+            yield from sql(
+                "ALTER TABLE {} ALTER COLUMN {} " + f"NVARCHAR({width}) {MSSQL_EXACT_TEXT} {null}",
+                messages,
+                sql.identifier(name),
+            )
+        yield from sql("ALTER TABLE {} ADD message_id_length AS DATALENGTH(message_id)", messages)
+        yield from sql(
+            "CREATE UNIQUE INDEX {} ON {} (message_id, message_id_length) "
+            "WHERE message_id IS NOT NULL",
+            message_id_index,
+            messages,
+        )
+        yield from sql(
+            "CREATE INDEX {} ON {} (shard_id, processed, last_read, deliver_at)",
+            shard_index,
+            messages,
+        )
+
+    return gen(body)
+
+
 def migrations(*, prefix: str = "cluster") -> migrator.Loader:
-    """The message tables' migrations. PostgreSQL DDL is serialized by the
-    migrator; errors propagate (a retry in an aborted transaction cannot
-    succeed)."""
+    """The message tables' migrations: ``0001`` to ``0003`` are Effect's,
+    ``0004`` is pyfect's. PostgreSQL DDL is serialized by the migrator;
+    errors propagate (a retry in an aborted transaction cannot succeed).
+    Deployed databases have run the earlier migrations: a change to the
+    schema is a new one, never an edit of an old one."""
     messages_table = f"{prefix}_messages"
     replies_table = f"{prefix}_replies"
 
@@ -942,11 +1003,20 @@ def migrations(*, prefix: str = "cluster") -> migrator.Loader:
             or_else=lambda: void,
         )
 
+    def exact_keys() -> Generator[Effect[Any, Any, Any], Any]:
+        sql = (yield from SqlClient()).without_transforms()
+        yield from sql.on_dialect_or_else(
+            mysql=lambda: _exact_keys_mysql(sql, messages_table),
+            mssql=lambda: _exact_keys_mssql(sql, messages_table),
+            or_else=lambda: void,
+        )
+
     return migrator.from_record(
         {
             "0001_create_tables": gen(create_tables),
             "0002_entity_type_size": gen(entity_type_size),
             "0003_pg_messages_rowid_index": gen(pg_rowid_index),
+            "0004_exact_keys": gen(exact_keys),
         }
     )
 
