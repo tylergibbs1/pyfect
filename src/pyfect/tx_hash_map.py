@@ -54,6 +54,13 @@ class TxHashMap[K = Unsubscripted, V = Unsubscripted]:
         infers it from the entries."""
         return _new(HashMap.from_iterable(entries))
 
+    # A list's own type is invariant, so pyright widens its literals: a list of
+    # pairs gives `TxHashMap[str, int]`, not `TxHashMap[Literal["a"], Literal[1]]`.
+    @overload
+    @classmethod
+    def from_iterable[K2, V2](
+        cls: type[TxHashMap[Unsubscripted, Unsubscripted]], entries: list[tuple[K2, V2]]
+    ) -> Effect[TxHashMap[K2, V2]]: ...
     @overload
     @classmethod
     def from_iterable[K2, V2](

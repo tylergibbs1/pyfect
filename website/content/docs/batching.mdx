@@ -1,0 +1,94 @@
+---
+title: Request batching
+description: "Collect lookups made at the same time into one call with Request and RequestResolver."
+---
+
+Code that fetches one thing at a time, such as `get_user(id)` for each order on a page, makes
+one query per item: the N+1 problem. A **request** describes one lookup, and a **resolver**
+answers many of them at once. Requests made through the same resolver in the same scheduler
+tick go to it as one batch, so N concurrent lookups become one call, while the code that
+makes them still asks for one item.
+
+## Requests and resolvers
+
+Subclass `fx.Request[A, E]` as a frozen dataclass: `A` is what the request succeeds with,
+`E` what it fails with (`Never` by default), and a third parameter names the services it
+needs. Frozen, equal requests compare equal, which caching and grouping rely on.
+
+`fx.RequestResolver(run_all)` gets every `Entry` of a batch, in the order the requests were
+made, and completes each one: `entry.request` is the request, and `entry.succeed(value)`,
+`entry.fail(error)`, `entry.complete(exit)` are effects that complete it
+(`complete_unsafe(exit)` does it from plain code). `fx.request(req, resolver)` makes the
+request and waits for its outcome; its type comes from the request.
+
+<CodeOutput>
+
+<include meta='title="users.py"'>../../snippets/batching/users.py</include>
+
+<include lang="text">../../snippets/batching/users.out</include>
+
+</CodeOutput>
+
+Batching needs the requests to be made concurrently: `for_each` and `all` with a
+`concurrency` option, forked fibers, or anything else that runs them side by side. There is no
+switch to turn it on. Run one after another, each request is a batch of one, which still
+works but saves nothing. Equal requests in a batch are separate entries, so `run_all`
+dedupes the keys it queries, as above.
+
+Interrupting a caller takes its request out of the batch, and a batch nobody waits for any
+more does not run.
+
+## Failures
+
+An entry failed with `entry.fail` fails only its own request. `run_all` itself can fail
+too: name that error as the resolver's second type parameter,
+`RequestResolver[GetPrice, DatabaseDown](run_all)`, and every request the run has not
+completed fails with it. A request's error type is its own error and the resolver's
+together. A request the run finishes without completing dies with
+`UncompletedRequestError`, since that is a bug in the resolver.
+
+<include meta='title="failures.py"'>../../snippets/batching/failures.py</include>
+
+## Shaping batches
+
+Other constructors cover the common shapes. `RequestResolver.from_function_batched(f)`
+answers a batch with `f(entries)`, one value per entry in order; `from_function(f)` answers
+each entry alone; `from_effect(f)` runs an effect per entry, all at once, and
+`from_effect_tagged({GetUser: ..., GetTeam: ...})` splits a batch by request class.
+
+Methods derive new resolvers. `batch_n(n)` runs a batch as soon as it holds `n` requests,
+for an API with a page size. `grouped(key)` (or `make_grouped`) splits requests into batches
+by a key, such as the shard or tenant. `set_delay("10 millis")` collects each batch for
+longer than one yield. `around(before, after)` wraps each batch, and `with_span(name)` traces
+it with its size and links to the spans that made the requests.
+
+<CodeOutput>
+
+<include meta='title="sizes.py"'>../../snippets/batching/sizes.py</include>
+
+<include lang="text">../../snippets/batching/sizes.out</include>
+
+</CodeOutput>
+
+## Caching
+
+A resolver doesn't remember anything by default. `resolver.with_cache(capacity=...)` is an
+effect giving one that does, by request equality: an equal request made while one is
+pending waits for it rather than joining the batch, and a later one is answered at once
+without a batch. The least recently used outcomes go first (`strategy="fifo"`: the oldest),
+and interrupted outcomes are not kept. Make the cached resolver once and share it, as each
+call to `with_cache` starts an empty cache.
+
+<CodeOutput>
+
+<include meta='title="cache.py"'>../../snippets/batching/cache.py</include>
+
+<include lang="text">../../snippets/batching/cache.out</include>
+
+</CodeOutput>
+
+`resolver.as_cache(capacity=..., time_to_live=...)` gives a [`Cache`](/docs/resources#caching-lookups)
+whose lookups are requests, for outcomes that expire. `resolver.persisted(store_id=...)`
+keeps outcomes in a [persistence](/docs/persistence) store, so they outlive the process.
+
+Reference: [`pyfect.batching`](/docs/reference/batching).

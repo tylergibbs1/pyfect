@@ -115,6 +115,13 @@ class Trie[V = Unsubscripted]:
     def make[V2](cls, *entries: tuple[str, V2]) -> Trie[V2]:
         return Trie.from_iterable(entries)
 
+    # A list's own type is invariant, so pyright widens its literals: a list of
+    # pairs gives `Trie[int]`, not `Trie[Literal[1]]`.
+    @overload
+    @classmethod
+    def from_iterable[V2](
+        cls: type[Trie[Unsubscripted]], entries: list[tuple[str, V2]]
+    ) -> Trie[V2]: ...
     @overload
     @classmethod
     def from_iterable[V2](

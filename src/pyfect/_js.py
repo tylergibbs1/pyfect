@@ -260,6 +260,25 @@ def same_value(a: object, b: object) -> bool:
     return a == b
 
 
+def same_json_value(a: object, b: object) -> bool:
+    """``Object.is`` on JSON values: ``same_value`` with ``int`` and ``float``
+    as JavaScript's one number type (``1`` is ``1.0``, but not ``True``)."""
+    if (
+        isinstance(a, (int, float))
+        and isinstance(b, (int, float))
+        and not isinstance(a, bool)
+        and not isinstance(b, bool)
+    ):
+        if isinstance(a, float) and math.isnan(a):
+            return isinstance(b, float) and math.isnan(b)
+        return a == b and _is_negative_zero(a) == _is_negative_zero(b)
+    return same_value(a, b)
+
+
+def _is_negative_zero(number: float) -> bool:
+    return isinstance(number, float) and number == 0.0 and math.copysign(1.0, number) < 0
+
+
 _ESCAPES = re.compile(r"(?:%[0-9A-Fa-f]{2})+")
 _URI_RESERVED = frozenset(";/?:@&=+$,#")
 

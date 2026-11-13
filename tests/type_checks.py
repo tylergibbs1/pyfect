@@ -155,6 +155,7 @@ from pyfect.http_api import (
 from pyfect.http_api import endpoint as api_endpoint
 from pyfect.http_api import error as api_error
 from pyfect.json_patch import JsonPatch
+from pyfect.mutable_hash_map import MutableHashMap
 from pyfect.net import address_resolver, dns, net_address
 from pyfect.option import Option
 from pyfect.persistence import (
@@ -4992,6 +4993,10 @@ def check_tx_collections(
     del widened_chunk
 
     assert_type(fx.TxHashMap.make(("a", 1)), fx.Effect[fx.TxHashMap[str, int], Never, Never])
+    # A list of pairs widens its literals, as `make`'s entries do (stockroom finding 12).
+    assert_type(
+        fx.TxHashMap.from_iterable([("a", 1)]), fx.Effect[fx.TxHashMap[str, int], Never, Never]
+    )
     assert_type(fx.TxHashMap[str, int].empty(), fx.Effect[fx.TxHashMap[str, int], Never, Never])
     assert_type(tx_map.get("a"), fx.Effect[fx.option.Option[int], Never, Never])
     assert_type(tx_map.remove("a"), fx.Effect[bool, Never, Never])
@@ -9561,6 +9566,9 @@ def collections_and_crypto(
     assert_type(service.uuid_v4(), fx.Effect[str])
     assert_type(service.uuid_v7(format="bytes"), fx.Effect[bytes])
     assert_type(HashMap.make(("a", 1), ("b", 2)), HashMap[str, int])
+    assert_type(HashMap.from_iterable([("a", 1)]), HashMap[str, int])
+    assert_type(MutableHashMap.from_iterable([("a", 1)]), MutableHashMap[str, int])
+    assert_type(Trie.from_iterable([("a", 1)]), Trie[int])
     assert_type(hm.get("a"), fx.option.Option[int])
     assert_type(hm.set("c", 3), HashMap[str, int])
     assert_type(HashSet.make(1, 2), HashSet[int])
@@ -9975,7 +9983,6 @@ type JobState = Literal["waiting", "running"]
 
 
 def check_data_constructors_honour_a_subscript() -> None:
-    from pyfect.mutable_hash_map import MutableHashMap
     from pyfect.mutable_hash_set import MutableHashSet
     from pyfect.tx_chunk import TxChunk
     from pyfect.tx_hash_map import TxHashMap

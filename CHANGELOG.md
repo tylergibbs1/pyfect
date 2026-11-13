@@ -1,14 +1,9 @@
 # Changelog
 
-## 0.6.2 (unreleased)
+## 0.6.3 (unreleased)
 
 ### Deprecated
 
-- `pyfect.socket.ws.make_server` and `layer_server` warn; use
-  `pyfect.socket.server.make_web_socket` and `layer_web_socket`. They are removed in 0.7.0.
-- The `intl` extra installs nothing: `date_time.intl` ships its data (ICU's CLDR data, under the
-  Unicode License v3, beside it as `LICENSE`) and needs no babel. The extra stays so
-  `pyfect-dev[intl]` still installs.
 - `schedule.Continue`, `Stop` and `Decision` warn. Schedules now step as Effect's do, with a
   `Pull` that succeeds with `(output, delay)` and fails with `cause.done(output)` to stop, and
   the public step functions translate: `from_step` still takes a step deciding `Continue` or
@@ -19,10 +14,99 @@
 
 - `schedule.from_step` and `from_step_with_metadata` take Effect's steps too: a step that
   succeeds with `(output, delay)` to recur and fails with `cause.done(output)` to stop.
-
 - `pyfect.testing.test_clock_with(f)`, Effect's `TestClock.testClockWith`.
 - `for_each(..., discard=True)`, Effect's `forEach` `discard` option: runs every item and
   keeps no results.
+
+### Fixed
+
+- Fibers yield where Effect's do under `MaxOpsBeforeYield` (#6): ops are counted and the budget
+  checked as in Effect 4.1.2's run loop. A run counts from zero, the check comes before every op
+  (a budget under 3 livelocks in Effect, so pyfect runs it as 3), a resumed run counts the
+  yield's continuation and the paused op, every 32nd `map` (Effect's `succeedWith`) goes back
+  through the loop, and exits handed straight to a continuation are free. The combinators that
+  run under it are built as Effect's are, op for op: `for_each` and `all` (one child per item,
+  Effect's `iterateConcurrentImpl`, and a `whileLoop` one at a time), `while_loop`,
+  `as_`/`as_void`, `on_exit`, `acquire_release`, `acquire_use_release` and the masks, `race` and
+  `race_all`, `match`/`match_cause`/`option`/`exit`/`result`, semaphore `with_permits`,
+  `release` and `resize`, `Scope.close`, `Fiber.interrupt` and `await_exit`, a channel's build,
+  the clock accessors (`clockWith`), the live and test clocks' `sleep` and `TestClock.adjust`,
+  queue `take` and `poll` (`suspendTake`), queue constructors and `fork`. A failing op meeting
+  an interrupt keeps its cause and gains the interrupt, and an interrupted wait runs its
+  canceler as Effect's `asyncFinalizer` does. Two fibers under a small budget now interleave
+  exactly as in Effect (`tests/oracle/test_max_ops_interleaving.py`, recorded from Node), and
+  the runtime differential tester runs its programs (not its harness) under budgets from 3 to
+  200 rather than an unlimited one, and its checked-in corpus has 1150 programs: none of 16,000
+  generated programs differ (seeds 7, 11, 23 and 31), from 947 of 3000 before. Built op for op
+  as well: schedules and everything that steps them (`retry`, `repeat`, `schedule`, the stream
+  and channel schedule operators), the channel merge and concurrent `map_effect`, `Stream.map`,
+  `Channel.suspend`, iterator pulls, `Fiber.join`, `exit`/`result`, `scoped` and a scope's lone
+  finalizer, and an interrupt arriving at a wait or at `set_interruptible`. A result a step
+  claimed (a taken permit or item) that the fiber pauses before now reaches its continuation
+  before an interrupt that landed in the pause, as in Effect, and a raising `should_yield` is a
+  defect rather than Effect's endless retry. Interleavings change under the default budget
+  (2048) too, since fibers now yield at other ops.
+- `retry_transient` reads a `Retry-After` HTTP date against the schedule's clock in epoch
+  milliseconds, as Effect's `retryAfterOf(input, now)`. It multiplied the time by 1000 first, so
+  a date in the future read as long past and the retry did not wait for it.
+- `json_patch.get` gives `[]` for two NaN floats that are different objects (`inf - inf` and
+  `inf * 0`), as Effect's `Object.is` does; it gave a `replace`. Numbers are compared by
+  `pyfect._js.same_json_value`, and `tests/test_object_is_guard.py` keeps hand-written sign
+  comparisons out of every other module. Found by dogfooding (stockroom).
+- `json_patch.apply` raises `TypeError` for a value that is not a patch, as Effect's does: an
+  operation that is not an object, has no string `path`, or is an `add` or `replace` without a
+  `value`. It raised `KeyError` for some of these. An operation with no `op` is a `replace`,
+  as in Effect, where it raised `KeyError`. Found by dogfooding (stockroom).
+- `TxHashMap.from_iterable`, `HashMap.from_iterable`, `MutableHashMap.from_iterable` and
+  `Trie.from_iterable` of a list of pairs infer `str` and `int`, as `make` does, where pyright
+  kept the literals (`TxHashMap[Literal["a"], Literal[1]]` for `[("a", 1)]`), so a later
+  `set("b", 2)` was a type error. `tests/test_pair_literals_guard.py` makes every overloaded
+  `Iterable[tuple[K, V]]` parameter come with the `list` overload that widens them. Found by
+  dogfooding (stockroom).
+- The live server's WebSockets answer pings and the client's close while the handler is not
+  pulling, as `ws` does under Node: the connection is read on until 64 KiB of messages wait
+  (Effect's high-water mark). A handler that only wrote left the client waiting for the close
+  reply, and the connection open, until the client gave up, so the handler ran on and server
+  shutdown waited for it. Once both sides have ended, the connection closes (after `ws`'s 30
+  second `closeTimeout` if the client never ends its side), and the handler is interrupted as
+  a client abort. Found by dogfooding (stockroom).
+
+### Docs
+
+- A request batching page: requests and resolvers, why requests batch only when made
+  concurrently, failures (`entry.fail`, a failing run, `UncompletedRequestError`), shaping
+  batches (`batch_n`, `grouped`, `set_delay`, `from_function_batched`, ...) and `with_cache`.
+- Observability has a section on error reporting (`with_error_reporting`,
+  `error_reporter.make` / `layer`, `report_ignored` / `report_severity` / `report_attributes`);
+  `RcRef` and `FiberHandle` have examples in Resources and Concurrency.
+- Transactions shows `TxHashSet` and `TxChunk`, `TxDeferred`, `TxSemaphore` and
+  `TxReentrantLock` coordinating fibers, and `TxPubSub` and `TxSubscriptionRef`. A new section
+  says that a failure caught inside `tx` keeps the writes made before it (there are no
+  savepoints), as in Effect.
+- optics.mdx says what `json_patch.apply` does not check, as Effect's does not: an `op` other
+  than `add` or `remove` is a `replace` (so a `test` overwrites the value it should check),
+  and a value that is not a patch raises `TypeError`; decode a client's patch with a schema
+  first.
+- schema.mdx says that `S.to_codec_json(...)` encodes to `JsonValue`, as Effect's is typed
+  `Json`, and that arrays encode as their schema's container (`tuple` for `S.Array`, `list`
+  for `S.List`).
+- http-server.mdx says how a WebSocket is read while the handler does not pull, what happens
+  to the handler when the client leaves, and how to end a handler that only writes. PARITY §4
+  records the Effect bug not copied: under Node, `ws` keeps Effect from interrupting the
+  handler when its client leaves.
+
+## 0.6.2 (2026-11-13)
+
+### Deprecated
+
+- `pyfect.socket.ws.make_server` and `layer_server` warn; use
+  `pyfect.socket.server.make_web_socket` and `layer_web_socket`. They are removed in 0.7.0.
+- The `intl` extra installs nothing: `date_time.intl` ships its data (ICU's CLDR data, under the
+  Unicode License v3, beside it as `LICENSE`) and needs no babel. The extra stays so
+  `pyfect-dev[intl]` still installs.
+
+### Added
+
 - An `audit` workflow checks `uv.lock` and `website/bun.lock` against known vulnerabilities
   (OSV) on every push and weekly, and `tests/test_workflow_security.py` keeps every
   workflow's actions pinned to commits, read-only by default, off `pull_request_target`, and
@@ -41,7 +125,7 @@
   clock, concurrency-limited `for_each`, retries and repeats on schedules; queue, deferred and
   semaphore handoffs; stream pipelines), each step logging an event. Each program runs in
   pyfect and, under Node, in Effect, and the two must agree on the exit, the shape of its cause
-  and the order of every event. A checked-in corpus of 1150 programs with Effect's answers
+  and the order of every event. A checked-in corpus of 506 programs with Effect's answers
   replays in every pytest run without Node; `python -m runtime_diff` (from `tests/`) grows or
   refreshes it and surveys fresh programs. The `fuzz` workflow compares 300 fresh programs
   with Node on every push and 20,000 weekly.
@@ -58,35 +142,6 @@
 
 ### Fixed
 
-- Fibers yield where Effect's do under `MaxOpsBeforeYield` (#6): ops are counted and the
-  budget checked as in Effect 4.1.2's run loop. A run counts from zero, the check comes before
-  every op (a budget under 3 livelocks in Effect, so pyfect runs it as 3), a resumed run counts
-  the yield's continuation and the paused op, every 32nd `map` (Effect's `succeedWith`) goes
-  back through the loop, and exits handed straight to a continuation are free. The combinators
-  that run under it are built as Effect's are, op for op: `for_each` and `all` (one child per
-  item, Effect's `iterateConcurrentImpl`, and a `whileLoop` one at a time), `while_loop`,
-  `as_`/`as_void`, `on_exit`, `acquire_release`, `acquire_use_release` and the masks, `race`
-  and `race_all`, `match`/`match_cause`/`option`/`exit`/`result`, semaphore `with_permits`,
-  `release` and `resize`, `Scope.close`, `Fiber.interrupt` and `await_exit`, a channel's build,
-  the clock accessors (`clockWith`), the live and test clocks' `sleep` and `TestClock.adjust`,
-  queue `take` and `poll` (`suspendTake`), queue constructors and `fork`. A failing op meeting
-  an interrupt keeps its cause and gains the interrupt, and an interrupted wait runs its
-  canceler as Effect's `asyncFinalizer` does. Two fibers under a small budget now interleave
-  exactly as in Effect (`tests/oracle/test_max_ops_interleaving.py`, recorded from Node), and
-  the runtime differential tester runs its programs (not its harness) under budgets from 3 to
-  200 rather than an unlimited one: none of 16,000 generated programs differ (seeds 7, 11, 23
-  and 31), from 947 of 3000 before. Built op for op as well: schedules and everything that
-  steps them (`retry`, `repeat`, `schedule`, the stream and channel schedule operators), the
-  channel merge and concurrent `map_effect`, `Stream.map`, `Channel.suspend`, iterator pulls,
-  `Fiber.join`, `exit`/`result`, `scoped` and a scope's lone finalizer, and an interrupt
-  arriving at a wait or at `set_interruptible`. A result a step claimed (a taken permit or
-  item) that the fiber pauses before now reaches its continuation before an interrupt that
-  landed in the pause, as in Effect, and a raising `should_yield` is a defect rather than
-  Effect's endless retry. Interleavings change
-  under the default budget (2048) too, since fibers now yield at other ops.
-- `retry_transient` reads a `Retry-After` HTTP date against the schedule's clock in epoch
-  milliseconds, as Effect's `retryAfterOf(input, now)`. It multiplied the time by 1000 first, so
-  a date in the future read as long past and the retry did not wait for it.
 - Shared-state types shared by runs on different threads (`fx.run_blocking` from a thread pool,
   `ThreadWorker`s, a `ManagedRuntime` per thread) lost updates, handed out items twice and left
   waiters asleep. Each operation counted on one fiber step being atomic, which holds for one
