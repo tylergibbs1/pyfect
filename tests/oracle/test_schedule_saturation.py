@@ -1,5 +1,3 @@
-# Schedule steps here use 0.6's Continue/Stop protocol, deprecated until 0.7.0.
-# pyright: reportDeprecated=false
 """Growing schedules saturate to an infinite delay, as JavaScript numbers do.
 
 Effect computes delays in float milliseconds: ``base * Math.pow(factor, n)``
@@ -15,7 +13,7 @@ import pyfect as fx
 from pyfect import schedule, testing
 from pyfect.duration import Duration, infinity, millis, seconds, zero
 from pyfect.exit import Success
-from pyfect.schedule import Continue, Schedule
+from pyfect.schedule import Schedule
 
 
 def delays_after[I](s: Schedule[object, I], input: I, steps: int) -> list[Duration]:
@@ -26,12 +24,11 @@ def delays_after[I](s: Schedule[object, I], input: I, steps: int) -> list[Durati
         step = yield from schedule.to_step(s)
         out: list[Duration] = []
         for _ in range(steps):
-            decision = yield from step(0.0, input)
-            assert isinstance(decision, Continue)
-            out.append(decision.delay)
+            _output, delay = yield from step(0.0, input)
+            out.append(delay)
         return out
 
-    return testing.run_test(go)
+    return testing.run_test(go.or_die())
 
 
 def test_capped_exponential_keeps_recurring_past_float_range():
@@ -136,6 +133,6 @@ def test_elapsed_between_instants_past_float_range_is_infinite():
         second = yield from step(1.7e308, None)
         return first, second
 
-    first, second = testing.run_test(go)
-    assert isinstance(first, Continue) and first.output == zero
-    assert isinstance(second, Continue) and second.output == infinity and second.delay == zero
+    first, second = testing.run_test(go.or_die())
+    assert first[0] == zero
+    assert second == (infinity, zero)
