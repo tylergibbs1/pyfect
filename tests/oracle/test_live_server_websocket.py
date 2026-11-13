@@ -302,6 +302,87 @@ def test_a_client_close_fails_the_pull_with_its_code() -> None:
     )
 
 
+@fx.fn
+def _write_only():
+    """Take the reader, then only write, never pulling (stockroom finding 14)."""
+    request = yield from HttpServerRequest()
+    sock = yield from request.upgrade
+
+    @fx.fn
+    def run():
+        yield from sock.reader
+        writer = yield from sock.writer
+        while True:
+            yield from writer.write("tick")
+            yield from fx.sleep("20 millis")
+
+    yield from scoped(run()).match(on_failure=lambda e: e, on_success=lambda _: None)
+    return server_response.empty()
+
+
+def test_answers_a_ping_and_a_close_while_the_handler_only_writes() -> None:
+    """As ``ws`` reads on while nothing pulls (up to Effect's 64 KiB high-water
+    mark), a ping is answered and the client's close is answered and ends the
+    connection, so the client is not left waiting for the server's close."""
+
+    @fx.fn
+    def program():
+        at = yield from port
+
+        def talk() -> list[int]:
+            conn, _ = _handshake(at)
+            with conn:
+                conn.sendall(_masked(0x9, b"hi"))
+                opcodes = [opcode for opcode, _ in _read_frames(conn, 1)]
+                while 0xA not in opcodes:
+                    opcodes += [opcode for opcode, _ in _read_frames(conn, 1)]
+                conn.sendall(_masked(0x8, struct.pack("!H", 1000)))
+                rest = [opcode for opcode, _ in _frames(conn)]
+                return [0xA, *[opcode for opcode in rest if opcode != 0x1]]
+
+        return (yield from effect.blocking(talk))
+
+    assert _routed(_write_only(), program()) == [0xA, 0x8]
+
+
+def test_messages_sent_while_nothing_pulls_all_arrive_in_order() -> None:
+    """Past the 64 KiB high-water mark the server stops reading, and nothing
+    is lost: a handler that starts pulling late gets every message."""
+    received: Deferred[list[str]] = Deferred()
+    messages = [f"{i:04d}" + "x" * 4096 for i in range(50)]
+
+    @fx.fn
+    def handler():
+        request = yield from HttpServerRequest()
+        sock = yield from request.upgrade
+
+        @fx.fn
+        def run():
+            reader = yield from sock.reader
+            yield from fx.sleep("300 millis")
+            got: list[str] = []
+            while len(got) < len(messages):
+                got += [str(chunk) for chunk in (yield from reader.pull)]
+            yield from received.succeed(got)
+
+        yield from scoped(run())
+        return server_response.empty()
+
+    @fx.fn
+    def program():
+        at = yield from port
+
+        def talk() -> None:
+            with _client(at) as ws:
+                for message in messages:
+                    ws.send(message)
+
+        yield from effect.blocking(talk).fork()
+        return (yield from received.wait())
+
+    assert _routed(handler(), program()) == messages
+
+
 def test_closes_with_1009_a_message_over_the_max_message_size() -> None:
     @fx.fn
     def program():
