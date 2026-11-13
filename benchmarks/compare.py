@@ -8,9 +8,10 @@ commit takes ``--base``. Both sides run the same benchmarks (this checkout's
 over the gate's calibration; a case is compared by the best of its rounds. A case slower
 than its base by more than its tolerance fails.
 
-Tolerances come from CI's spread comparing a commit with itself (``--base HEAD``): the
-largest ratio seen there, with some room. ``gate.py`` still catches slow drift against
-``baseline.json``; this catches one change's regression, which the gate's 1.6 let through.
+Tolerances come from CI's spread comparing a commit with itself (``--base HEAD``), with
+room (see ``TOLERANCE``). ``gate.py`` still catches slow drift against ``baseline.json``,
+but runners differ from each other by up to 1.6x on fork-heavy, so only a comparison on one
+runner can catch one change's regression, which the gate's 1.6 let through.
 """
 
 from __future__ import annotations
@@ -26,13 +27,17 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 MEASURE = Path(__file__).with_name("_measure.py")
 
-# A case slower than its base by more than this fails. CI comparing a commit with itself
-# (5 rounds, best of each) ranged up to the values noted; see the 0.6.2 entry of
-# CHANGELOG.md for the runs.
+# A case slower than its base by more than this fails. Twelve CI runners comparing a commit
+# with itself (bench-noise runs 43357391286 and 43358456044, 5 rounds each, Python 3.13) put
+# every case within x0.93 to x1.04 of itself: fork-heavy x0.96-1.03, queue x0.94-1.03, map +
+# filter x0.93-1.04. x1.10 is more than twice the largest of those; the per-fiber dispatchers'
+# x1.37 fork-heavy regression, which the gate's 1.6 let through, fails it by far.
 TOLERANCE: dict[str, float] = {
-    "fork-heavy": 1.15,
-    "queue offer/take": 1.15,
+    "fork-heavy": 1.10,
+    "queue offer/take": 1.10,
+    "map + filter": 1.10,
 }
+# The group_by_key cases' spread was not measured; until it is, they get the room of x1.25.
 DEFAULT_TOLERANCE = 1.25
 
 

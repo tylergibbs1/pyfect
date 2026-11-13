@@ -1088,7 +1088,7 @@ class _RunView:
         batch_run = (
             run_scheduler
             if scheduler is run_scheduler
-            and isinstance(run_scheduler, SyncScheduler | AsyncioScheduler)
+            and isinstance(run_scheduler, (SyncScheduler, AsyncioScheduler))
             and not isinstance(run_scheduler, SyncOnlyScheduler)
             else None
         )
