@@ -21,6 +21,7 @@ from typing import Never, cast
 
 from pyfect._js import int_text, js_number
 from pyfect._nesting import parse_nested
+from pyfect._redaction import NO_FORM, json_form
 from pyfect._stack import with_fresh_stack
 
 type Json = bool | int | float | str | list[Json] | dict[str, Json] | None
@@ -141,6 +142,10 @@ class _Writer:
             self._other(value, depth)
 
     def _other(self, value: object, depth: int) -> None:
+        form = json_form(value)
+        if form is not NO_FORM:
+            self.write(form, depth)
+            return
         match value:
             case str():
                 self.out.append(quote(value))
@@ -210,9 +215,10 @@ def stringify(
     """``JSON.stringify(value, null, indent)``: compact unless ``indent`` (a
     number of spaces, at most 10, or the text itself, as JavaScript's
     ``space``), numbers as JavaScript writes them, ints in full, non-ASCII
-    kept and lone surrogates escaped; keys sorted when ``sort_keys``; any
-    other object written as ``default`` of it (when given), and a
-    ``Redacted`` as ``<redacted>``, as its ``toJSON`` writes it.
+    kept and lone surrogates escaped; keys sorted when ``sort_keys``; an
+    object with a redacted form or its own ``to_json`` written as that (a
+    ``Redacted`` as ``<redacted>``), as ``toJSON`` is, and any other object
+    as ``default`` of it (when given).
     ``NaN`` and infinities raise ``ValueError``, or are written ``null`` as
     JavaScript writes them when ``null_non_finite``; a value with no JSON
     form raises ``TypeError``, a cycle ``ValueError``."""
@@ -249,13 +255,13 @@ def _with_to_json(
     default: Callable[[object], object] | None,
 ) -> Callable[[object], object]:
     """``default``, after the ``toJSON`` JavaScript's ``JSON.stringify``
-    calls on an Effect value: a ``Redacted`` is written as its ``str``
-    (``<redacted>``), never its secret."""
-    from pyfect.redacted import Redacted
+    calls (``_redaction.json_form``): a ``Redacted`` is written as its
+    ``str`` (``<redacted>``), never its secret."""
 
     def to_json(value: object) -> object:
-        if isinstance(value, Redacted):
-            return str(cast("Redacted[object]", value))
+        form = json_form(value)
+        if form is not NO_FORM:
+            return form
         if default is not None:
             return default(value)
         raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")

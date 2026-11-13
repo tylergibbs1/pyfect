@@ -35,6 +35,34 @@
   shutdown waited for it. Once both sides have ended, the connection closes (after `ws`'s 30
   second `closeTimeout` if the client never ends its side), and the handler is interrupted as
   a client abort. Found by dogfooding (stockroom).
+- `uvicorn_server` no longer trusts `X-Forwarded-For` and `X-Forwarded-Proto`: it sets
+  uvicorn's `proxy_headers` to `False`, so a request's `remote_address`, `peer_address` and URL
+  scheme are the socket's, as with `live_server`, `hypercorn_server` and Effect's Node server.
+  uvicorn's default took them from any peer in `FORWARDED_ALLOW_IPS` (loopback unless set),
+  ahead of the app's own `x_forwarded_headers`. To trust a proxy, use `x_forwarded_headers`
+  with its addresses, or opt back in to uvicorn's handling with
+  `uvicorn_server.layer(config={"proxy_headers": True, "forwarded_allow_ips": ...})`.
+  `tests/test_server_transport_peer.py` checks every server adapter.
+- A client TLS upgrade (`reader.upgrade`) on a `make_net` socket without a `servername`
+  checks the server certificate against the host it connected to, as Node's `tls.connect`
+  under Effect's `NodeSocket` does and as `make_tls` already did. It checked `localhost`, so a
+  certificate issued for `localhost` was accepted for any host. For an IP literal, a Unix or an
+  adopted socket the name is still `localhost`, as in Node. The side a socket upgrades as (a
+  server, or a client with its host) is now required where sockets are built, so a new kind of
+  socket cannot leave it out.
+- `console_json`, `format_json`, OpenTelemetry span events, log records and attributes, the
+  OTLP exporters and the DevTools client hide what `CurrentRedactedNames` names in `Headers`,
+  `UrlParams`, requests, responses and HTTP client errors, as `console_pretty` and
+  `console_logfmt` did for errors. Their JSON walked a value's entries, fields or exception
+  attributes before its own `to_json`, so logging an HTTP error or request (for example with
+  `catch_all(log_error)`) wrote authorization, cookie and URL signature values, and the
+  underlying httpx request, as they were. As in Effect's `formatJson` and `format`, a value's
+  redacted form (`Redactable`, here `__redacted__`) and then its own `to_json` come first,
+  wherever it is nested; `pyfect._json_text.stringify` writes a value's `to_json` before its
+  mapping entries too, as `JSON.stringify` calls `toJSON`. `pretty` and `logfmt` now also redact
+  `Headers` and `UrlParams` logged directly. `tests/test_log_redaction.py` logs each redacting
+  type through every logger and exporter, and `tests/test_log_redaction_guard.py` keeps sinks
+  from walking values themselves and every type that redacts giving its redacted form.
 
 ### Docs
 

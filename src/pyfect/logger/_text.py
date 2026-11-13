@@ -5,7 +5,8 @@ the loggers use, read for Python values.
 ``None`` as ``null``) and names the type of anything that is not a plain
 ``dict`` or ``list``. ``to_json`` turns a value into what
 ``pyfect._json_text.stringify`` accepts: exceptions become ``{"name", "message"}`` (plus their
-attributes), and circular references are dropped.
+attributes), and circular references are dropped. Both write a value's redacted form or its own
+``to_json`` (``pyfect._redaction``) before reading its entries, fields or attributes.
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ from typing import Any, cast
 
 from pyfect import _json_text as _json
 from pyfect._js import js_number, js_string, to_iso_string
+from pyfect._redaction import NO_FORM, Redactable, json_form
 from pyfect._stack import with_fresh_stack
 from pyfect.logger._model import LogSpan
 
@@ -132,7 +134,9 @@ def format_unknown(value: object) -> str:
     def compound(v: object) -> str:
         kind = type(v)
         name = kind.__name__
-        if isinstance(v, (list, tuple)):
+        if isinstance(v, Redactable):
+            text = recur(v.__redacted__())
+        elif isinstance(v, (list, tuple)):
             text = items(cast("Iterable[object]", v))
         elif isinstance(v, (datetime, date)):
             text = v.isoformat()
@@ -142,6 +146,8 @@ def format_unknown(value: object) -> str:
                 text += f" (cause: {recur(v.__cause__)})"
         elif _shown_as_str(v):
             text = str(v)
+        elif (form := json_form(v)) is not NO_FORM:
+            text = recur(form)  # Effect's ``toString``: the format of ``toJSON``
         elif isinstance(v, Mapping):
             body = entries(cast("Mapping[object, object]", v).items())
             text = body if kind is dict else f"{name}({body})"
@@ -211,6 +217,9 @@ def to_json(value: object) -> Any:
 
     def compound(v: object) -> object:  # noqa: PLR0911
         identity = id(v)
+        form = json_form(v)
+        if form is not NO_FORM:
+            return container(identity, lambda: recur(form))
         if isinstance(v, BaseException):
             error = v
             pairs = [*vars(error).items(), ("name", type(error).__name__), ("message", str(error))]

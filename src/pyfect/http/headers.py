@@ -104,9 +104,14 @@ class Headers(Mapping[str, str]):
             for name, value in self._entries.items()
         }
 
+    def __redacted__(self) -> dict[str, str | Redacted[str]]:
+        """The entries with the values of ``CurrentRedactedNames`` hidden,
+        as logs and traces show them (Effect's ``Redactable``)."""
+        return self.redact(current_redacted_names())
+
     def to_json(self) -> dict[str, str]:
         """The entries, with ``"<redacted>"`` for the redacted names."""
-        return {k: str(v) for k, v in self.redact(current_redacted_names()).items()}
+        return {k: str(v) for k, v in self.__redacted__().items()}
 
 
 EMPTY: Headers = Headers()

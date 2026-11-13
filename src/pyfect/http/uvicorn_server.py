@@ -58,9 +58,10 @@ from pyfect.socket.server import SocketServerError
 class Options(ListenOptions):
     config: NotRequired[Mapping[str, Any]]
     """More ``uvicorn.Config`` arguments (``ssl_certfile`` and ``ssl_keyfile``
-    for TLS, ``http``, ``ws``, ``ws_max_size``, ``proxy_headers``,
-    ``timeout_keep_alive``, ``log_config``...); the app, socket and lifespan
-    are the server's."""
+    for TLS, ``http``, ``ws``, ``ws_max_size``, ``timeout_keep_alive``,
+    ``log_config``...); the app, socket and lifespan are the server's.
+    ``proxy_headers`` is off: requests report the socket peer, as Effect's
+    Node server does; ``x_forwarded_headers`` trusts a proxy."""
 
 
 class _Server(uvicorn.Server):
@@ -86,6 +87,7 @@ def _uvicorn(dispatch: Dispatch, options: Options) -> uvicorn.Server:
         "log_config": None,
         "server_header": False,
         "ws_max_size": DEFAULT_MAX_MESSAGE_SIZE,
+        "proxy_headers": False,
         **options.get("config", {}),
     }
     # uvicorn's own timeout only backs up ``_Running.shut_down``, which ends
