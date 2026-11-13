@@ -81,7 +81,7 @@ from pyfect.ai.response_id_tracker import ResponseIdTracker
 from pyfect.ai.typesafe import client as typesafe_client
 from pyfect.ai.typesafe import decision_model as typesafe_dm
 from pyfect.batching import Entry
-from pyfect.cause import Die, Fail, Interrupt
+from pyfect.cause import Die, Fail, Interrupt, done
 from pyfect.cli import (
     Argument,
     CliError,
@@ -121,7 +121,7 @@ from pyfect.encoding import (
     xml,
 )
 from pyfect.encoding import zip as encoding_zip
-from pyfect.errors import TaggedError
+from pyfect.errors import Done, TaggedError
 from pyfect.eventlog import event_log as ev_log
 from pyfect.eventlog import event_log_remote as ev_remote
 from pyfect.fiber_handle import FiberHandleRuntime
@@ -1274,7 +1274,7 @@ def check_durations(scheduler: SyncScheduler) -> None:
     fx.testing.TestClock().sleep(1.0)  # pyright: ignore[reportArgumentType]
     scheduler.call_later(1.0, lambda: None)  # pyright: ignore[reportArgumentType]
     # A schedule's delay is a Duration too, so custom steps can't return NaN.
-    schedule.Continue(1, 1.0)  # pyright: ignore[reportArgumentType]
+    schedule.Continue(1, 1.0)  # pyright: ignore[reportArgumentType, reportDeprecated]
     # duration.Input takes every boundary form.
     inputs: list[DurationInput] = [1, 1.5, "1 second", (1, 0), {"seconds": 1}, second]
     assert_type(inputs, list[DurationInput])
@@ -1293,13 +1293,30 @@ def check_schedule_constructors() -> None:
     assert_type(ids.concat_result(schedule.spaced(1)), schedule.Schedule[fx.Result[int, str], str])
 
     def step(now: float, n: int) -> fx.Effect[schedule.Decision[str], NotFound, Port]:
-        return Port().as_(schedule.Stop(str(n)))
+        return Port().as_(schedule.Stop(str(n)))  # pyright: ignore[reportDeprecated]
 
     custom = schedule.from_step(fx.succeed(step))
     assert_type(custom, schedule.Schedule[str, int, NotFound, Port])
     assert_type(
         schedule.to_step(custom),
         fx.Effect[schedule.StepFn[str, int, NotFound, Port], Never, Port],
+    )
+
+    # from_step also takes Effect's steps: a Pull of (output, delay) that ends with done(output).
+    def pull_step(
+        now: float, n: int
+    ) -> fx.Effect[tuple[str, Duration], NotFound | Done[str], Port]:
+        return Port().and_then(done(str(n)))
+
+    assert_type(
+        schedule.from_step(fx.succeed(pull_step)), schedule.Schedule[str, int, NotFound, Port]
+    )
+
+    def metadata_step(m: schedule.InputMetadata[int]) -> fx.Effect[tuple[str, Duration], Done[str]]:
+        return done(str(m.input))
+
+    assert_type(
+        schedule.from_step_with_metadata(fx.succeed(metadata_step)), schedule.Schedule[str, int]
     )
 
 
@@ -1332,7 +1349,7 @@ def check_schedule_combinators(s: schedule.Schedule[int, str]) -> None:
         elapsed=0,
         elapsed_since_previous=0,
     )
-    _decision: schedule.Decision[object] = schedule.Continue[int](1, millis(0))
+    _decision: schedule.Decision[object] = schedule.Continue[int](1, millis(0))  # pyright: ignore[reportDeprecated]
 
     # The predicate sees the schedule's own input and output types.
     def on_int_inputs(m: schedule.Metadata[int, int]) -> bool:

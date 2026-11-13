@@ -332,6 +332,7 @@ from pyfect._primitives import (  # noqa: E402
     _WithFiber,
     _YieldNow,
     interruptible_mask,
+    known_exit,
     run_known,
     uninterruptible_mask,
 )
@@ -375,6 +376,7 @@ __all__ = [
     "_succeed_none",
     "_to_none",
     "interruptible_mask",
+    "known_exit",
     "run_known",
     "uninterruptible_mask",
 ]

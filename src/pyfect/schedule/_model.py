@@ -4,10 +4,10 @@ A schedule is an effect that makes a step function. Each run of a schedule
 (each ``retry``, ``repeat``, ...) runs that effect once, so the step can keep
 state in its closure while the schedule itself stays an immutable value.
 
-A step takes the current wall-clock time (milliseconds since the epoch, as
-Effect's ``currentTimeMillis``) and an input, and decides:
-``Continue(output, delay)`` to go again after ``delay``, or ``Stop(output)``
-to finish. It may fail with ``E`` and need ``R``.
+A step is Effect's: a ``Pull`` taking the current wall-clock time
+(milliseconds since the epoch, as ``currentTimeMillis``) and an input. It
+succeeds with ``(output, delay)`` to go again after ``delay``, or fails with
+``Done(output)`` to finish. It may also fail with ``E`` and need ``R``.
 """
 # pyright: reportPrivateUsage=false
 
@@ -15,14 +15,16 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Generic, Never, Self, TypeVar, cast, final, overload
+from typing import TYPE_CHECKING, Any, Generic, Never, Self, TypeVar, final, overload
 
-from pyfect._core import Effect, _FailCause, _Gen, _Succeed
+from pyfect._core import Effect, _FailCause, _Succeed, _Suspend
 from pyfect._effect_args import require_effect
-from pyfect.clock import Clock, sleep
+from pyfect.clock import clock_with, sleep
 from pyfect.context import Reference
 from pyfect.duration import Duration, from_input_unsafe, millis, zero
 from pyfect.duration import Input as DurationInput
+from pyfect.errors import Done
+from pyfect.pull import Pull
 
 if TYPE_CHECKING:
     from pyfect.result import Result
@@ -31,33 +33,14 @@ Out_co = TypeVar("Out_co", covariant=True)
 In_contra = TypeVar("In_contra", contravariant=True, default=object)
 E_co = TypeVar("E_co", covariant=True, default=Never)
 R_co = TypeVar("R_co", covariant=True, default=Never)
-# Decisions and metadata are immutable records, covariant in what they hold.
+# Metadata records are immutable, covariant in what they hold.
 O_co = TypeVar("O_co", covariant=True)
 I_co = TypeVar("I_co", covariant=True)
 
 
-@final
-@dataclass(frozen=True, slots=True)
-class Continue(Generic[O_co]):
-    """A step's decision to recur after ``delay``, producing ``output``."""
-
-    output: O_co
-    delay: Duration
-
-
-@final
-@dataclass(frozen=True, slots=True)
-class Stop(Generic[O_co]):
-    """A step's decision to finish, producing ``output`` (Effect's
-    ``Cause.done(output)``)."""
-
-    output: O_co
-
-
-type Decision[Out] = Continue[Out] | Stop[Out]
-
-type StepFn[Out, In, E, R] = Callable[[float, In], Effect[Decision[Out], E, R]]
-"""``(now, input) -> decision``; ``now`` is wall-clock milliseconds since the epoch."""
+type StepFn[Out, In, E, R] = Callable[[float, In], Pull[tuple[Out, Duration], E, Out, R]]
+"""``(now, input) -> (output, delay)``, or ``Done(output)`` to finish; ``now``
+is wall-clock milliseconds since the epoch."""
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -101,10 +84,6 @@ class CurrentMetadata(Reference[Metadata[object, object]]):
             elapsed=0,
             elapsed_since_previous=0,
         )
-
-
-def _value_or_effect(result: object) -> Effect[Any, Any, Any]:
-    return cast("Effect[Any, Any, Any]", result) if isinstance(result, Effect) else _Succeed(result)
 
 
 class _MetadataCounter:
@@ -176,17 +155,17 @@ class Schedule(Generic[Out_co, In_contra, E_co, R_co]):
     def map(self, f: Callable[[Any], Any]) -> Schedule[Any, Any, Any, Any]:
         """Replace each output (including the final one) with ``f(metadata)``,
         or with what it succeeds with when it is an effect."""
-        from pyfect.schedule._combinators import map_effect
+        from pyfect.schedule._combinators import map_
 
-        return map_effect(self, lambda m: _value_or_effect(f(m)))
+        return map_(self, f)
 
     def map_effect[B, I, E2 = Never, R2 = Never](
         self: Schedule[Out_co, I, E_co, R_co], f: Callable[[Metadata[Out_co, I]], Effect[B, E2, R2]]
     ) -> Schedule[B, I, E_co | E2, R_co | R2]:
         """``map`` with an effectful ``f``."""
-        from pyfect.schedule._combinators import map_effect
+        from pyfect.schedule._combinators import map_
 
-        return map_effect(self, f)
+        return map_(self, f)
 
     def tap[I, E2 = Never, R2 = Never](
         self: Schedule[Out_co, I, E_co, R_co],
@@ -210,18 +189,18 @@ class Schedule(Generic[Out_co, In_contra, E_co, R_co]):
         """Recur only while ``predicate(metadata)``, a value or an effect,
         holds (Effect's ``Schedule.while``); stop with the step's output once
         it fails."""
-        from pyfect.schedule._combinators import while_effect
+        from pyfect.schedule._combinators import while_
 
-        return while_effect(self, lambda m: _value_or_effect(predicate(m)))
+        return while_(self, predicate)
 
     def while_effect[I, E2 = Never, R2 = Never](
         self: Schedule[Out_co, I, E_co, R_co],
         predicate: Callable[[Metadata[Out_co, I]], Effect[bool, E2, R2]],
     ) -> Schedule[Out_co, I, E_co | E2, R_co | R2]:
         """``while_`` with an effectful predicate."""
-        from pyfect.schedule._combinators import while_effect
+        from pyfect.schedule._combinators import while_
 
-        return while_effect(self, predicate)
+        return while_(self, predicate)
 
     def modify_delay[I, E2 = Never, R2 = Never](
         self: Schedule[Out_co, I, E_co, R_co],
@@ -288,33 +267,48 @@ class Schedule(Generic[Out_co, In_contra, E_co, R_co]):
         """Run this schedule until it stops, then ``other``."""
         from pyfect.result import Ok
 
-        return self.concat_result(other).map(
-            lambda m: m.output.value if isinstance(m.output, Ok) else m.output.error
+        # Effect's ``concat`` maps with ``succeed(Result.merge(output))``.
+        return self.concat_result(other).map_effect(
+            lambda m: _Succeed(m.output.value if isinstance(m.output, Ok) else m.output.error)
         )
 
 
 # --- steps ----------------------------------------------------------------------------
 
 
+@overload
+def from_step[Out, In, E = Never, R = Never](
+    make_step: Effect[Callable[[float, In], Effect[tuple[Out, Duration], Done[Out], R]], E, R],
+) -> Schedule[Out, In, E, R]: ...
+@overload
 def from_step[Out, In, E = Never, R = Never](
     make_step: Effect[StepFn[Out, In, E, R], E, R],
-) -> Schedule[Out, In, E, R]:
+) -> Schedule[Out, In, E, R]: ...
+def from_step(make_step: Effect[Any, Any, Any]) -> Schedule[Any, Any, Any, Any]:
     """A schedule from an effect that makes its step function. The effect
     runs once per run of the schedule, so the step can keep state."""
     require_effect(make_step, "make_step")
     return Schedule(make_step)
 
 
+@overload
 def from_step_with_metadata[Out, In, E = Never, R = Never](
-    make_step: Effect[Callable[[InputMetadata[In]], Effect[Decision[Out], E, R]], E, R],
-) -> Schedule[Out, In, E, R]:
+    make_step: Effect[
+        Callable[[InputMetadata[In]], Effect[tuple[Out, Duration], Done[Out], R]], E, R
+    ],
+) -> Schedule[Out, In, E, R]: ...
+@overload
+def from_step_with_metadata[Out, In, E = Never, R = Never](
+    make_step: Effect[Callable[[InputMetadata[In]], Pull[tuple[Out, Duration], E, Out, R]], E, R],
+) -> Schedule[Out, In, E, R]: ...
+def from_step_with_metadata(make_step: Effect[Any, Any, Any]) -> Schedule[Any, Any, Any, Any]:
     """``from_step``, but the step gets ``InputMetadata`` (attempt, start,
     elapsed time) in place of ``(now, input)``."""
     require_effect(make_step, "make_step")
 
     def with_counter(
-        f: Callable[[InputMetadata[In]], Effect[Decision[Out], E, R]],
-    ) -> StepFn[Out, In, E, R]:
+        f: Callable[[InputMetadata[Any]], Effect[Any, Any, Any]],
+    ) -> StepFn[Any, Any, Any, Any]:
         meta = _MetadataCounter()
         return lambda now, input: f(meta(now, input))
 
@@ -333,46 +327,51 @@ def to_step[Out, In, E, R](
     return schedule._make_step.catch_cause(failing)
 
 
+type MetadataStep[Out, In, E, R] = Callable[[In], Pull[Metadata[Out, In], E, Out, R]]
+"""A step reading the clock itself and sleeping the delay: Effect's
+``toStepWithMetadata`` step."""
+
+
 def to_step_with_metadata[Out, In, E, R](
     schedule: Schedule[Out, In, E, R],
-) -> Effect[Callable[[In], Effect[Metadata[Out, In] | Stop[Out], E, R]], Never, R]:
+) -> Effect[MetadataStep[Out, In, E, R], Never, R]:
     """A step that reads the clock, decides, and sleeps the delay before
-    returning the step's ``Metadata``; or returns ``Stop`` without sleeping."""
+    succeeding with the step's ``Metadata``; or fails with ``Done(output)``
+    without sleeping."""
 
-    def make() -> Any:
-        step = yield from to_step(schedule)
-        clock = yield from Clock()
-        meta = _MetadataCounter()
+    def with_clock(clock: Any) -> Effect[MetadataStep[Out, In, E, R], Never, R]:
+        def make(step: StepFn[Out, In, E, R]) -> MetadataStep[Out, In, E, R]:
+            meta = _MetadataCounter()
 
-        def run(input: In) -> Effect[Metadata[Out, In] | Stop[Out], E, R]:
-            def body() -> Any:
-                now = clock.current_time_millis_unsafe()
-                decision = yield from step(now, input)
-                if isinstance(decision, Stop):
-                    return decision
-                m = meta.full(now, input, decision.output, decision.delay)
-                yield from sleep(decision.delay)
-                return m
+            def run(input: In) -> Pull[Metadata[Out, In], E, Out, R]:
+                def go() -> Pull[Metadata[Out, In], E, Out, R]:
+                    now: float = clock.current_time_millis_unsafe()
 
-            return _Gen(body)
+                    def decided(result: tuple[Out, Duration]) -> Effect[Metadata[Out, In]]:
+                        output, delay = result
+                        return sleep(delay).as_(meta.full(now, input, output, delay))
 
-        return run
+                    return step(now, input).flat_map(decided)
 
-    return _Gen(make)
+                return _Suspend(go)
+
+            return run
+
+        return to_step(schedule).map(make)
+
+    return clock_with(with_clock)
 
 
 def to_step_with_sleep[Out, In, E, R](
     schedule: Schedule[Out, In, E, R],
-) -> Effect[Callable[[In], Effect[Decision[Out], E, R]], Never, R]:
-    """``to_step_with_metadata``, returning ``Continue(output, delay)``
-    after the sleep in place of the metadata."""
+) -> Effect[Callable[[In], Pull[Out, E, Out, R]], Never, R]:
+    """``to_step_with_metadata``, succeeding with the output after the sleep
+    in place of the metadata."""
 
-    def keep_decision(m: Metadata[Out, In] | Stop[Out]) -> Decision[Out]:
-        return m if isinstance(m, Stop) else Continue(m.output, m.duration)
+    def make(step: MetadataStep[Out, In, E, R]) -> Callable[[In], Pull[Out, E, Out, R]]:
+        return lambda input: step(input).map(lambda m: m.output)
 
-    return to_step_with_metadata(schedule).map(
-        lambda step: lambda input: step(input).map(keep_decision)
-    )
+    return to_step_with_metadata(schedule).map(make)
 
 
 @final

@@ -46,8 +46,9 @@ from pyfect.logger import CurrentLogAnnotations
 from pyfect.metric import register_unsafe
 from pyfect.metric._state import GaugeState
 from pyfect.rpc import message as rpc_message
-from pyfect.schedule import exponential, spaced, to_step_with_sleep
+from pyfect.schedule import exponential, spaced
 from pyfect.schedule import min as schedule_min
+from pyfect.schedule._model import to_step_with_sleep
 from pyfect.scope import Scope, acquire_release, fork_in
 
 from ._activation import make_entity

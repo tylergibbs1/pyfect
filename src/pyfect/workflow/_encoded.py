@@ -24,7 +24,8 @@ from pyfect.effect import (
     sync,
 )
 from pyfect.exit import Exit, Failure
-from pyfect.schedule import Schedule, Stop, exponential, min, spaced, to_step_with_sleep
+from pyfect.schedule import Schedule, exponential, min, spaced
+from pyfect.schedule._model import to_step_with_sleep
 from pyfect.schema import decode_unknown_effect, encode_unknown_effect
 from pyfect.scope import Scope, add_finalizer
 from pyfect.tracer import annotate_current_span
@@ -363,18 +364,13 @@ def make_unsafe(options: Encoded) -> WorkflowEngineService:
 def _sleep_step(
     step: Callable[[Any], Effect[Any, Any, Any]], workflow: AnyWorkflow
 ) -> Effect[None]:
-    def exhausted(decision: Any) -> Effect[None]:
-        if isinstance(decision, Stop):
-            return die(RuntimeError(f"{workflow.tag}.execute: suspendedRetrySchedule exhausted"))
-        return succeed(None)
-
     return cast(
         "Effect[None]",
         step(None)
+        # As Effect's: any failure, the schedule's end included, is a defect.
         .catch_all(
             lambda _: die(RuntimeError(f"{workflow.tag}.execute: suspendedRetrySchedule exhausted"))
-        )
-        .flat_map(exhausted),
+        ),
     )
 
 

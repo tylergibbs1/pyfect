@@ -5,11 +5,12 @@ from __future__ import annotations
 
 import builtins
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Never
 
 from pyfect._concurrency import for_each
-from pyfect._core import Effect, _Gen, _Succeed, _Sync
+from pyfect._core import Effect, _FailCause, _Succeed, _Sync
 from pyfect._js import power, remainder
+from pyfect.cause import Cause, done
 from pyfect.duration import (
     Duration,
     from_input_unsafe,
@@ -20,30 +21,24 @@ from pyfect.duration import (
 from pyfect.duration import (
     Input as DurationInput,
 )
+from pyfect.pull import Pull, match_effect
 from pyfect.schedule._model import (
-    Continue,
-    Decision,
     InputMetadata,
     Schedule,
     StepFn,
-    Stop,
     from_step,
     from_step_with_metadata,
     to_step,
 )
 
-
-def _stateless[Out](
-    step: Callable[[InputMetadata[object]], Decision[Out]],
-) -> Schedule[Out]:
-    return from_step_with_metadata(_Succeed(lambda m: _Sync(lambda: step(m))))
+type _Decided[Out] = Pull[tuple[Out, Duration], Never, Out]
 
 
 def spaced(duration: DurationInput) -> Schedule[int]:
     """Recur forever, waiting ``duration`` each time. Outputs the count of
     recurrences so far, from 0."""
     delay = from_input_unsafe(duration)
-    return _stateless(lambda m: Continue(m.attempt - 1, delay))
+    return from_step_with_metadata(_Succeed(lambda m: _Succeed((m.attempt - 1, delay))))
 
 
 forever: Schedule[int] = spaced(zero)
@@ -53,7 +48,7 @@ forever: Schedule[int] = spaced(zero)
 def recurs(times: int) -> Schedule[int]:
     """Recur ``times`` times without waiting (never, if not positive).
     Outputs the count, from 0."""
-    return forever.while_(lambda m: m.attempt <= times)
+    return forever.while_(lambda m: _Succeed(m.attempt <= times))
 
 
 once: Schedule[None] = recurs(1).map(lambda _: None)
@@ -66,9 +61,7 @@ def identity[A]() -> Schedule[A, A]:
     return _IDENTITY
 
 
-_IDENTITY: Schedule[Any, Any] = from_step(
-    _Succeed(lambda _now, input: _Succeed(Continue(input, zero)))
-)
+_IDENTITY: Schedule[Any, Any] = from_step(_Succeed(lambda _now, input: _Succeed((input, zero))))
 
 
 def exponential(base: DurationInput, factor: float = 2.0) -> Schedule[Duration]:
@@ -77,11 +70,11 @@ def exponential(base: DurationInput, factor: float = 2.0) -> Schedule[Duration]:
     range (cap it with ``min(..., spaced(d))``)."""
     first = to_millis(base)
 
-    def step(m: InputMetadata[object]) -> Decision[Duration]:
+    def step(m: InputMetadata[object]) -> _Decided[Duration]:
         delay = millis(first * power(factor, m.attempt - 1))
-        return Continue(delay, delay)
+        return _Succeed((delay, delay))
 
-    return _stateless(step)
+    return from_step_with_metadata(_Succeed(step))
 
 
 def fibonacci(one: DurationInput) -> Schedule[Duration]:
@@ -90,17 +83,19 @@ def fibonacci(one: DurationInput) -> Schedule[Duration]:
     which becomes infinite once it passes float range."""
     unit = to_millis(one)
 
-    def make() -> StepFn[Duration, object, Any, Any]:
+    def make() -> StepFn[Duration, object, Never, Never]:
         # Effect's float milliseconds, which saturate to infinity.
         a, b = 0.0, unit
 
-        def step() -> Decision[Duration]:
+        def step() -> tuple[Duration, Duration]:
             nonlocal a, b
             delay = millis(b)
             a, b = b, a + b
-            return Continue(delay, delay)
+            return (delay, delay)
 
-        return lambda _now, _input: _Sync(step)
+        # As Effect's ``constant(sync(...))``: one effect, run at each step.
+        each = _Sync(step)
+        return lambda _now, _input: each
 
     return from_step(_Sync(make))
 
@@ -111,25 +106,25 @@ def fixed(interval: DurationInput) -> Schedule[int]:
     replayed. Outputs the count, from 0."""
     window = to_millis(from_input_unsafe(interval))
 
-    def make() -> Callable[[InputMetadata[object]], Effect[Decision[int]]]:
+    def make() -> Callable[[InputMetadata[object]], _Decided[int]]:
         # Effect's float milliseconds, ``%`` included.
         start = 0.0
         last_run = 0.0
 
-        def step(m: InputMetadata[object]) -> Decision[int]:
+        def step(m: InputMetadata[object]) -> tuple[int, Duration]:
             nonlocal start, last_run
             if window == 0:
-                return Continue(m.attempt - 1, zero)
+                return (m.attempt - 1, zero)
             if m.attempt == 1:
                 start = m.now
                 last_run = m.now + window
-                return Continue(0, millis(window))
+                return (0, millis(window))
             running_behind = m.now > last_run + window
             boundary = window - remainder(m.now - start, window)
             on_beat = window if millis(boundary).is_zero() else boundary
             delay = 0.0 if running_behind else on_beat
             last_run = m.now if running_behind else m.now + delay
-            return Continue(m.attempt - 1, millis(delay))
+            return (m.attempt - 1, millis(delay))
 
         return lambda m: _Sync(lambda: step(m))
 
@@ -141,19 +136,23 @@ def windowed(interval: DurationInput) -> Schedule[int]:
     first step. Outputs the count, from 0."""
     window = to_millis(from_input_unsafe(interval))
 
-    def step(m: InputMetadata[object]) -> Decision[int]:
+    def step(m: InputMetadata[object]) -> tuple[int, Duration]:
         if window == 0:
-            return Continue(m.attempt - 1, zero)
+            return (m.attempt - 1, zero)
         delay = millis(window - remainder(m.elapsed, window))
-        return Continue(m.attempt - 1, millis(window) if delay.is_zero() else delay)
+        return (m.attempt - 1, millis(window) if delay.is_zero() else delay)
 
-    return _stateless(step)
+    return from_step_with_metadata(_Succeed(lambda m: _Sync(lambda: step(m))))
 
 
 def duration(duration: DurationInput) -> Schedule[Duration]:
     """Recur once, after ``duration``. Outputs the duration, then 0."""
     delay = from_input_unsafe(duration)
-    return _stateless(lambda m: Continue(delay, delay) if m.attempt == 1 else Stop(zero))
+
+    def step(m: InputMetadata[object]) -> _Decided[Duration]:
+        return _Succeed((delay, delay)) if m.attempt == 1 else done(zero)
+
+    return from_step_with_metadata(_Succeed(step))
 
 
 def during(duration: DurationInput) -> Schedule[Duration]:
@@ -161,11 +160,11 @@ def during(duration: DurationInput) -> Schedule[Duration]:
     the first step. Outputs the time elapsed."""
     limit = to_millis(duration)
 
-    def step(m: InputMetadata[object]) -> Decision[Duration]:
+    def step(m: InputMetadata[object]) -> _Decided[Duration]:
         elapsed = millis(m.elapsed)
-        return Stop(elapsed) if m.elapsed > limit else Continue(elapsed, zero)
+        return done(elapsed) if m.elapsed > limit else _Succeed((elapsed, zero))
 
-    return _stateless(step)
+    return from_step_with_metadata(_Succeed(step))
 
 
 # --- combining ------------------------------------------------------------------------
@@ -175,23 +174,32 @@ def _combine[I, E, R](
     schedules: tuple[Schedule[object, I, E, R], ...],
     pick: Callable[[list[Duration | None]], Duration | None],
 ) -> Schedule[Duration, I, E, R]:
-    def make() -> Any:
-        steps = yield from for_each(schedules, to_step)
+    # Effect's ``max`` / ``min``: every step's delay (``None`` once it is
+    # done), then the picked one, or ``Done(zero)`` when there is none.
+    def make(steps: list[StepFn[object, I, E, R]]) -> StepFn[Duration, I, E, R]:
+        def step(now: float, input: I) -> Pull[tuple[Duration, Duration], E, Duration, R]:
+            def delay_of(s: StepFn[object, I, E, R]) -> Effect[Duration | None, E, R]:
+                def delay(result: tuple[object, Duration]) -> Effect[Duration | None]:
+                    return _Succeed(result[1])
 
-        def step(now: float, input: I) -> Effect[Decision[Duration], E, R]:
-            def body() -> Any:
-                delays: list[Duration | None] = []
-                for s in steps:
-                    decision = yield from s(now, input)
-                    delays.append(None if isinstance(decision, Stop) else decision.delay)
-                chosen = pick(delays)
-                return Stop(zero) if chosen is None else Continue(chosen, chosen)
+                def ended(_: object) -> Effect[Duration | None]:
+                    return _Succeed(None)
 
-            return _Gen(body)
+                def failed(cause: Cause[Any]) -> Effect[Duration | None, Any]:
+                    return _FailCause(cause)
+
+                pull: Effect[tuple[object, Duration], Any, R] = s(now, input)
+                return match_effect(pull, on_success=delay, on_failure=failed, on_done=ended)
+
+            def chosen(delays: list[Duration | None]) -> _Decided[Duration]:
+                picked = pick(delays)
+                return done(zero) if picked is None else _Succeed((picked, picked))
+
+            return for_each(steps, delay_of).flat_map(chosen)
 
         return step
 
-    return from_step(_Gen(make))
+    return from_step(for_each(schedules, to_step).map(make))
 
 
 def max[I, E, R](

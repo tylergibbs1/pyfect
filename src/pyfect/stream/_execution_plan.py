@@ -13,7 +13,8 @@ from pyfect.execution_plan._events import CurrentMetadata as PlanMetadata
 from pyfect.execution_plan._model import ExecutionPlan, Step
 from pyfect.execution_plan._run import PlanRun, fallback_schedule, first_schedule
 from pyfect.exit import Exit
-from pyfect.schedule import CurrentMetadata, Metadata, Schedule, Stop
+from pyfect.pull import catch_done
+from pyfect.schedule import CurrentMetadata, Metadata, Schedule
 from pyfect.schedule._model import to_step_with_metadata
 from pyfect.stream._base import AnyStream, StreamBase
 from pyfect.stream._constructors import fail, suspend, unwrap
@@ -43,14 +44,12 @@ def _retry_without_reset(self: AnyStream, schedule: Schedule[Any, Any, Any, Any]
             )
 
         def again(error: Any) -> _AnyStream:
-            def decided(decision: Metadata[Any, Any] | Stop[Any]) -> _AnyStream:
+            def stepped(next_meta: Metadata[Any, Any]) -> _AnyStream:
                 nonlocal meta
-                if isinstance(decision, Stop):
-                    return fail(error)
-                meta = decision
-                return unwrap(yield_now().as_(suspend(loop)))
+                meta = next_meta
+                return unwrap(yield_now().as_(loop()))
 
-            return unwrap(step(error).map(decided))
+            return unwrap(catch_done(step(error).map(stepped), lambda _: _Succeed(fail(error))))
 
         return loop()
 

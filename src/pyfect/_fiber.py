@@ -224,14 +224,14 @@ class _Wait:
                 return
             self.done = True
             self.fiber = None
-            self.canceler = None
+            canceler, self.canceler = self.canceler, None
             if self.registering:
                 self.sync_result = effect
                 return
         if fiber._on_run_thread():
-            fiber._resume(self, effect)
+            fiber._resume(self, effect, canceler)
         else:
-            fiber._scheduler.schedule(lambda: fiber._resume(self, effect))
+            fiber._scheduler.schedule(lambda: fiber._resume(self, effect, canceler))
 
 
 class _Yielded:
@@ -277,6 +277,7 @@ class Fiber(Generic[A_co, E_co]):
         "_dispatcher",
         "_exit",
         "_interrupt",
+        "_interrupt_fresh",
         "_interruptible",
         "_interrupts_after_resume",
         "_observers",
@@ -324,6 +325,10 @@ class Fiber(Generic[A_co, E_co]):
         self._yielded: _Yielded | None = None
         self._ops_on_resume = 0
         self._decided_on_resume = False  # pragma: no mutate, taken at every run's start
+        # An interrupt delivered to the running fiber that its loop has not met
+        # yet (Effect's ``_deferredInterrupt``): it replaces whatever comes
+        # next, a failure too, where one met later is added to failures.
+        self._interrupt_fresh = False
         self._phase: _Phase = "pending"
         # The ``contextvars`` context the fiber parked or paused in, which
         # it resumes in (Effect's captured async context), or that started
@@ -341,32 +346,40 @@ class Fiber(Generic[A_co, E_co]):
 
     def await_exit(self) -> Effect[Exit[A_co, E_co], Never, Never]:
         """Wait for the fiber and succeed with its ``Exit``."""
+        # As Effect's ``fiberAwait``: ``succeed(exit)``.
+        return self._when_exited(_Succeed)
+
+    def join(self) -> Effect[A_co, E_co, Never]:
+        """Wait for the fiber and take on its result: its value, or its
+        failure."""
+        # As Effect's ``fiberJoin``: the exit itself.
+        return self._when_exited(_FromExit)
+
+    def _when_exited[B, EB](
+        self, then: Callable[[Exit[A_co, E_co]], Effect[B, EB]]
+    ) -> Effect[B, EB]:
+        """``then(exit)`` once the fiber has ended: at once for an ended
+        fiber (no callback, as Effect's), else on its observer."""
         if self._exit is not None:
-            # As Effect's ``fiberAwait``: an ended fiber's exit, no callback.
-            return _Succeed(self._exit)
+            return then(self._exit)
 
         def register(resume: Callable[[Effect[Any, Any, Any]], None]) -> Effect[None] | None:
             if self._exit is not None:
-                resume(_Succeed(self._exit))
+                resume(then(self._exit))
                 return None
 
             def observer(ex: Exit[Any, Any]) -> None:
-                resume(_Succeed(ex))
+                resume(then(ex))
 
             self._observers.append(observer)
             if self._exit is not None:
                 # It finished on another thread (a fiber of another run)
                 # between the check and the append; resume counts once.
-                resume(_Succeed(self._exit))
+                resume(then(self._exit))
                 return None
             return _Sync(lambda: self._remove_observer(observer))
 
         return _Callback(register)
-
-    def join(self) -> Effect[A_co, E_co, Never]:
-        """Wait for the fiber and take on its result: its value, or its
-        failure."""
-        return self.await_exit().flat_map(_FromExit)
 
     def interrupt(self) -> Effect[None, Never, Never]:
         """Interrupt the fiber and wait until it has finished cleaning up.
@@ -589,7 +602,7 @@ class Fiber(Generic[A_co, E_co]):
                 and not (guard and (cur is start or not isinstance(cur, Effect)))
             ):
                 guard = False  # pragma: no mutate, cur holds the interrupt now
-                cur = self._with_interrupt(cur, self._interrupt)
+                cur = self._interrupting(cur, self._interrupt)
 
             if isinstance(cur, Effect):
                 ops += 1
@@ -618,6 +631,15 @@ class Fiber(Generic[A_co, E_co]):
                 return  # a resume callback will call _run again
             else:  # untyped user code handed back something that is not an effect
                 cur = exit_die(TypeError(f"not a valid effect: {cur!r}"))
+
+    def _interrupting(self, cur: Step, interrupt: Cause[Any]) -> Step:
+        """``cur`` with ``interrupt`` delivered: a fresh interrupt replaces
+        it (Effect's ``_deferredInterrupt``, failures included); a pending
+        one is merged into a failure (``_with_interrupt``)."""
+        if self._interrupt_fresh:
+            self._interrupt_fresh = False
+            return _failing(interrupt)
+        return self._with_interrupt(cur, interrupt)
 
     def _pause_due(self, cur: Step, ops: int) -> bool:
         """The budget is spent: pause before ``cur``, unless an
@@ -813,13 +835,19 @@ class Fiber(Generic[A_co, E_co]):
             return self._cancel_wait(wait)
         return SUSPEND
 
-    def _resume(self, wait: _Wait, effect: Effect[Any, Any, Any]) -> None:
+    def _resume(
+        self, wait: _Wait, effect: Effect[Any, Any, Any], canceler: Effect[Any, Any, Any] | None
+    ) -> None:
         """Run a claimed resume now. In Effect a resume runs the fiber at
         once, so an interrupt that arrived while another thread's resume
         was queued lands only once the resumed run has finished, parked or
         yielded."""
         if self._waiting is wait:
             self._waiting = None
+            if canceler is not None:
+                # Effect keeps the canceler's frame under every wait: an
+                # interrupt the wait resumes with runs it too.
+                self._push(_AsyncFinalizer(canceler))
             self._evaluate(effect)
         deferred, self._interrupts_after_resume = self._interrupts_after_resume, []
         for by, interruptor in deferred:
@@ -841,19 +869,26 @@ class Fiber(Generic[A_co, E_co]):
             self._interrupts_after_resume.append((by, annotations))
             return
         interrupt = self._record_interrupt(by, annotations)
-        if not self._interruptible or self._phase == "running":
-            return  # the loop raises it at its next interruptible step
+        if not self._interruptible:
+            return  # met when the fiber becomes interruptible again
         yielded = self._yielded
-        if yielded is not None:
-            # Queued after a yield or a pause: unwind now (Effect's
-            # evaluate of a yielded fiber); the queued task does nothing.
+        if self._phase == "running":
+            self._interrupt_fresh = True  # the loop raises it at its next step
+        elif yielded is not None:
+            # Queued after a yield or a pause: unwind now (Effect's evaluate of
+            # a yielded fiber with ``failCause``, which drops the op it paused
+            # before); the queued task does nothing. A result the fiber had
+            # claimed first reaches its continuations, as in Effect.
             self._yielded = None
             self._decided_on_resume = yielded.decided
+            self._interrupt_fresh = True
             self._evaluate(yielded.step)
         elif self._phase == "pending":
             self._evaluate(Failure(interrupt))
-        # Otherwise it is queued to run on this thread, nested deeper than
-        # runs may go, and meets the interrupt at its first step.
+        else:
+            # Queued to run on this thread, nested deeper than runs may go:
+            # it meets the interrupt at its first step.
+            self._interrupt_fresh = True
 
     def _record_interrupt(self, by: int | None, annotations: Context | None) -> Cause[Never]:
         cause = interrupt_cause(by)
@@ -950,9 +985,11 @@ class Fiber(Generic[A_co, E_co]):
 
 
 class _AsyncFinalizer(Frame):
-    """Effect's ``asyncFinalizer``: an interrupted wait's canceler, run
-    uninterruptibly, then the interrupt; a failing canceler is a failing
-    finalizer."""
+    """Effect's ``asyncFinalizer``, under a wait with a canceler: when the
+    wait ends with a cause holding interrupts (the fiber's, or one the wait
+    resumed with), the canceler, run uninterruptibly, then that cause; a
+    failing canceler is a failing finalizer. Any other failure goes back
+    through the loop, an op of its own, as in Effect."""
 
     __slots__ = ("canceler",)
 
@@ -963,6 +1000,8 @@ class _AsyncFinalizer(Frame):
         if fiber._interruptible:
             fiber._push(_RestoreInterruptible(True))
             fiber._interruptible = False
+        if not cause.has_interrupts:
+            return _failing(cause)
         return _run_finalizer(self.canceler, Failure(cause))
 
 

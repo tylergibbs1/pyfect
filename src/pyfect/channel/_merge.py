@@ -11,11 +11,11 @@ Items reach the reader through a queue that shuts down with that scope.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Generator
 from typing import Any, Literal
 
 from pyfect._concurrency import Concurrency, race_first
-from pyfect._core import Effect, _FailCause, _Succeed, _Suspend
+from pyfect._core import Effect, _FailCause, _Gen, _Succeed, _Suspend
 from pyfect._fiber import Fiber
 from pyfect.cause import Cause
 from pyfect.channel._base import AnyChannel, AnyPull, end_with
@@ -141,46 +141,47 @@ def merge_all(
 
 
 def merge(left: AnyChannel, right: AnyChannel, halt_strategy: HaltStrategy) -> Channel_:
+    # Effect's ``Channel.merge``, op for op: one generator making the queue,
+    # adding its shutdown to the forked scope and forking both sides.
     def build(
         upstream: AnyPull, _scope: CloseableScope, forked: CloseableScope
     ) -> Effect[AnyPull, Any, Any]:
-        queue: Queue[Any, Any] = Queue(0)
-        done = 0
+        def body() -> Generator[Effect[Any, Any, Any], Any, AnyPull]:
+            queue: Queue[Any, Any] = yield Queue[Any, Any].bounded(0)
+            yield _Suspend(lambda: forked._add_finalizer_exit(lambda _: queue.shutdown()))
+            done = 0
 
-        def on_exit(side: str, cause: Cause[Any]) -> Effect[None]:
-            nonlocal done
-            done += 1
-            if not is_done_cause(cause):
-                return queue.fail_cause(cause).as_void()
-            halts = done == 2 if halt_strategy == "both" else halt_strategy in ("either", side)
-            return queue.fail_cause(cause).as_void() if halts else _VOID
+            def on_exit(side: str, cause: Cause[Any]) -> Effect[object]:
+                nonlocal done
+                done += 1
+                if not is_done_cause(cause):
+                    return queue.fail_cause(cause)
+                halts = done == 2 if halt_strategy == "both" else halt_strategy in ("either", side)
+                return queue.fail_cause(cause) if halts else _VOID
 
-        def run_side(side: str, channel: AnyChannel) -> Effect[Any]:
-            side_scope = forked.fork_unsafe()
+            def run_side(side: str, channel: AnyChannel, side_scope: CloseableScope) -> Effect[Any]:
+                def stopped(cause: Any) -> Effect[object]:
+                    # A failure beside the side's Done (a finalizer's defect)
+                    # fails the merge, with any failure closing the scope adds.
+                    ex = done_exit_from_cause(cause)
+                    closed = from_exit(ex).on_exit(lambda _: side_scope.close(ex))
+                    return closed.match_cause_effect(
+                        on_failure=lambda close_cause: on_exit(side, close_cause),
+                        on_success=lambda _: on_exit(side, cause),
+                    )
 
-            def stopped(cause: Any) -> Effect[None]:
-                # A failure beside the side's Done (a finalizer's defect)
-                # fails the merge, with any failure closing the scope adds.
-                ex = done_exit_from_cause(cause)
-                closed = from_exit(ex).on_exit(lambda _: side_scope.close(ex))
-                return closed.match_cause_effect(
-                    on_failure=lambda close_cause: on_exit(side, close_cause),
-                    on_success=lambda _: on_exit(side, cause),
+                run = (
+                    channel._transform(upstream, side_scope)
+                    .flat_map(lambda pull: pull.flat_map(queue.offer).forever())
+                    .on_error(stopped)
                 )
+                return fork_in(run, forked)
 
-            run = (
-                channel._transform(upstream, side_scope)
-                .flat_map(lambda pull: pull.flat_map(queue.offer).forever())
-                .on_error(stopped)
-            )
-            return fork_in(run, forked)
+            yield run_side("left", left, forked.fork_unsafe())
+            yield run_side("right", right, forked.fork_unsafe())
+            return queue.take()
 
-        return (
-            forked.add_finalizer(lambda _: queue.shutdown())
-            .and_then(run_side("left", left))
-            .and_then(run_side("right", right))
-            .as_(queue.take())
-        )
+        return _Gen(body)
 
     return bracket(build)
 

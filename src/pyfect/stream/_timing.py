@@ -17,8 +17,9 @@ from pyfect.clock import Clock, ClockService, sleep
 from pyfect.duration import Input as DurationInput
 from pyfect.duration import from_input_unsafe, from_nanos_or_infinite, nanos_or_infinite
 from pyfect.latch import Latch
+from pyfect.pull import catch_done
 from pyfect.schedule import Schedule
-from pyfect.schedule._model import Stop, to_step_with_sleep
+from pyfect.schedule._model import to_step_with_sleep
 from pyfect.scope import CloseableScope
 from pyfect.stream._base import AnyStream
 from pyfect.stream._mapping import one
@@ -31,13 +32,9 @@ type AnyStream_ = Stream[Any, Any, Any]
 _VOID: AnyEffect = _Succeed(None)
 
 
-def _none(_: object) -> None:
-    return None
-
-
 def schedule(self: AnyStream, policy: Schedule[Any, Any, Any, Any]) -> AnyStream_:
-    scheduled = self._channel.flatten_array().schedule(policy).map_done(_none)
-    return Stream(scheduled.map(one))
+    # Effect's Stream.schedule, op for op: the schedule's output is the channel's done value.
+    return Stream(self._channel.flatten_array().schedule(policy).map(one))
 
 
 def repeat_elements(self: AnyStream, policy: Schedule[Any, Any, Any, Any]) -> AnyStream_:
@@ -50,14 +47,12 @@ def repeat_elements(self: AnyStream, policy: Schedule[Any, Any, Any, Any]) -> An
             chunk = (item,)
             step = yield to_step_with_sleep(policy)
 
-            def decided(decision: object) -> AnyEffect:
+            def ended(_: object) -> AnyEffect:
                 nonlocal repeating
-                if isinstance(decision, Stop):
-                    repeating = None
-                    return pull
-                return _Succeed(chunk)
+                repeating = None
+                return pull
 
-            repeating = _FlatMap(step(item), decided)
+            repeating = catch_done(step(item).as_(chunk), ended)
             return chunk
 
         pull = _Gen(first)

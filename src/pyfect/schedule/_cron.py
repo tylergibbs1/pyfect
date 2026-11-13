@@ -5,16 +5,18 @@ from __future__ import annotations
 
 import math
 from datetime import tzinfo
-from typing import overload
+from typing import Never, overload
 
 from pyfect import cron as cron_module
-from pyfect._core import Effect, _Succeed, _Sync
+from pyfect._core import _Sync
+from pyfect.cause import done
 from pyfect.cron import Cron, CronParseError, DstOverlapPolicy
 from pyfect.date_time._epoch import from_epoch_millis, to_epoch_millis
 from pyfect.duration import Duration, millis, zero
 from pyfect.effect import from_result
+from pyfect.pull import Pull
 from pyfect.result import Ok
-from pyfect.schedule._model import Continue, Decision, Schedule, Stop, from_step
+from pyfect.schedule._model import Schedule, from_step
 
 
 @overload
@@ -45,11 +47,11 @@ def cron(
     )
 
     def step_for(c: Cron):
-        def step(now: float, _input: object) -> Effect[Decision[Duration]]:
+        def step(now: float, _input: object) -> Pull[tuple[Duration, Duration], Never, Duration]:
             if math.isinf(now):
-                return _Succeed(Stop(zero))
+                return done(zero)
 
-            def decide() -> Decision[Duration]:
+            def decide() -> tuple[Duration, Duration]:
                 # A JavaScript ``Date`` holds whole milliseconds, cut toward zero.
                 start = from_epoch_millis(math.trunc(now)).astimezone()
                 found = cron_module.next(c, start)
@@ -57,7 +59,7 @@ def cron(
                 if delay.is_zero():
                     found = cron_module.next(c, found)
                     delay = millis(to_epoch_millis(found) - now)
-                return Continue(delay, delay)
+                return (delay, delay)
 
             return _Sync(decide)
 

@@ -14,6 +14,7 @@ from pyfect.context import Tag
 from pyfect.duration import Duration, from_input_unsafe, to_millis, zero
 from pyfect.duration import Input as DurationInput
 from pyfect.effect import fail, fail_cause, gen, provide_service, succeed, suspend
+from pyfect.exit import Failure
 from pyfect.layer import Layer, effect_discard
 from pyfect.layer import effect as layer_effect
 from pyfect.logger import log_warning
@@ -29,7 +30,9 @@ from pyfect.persistence.persisted_queue._store import (
     is_infinite,
     positive_delay,
 )
-from pyfect.schedule import Schedule, Stop, exponential, min, spaced, to_step
+from pyfect.pull import is_done_cause
+from pyfect.schedule import Schedule, exponential, min, spaced
+from pyfect.schedule._model import to_step
 from pyfect.schema import (
     Codec,
     SchemaError,
@@ -69,10 +72,12 @@ def retry_delay(schedule: RetrySchedule, attempts: int) -> Effect[Duration]:
         now = 0.0
         delay = zero
         for attempt in range(1, attempts + 1):
-            decision = yield from step(now, attempt)
-            if isinstance(decision, Stop):
-                break
-            delay = decision.delay
+            result = yield from step(now, attempt).exit()
+            if isinstance(result, Failure):
+                if is_done_cause(result.cause):
+                    break
+                return (yield from fail_cause(result.cause))
+            delay = result.value[1]
             now += to_millis(delay)
         return delay
 

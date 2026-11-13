@@ -12,9 +12,9 @@ some fail.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Generator
 from functools import partial
-from typing import Any, Literal, Never, overload
+from typing import Any, Literal, Never, cast, overload
 
 from pyfect._concurrency import for_each
 from pyfect._core import (
@@ -24,6 +24,7 @@ from pyfect._core import (
     _FromExit,
     _Gen,
     _Locally,
+    _OnExit,
     _RestoreInterruptible,
     _Succeed,
     _Suspend,
@@ -32,7 +33,8 @@ from pyfect._core import (
     uninterruptible_mask,
 )
 from pyfect._effect_args import require_effect
-from pyfect._effect_resources import _call_user_now
+from pyfect._effect_base import Step
+from pyfect._effect_resources import _call_user_now, _run_finalizer
 from pyfect._fiber import Fiber, Uninterruptible
 from pyfect._interrupt_reason import closed
 from pyfect.context import Tag
@@ -159,6 +161,10 @@ class CloseableScope:
             return None
         entries = list(reversed(self._finalizers.items()))
         self._finalizers = {}
+        if len(entries) == 1:
+            # As Effect's ``scopeCloseUnsafe``: a lone finalizer runs as it is.
+            # Its value is the finalizer's; callers only sequence on it.
+            return cast("Effect[None]", _call_user_now(entries[0][1], ex))
         run = _run_parallel if self._strategy == "parallel" else _run_sequential
         return run(entries, ex)
 
@@ -189,11 +195,11 @@ def _fail_with_all(exits: list[Exit[Any, Never]]) -> Effect[None]:
 
 
 def _run_sequential(entries: _Entries, ex: Exit[Any, Any]) -> Effect[None]:
-    def run_all():
+    def run_all() -> Generator[Effect[Any, Any, Any], Any]:
         exits: list[Exit[Any, Never]] = []
         for _key, fin in entries:
-            exits.append((yield from _call_user(fin, ex).exit()))
-        return (yield from _fail_with_all(exits))
+            exits.append((yield _call_user_now(fin, ex).exit()))
+        yield _fail_with_all(exits)
 
     return _Gen(run_all)
 
@@ -270,12 +276,23 @@ def scoped(eff: Effect[Any, Any, Any]) -> Effect[Any, Any, Any]:
     """Run ``eff`` in a new scope and close it when ``eff`` ends."""
     require_effect(eff, "eff")
 
-    def body() -> Effect[Any, Any, Any]:
+    # Effect's op for op: one ``withFiber`` that adds the scope to the
+    # fiber's context and pushes an ``OnExit`` frame, which puts the context
+    # back and closes the scope (handing the exit straight on if it is empty).
+    def enter(fiber: Fiber[Any, Any]) -> Effect[Any, Any, Any]:
+        before = fiber._context
         scope = CloseableScope()
-        inner: Effect[Any, Any, Any] = _Locally(eff, lambda ctx: ctx.add(Scope, scope))
-        return inner.on_exit(scope.close)
+        fiber._set_context(before.add(Scope, scope))
 
-    return _Suspend(body)
+        def finish(ex: Exit[Any, Any]) -> Step:
+            fiber._set_context(before)
+            after = scope.close_unsafe(ex)
+            return _FromExit(ex) if after is None else _run_finalizer(after, ex)
+
+        fiber._stack.append(_OnExit(eff, finish))
+        return eff
+
+    return _WithFiber(enter)
 
 
 def scoped_with[A, E = Never, R = Never](

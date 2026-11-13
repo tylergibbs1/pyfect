@@ -27,7 +27,6 @@ from pyfect.latch import Latch
 from pyfect.rpc import AnyRpc
 from pyfect.rpc import message as rpc_message
 from pyfect.rpc.server._core import OnRequest
-from pyfect.schedule import Decision
 from pyfect.scope import CloseableScope
 
 from ._state import EntityState, ManagerOptions, RequestEntry, RequestTransaction
@@ -36,8 +35,9 @@ if TYPE_CHECKING:
     from pyfect.cluster.entity import Entity, EntityHandlers
 
 
-type RestartStep = Callable[[None], Effect[Decision[Any], Any, Any]]
-"""Sleeps for an entity's next restart delay."""
+type RestartStep = Callable[[None], Effect[Any, Any, Any]]
+"""Sleeps for an entity's next restart delay; fails with ``Done`` once the
+policy stops, as Effect's ``toStepWithSleep`` step."""
 
 
 @dataclass(eq=False, slots=True)

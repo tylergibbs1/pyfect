@@ -17,6 +17,7 @@ from typing import Any, Generic, Never, Protocol, ReadOnly, TypedDict, TypeVar, 
 
 from pyfect import effect as fx
 from pyfect import stream
+from pyfect.cause import done
 from pyfect.context import Context, Provides
 from pyfect.duration import Duration, seconds
 from pyfect.effect import Effect
@@ -51,8 +52,9 @@ from pyfect.http.url_params import Input as UrlParamsInput
 from pyfect.layer import Layer
 from pyfect.layer import succeed as layer_succeed
 from pyfect.option import Option, Some
-from pyfect.schedule import Schedule, exponential, from_step, set_input_type, to_step
-from pyfect.schedule._model import Decision, Metadata, Stop
+from pyfect.pull import Pull
+from pyfect.schedule import Schedule, exponential, set_input_type
+from pyfect.schedule._model import Metadata, StepFn, from_step, to_step
 from pyfect.stream import Stream
 
 
@@ -88,12 +90,12 @@ def retryable_only[O, E, R](
     other failure (a middleware's, a fatal one) stops it."""
 
     def guard(
-        step: Callable[[float, GraphQLClientError], Effect[Decision[O], E, R]],
-    ) -> Callable[[float, object], Effect[Decision[O | None], E, R]]:
-        def guarded(now: float, input: object) -> Effect[Decision[O | None], E, R]:
+        step: StepFn[O, GraphQLClientError, E, R],
+    ) -> StepFn[O | None, object, E, R]:
+        def guarded(now: float, input: object) -> Pull[tuple[O | None, Duration], E, O | None, R]:
             if isinstance(input, GraphQLClientError) and input.is_retryable:
                 return step(now, input)
-            return fx.succeed(Stop(None))
+            return done(None)
 
         return guarded
 

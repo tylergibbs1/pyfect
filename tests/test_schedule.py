@@ -1,3 +1,5 @@
+# Schedule steps here use 0.6's Continue/Stop protocol, deprecated until 0.7.0.
+# pyright: reportDeprecated=false
 """Schedules driving effects on the test clock, beyond Effect's own
 ``Schedule.test.ts`` (ported in ``tests/oracle/test_schedule.py``)."""
 

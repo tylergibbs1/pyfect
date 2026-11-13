@@ -9,14 +9,15 @@ from typing import Any, Never, overload
 
 from pyfect import channel
 from pyfect._core import Effect, _Succeed, _Suspend, _Sync
-from pyfect.channel._base import end_with
+from pyfect.cause import done
 from pyfect.duration import Input as DurationInput
 from pyfect.duration import from_input_unsafe
 from pyfect.errors import Done
 from pyfect.pubsub import PubSub, Subscription
+from pyfect.pull import catch_done
 from pyfect.queue import Dequeue, Queue, Strategy
 from pyfect.schedule import Schedule
-from pyfect.schedule._model import Metadata, Stop, to_step_with_metadata
+from pyfect.schedule._model import to_step_with_sleep
 from pyfect.scope import Scope
 from pyfect.stream._stream import Stream, from_pull
 from pyfect.take import Take
@@ -85,13 +86,12 @@ def from_schedule[O, E = Never, R = Never](schedule: Schedule[O, object, E, R]) 
     """A stream of the outputs of ``schedule``, each after its delay; it
     ends when the schedule stops."""
 
-    def with_step(step: Callable[[None], Effect[Metadata[O, Any] | Stop[O], E, R]]) -> AnyPull:
-        def written(decision: Metadata[O, Any] | Stop[O]) -> AnyPull:
-            return end_with(None) if isinstance(decision, Stop) else _Succeed((decision.output,))
+    # Effect's: the sleeping step's output as a one-item chunk; its
+    # ``Done`` ends the stream with no leftover.
+    def with_step(step: Callable[[None], Effect[O, E | Done[O], R]]) -> AnyPull:
+        return catch_done(step(None).map(lambda output: (output,)), lambda _: done())
 
-        return step(None).flat_map(written)
-
-    return from_pull(to_step_with_metadata(schedule).map(with_step))
+    return from_pull(to_step_with_sleep(schedule).map(with_step))
 
 
 def tick(interval: DurationInput) -> Stream[None]:

@@ -1,3 +1,5 @@
+# Schedule steps here use 0.6's Continue/Stop protocol, deprecated until 0.7.0.
+# pyright: reportDeprecated=false
 """Ports of Effect's graphql/GraphQLClient.test.ts, GraphQLClient.pages.test.ts,
 GraphQLClient.makeTest.test.ts and GraphQLClient.subscriptions.test.ts. Each
 test's docstring is the Effect test title, prefixed by its describe blocks.

@@ -9,8 +9,16 @@
 - The `intl` extra installs nothing: `date_time.intl` ships its data (ICU's CLDR data, under the
   Unicode License v3, beside it as `LICENSE`) and needs no babel. The extra stays so
   `pyfect-dev[intl]` still installs.
+- `schedule.Continue`, `Stop` and `Decision` warn. Schedules now step as Effect's do, with a
+  `Pull` that succeeds with `(output, delay)` and fails with `cause.done(output)` to stop, and
+  the public step functions translate: `from_step` still takes a step deciding `Continue` or
+  `Stop`, and `to_step`, `to_step_with_metadata` and `to_step_with_sleep` still hand them back.
+  They are removed in 0.7.0, where those three hand back Effect's steps.
 
 ### Added
+
+- `schedule.from_step` and `from_step_with_metadata` take Effect's steps too: a step that
+  succeeds with `(output, delay)` to recur and fails with `cause.done(output)` to stop.
 
 - `pyfect.testing.test_clock_with(f)`, Effect's `TestClock.testClockWith`.
 - `for_each(..., discard=True)`, Effect's `forEach` `discard` option: runs every item and
@@ -33,7 +41,7 @@
   clock, concurrency-limited `for_each`, retries and repeats on schedules; queue, deferred and
   semaphore handoffs; stream pipelines), each step logging an event. Each program runs in
   pyfect and, under Node, in Effect, and the two must agree on the exit, the shape of its cause
-  and the order of every event. A checked-in corpus of 506 programs with Effect's answers
+  and the order of every event. A checked-in corpus of 1150 programs with Effect's answers
   replays in every pytest run without Node; `python -m runtime_diff` (from `tests/`) grows or
   refreshes it and surveys fresh programs. The `fuzz` workflow compares 300 fresh programs
   with Node on every push and 20,000 weekly.
@@ -66,12 +74,19 @@
   canceler as Effect's `asyncFinalizer` does. Two fibers under a small budget now interleave
   exactly as in Effect (`tests/oracle/test_max_ops_interleaving.py`, recorded from Node), and
   the runtime differential tester runs its programs (not its harness) under budgets from 3 to
-  200 rather than an unlimited one: 43 of 3000 generated cases still differ, from 947 before,
-  all but 7 inside a stream or a `repeat`/`retry` schedule, whose internals are not yet built
-  op for op. A result a step claimed (a taken permit or item) that the fiber pauses before now
-  reaches its continuation before an interrupt that landed in the pause, as in Effect, and a
-  raising `should_yield` is a defect rather than Effect's endless retry. Interleavings change
+  200 rather than an unlimited one: none of 16,000 generated programs differ (seeds 7, 11, 23
+  and 31), from 947 of 3000 before. Built op for op as well: schedules and everything that
+  steps them (`retry`, `repeat`, `schedule`, the stream and channel schedule operators), the
+  channel merge and concurrent `map_effect`, `Stream.map`, `Channel.suspend`, iterator pulls,
+  `Fiber.join`, `exit`/`result`, `scoped` and a scope's lone finalizer, and an interrupt
+  arriving at a wait or at `set_interruptible`. A result a step claimed (a taken permit or
+  item) that the fiber pauses before now reaches its continuation before an interrupt that
+  landed in the pause, as in Effect, and a raising `should_yield` is a defect rather than
+  Effect's endless retry. Interleavings change
   under the default budget (2048) too, since fibers now yield at other ops.
+- `retry_transient` reads a `Retry-After` HTTP date against the schedule's clock in epoch
+  milliseconds, as Effect's `retryAfterOf(input, now)`. It multiplied the time by 1000 first, so
+  a date in the future read as long past and the retry did not wait for it.
 - `S.Finite` and `S.is_finite` read an `int` as a JavaScript number, so one past the largest
   double (a 400-digit JSON literal, which `JSON.parse` reads as `Infinity`) is not finite, as
   in Effect. `jwt.verify` checks `exp`, `nbf` and `iat` with `S.Finite`, so a token signed

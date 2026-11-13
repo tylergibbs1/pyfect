@@ -1,3 +1,5 @@
+# Schedule steps here use 0.6's Continue/Stop protocol, deprecated until 0.7.0.
+# pyright: reportDeprecated=false
 """Ports of Effect's ``Schedule.test.ts``.
 
 Each test's docstring is the Effect test title. A step takes epoch

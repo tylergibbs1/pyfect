@@ -2,7 +2,8 @@
 the pull fails, and a pull reading a Python iterator.
 
 Both run on the fiber's explicit stack, so a loop over millions of items
-never grows Python's stack, and each item costs one or two fiber steps.
+never grows Python's stack. A pull is two ops, as Effect's ``suspend`` that
+returns ``succeed(item)`` or ``Cause.done(...)``, itself an op there.
 """
 # pyright: reportPrivateUsage=false
 
@@ -12,10 +13,10 @@ from collections.abc import Callable, Generator, Iterator
 from itertools import islice
 from typing import TYPE_CHECKING, Any, Never, final
 
-from pyfect._core import Effect, Step
+from pyfect._core import Effect, Step, _FromExit, _Succeed
 from pyfect.cause import Cause, Fail
 from pyfect.errors import Done
-from pyfect.exit import Failure, Success
+from pyfect.exit import Failure
 
 if TYPE_CHECKING:
     from pyfect._fiber import Fiber
@@ -42,8 +43,8 @@ class PullLoop(Effect[Never, Any, Any]):
         return self.pull
 
 
-def _done(leftover: object) -> Failure[Done[Any]]:
-    return Failure(Cause((Fail(Done(leftover)),)))
+def _done(leftover: object) -> Effect[Never, Done[Any]]:
+    return _FromExit(Failure(Cause((Fail(Done(leftover)),))))
 
 
 @final
@@ -58,7 +59,7 @@ class IteratorPull(Effect[Any, Done[Any], Never]):
 
     def _step(self, fiber: Fiber[Any, Any]) -> Step:
         try:
-            return Success(next(self.iterator))
+            return _Succeed(next(self.iterator))
         except StopIteration as stop:
             return _done(stop.value)
 
@@ -86,7 +87,7 @@ class ChunkPull(Effect[tuple[Any, ...], Done[Any], Never]):
             chunk = tuple(islice(self.iterator, self.size))
             if len(chunk) < self.size:
                 self.ended = True
-            return Success(chunk) if chunk else _done(None)
+            return _Succeed(chunk) if chunk else _done(None)
         items: list[Any] = []
         try:
             while len(items) < self.size:
@@ -97,4 +98,4 @@ class ChunkPull(Effect[tuple[Any, ...], Done[Any], Never]):
                 return _done(stop.value)
             self.ended = True
             self.leftover = stop.value
-        return Success(tuple(items))
+        return _Succeed(tuple(items))

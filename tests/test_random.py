@@ -1,3 +1,5 @@
+# Schedule steps here use 0.6's Continue/Stop protocol, deprecated until 0.7.0.
+# pyright: reportDeprecated=false
 """``random.with_seed`` gives Effect's exact sequences. Every expected value
 here was printed by Effect's ``Random.ts`` under Node (``Random.withSeed``)."""
 

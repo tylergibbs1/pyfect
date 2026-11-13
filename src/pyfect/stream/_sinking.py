@@ -25,7 +25,7 @@ from pyfect.pull import catch_done
 from pyfect.queue import Queue
 from pyfect.queue import _state as queue_state
 from pyfect.schedule import Schedule
-from pyfect.schedule._model import Continue, to_step
+from pyfect.schedule._model import to_step
 from pyfect.scope import CloseableScope, fork_in, scoped_with
 from pyfect.sink._sink import AnySink, End
 from pyfect.sink._steps import ENDED
@@ -220,19 +220,15 @@ def aggregate_within(
                     opened_at = clock.now_nanos_unsafe()
                 return _Succeed(chunk)
 
-            def decided(decision: object) -> AnyEffect:
-                if isinstance(decision, Continue):
-                    return sleep(decision.delay).and_then(buffer.offer(_SCHEDULE_STEP))
-                # End input so the sink drains its leftovers without pulling
-                # more upstream.
-                return buffer.end()
-
-            step_to_buffer = (
+            stepped = (
                 has_input.wait()
                 .flat_map(lambda _: step(schedule_time / 1_000_000, last_output))
-                .flat_map(decided)
-                .and_then(never)
+                .flat_map(lambda result: sleep(result[1]))
+                .flat_map(lambda _: buffer.offer(_SCHEDULE_STEP))
             )
+            # End input so the sink drains its leftovers without pulling more
+            # upstream.
+            step_to_buffer = catch_done(stepped, lambda _: buffer.end()).flat_map(lambda _: never)
 
             def take_input(item: Any) -> AnyEffect:
                 return ENDED if item is _SCHEDULE_STEP else on_input(item)

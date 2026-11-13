@@ -43,7 +43,8 @@ from pyfect.persistence.circuit_breaker._types import (
 )
 from pyfect.pubsub import PubSub
 from pyfect.result import Ok
-from pyfect.schedule import Schedule, Stop, to_step
+from pyfect.schedule import Schedule
+from pyfect.schedule._model import to_step
 from pyfect.scope import CloseableScope, Scope, add_finalizer, scoped_with
 from pyfect.stream import Stream, from_pubsub_take
 from pyfect.take import Take
@@ -95,10 +96,12 @@ def _open_duration(open_duration: OpenDuration) -> Callable[[int], Effect[Durati
             now = clock.current_time_millis_unsafe()
             delay = zero
             for attempt in range(1, openings + 1):
-                decision = yield from step(now, attempt)
-                if isinstance(decision, Stop):
+                # As Effect's: any failure of the step (its end included)
+                # keeps the last delay.
+                result = yield from step(now, attempt).exit()
+                if isinstance(result, Failure):
                     break
-                delay = decision.delay
+                delay = result.value[1]
                 now += to_millis(delay)
             return delay
 

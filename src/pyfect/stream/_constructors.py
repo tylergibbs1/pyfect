@@ -5,12 +5,12 @@ ranges, unfolding, and deferred and scoped streams."""
 from __future__ import annotations
 
 import builtins
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Generator, Iterable
 from typing import Any, Never, overload
 
 from pyfect import channel
 from pyfect._context_effects import service_option as _service_option
-from pyfect._core import Effect, _Locally, _Succeed, _Suspend, _Sync
+from pyfect._core import Effect, _Gen, _Locally, _Succeed, _Suspend, _Sync
 from pyfect._effect_args import require_effect
 from pyfect.cause import Cause
 from pyfect.channel._base import end_with
@@ -18,7 +18,7 @@ from pyfect.context import TagLike
 from pyfect.errors import Done
 from pyfect.option import Option
 from pyfect.schedule import Schedule
-from pyfect.schedule._model import CurrentMetadata, Metadata, Stop, to_step_with_metadata
+from pyfect.schedule._model import CurrentMetadata, Metadata, MetadataStep, to_step_with_metadata
 from pyfect.scope import Scope
 from pyfect.stream._base import AnyStream, StreamBase, require_stream
 from pyfect.stream._concat import SuspendedStream
@@ -132,36 +132,33 @@ def from_effect_schedule[A, EE = Never, RR = Never](
     of ``eff`` sees the step's ``schedule.CurrentMetadata``."""
     require_effect(eff, "eff")
 
-    def make_pull(step: Callable[[Any], Effect[Metadata[Any, Any] | Stop[Any], Any, Any]]) -> Any:
-        first = _with_metadata(eff, CurrentMetadata.default())
+    # Effect's ``fromEffectSchedule``, op for op: the first value at once,
+    # then the step (which sleeps) and ``eff`` again for each next one. The
+    # step's ``Done`` ends the stream.
+    def body() -> Generator[Effect[Any, Any, Any], Any, AnyPull]:
+        step: MetadataStep[Any, Any, Any, Any] = yield to_step_with_metadata(schedule)
+        last: Any = yield _with_metadata(eff, CurrentMetadata.default())
+        initial = True
 
-        def started(value: Any) -> AnyPull:
-            last = value
+        def keep(next_value: Any) -> tuple[Any]:
+            nonlocal last
+            last = next_value
+            return (next_value,)
 
-            def again(decision: Metadata[Any, Any] | Stop[Any]) -> AnyPull:
-                if isinstance(decision, Stop):
-                    return _ENDED
-                return _with_metadata(eff, decision).map(keep)
+        pull: AnyPull = (
+            _Suspend(lambda: step(last)).flat_map(lambda meta: _with_metadata(eff, meta)).map(keep)
+        )
 
-            def keep(next_value: Any) -> tuple[Any]:
-                nonlocal last
-                last = next_value
-                return (next_value,)
+        def first() -> AnyPull:
+            nonlocal initial
+            if initial:
+                initial = False
+                return _Succeed((last,))
+            return pull
 
-            emitted = False
+        return _Suspend(first)
 
-            def pull() -> AnyPull:
-                nonlocal emitted
-                if not emitted:
-                    emitted = True
-                    return _Succeed((last,))
-                return step(last).flat_map(again)
-
-            return _Succeed(_Suspend(pull))
-
-        return first.flat_map(started)
-
-    return from_pull(to_step_with_metadata(schedule).flat_map(make_pull))
+    return from_pull(_Gen(body))
 
 
 def service[S, T](tag: TagLike[S, T]) -> Stream[S, Never, T]:

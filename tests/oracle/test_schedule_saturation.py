@@ -1,3 +1,5 @@
+# Schedule steps here use 0.6's Continue/Stop protocol, deprecated until 0.7.0.
+# pyright: reportDeprecated=false
 """Growing schedules saturate to an infinite delay, as JavaScript numbers do.
 
 Effect computes delays in float milliseconds: ``base * Math.pow(factor, n)``

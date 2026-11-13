@@ -271,6 +271,11 @@ class _SetInterruptible[A, E, R](Effect[A, E, R]):
         if fiber._interruptible != self.flag:
             fiber._push(_RestoreInterruptible(fiber._interruptible))
             fiber._interruptible = self.flag
+            interrupt = fiber._interrupt
+            if interrupt is not None and self.flag:
+                # Effect's ``setFiberInterruptible``: an interrupt pending
+                # fails the region before it starts.
+                return _FailCause(interrupt)
         return self.inner
 
 

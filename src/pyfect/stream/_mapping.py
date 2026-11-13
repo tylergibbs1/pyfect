@@ -13,6 +13,7 @@ from pyfect._core import Effect, _FlatMap, _Succeed
 from pyfect.channel import transform_pull
 from pyfect.result import Err, Ok
 from pyfect.stream._base import AnyStream
+from pyfect.stream._concat import SuspendedStream
 from pyfect.stream._stream import Stream
 
 type AnyEffect = Effect[Any, Any, Any]
@@ -42,7 +43,9 @@ def map_chunks(self: AnyStream, make: Callable[[], Callable[[Chunk], Chunk]]) ->
 
 
 def map_(self: AnyStream, f: Callable[[Any], Any]) -> AnyStream_:
-    return Stream(self._channel.map(lambda chunk: tuple(map(f, chunk))))
+    # As Effect's ``Stream.map``: a ``suspend`` around the mapped channel
+    # (where Effect starts its per-run index).
+    return SuspendedStream(lambda: Stream(self._channel.map(lambda chunk: tuple(map(f, chunk)))))
 
 
 def map_array(self: AnyStream, f: Callable[[Chunk], Chunk]) -> AnyStream_:

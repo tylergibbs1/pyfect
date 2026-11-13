@@ -13,9 +13,10 @@ from pyfect.http.error import HttpClientError, StatusCodeError, TransportError
 from pyfect.http.headers import parse_retry_after, retry_after_delay
 from pyfect.http.response import HttpClientResponse
 from pyfect.persistence.rate_limiter._store import clamp_adaptive_millis
+from pyfect.pull import Pull
 from pyfect.result import Ok
-from pyfect.schedule import Continue, Schedule, forever, from_step, to_step
-from pyfect.schedule._model import Decision, StepFn
+from pyfect.schedule import Schedule, forever
+from pyfect.schedule._model import StepFn, from_step, to_step
 
 _TRANSIENT_STATUSES = frozenset((408, 429, 500, 502, 503, 504))
 
@@ -63,17 +64,11 @@ def with_retry_after[O, E, R](schedule: Schedule[O, Any, E, R]) -> Schedule[O, A
     """``schedule``, waiting at least each input's ``Retry-After``."""
 
     def wrap(step: StepFn[O, Any, E, R]) -> StepFn[O, Any, E, R]:
-        def run(now: float, input: Any) -> Effect[Decision[O], E, R]:
-            retry_after = retry_after_of(input, now * 1000)
+        def run(now: float, input: Any) -> Pull[tuple[O, Duration], E, O, R]:
+            retry_after = retry_after_of(input, now)
             if retry_after is None:
                 return step(now, input)
-            return step(now, input).map(
-                lambda decision: (
-                    Continue(decision.output, max(decision.delay, retry_after))
-                    if isinstance(decision, Continue)
-                    else decision
-                )
-            )
+            return step(now, input).map(lambda result: (result[0], max(result[1], retry_after)))
 
         return run
 

@@ -4,6 +4,9 @@ cases Effect's own tests leave open (each kills a mutation that survived
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+from email.utils import format_datetime
+
 import pytest
 
 import pyfect as fx
@@ -158,6 +161,36 @@ def test_retry_transient_waits_an_hour_at_most_for_a_retry_after(retry_after: st
         client = c.make(send).retry_transient(retry_on="response-only", times=1)
         fiber = yield from client.get("http://test/").fork(start_immediately=True)
         yield from testing.adjust("1 hour")
+        assert attempts[0] == 2
+        response = yield from fiber.join()
+        assert response.status == 200
+
+    testing.run_test(fx.scoped(fx.gen(body).or_die()))
+
+
+def test_retry_transient_waits_until_a_retry_after_date() -> None:
+    """A ``Retry-After`` HTTP date is read against the schedule's clock in
+    epoch milliseconds, as Effect's ``retryAfterOf(input, now)``: a date ten
+    seconds ahead waits ten seconds."""
+    now_millis = 1_700_000_000_000
+    retry_at = format_datetime(datetime.fromtimestamp(now_millis / 1000 + 10, tz=UTC), usegmt=True)
+    statuses = iter([503, 200])
+    attempts = [0]
+
+    def send(request: req.HttpClientRequest, *_: object) -> fx.Effect[res.HttpClientResponse]:
+        def answer() -> res.HttpClientResponse:
+            attempts[0] += 1
+            return res.make(request, status=next(statuses), headers={"retry-after": retry_at})
+
+        return fx.sync(answer)
+
+    def body():
+        yield from testing.set_time(now_millis)
+        client = c.make(send).retry_transient(retry_on="response-only", times=1)
+        fiber = yield from client.get("http://test/").fork(start_immediately=True)
+        yield from testing.adjust("9 seconds")
+        assert attempts[0] == 1
+        yield from testing.adjust("1 second")
         assert attempts[0] == 2
         response = yield from fiber.join()
         assert response.status == 200

@@ -1,3 +1,5 @@
+# Schedule steps here use 0.6's Continue/Stop protocol, deprecated until 0.7.0.
+# pyright: reportDeprecated=false
 """Durations: parsed once at the boundary, so every consumer agrees."""
 
 import asyncio

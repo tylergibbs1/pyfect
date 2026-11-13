@@ -1,3 +1,5 @@
+# Schedule steps here use 0.6's Continue/Stop protocol, deprecated until 0.7.0.
+# pyright: reportDeprecated=false
 """Ports of the ``schedule``, ``repeat`` and ``retry`` sections of Effect's
 ``Effect.test.ts``.
 

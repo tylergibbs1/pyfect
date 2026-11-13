@@ -7,7 +7,7 @@ from __future__ import annotations
 from collections.abc import Callable, Generator, Iterable, Iterator
 from typing import Any, Never, overload
 
-from pyfect._core import Effect, _Callback, _FailCause, _Succeed, _Suspend, _Sync
+from pyfect._core import Effect, _Callback, _FailCause, _Gen, _Succeed, _Suspend, _Sync
 from pyfect._effect_args import require_effect
 from pyfect.cause import Cause
 from pyfect.cause import die as die_cause
@@ -210,7 +210,8 @@ def suspend[O, E, D, I, IE, ID, R](
     thunk: Callable[[], Channel[O, E, D, I, IE, ID, R]],
 ) -> Channel[O, E, D, I, IE, ID, R]:
     """The channel ``thunk()`` returns, built each time it runs."""
-    return Channel(lambda upstream, scope: thunk()._transform(upstream, scope))
+    # As Effect's: an ``Effect.suspend`` around the built channel's transform.
+    return Channel(lambda upstream, scope: _Suspend(lambda: thunk()._transform(upstream, scope)))
 
 
 @overload
@@ -300,13 +301,19 @@ def bracket(
     f: Callable[[AnyPull, CloseableScope, CloseableScope], Effect[AnyPull, Any, Any]],
 ) -> _AnyChannel:
 
+    # Effect's ``fromTransformBracket``, op for op: a generator that forks the
+    # scope, runs ``f`` closing it on failure, and returns the pull doing so too.
     def transform(upstream: AnyPull, scope: CloseableScope) -> Effect[AnyPull, Any, Any]:
-        forked = scope.fork_unsafe()
+        def body() -> Generator[Effect[Any, Any, Any], Any, AnyPull]:
+            forked = scope.fork_unsafe()
 
-        def close(cause: Cause[Any]) -> Effect[None]:
-            return forked.close(done_exit_from_cause(cause))
+            def close(cause: Cause[Any]) -> Effect[None]:
+                return forked.close(done_exit_from_cause(cause))
 
-        return f(upstream, scope, forked).on_error(close).map(lambda pull: pull.on_error(close))
+            pull: AnyPull = yield f(upstream, scope, forked).on_error(close)
+            return pull.on_error(close)
+
+        return _Gen(body)
 
     channel: _AnyChannel = from_transform(transform)
     return channel

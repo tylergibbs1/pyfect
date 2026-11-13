@@ -85,7 +85,11 @@ class FoldingMethods(EffectBase[A_co, E_co, R_co]):
 
     def exit(self) -> Effect[Exit[A_co, E_co], Never, R_co]:
         """Succeed with the outcome as a value. Interruption still
-        propagates; it is not something a fiber can catch."""
+        propagates; it is not something a fiber can catch. An effect that is
+        nothing but its outcome succeeds with it, in one op, as in Effect."""
+        known = _core.known_exit(as_effect(self))
+        if known is not None:
+            return _core._Succeed(known)
         return _core._MatchCause(
             as_effect(self),
             lambda c: succeed_with(Failure(c)),
@@ -94,12 +98,8 @@ class FoldingMethods(EffectBase[A_co, E_co, R_co]):
 
     def result(self) -> Effect[Ok[A_co] | Err[E_co], Never, R_co]:
         """Succeed with ``Ok(value)`` or ``Err(error)``. Defects and
-        interruptions still propagate."""
-        return _core._MatchCause(
-            as_effect(self),
-            _recovering(lambda e: succeed_with(Err(e))),
-            lambda a: succeed_with(Ok(a)),
-        )
+        interruptions still propagate. As Effect's, it is ``match_eager``."""
+        return as_effect(self).match_eager(on_failure=Err, on_success=Ok)
 
 
 def _none(_: object) -> Step:

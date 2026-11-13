@@ -18,7 +18,7 @@ from pyfect.errors import Done
 from pyfect.pubsub import PubSub, Subscription
 from pyfect.queue import Dequeue, Queue, Strategy
 from pyfect.schedule import Schedule
-from pyfect.schedule._model import Metadata, Stop, to_step_with_metadata
+from pyfect.schedule._model import to_step_with_sleep
 from pyfect.scope import CloseableScope, Scope, fork_in
 from pyfect.take import Take
 
@@ -164,13 +164,8 @@ def from_schedule[O, E = Never, R = Never](
     """Write each output of ``schedule`` after its delay; end with the
     final output when it stops."""
 
-    def emit(step: Metadata[Any, Any] | Stop[Any]) -> AnyPull:
-        return end_with(step.output) if isinstance(step, Stop) else _Succeed(step.output)
-
-    def with_step(step: Callable[[Any], Effect[Any, Any, Any]]) -> AnyPull:
-        return step(None).flat_map(emit)
-
-    return from_pull(to_step_with_metadata(schedule).map(with_step))
+    # Effect's: one pull, the sleeping step applied to ``None``.
+    return from_pull(to_step_with_sleep(schedule).map(lambda step: step(None)))
 
 
 def from_async_iterable[A, E](
