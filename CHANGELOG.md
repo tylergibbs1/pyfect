@@ -37,6 +37,15 @@
 
 ### Fixed
 
+- `EventLogService.synced` (a pyfect addition) no longer waits forever when a remote
+  acknowledges this log's upload before the entry before it has been replayed. The remote
+  leaves a connection's own writes out of its change stream and the journal's cursor crosses
+  only acks that continue straight on from it (both as in Effect), so the cursor stopped
+  short of the server's latest sequence. `synced` now counts the sequences the remote
+  acknowledged for this log's uploads as seen, on top of the cursor, which every journal
+  still reports as Effect's does. A property test commits acks and replays in every order on
+  the memory and SQL journals and checks `synced` sees the end, and never a sequence the log
+  lacks. Found by dogfooding (quill).
 - `S.Finite` and `S.is_finite` read an `int` as a JavaScript number, so one past the largest
   double (a 400-digit JSON literal, which `JSON.parse` reads as `Infinity`) is not finite, as
   in Effect. `jwt.verify` checks `exp`, `nbf` and `iat` with `S.Finite`, so a token signed

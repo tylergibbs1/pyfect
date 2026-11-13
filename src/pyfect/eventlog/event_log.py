@@ -45,6 +45,7 @@ from pyfect.eventlog._compactor import CompactFn, CompactWrite, RegisteredCompac
 from pyfect.eventlog._conflicts import set_anchor
 from pyfect.eventlog._identity import Identity, IdentityService
 from pyfect.eventlog._log_compaction import CompactOutcome, CompactResult, LogCompaction
+from pyfect.eventlog._own_acks import OwnAcks
 from pyfect.eventlog.event import AnyEvent, AnyWrite, Event, Write
 from pyfect.eventlog.event_group import EventGroup
 from pyfect.eventlog.event_journal import (
@@ -885,7 +886,11 @@ type _Upload = Callable[
 
 
 def _uploader(
-    journal: EventJournalService, identity: IdentityService, store_id: StoreId, with_lock: WithLock
+    journal: EventJournalService,
+    identity: IdentityService,
+    store_id: StoreId,
+    with_lock: WithLock,
+    own_acks: OwnAcks,
 ) -> _Upload:
     """Sends the entries a remote has not seen and records its acks."""
 
@@ -895,12 +900,19 @@ def _uploader(
         def acknowledge(acks: Sequence[WriteAck] | None) -> Effect[None, EventJournalError]:
             if not acks:
                 return succeed(None)
-            return with_lock(
-                journal.write_remote_acks(
-                    remote_id=remote.id,
-                    acks=[RemoteAck(ack.entry_id, ack.sequence) for ack in acks],
-                    first_sequence=remote.first_sequence,
+            written = journal.write_remote_acks(
+                remote_id=remote.id,
+                acks=[RemoteAck(ack.entry_id, ack.sequence) for ack in acks],
+                first_sequence=remote.first_sequence,
+            ).and_then(journal.next_remote_sequence(remote.id))
+            return (
+                with_lock(written)
+                .flat_map(
+                    lambda cursor: sync(
+                        lambda: own_acks.advance(remote.id, cursor, (ack.sequence for ack in acks))
+                    )
                 )
+                .as_void()
             )
 
         return journal.with_remote_uncommitted(
@@ -914,11 +926,13 @@ def _uploader(
 
 
 def _synced(
+    *,
     registry: RegistryService,
     journal: EventJournalService,
     identity: IdentityService,
     store_id: StoreId,
     upload_to: _Upload,
+    own_acks: OwnAcks,
 ) -> Effect[None, EventJournalError | EventLogRemoteError]:
     def sync_remote(
         remote: EventLogRemoteService,
@@ -933,7 +947,11 @@ def _synced(
             latest = yield from latest_sequence(identity=identity, store_id=store_id)
             if latest is None:
                 return
-            while (yield from journal.next_remote_sequence(remote.id)) <= latest:
+            # The remote never sends this log's own writes back on this connection.
+            while (
+                own_acks.advance(remote.id, (yield from journal.next_remote_sequence(remote.id)))
+                <= latest
+            ):
                 yield from sleep(_SYNCED_POLL)
 
         return gen(body)
@@ -966,7 +984,8 @@ def _make():
         return gen(body)
 
     compact_remote = _compact_remote(registry.compactors)
-    upload_to = _uploader(journal, identity, store_id, with_lock)
+    own_acks = OwnAcks()
+    upload_to = _uploader(journal, identity, store_id, with_lock, own_acks)
     log_compaction = LogCompaction(journal, store_id, identity, registry.compactors)
 
     def run_remote(remote: EventLogRemoteService) -> Effect[None]:
@@ -1050,12 +1069,18 @@ def _make():
         return gen(body)
 
     yield from registry.handle_remote(run_remote)
-    synced = _synced(registry, journal, identity, store_id, upload_to)
     return EventLogService(
         write_events,
         journal.entries,
         journal.destroy,
-        synced,
+        _synced(
+            registry=registry,
+            journal=journal,
+            identity=identity,
+            store_id=store_id,
+            upload_to=upload_to,
+            own_acks=own_acks,
+        ),
         lambda remote_id: suspend(
             lambda: log_compaction.compact(list(registry.remotes.values()), remote_id)
         ),
