@@ -1273,8 +1273,12 @@ def check_durations(scheduler: SyncScheduler) -> None:
     # Past the boundary, a raw float is rejected: it must go through from_input_unsafe.
     fx.testing.TestClock().sleep(1.0)  # pyright: ignore[reportArgumentType]
     scheduler.call_later(1.0, lambda: None)  # pyright: ignore[reportArgumentType]
+
     # A schedule's delay is a Duration too, so custom steps can't return NaN.
-    schedule.Continue(1, 1.0)  # pyright: ignore[reportArgumentType, reportDeprecated]
+    def float_delay(now: float, input: object) -> fx.Effect[tuple[int, float]]:
+        return fx.succeed((1, 1.0))
+
+    schedule.from_step(fx.succeed(float_delay))  # pyright: ignore[reportArgumentType, reportCallIssue]
     # duration.Input takes every boundary form.
     inputs: list[DurationInput] = [1, 1.5, "1 second", (1, 0), {"seconds": 1}, second]
     assert_type(inputs, list[DurationInput])
@@ -1292,8 +1296,8 @@ def check_schedule_constructors() -> None:
     assert_type(ids.concat(schedule.spaced(1)), schedule.Schedule[str | int, str])
     assert_type(ids.concat_result(schedule.spaced(1)), schedule.Schedule[fx.Result[int, str], str])
 
-    def step(now: float, n: int) -> fx.Effect[schedule.Decision[str], NotFound, Port]:
-        return Port().as_(schedule.Stop(str(n)))  # pyright: ignore[reportDeprecated]
+    def step(now: float, n: int) -> fx.Effect[tuple[str, Duration], NotFound | Done[str], Port]:
+        return Port().and_then(done(str(n)))
 
     custom = schedule.from_step(fx.succeed(step))
     assert_type(custom, schedule.Schedule[str, int, NotFound, Port])
@@ -1338,7 +1342,7 @@ def check_schedule_combinators(s: schedule.Schedule[int, str]) -> None:
     assert_type(s.pipe(schedule.passthrough), schedule.Schedule[str, str])
     assert_type(schedule.forever.pipe(schedule.set_input_type(str)), schedule.Schedule[int, str])
     s.pipe(schedule.set_input_type(int))  # pyright: ignore[reportArgumentType]
-    # Decisions and metadata are immutable, so covariant.
+    # Metadata is immutable, so covariant.
     _meta: schedule.Metadata[object, object] = schedule.Metadata[int, str](
         input="a",
         output=1,
@@ -1349,7 +1353,6 @@ def check_schedule_combinators(s: schedule.Schedule[int, str]) -> None:
         elapsed=0,
         elapsed_since_previous=0,
     )
-    _decision: schedule.Decision[object] = schedule.Continue[int](1, millis(0))  # pyright: ignore[reportDeprecated]
 
     # The predicate sees the schedule's own input and output types.
     def on_int_inputs(m: schedule.Metadata[int, int]) -> bool:
