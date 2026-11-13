@@ -127,13 +127,18 @@ class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
 
         def attempt() -> Effect[bool]:
             # As Effect's ``offer``: an item that fits is added in this step,
-            # and only a full suspending queue parks the offer.
-            with self._lock:
+            # and only a full suspending queue parks the offer. ``acquire``
+            # rather than ``with``: this is the hot path, and it is cheaper.
+            lock = self._lock
+            lock.acquire()
+            try:
                 if self._offer(item):
                     return _TRUE
                 if isinstance(self._state, st.Open) and self._strategy == "suspend":
                     return _Callback(register)
                 return _FALSE
+            finally:
+                lock.release()
 
         return _Suspend(attempt)
 
@@ -272,9 +277,13 @@ class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
         """Wait for an item."""
 
         def attempt() -> Effect[A, E]:
-            with self._lock:
+            lock = self._lock  # ``acquire`` rather than ``with``, as in ``offer``
+            lock.acquire()
+            try:
                 ex = self._take()
                 return self._wait_then(1, attempt) if ex is None else _FromExit(ex)
+            finally:
+                lock.release()
 
         return _Suspend(attempt)
 
@@ -551,7 +560,7 @@ class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
         ``releaseCapacity``)."""
         match self._state:
             case st.Open(offers=offers) | st.Closing(offers=offers):
-                if self._capacity is not None:
+                if offers and self._capacity is not None:
                     st.admit(offers, self._items, self._capacity, self._lock)
                 self._finish_if_drained()
             case st.Done():
