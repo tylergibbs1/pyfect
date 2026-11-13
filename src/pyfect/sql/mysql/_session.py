@@ -4,7 +4,8 @@ Statements take turns on it (a lock, as mysql2 queues commands), and a
 stream holds the turn until it closes. A prepared statement goes through
 ``COM_STMT_PREPARE`` / ``COM_STMT_EXECUTE`` (binary protocol), kept
 prepared per connection; any other statement is sent as text with its
-parameters escaped in (``_bind``), several statements at once allowed.
+parameters written in as literals (``_bind``, ``_literal``), several statements at
+once allowed.
 """
 
 from __future__ import annotations
@@ -13,7 +14,7 @@ import asyncio
 import contextlib
 import logging
 from collections import OrderedDict
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, cast
 
@@ -21,6 +22,7 @@ from pyfect import _json_text as json_text
 from pyfect.sql.mysql import _asyncmy
 from pyfect.sql.mysql._asyncmy import Cursor, PreparedStatement, RawConnection
 from pyfect.sql.mysql._bind import bind
+from pyfect.sql.mysql._literal import text_literal
 
 _STATEMENT_CACHE_SIZE = 256
 _STREAM_CHUNK = 128
@@ -58,42 +60,6 @@ def _parameter(value: object) -> object:
 
 def _parameters(params: Sequence[object]) -> tuple[object, ...]:
     return tuple(_parameter(value) for value in params)
-
-
-def _identifier(name: str) -> str:
-    """sql-escaper's ``escapeId``: a dot qualifies the name, unless it holds a
-    JSON operator (``->``)."""
-    quoted = name.replace("`", "``")
-    if "->" not in name:
-        quoted = quoted.replace(".", "`.`")
-    return f"`{quoted}`"
-
-
-def _text_literal(escape: Callable[[object], str]) -> Callable[[object, bool], str]:
-    r"""A parameter's literal in a text-protocol statement, as mysql2 (sql-escaper)
-    writes it: a list is ``a, b``, a list in it ``(a, b)``, and a dict in a ``SET``
-    assignment list is ``\`key\` = value`` pairs. Elsewhere a dict is its JSON
-    text, where mysql2 writes JavaScript's ``'[object Object]'``."""
-
-    def value(item: object) -> str:
-        # sql-escaper's ``escape(item, stringifyObjects=true)``.
-        if isinstance(item, list):
-            return listed(cast("list[object]", item))
-        return escape(_parameter(item))
-
-    def listed(items: list[object]) -> str:
-        return ", ".join(
-            f"({listed(cast('list[object]', item))})" if isinstance(item, list) else value(item)
-            for item in items
-        )
-
-    def literal(param: object, assigns: bool) -> str:
-        if assigns and isinstance(param, dict):
-            pairs = cast("dict[object, object]", param).items()
-            return ", ".join(f"{_identifier(str(key))} = {value(item)}" for key, item in pairs)
-        return value(param)
-
-    return literal
 
 
 class Session:
@@ -166,13 +132,12 @@ class Session:
         return [[dict(zip(names, row, strict=True)) for row in rows]]
 
     def _bound(self, sql: str, params: Sequence[object]) -> str:
-        # The server reports the session's mode with every result, and the
-        # connection's ``escape`` follows the same flag.
+        # The server reports the session's mode with every result.
         no_backslash_escapes = bool(self.raw.server_status & _NO_BACKSLASH_ESCAPES)
         return bind(
             sql,
             params,
-            _text_literal(self.raw.escape),
+            text_literal(no_backslash_escapes=no_backslash_escapes),
             no_backslash_escapes=no_backslash_escapes,
         )
 
