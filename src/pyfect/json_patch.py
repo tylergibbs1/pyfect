@@ -8,20 +8,23 @@
 
 Arrays are lists or tuples and objects string-keyed mappings on the way in;
 ``apply`` builds new lists and dicts along the path it changes and keeps
-every other value as it is. An operation that cannot be applied raises
-``ValueError`` with Effect's message.
+every other value as it is. An operation that does not fit the value raises
+``ValueError`` with Effect's message; a value that is not a patch (not a
+list of objects with a string ``path``, or an ``add`` or ``replace`` with no
+``value``) raises ``TypeError``, as Effect's does. As in Effect, an ``op``
+other than ``add`` or ``remove`` is a ``replace``: ``test`` is not checked.
 """
 
 from __future__ import annotations
 
-import math
 import re
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from typing import Literal, NotRequired, TypedDict, cast
 
 from pyfect import _json_text
 from pyfect._digits import parse_digits
-from pyfect._js import js_sort_key
+from pyfect._js import js_sort_key, same_json_value
 from pyfect._json_value import JsonValue
 from pyfect.json_pointer import escape_token, unescape_token
 
@@ -61,21 +64,6 @@ def _is_object(value: object) -> bool:
     return isinstance(value, Mapping)
 
 
-def _same(a: JsonValue, b: JsonValue) -> bool:
-    """JavaScript's ``Object.is`` on JSON values: the same container, or
-    leaves of one JSON type with one value (``True`` is not ``1``, ``-0.0``
-    is not ``0``)."""
-    if a is b:
-        return True
-    if isinstance(a, bool) or isinstance(b, bool):
-        return type(a) is type(b) and a == b
-    if isinstance(a, (int, float)) and isinstance(b, (int, float)):
-        return a == b and math.copysign(1, a) == math.copysign(1, b)
-    if isinstance(a, str) and isinstance(b, str):
-        return a == b
-    return False
-
-
 def get(old_value: JsonValue, new_value: JsonValue) -> list[JsonPatchOperation]:
     """The operations turning ``old_value`` into ``new_value``: array
     elements compared by index (removals from the end first, then
@@ -88,7 +76,7 @@ def get(old_value: JsonValue, new_value: JsonValue) -> list[JsonPatchOperation]:
 def _get_loop(
     old_value: JsonValue, new_value: JsonValue, path: str, patches: list[JsonPatchOperation]
 ) -> None:
-    if _same(old_value, new_value):
+    if same_json_value(old_value, new_value):
         return
     if _is_array(old_value) and _is_array(new_value):
         old = cast("_Array", old_value)
@@ -121,11 +109,38 @@ def _get_loop(
 
 def apply(patch: JsonPatch, old_value: JsonValue) -> JsonValue:
     """``old_value`` with each operation applied in order. An empty patch
-    returns ``old_value`` itself."""
+    returns ``old_value`` itself. As in Effect, an operation whose ``op`` is
+    not ``add`` or ``remove`` (``test``, a typo, none) is a ``replace``."""
     doc = old_value
     for operation in patch:
-        doc = _apply_operation(doc, operation)
+        doc = _apply_operation(doc, _parse_operation(operation))
     return doc
+
+
+@dataclass(frozen=True, slots=True)
+class _Operation:
+    kind: Literal["add", "remove", "replace"]
+    op: str
+    path: str
+    value: JsonValue
+
+
+def _parse_operation(raw: object) -> _Operation:
+    """Effect throws a ``TypeError`` for a value that is not an operation;
+    a missing ``value``, which Effect writes as ``undefined``, is one too,
+    as Python has no ``undefined``."""
+    if not isinstance(raw, Mapping):
+        raise TypeError(f"A JSON Patch operation must be an object, got {type(raw).__name__}")
+    operation = cast("Mapping[str, object]", raw)
+    path = operation.get("path")
+    if not isinstance(path, str):
+        raise TypeError(f'A JSON Patch operation needs a string "path", got {path!r}')
+    op = operation.get("op")
+    label = op if isinstance(op, str) else "undefined" if op is None else repr(op)
+    kind = op if op in ("add", "remove") else "replace"
+    if kind != "remove" and "value" not in operation:
+        raise TypeError(f'JSON Patch operation {label} at "{path}" has no "value"')
+    return _Operation(kind, label, path, cast("JsonValue", operation.get("value")))
 
 
 def _tokenize(pointer: str) -> list[str]:
@@ -150,18 +165,18 @@ def _array_index(token: str) -> int:
     return index
 
 
-def _not_a_container(operation: JsonPatchOperation) -> ValueError:
+def _not_a_container(operation: _Operation) -> ValueError:
     return ValueError(
-        f'Cannot {operation["op"]} at "{operation["path"]}" (parent not found or not a container).'
+        f'Cannot {operation.op} at "{operation.path}" (parent not found or not a container).'
     )
 
 
-def _apply_operation(doc: JsonValue, operation: JsonPatchOperation) -> JsonValue:
-    path = operation["path"]
+def _apply_operation(doc: JsonValue, operation: _Operation) -> JsonValue:
+    path = operation.path
     if not path:
-        if operation["op"] == "remove":
+        if operation.kind == "remove":
             raise ValueError("Unsupported operation at the root")
-        return operation["value"]
+        return operation.value
     resolved = _resolve_parent(doc, path)
     if resolved is None:
         raise _not_a_container(operation)
@@ -173,35 +188,33 @@ def _apply_operation(doc: JsonValue, operation: JsonPatchOperation) -> JsonValue
     raise _not_a_container(operation)
 
 
-def _apply_to_array(
-    parent: _Array, last_token: str, operation: JsonPatchOperation
-) -> list[JsonValue]:
-    if last_token == "-" and operation["op"] != "add":
-        raise ValueError(f'"-" is not valid for {operation["op"]} at "{operation["path"]}".')
+def _apply_to_array(parent: _Array, last_token: str, operation: _Operation) -> list[JsonValue]:
+    if last_token == "-" and operation.kind != "add":
+        raise ValueError(f'"-" is not valid for {operation.op} at "{operation.path}".')
     index = len(parent) if last_token == "-" else _array_index(last_token)
-    max_index = len(parent) if operation["op"] == "add" else len(parent) - 1
+    max_index = len(parent) if operation.kind == "add" else len(parent) - 1
     if index > max_index:
-        raise ValueError(f'Array index out of bounds at "{operation["path"]}".')
+        raise ValueError(f'Array index out of bounds at "{operation.path}".')
     updated = list(parent)
-    if operation["op"] == "add":
-        updated.insert(index, operation["value"])
-    elif operation["op"] == "remove":
+    if operation.kind == "add":
+        updated.insert(index, operation.value)
+    elif operation.kind == "remove":
         del updated[index]
     else:
-        updated[index] = operation["value"]
+        updated[index] = operation.value
     return updated
 
 
 def _apply_to_object(
-    parent: _Object, last_token: str, operation: JsonPatchOperation
+    parent: _Object, last_token: str, operation: _Operation
 ) -> dict[str, JsonValue]:
-    if operation["op"] != "add" and last_token not in parent:
-        raise ValueError(f'Property "{last_token}" does not exist at "{operation["path"]}".')
+    if operation.kind != "add" and last_token not in parent:
+        raise ValueError(f'Property "{last_token}" does not exist at "{operation.path}".')
     updated = dict(parent)
-    if operation["op"] == "remove":
+    if operation.kind == "remove":
         del updated[last_token]
     else:
-        updated[last_token] = operation["value"]
+        updated[last_token] = operation.value
     return updated
 
 
