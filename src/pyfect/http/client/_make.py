@@ -162,24 +162,13 @@ def _add_header_attributes(
             span.attribute(f"http.{phase}.header.{name}", shown)
 
 
-_response_controllers: weakref.WeakKeyDictionary[HttpClientResponse, AbortController] = (
-    weakref.WeakKeyDictionary()
-)
-
-
-def abort_response(response: HttpClientResponse) -> None:
-    """Abort the request of a response this module made (scoped or not),
-    releasing its connection without reading the body."""
-    controller = _response_controllers.get(response)
-    if controller is not None:
-        controller.abort()
-
-
 def _track(
     response: HttpClientResponse, controller: AbortController, scoped: bool
 ) -> HttpClientResponse:
     tracked = response if scoped else _interruptible(response, controller)
-    _response_controllers[tracked] = controller
+    # On the response, not in a table keyed by it: the controller reaches the response
+    # again (through the request's span), which would keep such an entry forever.
+    tracked._abort_with(controller.abort)
     return tracked
 
 

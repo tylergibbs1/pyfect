@@ -25,3 +25,7 @@ wheels/
 # Mutation testing work directories (scripts/mutation.py)
 .mutation/
 .fuzz/
+
+# Soak runs (tests/soak) and the free-threaded venv
+.soak/
+.venv-*/

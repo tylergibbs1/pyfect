@@ -29,8 +29,6 @@ is bound to the run, whose scheduler still owns the timers.
 from __future__ import annotations
 
 import asyncio
-import heapq
-import itertools
 import threading
 import time
 from abc import ABC, abstractmethod
@@ -38,6 +36,7 @@ from collections import deque
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Literal, Protocol
 
+from pyfect import _timer_heap
 from pyfect._priority_buckets import PriorityBuckets
 from pyfect._wake_tracking import Tracking, WakeTracker
 from pyfect.context import Reference
@@ -253,16 +252,11 @@ class BoundScheduler:
 
 
 class _Timer:
-    __slots__ = ("alive", "daemon", "task", "when")
+    __slots__ = ("daemon", "task")
 
-    def __init__(self, when: float, task: Task, *, daemon: bool = False) -> None:
-        self.when = when
+    def __init__(self, task: Task, *, daemon: bool) -> None:
         self.task = task
         self.daemon = daemon
-        self.alive = True
-
-    def cancel(self) -> None:
-        self.alive = False
 
 
 def _merged(ready: deque[Task], prioritized: PriorityBuckets | None) -> deque[Task]:
@@ -293,8 +287,8 @@ class SyncScheduler(Tracking):
         self._last_activity = time.monotonic()
         self._ready: deque[Task] = deque()
         self._prioritized: PriorityBuckets | None = None
-        self._timers: list[tuple[float, int, _Timer]] = []
-        self._seq = itertools.count()
+        # A cancelled timer lets go of its task at once (``TimerHeap``).
+        self._timers: _timer_heap.TimerHeap[_Timer] = _timer_heap.TimerHeap()
         self._cond = threading.Condition()
         # The thread inside ``run_until``, if any.
         self._driver: int | None = None
@@ -318,11 +312,16 @@ class SyncScheduler(Tracking):
             self._cond.notify()
 
     def call_later(self, delay: Duration, task: Task, *, daemon: bool = False) -> Cancel:
-        timer = _Timer(time.monotonic() + max(delay.to_seconds(), 0.0), task, daemon=daemon)
+        when = time.monotonic() + max(delay.to_seconds(), 0.0)
         with self._cond:
-            heapq.heappush(self._timers, (timer.when, next(self._seq), timer))
+            entry = self._timers.push(when, _Timer(task, daemon=daemon))
             self._cond.notify()
-        return timer.cancel
+
+        def cancel() -> None:
+            with self._cond:
+                entry.cancel()
+
+        return cancel
 
     def run_until(self, done: Callable[[], bool], *, stall_timeout: float | None = None) -> None:
         """Run tasks and timers until ``done()`` is true.
@@ -398,24 +397,21 @@ class SyncScheduler(Tracking):
         return remaining if timeout is None else min(timeout, remaining)
 
     def _has_live_timers(self) -> bool:
-        return any(t.alive and not t.daemon for _, _, t in self._timers)
+        return any(not t.daemon for t in self._timers.values())
 
     def _move_due_timers(self) -> None:
         now = time.monotonic()
-        while self._timers and self._timers[0][0] <= now:
-            _, _, timer = heapq.heappop(self._timers)
-            if timer.alive:
-                self._ready.append(timer.task)
-                if not timer.daemon:
-                    self._last_activity = now
+        for timer in self._timers.pop_due(now):
+            self._ready.append(timer.task)
+            if not timer.daemon:
+                self._last_activity = now
 
     def _next_timeout(self) -> float | None:
-        while self._timers and not self._timers[0][2].alive:
-            heapq.heappop(self._timers)
-        if not self._timers:
+        when = self._timers.next_due()
+        if when is None:
             return None
         # An infinite (or absurdly far) deadline still has to fit a lock wait.
-        return min(max(self._timers[0][0] - time.monotonic(), 0.0), threading.TIMEOUT_MAX)
+        return min(max(when - time.monotonic(), 0.0), threading.TIMEOUT_MAX)
 
 
 class SyncOnlyScheduler(SyncScheduler):

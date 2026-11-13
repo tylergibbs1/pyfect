@@ -5,6 +5,7 @@ backtracks through every split and holds the GIL while it does)."""
 from __future__ import annotations
 
 import ast
+import gc
 import importlib
 import re
 import time
@@ -27,14 +28,24 @@ _RUN_CHARACTERS = "0 1aA-./\\\t\n,;:=%\"'_~#&+(<x"
 
 
 def _seconds(call: Callable[[], object]) -> float:
-    start = time.perf_counter()
-    call()
-    return time.perf_counter() - start
+    gc.disable()
+    try:
+        start = time.perf_counter()
+        call()
+        return time.perf_counter() - start
+    finally:
+        gc.enable()
 
 
 def _is_linear(call: Callable[[int], object], n: int = 4000) -> bool:
     """Doubling the input at most triples the time (a quadratic one is 4x),
-    or the larger input takes under 5 ms either way."""
+    or the larger input takes under 5 ms either way. A quadratic pattern fails
+    every measurement, so one of three passing is linear: a slow CI runner's
+    single stall once failed a linear pattern."""
+    return any(_doubling_is_linear(call, n) for _ in range(3))
+
+
+def _doubling_is_linear(call: Callable[[int], object], n: int) -> bool:
     small = min(_seconds(lambda: call(n)) for _ in range(3))
     large = min(_seconds(lambda: call(2 * n)) for _ in range(3))
     return large < 0.005 or large < 3 * small

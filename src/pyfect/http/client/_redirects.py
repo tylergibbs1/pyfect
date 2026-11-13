@@ -8,7 +8,6 @@ from pyfect.effect import Effect, succeed, suspend, sync
 from pyfect.http import body as _body
 from pyfect.http import url as _url
 from pyfect.http import url_params as _url_params
-from pyfect.http.client._make import abort_response
 from pyfect.http.client._service import HttpClientService
 from pyfect.http.headers import Headers, current_redacted_names, is_redacted_name
 from pyfect.http.request import HttpClientRequest
@@ -92,9 +91,8 @@ def follow_redirects[E, R](
                 if following is None:
                     return succeed(response)
                 # Abort the discarded response to release its connection unread.
-                return sync(lambda: abort_response(response)).and_then(
-                    loop(succeed(following), redirects + 1)
-                )
+                abort = response._abort_unread  # pyright: ignore[reportPrivateUsage]
+                return sync(abort).and_then(loop(succeed(following), redirects + 1))
 
             return post(requests.map(remember)).flat_map(follow)
 

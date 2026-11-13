@@ -32,7 +32,7 @@ from pyfect.http.etag import layer_weak as etag_layer_weak
 from pyfect.http.http_effect import to_handled
 from pyfect.http.httpx_client import layer as httpx_layer
 from pyfect.http.live_server._exchange import Exchange
-from pyfect.http.live_server._listener import ConnectionState, Listen, Listener, listen
+from pyfect.http.live_server._listener import ConnectionState, Listen, Listener, Tls, listen
 from pyfect.http.live_server._serve import Timeouts, serve_connection
 from pyfect.http.live_server._ws_deflate import PerMessageDeflate, WebSocketConfig
 from pyfect.http.platform import HttpPlatform
@@ -87,6 +87,9 @@ class Options(TypedDict):
 class TlsOptions(Options):
     cert: PemInput
     key: Redacted[PemInput] | PemInput
+    handshake_timeout: NotRequired[DurationInput]
+    """How long a connection's TLS handshake may take before it is dropped (Node's
+    ``handshakeTimeout``, 120s)."""
 
 
 def _serve(listener: Listener, protocol: RequestProtocol, options: Options) -> HttpServerService:
@@ -120,7 +123,7 @@ def _serve(listener: Listener, protocol: RequestProtocol, options: Options) -> H
 
 
 def _make(
-    listen_with: Listen, protocol: RequestProtocol, options: Options, tls: Any = None
+    listen_with: Listen, protocol: RequestProtocol, options: Options, tls: Tls | None = None
 ) -> Effect[HttpServerService, SocketServerError, Scope]:
     return listen(listen_with, tls).map(lambda listener: _serve(listener, protocol, options))
 
@@ -151,8 +154,12 @@ def make_tls(**options: Unpack[TlsOptions]) -> Effect[HttpServerService, SocketS
         except (OSError, ValueError) as cause:
             return fail(SocketServerError(SocketServerOpenError(cause)))
         host, port = options.get("host"), options.get("port", 0)
+        handshake_timeout = from_input_unsafe(options.get("handshake_timeout", "120 seconds"))
         return _make(
-            lambda factory: get_loop().create_server(factory, host, port), "https", options, context
+            lambda factory: get_loop().create_server(factory, host, port),
+            "https",
+            options,
+            Tls(context, handshake_timeout),
         )
 
     return suspend(body)

@@ -18,6 +18,7 @@ from collections.abc import Callable
 from typing import Any, TypedDict, cast
 
 import pytest
+from _gc_census import tracked_of
 
 import pyfect as fx
 from pyfect import layer, testing
@@ -305,9 +306,7 @@ def test_should_release_disconnected_clients_when_a_reverse_request_is_cancelled
         yield from transport.disconnects.offer(client_id)
     yield from testing.adjust("11 seconds")
     gc.collect()
-    sessions = {
-        o.client_id for o in gc.get_objects() if isinstance(o, Connection) and o.server is server
-    }
+    sessions = {o.client_id for o in tracked_of(Connection) if o.server is server}
     assert seen == {1, 2}
     assert 2 not in sessions, "control client must be collectible"
     assert 1 not in sessions, "cancelled reverse client must be collectible"

@@ -20,6 +20,7 @@ reach the buffer, and encrypted by each on the way out.
 from __future__ import annotations
 
 import asyncio
+import math
 import ssl
 import threading
 from collections import deque
@@ -27,10 +28,14 @@ from collections.abc import Callable
 
 from pyfect._core import Effect
 from pyfect._os_wait import Resume, os_wait
+from pyfect.duration import Duration, from_input_unsafe
 from pyfect.effect import fail, succeed, suspend, void
 from pyfect.socket._errors import SocketError, close_error, read_error, write_error
-from pyfect.socket._loop import call_soon
+from pyfect.socket._loop import call_soon, get_loop
 from pyfect.socket._tls_session import Received, TlsSession
+
+_HANDSHAKE_TIMEOUT = from_input_unsafe("120 seconds")
+"""How long an accepted connection's TLS handshake may take (Node's ``handshakeTimeout``)."""
 
 HIGH_WATER_MARK = 64 * 1024
 
@@ -90,9 +95,11 @@ class Connection(asyncio.Protocol):
         on_made: Callable[[Connection], None] | None = None,
         *,
         server_tls: ssl.SSLContext | None = None,
+        handshake_timeout: Duration = _HANDSHAKE_TIMEOUT,
     ) -> None:
         self._on_made = on_made
         self._server_tls = server_tls
+        self._handshake_timeout = handshake_timeout
         self.lock = threading.Lock()
         self.signal = Signal(self.lock)
         self.transport: asyncio.Transport | None = None
@@ -118,6 +125,11 @@ class Connection(asyncio.Protocol):
         elif self._server_tls is not None:
             handshake = self.start_tls(self._server_tls, server_side=True, hostname=None)
             handshake.add_done_callback(self._server_handshake_done)
+            seconds = self._handshake_timeout.to_seconds()
+            if math.isfinite(seconds):
+                # A handshake that never finishes must not hold the connection.
+                timer = get_loop().call_later(seconds, lambda: self._apply_close(graceful=False))
+                handshake.add_done_callback(lambda _: timer.cancel())
         elif self._on_made is not None:
             self._on_made(self)
 
@@ -155,6 +167,7 @@ class Connection(asyncio.Protocol):
             transport.pause_reading()
 
     def eof_received(self) -> bool:
+        self._fail_handshakes(ConnectionError("the peer closed during the TLS handshake"))
         self.end(close_error(1000))
         # Stay half-open: the write side ends when the writer is released.
         return True
@@ -165,13 +178,17 @@ class Connection(asyncio.Protocol):
             waiters = self.signal.notify_locked()
         for wake in waiters:
             wake()
-        for session in self._tls:
-            if not session.handshake.done():
-                session.handshake.set_exception(exc or ConnectionError("socket closed"))
+        self._fail_handshakes(exc or ConnectionError("socket closed"))
         if exc is None:
             self.end(close_error(1000))
         else:
             self.fail(read_error(exc))
+
+    def _fail_handshakes(self, error: BaseException) -> None:
+        """No more input: a handshake still going cannot finish."""
+        for session in self._tls:
+            if not session.handshake.done():
+                session.handshake.set_exception(error)
 
     def pause_writing(self) -> None:
         with self.lock:

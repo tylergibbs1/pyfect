@@ -175,7 +175,10 @@ def _hashable(value: object) -> bool:
 
 
 _STRUCTS: WeakKeyDictionary[type, ast.Objects] = WeakKeyDictionary()
-_BUILDING: set[type] = set()
+# The TypedDicts being derived, each with where its AST goes once built. A recursive
+# reference waits on that, not on the class: an AST reaching its class would keep its
+# ``_STRUCTS`` entry, and the class, forever.
+_BUILDING: dict[type, list[ast.Objects]] = {}
 
 
 def typed_dict_ast(
@@ -188,13 +191,16 @@ def typed_dict_ast(
         cached = _STRUCTS.get(typed_dict)
         if cached is not None:
             return cached
-        if typed_dict in _BUILDING:
-            return ast.Suspend(lambda: _STRUCTS[typed_dict])
-        _BUILDING.add(typed_dict)
+        building = _BUILDING.get(typed_dict)
+        if building is not None:
+            return ast.Suspend(lambda: building[0])
+        built: list[ast.Objects] = []
+        _BUILDING[typed_dict] = built
         try:
             node = objects_of(typed_dict, typed_dict_fields(typed_dict, {}))
         finally:
-            _BUILDING.discard(typed_dict)
+            del _BUILDING[typed_dict]
+        built.append(node)
         _STRUCTS[typed_dict] = node
         return node
     return objects_of(typed_dict, fields)

@@ -42,6 +42,8 @@ import pytest
 
 pytest.importorskip("psycopg")
 
+from _gc_census import tracked_of
+
 import pyfect as fx
 from pyfect import scope, testing
 from pyfect.cause import Interrupted
@@ -792,11 +794,7 @@ def _dead_sessions(url: object) -> int:
     import gc
 
     gc.collect()
-    return sum(
-        1
-        for o in gc.get_objects()
-        if isinstance(o, PgConnection) and o.config.url == url and o.is_dead
-    )
+    return sum(1 for o in tracked_of(PgConnection) if o.config.url == url and o.is_dead)
 
 
 @testing.live
