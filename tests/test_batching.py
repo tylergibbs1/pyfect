@@ -2,6 +2,7 @@
 under Node (``Effect.request`` with the same resolvers)."""
 
 import asyncio
+import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -270,15 +271,19 @@ def test_race_interrupts_a_losing_run_wrapped_by_around():
 
 
 def test_a_batch_left_pending_by_a_finished_run_does_not_hold_up_later_runs():
-    # A daemon's request outlives its ``run_blocking``, whose scheduler then
-    # stops: the batch it started never runs. Requests of a later run
-    # through the same (module-level) resolver collect a batch of their own.
+    # A daemon's request outlives its ``run_blocking``; as in Effect, whose
+    # scheduler is always alive, the daemon goes on and its batch runs. A
+    # later run's request through the same (module-level) resolver is
+    # answered too, not held up by it.
     log: list[int] = []
     resolver = fx.RequestResolver(_answering(log)).set_delay("10 millis")
     fx.run_blocking(fx.request(Get(1), resolver).fork_daemon(start_immediately=True).as_void())
     later = fx.request(Get(2), resolver).timeout_option("1 second").or_die()
     assert fx.run_blocking(later) == fx.option.Some("2")
-    assert log == [2]
+    deadline = time.monotonic() + 5
+    while 1 not in log and time.monotonic() < deadline:
+        time.sleep(0.01)  # the daemon's batch runs on the background thread
+    assert sorted(log) == [1, 2]
 
 
 def test_runs_on_one_asyncio_loop_share_batches():

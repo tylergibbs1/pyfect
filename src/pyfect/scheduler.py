@@ -296,6 +296,8 @@ class SyncScheduler(Tracking):
         # The scheduler that runs this one's tasks and timers once its caller has
         # returned (``adopt``).
         self._adopter: SyncScheduler | None = None
+        # Tasks of this scheduler queued or running on the adopter (``driver``).
+        self._forwarded = 0
 
     def runs_here(self) -> bool:
         """Whether this thread is the one running the scheduler's tasks."""
@@ -305,8 +307,13 @@ class SyncScheduler(Tracking):
         return self._driver == threading.get_ident()
 
     def driver(self) -> int | None:
+        """The thread running this scheduler's tasks now. Once adopted, the
+        adopter's thread, while a task of this scheduler is queued or running
+        there: idle, it races with nobody."""
         adopter = self._adopter
-        return self._driver if adopter is None else adopter.driver()
+        if adopter is None:
+            return self._driver
+        return adopter.driver() if self._forwarded else None
 
     def adopt(self, into: SyncScheduler) -> None:
         """Hand what is left to ``into`` for good: the tasks ready now, the timers
@@ -320,11 +327,39 @@ class SyncScheduler(Tracking):
             batch = self._take_batch() if self._ready or self._prioritized else deque[Task]()
             timers = [entry for _, _, entry in self._timers.entries if entry.owner is not None]
         for task in batch:
-            into.schedule(task)
+            into.schedule(self._forward(task))
         for entry in timers:
             timer = entry.value
             if timer is not None:
-                into.call_at(entry.when, self._fire(entry), daemon=timer.daemon)
+                into.call_at(entry.when, self._counted(self._fire(entry)), daemon=timer.daemon)
+
+    def _forward(self, task: Task) -> Task:
+        """``task`` for the adopter, counted while queued or running there."""
+        with self._cond:
+            self._forwarded += 1
+
+        def run() -> None:
+            try:
+                task()
+            finally:
+                with self._cond:
+                    self._forwarded -= 1
+
+        return run
+
+    def _counted(self, task: Task) -> Task:
+        """A timer's ``task`` for the adopter, counted while it runs there."""
+
+        def run() -> None:
+            with self._cond:
+                self._forwarded += 1
+            try:
+                task()
+            finally:
+                with self._cond:
+                    self._forwarded -= 1
+
+        return run
 
     def _fire(self, entry: _timer_heap.TimerEntry[_Timer]) -> Task:
         """A timer moved to the adopter: runs ``entry``'s task unless it was
@@ -352,7 +387,7 @@ class SyncScheduler(Tracking):
                 self._last_activity = time.monotonic()
                 self._cond.notify()
                 return
-        adopter.schedule(task, priority)
+        adopter.schedule(self._forward(task), priority)
 
     def call_later(self, delay: Duration, task: Task, *, daemon: bool = False) -> Cancel:
         return self.call_at(time.monotonic() + max(delay.to_seconds(), 0.0), task, daemon=daemon)
@@ -368,7 +403,7 @@ class SyncScheduler(Tracking):
                 entry = None
         if entry is None:
             assert adopter is not None
-            return adopter.call_at(when, task, daemon=daemon)
+            return adopter.call_at(when, self._counted(task), daemon=daemon)
 
         def cancel() -> None:
             with self._cond:
@@ -472,7 +507,7 @@ class SyncScheduler(Tracking):
         return min(max(when - time.monotonic(), 0.0), threading.TIMEOUT_MAX)
 
 
-class BackgroundScheduler(SyncScheduler):
+class _BackgroundScheduler(SyncScheduler):
     """The process-wide scheduler that runs what a run leaves behind once its caller
     returns (``SyncScheduler.adopt``): fibers still waiting, their timers, the wakes
     other threads send them. Effect's scheduler is always alive; this is that
@@ -526,7 +561,7 @@ def _never() -> bool:
     return False
 
 
-BACKGROUND = BackgroundScheduler()
+BACKGROUND = _BackgroundScheduler()
 """Runs every adopted scheduler's tasks and timers."""
 
 if hasattr(os, "register_at_fork"):
