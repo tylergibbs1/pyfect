@@ -48,6 +48,21 @@ it. Two hundred transfers run concurrently, and the total balance stays the same
 
 <include meta='title="bank.py"'>../../snippets/transactions/bank.py</include>
 
+## Catching a failure inside tx
+
+A transaction has no savepoints. The writes are undone only when the whole `tx` fails. A
+failure caught inside `tx` leaves the transaction running, and every write made before it,
+including those of the effect that failed, commits with the rest. Effect behaves the same.
+To undo a step's writes, catch its failure outside `tx`, or check before writing.
+
+<CodeOutput>
+
+<include meta='title="caught.py"'>../../snippets/transactions/caught.py</include>
+
+<include lang="text">../../snippets/transactions/caught.out</include>
+
+</CodeOutput>
+
 ## Transactional collections
 
 `TxQueue`, `TxHashMap`, `TxHashSet`, `TxChunk`, `TxPriorityQueue`, `TxPubSub`,
@@ -75,6 +90,57 @@ would. Items with equal keys come out in the order they went in, and items witho
 
 </CodeOutput>
 
+A `TxHashSet` is a set and a `TxChunk` a sequence (its value is a `tuple`), and a check
+followed by a write on either is safe only inside one `tx`, like any other read and write.
+
+<CodeOutput>
+
+<include meta='title="seats.py"'>../../snippets/transactions/seats.py</include>
+
+<include lang="text">../../snippets/transactions/seats.out</include>
+
+</CodeOutput>
+
+## Coordinating fibers
+
+The transactional versions of `Deferred`, `Semaphore` and a read/write lock wait through
+`tx_retry`, so they compose with other refs in one transaction. `TxDeferred.wait()` waits
+until the deferred is completed with `succeed`, `fail` or `done(result)`.
+`TxSemaphore.make(n)` hands out `n` permits: `with_permit(eff)` holds one while `eff` runs,
+and `acquire`, `release` and `try_acquire` work inside a larger `tx`. A `TxReentrantLock`
+lets any number of fibers hold a read lock (`with_read_lock`) while no fiber holds the write
+lock (`with_write_lock`); a fiber can take a lock it already holds.
+
+<CodeOutput>
+
+<include meta='title="coordination.py"'>../../snippets/transactions/coordination.py</include>
+
+<include lang="text">../../snippets/transactions/coordination.out</include>
+
+</CodeOutput>
+
+A `TxPubSub` gives each subscriber its own `TxQueue` for as long as its scope lasts
+(`subscribe()`), and `publish` offers a value to all of them in the running transaction, so
+a transaction that rolls back publishes nothing. `bounded`, `dropping`, `sliding` and
+`unbounded` choose what happens when a subscriber's queue is full, as for `PubSub`. A
+`TxSubscriptionRef` is a `TxRef` that publishes every value it stores: `changes()` is a
+queue of the current value and then each committed one, and `changes_stream()` the same as a
+`Stream`.
+
+<CodeOutput>
+
+<include meta='title="subscriptions.py"'>../../snippets/transactions/subscriptions.py</include>
+
+<include lang="text">../../snippets/transactions/subscriptions.out</include>
+
+</CodeOutput>
+
 Reference: [`pyfect.transaction`](/docs/reference/transaction),
 [`pyfect.tx_ref`](/docs/reference/tx_ref), [`pyfect.tx_queue`](/docs/reference/tx_queue),
-[`pyfect.tx_priority_queue`](/docs/reference/tx_priority_queue).
+[`pyfect.tx_priority_queue`](/docs/reference/tx_priority_queue),
+[`pyfect.tx_hash_set`](/docs/reference/tx_hash_set), [`pyfect.tx_chunk`](/docs/reference/tx_chunk),
+[`pyfect.tx_deferred`](/docs/reference/tx_deferred),
+[`pyfect.tx_semaphore`](/docs/reference/tx_semaphore),
+[`pyfect.tx_reentrant_lock`](/docs/reference/tx_reentrant_lock),
+[`pyfect.tx_pubsub`](/docs/reference/tx_pubsub),
+[`pyfect.tx_subscription_ref`](/docs/reference/tx_subscription_ref).

@@ -48,13 +48,29 @@ A `FiberSet` holds fibers that live as long as a scope: each one leaves the set 
 completes, and those still running are interrupted when the scope closes. `join` fails with
 the first failure of a fiber in the set. Give the set its fibers' success and error types,
 `FiberSet[A, E].make()`: a bare `FiberSet.make()` is a `FiberSet[object, object]`, and its
-`join` fails with `object`. `FiberMap` and `FiberHandle` key their fibers, or hold one.
+`join` fails with `object`. A `FiberMap` keys its fibers: running one under a key
+interrupts the fiber already there.
 
 <CodeOutput>
 
 <include meta='title="fiber_set.py"'>../../snippets/concurrency/fiber_set.py</include>
 
 <include lang="text">../../snippets/concurrency/fiber_set.out</include>
+
+</CodeOutput>
+
+A `FiberHandle` holds at most one fiber, for work where only the latest run matters, such
+as a search as you type or a background job per warehouse. `handle.run(eff)` forks `eff` and
+interrupts the fiber running there; with `only_if_missing=True` the running fiber stays and
+the new one never starts. `await_empty()` waits for the current fiber, `clear()` interrupts
+it, and `join()` fails with the first failure of a fiber in the handle. Closing the scope
+interrupts the fiber and waits for its cleanup.
+
+<CodeOutput>
+
+<include meta='title="fiber_handle.py"'>../../snippets/concurrency/fiber_handle.py</include>
+
+<include lang="text">../../snippets/concurrency/fiber_handle.out</include>
 
 </CodeOutput>
 
@@ -106,4 +122,5 @@ subscription.
 
 Reference: [`Fiber`](/docs/reference/Fiber), [`pyfect.queue`](/docs/reference/queue), [`pyfect.pubsub`](/docs/reference/pubsub),
 [`for_each`](/docs/reference), [`pyfect.fiber_set`](/docs/reference/fiber_set),
+[`pyfect.fiber_handle`](/docs/reference/fiber_handle),
 [`pyfect.partitioned_semaphore`](/docs/reference/partitioned_semaphore).
