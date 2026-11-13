@@ -37,7 +37,14 @@
   and logger formatting. They are now module-level functions or methods on a small state object.
   `tests/test_closure_cycles.py` fails for any nested function in `pyfect` that reaches itself
   through a closure cell, and `tests/test_release_*.py` check that the public loops free what
-  they handled once the run ends, with the cycle collector off.
+  they handled once the run ends, with the cycle collector off. The live server's request
+  `upgrade` still refers to its request this way; the fix changes its signature, so it waits
+  for 0.7.0.
+
+### Performance
+
+- `Queue.take`, `peek`, `await_done` and `take_between` re-enter through methods rather than a
+  fresh closure per call: the `queue offer/take` benchmark runs at x0.83 of 0.6.2.
 
 ### Docs
 

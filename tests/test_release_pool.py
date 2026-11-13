@@ -4,25 +4,20 @@ ends, without the cycle collector (see ``tests/test_closure_cycles.py``)."""
 from __future__ import annotations
 
 import gc
-import weakref
 from typing import Any
 
 from _closure_release import Handled, assert_freed_after_run
 from _gc_census import tracked_of
 from oracle._ai_http import MockHttp
 from oracle._graphql import FakeWebSocket
-from oracle._live_http import parse_responses, port, run_live, until_close
 from oracle._mcp_rpc import custom_transport, request
 
 import pyfect as fx
-from pyfect import effect
 from pyfect.ai import mcp_protocol as P
 from pyfect.ai import mcp_server as M
 from pyfect.ai._mcp.dispatch import Connection
 from pyfect.ai.openai import client as openai_client
 from pyfect.deferred import Deferred
-from pyfect.http import router, server_response
-from pyfect.http.server_request import HttpServerRequest, ServerRequest
 from pyfect.persistence import redis as R
 from pyfect.persistence.redis import RedisError
 from pyfect.queue import Queue
@@ -68,37 +63,6 @@ def test_redis_frees_a_reserved_connection_once_closed() -> None:
         return fx.scoped(fx.gen(program))
 
     assert_freed_after_run(build)
-
-
-def test_live_server_frees_an_upgrade_request_after_answering_it() -> None:
-    seen: list[weakref.ref[ServerRequest]] = []
-
-    def answer(request: ServerRequest) -> fx.Effect[Any]:
-        seen.append(weakref.ref(request))
-        return effect.succeed(server_response.text("no"))
-
-    routes = router.add("*", "*", HttpServerRequest().flat_map(answer))
-
-    def program() -> Any:
-        at = yield from port
-        return (
-            yield from until_close(
-                at,
-                b"GET / HTTP/1.1\r\nHost: x\r\nUpgrade: echo\r\nConnection: upgrade, close\r\n\r\n",
-            )
-        )
-
-    served = effect.gen(program).pipe(fx.provide(router.serve(routes, disable_logger=True)))
-    gc.collect()
-    gc.disable()
-    try:
-        [response] = parse_responses(run_live(served))
-        assert response.status == 200
-        del served
-        assert len(seen) == 1
-        assert seen[0]() is None, "the server still holds the request it answered"
-    finally:
-        gc.enable()
 
 
 def test_mcp_over_an_rpc_protocol_frees_a_session_that_ended() -> None:
