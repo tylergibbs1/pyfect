@@ -12,6 +12,7 @@ import threading
 from collections.abc import Iterable
 
 from pyfect._core import Effect
+from pyfect._effect_args import require_effect
 from pyfect.effect import gen, sync
 from pyfect.eventlog.event_journal import RemoteId
 
@@ -30,6 +31,7 @@ class OwnAcks:
         """Records ``acked`` and gives the first sequence of ``remote_id`` this log
         has neither read (below the journal's ``cursor``) nor had acknowledged,
         counting from the cursor without a gap."""
+        require_effect(cursor, "cursor")
         pending = tuple(acked)
 
         def body():
@@ -48,6 +50,7 @@ class OwnAcks:
     def forgetting[A, E](self, destroy: Effect[A, E]) -> Effect[A, E]:
         """Runs ``destroy``, which empties the journal and resets its cursors, and
         forgets every ack and cursor read before it ended."""
+        require_effect(destroy, "destroy")
         return sync(self._forget).and_then(destroy).tap(lambda _: sync(self._forget))
 
     def _read_epoch(self) -> int:
