@@ -12,7 +12,7 @@ from typing import Any
 import pyfect as fx
 from pyfect.option import Some
 
-from ._hammer import THREADS, Case, expect, on_threads
+from ._hammer import THREADS, Case, barrier, expect, on_threads
 
 N = 1500
 """Operations per thread, each in a run of its own."""
@@ -114,7 +114,7 @@ def _rounds(
 
     def run() -> list[str]:
         shared: list[Any] = [None]
-        gate = threading.Barrier(THREADS, action=lambda: shared.__setitem__(0, setup()))
+        gate = barrier(THREADS, action=lambda: shared.__setitem__(0, setup()))
         waited: list[list[Any]] = [[] for _ in range(ROUNDS)]
         woke: list[list[Any]] = [[] for _ in range(ROUNDS)]
         problems: list[str] = []

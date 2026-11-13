@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import sys
 from collections.abc import Iterator
+from pathlib import Path
 
 import pytest
 
@@ -33,6 +34,31 @@ def switch_often() -> Iterator[None]:
 def test_runs_on_other_threads_share_it_safely(case: Case):
     problems = case.run()
     assert not problems, "\n".join(problems)
+
+
+def test_cases_wait_at_barriers_a_raise_breaks():
+    """A thread that raises leaves the others at a plain ``threading.Barrier`` until the
+    deadline, reported as a hang; ``_hammer.barrier`` breaks so the raise is reported."""
+    plain = [
+        path.name
+        for path in Path(__file__).parent.glob("cases_*.py")
+        if "threading.Barrier(" in path.read_text()
+    ]
+    assert not plain, f"use _hammer.barrier in {plain}"
+
+
+def test_a_raising_thread_is_reported_not_hung():
+    from ._hammer import barrier, on_threads
+
+    gate = barrier()
+
+    def work(i: int) -> None:
+        if i == 0:
+            raise ValueError("boom")
+        gate.wait()
+
+    problems = on_threads(work)
+    assert len(problems) == 1 and "ValueError: boom" in problems[0], problems
 
 
 _SERVICE = (

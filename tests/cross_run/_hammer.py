@@ -32,18 +32,33 @@ class Case:
     run: Callable[[], list[str]]
 
 
+_barriers: list[threading.Barrier] = []
+
+
+def barrier(parties: int = THREADS, action: Callable[[], None] | None = None) -> threading.Barrier:
+    """A ``threading.Barrier`` that ``on_threads`` breaks when a thread raises, so the
+    threads waiting at it for the one that raised fail at once instead of looking hung."""
+    made = threading.Barrier(parties, action=action)
+    _barriers.append(made)
+    return made
+
+
 def on_threads(work: Callable[[int], None], threads: int = THREADS) -> list[str]:
     """``work(i)`` on ``threads`` threads released together; the problems: what each raised,
     and the threads still running at the deadline."""
-    start = threading.Barrier(threads)
+    start = barrier(threads)
     errors: list[str] = []
 
     def go(i: int) -> None:
         try:
             start.wait()
             work(i)
+        except threading.BrokenBarrierError:
+            pass  # Another thread raised; its error is the one reported.
         except BaseException:
             errors.append(f"thread {i}: {traceback.format_exc(limit=-6)}")
+            for each in _barriers:
+                each.abort()
 
     pool = [
         threading.Thread(target=go, args=(i,), name=f"cross-run-{i}", daemon=True)
@@ -55,6 +70,7 @@ def on_threads(work: Callable[[int], None], threads: int = THREADS) -> list[str]
     for thread in pool:
         thread.join(max(0.0, deadline - time.monotonic()))
     hung = [thread.name for thread in pool if thread.is_alive()]
+    _barriers.clear()
     return errors + ([f"hung (a lost wake-up?): {', '.join(hung)}"] if hung else [])
 
 

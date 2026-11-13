@@ -17,7 +17,7 @@ from typing import Any
 import pyfect as fx
 from pyfect.exit import Success
 
-from ._hammer import THREADS, Case, expect, on_threads
+from ._hammer import THREADS, Case, barrier, expect, on_threads
 
 ROUNDS = 150
 """Rounds of the cases where one run's fiber ends while other runs wait on it."""
@@ -49,7 +49,7 @@ def _awaited_from_other_runs(observe: bool) -> Callable[[], list[str]]:
     def run() -> list[str]:
         slot: list[fx.Fiber[int] | None] = [None]
         published = threading.Event()
-        gate = threading.Barrier(THREADS, action=published.clear)
+        gate = barrier(THREADS, action=published.clear)
         calls = [0] * (ROUNDS * THREADS)
         count_lock = threading.Lock()
         exits: list[list[object]] = [[] for _ in range(ROUNDS)]
@@ -108,7 +108,7 @@ def _interrupted_from_other_runs() -> list[str]:
     """One run's fiber waits forever; another run interrupts it and waits for it to end."""
     slot: list[fx.Fiber[Any] | None] = [None]
     published = threading.Event()
-    gate = threading.Barrier(2, action=published.clear)
+    gate = barrier(2, action=published.clear)
     exits: list[fx.Exit[Any, Any]] = []
 
     @fx.gen
@@ -251,9 +251,7 @@ def _scope_close_race(
 
     def run() -> list[str]:
         shared: list[fx.scope.CloseableScope] = [fx.scope.CloseableScope()]
-        gate = threading.Barrier(
-            THREADS, action=lambda: shared.__setitem__(0, fx.scope.CloseableScope())
-        )
+        gate = barrier(THREADS, action=lambda: shared.__setitem__(0, fx.scope.CloseableScope()))
         ran = [0] * (ROUNDS * THREADS)
 
         def work(i: int) -> None:

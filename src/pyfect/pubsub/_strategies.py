@@ -51,12 +51,14 @@ class BackPressureStrategy[A](Strategy[A]):
     """Publishers wait until every message they publish fits, oldest
     publish first; a slow subscriber slows everyone."""
 
-    __slots__ = ("_depth", "publishers")
+    __slots__ = ("_depth", "_lock", "publishers")
 
     def __init__(self) -> None:
         self.publishers: deque[_Publish[A]] = deque()
         # Nested ``on_pubsub_empty_space_unsafe`` calls.
         self._depth = 0
+        # The hub's lock, known once a publisher has parked.
+        self._lock: Lock | None = None
 
     @property
     def shutdown(self) -> Effect[None]:
@@ -64,9 +66,10 @@ class BackPressureStrategy[A](Strategy[A]):
 
         def interrupt_all(fiber: Fiber[Any, Any]) -> Effect[None]:
             # The hub is shut down, so no publisher parks from now on.
-            if not self.publishers:
+            lock = self._lock
+            if lock is None:
                 return _VOID
-            with self.publishers[0].lock:
+            with lock:
                 entries, self.publishers = self.publishers, deque[_Publish[A]]()
                 for entry in entries:
                     entry.complete(_FailCause(interrupt_cause(fiber.id)))
@@ -84,6 +87,7 @@ class BackPressureStrategy[A](Strategy[A]):
     ) -> Effect[bool]:
         def register(resume: Callable[[Effect[bool]], None]) -> Effect[None] | None:
             with pubsub._lock:
+                self._lock = pubsub._lock
                 # ``end`` only rejects publishers already waiting.
                 if ended() is not None:
                     resume(_FALSE)

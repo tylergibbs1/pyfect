@@ -11,7 +11,7 @@ from typing import Any, Never
 import pyfect as fx
 from pyfect.pubsub import BackPressureStrategy
 
-from ._hammer import THREADS, Case, expect, on_threads
+from ._hammer import THREADS, Case, barrier, expect, on_threads
 
 N = 400
 """Messages per publisher."""
@@ -32,7 +32,7 @@ def _fan_out(
 
     def run() -> list[str]:
         pubsub = fx.run_blocking(make())
-        ready = threading.Barrier(THREADS)
+        ready = barrier(THREADS)
         lock = threading.Lock()
         finished = [0]
         published: list[list[int]] = [[] for _ in range(PUBLISHERS)]
@@ -95,7 +95,7 @@ def _shutdown_race() -> list[str]:
     down: every run ends (publishers interrupted or done), none hangs."""
     rounds = 100
     shared: list[Any] = [None]
-    gate = threading.Barrier(
+    gate = barrier(
         THREADS, action=lambda: shared.__setitem__(0, fx.run_blocking(fx.PubSub[int].bounded(1)))
     )
     outcomes: list[str] = []
@@ -123,7 +123,7 @@ def _subscription_ref_changes() -> list[str]:
     updaters = PUBLISHERS
     each = N
     total = updaters * each
-    ready = threading.Barrier(THREADS)
+    ready = barrier(THREADS)
     seen: list[list[int]] = [[] for _ in range(THREADS)]
 
     def work(i: int) -> None:
