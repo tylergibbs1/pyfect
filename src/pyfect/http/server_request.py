@@ -398,11 +398,12 @@ class SourceRequest(ServerRequest):
         source: object = None,
         remote_address: str | None = None,
         protocol: RequestProtocol | None = None,
-        upgrade: Callable[[Headers], Effect[SocketService, object]] | None = None,
+        upgrade: Callable[[ServerRequest, Headers], Effect[SocketService, object]] | None = None,
         read_body: Callable[[], Stream[bytes, object]] | None = None,
     ) -> None:
         """``read_body`` opens the body for reading it whole, when that
-        differs from streaming it."""
+        differs from streaming it. ``upgrade`` gets the request upgrading
+        (this one or a copy) and the response headers, as Effect's does."""
         super().__init__(None, headers, remote_address, None, protocol)
         self._method = method.upper()
         self._original_url = url
@@ -441,7 +442,7 @@ class SourceRequest(ServerRequest):
         from pyfect.http.origin import require_allowed_origin
 
         upgrade = self._upgrade
-        upgraded = upgrade(from_input(headers)).map_error(
+        upgraded = upgrade(self, from_input(headers)).map_error(
             lambda cause: (
                 cause
                 if isinstance(cause, HttpServerError)

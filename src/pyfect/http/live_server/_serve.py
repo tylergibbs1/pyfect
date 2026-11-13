@@ -8,6 +8,7 @@ from __future__ import annotations
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from functools import partial
 from http import HTTPStatus
 from typing import Any
 
@@ -25,7 +26,7 @@ from pyfect.http.live_server._timers import timeout_option
 from pyfect.http.live_server._upgrade import upgrade
 from pyfect.http.live_server._ws_deflate import WebSocketConfig
 from pyfect.http.server_error import CLIENT_ABORT_ANNOTATION
-from pyfect.http.server_request import RequestProtocol, SourceRequest
+from pyfect.http.server_request import RequestProtocol, ServerRequest, SourceRequest
 from pyfect.option import Option
 from pyfect.socket._connection import Connection
 from pyfect.socket._errors import SocketError
@@ -97,13 +98,7 @@ def _request(
     head = exchange.head
     url = head.target
     body = exchange.body
-    request: SourceRequest | None = None
-
-    def upgrade_request(upgrade_headers: Headers) -> Effect[Any, Any]:
-        assert request is not None
-        return upgrade(exchange, request, upgrade_headers, websocket)
-
-    request = SourceRequest(
+    return SourceRequest(
         head.method,
         url if url == "*" else absolute_url(protocol, head.authority or LOCALHOST, url),
         head.headers,
@@ -111,9 +106,14 @@ def _request(
         source=exchange,
         remote_address=remote_address,
         protocol=protocol,
-        upgrade=upgrade_request if head.upgrade is not None else None,
+        upgrade=partial(_upgrade, exchange, websocket) if head.upgrade is not None else None,
     )
-    return request
+
+
+def _upgrade(
+    exchange: Exchange, websocket: WebSocketConfig, request: ServerRequest, headers: Headers
+) -> Effect[Any, Any]:
+    return upgrade(exchange, request, headers, websocket)
 
 
 def _run_request(exchange: Exchange, handled: Effect[None]) -> Effect[None]:

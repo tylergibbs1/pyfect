@@ -31,11 +31,6 @@ SRC = Path(__file__).resolve().parent.parent / "src" / "pyfect"
 # Each entry: "path:enclosing function:names in the cycle" -> why the cycle
 # cannot hold a user value or is broken another way.
 _ALLOWED: dict[str, str] = {
-    "http/live_server/_serve.py:_request:request,upgrade_request": (
-        "the request's upgrade callable reads the request it belongs to; Effect passes the "
-        "request to the callback instead, a change to the public upgrade= signature that "
-        "waits for 0.7.0"
-    ),
     "schema/_to_equivalence.py:_Derivation._class:equivalent,self": (
         "the derivation's memo, which lets a recursive class refer to itself; it holds "
         "schema ASTs and derived functions, never compared values, and lives as long as "
