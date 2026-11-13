@@ -904,14 +904,11 @@ def _uploader(
                 remote_id=remote.id,
                 acks=[RemoteAck(ack.entry_id, ack.sequence) for ack in acks],
                 first_sequence=remote.first_sequence,
-            ).and_then(journal.next_remote_sequence(remote.id))
+            )
+            cursor = journal.next_remote_sequence(remote.id)
             return (
                 with_lock(written)
-                .flat_map(
-                    lambda cursor: sync(
-                        lambda: own_acks.advance(remote.id, cursor, (ack.sequence for ack in acks))
-                    )
-                )
+                .and_then(own_acks.advance(remote.id, cursor, [ack.sequence for ack in acks]))
                 .as_void()
             )
 
@@ -948,10 +945,8 @@ def _synced(
             if latest is None:
                 return
             # The remote never sends this log's own writes back on this connection.
-            while (
-                own_acks.advance(remote.id, (yield from journal.next_remote_sequence(remote.id)))
-                <= latest
-            ):
+            cursor = journal.next_remote_sequence(remote.id)
+            while (yield from own_acks.advance(remote.id, cursor)) <= latest:
                 yield from sleep(_SYNCED_POLL)
 
         return gen(body)
@@ -1072,7 +1067,7 @@ def _make():
     return EventLogService(
         write_events,
         journal.entries,
-        journal.destroy,
+        own_acks.forgetting(journal.destroy),
         _synced(
             registry=registry,
             journal=journal,

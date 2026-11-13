@@ -121,13 +121,14 @@ def _journals() -> dict[str, fx.Layer[J.EventJournal, Any]]:
 class _OwnWritesNotEchoed:
     """A remote holding another device's entry at sequence 0. It leaves this log's writes
     out of its change stream, as Effect's server leaves out a connection's own writes, and
-    it sends the other entry only when asked for its latest sequence. ``synced`` asks after
+    it sends the other entry once, when first asked for its latest sequence. ``synced`` asks after
     its upload's acks are committed (the uploader's too: ``with_remote_uncommitted`` has
     nothing left for ``synced`` only once they are), so they come before the replay."""
 
     def __init__(self, other: Entry, changes: fx.Queue[RemoteEntry, EventLogRemoteError]):
         self.stored = [other]
         self._changes = changes
+        self._sent = False
         self.service = EventLogRemoteService(
             id=J.make_remote_id_unsafe(),
             changes=self._open_changes,
@@ -150,14 +151,19 @@ class _OwnWritesNotEchoed:
         return fx.sync(store)
 
     def _latest_sequence(self, **_: object) -> fx.Effect[int]:
-        other = RemoteEntry(remote_sequence=0, entry=self.stored[0])
-        return self._changes.offer(other).as_(len(self.stored) - 1)
+        latest = len(self.stored) - 1
+        if self._sent:
+            return fx.succeed(latest)
+        self._sent = True
+        return self._changes.offer(RemoteEntry(remote_sequence=0, entry=self.stored[0])).as_(latest)
 
 
-@pytest.mark.parametrize("journal", _journals())
-def test_synced_succeeds_when_its_acks_commit_before_the_replay(journal: str) -> None:
-    # Quill's hang: the ack of sequence 1 came while the cursor was still 0, so it could not
-    # move it; the replay of 0 moved it to 1, and 1 never comes back on this connection.
+def _synced_against_a_remote_that_skips_own_writes(
+    journal: str, then: fx.Effect[Any, Any, L.EventLog] = fx.void
+) -> fx.Exit[Any, Any]:
+    """Writes n2, waits for ``synced`` (the remote's n1 replays only after n2's acks
+    commit), runs ``then`` and gives the log's entries and what ``then`` gave."""
+
     @fx.fn
     def body():
         log = yield from L.EventLog()
@@ -170,14 +176,40 @@ def test_synced_succeeds_when_its_acks_commit_before_the_replay(journal: str) ->
         yield from registry.register_remote(_OwnWritesNotEchoed(other, changes).service)
         yield from log.write(NoteAdded, {"id": "n2", "text": "eggs"})
         yield from log.synced
-        return _texts((yield from log.entries))
+        after = yield from then
+        return _texts((yield from log.entries)), after
 
     handlers = L.group(Notes, lambda h: h.handle(NoteAdded, lambda _: fx.void))
     log = L.layer(L.schema(Notes), handlers).pipe(
         layer.provide(layer.merge(_journals()[journal], layer.effect(L.Identity, L.make_identity)))
     )
     program = fx.scoped(body()).pipe(fx.provide(log)).pipe(fx.provide(layer_subtle))
-    assert fx.run_blocking_exit(program.timeout("10 seconds")) == fx.Success(["n1", "n2"])
+    return fx.run_blocking_exit(program.timeout("10 seconds"))
+
+
+@pytest.mark.parametrize("journal", _journals())
+def test_synced_succeeds_when_its_acks_commit_before_the_replay(journal: str) -> None:
+    # Quill's hang: the ack of sequence 1 came while the cursor was still 0, so it could not
+    # move it; the replay of 0 moved it to 1, and 1 never comes back on this connection.
+    exit = _synced_against_a_remote_that_skips_own_writes(journal)
+    assert exit == fx.Success((["n1", "n2"], None))
+
+
+def test_synced_after_destroy_does_not_count_the_acks_of_destroyed_entries() -> None:
+    # destroy empties the journal and resets its cursor; the remote still holds n1 and n2,
+    # which the log no longer has, so synced must not succeed (Effect does not restart the
+    # change stream on destroy, so nothing re-applies them: it waits).
+    @fx.fn
+    def destroy_then_sync():
+        log = yield from L.EventLog()
+        yield from log.destroy
+        return (yield from log.synced.timeout("1 second").exit())
+
+    exit = _synced_against_a_remote_that_skips_own_writes("memory", destroy_then_sync())
+    assert isinstance(exit, fx.Success), exit
+    entries, synced = exit.value
+    assert entries == []
+    assert not isinstance(synced, fx.Success), synced
 
 
 # --- each storage reports its latest sequence ---------------------------------------
