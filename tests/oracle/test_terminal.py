@@ -285,7 +285,7 @@ def test_size_offers_the_current_size_then_only_the_latest_resize(
         assert (yield from sizes.take()) == Size(80, 24)
         _resize(terminal_size, 100, 30)
         _resize(terminal_size, 120, 50)
-        assert (yield from sizes.take_all()) == [Size(120, 50)]
+        assert (yield from sizes.take_all()) == (Size(120, 50),)
 
 
 @_no_winch

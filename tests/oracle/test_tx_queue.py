@@ -241,7 +241,7 @@ def test_take_all_works_correctly_with_new_signature():
     """takeAll works correctly with new signature"""
     queue = yield from fx.TxQueue[int].bounded(10)
     yield from queue.offer_all([1, 2, 3, 4, 5])
-    assert (yield from queue.take_all()) == [1, 2, 3, 4, 5]
+    assert (yield from queue.take_all()) == (1, 2, 3, 4, 5)
     assert (yield from queue.size()) == 0
 
 
@@ -252,7 +252,7 @@ def test_take_all_with_interrupted_queue_returns_done_flag():
     queue = yield from fx.TxQueue[int].bounded(10)
     yield from queue.offer_all([1, 2])
     yield from queue.interrupt()
-    assert (yield from queue.take_all()) == [1, 2]
+    assert (yield from queue.take_all()) == (1, 2)
 
 
 @testing.effect
@@ -290,7 +290,7 @@ def test_take_n_and_take_between_normalize_element_counts_before_waiting():
     invalid_queue = yield from fx.TxQueue[int].unbounded()
     yield from invalid_queue.offer(1)
     assert (yield from invalid_queue.take_n(0)) == []
-    assert (yield from invalid_queue.take_all()) == [1]
+    assert (yield from invalid_queue.take_all()) == (1,)
 
 
 @testing.effect
@@ -340,7 +340,7 @@ def test_take_all_waits_when_empty_then_returns_items_when_available():
     queue = yield from fx.TxQueue[int].bounded(5)
     fiber = yield from queue.take_all().fork()
     yield from queue.offer_all([1, 2, 3])
-    assert (yield from fiber.join()) == [1, 2, 3]
+    assert (yield from fiber.join()) == (1, 2, 3)
 
 
 @testing.effect
@@ -350,7 +350,7 @@ def test_take_all_during_state_transition_handles_race_condition():
     queue = yield from fx.TxQueue[int].bounded(5)
     yield from queue.offer_all([1, 2])
     yield from queue.interrupt()
-    assert (yield from queue.take_all()) == [1, 2]
+    assert (yield from queue.take_all()) == (1, 2)
     assert (yield from queue.is_done()) is True
 
 
@@ -404,7 +404,7 @@ def test_take_between_takes_up_to_maximum_when_available():
     queue = yield from fx.TxQueue[int].bounded(10)
     yield from queue.offer_all([1, 2, 3, 4, 5, 6, 7])
     assert (yield from queue.take_between(3, 5)) == [1, 2, 3, 4, 5]
-    assert (yield from queue.take_all()) == [6, 7]
+    assert (yield from queue.take_all()) == (6, 7)
 
 
 @testing.effect

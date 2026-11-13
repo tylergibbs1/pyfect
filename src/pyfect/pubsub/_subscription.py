@@ -30,6 +30,7 @@ from pyfect._core import (
     _Sync,
     _WithFiber,
 )
+from pyfect._non_empty import non_empty
 from pyfect.cause import Cause
 from pyfect.cause import interrupt as interrupt_cause
 from pyfect.exit import Failure, Success
@@ -76,27 +77,27 @@ class Subscription[A]:
 
         return _Suspend(attempt)
 
-    def take_all(self) -> Effect[Sequence[A]]:
-        """Wait for at least one message, then take every one there is."""
+    def take_all(self) -> Effect[tuple[A, *tuple[A, ...]]]:
+        """Wait for at least one message, then take every one there is
+        (Effect's ``NonEmptyArray``)."""
         reader = self._reader
         hub = self._hub
 
-        def more(first: A) -> list[A]:
+        def more(first: A) -> tuple[A, *tuple[A, ...]]:
             rest = reader.poll_up_to(reader.backing.size())
             hub.on_empty_space()
-            return [first, *rest]
+            return non_empty(first, rest)
 
-        def attempt() -> Effect[list[A]]:
+        def attempt() -> Effect[tuple[A, *tuple[A, ...]]]:
             if reader.unsubscribed:
                 return _interrupt()
             polled = reader.poll_up_to(reader.backing.size())
             hub.on_empty_space()
-            if reader.replay.remaining:
-                return _Succeed(reader.replay.take_all() + polled)
-            if polled:
-                return _Succeed(polled)
+            taken = reader.replay.take_all() + polled if reader.replay.remaining else polled
+            if taken:
+                return _Succeed(non_empty(taken[0], taken[1:]))
             if hub.ended is not None:
-                return _Succeed([hub.ended.value])
+                return _Succeed((hub.ended.value,))
             return self._park(more, attempt)
 
         return _Suspend(attempt)

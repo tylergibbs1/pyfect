@@ -157,11 +157,11 @@ def test_sliding_with_several_subscribers():
     yield from ps.publish(3)
     yield from ps.publish(4)
     assert first == 1
-    assert (yield from a.take_all()) == [3, 4]
-    assert (yield from b.take_all()) == [3, 4]
+    assert (yield from a.take_all()) == (3, 4)
+    assert (yield from b.take_all()) == (3, 4)
     yield from ps.publish_all([5, 6, 7])
-    assert (yield from a.take_all()) == [6, 7]
-    assert (yield from b.take_all()) == [6, 7]
+    assert (yield from a.take_all()) == (6, 7)
+    assert (yield from b.take_all()) == (6, 7)
     assert ps.size_unsafe() == 0
 
 
@@ -173,7 +173,7 @@ def test_sliding_with_a_parked_take_on_one_of_two_subscribers():
     b = yield from ps.subscribe()
     fa = yield from _logged(log, "a", a.take()).fork(start_immediately=True)
     yield from ps.publish_all([1, 2, 3])
-    assert (yield from b.take_all()) == [3]
+    assert (yield from b.take_all()) == (3,)
     yield from fa.join()
     assert log == ["a1"]
     assert (yield from a.take_up_to(10)) == [3]
@@ -257,7 +257,7 @@ def test_a_user_strategy_extending_a_built_in():
     assert (yield from ps.publish_all([1, 2, 3, 4])) is False
     assert (yield from ps.publish(5)) is False
     assert strategy.dropped == 3
-    assert (yield from sub.take_all()) == [1, 2]
+    assert (yield from sub.take_all()) == (1, 2)
 
 
 class _Pairs[A]:

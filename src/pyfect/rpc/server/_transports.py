@@ -375,10 +375,10 @@ class _HttpHandler:
                 responses: list[Any] = yield from collected.interruptible()
                 encoded = parser.encode(responses) if responses else None
                 return text("" if encoded is None else _as_text(encoded), content_type=content_type)
-            take_all: Effect[list[Any], Never] = queue.take_all().catch_all(
-                lambda _: succeed(list[Any]())
+            take_all: Effect[tuple[Any, ...], Never] = queue.take_all().catch_all(
+                lambda _: succeed(())
             )
-            initial: list[Any] = yield from take_all.interruptible()
+            initial: tuple[Any, ...] = yield from take_all.interruptible()
             chunks = [encode_text(c) for c in initial]
             if queue.is_done_unsafe():
                 joined = b"".join(chunks)

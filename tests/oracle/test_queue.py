@@ -24,7 +24,7 @@ Omitted, with the reason:
   buffered message ...", "flushUnsafe preserves later offers ...").
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import Any, Never
 
 import pytest
@@ -117,7 +117,7 @@ def test_offer_all_does_not_retain_the_input_array():
     buffer = [1, 2, 3]
     yield from queue.offer_all(buffer)
     buffer[0] = 0
-    assert (yield from queue.take_all()) == [1, 2, 3]
+    assert (yield from queue.take_all()) == (1, 2, 3)
 
 
 @testing.effect
@@ -128,11 +128,11 @@ def test_bounded_offer_all_waits_until_capacity_is_released():
     yield from fx.yield_now()
     assert fiber.poll_unsafe() is None
 
-    assert (yield from queue.take_all()) == [1, 2]
+    assert (yield from queue.take_all()) == (1, 2)
     yield from fx.yield_now()
     assert fiber.poll_unsafe() is not None
 
-    assert (yield from queue.take_all()) == [3, 4]
+    assert (yield from queue.take_all()) == (3, 4)
     yield from fx.yield_now()
     assert fiber.poll_unsafe() == fx.Success([])
 
@@ -215,7 +215,8 @@ def test_zero_capacity_take_reserves_the_message_before_resuming_method(method: 
     producer_exit = producer.poll_unsafe()
     yield from queue.shutdown()
 
-    assert (first, producer_exit) == ([1], None)
+    expected = (1,) if take == "takeAll" else [1]
+    assert (first, producer_exit) == (expected, None)
 
 
 @pytest.mark.parametrize("method", ["offer", "offerAll"])
@@ -261,7 +262,7 @@ def test_resuming_method_does_not_overfill_the_queue_with_reentrant_offers(metho
     size = queue.size_unsafe()
     yield from queue.shutdown()
 
-    assert first == [0, 1]
+    assert first == (0, 1)
     assert size <= 2
 
 
@@ -327,7 +328,8 @@ def test_name_does_not_miss_an_offer_during_the_check_to_registration_yield(
         size = yield from queue.size()
         yield from queue.shutdown()
         assert offerer.poll_unsafe() == fx.Success(True), ops
-        assert ex == fx.Success(1 if name in ("take", "peek") else [1]), ops
+        expected = 1 if name in ("take", "peek") else (1,) if name == "takeAll" else [1]
+        assert ex == fx.Success(expected), ops
         assert size == (1 if name == "peek" else 0), ops
 
 
@@ -416,7 +418,7 @@ def test_take_n_and_take_between_take_nothing_for_counts_of_zero_or_less():
     assert (yield from queue.take_n(-3)) == []
     assert (yield from queue.take_between(0, 2)) == []
     assert (yield from queue.take_between(1, 0)) == []
-    assert (yield from queue.take_all()) == [1]
+    assert (yield from queue.take_all()) == (1,)
 
 
 @testing.effect
@@ -437,7 +439,7 @@ def test_offer_dropping():
     queue = yield from fx.Queue[int].make(2, strategy="dropping")
     assert (yield from queue.offer_all([1, 2, 3, 4])) == [3, 4]
     assert (yield from queue.offer(5)) is False
-    assert (yield from queue.take_all()) == [1, 2]
+    assert (yield from queue.take_all()) == (1, 2)
 
 
 @testing.effect
@@ -446,7 +448,7 @@ def test_offer_sliding():
     queue = yield from fx.Queue[int].make(2, strategy="sliding")
     assert (yield from queue.offer_all([1, 2, 3, 4])) == []
     assert (yield from queue.offer(5)) is True
-    assert (yield from queue.take_all()) == [4, 5]
+    assert (yield from queue.take_all()) == (4, 5)
 
 
 # --- interruption --------------------------------------------------------------------
@@ -462,10 +464,10 @@ def test_offer_all_can_be_interrupted():
     yield from fiber.interrupt()
     yield from fx.yield_now()
 
-    assert (yield from queue.take_all()) == [1, 2]
+    assert (yield from queue.take_all()) == (1, 2)
     yield from queue.offer(5)
     yield from fx.yield_now()
-    assert (yield from queue.take_all()) == [5]
+    assert (yield from queue.take_all()) == (5,)
 
 
 @testing.effect
@@ -484,7 +486,7 @@ def test_take_can_be_interrupted_without_losing_offers():
     assert (yield from live.join()) == 1
 
 
-_DEQUEUES: list[tuple[str, Callable[[fx.Queue[int]], fx.Effect[list[int]]], bool]] = [
+_DEQUEUES: list[tuple[str, Callable[[fx.Queue[int]], fx.Effect[Sequence[int]]], bool]] = [
     ("take", lambda q: q.take().map(lambda v: [v]), True),
     ("takeAll", lambda q: q.take_all(), True),
     ("takeN", lambda q: q.take_n(1), True),
@@ -623,9 +625,9 @@ def test_fail_drains_buffered_values_before_failing_takers():
     yield from queue.offer(5).fork()
     yield from queue.fail("boom").fork()
     take_all = queue.take_all()
-    assert (yield from take_all) == [1, 2]
-    assert (yield from take_all) == [3, 4]
-    assert (yield from queue.take_all()) == [5]
+    assert (yield from take_all) == (1, 2)
+    assert (yield from take_all) == (3, 4)
+    assert (yield from queue.take_all()) == (5,)
     assert (yield from queue.take_all().flip()) == "boom"
     assert (yield from queue.await_done().flip()) == "boom"
     assert (yield from queue.offer(6)) is False
@@ -749,7 +751,7 @@ def test_await_waits_for_no_items():
 
     yield from fx.yield_now()
     assert fiber.poll_unsafe() is None
-    assert (yield from queue.take_all()) == [1]
+    assert (yield from queue.take_all()) == (1,)
     yield from queue.take_all().flip()
     yield from fx.yield_now()
     assert fiber.poll_unsafe() is not None
@@ -804,7 +806,7 @@ def test_zero_capacity_take_all_consumes_buffered_messages_before_pending_offers
     nxt = yield from waiting.join()
     yield from producer.join()
 
-    assert batch == [1]
+    assert batch == (1,)
     assert nxt == 2
 
 
@@ -834,7 +836,7 @@ def test_zero_capacity_offer_all_drains_in_order_and_completes_a_closing_queue()
     producer_exit = producer.poll_unsafe()
     done = yield from queue.await_done().exit()
 
-    assert first == [1]
+    assert first == (1,)
     assert second == [2]
     assert third == fx.Some(3)
     assert producer_exit == fx.Success([])

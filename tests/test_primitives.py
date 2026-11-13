@@ -91,7 +91,7 @@ def test_dropping_and_sliding_queues():
             yield from sliding.offer(i)
         return accepted, (yield from dropping.take_all()), (yield from sliding.take_all())
 
-    assert run(program) == ([True, True, False], [0, 1], [1, 2])
+    assert run(program) == ([True, True, False], (0, 1), (1, 2))
 
 
 def test_ended_queue_drains_then_fails_with_done():

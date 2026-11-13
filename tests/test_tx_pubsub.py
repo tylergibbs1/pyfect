@@ -51,7 +51,7 @@ def test_publish_all_reports_a_value_dropped_for_one_subscriber():
     def body():
         sub = yield from hub.subscribe()
         assert (yield from hub.publish_all([1, 2])) is False
-        assert (yield from sub.take_all()) == [1]
+        assert (yield from sub.take_all()) == (1,)
 
     yield from fx.scoped(body())
 

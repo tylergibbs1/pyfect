@@ -1,6 +1,6 @@
 """Queue lifecycle: Open -> Closing(cause) -> Done(cause), rendezvous, batch offers."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import Never
 
 import pytest
@@ -44,7 +44,7 @@ def test_fail_drains_buffered_values_before_failing_takers():
         yield from q.offer(5).fork()
         yield from q.fail("boom").fork()
         yield from _settle()
-        batches: list[list[int]] = []
+        batches: list[tuple[int, ...]] = []
         for _ in range(3):
             batches.append((yield from q.take_all()))  # noqa: PERF401
         error = yield from q.take_all().exit()
@@ -54,7 +54,7 @@ def test_fail_drains_buffered_values_before_failing_takers():
     ex = run_exit(program)
     assert isinstance(ex, fx.Success)
     batches, error, late = ex.value
-    assert batches == [[1, 2], [3, 4], [5]]
+    assert batches == [(1, 2), (3, 4), (5,)]
     assert isinstance(error, fx.Failure) and error.cause.failures == ("boom",)
     assert late is False
 
@@ -140,7 +140,7 @@ def test_offer_all_can_be_interrupted():
         yield from q.offer(5)
         return first, (yield from q.take_all())
 
-    assert run(program) == ([1, 2], [5])
+    assert run(program) == ((1, 2), (5,))
 
 
 # --- rendezvous ---------------------------------------------------------------------
@@ -194,7 +194,7 @@ def test_zero_capacity_take_all_consumes_buffered_messages_before_pending_offers
         rest = yield from producer.join()
         return batch, nxt, rest
 
-    assert run(program) == ([1], 2, [])
+    assert run(program) == ((1,), 2, [])
 
 
 # --- offer_all, shutdown, take_between ---------------------------------------------
@@ -209,7 +209,7 @@ def test_offer_all_returns_what_a_dropping_queue_rejected():
         remaining = yield from q.offer_all([1, 2, 3, 4])
         return remaining, (yield from q.offer(5)), (yield from q.take_all())
 
-    assert run(program) == ([3, 4], False, [1, 2])
+    assert run(program) == ([3, 4], False, (1, 2))
 
 
 def test_offer_all_on_a_sliding_queue_keeps_the_newest():
@@ -221,7 +221,7 @@ def test_offer_all_on_a_sliding_queue_keeps_the_newest():
         remaining = yield from q.offer_all([1, 2, 3, 4])
         return remaining, (yield from q.offer(5)), (yield from q.take_all())
 
-    assert run(program) == ([], True, [4, 5])
+    assert run(program) == ([], True, (4, 5))
 
 
 def test_offer_all_on_a_finished_queue_returns_every_item():
@@ -246,7 +246,7 @@ def test_offer_all_admits_what_fits_in_one_step():
         rest = yield from producer.join()
         return size_while_parked, rest, (yield from q.take_all())
 
-    assert run(program) == (3, [], [3, 4])
+    assert run(program) == (3, [], (3, 4))
 
 
 def test_shutdown_returns_whether_it_finished_the_queue():
@@ -340,7 +340,7 @@ def test_many_producers_and_consumers_lose_nothing(capacity: int):
     assert run(program) == list(range(40))
 
 
-def _dequeue(name: str, q: fx.Queue[int, fx.Done]) -> fx.Effect[list[int], fx.Done]:
+def _dequeue(name: str, q: fx.Queue[int, fx.Done]) -> fx.Effect[Sequence[int], fx.Done]:
     match name:
         case "take":
             return q.take().map(lambda v: [v])

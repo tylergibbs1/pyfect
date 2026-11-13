@@ -74,7 +74,7 @@ def test_offer_all_to_a_bounded_queue_adds_all_or_waits():
     assert (yield from queue.size()) == 1
     assert (yield from queue.take()) == 0
     assert (yield from offer.join()) == []
-    assert (yield from queue.take_all()) == [1, 2]
+    assert (yield from queue.take_all()) == (1, 2)
 
 
 @testing.effect

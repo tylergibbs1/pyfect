@@ -96,7 +96,7 @@ def test_run_into_pubsub_publishes_and_succeeds_with_the_end_value():
     subscription = yield from pubsub.subscribe()
     source = channel.from_iterable([1, 2]).concat(channel.end("D"))
     assert (yield from source.run_into_pubsub(pubsub)) == "D"
-    assert (yield from subscription.take_all()) == [1, 2]
+    assert (yield from subscription.take_all()) == (1, 2)
     assert not (yield from pubsub.is_shutdown())
 
 

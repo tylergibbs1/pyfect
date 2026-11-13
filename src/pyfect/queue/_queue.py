@@ -21,6 +21,7 @@ from pyfect._core import (
 )
 from pyfect._effect_args import require_effect
 from pyfect._fiber import FiberDispatcher, current_fiber
+from pyfect._non_empty import non_empty
 from pyfect._waiters import WaitList
 from pyfect.cause import Cause
 from pyfect.cause import fail as fail_cause
@@ -37,6 +38,10 @@ type Strategy = Literal["suspend", "dropping", "sliding"]
 
 _TRUE: Effect[bool] = _FromExit(Success(True))
 _FALSE: Effect[bool] = _FromExit(Success(False))
+
+
+def _as_taken[A](items: list[A]) -> list[A]:
+    return items
 
 
 class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
@@ -284,9 +289,10 @@ class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
         """``take_between(n, n)``."""
         return self._take_between(n, n)
 
-    def take_all(self) -> Effect[list[A], E]:
-        """Wait for at least one item, then take everything."""
-        return self._take_between(1, None)
+    def take_all(self) -> Effect[tuple[A, *tuple[A, ...]], E]:
+        """Wait for at least one item, then take everything (Effect's
+        ``NonEmptyArray``)."""
+        return self._take_between(1, None, lambda items: non_empty(items[0], items[1:]))
 
     def poll(self) -> Effect[Option[A]]:
         """An item if one is there now; ``None`` if not, or if the queue is
@@ -354,7 +360,7 @@ class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
         def body() -> Generator[Effect[Any, Any, Any], Any, list[Any]]:
             out: list[Any] = []
             while True:
-                taken: Exit[list[Any], Any] = yield self.take_all().exit()
+                taken: Exit[tuple[Any, ...], Any] = yield self.take_all().exit()
                 match taken:
                     case Success(value=items):
                         out.extend(items)
@@ -456,17 +462,30 @@ class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
             case st.Done():
                 pass
 
-    def _take_between(self, minimum: int, maximum: int | None) -> Effect[list[A], E]:
+    @overload
+    def _take_between(self, minimum: int, maximum: int | None) -> Effect[list[A], E]: ...
+    @overload
+    def _take_between[T](
+        self, minimum: int, maximum: int | None, shape: Callable[[list[A]], T]
+    ) -> Effect[T, E]: ...
+    def _take_between(
+        self,
+        minimum: int,
+        maximum: int | None,
+        shape: Callable[[list[A]], Any] = _as_taken,
+    ) -> Effect[Any, E]:
         """``maximum=None`` takes every buffered item. The items are taken in
-        the taking fiber's own step, so none is handed to a parked fiber."""
+        the taking fiber's own step, so none is handed to a parked fiber;
+        ``shape`` makes the result in that step too, as nothing may come
+        between a take and the step that returns it."""
 
-        def attempt() -> Effect[list[A], E]:
+        def attempt() -> Effect[Any, E]:
             match self._state:
                 case st.Done(cause=cause):
                     return _FailCause(cause)
                 case st.Open(offers=offers) | st.Closing(offers=offers):
                     if minimum <= 0 or (maximum is not None and maximum <= 0):
-                        return _Succeed([])
+                        return _Succeed(shape([]))
                     if not self._can_take(minimum):
                         return self._wait_then(minimum, attempt)
                     if self._items:
@@ -474,7 +493,7 @@ class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
                     else:
                         items = [st.take_offer(offers)]
                     self._release()
-                    return _Succeed(items)
+                    return _Succeed(shape(items))
 
         return _Suspend(attempt)
 
