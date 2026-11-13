@@ -39,30 +39,36 @@ from pyfect.schedule._constructors import (
     windowed,
 )
 from pyfect.schedule._cron import cron
-from pyfect.schedule._model import (
-    CurrentMetadata,
-    InputMetadata,
-    Metadata,
-    MetadataStep,
-    Schedule,
-    SetInputType,
+from pyfect.schedule._decision import (
+    Continue,  # pyright: ignore[reportDeprecated]
+    Decision,
     StepFn,
+    Stop,  # pyright: ignore[reportDeprecated]
     from_step,
     from_step_with_metadata,
-    set_input_type,
     to_step,
     to_step_with_metadata,
     to_step_with_sleep,
 )
+from pyfect.schedule._model import (
+    CurrentMetadata,
+    InputMetadata,
+    Metadata,
+    Schedule,
+    SetInputType,
+    set_input_type,
+)
 
 __all__ = [
+    "Continue",
     "CurrentMetadata",
+    "Decision",
     "InputMetadata",
     "Metadata",
-    "MetadataStep",
     "Schedule",
     "SetInputType",
     "StepFn",
+    "Stop",
     "cron",
     "duration",
     "during",

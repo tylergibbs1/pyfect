@@ -1,3 +1,5 @@
+# Schedule steps here use 0.6's Continue/Stop protocol, deprecated until 0.7.0.
+# pyright: reportDeprecated=false
 """``random.with_seed`` gives Effect's exact sequences. Every expected value
 here was printed by Effect's ``Random.ts`` under Node (``Random.withSeed``)."""
 
@@ -129,13 +131,14 @@ def test_a_jittered_schedule_draws_from_the_seeded_generator():
         out: list[Duration] = []
         for _ in range(3):
             meta = yield from step(None)
+            assert isinstance(meta, schedule.Metadata)
             out.append(meta.duration)
         return out
 
     draws = (0.1633802591287037, 0.690650922132836, 0.0031429880468195615)
     # Effect's jittered: Duration.millis(d * 0.8 * (1 - r) + d * 1.2 * r), d in milliseconds.
     expected = [millis(1000 * 0.8 * (1 - r) + 1000 * 1.2 * r) for r in draws]
-    assert seeded(delays.or_die(), "example") == expected
+    assert seeded(delays, "example") == expected
 
 
 ZERO_SEED = (0.18761596091856492, 0.8562177131738374, 0.49493102975267533)

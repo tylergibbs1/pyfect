@@ -75,13 +75,15 @@ MODULE_CASES: dict[str, Callable[[], list[AnySchedule]]] = {
 
 # Public names that neither make nor combine schedules.
 NOT_SCHEDULES = {
+    "Continue",
     "CurrentMetadata",
+    "Decision",
     "InputMetadata",
     "Metadata",
-    "MetadataStep",
     "Schedule",
     "SetInputType",
     "StepFn",
+    "Stop",
     "from_step_with_metadata",  # pinned through every metadata-based constructor
     "to_step",
     "to_step_with_metadata",
