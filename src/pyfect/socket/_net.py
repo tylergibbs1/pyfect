@@ -47,7 +47,14 @@ from pyfect.socket._socket import (
     make,
     to_channel,
 )
-from pyfect.socket._tls import DEFAULT_SERVERNAME, check_credentials, client_context, server_context
+from pyfect.socket._tls import (
+    ServerSide,
+    UpgradeSide,
+    check_credentials,
+    client_context,
+    client_side,
+    server_context,
+)
 
 type Connect = Callable[[Connection], Coroutine[Any, Any, object]]
 
@@ -84,14 +91,14 @@ def _chunk_limit(chunk_size: float) -> int | None:
 def from_connection(
     open: Effect[Connection, SocketError, Scope],
     *,
+    upgrade_side: UpgradeSide,
     open_timeout: DurationInput | None = None,
     chunk_size: float = DEFAULT_CHUNK_SIZE,
-    tls_server: bool = False,
     target: str | None = None,
 ) -> SocketService:
-    """A socket over the connections ``open`` makes. ``open_timeout`` bounds
-    the opening; each pull gives at most ``chunk_size`` buffered chunks (``math.inf``
-    for all of them); ``tls_server`` makes TLS upgrades take the server side;
+    """A socket over the connections ``open`` makes. TLS upgrades take
+    ``upgrade_side``; ``open_timeout`` bounds the opening; each pull gives at
+    most ``chunk_size`` buffered chunks (``math.inf`` for all of them);
     ``target`` (``host:port``, a path) is named when opening fails."""
     require_effect(open, "open")
     limit = _chunk_limit(chunk_size)
@@ -124,7 +131,7 @@ def from_connection(
             def start() -> Effect[None, SocketError]:
                 if not state["upgradable"]:
                     return fail(upgrade_error(RuntimeError("socket is already upgraded or closed")))
-                return _upgrade(conn, options or TlsUpgradeOptions(), server=tls_server).map(
+                return _upgrade(conn, options or TlsUpgradeOptions(), upgrade_side).map(
                     lambda _: state.update(upgradable=False)
                 )
 
@@ -167,8 +174,9 @@ def from_connection(
 
 
 def _upgrade(
-    conn: Connection, options: TlsUpgradeOptions, *, server: bool
+    conn: Connection, options: TlsUpgradeOptions, side: UpgradeSide
 ) -> Effect[None, SocketError]:
+    server = isinstance(side, ServerSide)
     problem = check_credentials(options, server=server)
     if problem is not None:
         return fail(upgrade_error(ValueError(problem)))
@@ -176,7 +184,7 @@ def _upgrade(
         context = server_context(options) if server else client_context(options)
     except (ssl.SSLError, OSError, ValueError) as cause:
         return fail(upgrade_error(cause))
-    hostname = None if server else options.servername or DEFAULT_SERVERNAME
+    hostname = None if isinstance(side, ServerSide) else options.servername or side.host
 
     def failed(cause: BaseException) -> Effect[None, SocketError]:
         error = upgrade_error(cause)
@@ -226,14 +234,19 @@ def make_net(
     chunk_size: float = DEFAULT_CHUNK_SIZE,
 ) -> SocketService:
     """A TCP socket connecting to ``host:port``; each pull gives at most
-    ``chunk_size`` chunks."""
+    ``chunk_size`` chunks. A TLS upgrade without a ``servername`` checks the
+    certificate against ``host``, or ``localhost`` for an IP literal."""
 
     async def connect(conn: Connection) -> object:
         return await get_loop().create_connection(lambda: conn, host, port)
 
     target = _address(host, port)
     return from_connection(
-        connecting(connect, target), open_timeout=open_timeout, chunk_size=chunk_size, target=target
+        connecting(connect, target),
+        upgrade_side=client_side(host),
+        open_timeout=open_timeout,
+        chunk_size=chunk_size,
+        target=target,
     )
 
 
@@ -243,7 +256,12 @@ def make_unix(path: str, *, open_timeout: DurationInput | None = None) -> Socket
     async def connect(conn: Connection) -> object:
         return await get_loop().create_unix_connection(lambda: conn, path)
 
-    return from_connection(connecting(connect, path), open_timeout=open_timeout, target=path)
+    return from_connection(
+        connecting(connect, path),
+        upgrade_side=client_side(None),
+        open_timeout=open_timeout,
+        target=path,
+    )
 
 
 def make_tls(
@@ -266,7 +284,11 @@ def make_tls(
 
     target = _address(host, port)
     return from_connection(
-        connecting(connect, target), open_timeout=open_timeout, chunk_size=chunk_size, target=target
+        connecting(connect, target),
+        upgrade_side=client_side(host),
+        open_timeout=open_timeout,
+        chunk_size=chunk_size,
+        target=target,
     )
 
 
@@ -295,7 +317,7 @@ def from_socket(
     require_effect(open, "open")
     return from_connection(
         open.flat_map(_adopt),
-        tls_server=tls_server,
+        upgrade_side=ServerSide() if tls_server else client_side(None),
         open_timeout=open_timeout,
         chunk_size=chunk_size,
     )

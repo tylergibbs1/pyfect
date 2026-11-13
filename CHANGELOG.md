@@ -33,6 +33,13 @@
   with its addresses, or opt back in to uvicorn's handling with
   `uvicorn_server.layer(config={"proxy_headers": True, "forwarded_allow_ips": ...})`.
   `tests/test_server_transport_peer.py` checks every server adapter.
+- A client TLS upgrade (`reader.upgrade`) on a `make_net` socket without a `servername`
+  checks the server certificate against the host it connected to, as Node's `tls.connect`
+  under Effect's `NodeSocket` does and as `make_tls` already did. It checked `localhost`, so a
+  certificate issued for `localhost` was accepted for any host. For an IP literal, a Unix or an
+  adopted socket the name is still `localhost`, as in Node. The side a socket upgrades as (a
+  server, or a client with its host) is now required where sockets are built, so a new kind of
+  socket cannot leave it out.
 
 ### Docs
 
