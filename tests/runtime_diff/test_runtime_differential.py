@@ -12,7 +12,7 @@ import re
 
 import pytest
 
-from . import oracle, program
+from . import generate, oracle, program
 
 _CORPUS = oracle.read_corpus()
 
@@ -51,3 +51,11 @@ def test_the_effect_interpreter_handles_every_node():
     source = oracle.INTERPRETER.read_text(encoding="utf-8")
     handled = set(re.findall(r'case "([A-Z]\w*)"', source))
     assert set(program.NODES) - {"Resource"} == handled
+
+
+def test_a_nested_program_strategy_has_a_short_repr():
+    """Hypothesis prints a strategy's repr when it re-encodes a drawn value, and
+    ``st.recursive`` nests ``_extend`` once per doubling of ``max_leaves``: a level
+    that repeated its children's repr made the fuzz job's reports grow to gigabytes."""
+    nested = generate._extend(generate._extend(generate._extend(generate._LEAVES)))  # pyright: ignore[reportPrivateUsage]
+    assert len(repr(nested)) < 20_000

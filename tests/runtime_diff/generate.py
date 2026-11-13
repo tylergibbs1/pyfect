@@ -147,7 +147,21 @@ def _stream_ops(exprs: st.SearchStrategy[Expr]) -> st.SearchStrategy[StreamOp]:
     )
 
 
-def _extend(exprs: st.SearchStrategy[Expr]) -> st.SearchStrategy[Expr]:
+def _extend(children: st.SearchStrategy[Expr]) -> st.SearchStrategy[Expr]:
+    """``_nodes(children)`` behind a composite without arguments, whose repr is its
+    name. Hypothesis prints a strategy's repr when it fails to re-encode a drawn
+    value, and ``st.recursive`` nests this once per doubling of ``max_leaves``: the
+    nodes' own repr, repeating their children's dozens of times, grew exponentially."""
+    nodes = _nodes(children)
+
+    @st.composite
+    def node(draw: st.DrawFn) -> Expr:
+        return draw(nodes)
+
+    return node()
+
+
+def _nodes(exprs: st.SearchStrategy[Expr]) -> st.SearchStrategy[Expr]:
     zero = st.just(0)
     some = st.lists(exprs, min_size=1, max_size=3).map(tuple)
     resources = st.builds(Resource, exprs, exprs)
