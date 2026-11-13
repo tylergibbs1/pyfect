@@ -34,23 +34,21 @@ def _open(options: dict[str, Any]) -> Effect[Session, SqlError, Scope]:
     )
 
 
+def _check_out(pool: Pool[Session, SqlError]) -> Effect[Session, SqlError, Scope]:
+    return pool.get().flat_map(lambda session: _checked(pool, session))
+
+
+def _checked(pool: Pool[Session, SqlError], session: Session) -> Effect[Session, SqlError, Scope]:
+    if session.usable:
+        return succeed(session)
+    return pool.invalidate(session).and_then(_Suspend(lambda: _check_out(pool)))
+
+
 def make(
     options: dict[str, Any], *, max_connections: int, idle_timeout: Duration
 ) -> Effect[Effect[Session, SqlError, Scope], Never, Scope]:
     """A pool closed with the scope, as its checkout: a session until the
     checkout's scope closes."""
-
-    def build(pool: Pool[Session, SqlError]) -> Effect[Session, SqlError, Scope]:
-        def check_out() -> Effect[Session, SqlError, Scope]:
-            def checked(session: Session) -> Effect[Session, SqlError, Scope]:
-                if session.usable:
-                    return succeed(session)
-                return pool.invalidate(session).and_then(_Suspend(check_out))
-
-            return pool.get().flat_map(checked)
-
-        return _Suspend(check_out)
-
     pool: Effect[Pool[Session, SqlError], Never, Any] = Pool.make_with_ttl(
         _open(options),
         min=0,
@@ -58,7 +56,7 @@ def make(
         time_to_live=idle_timeout,
         time_to_live_strategy="usage",
     )
-    return pool.map(build)
+    return pool.map(lambda made: _Suspend(lambda: _check_out(made)))
 
 
 __all__ = ["make"]

@@ -498,36 +498,7 @@ class PgConnection:
     def _deliver(self, mailbox: Mailbox, queue: Queue[Notification, SqlError]) -> Effect[None]:
         """Move notifications from the loop into ``queue``; the session's
         failure fails it."""
-        shared = self._shared
-
-        def behind() -> SqlError:
-            return _fell_behind(mailbox.capacity)
-
-        def handle(batch: list[Notification | BaseException]) -> Effect[bool]:
-            notes = [item for item in batch if isinstance(item, Notification)]
-            if not offer_to_subscriber(queue, notes, behind):
-                return succeed(False)
-            failures = [item for item in batch if not isinstance(item, Notification)]
-            if not failures:
-                return succeed(True)
-            if isinstance(failures[0], FellBehind):
-                return queue.fail(behind()).as_(False)
-            error = _catch_query(failures[0])
-
-            def failed() -> Effect[bool]:
-                dead = shared.dead_with or error
-                return queue.fail(dead).as_(False)
-
-            return shared.fatal(error).and_then(_Suspend(failed))
-
-        def loop(_: object = None) -> Effect[None]:
-            pulled = call(
-                lambda: next_notification(mailbox), _catch_query, waits_for="event"
-            ).flat_map(handle)
-            stopped = pulled.catch_all(lambda _: succeed(False))
-            return stopped.flat_map(lambda more: loop() if more else void)
-
-        return _Suspend(loop)
+        return _Suspend(_Deliver(self._shared, mailbox, queue).loop)
 
     def _unlisten(
         self,
@@ -574,6 +545,55 @@ class PgConnection:
             .flat_map(after)
         )
         return unlisten.and_then(queue.shutdown()).as_void()
+
+
+class _Deliver:
+    """One ``listen``'s delivery: a loop on a state object, not a closure
+    that calls itself (that cycle would keep the queue and the last
+    notifications alive)."""
+
+    __slots__ = ("mailbox", "queue", "shared")
+
+    def __init__(self, shared: _Shared, mailbox: Mailbox, queue: Queue[Notification, SqlError]):
+        self.shared = shared
+        self.mailbox = mailbox
+        self.queue = queue
+
+    def behind(self) -> SqlError:
+        return _fell_behind(self.mailbox.capacity)
+
+    def handle(self, batch: list[Notification | BaseException]) -> Effect[bool]:
+        queue = self.queue
+        notes = [item for item in batch if isinstance(item, Notification)]
+        if not offer_to_subscriber(queue, notes, self.behind):
+            return succeed(False)
+        failures = [item for item in batch if not isinstance(item, Notification)]
+        if not failures:
+            return succeed(True)
+        if isinstance(failures[0], FellBehind):
+            return queue.fail(self.behind()).as_(False)
+        error = _catch_query(failures[0])
+        shared = self.shared
+
+        def failed() -> Effect[bool]:
+            dead = shared.dead_with or error
+            return queue.fail(dead).as_(False)
+
+        return shared.fatal(error).and_then(_Suspend(failed))
+
+    def loop(self) -> Effect[None]:
+        mailbox = self.mailbox
+        pulled = call(lambda: next_notification(mailbox), _catch_query, waits_for="event").flat_map(
+            self.handle
+        )
+        return pulled.catch_all(_stop).flat_map(self.again)
+
+    def again(self, more: bool) -> Effect[None]:
+        return self.loop() if more else void
+
+
+def _stop(_: SqlError) -> Effect[bool]:
+    return succeed(False)
 
 
 def _open(config: PgConnectionConfig, resolved: ResolvedConfig) -> Effect[PgConnection, SqlError]:

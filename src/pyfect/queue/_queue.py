@@ -6,6 +6,7 @@ from __future__ import annotations
 import threading
 from collections import deque
 from collections.abc import Callable, Generator, Iterable
+from functools import partial
 from typing import Any, Literal, Never, overload
 
 from pyfect._core import (
@@ -275,17 +276,16 @@ class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
 
     def take(self) -> Effect[A, E]:
         """Wait for an item."""
+        return _Suspend(self._take_attempt)
 
-        def attempt() -> Effect[A, E]:
-            lock = self._lock  # ``acquire`` rather than ``with``, as in ``offer``
-            lock.acquire()
-            try:
-                ex = self._take()
-                return self._wait_then(1, attempt) if ex is None else _FromExit(ex)
-            finally:
-                lock.release()
-
-        return _Suspend(attempt)
+    def _take_attempt(self) -> Effect[A, E]:
+        lock = self._lock  # ``acquire`` rather than ``with``, as in ``offer``
+        lock.acquire()
+        try:
+            ex = self._take()
+            return self._wait_then(1, self._take_attempt) if ex is None else _FromExit(ex)
+        finally:
+            lock.release()
 
     def take_unsafe(self) -> Exit[A, E] | None:
         """An item, the failure of a finished queue, or ``None`` if ``take``
@@ -333,19 +333,18 @@ class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
     def peek(self) -> Effect[A, E]:
         """Wait for an item and succeed with it, leaving it in the queue.
         Offers waiting on a rendezvous queue are not visible to ``peek``."""
+        return _Suspend(self._peek_attempt)
 
-        def attempt() -> Effect[A, E]:
-            with self._lock:
-                match self._state:
-                    case st.Done(cause=cause):
-                        return _FailCause(cause)
-                    case st.Open(takers=takers) | st.Closing(takers=takers):
-                        if not self._items:
-                            ready = self._finished_or(lambda: bool(self._items))
-                            return takers.wait(ready).and_then(_Suspend(attempt))
-                        return _Succeed(self._items[0])
-
-        return _Suspend(attempt)
+    def _peek_attempt(self) -> Effect[A, E]:
+        with self._lock:
+            match self._state:
+                case st.Done(cause=cause):
+                    return _FailCause(cause)
+                case st.Open(takers=takers) | st.Closing(takers=takers):
+                    if not self._items:
+                        ready = self._finished_or(lambda: bool(self._items))
+                        return takers.wait(ready).and_then(_Suspend(self._peek_attempt))
+                    return _Succeed(self._items[0])
 
     @overload
     def clear[AA](self: Queue[AA, Done[Any]]) -> Effect[list[AA], Never]: ...
@@ -407,18 +406,17 @@ class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
         """Wait until the queue is finished: ended, failed or shut down, and
         drained. Succeeds if it was ended; otherwise fails as its takers do
         (Effect's ``Queue.await``)."""
+        return _Suspend(self._await_done_attempt)
 
-        def attempt() -> Effect[None, Any]:
-            with self._lock:
-                match self._state:
-                    case st.Done(cause=cause):
-                        return _catch_done(cause, None)
-                    case st.Open(awaiters=awaiters) | st.Closing(awaiters=awaiters):
-                        return awaiters.wait(self._finished_or(lambda: False)).and_then(
-                            _Suspend(attempt)
-                        )
-
-        return _Suspend(attempt)
+    def _await_done_attempt(self) -> Effect[None, Any]:
+        with self._lock:
+            match self._state:
+                case st.Done(cause=cause):
+                    return _catch_done(cause, None)
+                case st.Open(awaiters=awaiters) | st.Closing(awaiters=awaiters):
+                    return awaiters.wait(self._finished_or(lambda: False)).and_then(
+                        _Suspend(self._await_done_attempt)
+                    )
 
     def size(self) -> Effect[int]:
         """How many items the queue holds (0 once it is finished)."""
@@ -495,25 +493,25 @@ class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
     def _take_between(self, minimum: int, maximum: int | None) -> Effect[list[A], E]:
         """``maximum=None`` takes every buffered item. The items are taken in
         the taking fiber's own step, so none is handed to a parked fiber."""
+        return _Suspend(partial(self._take_between_attempt, minimum, maximum))
 
-        def attempt() -> Effect[list[A], E]:
-            with self._lock:
-                match self._state:
-                    case st.Done(cause=cause):
-                        return _FailCause(cause)
-                    case st.Open(offers=offers) | st.Closing(offers=offers):
-                        if minimum <= 0 or (maximum is not None and maximum <= 0):
-                            return _Succeed([])
-                        if not self._can_take(minimum):
-                            return self._wait_then(minimum, attempt)
-                        if self._items:
-                            items = self._take_buffered(maximum or len(self._items))
-                        else:
-                            items = [st.take_offer(offers, self._lock)]
-                        self._release()
-                        return _Succeed(items)
-
-        return _Suspend(attempt)
+    def _take_between_attempt(self, minimum: int, maximum: int | None) -> Effect[list[A], E]:
+        with self._lock:
+            match self._state:
+                case st.Done(cause=cause):
+                    return _FailCause(cause)
+                case st.Open(offers=offers) | st.Closing(offers=offers):
+                    if minimum <= 0 or (maximum is not None and maximum <= 0):
+                        return _Succeed([])
+                    if not self._can_take(minimum):
+                        retry = partial(self._take_between_attempt, minimum, maximum)
+                        return self._wait_then(minimum, retry)
+                    if self._items:
+                        items = self._take_buffered(maximum or len(self._items))
+                    else:
+                        items = [st.take_offer(offers, self._lock)]
+                    self._release()
+                    return _Succeed(items)
 
     def _wait_then[T](self, minimum: int, retry: Callable[[], Effect[T, E]]) -> Effect[T, E]:
         """Park until a take of ``minimum`` items can complete (or the queue

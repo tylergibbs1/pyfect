@@ -166,14 +166,21 @@ def get_index_signature_keys(
     """The keys of ``input`` that an index signature with ``parameter``
     takes (Effect's ``getIndexSignatureKeys``): those its encoded side
     accepts. A union's are its members' in member order, each key once."""
-    parse_options = options or {}
+    return _index_signature_keys(input, to_encoded(parameter), options or {})
 
-    def go(node: AST) -> list[object]:
-        if node.tag == "Union" and node.checks is None and node.encoding is None:
-            return list(dict.fromkeys(key for member in node.children() for key in go(member)))
-        return [key for key in input if type(node.parse(key, parse_options)) is Success]
 
-    return go(to_encoded(parameter))
+def _index_signature_keys(
+    input: Mapping[Any, object], node: AST, options: ParseOptions
+) -> list[object]:
+    if node.tag == "Union" and node.checks is None and node.encoding is None:
+        return list(
+            dict.fromkeys(
+                key
+                for member in node.children()
+                for key in _index_signature_keys(input, member, options)
+            )
+        )
+    return [key for key in input if type(node.parse(key, options)) is Success]
 
 
 @dataclass(frozen=True, slots=True, eq=False)

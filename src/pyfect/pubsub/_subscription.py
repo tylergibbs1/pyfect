@@ -16,6 +16,7 @@ are typed ``Sequence`` (they are lists).
 from __future__ import annotations
 
 from collections.abc import Callable, Generator, Sequence
+from functools import partial
 from typing import TYPE_CHECKING, Any, Never, cast
 
 from pyfect._core import (
@@ -58,52 +59,44 @@ class Subscription[A]:
 
     def take(self) -> Effect[A]:
         """Wait for the next message."""
+        return _Suspend(self._take_attempt)
+
+    def _take_attempt(self) -> Effect[A]:
         reader = self._reader
         hub = self._hub
-
-        def attempt() -> Effect[A]:
-            with hub.lock:
-                if reader.unsubscribed:
-                    return _interrupt()
-                replayed = reader.replay.take()
-                if replayed is not None:
-                    return _Succeed(replayed.value)
-                polled = reader.poll_up_to(1)
-                if polled:
-                    hub.on_empty_space()
-                    return _Succeed(polled[0])
-                if hub.ended is not None:
-                    return _Succeed(hub.ended.value)
-            return self._park(_identity, attempt)
-
-        return _Suspend(attempt)
+        with hub.lock:
+            if reader.unsubscribed:
+                return _interrupt()
+            replayed = reader.replay.take()
+            if replayed is not None:
+                return _Succeed(replayed.value)
+            polled = reader.poll_up_to(1)
+            if polled:
+                hub.on_empty_space()
+                return _Succeed(polled[0])
+            if hub.ended is not None:
+                return _Succeed(hub.ended.value)
+        return self._park(_identity, self._take_attempt)
 
     def take_all(self) -> Effect[Sequence[A]]:
         """Wait for at least one message, then take every one there is."""
+        return _Suspend(self._take_all_attempt)
+
+    def _take_all_attempt(self) -> Effect[Sequence[A]]:
         reader = self._reader
         hub = self._hub
-
-        def more(first: A) -> list[A]:
-            # Called by ``_Collect`` holding the hub's lock.
-            rest = reader.poll_up_to(reader.backing.size())
+        with hub.lock:
+            if reader.unsubscribed:
+                return _interrupt()
+            polled = reader.poll_up_to(reader.backing.size())
             hub.on_empty_space()
-            return [first, *rest]
-
-        def attempt() -> Effect[list[A]]:
-            with hub.lock:
-                if reader.unsubscribed:
-                    return _interrupt()
-                polled = reader.poll_up_to(reader.backing.size())
-                hub.on_empty_space()
-                if reader.replay.remaining:
-                    return _Succeed(reader.replay.take_all() + polled)
-                if polled:
-                    return _Succeed(polled)
-                if hub.ended is not None:
-                    return _Succeed([hub.ended.value])
-            return self._park(more, attempt)
-
-        return _Suspend(attempt)
+            if reader.replay.remaining:
+                return _Succeed(reader.replay.take_all() + polled)
+            if polled:
+                return _Succeed(polled)
+            if hub.ended is not None:
+                return _Succeed([hub.ended.value])
+        return self._park(partial(_take_all_more, self), self._take_all_attempt)
 
     def take_up_to(self, n: int) -> Effect[Sequence[A]]:
         """Take up to ``n`` messages without waiting (none if ``n`` is 0 or
@@ -248,3 +241,12 @@ class _Collect[A, X](Frame):
                     hub.atomic, hub.subscribers, reader.backing, reader.pollers
                 )
         return Failure(cause)
+
+
+def _take_all_more[A](subscription: Subscription[A], first: A) -> Sequence[A]:
+    """Called by ``_Collect`` holding the hub's lock. Not a method: one taking
+    an ``A`` would make ``Subscription`` invariant."""
+    reader = subscription._reader
+    rest = reader.poll_up_to(reader.backing.size())
+    subscription._hub.on_empty_space()
+    return [first, *rest]

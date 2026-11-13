@@ -168,17 +168,7 @@ def decode_channel[H](
             )
 
         def run(read: Callable[[], Any], end: Callable[[], object]) -> AnyPull:
-            def loop() -> Any:
-                seen = pulls
-                try:
-                    result = read()
-                except error_type as error:
-                    return fail_exit(error)
-                if result is NEED_INPUT:
-                    return pull_input(seen).flat_map(lambda _: _Suspend(loop))
-                return end_with(end()) if result is None else Success(result)
-
-            return _Suspend(loop)
+            return _Suspend(_ReadLoop(read, end, error_type, lambda: pulls, pull_input))
 
         def body(generation: int) -> Any:
             return from_pull(_Succeed(run(lambda: decoder.read(generation), lambda: None)))
@@ -197,3 +187,38 @@ def decode_channel[H](
         return scope.add_finalizer(lambda _: _Sync(decoder.close)).map(lambda _: pull)
 
     return from_transform(lambda upstream, scope: _Suspend(lambda: transform(upstream, scope)))
+
+
+class _ReadLoop:
+    """Read ``read`` until it has a result, pulling more input when it needs
+    it: a loop on a state object, so a finished run does not keep its input
+    alive."""
+
+    __slots__ = ("end", "error_type", "pull_input", "pulls", "read")
+
+    def __init__(
+        self,
+        read: Callable[[], Any],
+        end: Callable[[], object],
+        error_type: type[Exception],
+        pulls: Callable[[], int],
+        pull_input: Callable[[int], AnyPull],
+    ) -> None:
+        self.read = read
+        self.end = end
+        self.error_type = error_type
+        self.pulls = pulls
+        self.pull_input = pull_input
+
+    def __call__(self) -> Any:
+        seen = self.pulls()
+        try:
+            result = self.read()
+        except self.error_type as error:
+            return fail_exit(error)
+        if result is NEED_INPUT:
+            return self.pull_input(seen).flat_map(self.again)
+        return end_with(self.end()) if result is None else Success(result)
+
+    def again(self, _: object) -> Any:
+        return _Suspend(self)

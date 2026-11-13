@@ -34,6 +34,72 @@ type Keys = Sequence[object] | Mapping[str, Sequence[object]]
 type _Hash = str | int
 
 
+def _noop() -> None:
+    pass
+
+
+class _Query[A, E]:
+    """One ``query``: runs its effect again after each invalidation. The
+    service's handlers hold ``run`` and ``cancel`` holds that handler, so
+    ``unregister`` drops ``cancel`` to end the cycle."""
+
+    __slots__ = (
+        "cancel",
+        "effect",
+        "pending",
+        "results",
+        "running",
+        "scope",
+        "services",
+        "stopped",
+    )
+
+    def __init__(
+        self, effect: Effect[A, E, Any], services: Context[Any], scope: CloseableScope
+    ) -> None:
+        self.effect = effect
+        self.services = services
+        self.scope = scope
+        self.results: Queue[A, E | Done] = Queue()
+        self.running = False
+        self.pending = False
+        self.stopped = False
+        self.cancel: Callable[[], None] = _noop
+
+    def unregister(self) -> None:
+        cancel, self.cancel = self.cancel, _noop
+        cancel()
+
+    def run(self) -> None:
+        if self.stopped:
+            return
+        if self.running:
+            self.pending = True
+            return
+        self.running = True
+        self._fork()
+
+    def _fork(self) -> None:
+        child = run_fork(self.effect, context=self.services)
+        child.run_in(self.scope)
+        child.add_observer_unsafe(self._handle_exit)
+
+    def _handle_exit(self, exit_: Exit[A, E]) -> None:
+        if isinstance(exit_, Failure):
+            self.stopped = True
+            self.pending = False
+            self.running = False
+            self.unregister()
+            self.results.fail_cause_unsafe(exit_.cause)
+            return
+        self.results.offer_unsafe(exit_.value)
+        if self.pending:
+            self.pending = False
+            self._fork()
+        else:
+            self.running = False
+
+
 class _PendingInvalidation(
     Tag[dict[_Hash, None]], key="effect/reactivity/Reactivity/PendingInvalidation"
 ):
@@ -135,43 +201,14 @@ class ReactivityService:
         def body(fiber: Fiber[Any, Any]) -> Effect[Dequeue[A, E | Done], Never, R | Scope]:
             services: Context[Any] = fiber._context
             scope: CloseableScope = services.get_unsafe(Scope)
-            results: Queue[A, E | Done] = Queue()
-            state = {"running": False, "pending": False, "stopped": False}
-
-            def fork() -> None:
-                child = run_fork(effect, context=services)
-                child.run_in(scope)
-                child.add_observer_unsafe(handle_exit)
-
-            def handle_exit(exit_: Exit[A, E]) -> None:
-                if isinstance(exit_, Failure):
-                    state.update(stopped=True, pending=False, running=False)
-                    cancel()
-                    results.fail_cause_unsafe(exit_.cause)
-                    return
-                results.offer_unsafe(exit_.value)
-                if state["pending"]:
-                    state["pending"] = False
-                    fork()
-                else:
-                    state["running"] = False
-
-            def run() -> None:
-                if state["stopped"]:
-                    return
-                if state["running"]:
-                    state["pending"] = True
-                    return
-                state["running"] = True
-                fork()
-
-            cancel = self.register_unsafe(keys, run)
+            query = _Query[A, E](effect, services, scope)
+            query.cancel = self.register_unsafe(keys, query.run)
 
             def start() -> Dequeue[A, E | Done]:
-                run()
-                return results
+                query.run()
+                return query.results
 
-            return scope.add_finalizer(lambda _: _Sync(cancel)).and_then(_Sync(start))
+            return scope.add_finalizer(lambda _: _Sync(query.unregister)).and_then(_Sync(start))
 
         return _WithFiber(body)
 

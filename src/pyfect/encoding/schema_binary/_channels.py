@@ -3,7 +3,7 @@
 # pyright: reportUnknownVariableType=false, reportUnknownArgumentType=false, reportUnknownMemberType=false
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import Any, Never, Unpack
 
 from pyfect import schema as S
@@ -15,7 +15,7 @@ from pyfect.channel import Channel, from_transform
 from pyfect.channel._base import AnyPull, end_with, require_channel
 from pyfect.encoding.schema_binary import _encode
 from pyfect.encoding.schema_binary._fingerprint import compile_mode
-from pyfect.encoding.schema_binary._parser import make_parser
+from pyfect.encoding.schema_binary._parser import Parser, make_parser
 from pyfect.encoding.schema_binary._target import (
     compile_target,
     excess_is_error,
@@ -94,17 +94,8 @@ def decode[A, RD, E = Never, D = None](
         stashed: list[SchemaError] = []
 
         def decode_all(raw: list[object]) -> AnyPull:
-            out: list[object] = []
-
-            def step() -> AnyPull:
-                if len(out) == len(raw):
-                    return _Succeed(tuple(out))
-
-                def added(value: object) -> AnyPull:
-                    out.append(value)
-                    return _Suspend(step)
-
-                return decode_one(raw[len(out)]).flat_map(added)
+            step = _DecodeAll(raw, decode_one)
+            out = step.out
 
             def caught(cause: Cause[Any]) -> AnyPull:
                 found = cause.find_recoverable_error()
@@ -115,19 +106,6 @@ def decode[A, RD, E = Never, D = None](
 
             return _Suspend(step).catch_cause(caught)
 
-        def feed(chunk: tuple[bytes, ...]) -> AnyPull:
-            raw: list[object] = []
-            try:
-                for part in chunk:
-                    raw.extend(frames.feed_sync(part))
-            except SchemaError as error:
-                if not raw:
-                    return _FailCause(fail_cause(error))
-                stashed.append(error)
-            if not raw:
-                return pull
-            return _Succeed(tuple(raw)) if decode_target is None else decode_all(raw)
-
         def done(leftover: object) -> AnyPull:
             try:
                 frames.end_sync()
@@ -135,19 +113,73 @@ def decode[A, RD, E = Never, D = None](
                 return _FailCause(fail_cause(error))
             return end_with(leftover)
 
-        def failed(cause: Cause[Any]) -> AnyPull:
-            return _FailCause(cause)
-
-        def next_pull() -> AnyPull:
-            if stashed:
-                return _FailCause(fail_cause(stashed[0]))
-            return match_effect(upstream, on_success=feed, on_failure=failed, on_done=done)
-
-        pull: AnyPull = _Suspend(next_pull)
-        return _Succeed(pull)
+        decode = None if decode_target is None else decode_all
+        return _Succeed(_Suspend(_FramesPull(upstream, frames, stashed, decode, done).next))
 
     channel: Any = from_transform(transform)
     return channel
+
+
+class _FramesPull:
+    """``decode``'s pull: a state object rather than closures over the pull
+    itself, so a finished run does not keep its input alive."""
+
+    __slots__ = ("decode_all", "done", "frames", "stashed", "upstream")
+
+    def __init__(
+        self,
+        upstream: AnyPull,
+        frames: Parser[Any],
+        stashed: list[SchemaError],
+        decode_all: Callable[[list[object]], AnyPull] | None,
+        done: Callable[[object], AnyPull],
+    ) -> None:
+        self.upstream = upstream
+        self.frames = frames
+        self.stashed = stashed
+        self.decode_all = decode_all
+        self.done = done
+
+    def next(self) -> AnyPull:
+        if self.stashed:
+            return _FailCause(fail_cause(self.stashed[0]))
+        return match_effect(
+            self.upstream, on_success=self, on_failure=_FailCause, on_done=self.done
+        )
+
+    def __call__(self, chunk: tuple[bytes, ...]) -> AnyPull:
+        raw: list[object] = []
+        try:
+            for part in chunk:
+                raw.extend(self.frames.feed_sync(part))
+        except SchemaError as error:
+            if not raw:
+                return _FailCause(fail_cause(error))
+            self.stashed.append(error)
+        if not raw:
+            return _Suspend(self.next)
+        return _Succeed(tuple(raw)) if self.decode_all is None else self.decode_all(raw)
+
+
+class _DecodeAll:
+    """Decode each of ``raw`` in turn into ``out``: a loop on a state object,
+    so a finished run does not keep its values alive."""
+
+    __slots__ = ("decode_one", "out", "raw")
+
+    def __init__(self, raw: list[object], decode_one: Callable[[object], Any]) -> None:
+        self.raw = raw
+        self.decode_one = decode_one
+        self.out: list[object] = []
+
+    def __call__(self) -> AnyPull:
+        if len(self.out) == len(self.raw):
+            return _Succeed(tuple(self.out))
+        return self.decode_one(self.raw[len(self.out)]).flat_map(self.added)
+
+    def added(self, value: object) -> AnyPull:
+        self.out.append(value)
+        return _Suspend(self)
 
 
 def duplex[TI, TO, OE, OD, IE, ID, R, RD, RE](

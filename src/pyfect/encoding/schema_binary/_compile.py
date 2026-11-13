@@ -78,15 +78,16 @@ def _is_json_declaration(node: ast.Declaration) -> bool:
 
 
 def _proves_integer(node: ast.AST) -> bool:
-    def go(check: ast.Check[Any]) -> bool:
-        representation = (check.annotations or {}).get("representation")
-        if isinstance(representation, dict):
-            id = cast("dict[str, object]", representation).get("id")
-            if id == "effect/schema/isInt":
-                return True
-        return isinstance(check, FilterGroup) and any(map(go, check.checks))
+    return any(map(_check_proves_integer, node.checks or ()))
 
-    return any(map(go, node.checks or ()))
+
+def _check_proves_integer(check: ast.Check[Any]) -> bool:
+    representation = (check.annotations or {}).get("representation")
+    if isinstance(representation, dict):
+        id = cast("dict[str, object]", representation).get("id")
+        if id == "effect/schema/isInt":
+            return True
+    return isinstance(check, FilterGroup) and any(map(_check_proves_integer, check.checks))
 
 
 def _resolve(node: ast.AST) -> ast.AST:
@@ -108,27 +109,27 @@ def _enum_literals(node: ast.Enum) -> list[ast.AST]:
 def _flatten_members(types: Sequence[ast.AST]) -> list[ast.AST]:
     out: list[ast.AST] = []
     seen: set[ast.AST] = set()
-
-    def go(node: ast.AST) -> None:
-        resolved = _resolve(node)
-        if resolved in seen:
-            return
-        seen.add(resolved)
-        match resolved:
-            case ast.Never():
-                return
-            case ast.Union():
-                for member in resolved.types:
-                    go(member)
-            case ast.Enum():
-                for member in _enum_literals(resolved):
-                    go(member)
-            case _:
-                out.append(resolved)
-
     for node in types:
-        go(node)
+        _flatten_member(node, out, seen)
     return out
+
+
+def _flatten_member(node: ast.AST, out: list[ast.AST], seen: set[ast.AST]) -> None:
+    resolved = _resolve(node)
+    if resolved in seen:
+        return
+    seen.add(resolved)
+    match resolved:
+        case ast.Never():
+            return
+        case ast.Union():
+            for member in resolved.types:
+                _flatten_member(member, out, seen)
+        case ast.Enum():
+            for member in _enum_literals(resolved):
+                _flatten_member(member, out, seen)
+        case _:
+            out.append(resolved)
 
 
 def _leaf_kind_of_literal(literal: ast.LiteralValue) -> L.LeafKind:
@@ -554,50 +555,55 @@ def is_exact(root: ast.AST) -> bool:
     values, so the schema pass around it would only repeat work. A suspend
     still being walked counts as exact: if nothing else in the cycle
     disqualifies it, the whole cycle is exact."""
-    walked: dict[ast.AST, bool] = {}
+    return _exact(root, {})
 
-    def exact(node: ast.AST) -> bool:  # noqa: PLR0911
-        if not _clean(node):
-            return False
-        match node:
-            case (
-                ast.String()
-                | ast.Boolean()
-                | ast.Null()
-                | ast.Number()
-                | ast.BigInt()
-                | ast.Literal()
-                | ast.Never()
-                | ast.Unknown()
-                | ast.Any()
-            ):
-                return True
-            case ast.Arrays():
-                return all(exact(e.type) for e in node.elements) and all(map(exact, node.rest))
-            case ast.Objects():
-                return all(p.default is None and exact(p.type) for p in node.properties) and all(
-                    isinstance(i.parameter, ast.String) and exact(i.parameter) and exact(i.type)
-                    for i in node.index_signatures
-                )
-            case ast.Union():
-                return node.mode == "any_of" and all(map(exact, node.types))
-            case ast.Suspend():
-                seen = walked.get(node)
-                if seen is not None:
-                    return seen
-                walked[node] = True
-                walked[node] = exact(node.target)
-                return walked[node]
-            case ast.Declaration():
-                id = representation_id(node)
-                native = None if id is None else NATIVES.get(id)
-                if native is None:
-                    return False
-                return native[1] or all(map(exact, node.type_parameters))
-            case _:
+
+def _exact(node: ast.AST, walked: dict[ast.AST, bool]) -> bool:  # noqa: PLR0911
+    if not _clean(node):
+        return False
+    match node:
+        case (
+            ast.String()
+            | ast.Boolean()
+            | ast.Null()
+            | ast.Number()
+            | ast.BigInt()
+            | ast.Literal()
+            | ast.Never()
+            | ast.Unknown()
+            | ast.Any()
+        ):
+            return True
+        case ast.Arrays():
+            return all(_exact(e.type, walked) for e in node.elements) and all(
+                _exact(e, walked) for e in node.rest
+            )
+        case ast.Objects():
+            return all(
+                p.default is None and _exact(p.type, walked) for p in node.properties
+            ) and all(
+                isinstance(i.parameter, ast.String)
+                and _exact(i.parameter, walked)
+                and _exact(i.type, walked)
+                for i in node.index_signatures
+            )
+        case ast.Union():
+            return node.mode == "any_of" and all(_exact(t, walked) for t in node.types)
+        case ast.Suspend():
+            seen = walked.get(node)
+            if seen is not None:
+                return seen
+            walked[node] = True
+            walked[node] = _exact(node.target, walked)
+            return walked[node]
+        case ast.Declaration():
+            id = representation_id(node)
+            native = None if id is None else NATIVES.get(id)
+            if native is None:
                 return False
-
-    return exact(root)
+            return native[1] or all(_exact(t, walked) for t in node.type_parameters)
+        case _:
+            return False
 
 
 def _is_exit_with_exact_success(root: ast.AST) -> bool:

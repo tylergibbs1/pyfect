@@ -5,7 +5,7 @@ and in time linear in their size."""
 
 from __future__ import annotations
 
-import time
+from collections.abc import Iterator
 from typing import Any
 
 from pyfect._equal import equals
@@ -38,16 +38,35 @@ def test_long_cycles_compare_by_bisimilarity() -> None:
     assert not equals(ring(DEPTH), ring(DEPTH, last=1))
 
 
-def test_deep_comparison_is_linear() -> None:
-    def seconds(depth: int) -> float:
-        a, b = nested(depth, bytearray(b"a")), nested(depth, bytearray(b"a"))
-        runs: list[float] = []
-        for _ in range(3):
-            start = time.perf_counter()
-            assert equals(a, b)
-            runs.append(time.perf_counter() - start)
-        return sorted(runs)[1]
+class _Counted(list[Any]):
+    """A list that counts how often it is walked, in ``walks[0]``: a count
+    of the work, which, unlike a time, no machine's speed changes."""
 
-    # Four times as deep: about four times as long (keying each level again
-    # took sixteen times as long).
-    assert seconds(8000) < 10 * seconds(2000)
+    __slots__ = ("walks",)
+
+    def __init__(self, items: list[Any], walks: list[int]) -> None:
+        super().__init__(items)
+        self.walks = walks
+
+    def __iter__(self) -> Iterator[Any]:
+        self.walks[0] += 1
+        return super().__iter__()
+
+
+def _walks(depth: int) -> int:
+    walks = [0]
+
+    def counted(depth: int) -> _Counted:
+        value = _Counted([bytearray(b"a")], walks)
+        for _ in range(depth):
+            value = _Counted([value, 0], walks)
+        return value
+
+    assert equals(counted(depth), counted(depth))
+    return walks[0]
+
+
+def test_deep_comparison_is_linear() -> None:
+    # Four times as deep: about four times the walks (keying each level
+    # again walked sixteen times as much).
+    assert _walks(8000) <= 5 * _walks(2000)

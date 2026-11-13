@@ -60,15 +60,22 @@ def from_representations(
 
 class ReferenceSlot:
     def __init__(self, key: str) -> None:
+        self.key = key
         self.body: ast.AST | None = None
         self.resolving = False
+        self._wrapper: ast.Suspend | None = None
 
-        def thunk() -> ast.AST:
-            if self.body is None:
-                raise RepresentationError(f"Reference {key} was evaluated before it was resolved")
-            return self.body
+    @property
+    def wrapper(self) -> ast.Suspend:
+        """The body, suspended: made only for a reference inside its own body."""
+        if self._wrapper is None:
+            self._wrapper = ast.Suspend(self._resolved)
+        return self._wrapper
 
-        self.wrapper = ast.Suspend(thunk)
+    def _resolved(self) -> ast.AST:
+        if self.body is None:
+            raise RepresentationError(f"Reference {self.key} was evaluated before it was resolved")
+        return self.body
 
 
 class Reviving:

@@ -121,53 +121,60 @@ def _key(k: object) -> str:
 
 def format_unknown(value: object) -> str:
     """``value`` as one line of JSON-like text. Never raises."""
-    ancestors: set[int] = set()
+    return _UnknownFormatter().recur(value)
 
-    def entries(pairs: Iterable[tuple[object, object]]) -> str:
-        return "{" + ",".join(f"{_key(k)}:{recur(v)}" for k, v in pairs) + "}"
 
-    def items(values: Iterable[object]) -> str:
-        return "[" + ",".join(recur(v) for v in values) + "]"
+class _UnknownFormatter:
+    """``format_unknown`` over one value."""
 
-    def compound(v: object) -> str:
+    __slots__ = ("ancestors",)
+
+    def __init__(self) -> None:
+        self.ancestors: set[int] = set()
+
+    def entries(self, pairs: Iterable[tuple[object, object]]) -> str:
+        return "{" + ",".join(f"{_key(k)}:{self.recur(v)}" for k, v in pairs) + "}"
+
+    def items(self, values: Iterable[object]) -> str:
+        return "[" + ",".join(self.recur(v) for v in values) + "]"
+
+    def compound(self, v: object) -> str:
         kind = type(v)
         name = kind.__name__
         if isinstance(v, (list, tuple)):
-            text = items(cast("Iterable[object]", v))
+            text = self.items(cast("Iterable[object]", v))
         elif isinstance(v, (datetime, date)):
             text = v.isoformat()
         elif isinstance(v, BaseException):
             text = _exception_text(v)
             if v.__cause__ is not None:
-                text += f" (cause: {recur(v.__cause__)})"
+                text += f" (cause: {self.recur(v.__cause__)})"
         elif _shown_as_str(v):
             text = str(v)
         elif isinstance(v, Mapping):
-            body = entries(cast("Mapping[object, object]", v).items())
+            body = self.entries(cast("Mapping[object, object]", v).items())
             text = body if kind is dict else f"{name}({body})"
         elif isinstance(v, Iterable):
-            text = f"{name}({items(cast('Iterable[object]', v))})"
+            text = f"{name}({self.items(cast('Iterable[object]', v))})"
         elif (fields := _fields(v)) is not None:
-            text = f"{name}({entries(fields.items())})"
+            text = f"{name}({self.entries(fields.items())})"
         else:
             text = f"{name}({{}})"
         return text
 
-    def recur(v: object) -> str:
+    def recur(self, v: object) -> str:
         scalar = _scalar_text(v)
         if scalar is not None:
             return scalar
-        if id(v) in ancestors:
+        if id(v) in self.ancestors:
             return "[Circular]"
-        ancestors.add(id(v))
+        self.ancestors.add(id(v))
         try:
-            return compound(v)
+            return self.compound(v)
         except Exception:
             return "[inspection threw]"
         finally:
-            ancestors.discard(id(v))
-
-    return recur(value)
+            self.ancestors.discard(id(v))
 
 
 def structured_message(value: object) -> object:
@@ -187,40 +194,50 @@ _DROP = object()
 def to_json(value: object) -> Any:
     """``value`` as plain JSON data: dicts with string keys, lists,
     strings, numbers, booleans and ``None``."""
-    ancestors: set[int] = set()
+    converted = _JsonConverter().recur(value)
+    return None if converted is _DROP else converted
 
-    def mapping(pairs: Iterable[tuple[object, object]]) -> dict[str, object]:
+
+class _JsonConverter:
+    """``to_json`` over one value."""
+
+    __slots__ = ("ancestors",)
+
+    def __init__(self) -> None:
+        self.ancestors: set[int] = set()
+
+    def mapping(self, pairs: Iterable[tuple[object, object]]) -> dict[str, object]:
         out: dict[str, object] = {}
         for k, x in pairs:
-            converted = recur(x)
+            converted = self.recur(x)
             if converted is not _DROP:
                 out[js_string(k)] = converted
         return out
 
-    def sequence(values: Iterable[object]) -> list[object]:
-        return [None if (c := recur(x)) is _DROP else c for x in values]
+    def sequence(self, values: Iterable[object]) -> list[object]:
+        return [None if (c := self.recur(x)) is _DROP else c for x in values]
 
-    def container(identity: int, convert: Callable[[], object]) -> object:
-        if identity in ancestors:
+    def container(self, identity: int, convert: Callable[[], object]) -> object:
+        if identity in self.ancestors:
             return _DROP
-        ancestors.add(identity)
+        self.ancestors.add(identity)
         try:
             return with_fresh_stack(convert)  # as deep as the value
         finally:
-            ancestors.discard(identity)
+            self.ancestors.discard(identity)
 
-    def compound(v: object) -> object:  # noqa: PLR0911
+    def compound(self, v: object) -> object:  # noqa: PLR0911
         identity = id(v)
         if isinstance(v, BaseException):
             error = v
             pairs = [*vars(error).items(), ("name", type(error).__name__), ("message", str(error))]
-            return container(identity, lambda: mapping(pairs))
+            return self.container(identity, lambda: self.mapping(pairs))
         if isinstance(v, Mapping):
             pairs = list(cast("Mapping[object, object]", v).items())
-            return container(identity, lambda: mapping(pairs))
+            return self.container(identity, lambda: self.mapping(pairs))
         if isinstance(v, (list, tuple)):
             values = list(cast("Iterable[object]", v))
-            return container(identity, lambda: sequence(values))
+            return self.container(identity, lambda: self.sequence(values))
         if isinstance(v, (set, frozenset)):
             return {}  # a JavaScript ``Set`` has no enumerable keys
         if isinstance(v, (bytes, bytearray)):
@@ -230,9 +247,9 @@ def to_json(value: object) -> Any:
         fields = None if _shown_as_str(v) else _fields(v)
         if fields is None:
             return str(v)
-        return container(identity, lambda: mapping(fields.items()))
+        return self.container(identity, lambda: self.mapping(fields.items()))
 
-    def recur(v: object) -> object:
+    def recur(self, v: object) -> object:
         if v is None or isinstance(v, (str, bool, int)):
             return v
         if isinstance(v, float):
@@ -241,10 +258,7 @@ def to_json(value: object) -> Any:
             return iso_millis(v)
         if isinstance(v, date):
             return v.isoformat()
-        return compound(v)
-
-    converted = recur(value)
-    return None if converted is _DROP else converted
+        return self.compound(v)
 
 
 def json_text(value: object) -> str:

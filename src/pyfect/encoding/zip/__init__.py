@@ -201,22 +201,34 @@ def _deflate_bytes(content: bytes) -> Any:
     compressor = zlib.compressobj(wbits=-15)
     if len(content) <= _DEFLATE_PIECE:
         return _Succeed(compressor.compress(content) + compressor.flush())
-    parts: list[bytes] = []
-    at = 0
-
-    def step() -> Any:
-        nonlocal at
-        if at >= len(content):
-            parts.append(compressor.flush())
-            return _Succeed(b"".join(parts))
-        parts.append(compressor.compress(content[at : at + _DEFLATE_PIECE]))
-        at += _DEFLATE_PIECE
-        return yield_now().flat_map(lambda _: _Suspend(step))
-
-    return _Suspend(step)
+    return _Suspend(_Deflation(content, compressor).step)
 
 
-def encode[E = Never, R = Never, IE = Never, D = None]() -> Channel[  # noqa: PLR0915
+class _Deflation:
+    """Deflates ``content`` one piece per step."""
+
+    __slots__ = ("at", "compressor", "content", "parts")
+
+    def __init__(self, content: bytes, compressor: zlib._Compress) -> None:
+        self.content = content
+        self.compressor = compressor
+        self.parts: list[bytes] = []
+        self.at = 0
+
+    def step(self) -> Any:
+        content = self.content
+        if self.at >= len(content):
+            self.parts.append(self.compressor.flush())
+            return _Succeed(b"".join(self.parts))
+        self.parts.append(self.compressor.compress(content[self.at : self.at + _DEFLATE_PIECE]))
+        self.at += _DEFLATE_PIECE
+        return yield_now().flat_map(self._resume)
+
+    def _resume(self, _: object) -> Any:
+        return _Suspend(self.step)
+
+
+def encode[E = Never, R = Never, IE = Never, D = None]() -> Channel[
     tuple[bytes, ...],
     ZipError | IE | E,
     D,
@@ -252,146 +264,166 @@ def encode[E = Never, R = Never, IE = Never, D = None]() -> Channel[  # noqa: PL
     Entries that differ in their bodies' errors or services do not infer one ``E`` and
     ``R``: annotate the stream, as ``Stream[Entry[E1 | E2, R1 | R2] | ContentEntry]``."""
 
-    def transform(upstream: AnyPull, scope: CloseableScope) -> AnyPull:  # noqa: PLR0915
-        writer = Writer()
-        entries: tuple[Any, ...] = ()
-        index = 0
-        done: tuple[Any] | None = None
-        body: AnyPull | None = None
-        body_scope: CloseableScope | None = None
-        compressor: Any = None
+    channel: Any = from_transform(
+        lambda upstream, scope: _Suspend(
+            lambda: _Succeed(_Suspend(_ZipEncoding(upstream, scope).step))
+        )
+    )
+    return channel
 
-        def on_body(chunks: tuple[bytes, ...] | None) -> Any:
-            nonlocal body, body_scope, compressor
+
+class _ZipEncoding:
+    """One run of ``encode``: entries in, archive bytes out."""
+
+    __slots__ = (
+        "body",
+        "body_scope",
+        "compressor",
+        "done",
+        "entries",
+        "index",
+        "scope",
+        "upstream",
+        "writer",
+    )
+
+    def __init__(self, upstream: AnyPull, scope: CloseableScope) -> None:
+        self.upstream = upstream
+        self.scope = scope
+        self.writer = Writer()
+        self.entries: tuple[Any, ...] = ()
+        self.index = 0
+        self.done: tuple[Any] | None = None
+        self.body: AnyPull | None = None
+        self.body_scope: CloseableScope | None = None
+        self.compressor: Any = None
+
+    @property
+    def pull(self) -> AnyPull:
+        return _Suspend(self.step)
+
+    def on_body(self, chunks: tuple[bytes, ...] | None) -> Any:
+        writer = self.writer
+        try:
+            if chunks is not None:
+                writer.update(chunks)
+                compressor = self.compressor
+                if compressor is None:
+                    writer.data(chunks)
+                else:
+                    writer.data(tuple(compressor.compress(chunk) for chunk in chunks))
+                return self.pull
+            if self.compressor is not None:
+                writer.data((self.compressor.flush(),))
+                self.compressor = None
+        except ZipError as error:
+            return fail_exit(error)
+        self.body = None
+        assert self.body_scope is not None
+        closing = self.body_scope.close(void)
+        self.body_scope = None
+        return closing.flat_map(self.on_body_closed)
+
+    def on_body_closed(self, _: None) -> Any:
+        try:
+            self.writer.end()
+        except ZipError as error:
+            return fail_exit(error)
+        return self.pull
+
+    def write_content(self, entry: ContentEntry, compress: bool) -> Any:
+        def written(data: bytes) -> Any:
             try:
-                if chunks is not None:
-                    writer.update(chunks)
-                    if compressor is None:
-                        writer.data(chunks)
-                    else:
-                        writer.data(tuple(compressor.compress(chunk) for chunk in chunks))
-                    return pull
-                if compressor is not None:
-                    writer.data((compressor.flush(),))
-                    compressor = None
+                self.writer.entry(entry.header, entry.content, data)
             except ZipError as error:
                 return fail_exit(error)
-            body = None
-            assert body_scope is not None
-            closing = body_scope.close(void)
-            body_scope = None
-            return closing.flat_map(on_body_closed)
+            return self.pull
 
-        def on_body_closed(_: None) -> Any:
+        return (
+            _deflate_bytes(entry.content).flat_map(written) if compress else written(entry.content)
+        )
+
+    def collect_and_deflate(self, entry: Entry[Any, Any], size: int) -> Any:
+        """A small body costs less to deflate in one piece than as a stream."""
+        writer = self.writer
+        chunks: list[bytes] = []
+        length = 0
+
+        def collect(array: tuple[bytes, ...]) -> Any:
+            nonlocal length
+            chunks.extend(array)
+            length += sum(map(len, array))
+            if length > size:
+                return fail_exit(size_mismatch(entry.header.path, length, size))
+            writer.update(array)
+            return _Succeed(None)
+
+        def deflated(data: bytes) -> Any:
             try:
+                writer.data((data,))
                 writer.end()
             except ZipError as error:
                 return fail_exit(error)
-            return pull
+            return self.pull
 
-        def write_content(entry: ContentEntry, compress: bool) -> Any:
-            def written(data: bytes) -> Any:
-                try:
-                    writer.entry(entry.header, entry.content, data)
-                except ZipError as error:
-                    return fail_exit(error)
-                return pull
+        return (
+            entry.body.run_for_each_array(collect)
+            .flat_map(lambda _: _deflate_bytes(b"".join(chunks)))
+            .flat_map(deflated)
+        )
 
-            return (
-                _deflate_bytes(entry.content).flat_map(written)
-                if compress
-                else written(entry.content)
-            )
+    def begin(self, entry: Any) -> Any:
+        header = entry.header
+        try:
+            validate(header)
+            compress = header.type == "File" and header.method == "Deflate"
+            if isinstance(entry, ContentEntry):
+                return self.write_content(entry, compress)
+            self.writer.begin(header)
+        except ZipError as error:
+            return fail_exit(error)
+        if compress and header.size is not None and header.size <= _DEFLATE_PIECE:
+            return self.collect_and_deflate(entry, header.size)
+        # A compressor failure is a defect, as a raise here makes it
+        self.compressor = zlib.compressobj(wbits=-15) if compress else None
+        body_scope = self.body_scope = self.scope.fork_unsafe()
+        return entry.body._channel.to_pull_scoped(body_scope).flat_map(self.opened)
 
-        def collect_and_deflate(entry: Entry[Any, Any], size: int) -> Any:
-            """A small body costs less to deflate in one piece than as a stream."""
-            chunks: list[bytes] = []
-            length = 0
+    def opened(self, opened_pull: AnyPull) -> Any:
+        self.body = opened_pull
+        return self.pull
 
-            def collect(array: tuple[bytes, ...]) -> Any:
-                nonlocal length
-                chunks.extend(array)
-                length += sum(map(len, array))
-                if length > size:
-                    return fail_exit(size_mismatch(entry.header.path, length, size))
-                writer.update(array)
-                return _Succeed(None)
+    def upstream_done(self, value: object) -> AnyPull:
+        self.done = (value,)
+        return _Succeed(None)
 
-            def deflated(data: bytes) -> Any:
-                try:
-                    writer.data((data,))
-                    writer.end()
-                except ZipError as error:
-                    return fail_exit(error)
-                return pull
+    def on_upstream(self, next_entries: tuple[Any, ...] | None) -> Any:
+        if next_entries is None:
+            self.writer.finish()
+        else:
+            self.entries = next_entries
+            self.index = 0
+        return self.pull
 
-            return (
-                entry.body.run_for_each_array(collect)
-                .flat_map(lambda _: _deflate_bytes(b"".join(chunks)))
-                .flat_map(deflated)
-            )
+    def step(self) -> Any:
+        writer = self.writer
+        if writer.buffered >= SLAB_SIZE:
+            return Success(writer.flush())
+        if self.body is not None:
+            return catch_done(self.body, _void_done).flat_map(self.on_body)
+        if self.index < len(self.entries):
+            entry = self.entries[self.index]
+            self.index += 1
+            return self.begin(entry)
+        if writer.buffered > 0:
+            return Success(writer.flush())
+        if self.done is not None:
+            return end_with(self.done[0])
+        return catch_done(self.upstream, self.upstream_done).flat_map(self.on_upstream)
 
-        def begin(entry: Any) -> Any:
-            nonlocal body_scope, compressor
-            header = entry.header
-            try:
-                validate(header)
-                compress = header.type == "File" and header.method == "Deflate"
-                if isinstance(entry, ContentEntry):
-                    return write_content(entry, compress)
-                writer.begin(header)
-            except ZipError as error:
-                return fail_exit(error)
-            if compress and header.size is not None and header.size <= _DEFLATE_PIECE:
-                return collect_and_deflate(entry, header.size)
-            # A compressor failure is a defect, as a raise here makes it
-            compressor = zlib.compressobj(wbits=-15) if compress else None
-            body_scope = scope.fork_unsafe()
 
-            def opened(opened_pull: AnyPull) -> Any:
-                nonlocal body
-                body = opened_pull
-                return pull
-
-            return entry.body._channel.to_pull_scoped(body_scope).flat_map(opened)
-
-        def upstream_done(value: object) -> AnyPull:
-            nonlocal done
-            done = (value,)
-            return _Succeed(None)
-
-        def on_upstream(next_entries: tuple[Any, ...] | None) -> Any:
-            nonlocal entries, index
-            if next_entries is None:
-                writer.finish()
-            else:
-                entries = next_entries
-                index = 0
-            return pull
-
-        def step() -> Any:
-            nonlocal index
-            if writer.buffered >= SLAB_SIZE:
-                return Success(writer.flush())
-            if body is not None:
-                return catch_done(body, lambda _: _Succeed(None)).flat_map(on_body)
-            if index < len(entries):
-                entry = entries[index]
-                index += 1
-                return begin(entry)
-            if writer.buffered > 0:
-                return Success(writer.flush())
-            if done is not None:
-                return end_with(done[0])
-            return catch_done(upstream, upstream_done).flat_map(on_upstream)
-
-        pull: AnyPull = _Suspend(step)
-        return _Succeed(pull)
-
-    channel: Any = from_transform(
-        lambda upstream, scope: _Suspend(lambda: transform(upstream, scope))
-    )
-    return channel
+def _void_done(_: object) -> AnyPull:
+    return _Succeed(None)
 
 
 publish(globals())

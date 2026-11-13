@@ -39,33 +39,44 @@ type Handler = Callable[[Any], AnyChannel]
 
 def catch_cause(self: AnyChannel, f: Callable[[Cause[Any]], AnyChannel]) -> Channel_:
     def transform(upstream: AnyPull, scope: CloseableScope) -> Effect[AnyPull]:
-        forked = scope.fork_unsafe()
-
-        def with_pull(pull: AnyPull) -> AnyPull:
-            current: AnyPull
-
-            def switch(pull: AnyPull) -> AnyPull:
-                nonlocal current
-                current = pull
-                return pull
-
-            def recover(cause: Cause[Any]) -> AnyPull:
-                nonlocal forked
-                if is_done_cause(cause):
-                    return _FailCause(cause)
-                failed, forked = forked, scope.fork_unsafe()
-                return (
-                    failed.close(Failure(cause))
-                    .and_then(f(cause)._transform(upstream, forked))
-                    .flat_map(switch)
-                )
-
-            current = _MatchCause(pull, recover, None)
-            return _Suspend(lambda: current)
-
-        return self._transform(upstream, forked).map(with_pull)
+        recovering = _Recovering(f, upstream, scope)
+        return self._transform(upstream, recovering.forked).map(recovering.with_pull)
 
     return from_transform(transform)
+
+
+class _Recovering:
+    """One run of ``catch_cause``: ``current`` is the handler's pull once
+    the channel has failed. It holds no pull built from its own methods."""
+
+    __slots__ = ("current", "f", "forked", "scope", "upstream")
+
+    def __init__(
+        self, f: Callable[[Cause[Any]], AnyChannel], upstream: AnyPull, scope: CloseableScope
+    ) -> None:
+        self.f = f
+        self.upstream = upstream
+        self.scope = scope
+        self.forked = scope.fork_unsafe()
+        self.current: AnyPull | None = None
+
+    def with_pull(self, pull: AnyPull) -> AnyPull:
+        protected = _MatchCause(pull, self.recover, None)
+        return _Suspend(lambda: protected if self.current is None else self.current)
+
+    def recover(self, cause: Cause[Any]) -> AnyPull:
+        if is_done_cause(cause):
+            return _FailCause(cause)
+        failed, self.forked = self.forked, self.scope.fork_unsafe()
+        return (
+            failed.close(Failure(cause))
+            .and_then(self.f(cause)._transform(self.upstream, self.forked))
+            .flat_map(self.switch)
+        )
+
+    def switch(self, pull: AnyPull) -> AnyPull:
+        self.current = pull
+        return pull
 
 
 def catch_cause_if(

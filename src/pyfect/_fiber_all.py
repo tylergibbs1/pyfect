@@ -9,7 +9,7 @@ is interrupted, so an abandoned wait leaves nothing behind.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Iterator
 from typing import Any, Never
 
 from pyfect._core import Effect, _Callback, _FromExit, _Succeed, _Sync, _WithFiber
@@ -22,34 +22,48 @@ def await_all[A, E](fibers: Iterable[Fiber[A, E]]) -> Effect[list[Exit[A, E]]]:
     order. ``fibers`` is read when the effect runs."""
 
     def register(resume: Callable[[Effect[list[Exit[A, E]]]], None]) -> Effect[None]:
-        remaining = iter(fibers)
-        exits: list[Exit[A, E]] = []
-        remove: Callable[[], None] | None = None
-
-        def loop() -> None:
-            nonlocal remove
-            for fiber in remaining:
-                ex = fiber.poll_unsafe()
-                if ex is not None:
-                    exits.append(ex)
-                    continue
-
-                def observer(ex: Exit[A, E]) -> None:
-                    exits.append(ex)
-                    loop()
-
-                remove = fiber.add_observer_unsafe(observer)
-                return
-            resume(_Succeed(exits))
-
-        def cancel() -> None:
-            if remove is not None:
-                remove()
-
-        loop()
-        return _Sync(cancel)
+        state = _AwaitAll(iter(fibers), resume)
+        state.loop()
+        return _Sync(state.cancel)
 
     return _Callback(register)
+
+
+class _AwaitAll[A, E]:
+    """One ``await_all`` wait: a loop on a state object, not closures that
+    reach each other (that cycle would keep the exits alive after the wait).
+    ``remove`` holds the observer, so it is cleared once used."""
+
+    __slots__ = ("exits", "remaining", "remove", "resume")
+
+    def __init__(
+        self, remaining: Iterator[Fiber[A, E]], resume: Callable[[Effect[list[Exit[A, E]]]], None]
+    ) -> None:
+        self.remaining = remaining
+        self.resume = resume
+        self.exits: list[Exit[A, E]] = []
+        self.remove: Callable[[], None] | None = None
+
+    def loop(self) -> None:
+        for fiber in self.remaining:
+            ex = fiber.poll_unsafe()
+            if ex is not None:
+                self.exits.append(ex)
+                continue
+            self.remove = fiber.add_observer_unsafe(self.observe)
+            return
+        self.resume(_Succeed(self.exits))
+
+    def observe(self, ex: Exit[A, E]) -> None:
+        self.remove = None
+        self.exits.append(ex)
+        self.loop()
+
+    def cancel(self) -> None:
+        remove = self.remove
+        if remove is not None:
+            self.remove = None
+            remove()
 
 
 def join_all[A, E](fibers: Iterable[Fiber[A, E]]) -> Effect[list[A], E]:

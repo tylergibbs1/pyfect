@@ -27,24 +27,37 @@ def default_transforms(transformer: Callable[[str], str], nested: bool = True) -
     mappings inside a row. Lists, ``None`` and scalars among the rows stay
     as they are."""
 
-    def transform_value(value: object) -> object:
+    keys = _KeyTransform(transformer, nested)
+    return RowTransforms(keys.transform_value, keys.transform_object, keys.array)
+
+
+class _KeyTransform:
+    __slots__ = ("nested", "transformer")
+
+    def __init__(self, transformer: Callable[[str], str], nested: bool) -> None:
+        self.transformer = transformer
+        self.nested = nested
+
+    def transform_value(self, value: object) -> object:
         if isinstance(value, (list, tuple)):
             items = cast("Sequence[object]", value)
             if not items or not isinstance(items[0], Mapping):
                 return items
-            return array(items)
+            return self.array(items)
         if isinstance(value, Mapping):
-            return transform_object(value)  # pyright: ignore[reportUnknownArgumentType]
+            return self.transform_object(value)  # pyright: ignore[reportUnknownArgumentType]
         return value
 
-    def transform_object(obj: Mapping[str, object]) -> dict[str, object]:
-        return {transformer(key): transform_value(value) for key, value in obj.items()}
+    def transform_object(self, obj: Mapping[str, object]) -> dict[str, object]:
+        transformer = self.transformer
+        return {transformer(key): self.transform_value(value) for key, value in obj.items()}
 
-    def transform_array(rows: Rows, values: Callable[[object], object]) -> list[Any]:
+    def transform_array(self, rows: Rows, values: Callable[[object], object]) -> list[Any]:
+        transformer = self.transformer
         result: list[Any] = []
         for row in rows:
             if isinstance(row, (list, tuple)):
-                result.append(transform_array(row, values))  # pyright: ignore[reportUnknownArgumentType]
+                result.append(self.transform_array(row, values))  # pyright: ignore[reportUnknownArgumentType]
             elif isinstance(row, Mapping):
                 entries: Mapping[str, object] = row  # pyright: ignore[reportUnknownVariableType]
                 result.append({transformer(key): values(value) for key, value in entries.items()})
@@ -52,13 +65,12 @@ def default_transforms(transformer: Callable[[str], str], nested: bool = True) -
                 result.append(row)
         return result
 
-    def keep(value: object) -> object:
-        return value
+    def array(self, rows: Rows) -> list[Any]:
+        return self.transform_array(rows, self.transform_value if self.nested else _keep)
 
-    def array(rows: Rows) -> list[Any]:
-        return transform_array(rows, transform_value if nested else keep)
 
-    return RowTransforms(transform_value, transform_object, array)
+def _keep(value: object) -> object:
+    return value
 
 
 type PrimitiveKind = Literal[

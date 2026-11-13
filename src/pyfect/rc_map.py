@@ -67,22 +67,22 @@ type IdleTimeToLive[K] = DurationInput | Callable[[K], DurationInput]
 """A duration for every key, or one per key."""
 
 
-class _Entry[A, E]:
+class _Entry[K, A, E]:
     __slots__ = (
         "deferred",
         "expires_at",
         "fiber",
-        "finalizer",
         "idle_time_to_live",
+        "key",
         "ref_count",
         "scope",
     )
 
-    def __init__(self, idle_time_to_live: Duration) -> None:
+    def __init__(self, key: K, idle_time_to_live: Duration) -> None:
+        self.key = key
         self.deferred: Deferred[A, E] = Deferred()
         self.scope = CloseableScope()
         self.idle_time_to_live = idle_time_to_live
-        self.finalizer: Effect[None] = _VOID  # set once the entry's key is known
         self.fiber: Fiber[None, Never] | None = None  # the idle timer
         self.expires_at: int | float = 0  # monotonic nanoseconds
         self.ref_count = 1
@@ -117,7 +117,7 @@ class RcMap[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never]:
         self._scope = scope
         self._idle_time_to_live = idle_time_to_live
         self._capacity = capacity
-        self._entries: dict[K, _Entry[A, E]] | None = {}  # None once closed
+        self._entries: dict[K, _Entry[K, A, E]] | None = {}  # None once closed
         # The run that made the map: idle timers run on it.
         self._owner = owner
         self._lock = threading.Lock()
@@ -274,8 +274,7 @@ class RcMap[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never]:
 
     def _get(self, parent: Fiber[Any, Any], key: K, restore: Restore) -> Effect[A, E]:
         # Read outside the lock: it is the user's function.
-        new = _Entry[A, E](self._idle_time_to_live(key))
-        new.finalizer = self._release(key, new)
+        new = _Entry[K, A, E](key, self._idle_time_to_live(key))
         with self._lock:
             entries = self._entries
             if entries is None:
@@ -296,14 +295,14 @@ class RcMap[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never]:
         return self._retain(parent, entry, restore(entry.deferred.wait()))
 
     def _retain[B](
-        self, fiber: Fiber[Any, Any], entry: _Entry[A, E], then: Effect[B, E]
+        self, fiber: Fiber[Any, Any], entry: _Entry[K, A, E], then: Effect[B, E]
     ) -> Effect[B, E]:
         """Hold ``entry``, counted already, until the caller's scope closes,
         then run ``then``."""
         scope = fiber._context.get_unsafe(Scope)
-        return scope.add_finalizer(lambda _: entry.finalizer).and_then(then)
+        return scope.add_finalizer(lambda _: self._release(entry)).and_then(then)
 
-    def _start_lookup(self, parent: Fiber[Any, Any], key: K, entry: _Entry[A, E]) -> None:
+    def _start_lookup(self, parent: Fiber[Any, Any], key: K, entry: _Entry[K, A, E]) -> None:
         context = self._context.merge(parent._context).add(Scope, entry.scope)
         fiber: Fiber[A, E] = new_root(parent._run_scheduler, context)
 
@@ -318,7 +317,7 @@ class RcMap[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never]:
         fiber.run_in(entry.scope)
         fiber.add_observer_unsafe(observe)
 
-    def _remove_interrupted(self, lookup: Fiber[Any, Any], key: K, entry: _Entry[A, E]) -> None:
+    def _remove_interrupted(self, lookup: Fiber[Any, Any], key: K, entry: _Entry[K, A, E]) -> None:
         with self._lock:
             entries = self._entries
             if entries is None or entries.get(key) is not entry:
@@ -330,10 +329,11 @@ class RcMap[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never]:
         start_root(closer, _report_unhandled(_close_entry(entry)))
         closer.run_in(self._scope)
 
-    def _release(self, key: K, entry: _Entry[A, E]) -> Effect[None]:
-        return _WithFiber(lambda fiber: self._release_now(fiber, key, entry))
+    def _release(self, entry: _Entry[K, A, E]) -> Effect[None]:
+        return _WithFiber(lambda fiber: self._release_now(fiber, entry))
 
-    def _release_now(self, fiber: Fiber[Any, Any], key: K, entry: _Entry[A, E]) -> Effect[None]:
+    def _release_now(self, fiber: Fiber[Any, Any], entry: _Entry[K, A, E]) -> Effect[None]:
+        key = entry.key
         ttl = entry.idle_time_to_live
         clock: ClockService = fiber._context.lookup(Clock)[1]
         with self._lock:
@@ -353,20 +353,7 @@ class RcMap[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never]:
                 return _VOID
 
         def expire_when_due(restore: Restore) -> Effect[None]:
-            def check() -> Effect[None]:
-                remaining = entry.expires_at - clock.monotonic_nanos_unsafe()
-                if remaining > 0:
-                    return restore(clock.sleep(from_nanos_or_infinite(remaining))).and_then(
-                        _Suspend(check)
-                    )
-                with self._lock:
-                    current = self._entries
-                    if current is None or entry.ref_count > 0 or current.get(key) is not entry:
-                        return _VOID
-                    del current[key]
-                return _report_unhandled(entry.scope.close(_DONE))
-
-            return _Suspend(check)
+            return _Suspend(_IdleExpiry(self, entry, clock, restore).check)
 
         finished = [False]
 
@@ -406,6 +393,38 @@ class RcMap[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never]:
         return closing.flat_map(finish)
 
 
+class _IdleExpiry[K: Hashable, A, E]:
+    """An idle entry's timer: closes it once it has been idle long enough."""
+
+    __slots__ = ("clock", "entry", "rc_map", "restore")
+
+    def __init__(
+        self,
+        rc_map: RcMap[K, A, E],
+        entry: _Entry[K, A, E],
+        clock: ClockService,
+        restore: Restore,
+    ) -> None:
+        self.rc_map = rc_map
+        self.entry = entry
+        self.clock = clock
+        self.restore = restore
+
+    def check(self) -> Effect[None]:
+        entry = self.entry
+        remaining = entry.expires_at - self.clock.monotonic_nanos_unsafe()
+        if remaining > 0:
+            sleep = self.clock.sleep(from_nanos_or_infinite(remaining))
+            return self.restore(sleep).and_then(_Suspend(self.check))
+        rc_map = self.rc_map
+        with rc_map._lock:
+            current = rc_map._entries
+            if current is None or entry.ref_count > 0 or current.get(entry.key) is not entry:
+                return _VOID
+            del current[entry.key]
+        return _report_unhandled(entry.scope.close(_DONE))
+
+
 def _report_unhandled(closing: Effect[None]) -> Effect[None]:
     """A release nobody waits for: its failure is logged at the
     ``UnhandledLogLevel``, as Effect 4.1.2 does."""
@@ -414,7 +433,7 @@ def _report_unhandled(closing: Effect[None]) -> Effect[None]:
     )
 
 
-def _close_entry(entry: _Entry[Any, Any]) -> Effect[None]:
+def _close_entry(entry: _Entry[Any, Any, Any]) -> Effect[None]:
     closing = entry.scope.close(_DONE)
     return closing if entry.fiber is None else entry.fiber.interrupt().and_then(closing)
 

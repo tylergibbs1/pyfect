@@ -147,35 +147,39 @@ def _error_message(error: BaseException) -> str:
 def _encode(value: object, *, include_stack: bool, exclude_cause: bool) -> JsonValue:
     """``value`` (an exception, an ``ErrorInstance`` or a JSON value) in
     JSON; an error that is its own cause is ``"[Circular]"`` there."""
-    seen: set[int] = set()
+    return _encode_value(value, set(), include_stack, exclude_cause)
 
-    def go(value: object) -> JsonValue:
-        if not isinstance(value, BaseException):
-            return _unknown_as_json(value)
-        if id(value) in seen:
-            return "[Circular]"
-        seen.add(id(value))
-        try:
-            return error(value)
-        finally:
-            seen.discard(id(value))
 
-    def error(value: BaseException) -> dict[str, JsonValue]:
-        if isinstance(value, ErrorInstance):
-            encoded: dict[str, JsonValue] = {"name": value.name, "message": value.message}
-            stack, cause = value.stack, value.cause
-        else:
-            encoded = {"name": _error_name(value), "message": _error_message(value)}
-            frames = value.__traceback__
-            stack = None if frames is None else "".join(traceback.format_exception(value))
-            cause = None if value.__cause__ is None else Some(value.__cause__)
-        if include_stack and stack is not None:
-            encoded["stack"] = stack
-        if not exclude_cause and cause is not None:
-            encoded["cause"] = go(cause.value)
-        return encoded
+def _encode_value(
+    value: object, seen: set[int], include_stack: bool, exclude_cause: bool
+) -> JsonValue:
+    if not isinstance(value, BaseException):
+        return _unknown_as_json(value)
+    if id(value) in seen:
+        return "[Circular]"
+    seen.add(id(value))
+    try:
+        return _encode_error(value, seen, include_stack, exclude_cause)
+    finally:
+        seen.discard(id(value))
 
-    return go(value)
+
+def _encode_error(
+    value: BaseException, seen: set[int], include_stack: bool, exclude_cause: bool
+) -> dict[str, JsonValue]:
+    if isinstance(value, ErrorInstance):
+        encoded: dict[str, JsonValue] = {"name": value.name, "message": value.message}
+        stack, cause = value.stack, value.cause
+    else:
+        encoded = {"name": _error_name(value), "message": _error_message(value)}
+        frames = value.__traceback__
+        stack = None if frames is None else "".join(traceback.format_exception(value))
+        cause = None if value.__cause__ is None else Some(value.__cause__)
+    if include_stack and stack is not None:
+        encoded["stack"] = stack
+    if not exclude_cause and cause is not None:
+        encoded["cause"] = _encode_value(cause.value, seen, include_stack, exclude_cause)
+    return encoded
 
 
 _JSON_ERROR = ast.Objects(

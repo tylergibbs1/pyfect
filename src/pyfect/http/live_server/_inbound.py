@@ -1,6 +1,7 @@
 """The bytes a connection receives, read by one fiber at a time: request
 heads, then body bytes, with what was read too far kept for the next
 read."""
+# pyright: reportPrivateUsage=false
 
 from __future__ import annotations
 
@@ -92,39 +93,7 @@ class Inbound:
         """The next head without its blank line; ``None`` at a clean end
         before any of it. Blank lines (CRLF or LF, as ``llhttp``) before a
         head are skipped (RFC 9112 §2.2)."""
-
-        def run() -> Effect[bytes | None, SocketError | HeadTooLarge | BareLineFeed]:
-            # Bytes already searched: each arrival is searched once, so a head sent a byte at
-            # a time costs linear time, not quadratic (llhttp parses incrementally too).
-            scanned = 0
-
-            def step() -> Effect[bytes | None, SocketError | HeadTooLarge | BareLineFeed]:
-                nonlocal scanned
-                pending = self._pending
-                while pending.startswith((b"\n", b"\r\n")):
-                    removed = 1 if pending.startswith(b"\n") else 2
-                    del pending[:removed]
-                    scanned = max(0, scanned - removed)
-                end = pending.find(b"\r\n\r\n", max(0, scanned - 3))
-                bare = _BARE_LF.search(pending, scanned, len(pending) if end == -1 else end)
-                if bare is not None:
-                    return fail(BareLineFeed())
-                if end != -1:
-                    if end > limit:
-                        return fail(HeadTooLarge())
-                    head = bytes(pending[:end])
-                    del pending[: end + 4]
-                    return succeed(head)
-                if len(pending) > limit:
-                    return fail(HeadTooLarge())
-                scanned = len(pending)
-                return self._fill().flat_map(
-                    lambda more: suspend(step) if more else self._ended_head()
-                )
-
-            return step()
-
-        return suspend(run)
+        return suspend(lambda: _ReadHead(self, limit).step())
 
     def _ended_head(self) -> Effect[bytes | None, SocketError]:
         if self._pending:
@@ -136,15 +105,7 @@ class Inbound:
     ) -> Effect[A, SocketError | E]:
         """``take`` of up to ``maximum`` bytes, waiting for some (``b""`` at
         the end); the bytes are taken and handed over in one step."""
-
-        def step() -> Effect[A, SocketError | E]:
-            if self._pending or self._ended:
-                data = bytes(self._pending[:maximum])
-                del self._pending[:maximum]
-                return take(data)
-            return self._fill().flat_map(lambda _: suspend(step))
-
-        return suspend(step)
+        return suspend(_Read(self, maximum, take).step)
 
     def read_line[A, E](
         self, limit: int, take: Callable[[bytes | None], Effect[A, E]]
@@ -152,25 +113,101 @@ class Inbound:
         """``take`` of the next line without its CRLF (``None`` at the end,
         past ``limit``, or at a line ending in a bare LF, which ``llhttp``
         fails at once), taken and handed over in one step."""
+        return suspend(lambda: _ReadLine(self, limit, take).step())
 
-        def run() -> Effect[A, SocketError | E]:
-            scanned = 0
 
-            def step() -> Effect[A, SocketError | E]:
-                nonlocal scanned
-                pending = self._pending
-                lf = pending.find(b"\n", scanned)
-                if lf != -1:
-                    if lf == 0 or pending[lf - 1] != 0x0D:
-                        return take(None)
-                    line = bytes(pending[: lf - 1])
-                    del pending[: lf + 1]
-                    return take(line)
-                if len(self._pending) > limit or self._ended:
-                    return take(None)
-                scanned = len(pending)
-                return self._fill().flat_map(lambda _: suspend(step))
+class _ReadHead:
+    """One run of ``read_head``: a loop on a state object, not a closure that
+    calls itself (that cycle would keep the inbound bytes alive).
+    ``scanned`` counts the bytes already searched: each arrival is searched
+    once, so a head sent a byte at a time costs linear time, not quadratic
+    (``llhttp`` parses incrementally too)."""
 
-            return step()
+    __slots__ = ("inbound", "limit", "scanned")
 
-        return suspend(run)
+    def __init__(self, inbound: Inbound, limit: int) -> None:
+        self.inbound = inbound
+        self.limit = limit
+        self.scanned = 0
+
+    def step(self) -> Effect[bytes | None, SocketError | HeadTooLarge | BareLineFeed]:
+        pending = self.inbound._pending
+        scanned = self.scanned
+        while pending.startswith((b"\n", b"\r\n")):
+            removed = 1 if pending.startswith(b"\n") else 2
+            del pending[:removed]
+            scanned = max(0, scanned - removed)
+        end = pending.find(b"\r\n\r\n", max(0, scanned - 3))
+        bare = _BARE_LF.search(pending, scanned, len(pending) if end == -1 else end)
+        self.scanned = scanned
+        if bare is not None:
+            return fail(BareLineFeed())
+        if end != -1:
+            if end > self.limit:
+                return fail(HeadTooLarge())
+            head = bytes(pending[:end])
+            del pending[: end + 4]
+            return succeed(head)
+        if len(pending) > self.limit:
+            return fail(HeadTooLarge())
+        self.scanned = len(pending)
+        return self.inbound._fill().flat_map(self.filled)
+
+    def filled(self, more: bool) -> Effect[bytes | None, SocketError | HeadTooLarge | BareLineFeed]:
+        return suspend(self.step) if more else self.inbound._ended_head()
+
+
+class _Read[A, E]:
+    """One ``read``: a loop on a state object, not a closure that calls
+    itself."""
+
+    __slots__ = ("inbound", "maximum", "take")
+
+    def __init__(self, inbound: Inbound, maximum: int, take: Callable[[bytes], Effect[A, E]]):
+        self.inbound = inbound
+        self.maximum = maximum
+        self.take = take
+
+    def step(self) -> Effect[A, SocketError | E]:
+        inbound = self.inbound
+        if inbound._pending or inbound._ended:
+            data = bytes(inbound._pending[: self.maximum])
+            del inbound._pending[: self.maximum]
+            return self.take(data)
+        return inbound._fill().flat_map(self.again)
+
+    def again(self, _: bool) -> Effect[A, SocketError | E]:
+        return suspend(self.step)
+
+
+class _ReadLine[A, E]:
+    """One run of ``read_line``: a loop on a state object, not a closure that
+    calls itself; ``scanned`` counts the bytes already searched."""
+
+    __slots__ = ("inbound", "limit", "scanned", "take")
+
+    def __init__(
+        self, inbound: Inbound, limit: int, take: Callable[[bytes | None], Effect[A, E]]
+    ) -> None:
+        self.inbound = inbound
+        self.limit = limit
+        self.take = take
+        self.scanned = 0
+
+    def step(self) -> Effect[A, SocketError | E]:
+        inbound = self.inbound
+        pending = inbound._pending
+        lf = pending.find(b"\n", self.scanned)
+        if lf != -1:
+            if lf == 0 or pending[lf - 1] != 0x0D:
+                return self.take(None)
+            line = bytes(pending[: lf - 1])
+            del pending[: lf + 1]
+            return self.take(line)
+        if len(pending) > self.limit or inbound._ended:
+            return self.take(None)
+        self.scanned = len(pending)
+        return inbound._fill().flat_map(self.again)
+
+    def again(self, _: bool) -> Effect[A, SocketError | E]:
+        return suspend(self.step)

@@ -18,6 +18,7 @@ from pyfect.reactivity import async_result
 from pyfect.reactivity._result_effect import result_effect
 from pyfect.reactivity.async_result import AsyncResult, Initial
 from pyfect.reactivity.atom_registry._batch import run_all
+from pyfect.reactivity.atom_registry._unsubscribe import Unsubscribe
 
 if TYPE_CHECKING:
     from pyfect.errors import Done
@@ -90,13 +91,15 @@ class Lifetime[A]:
                 resume(result_effect(result))
                 return None
 
+            cancel = Unsubscribe()
+
             def on_change(value: AsyncResult[T, E]) -> None:
                 if not ready(value):
                     return
                 cancel()
                 resume(result_effect(value))
 
-            cancel = self.node.registry.subscribe(atom, on_change)
+            cancel.set(self.node.registry.subscribe(atom, on_change))
             return _Sync(cancel)
 
         return _Callback(register)
@@ -122,13 +125,15 @@ class Lifetime[A]:
                 resume(_Succeed(found.value))
                 return None
 
+            cancel = Unsubscribe()
+
             def on_change(value: Option[T]) -> None:
                 if value is None:
                     return
                 cancel()
                 resume(_Succeed(value.value))
 
-            cancel = self.node.registry.subscribe(atom, on_change)
+            cancel.set(self.node.registry.subscribe(atom, on_change))
             return _Sync(cancel)
 
         return _Callback(register)

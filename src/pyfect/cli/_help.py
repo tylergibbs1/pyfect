@@ -128,15 +128,15 @@ def global_flags_for_tree(
     command: AnyCommand, built_ins: Sequence[GlobalFlag]
 ) -> tuple[GlobalFlag, ...]:
     collected: list[GlobalFlag] = []
-
-    def visit(current: AnyCommand) -> None:
-        collected.extend(current.state.global_flags)
-        for group in current.subcommands:
-            for sub in group.commands:
-                visit(sub)
-
-    visit(command)
+    _collect_global_flags(command, collected)
     return _dedupe([*built_ins, *_dedupe(collected)])
+
+
+def _collect_global_flags(command: AnyCommand, collected: list[GlobalFlag]) -> None:
+    collected.extend(command.state.global_flags)
+    for group in command.subcommands:
+        for sub in group.commands:
+            _collect_global_flags(sub, collected)
 
 
 def _inherited_flags(commands: Sequence[AnyCommand], current: Sequence[FlagDoc]) -> list[FlagDoc]:

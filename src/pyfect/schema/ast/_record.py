@@ -15,22 +15,22 @@ def record(key: AST, value: AST) -> Objects:
     index signature. ``Never`` takes no key."""
     literals: list[LiteralValue] = []
     parameters: list[AST] = []
-
-    def go(node: AST) -> None:
-        match node:
-            case Literal(literal=literal) if node.checks is None:
-                if not any(same_literal(seen, literal) for seen in literals):
-                    literals.append(literal)
-            case Never():
-                pass
-            case Union(types=types) if node.checks is None:
-                for member in types:
-                    go(member)
-            case _:
-                parameters.append(node)
-
-    go(key)
+    _split_keys(key, literals, parameters)
     return Objects(
         tuple(PropertySignature(name, value) for name in literals),
         tuple(IndexSignature(parameter, value) for parameter in parameters),
     )
+
+
+def _split_keys(node: AST, literals: list[LiteralValue], parameters: list[AST]) -> None:
+    match node:
+        case Literal(literal=literal) if node.checks is None:
+            if not any(same_literal(seen, literal) for seen in literals):
+                literals.append(literal)
+        case Never():
+            pass
+        case Union(types=types) if node.checks is None:
+            for member in types:
+                _split_keys(member, literals, parameters)
+        case _:
+            parameters.append(node)

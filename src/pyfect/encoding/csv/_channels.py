@@ -14,7 +14,6 @@ from pyfect._equal import dedupe
 from pyfect._js import text_encode
 from pyfect._json_text import quote
 from pyfect._primitives import _FailCause, _Succeed, _Suspend, _Sync
-from pyfect.cause import Cause
 from pyfect.cause import fail as fail_cause
 from pyfect.channel import Channel, decode_text, from_transform
 from pyfect.channel._base import AnyPull, end_with
@@ -56,59 +55,7 @@ def decode_records(
 
     def build(upstream: AnyPull) -> AnyPull:
         parser = Parser(delimiter, max_record_size, ignore_empty_lines)
-        names: list[Row] = []  # the header row, once read
-        done: list[object] = []
-
-        def to_record(row: Parsed) -> Decoded:
-            if not headers:
-                return Decoded(row.cells, row.record)
-            header = names[0]
-            if len(row.cells) != len(header):
-                raise CsvError(
-                    "Header",
-                    f"Expected {len(header)} cells, got {len(row.cells)}",
-                    row.record,
-                    row.line,
-                )
-            return Decoded(dict(zip(header, row.cells, strict=True)), row.record)
-
-        def emit(run: Callable[[list[Parsed]], None]) -> AnyPull:
-            rows: list[Parsed] = []
-            out: list[Decoded] = []
-            try:
-                run(rows)
-                for row in rows:
-                    if headers and not names:
-                        if len(dedupe(row.cells)) != len(row.cells):
-                            raise CsvError("Header", "Duplicate header name", row.record, row.line)
-                        names.append(row.cells)
-                    else:
-                        out.append(to_record(row))
-            except CsvError as error:
-                return _FailCause(fail_cause(error))
-            return _Succeed(tuple(out)) if out else pull
-
-        def feed(texts: tuple[str, ...]) -> AnyPull:
-            def run(out: list[Parsed]) -> None:
-                for text in texts:
-                    parser.feed(text, out)
-
-            return emit(run)
-
-        def failed(cause: Cause[Any]) -> AnyPull:
-            return _FailCause(cause)
-
-        def ended(leftover: object) -> AnyPull:
-            done.append(leftover)
-            return emit(parser.end)
-
-        def next_pull() -> AnyPull:
-            if done:
-                return end_with(done[0])
-            return match_effect(upstream, on_success=feed, on_failure=failed, on_done=ended)
-
-        pull: AnyPull = _Suspend(next_pull)
-        return pull
+        return _Suspend(_RecordsPull(upstream, parser, headers).next)
 
     def transform(upstream: AnyPull, _scope: CloseableScope) -> AnyPull:
         return _Sync(lambda: build(upstream))
@@ -117,6 +64,72 @@ def decode_records(
         "Channel[tuple[Decoded, ...], Any, Any, tuple[str, ...], Any, Any]",
         from_transform(transform),
     )
+
+
+class _RecordsPull:
+    """``decode_records``' pull: a state object rather than closures over the
+    pull itself, so a finished run does not keep its input alive."""
+
+    __slots__ = ("done", "headers", "names", "parser", "upstream")
+
+    def __init__(self, upstream: AnyPull, parser: Parser, headers: bool) -> None:
+        self.upstream = upstream
+        self.parser = parser
+        self.headers = headers
+        self.names: list[Row] = []  # the header row, once read
+        self.done: list[object] = []
+
+    def next(self) -> AnyPull:
+        if self.done:
+            return end_with(self.done[0])
+        return match_effect(
+            self.upstream, on_success=self.feed, on_failure=_FailCause, on_done=self.ended
+        )
+
+    def feed(self, texts: tuple[str, ...]) -> AnyPull:
+        rows: list[Parsed] = []
+        try:
+            for text in texts:
+                self.parser.feed(text, rows)
+        except CsvError as error:
+            return _FailCause(fail_cause(error))
+        return self.emit(rows)
+
+    def ended(self, leftover: object) -> AnyPull:
+        self.done.append(leftover)
+        rows: list[Parsed] = []
+        try:
+            self.parser.end(rows)
+        except CsvError as error:
+            return _FailCause(fail_cause(error))
+        return self.emit(rows)
+
+    def emit(self, rows: list[Parsed]) -> AnyPull:
+        out: list[Decoded] = []
+        try:
+            for row in rows:
+                if self.headers and not self.names:
+                    if len(dedupe(row.cells)) != len(row.cells):
+                        raise CsvError("Header", "Duplicate header name", row.record, row.line)
+                    self.names.append(row.cells)
+                else:
+                    out.append(self.to_record(row))
+        except CsvError as error:
+            return _FailCause(fail_cause(error))
+        return _Succeed(tuple(out)) if out else _Suspend(self.next)
+
+    def to_record(self, row: Parsed) -> Decoded:
+        if not self.headers:
+            return Decoded(row.cells, row.record)
+        header = self.names[0]
+        if len(row.cells) != len(header):
+            raise CsvError(
+                "Header",
+                f"Expected {len(header)} cells, got {len(row.cells)}",
+                row.record,
+                row.line,
+            )
+        return Decoded(dict(zip(header, row.cells, strict=True)), row.record)
 
 
 def _values(records: tuple[Decoded, ...]) -> tuple[Row | HeaderRecord, ...]:

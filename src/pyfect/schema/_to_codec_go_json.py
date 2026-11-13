@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import replace
+from functools import partial
 from typing import Any
 
 from pyfect._json_value import JsonValue
@@ -30,19 +31,19 @@ def to_codec_go_json[T, E, RD, RE](schema: Codec[T, E, RD, RE], /) -> Bottom[T, 
 
 def _on_last(f: Callable[[ast.AST], ast.AST]) -> Callable[[ast.AST], ast.AST]:
     """``f`` on ``node``, or on what the last link of its encoding reads."""
+    return partial(_apply_on_last, f)
 
-    def apply(node: ast.AST) -> ast.AST:
-        if node.encoding is None:
-            return f(node)
-        *init, last = node.encoding
-        to = apply(last.to)
-        return (
-            node
-            if to is last.to
-            else replace(node, encoding=(*init, ast.Link(to, last.transformation)))
-        )
 
-    return apply
+def _apply_on_last(f: Callable[[ast.AST], ast.AST], node: ast.AST) -> ast.AST:
+    if node.encoding is None:
+        return f(node)
+    *init, last = node.encoding
+    to = _apply_on_last(f, last.to)
+    return (
+        node
+        if to is last.to
+        else replace(node, encoding=(*init, ast.Link(to, last.transformation)))
+    )
 
 
 def _forbidden(_: object) -> str:

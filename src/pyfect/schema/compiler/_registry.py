@@ -355,17 +355,27 @@ def install(compiler: CompileSource) -> None:
 def enable(ast: AST, compiler: CompileSource) -> None:
     """Compile ``ast`` and the nodes its parsers reach with ``compiler``."""
     _activate()
-
-    def scoped(child: AST) -> Entry:
-        cached = _cached(child)
-        if cached is not None and (cached.compiled is not None or cached.resolve is scoped):
-            return cached
-        return set(child, compiler(child, scoped), scoped)
-
+    scoped = _Scoped(compiler)
     decoder = compiler(ast, scoped)
     cached = _cached(ast)
     if decoder is not None or cached is None or cached.compiled is None:
         set(ast, decoder, scoped)
+
+
+@final
+class _Scoped:
+    """How ``enable`` resolves the nodes below its AST: compiled with its compiler."""
+
+    __slots__ = ("compiler",)
+
+    def __init__(self, compiler: CompileSource) -> None:
+        self.compiler = compiler
+
+    def __call__(self, child: AST) -> Entry:
+        cached = _cached(child)
+        if cached is not None and (cached.compiled is not None or cached.resolve is self):
+            return cached
+        return set(child, self.compiler(child, self), self)
 
 
 def reset() -> None:

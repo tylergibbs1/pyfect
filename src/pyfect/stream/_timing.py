@@ -42,28 +42,47 @@ def schedule(self: AnyStream, policy: Schedule[Any, Any, Any, Any]) -> AnyStream
 
 def repeat_elements(self: AnyStream, policy: Schedule[Any, Any, Any, Any]) -> AnyStream_:
     def build(pull_item: AnyEffect, _scope: CloseableScope) -> AnyEffect:
-        repeating: AnyEffect | None = None
-
-        def first() -> Generator[AnyEffect, Any, Chunk]:
-            nonlocal repeating
-            item = yield pull_item
-            chunk = (item,)
-            step = yield to_step_with_sleep(policy)
-
-            def decided(decision: object) -> AnyEffect:
-                nonlocal repeating
-                if isinstance(decision, Stop):
-                    repeating = None
-                    return pull
-                return _Succeed(chunk)
-
-            repeating = _FlatMap(step(item), decided)
-            return chunk
-
-        pull = _Gen(first)
-        return _Succeed(_Suspend(lambda: pull if repeating is None else repeating))
+        repeating = _RepeatElements(pull_item, policy)
+        pull = _Gen(repeating.first)
+        return _Succeed(
+            _Suspend(
+                lambda: (
+                    pull
+                    if (decide := repeating.decide) is None
+                    else _FlatMap(decide, repeating.decided)
+                )
+            )
+        )
 
     return Stream(transform_pull(self._channel.flatten_array(), build))
+
+
+class _RepeatElements:
+    """One run of ``repeat_elements``: ``decide`` is the schedule's step for
+    the item in ``chunk`` while it repeats."""
+
+    __slots__ = ("chunk", "decide", "policy", "pull_item")
+
+    def __init__(self, pull_item: AnyEffect, policy: Schedule[Any, Any, Any, Any]) -> None:
+        self.pull_item = pull_item
+        self.policy = policy
+        self.chunk: Chunk = ()
+        self.decide: AnyEffect | None = None
+
+    def first(self) -> Generator[AnyEffect, Any, Chunk]:
+        item = yield self.pull_item
+        chunk = (item,)
+        step = yield to_step_with_sleep(self.policy)
+        self.chunk = chunk
+        self.decide = step(item)
+        return chunk
+
+    def decided(self, decision: object) -> AnyEffect:
+        if isinstance(decision, Stop):
+            self.decide = None
+            self.chunk = ()
+            return _Gen(self.first)
+        return _Succeed(self.chunk)
 
 
 # --- timeouts -----------------------------------------------------------------
@@ -137,59 +156,17 @@ def debounce(self: AnyStream, duration: DurationInput) -> AnyStream_:
     def build(pull: AnyEffect, scope: CloseableScope) -> AnyEffect:
         def body() -> Generator[AnyEffect, Any, AnyEffect]:
             clock: ClockService = yield Clock()
-            last: Chunk | None = None
-            stopped: Cause[Any] | None = None
-            emit_at: int | float = math.inf  # clock nanoseconds
-            pulling = Latch()
-            emitting = Latch()
-            ended = Latch()
-
-            def got(chunk: Chunk) -> AnyEffect:
-                nonlocal last, emit_at
-                emitting.open_unsafe()
-                last = chunk
-                emit_at = clock.now_nanos_unsafe() + wait_ns
-                return _VOID
-
-            def failed(cause: Cause[Any]) -> AnyEffect:
-                nonlocal stopped, emit_at
-                stopped = cause
-                emit_at = clock.now_nanos_unsafe()
-                emitting.open_unsafe()
-                ended.open_unsafe()
-                return _VOID
-
-            producer = pulling.when_open(pull).flat_map(got).forever(disable_yield=True)
-            yield producer.on_error(failed).fork_in(scope)
-
-            def take_last(chunk: Chunk) -> AnyEffect:
-                nonlocal last
-                last = None
-                return _Succeed((chunk[-1],))
-
-            def loop() -> AnyEffect:
-                now = clock.now_nanos_unsafe()
-                delay = wait_ns if emit_at < now else min(wait_ns, emit_at - now)
-                return _FlatMap(
-                    sleep(from_nanos_or_infinite(delay)).race_first(ended.wait()), after
-                )
-
-            def after(_: object) -> AnyEffect:
-                if clock.now_nanos_unsafe() < emit_at:
-                    return loop()
-                if last is not None:
-                    emitting.close_unsafe()
-                    pulling.close_unsafe()
-                    return take_last(last)
-                if stopped is not None:
-                    return _FailCause(stopped)
-                return loop()
-
-            sleep_loop = _Suspend(loop)
+            state = _Debounce(clock, wait_ns)
+            pulling = state.pulling
+            emitting = state.emitting
+            producer = pulling.when_open(pull).flat_map(state.got).forever(disable_yield=True)
+            yield producer.on_error(state.failed).fork_in(scope)
+            sleep_loop = _Suspend(state.loop)
 
             def next_pull() -> AnyEffect:
-                if stopped is not None:
-                    return take_last(last) if last is not None else _FailCause(stopped)
+                if state.stopped is not None:
+                    last = state.last
+                    return state.take_last(last) if last is not None else _FailCause(state.stopped)
                 pulling.open_unsafe()
                 return emitting.when_open(sleep_loop)
 
@@ -198,6 +175,59 @@ def debounce(self: AnyStream, duration: DurationInput) -> AnyStream_:
         return _Gen(body)
 
     return Stream(transform_pull(self._channel, build))
+
+
+class _Debounce:
+    """One run of ``debounce``: a loop on a state object, not closures that
+    reach each other (that cycle would keep the last chunk alive after the run)."""
+
+    __slots__ = ("clock", "emit_at", "emitting", "ended", "last", "pulling", "stopped", "wait_ns")
+
+    def __init__(self, clock: ClockService, wait_ns: int | float) -> None:
+        self.clock = clock
+        self.wait_ns = wait_ns
+        self.last: Chunk | None = None
+        self.stopped: Cause[Any] | None = None
+        self.emit_at: int | float = math.inf  # clock nanoseconds
+        self.pulling = Latch()
+        self.emitting = Latch()
+        self.ended = Latch()
+
+    def got(self, chunk: Chunk) -> AnyEffect:
+        self.emitting.open_unsafe()
+        self.last = chunk
+        self.emit_at = self.clock.now_nanos_unsafe() + self.wait_ns
+        return _VOID
+
+    def failed(self, cause: Cause[Any]) -> AnyEffect:
+        self.stopped = cause
+        self.emit_at = self.clock.now_nanos_unsafe()
+        self.emitting.open_unsafe()
+        self.ended.open_unsafe()
+        return _VOID
+
+    def take_last(self, chunk: Chunk) -> AnyEffect:
+        self.last = None
+        return _Succeed((chunk[-1],))
+
+    def loop(self) -> AnyEffect:
+        now = self.clock.now_nanos_unsafe()
+        wait_ns = self.wait_ns
+        delay = wait_ns if self.emit_at < now else min(wait_ns, self.emit_at - now)
+        return _FlatMap(
+            sleep(from_nanos_or_infinite(delay)).race_first(self.ended.wait()), self.after
+        )
+
+    def after(self, _: object) -> AnyEffect:
+        if self.clock.now_nanos_unsafe() < self.emit_at:
+            return self.loop()
+        if self.last is not None:
+            self.emitting.close_unsafe()
+            self.pulling.close_unsafe()
+            return self.take_last(self.last)
+        if self.stopped is not None:
+            return _FailCause(self.stopped)
+        return self.loop()
 
 
 # --- throttling ---------------------------------------------------------------
@@ -236,28 +266,52 @@ def _throttle_enforce(
     self: AnyStream, cost: Callable[[Chunk], AnyEffect], units: float, period_ns: float, cap: float
 ) -> AnyStream_:
     def with_clock(pull: AnyEffect, clock: ClockService) -> AnyEffect:
-        tokens = units
-        stamp = clock.now_nanos_unsafe()
-
-        def loop(chunk: Chunk) -> AnyEffect:
-            def weighed(weight: float) -> AnyEffect:
-                nonlocal tokens, stamp
-                now = clock.now_nanos_unsafe()
-                total = _refilled(tokens, now - stamp, period_ns, units)
-                available = cap if total < 0 else min(total, cap)
-                if weight <= available:
-                    tokens = available - weight
-                    stamp = now
-                    return _Succeed(chunk)
-                return _FlatMap(pull, loop)
-
-            return _FlatMap(cost(chunk), weighed)
-
-        return _FlatMap(pull, loop)
+        state = _ThrottleEnforce(pull, clock, cost, units=units, period_ns=period_ns, cap=cap)
+        return _FlatMap(pull, state.loop)
 
     return Stream(
         transform_pull(self._channel, lambda pull, _: Clock().map(lambda c: with_clock(pull, c)))
     )
+
+
+class _ThrottleEnforce:
+    """One run of ``throttle`` with ``"enforce"``: a loop on a state object, not
+    closures that reach each other (that cycle would keep the pull alive after
+    the run)."""
+
+    __slots__ = ("cap", "clock", "cost", "period_ns", "pull", "stamp", "tokens", "units")
+
+    def __init__(
+        self,
+        pull: AnyEffect,
+        clock: ClockService,
+        cost: Callable[[Chunk], AnyEffect],
+        *,
+        units: float,
+        period_ns: float,
+        cap: float,
+    ) -> None:
+        self.pull = pull
+        self.clock = clock
+        self.cost = cost
+        self.units = units
+        self.period_ns = period_ns
+        self.cap = cap
+        self.tokens = units
+        self.stamp = clock.now_nanos_unsafe()
+
+    def loop(self, chunk: Chunk) -> AnyEffect:
+        return _FlatMap(self.cost(chunk), lambda weight: self.weighed(chunk, weight))
+
+    def weighed(self, chunk: Chunk, weight: float) -> AnyEffect:
+        now = self.clock.now_nanos_unsafe()
+        total = _refilled(self.tokens, now - self.stamp, self.period_ns, self.units)
+        available = self.cap if total < 0 else min(total, self.cap)
+        if weight <= available:
+            self.tokens = available - weight
+            self.stamp = now
+            return _Succeed(chunk)
+        return _FlatMap(self.pull, self.loop)
 
 
 def _throttle_shape(

@@ -65,6 +65,27 @@ def _refs(root: R.Representation, identifiers: set[str]) -> set[str]:
     return refs
 
 
+def _visit(
+    dependencies: dict[str, set[str]],
+    recursive: dict[str, None],
+    state: dict[str, int],
+    path: list[str],
+    key: str,
+) -> None:
+    current = state.get(key, 0)
+    if current == 1:
+        recursive.update(dict.fromkeys(path[path.index(key) :]))
+        return
+    if current == 2:
+        return
+    state[key] = 1
+    path.append(key)
+    for dependency in dependencies[key]:
+        _visit(dependencies, recursive, state, path, dependency)
+    path.pop()
+    state[key] = 2
+
+
 def topological_sort(references: R.References) -> TopologicalSort:
     identifiers = list(references)
     known = set(identifiers)
@@ -72,23 +93,8 @@ def topological_sort(references: R.References) -> TopologicalSort:
     recursive: dict[str, None] = {}
     state: dict[str, int] = {}
     path: list[str] = []
-
-    def visit(key: str) -> None:
-        current = state.get(key, 0)
-        if current == 1:
-            recursive.update(dict.fromkeys(path[path.index(key) :]))
-            return
-        if current == 2:
-            return
-        state[key] = 1
-        path.append(key)
-        for dependency in dependencies[key]:
-            visit(dependency)
-        path.pop()
-        state[key] = 2
-
     for key in identifiers:
-        visit(key)
+        _visit(dependencies, recursive, state, path, key)
 
     in_degree = {key: 0 for key in identifiers if key not in recursive}
     dependents: dict[str, list[str]] = {key: [] for key in in_degree}

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 from pyfect.effect import Effect, succeed, suspend, sync
@@ -69,33 +70,43 @@ def follow_redirects[E, R](
     client: HttpClientService[E, R], max_redirects: int
 ) -> HttpClientService[E, R]:
     post = client.postprocess
+    return HttpClientService(
+        lambda requests: _follow(post, max_redirects, requests, 0), client.preprocess
+    )
 
-    def loop(
-        requests: Effect[HttpClientRequest, Any, Any], redirects: int
-    ) -> Effect[HttpClientResponse, E, R]:
-        def run() -> Effect[HttpClientResponse, E, R]:
-            current: list[HttpClientRequest] = []
 
-            def remember(request: HttpClientRequest) -> HttpClientRequest:
-                current.append(request)
-                return request
+def _follow[E, R](
+    post: Callable[[Effect[HttpClientRequest, Any, Any]], Effect[HttpClientResponse, E, R]],
+    max_redirects: int,
+    requests: Effect[HttpClientRequest, Any, Any],
+    redirects: int,
+) -> Effect[HttpClientResponse, E, R]:
+    """Send ``requests`` and follow the redirects of the response, up to
+    ``max_redirects`` in all."""
 
-            def follow(response: HttpClientResponse) -> Effect[HttpClientResponse, E, R]:
-                if (
-                    not 300 <= response.status < 400
-                    or not response.headers.get("location")
-                    or redirects >= max_redirects
-                ):
-                    return succeed(response)
-                following = _next_request(response, current[-1] if current else response.request)
-                if following is None:
-                    return succeed(response)
-                # Abort the discarded response to release its connection unread.
-                abort = response._abort_unread  # pyright: ignore[reportPrivateUsage]
-                return sync(abort).and_then(loop(succeed(following), redirects + 1))
+    def run() -> Effect[HttpClientResponse, E, R]:
+        current: list[HttpClientRequest] = []
 
-            return post(requests.map(remember)).flat_map(follow)
+        def remember(request: HttpClientRequest) -> HttpClientRequest:
+            current.append(request)
+            return request
 
-        return suspend(run)
+        def follow(response: HttpClientResponse) -> Effect[HttpClientResponse, E, R]:
+            if (
+                not 300 <= response.status < 400
+                or not response.headers.get("location")
+                or redirects >= max_redirects
+            ):
+                return succeed(response)
+            following = _next_request(response, current[-1] if current else response.request)
+            if following is None:
+                return succeed(response)
+            # Abort the discarded response to release its connection unread.
+            abort = response._abort_unread  # pyright: ignore[reportPrivateUsage]
+            return sync(abort).and_then(
+                _follow(post, max_redirects, succeed(following), redirects + 1)
+            )
 
-    return HttpClientService(lambda requests: loop(requests, 0), client.preprocess)
+        return post(requests.map(remember)).flat_map(follow)
+
+    return suspend(run)

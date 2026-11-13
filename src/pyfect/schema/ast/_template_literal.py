@@ -177,25 +177,36 @@ class TemplateLiteral(AST):
 def segment(node: TemplateLiteral, input: str, options: ParseOptions) -> list[str] | None:
     """``input`` split into one segment per part, or ``None`` when it does
     not match (Effect's ``segmentTemplateLiteralParts``)."""
-    parts = node.parts
-    literals = node.literals
     size = len(input)
-    if any(literal and literal not in input for literal in literals):
+    if any(literal and literal not in input for literal in node.literals):
         return None
     if node.suffix_lengths[0] > size:
         return None
-    out = [""] * len(parts)
-    failures: set[int] = set()
+    segmenter = _Segmenter(node, input, options)
+    return segmenter.out if segmenter.go(0, 0) else None
 
-    def last_index(anchor: str, start: int) -> int:
+
+class _Segmenter:
+    __slots__ = ("failed", "input", "node", "options", "out")
+
+    def __init__(self, node: TemplateLiteral, input: str, options: ParseOptions) -> None:
+        self.node = node
+        self.input = input
+        self.options = options
+        self.out = [""] * len(node.parts)
+        self.failed: set[int] = set()
+
+    def last_index(self, anchor: str, start: int) -> int:
         # JavaScript's ``lastIndexOf(anchor, start)``.
-        return input.rfind(anchor, 0, max(start, 0) + len(anchor))
+        return self.input.rfind(anchor, 0, max(start, 0) + len(anchor))
 
-    def go(i: int, pos: int) -> bool:
+    def go(self, i: int, pos: int) -> bool:
+        node, input, options, out = self.node, self.input, self.options, self.out
+        parts, literals, size = node.parts, node.literals, len(input)
         if i == len(parts):
             return pos == size
         key = i * (size + 1) + pos
-        if key in failures:
+        if key in self.failed:
             return False
         part = parts[i]
         if i == len(parts) - 1:
@@ -205,26 +216,24 @@ def segment(node: TemplateLiteral, input: str, options: ParseOptions) -> list[st
                 return True
         elif isinstance(part, Literal):
             text = literals[i] or ""
-            if input.startswith(text, pos) and go(i + 1, pos + len(text)):
+            if input.startswith(text, pos) and self.go(i + 1, pos + len(text)):
                 out[i] = text
                 return True
         else:
             maximum = size - node.suffix_lengths[i + 1]
             # A split before a literal need only try where that literal occurs.
             anchor = literals[i + 1]
-            end = maximum if anchor is None else last_index(anchor, maximum)
+            end = maximum if anchor is None else self.last_index(anchor, maximum)
             while end >= pos:
                 text = input[pos:end]
-                if match_part(part, text, options) and go(i + 1, end):
+                if match_part(part, text, options) and self.go(i + 1, end):
                     out[i] = text
                     return True
                 if end == 0:
                     break
-                end = end - 1 if anchor is None else last_index(anchor, end - 1)
-        failures.add(key)
+                end = end - 1 if anchor is None else self.last_index(anchor, end - 1)
+        self.failed.add(key)
         return False
-
-    return out if go(0, 0) else None
 
 
 def normalize_encoded(nodes: Sequence[AST]) -> tuple[AST, ...]:
@@ -233,25 +242,30 @@ def normalize_encoded(nodes: Sequence[AST]) -> tuple[AST, ...]:
     ``any_of``. A node shared in ``nodes`` (a union's members too) gives one
     shared part."""
     memo: dict[int, AST] = {}
+    return tuple([_encoded_part(memo, node) for node in nodes])
 
-    def union(node: Union) -> AST:
-        types = tuple(map(encoded, node.types))
-        same = all(a is b for a, b in zip(types, node.types, strict=True))
-        return node if same and node.mode == "any_of" else replace(node, types=types, mode="any_of")
 
-    def encoded(node: AST) -> AST:
-        done = memo.get(id(node))
-        if done is None:
-            plain = node.encoding is None and node.checks is None and node.encoding_checks is None
-            if isinstance(node, Union) and plain:
-                done = union(node)
-            else:
-                side = to_encoded(node)
-                done = union(side) if isinstance(side, Union) and side.checks is None else side
-            memo[id(node)] = done
-        return done
+def _encoded_union(memo: dict[int, AST], node: Union) -> AST:
+    types = tuple([_encoded_part(memo, member) for member in node.types])
+    same = all(a is b for a, b in zip(types, node.types, strict=True))
+    return node if same and node.mode == "any_of" else replace(node, types=types, mode="any_of")
 
-    return tuple(map(encoded, nodes))
+
+def _encoded_part(memo: dict[int, AST], node: AST) -> AST:
+    done = memo.get(id(node))
+    if done is None:
+        plain = node.encoding is None and node.checks is None and node.encoding_checks is None
+        if isinstance(node, Union) and plain:
+            done = _encoded_union(memo, node)
+        else:
+            side = to_encoded(node)
+            done = (
+                _encoded_union(memo, side)
+                if isinstance(side, Union) and side.checks is None
+                else side
+            )
+        memo[id(node)] = done
+    return done
 
 
 def template_mismatch(input: str, options: ParseOptions) -> Exit[Never, Issue]:

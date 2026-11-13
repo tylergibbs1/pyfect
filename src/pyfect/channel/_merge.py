@@ -12,6 +12,7 @@ Items reach the reader through a queue that shuts down with that scope.
 from __future__ import annotations
 
 from collections.abc import Callable
+from functools import partial
 from typing import Any, Literal
 
 from pyfect._concurrency import Concurrency, race_first
@@ -64,18 +65,6 @@ def merge_all(
 
             return pull.fork().flat_map(raced)
 
-        def evict() -> Effect[None]:
-            if len(fibers) < n:
-                return _VOID
-            fiber, fiber_scope = next(iter(fibers.items()))
-            del fibers[fiber]
-            if not fibers:  # pragma: no mutate, start() closes the latch again
-                done_latch.open_unsafe()
-            # A worker interrupted before it starts never closes its own
-            # scope; failures of replaced workers' finalizers are dropped.
-            closed = fiber_scope.close(interrupted()).ignore_cause()
-            return fiber.interrupt().and_then(closed).and_then(_Suspend(evict))
-
         def start(channel: AnyChannel) -> Effect[None, Any, Any]:
             child_scope = forked.fork_unsafe()
             fiber_box: list[Fiber[Any, Any]] = []
@@ -118,7 +107,7 @@ def merge_all(
                     done_latch.close_unsafe()
                     fibers[fiber] = child_scope
 
-                return evict().and_then(worker.fork()).map(started)
+                return _evict(fibers, n, done_latch).and_then(worker.fork()).map(started)
 
             return channel._transform(upstream, child_scope).flat_map(run)
 
@@ -138,6 +127,22 @@ def merge_all(
         )
 
     return bracket(build)
+
+
+def _evict(
+    fibers: dict[Fiber[Any, Any], CloseableScope], n: int, done_latch: Latch
+) -> Effect[None]:
+    if len(fibers) < n:
+        return _VOID
+    fiber, fiber_scope = next(iter(fibers.items()))
+    del fibers[fiber]
+    if not fibers:  # pragma: no mutate, start() closes the latch again
+        done_latch.open_unsafe()
+    # A worker interrupted before it starts never closes its own
+    # scope; failures of replaced workers' finalizers are dropped.
+    closed = fiber_scope.close(interrupted()).ignore_cause()
+    again = _Suspend(partial(_evict, fibers, n, done_latch))
+    return fiber.interrupt().and_then(closed).and_then(again)
 
 
 def merge(left: AnyChannel, right: AnyChannel, halt_strategy: HaltStrategy) -> Channel_:

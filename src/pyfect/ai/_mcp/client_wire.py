@@ -153,44 +153,47 @@ def header_parameters(tool: Tool) -> list[HeaderParameter] | None:
     """The ``x-mcp-header`` annotations along chains of ``properties``, or
     ``None`` when one is invalid or found anywhere else."""
     parameters: list[HeaderParameter] = []
-    names: set[str] = set()
+    return parameters if _visit_headers(tool["inputSchema"], (), parameters, set()) else None
 
-    def visit(schema: object, path: tuple[str, ...] | None) -> bool:
-        if not isinstance(schema, dict):
-            return True
-        node = cast("dict[str, object]", schema)
-        name = node.get("x-mcp-header")
-        if name is not None:
-            kind = node.get("type")
-            if (
-                not path
-                or not isinstance(name, str)
-                or _HEADER_TOKEN.match(name) is None
-                or name.lower() in names
-                or kind not in ("string", "integer", "boolean")
+
+def _visit_headers(
+    schema: object,
+    path: tuple[str, ...] | None,
+    parameters: list[HeaderParameter],
+    names: set[str],
+) -> bool:
+    if not isinstance(schema, dict):
+        return True
+    node = cast("dict[str, object]", schema)
+    name = node.get("x-mcp-header")
+    if name is not None:
+        kind = node.get("type")
+        if (
+            not path
+            or not isinstance(name, str)
+            or _HEADER_TOKEN.match(name) is None
+            or name.lower() in names
+            or kind not in ("string", "integer", "boolean")
+        ):
+            return False
+        names.add(name.lower())
+        parameters.append(HeaderParameter(path, f"mcp-param-{name.lower()}", cast("str", kind)))
+    for keyword, value in node.items():
+        if keyword in _SCHEMA_MAP_KEYWORDS and isinstance(value, dict):
+            children = cast("dict[str, object]", value)
+            for key, child in children.items():
+                child_path = (*path, key) if keyword == "properties" and path is not None else None
+                if not _visit_headers(child, child_path, parameters, names):
+                    return False
+        elif isinstance(value, list):
+            if keyword in _SCHEMA_ARRAY_KEYWORDS and not all(
+                _visit_headers(child, None, parameters, names)
+                for child in cast("list[object]", value)
             ):
                 return False
-            names.add(name.lower())
-            parameters.append(HeaderParameter(path, f"mcp-param-{name.lower()}", cast("str", kind)))
-        for keyword, value in node.items():
-            if keyword in _SCHEMA_MAP_KEYWORDS and isinstance(value, dict):
-                children = cast("dict[str, object]", value)
-                for key, child in children.items():
-                    child_path = (
-                        (*path, key) if keyword == "properties" and path is not None else None
-                    )
-                    if not visit(child, child_path):
-                        return False
-            elif isinstance(value, list):
-                if keyword in _SCHEMA_ARRAY_KEYWORDS and not all(
-                    visit(child, None) for child in cast("list[object]", value)
-                ):
-                    return False
-            elif keyword in _SCHEMA_KEYWORDS and not visit(value, None):
-                return False
-        return True
-
-    return parameters if visit(tool["inputSchema"], ()) else None
+        elif keyword in _SCHEMA_KEYWORDS and not _visit_headers(value, None, parameters, names):
+            return False
+    return True
 
 
 def routing_headers(

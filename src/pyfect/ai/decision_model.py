@@ -191,29 +191,36 @@ def _extract_images(state: JsonValue, random: RandomService) -> _Extracted:
     """``state`` with each encoded ``decision.Image`` replaced by a
     reference; equal images share one. ``paths`` holds every path where an
     image was found."""
-    images: list[ProviderImage] = []
-    references: dict[tuple[str, str], str] = {}
-    paths: set[str] = set()
+    extraction = _ImageExtraction(random)
+    walked = extraction.walk(state, ())
+    return _Extracted(walked, tuple(extraction.images), frozenset(extraction.paths))
 
-    def walk(value: JsonValue, path: Path) -> JsonValue:
+
+class _ImageExtraction:
+    __slots__ = ("images", "paths", "random", "references")
+
+    def __init__(self, random: RandomService) -> None:
+        self.random = random
+        self.images: list[ProviderImage] = []
+        self.references: dict[tuple[str, str], str] = {}
+        self.paths: set[str] = set()
+
+    def walk(self, value: JsonValue, path: Path) -> JsonValue:
         image = _provider_image(value)
         if image is not None:
-            paths.add(_format_path(path))
+            self.paths.add(_format_path(path))
             data = image.data
             found = f"url:{url_.href(data)}" if isinstance(data, Url) else f"base64:{data!s}"
-            reference = references.get((image.media_type, found))
+            reference = self.references.get((image.media_type, found))
             if reference is None:
-                reference = references[image.media_type, found] = _random_uuid(random)
-                images.append(ProviderImage(reference, path, image))
+                reference = self.references[image.media_type, found] = _random_uuid(self.random)
+                self.images.append(ProviderImage(reference, path, image))
             return reference
         if isinstance(value, (list, tuple)):
-            return [walk(item, (*path, index)) for index, item in enumerate(value)]
+            return [self.walk(item, (*path, index)) for index, item in enumerate(value)]
         if isinstance(value, Mapping):
-            return {k: walk(item, (*path, k)) for k, item in value.items()}
+            return {k: self.walk(item, (*path, k)) for k, item in value.items()}
         return value
-
-    walked = walk(state, ())
-    return _Extracted(walked, tuple(images), frozenset(paths))
 
 
 def _require_answers(

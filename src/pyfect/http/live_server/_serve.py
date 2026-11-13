@@ -6,6 +6,7 @@ response, a shutdown)."""
 from __future__ import annotations
 
 import time
+import weakref
 from collections.abc import Callable
 from dataclasses import dataclass
 from http import HTTPStatus
@@ -14,7 +15,7 @@ from typing import Any
 from pyfect._core import Effect
 from pyfect._fiber import Fiber
 from pyfect.duration import Duration, millis
-from pyfect.effect import gen, succeed, sync, void
+from pyfect.effect import fail, gen, succeed, sync, void
 from pyfect.http._authority import LOCALHOST, absolute_url
 from pyfect.http.headers import Headers
 from pyfect.http.live_server._exchange import MAX_DRAIN_BYTES, Exchange
@@ -88,6 +89,24 @@ def _peer_address(conn: Connection) -> str | None:
     return None
 
 
+class _Upgrade:
+    """A request's ``upgrade``. It holds the request weakly, as the request
+    holds it; the connection's loop keeps the request until the next one."""
+
+    __slots__ = ("exchange", "request", "websocket")
+
+    def __init__(self, exchange: Exchange, websocket: WebSocketConfig) -> None:
+        self.exchange = exchange
+        self.websocket = websocket
+        self.request: weakref.ref[SourceRequest] | None = None
+
+    def __call__(self, headers: Headers) -> Effect[Any, Any]:
+        request = None if self.request is None else self.request()
+        if request is None:
+            return fail(RuntimeError("the request has ended"))
+        return upgrade(self.exchange, request, headers, self.websocket)
+
+
 def _request(
     exchange: Exchange,
     protocol: RequestProtocol,
@@ -97,12 +116,7 @@ def _request(
     head = exchange.head
     url = head.target
     body = exchange.body
-    request: SourceRequest | None = None
-
-    def upgrade_request(upgrade_headers: Headers) -> Effect[Any, Any]:
-        assert request is not None
-        return upgrade(exchange, request, upgrade_headers, websocket)
-
+    upgrade_request = _Upgrade(exchange, websocket) if head.upgrade is not None else None
     request = SourceRequest(
         head.method,
         url if url == "*" else absolute_url(protocol, head.authority or LOCALHOST, url),
@@ -111,8 +125,10 @@ def _request(
         source=exchange,
         remote_address=remote_address,
         protocol=protocol,
-        upgrade=upgrade_request if head.upgrade is not None else None,
+        upgrade=upgrade_request,
     )
+    if upgrade_request is not None:
+        upgrade_request.request = weakref.ref(request)
     return request
 
 

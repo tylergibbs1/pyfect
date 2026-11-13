@@ -214,16 +214,33 @@ def while_loop[A, E = Never, R = Never](
     """Run ``body`` while ``while_()`` holds, giving each value to ``step``;
     the stack does not grow."""
 
-    def loop() -> Effect[None, E, R]:
-        if not while_():
+    return _Suspend(_WhileLoop(while_, body, step).loop)
+
+
+class _WhileLoop[A, E, R]:
+    """One ``while_loop``: a loop on a state object, as closures reaching each
+    other would keep ``body`` and ``step`` alive after the run."""
+
+    __slots__ = ("body", "step", "while_")
+
+    def __init__(
+        self,
+        while_: Callable[[], bool],
+        body: Callable[[], Effect[A, E, R]],
+        step: Callable[[A], None],
+    ) -> None:
+        self.while_ = while_
+        self.body = body
+        self.step = step
+
+    def loop(self) -> Effect[None, E, R]:
+        if not self.while_():
             return _Succeed(None)
-        return body().flat_map(_after)
+        return self.body().flat_map(self.after)
 
-    def _after(a: A) -> Effect[None, E, R]:
-        step(a)
-        return _Suspend(loop)
-
-    return _Suspend(loop)
+    def after(self, a: A) -> Effect[None, E, R]:
+        self.step(a)
+        return _Suspend(self.loop)
 
 
 def _js_falsy(value: object) -> bool:

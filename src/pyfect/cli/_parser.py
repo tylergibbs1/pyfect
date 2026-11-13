@@ -282,11 +282,23 @@ def consume_global_flags(
     """Takes the global flags out of ``tokens``, level by level: a token a
     command's own or shared flag claims stays (with its value), unless a
     local flag of the same name only precedes a subcommand."""
-    flag_map = empty_flag_map(registry.params)
-    errors: list[InvalidValue] = []
+    taking = _GlobalFlagTaking(registry)
+    remainder = taking.level(tokens, command, ())
+    return FlagsTaken(taking.flag_map, tuple(remainder), tuple(taking.errors))
+
+
+class _GlobalFlagTaking:
+    """The global flags taken so far, and their errors."""
+
+    __slots__ = ("errors", "flag_map", "registry")
+
+    def __init__(self, registry: FlagRegistry) -> None:
+        self.registry = registry
+        self.flag_map = empty_flag_map(registry.params)
+        self.errors: list[InvalidValue] = []
 
     def level(
-        tokens: Sequence[Token], command: AnyCommand, ignored: tuple[FlagRegistry, ...]
+        self, tokens: Sequence[Token], command: AnyCommand, ignored: tuple[FlagRegistry, ...]
     ) -> list[Token]:
         local = create_flag_registry(_local_flags(command))
         inherited = create_flag_registry(_context_flags(command))
@@ -305,7 +317,7 @@ def consume_global_flags(
                     sub = sub_index.get(token.value)
                     if sub is not None:
                         remainder.append(token)
-                        remainder.extend(level(cursor.rest(), sub, (*ignored, inherited)))
+                        remainder.extend(self.level(cursor.rest(), sub, (*ignored, inherited)))
                         return remainder
                     awaiting_first_value = False
                 remainder.append(token)
@@ -315,12 +327,12 @@ def consume_global_flags(
                 preserve(token, claimed)
                 continue
             own = _resolve(token, local)
-            global_ = _resolve(token, registry)
+            global_ = _resolve(token, self.registry)
             if own is not None and (
                 global_ is None
                 or not awaiting_first_value
                 or not _local_precedes_subcommand(
-                    token, cursor.rest(), own, sub_index, (local, inherited, registry)
+                    token, cursor.rest(), own, sub_index, (local, inherited, self.registry)
                 )
             ):
                 preserve(token, own)
@@ -328,15 +340,12 @@ def consume_global_flags(
             if global_ is not None:
                 consumed = _consume(cursor, token, global_)
                 if consumed.error is not None:
-                    errors.append(consumed.error)
+                    self.errors.append(consumed.error)
                 elif consumed.value is not None:
-                    flag_map[global_.param.name].append(consumed.value)
+                    self.flag_map[global_.param.name].append(consumed.value)
                 continue
             remainder.append(token)
         return remainder
-
-    remainder = level(tokens, command, ())
-    return FlagsTaken(flag_map, tuple(remainder), tuple(errors))
 
 
 # --- one command level -------------------------------------------------------------

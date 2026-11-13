@@ -53,13 +53,36 @@ type Connect = Callable[[Connection], Coroutine[Any, Any, object]]
 
 
 class _Current:
-    """The connection the current reader opened, which writers use."""
+    """The connection the current reader opened, which its writes use."""
 
     __slots__ = ("connection", "latch")
 
     def __init__(self) -> None:
         self.connection: Connection | None = None
         self.latch = Latch(False)
+
+    def write(self, chunk: Chunk | CloseEvent) -> Effect[None, SocketError]:
+        def start() -> Effect[None, SocketError]:
+            conn = self.connection
+            if conn is None:
+                return self.latch.when_open(self.write(chunk))
+            if isinstance(chunk, CloseEvent):
+                if chunk.code > 1000:
+                    conn.fail(read_error(ConnectionError(f"closed with code {chunk.code}")))
+                conn.close(graceful=False)
+                return void
+            return conn.write((encode_chunk(chunk),))
+
+        return suspend(start)
+
+    def write_all(self, chunks: Sequence[Chunk]) -> Effect[None, SocketError]:
+        def start() -> Effect[None, SocketError]:
+            conn = self.connection
+            if conn is None:
+                return self.latch.when_open(self.write_all(chunks))
+            return conn.write(tuple(map(encode_chunk, chunks)))
+
+        return suspend(start)
 
 
 DEFAULT_CHUNK_SIZE = 4096
@@ -132,29 +155,6 @@ def from_connection(
 
         return Reader(conn.pull(limit), upgrade)
 
-    def write(chunk: Chunk | CloseEvent) -> Effect[None, SocketError]:
-        def start() -> Effect[None, SocketError]:
-            conn = current.connection
-            if conn is None:
-                return current.latch.when_open(write(chunk))
-            if isinstance(chunk, CloseEvent):
-                if chunk.code > 1000:
-                    conn.fail(read_error(ConnectionError(f"closed with code {chunk.code}")))
-                conn.close(graceful=False)
-                return void
-            return conn.write((encode_chunk(chunk),))
-
-        return suspend(start)
-
-    def write_all(chunks: Sequence[Chunk]) -> Effect[None, SocketError]:
-        def start() -> Effect[None, SocketError]:
-            conn = current.connection
-            if conn is None:
-                return current.latch.when_open(write_all(chunks))
-            return conn.write(tuple(map(encode_chunk, chunks)))
-
-        return suspend(start)
-
     def end_writing(_writer: Writer, _exit: Exit[Any, Any]) -> Effect[None]:
         def run_end() -> None:
             if current.connection is not None:
@@ -162,7 +162,7 @@ def from_connection(
 
         return sync(run_end)
 
-    writer = acquire_release(succeed(Writer(write, write_all)), end_writing)
+    writer = acquire_release(succeed(Writer(current.write, current.write_all)), end_writing)
     return make(gen(reader), writer)
 
 

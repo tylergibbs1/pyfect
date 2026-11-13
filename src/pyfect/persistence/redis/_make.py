@@ -36,13 +36,26 @@ from pyfect.scope import Scope, acquire_release, add_finalizer
 class _Pooled:
     """A connection in the pool, with the commands running on it."""
 
-    __slots__ = ("active", "close", "healthy", "send")
+    __slots__ = ("_close", "_open", "active", "healthy", "send")
 
-    def __init__(self, send: Send, close: Effect[None]) -> None:
-        self.send = send
-        self.close = close
+    def __init__(self, connection: OpenConnection, open_connections: set[_Pooled]) -> None:
+        self.send = connection.send
+        self._close = connection.close
+        self._open = open_connections
         self.healthy = True
         self.active = 0
+        open_connections.add(self)
+
+    @property
+    def close(self) -> Effect[None]:
+        """Close the connection, once."""
+        return suspend(self._close_once)
+
+    def _close_once(self) -> Effect[None]:
+        if self in self._open:
+            self._open.discard(self)
+            return self._close
+        return void
 
 
 class _Connection:
@@ -169,15 +182,7 @@ def make(
         connections: set[_Pooled] = set()
 
         def opened(connection: OpenConnection) -> _Pooled:
-            def close() -> Effect[None]:
-                if pooled in connections:
-                    connections.discard(pooled)
-                    return connection.close
-                return void
-
-            pooled = _Pooled(connection.send, suspend(close))
-            connections.add(pooled)
-            return pooled
+            return _Pooled(connection, connections)
 
         connection_pool: Pool[_Pooled, RedisError] = yield from Pool.make_with_ttl(
             acquire_release(connect.map(opened), lambda pooled, _exit: pooled.close),

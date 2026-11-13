@@ -133,37 +133,46 @@ def concat_result[O, O2, I, E, R](
     right: Schedule[Result[O2, O], I, E, R] = second.map(lambda m: Ok(m.output))
 
     def make() -> StepFn[Result[O2, O], I, E, R]:
-        current: StepFn[Result[O2, O], I, E, R] | None = None
-        on_left = True
-
-        def recur(now: float, input: I) -> Effect[Decision[Result[O2, O]], E, R]:
-            if current is not None:
-                return current(now, input)
-
-            def body() -> Any:
-                nonlocal current, on_left
-                step = yield from to_step(left if on_left else right)
-                if on_left:
-                    on_left = False
-
-                    def until_done(now: float, input: I) -> Effect[Decision[Result[O2, O]], E, R]:
-                        def go() -> Any:
-                            nonlocal current
-                            decision = yield from step(now, input)
-                            if isinstance(decision, Stop):
-                                current = None
-                                return (yield from recur(now, input))
-                            return decision
-
-                        return _Gen(go)
-
-                    current = until_done
-                else:
-                    current = step
-                return (yield from current(now, input))
-
-            return _Gen(body)
-
-        return recur
+        return _ConcatResult(left, right).recur
 
     return from_step(_Sync(make))
+
+
+class _ConcatResult[O, I, E, R]:
+    """One run of ``concat_result``: steps through ``left``, then ``right``.
+    The current step lives on this object, not in closures that reach each
+    other (that cycle would keep both schedules alive after the run)."""
+
+    __slots__ = ("left", "left_step", "on_left", "right", "right_step")
+
+    def __init__(self, left: Schedule[O, I, E, R], right: Schedule[O, I, E, R]) -> None:
+        self.left = left
+        self.right = right
+        self.on_left = True
+        self.left_step: StepFn[O, I, E, R] | None = None
+        self.right_step: StepFn[O, I, E, R] | None = None
+
+    def recur(self, now: float, input: I) -> Effect[Decision[O], E, R]:
+        left_step = self.left_step
+        if left_step is not None:
+            return _Gen(lambda: self.until_done(left_step, now, input))
+        right_step = self.right_step
+        if right_step is not None:
+            return right_step(now, input)
+        return _Gen(lambda: self.start(now, input))
+
+    def start(self, now: float, input: I) -> Any:
+        step = yield from to_step(self.left if self.on_left else self.right)
+        if self.on_left:
+            self.on_left = False
+            self.left_step = step
+        else:
+            self.right_step = step
+        return (yield from self.recur(now, input))
+
+    def until_done(self, step: StepFn[O, I, E, R], now: float, input: I) -> Any:
+        decision = yield from step(now, input)
+        if isinstance(decision, Stop):
+            self.left_step = None
+            return (yield from self.recur(now, input))
+        return decision

@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import base64
 import binascii
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any, Never, Unpack, overload
 
 from pyfect import redacted
@@ -145,25 +145,32 @@ def security_middleware(
 
     def middleware(handler: Effect[Any, Any, Any], options: Any) -> Effect[Any, Any, Any]:
         wrapped: Effect[Any, Any, Any] = handler.map_error(_HandlerError)
-
-        def attempt(index: int, last: object) -> Effect[Any, Any, Any]:
-            if index == len(entries):
-                return fail(last)
-            decode, run = entries[index]
-
-            def with_credential(credential: Any) -> Effect[Any, Any, Any]:
-                return run(wrapped, SecurityOptions(credential, options.endpoint, options.group))
-
-            def on_error(error: object) -> Effect[Any, Any, Any]:
-                if isinstance(error, _HandlerError):
-                    return fail(error.error)
-                return attempt(index + 1, error)
-
-            return decode.flat_map(with_credential).catch_all(on_error)
-
-        return attempt(0, None)
+        return _attempt_security(entries, wrapped, options, 0, None)
 
     return middleware
+
+
+def _attempt_security(
+    entries: Sequence[tuple[Effect[Any, Any, Any], SecurityMiddlewareFn[Any, Any, Any]]],
+    wrapped: Effect[Any, Any, Any],
+    options: Any,
+    index: int,
+    last: object,
+) -> Effect[Any, Any, Any]:
+    """Try ``entries[index]`` and, if it fails, those after it."""
+    if index == len(entries):
+        return fail(last)
+    decode, run = entries[index]
+
+    def with_credential(credential: Any) -> Effect[Any, Any, Any]:
+        return run(wrapped, SecurityOptions(credential, options.endpoint, options.group))
+
+    def on_error(error: object) -> Effect[Any, Any, Any]:
+        if isinstance(error, _HandlerError):
+            return fail(error.error)
+        return _attempt_security(entries, wrapped, options, index + 1, error)
+
+    return decode.flat_map(with_credential).catch_all(on_error)
 
 
 __all__ = [

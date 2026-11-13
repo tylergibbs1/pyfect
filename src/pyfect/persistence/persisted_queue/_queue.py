@@ -167,10 +167,17 @@ class PersistedQueue[A, R = Never]:
                 )
             )
 
-        def loop() -> Effect[XA, Any, Any]:
-            return scoped_with(attempt).catch_if(is_dead_letter, lambda _: suspend(loop))
+        return suspend(lambda: _take_loop(attempt))
 
-        return suspend(loop)
+
+def _take_loop[XA](
+    attempt: Callable[[CloseableScope], Effect[XA, Any, Any]],
+) -> Effect[XA, Any, Any]:
+    """Take until an element decodes; module-level, as a closure calling
+    itself would keep ``f`` alive after the take."""
+    return scoped_with(attempt).catch_if(
+        is_dead_letter, lambda _: suspend(lambda: _take_loop(attempt))
+    )
 
 
 class PersistedQueueFactoryService:

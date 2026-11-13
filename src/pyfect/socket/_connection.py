@@ -16,6 +16,7 @@ connection has, as Node's upgrade puts a ``TLSSocket`` over whatever the
 socket is: bytes are decrypted by each layer, outermost first, before they
 reach the buffer, and encrypted by each on the way out.
 """
+# pyright: reportPrivateUsage=false
 
 from __future__ import annotations
 
@@ -301,16 +302,7 @@ class Connection(asyncio.Protocol):
     ) -> Effect[A, SocketError]:
         """``take`` of the buffered chunks (at most ``limit``), called in the step
         that takes them, so an interrupt cannot lose them."""
-
-        def step() -> Effect[A, SocketError]:
-            taken = self._take(limit)
-            if isinstance(taken, tuple):
-                return succeed(take(taken))
-            if taken is not None:
-                return fail(taken)
-            return self.signal.wait(self._readable).flat_map(lambda _: suspend(step))
-
-        return suspend(step)
+        return suspend(_PullInto(self, take, limit).step)
 
     def closed(self) -> Effect[None]:
         """Wait until the transport is lost."""
@@ -418,3 +410,29 @@ class Connection(asyncio.Protocol):
             transport.close()
         else:
             transport.abort()
+
+
+class _PullInto[A]:
+    """One ``pull_into``: a loop on a state object, not a closure that calls
+    itself (that cycle would keep the connection and ``take`` alive)."""
+
+    __slots__ = ("conn", "limit", "take")
+
+    def __init__(
+        self, conn: Connection, take: Callable[[tuple[bytes, ...]], A], limit: int | None
+    ) -> None:
+        self.conn = conn
+        self.take = take
+        self.limit = limit
+
+    def step(self) -> Effect[A, SocketError]:
+        conn = self.conn
+        taken = conn._take(self.limit)
+        if isinstance(taken, tuple):
+            return succeed(self.take(taken))
+        if taken is not None:
+            return fail(taken)
+        return conn.signal.wait(conn._readable).flat_map(self.again)
+
+    def again(self, _: object) -> Effect[A, SocketError]:
+        return suspend(self.step)

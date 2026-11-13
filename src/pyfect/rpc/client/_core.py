@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 import itertools
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Never
 
@@ -184,13 +184,7 @@ class ClientCore:
             if (found := self._services.get_option(client_tag(tag))) is not None
         ]
 
-        def loop(request: Request, index: int) -> Effect[Any, Any]:
-            if index == -1:
-                return send(request)
-            options = ClientMiddlewareOptions(rpc, request, lambda r: loop(r, index - 1))
-            return middlewares[index](options)
-
-        return loop(request, len(middlewares) - 1)
+        return _through_middleware(rpc, send, middlewares, request, len(middlewares) - 1)
 
     def _request(
         self,
@@ -457,6 +451,23 @@ def make_no_serialization[G: RpcGroup](
         return client, core
 
     return make
+
+
+def _through_middleware(
+    rpc: AnyRpc,
+    send: Callable[[Request], Effect[Any, Any]],
+    middlewares: Sequence[Callable[[ClientMiddlewareOptions], Effect[Any, Any]]],
+    request: Request,
+    index: int,
+) -> Effect[Any, Any]:
+    """``request`` through ``middlewares[index]`` and those before it, then
+    ``send``."""
+    if index == -1:
+        return send(request)
+    options = ClientMiddlewareOptions(
+        rpc, request, lambda r: _through_middleware(rpc, send, middlewares, r, index - 1)
+    )
+    return middlewares[index](options)
 
 
 def _current_fiber() -> Fiber[Any, Any]:

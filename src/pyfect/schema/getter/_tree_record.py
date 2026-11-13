@@ -155,23 +155,25 @@ def collect_bracket_path_entries[A](
 
     def collect(tree: Mapping[str, object]) -> list[tuple[str, A]]:
         entries: list[tuple[str, A]] = []
-
-        def append(key: str, value: object) -> None:
-            if is_leaf(value):
-                entries.append((key, value))
-            elif isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
-                items = cast("Sequence[object]", value)
-                if all(is_leaf(item) for item in items):
-                    entries.extend((key, cast("A", item)) for item in items)
-                else:
-                    for i, item in enumerate(items):
-                        append(f"{key}[{i}]", item)
-            elif isinstance(value, Mapping):
-                for k, v in cast("Mapping[object, object]", value).items():
-                    append(f"{key}[{k}]", v)
-
         for key, value in tree.items():
-            append(key, value)
+            _append_bracket_entries(is_leaf, entries, key, value)
         return entries
 
     return collect
+
+
+def _append_bracket_entries[A](
+    is_leaf: Callable[[object], TypeIs[A]], entries: list[tuple[str, A]], key: str, value: object
+) -> None:
+    if is_leaf(value):
+        entries.append((key, value))
+    elif isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+        items = cast("Sequence[object]", value)
+        if all(is_leaf(item) for item in items):
+            entries.extend((key, cast("A", item)) for item in items)
+        else:
+            for i, item in enumerate(items):
+                _append_bracket_entries(is_leaf, entries, f"{key}[{i}]", item)
+    elif isinstance(value, Mapping):
+        for k, v in cast("Mapping[object, object]", value).items():
+            _append_bracket_entries(is_leaf, entries, f"{key}[{k}]", v)

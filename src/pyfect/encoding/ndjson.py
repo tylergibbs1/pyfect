@@ -115,39 +115,49 @@ the chunk, and the values before it are still written."""
 def _decode_pull(
     upstream: AnyPull, step: _Step, flush: Callable[[list[Json]], NdjsonError | None]
 ) -> AnyPull:
-    failure: NdjsonError | None = None
-    ended: list[object] = []
+    return _Suspend(_DecodePull(upstream, step, flush).next)
 
-    def emit(out: list[Json], error: NdjsonError | None) -> AnyPull | None:
-        nonlocal failure
-        failure = error
+
+class _DecodePull:
+    """The decoders' pull: a state object rather than closures over the pull
+    itself, so a finished run does not keep its input alive."""
+
+    __slots__ = ("ended", "failure", "flush", "step", "upstream")
+
+    def __init__(
+        self, upstream: AnyPull, step: _Step, flush: Callable[[list[Json]], NdjsonError | None]
+    ) -> None:
+        self.upstream = upstream
+        self.step = step
+        self.flush = flush
+        self.failure: NdjsonError | None = None
+        self.ended: list[object] = []
+
+    def emit(self, out: list[Json], error: NdjsonError | None) -> AnyPull | None:
+        self.failure = error
         if out:
             return _Succeed(tuple(out))
         return None if error is None else _FailCause(fail_cause(error))
 
-    def written(chunk: object) -> AnyPull:
+    def written(self, chunk: object) -> AnyPull:
         out: list[Json] = []
-        result = emit(out, step(chunk, out))
-        return pull if result is None else result
+        result = self.emit(out, self.step(chunk, out))
+        return _Suspend(self.next) if result is None else result
 
-    def failed(cause: Cause[Any]) -> AnyPull:
-        return _FailCause(cause)
-
-    def done(leftover: object) -> AnyPull:
-        ended.append(leftover)
+    def done(self, leftover: object) -> AnyPull:
+        self.ended.append(leftover)
         out: list[Json] = []
-        result = emit(out, flush(out))
+        result = self.emit(out, self.flush(out))
         return end_with(leftover) if result is None else result
 
-    def next_pull() -> AnyPull:
-        if failure is not None:
-            return _FailCause(fail_cause(failure))
-        if ended:
-            return end_with(ended[0])
-        return match_effect(upstream, on_success=written, on_failure=failed, on_done=done)
-
-    pull: AnyPull = _Suspend(next_pull)
-    return pull
+    def next(self) -> AnyPull:
+        if self.failure is not None:
+            return _FailCause(fail_cause(self.failure))
+        if self.ended:
+            return end_with(self.ended[0])
+        return match_effect(
+            self.upstream, on_success=self.written, on_failure=_FailCause, on_done=self.done
+        )
 
 
 def _parse_line(

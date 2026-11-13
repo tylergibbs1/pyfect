@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import threading
 from collections.abc import Callable
+from functools import partial
 from typing import Literal
 
 from pyfect._core import Effect, _Callback, _Sync
@@ -59,6 +60,12 @@ class _Waiting:
             outside.finish_one()
 
 
+def _beat(scheduler: Scheduler, waiting: _Waiting) -> None:
+    """Keep a timer pending while ``waiting`` is active."""
+    if waiting.active:
+        scheduler.call_later(_KEEPALIVE, partial(_beat, scheduler, waiting))
+
+
 def os_wait[A, E](register: Register[A, E], *, waits_for: WaitsFor) -> Effect[A, E]:
     """Suspend until ``register``'s ``resume`` is called, from any thread.
     ``register`` runs on the fiber's thread and may resume at once; the
@@ -78,10 +85,6 @@ def _registered[A, E](
         waiting = _Waiting(counted=waits_for == "work")
         if waiting.counted:
             outside.pending += 1
-
-        def beat() -> None:
-            if waiting.active:
-                scheduler.call_later(_KEEPALIVE, beat)
 
         def settle(effect: Effect[A, E]) -> None:
             # On the scheduler's thread: the resume and what it schedules
@@ -106,7 +109,7 @@ def _registered[A, E](
         waiting.registering = None
         if not waiting.active:
             return None
-        scheduler.call_later(_KEEPALIVE, beat)
+        scheduler.call_later(_KEEPALIVE, partial(_beat, scheduler, waiting))
 
         def interrupted() -> None:
             waiting.active = False

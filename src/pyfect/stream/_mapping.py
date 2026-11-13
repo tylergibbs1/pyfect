@@ -30,15 +30,24 @@ def map_chunks(self: AnyStream, make: Callable[[], Callable[[Chunk], Chunk]]) ->
     the next chunk instead of writing."""
 
     def build(pull: AnyEffect, _scope: object) -> AnyEffect:
-        f = make()
-
-        def loop(chunk: Chunk) -> AnyEffect:
-            out = f(chunk)
-            return _Succeed(out) if out else _FlatMap(pull, loop)
-
-        return _Succeed(_FlatMap(pull, loop))
+        return _Succeed(_FlatMap(pull, _MapChunks(pull, make()).loop))
 
     return Stream(transform_pull(self._channel, build))
+
+
+class _MapChunks:
+    """One run of ``map_chunks``: a loop on a state object, not a closure that
+    calls itself (that cycle would keep the pull alive after the run)."""
+
+    __slots__ = ("f", "pull")
+
+    def __init__(self, pull: AnyEffect, f: Callable[[Chunk], Chunk]) -> None:
+        self.pull = pull
+        self.f = f
+
+    def loop(self, chunk: Chunk) -> AnyEffect:
+        out = self.f(chunk)
+        return _Succeed(out) if out else _FlatMap(self.pull, self.loop)
 
 
 def map_(self: AnyStream, f: Callable[[Any], Any]) -> AnyStream_:
@@ -63,12 +72,23 @@ def map_effect(
 
 def map_array_effect(self: AnyStream, f: Callable[[Chunk], AnyEffect]) -> AnyStream_:
     def build(pull: AnyEffect, _scope: object) -> AnyEffect:
-        def loop(chunk: Chunk) -> AnyEffect:
-            return _FlatMap(f(chunk), lambda out: _Succeed(out) if out else _FlatMap(pull, loop))
-
-        return _Succeed(_FlatMap(pull, loop))
+        return _Succeed(_FlatMap(pull, _MapArrayEffect(pull, f).loop))
 
     return Stream(transform_pull(self._channel, build))
+
+
+class _MapArrayEffect:
+    __slots__ = ("f", "pull")
+
+    def __init__(self, pull: AnyEffect, f: Callable[[Chunk], AnyEffect]) -> None:
+        self.pull = pull
+        self.f = f
+
+    def loop(self, chunk: Chunk) -> AnyEffect:
+        return _FlatMap(self.f(chunk), self.mapped)
+
+    def mapped(self, out: Chunk) -> AnyEffect:
+        return _Succeed(out) if out else _FlatMap(self.pull, self.loop)
 
 
 def result(self: AnyStream) -> AnyStream_:

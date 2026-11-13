@@ -328,17 +328,19 @@ def _is_structural(check: Check[Any]) -> bool:
 def structural_checks(checks: Checks) -> Checks | None:
     """The structural checks among ``checks``, a group's structural members
     taken out of it (Effect's ``extractStructuralChecks``)."""
+    out: list[Check[Any]] = []
+    _extract_structural(checks, out)
+    return (out[0], *out[1:]) if out else None
+
+
+def _extract_structural(checks: Iterable[Check[Any]], out: list[Check[Any]]) -> None:
     from pyfect.schema.ast._check import FilterGroup  # _check imports this module.
 
-    def extract(check: Check[Any]) -> list[Check[Any]]:
+    for check in checks:
         if _is_structural(check):
-            return [check]
-        if isinstance(check, FilterGroup):
-            return [found for member in check.checks for found in extract(member)]
-        return []
-
-    out = [found for check in checks for found in extract(check)]
-    return (out[0], *out[1:]) if out else None
+            out.append(check)
+        elif isinstance(check, FilterGroup):
+            _extract_structural(check.checks, out)
 
 
 _METADATA = frozenset(

@@ -33,6 +33,7 @@ from pyfect.reactivity.async_result import Initial, is_async_result
 from pyfect.reactivity.atom._serializable import SerializableInfo
 from pyfect.reactivity.atom._types import Atom
 from pyfect.reactivity.atom_registry import AtomRegistryService
+from pyfect.reactivity.atom_registry._unsubscribe import Unsubscribe
 from pyfect.schema import SchemaError
 
 _MARKER = "~effect/reactivity/Hydration/DehydratedAtom"
@@ -119,13 +120,14 @@ def _settle_when_not_initial(
     registry: AtomRegistryService, atom: Atom[Any], info: SerializableInfo
 ) -> Deferred[object, SchemaError]:
     deferred: Deferred[object, SchemaError] = Deferred()
+    unsubscribe = Unsubscribe()
 
     def on_change(value: object) -> None:
         if is_async_result(value) and not isinstance(value, Initial):
             unsubscribe()
             deferred.done_unsafe(_encode(info, value))
 
-    unsubscribe = registry.subscribe(atom, on_change)
+    unsubscribe.set(registry.subscribe(atom, on_change))
     return deferred
 
 

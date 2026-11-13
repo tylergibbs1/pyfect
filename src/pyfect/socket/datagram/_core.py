@@ -82,12 +82,6 @@ class ReaderState:
         self.capacity = buffer.capacity
         self.sliding = buffer.strategy == "sliding"
         self.listener = listener
-        self.events = BackingEvents(
-            on_packet=self.push,
-            on_read_error=self.fail,
-            on_error=self.report,
-            on_close=lambda: self.fail(closed_error()),
-        )
         # Set once the open completes; packets can arrive before that.
         self.handle: BackingSocket | None = None
         self.failure: DatagramSocketError | None = None
@@ -99,6 +93,15 @@ class ReaderState:
         self.scope_ids: Mapping[str, int] = _NO_SCOPE_IDS
 
     # --- the adapter's side (any thread) -----------------------------------
+
+    def events(self) -> BackingEvents:
+        """The adapter's callbacks; the adapter holds them, not this state."""
+        return BackingEvents(
+            on_packet=self.push,
+            on_read_error=self.fail,
+            on_error=self.report,
+            on_close=self.closed_underneath,
+        )
 
     def push(self, payload: bytes, host: str, port: int) -> None:
         with self.lock:
@@ -123,6 +126,9 @@ class ReaderState:
         for wake in waiters:
             wake()
 
+    def closed_underneath(self) -> None:
+        self.fail(closed_error())
+
     def report(self, error: DatagramSocketError) -> None:
         listener = self.listener
         if listener is None or self.closed:
@@ -145,23 +151,23 @@ class ReaderState:
             waiters = self.signal.notify_locked()
         for wake in waiters:
             wake()
-        if self.handle is not None:
-            self.handle.close()
+        handle, self.handle = self.handle, None
+        if handle is not None:
+            handle.close()
 
     def pull(self) -> Effect[tuple[Datagram, ...], DatagramSocketError]:
-        def take() -> Effect[tuple[Datagram, ...], DatagramSocketError]:
-            with self.lock:
-                if self.queue:
-                    batch = tuple(self.queue)
-                    self.queue.clear()
-                    return succeed(batch)
-                failure = self.failure
-            if failure is not None:
-                return fail(failure)
-            return self.signal.wait(self._ready).and_then(pulling)
+        return suspend(self._take)
 
-        pulling: Effect[tuple[Datagram, ...], DatagramSocketError] = suspend(take)
-        return pulling
+    def _take(self) -> Effect[tuple[Datagram, ...], DatagramSocketError]:
+        with self.lock:
+            if self.queue:
+                batch = tuple(self.queue)
+                self.queue.clear()
+                return succeed(batch)
+            failure = self.failure
+        if failure is not None:
+            return fail(failure)
+        return self.signal.wait(self._ready).and_then(self.pull())
 
     def _ready(self) -> bool:
         return bool(self.queue) or self.failure is not None
@@ -406,6 +412,24 @@ class _Shared:
         self.latch.close_unsafe()
         self.free.open_unsafe()
 
+    def write(self, datagram: Outgoing) -> Effect[None, DatagramSocketError]:
+        def start() -> Effect[None, DatagramSocketError]:
+            state = self.current
+            if state is None:
+                return self.latch.when_open(self.write(datagram))
+            return state.write(datagram)
+
+        return suspend(start)
+
+    def write_all(self, datagrams: Sequence[Outgoing]) -> Effect[None, DatagramSocketError]:
+        def start() -> Effect[None, DatagramSocketError]:
+            state = self.current
+            if state is None:
+                return self.latch.when_open(self.write_all(datagrams))
+            return state.write_all(datagrams)
+
+        return suspend(start)
+
 
 def _build(
     open: Open[Any],
@@ -421,7 +445,7 @@ def _build(
         scope = yield from Scope()
         state = ReaderState(buffer, on_error)
         current: Context[Any] = yield from context()
-        run_open = open(state.events).pipe(
+        run_open = open(state.events()).pipe(
             provide_context(services.merge(current).add(Scope, scope))
         )
         opening = yield from run_open.fork_daemon(start_immediately=True)
@@ -439,22 +463,4 @@ def _build(
         lambda restore: gen(lambda: acquire(restore))
     )
 
-    def write(datagram: Outgoing) -> Effect[None, DatagramSocketError]:
-        def start() -> Effect[None, DatagramSocketError]:
-            state = shared.current
-            if state is None:
-                return shared.latch.when_open(write(datagram))
-            return state.write(datagram)
-
-        return suspend(start)
-
-    def write_all(datagrams: Sequence[Outgoing]) -> Effect[None, DatagramSocketError]:
-        def start() -> Effect[None, DatagramSocketError]:
-            state = shared.current
-            if state is None:
-                return shared.latch.when_open(write_all(datagrams))
-            return state.write_all(datagrams)
-
-        return suspend(start)
-
-    return DatagramSocketService(reader, succeed(Writer(write, write_all)))
+    return DatagramSocketService(reader, succeed(Writer(shared.write, shared.write_all)))

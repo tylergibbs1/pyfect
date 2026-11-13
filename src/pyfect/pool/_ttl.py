@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import weakref
+from functools import partial
 from typing import TYPE_CHECKING, Any
 
 from pyfect._core import Effect, _Succeed, _Suspend, _WithFiber
@@ -36,19 +37,7 @@ def creation_ttl(ttl: Duration) -> Effect[Strategy[Any, Any]]:
         created: weakref.WeakKeyDictionary[_Item, int] = weakref.WeakKeyDictionary()
 
         def run(pool: _Pool) -> Effect[None]:
-            def process(item: _Item) -> Effect[None]:
-                def body() -> Effect[None]:
-                    with pool.state.lock:
-                        gone = item not in pool.state.items or item in pool.state.invalidated
-                    if gone:
-                        return _VOID
-                    remaining = ttl_nanos - (clock.now_nanos_unsafe() - created[item])
-                    if remaining > 0:
-                        return process(item).delay(from_nanos_or_infinite(remaining))
-                    return pool._invalidate_item(item)
-
-                return _Suspend(body)
-
+            process = _CreationExpiry(pool, clock, created, ttl_nanos).process
             return queue.take().flat_map(process).forever(disable_yield=True)
 
         def on_acquire(item: _Item) -> Effect[None]:
@@ -66,6 +55,38 @@ def creation_ttl(ttl: Duration) -> Effect[Strategy[Any, Any]]:
     return _WithFiber(make)
 
 
+class _CreationExpiry:
+    """``creation_ttl``'s run: invalidates each item once its time is up."""
+
+    __slots__ = ("clock", "created", "pool", "ttl_nanos")
+
+    def __init__(
+        self,
+        pool: _Pool,
+        clock: ClockService,
+        created: weakref.WeakKeyDictionary[_Item, int],
+        ttl_nanos: float,
+    ) -> None:
+        self.pool = pool
+        self.clock = clock
+        self.created = created
+        self.ttl_nanos = ttl_nanos
+
+    def process(self, item: _Item) -> Effect[None]:
+        return _Suspend(partial(self._expire, item))
+
+    def _expire(self, item: _Item) -> Effect[None]:
+        pool = self.pool
+        with pool.state.lock:
+            gone = item not in pool.state.items or item in pool.state.invalidated
+        if gone:
+            return _VOID
+        remaining = self.ttl_nanos - (self.clock.now_nanos_unsafe() - self.created[item])
+        if remaining > 0:
+            return self.process(item).delay(from_nanos_or_infinite(remaining))
+        return pool._invalidate_item(item)
+
+
 def usage_ttl(ttl: Duration) -> Effect[Strategy[Any, Any]]:
     """Every ``ttl``, while the pool is above its target size, invalidate
     the items idle for at least ``ttl``, longest idle first."""
@@ -75,27 +96,8 @@ def usage_ttl(ttl: Duration) -> Effect[Strategy[Any, Any]]:
         clock = _clock(fiber)
 
         def run(pool: _Pool) -> Effect[None]:
-            state = pool.state
-
-            def retire() -> Effect[None]:
-                oldest: _Item | None = None
-                with state.lock:
-                    if pool._active_size() <= pool._target_size():
-                        return _VOID
-                    expired = clock.now_nanos_unsafe() - ttl_nanos
-                    for item in state.items:
-                        if item.ref_count > 0 or item.idle_since > expired:
-                            continue
-                        if item in state.invalidated or item.reservations:
-                            continue
-                        if oldest is None or item.idle_since < oldest.idle_since:
-                            oldest = item
-                if oldest is None:
-                    return _VOID
-                return pool._invalidate_item(oldest).and_then(process)
-
-            process: Effect[None] = _Suspend(retire)
-            return process.delay(ttl).forever(disable_yield=True)
+            retire = _Suspend(_UsageExpiry(pool, clock, ttl_nanos).retire)
+            return retire.delay(ttl).forever(disable_yield=True)
 
         def on_acquire(_: _Item) -> Effect[None]:
             return _VOID
@@ -106,3 +108,33 @@ def usage_ttl(ttl: Duration) -> Effect[Strategy[Any, Any]]:
         return _Succeed(Strategy(run, on_acquire, reclaim))
 
     return _WithFiber(make)
+
+
+class _UsageExpiry:
+    """``usage_ttl``'s run: invalidates the longest idle expired items."""
+
+    __slots__ = ("clock", "pool", "ttl_nanos")
+
+    def __init__(self, pool: _Pool, clock: ClockService, ttl_nanos: float) -> None:
+        self.pool = pool
+        self.clock = clock
+        self.ttl_nanos = ttl_nanos
+
+    def retire(self) -> Effect[None]:
+        pool = self.pool
+        state = pool.state
+        oldest: _Item | None = None
+        with state.lock:
+            if pool._active_size() <= pool._target_size():
+                return _VOID
+            expired = self.clock.now_nanos_unsafe() - self.ttl_nanos
+            for item in state.items:
+                if item.ref_count > 0 or item.idle_since > expired:
+                    continue
+                if item in state.invalidated or item.reservations:
+                    continue
+                if oldest is None or item.idle_since < oldest.idle_since:
+                    oldest = item
+        if oldest is None:
+            return _VOID
+        return pool._invalidate_item(oldest).and_then(_Suspend(self.retire))

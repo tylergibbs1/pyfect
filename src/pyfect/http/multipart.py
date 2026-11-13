@@ -316,34 +316,12 @@ class _State:
             self.exit = fail(Done())
 
     def _on_file(self, info: mp.PartInfo) -> mp.OnChunk:
-        chunks: list[bytes] = []
-        finished = False
-
-        def pull() -> Effect[tuple[bytes, ...], Any]:
-            nonlocal chunks
-            if not chunks:
-                if finished:
-                    return fail(Done())
-                if self.exit is not None:
-                    return self.exit
-                return self.pump().flat_map(lambda _: pull())
-            taken = tuple(chunks)
-            chunks = []
-            return succeed(taken)
-
-        content = cast("Stream[bytes, Any]", stream_from_pull(succeed(suspend(pull)))).map_error(
-            _to_multipart_error
-        )
+        part = _FilePart(self)
+        content = cast(
+            "Stream[bytes, Any]", stream_from_pull(succeed(suspend(part.pull)))
+        ).map_error(_to_multipart_error)
         self.parts.append(File(info.name, info.filename or info.name, info.content_type, content))
-
-        def on_chunk(chunk: bytes | None) -> None:
-            nonlocal finished
-            if chunk is None:
-                finished = True
-            else:
-                chunks.append(chunk)
-
-        return on_chunk
+        return part.on_chunk
 
     def pump(self) -> Effect[None]:
         def write(chunk: tuple[bytes, ...]) -> Effect[None]:
@@ -370,6 +348,40 @@ class _State:
         taken = tuple(self.parts)
         self.parts = []
         return succeed(taken)
+
+
+class _FilePart:
+    """A file part's chunks the parser produced and not yet pulled: its
+    loop is on this object, not a closure that calls itself (that cycle
+    would keep the chunks alive)."""
+
+    __slots__ = ("chunks", "finished", "state")
+
+    def __init__(self, state: _State) -> None:
+        self.state = state
+        self.chunks: list[bytes] = []
+        self.finished = False
+
+    def pull(self) -> Effect[tuple[bytes, ...], Any]:
+        if not self.chunks:
+            if self.finished:
+                return fail(Done())
+            state = self.state
+            if state.exit is not None:
+                return state.exit
+            return state.pump().flat_map(self.again)
+        taken = tuple(self.chunks)
+        self.chunks = []
+        return succeed(taken)
+
+    def again(self, _: None) -> Effect[tuple[bytes, ...], Any]:
+        return self.pull()
+
+    def on_chunk(self, chunk: bytes | None) -> None:
+        if chunk is None:
+            self.finished = True
+        else:
+            self.chunks.append(chunk)
 
 
 def make_channel[IE = Never](

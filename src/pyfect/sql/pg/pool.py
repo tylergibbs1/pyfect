@@ -216,6 +216,23 @@ def make(config: PgPoolConfig) -> Effect[PgPoolService, SqlError, Scope]:
     return _WithFiber(lambda fiber: _make(config, _Connects(fiber.get_ref(Clock))))
 
 
+def _check_out(
+    pool: Pool[PgConnection, SqlError],
+    expired: Callable[[PgConnection, float], bool],
+    connects: _Connects,
+) -> Effect[PgConnection, SqlError, Scope]:
+    def checked(connection: PgConnection) -> Effect[PgConnection, SqlError, Scope]:
+        def at(now: float) -> Effect[PgConnection, SqlError, Scope]:
+            if expired(connection, now):
+                again = _Suspend(lambda: _check_out(pool, expired, connects))
+                return pool.invalidate(connection).and_then(again)
+            return succeed(connection)
+
+        return monotonic().flat_map(at)
+
+    return pool.get().flat_map(checked).flat_map(connects.hand_out)
+
+
 def _make(config: PgPoolConfig, connects: _Connects) -> Effect[PgPoolService, SqlError, Scope]:
     ttl = None if config.connection_ttl is None else from_input_unsafe(config.connection_ttl)
     timeout = None if config.acquire_timeout is None else from_input_unsafe(config.acquire_timeout)
@@ -250,26 +267,14 @@ def _make(config: PgPoolConfig, connects: _Connects) -> Effect[PgPoolService, Sq
             return False
         return now - opened_at.get(connection, now) >= ttl.to_seconds()
 
-    def check_out() -> Effect[PgConnection, SqlError, Scope]:
-        pool = holder[0]
-
-        def checked(connection: PgConnection) -> Effect[PgConnection, SqlError, Scope]:
-            def at(now: float) -> Effect[PgConnection, SqlError, Scope]:
-                if expired(connection, now):
-                    return pool.invalidate(connection).and_then(_Suspend(check_out))
-                return succeed(connection)
-
-            return monotonic().flat_map(at)
-
-        return pool.get().flat_map(checked).flat_map(connects.hand_out)
-
     def slow_use() -> bool:
         return ttl is not None or timeout is not None or any(c.needs_retire for c in opened_at)
 
     def build(pool: Pool[PgConnection, SqlError]) -> PgPoolService:
         holder.append(pool)
+        check_out = _Suspend(lambda: _check_out(pool, expired, connects))
         return PgPoolService(
-            config, pool, _with_timeout(_Suspend(check_out), timeout), slow_use, connects.hand_out
+            config, pool, _with_timeout(check_out, timeout), slow_use, connects.hand_out
         )
 
     pool: Effect[Pool[PgConnection, SqlError], Never, Any] = Pool.make_with_ttl(

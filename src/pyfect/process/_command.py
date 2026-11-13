@@ -491,19 +491,21 @@ def flatten_command(command: Command) -> FlattenedPipeline:
     """The commands of a pipeline in order, with the options of each pipe."""
     commands: list[StandardCommand] = []
     pipes: list[PipeOptions] = []
-
-    def walk(cmd: Command) -> None:
-        match cmd:
-            case StandardCommand():
-                commands.append(cmd)
-            case PipedCommand():
-                walk(cmd.left)
-                pipes.append(cmd.options)
-                walk(cmd.right)
-
-    walk(command)
+    _flatten_into(command, commands, pipes)
     first, *rest = commands
     return FlattenedPipeline((first, *rest), tuple(pipes))
+
+
+def _flatten_into(
+    command: Command, commands: list[StandardCommand], pipes: list[PipeOptions]
+) -> None:
+    match command:
+        case StandardCommand():
+            commands.append(command)
+        case PipedCommand():
+            _flatten_into(command.left, commands, pipes)
+            pipes.append(command.options)
+            _flatten_into(command.right, commands, pipes)
 
 
 _FD_NAME = re.compile(r"fd([0-9]+)")

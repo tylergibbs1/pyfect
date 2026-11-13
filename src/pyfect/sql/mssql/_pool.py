@@ -87,6 +87,20 @@ def _open(
     return _Suspend(start)
 
 
+def _check_out(
+    pool: Pool[MssqlConnection, SqlError],
+) -> Effect[MssqlConnection, SqlError, Scope]:
+    return pool.get().flat_map(lambda connection: _checked(pool, connection))
+
+
+def _checked(
+    pool: Pool[MssqlConnection, SqlError], connection: MssqlConnection
+) -> Effect[MssqlConnection, SqlError, Scope]:
+    if connection.ended:
+        return pool.invalidate(connection).and_then(_Suspend(lambda: _check_out(pool)))
+    return _Succeed(connection)
+
+
 def make(
     options: ConnectOptions,
     parameter_types: ParameterTypes,
@@ -101,16 +115,7 @@ def make(
 
     def build(pool: Pool[MssqlConnection, SqlError]) -> Effect[MssqlConnection, SqlError, Scope]:
         ref.pool = pool
-
-        def check_out() -> Effect[MssqlConnection, SqlError, Scope]:
-            def checked(connection: MssqlConnection) -> Effect[MssqlConnection, SqlError, Scope]:
-                if connection.ended:
-                    return pool.invalidate(connection).and_then(_Suspend(check_out))
-                return _Succeed(connection)
-
-            return pool.get().flat_map(checked)
-
-        return _Suspend(check_out)
+        return _Suspend(lambda: _check_out(pool))
 
     pool: Effect[Pool[MssqlConnection, SqlError], Never, Any] = Pool.make_with_ttl(
         _open(options, parameter_types, ref),

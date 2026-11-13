@@ -5,11 +5,11 @@ non-empty arrays) and passes upstream's failure and end through."""
 
 from __future__ import annotations
 
+import codecs
 from typing import Any, Never
 
 from pyfect._core import Effect, _FailCause, _Succeed, _Suspend, _Sync
 from pyfect._js import text_decoder, text_encode
-from pyfect.cause import Cause
 from pyfect.cause import fail as fail_cause
 from pyfect.channel._base import AnyPull, end_with
 from pyfect.channel._channel import Channel, from_transform
@@ -27,25 +27,34 @@ def decode_text[E = Never, D = None](
 
     def transform(upstream: AnyPull, _scope: CloseableScope) -> Effect[AnyPull]:
         def build() -> AnyPull:
-            decoder = text_decoder(encoding, fatal=fatal, ignore_bom=ignore_bom)
-            pull: AnyPull
-
-            def decoded(chunks: tuple[bytes, ...]) -> tuple[str, ...]:
-                return tuple(decoder.decode(chunk) for chunk in chunks)
-
-            def flush(leftover: Any) -> AnyPull:
-                nonlocal pull
-                pull = end_with(leftover)
-                last = decoder.decode(b"", final=True)
-                return _Succeed((last,)) if last else pull
-
-            pull = catch_done(upstream.map(decoded), flush)
-            return _Suspend(lambda: pull)
+            decoding = _Decoding(text_decoder(encoding, fatal=fatal, ignore_bom=ignore_bom))
+            pull = catch_done(upstream.map(decoding.decoded), decoding.flush)
+            return _Suspend(lambda: pull if decoding.ended is None else decoding.ended)
 
         return _Sync(build)
 
     channel: Channel[tuple[str, ...], E, D, tuple[bytes, ...], E, D] = from_transform(transform)
     return channel
+
+
+class _Decoding:
+    """One run of ``decode_text``: ``ended`` is the end it repeats once
+    upstream has ended."""
+
+    __slots__ = ("decoder", "ended")
+
+    def __init__(self, decoder: codecs.IncrementalDecoder) -> None:
+        self.decoder = decoder
+        self.ended: AnyPull | None = None
+
+    def decoded(self, chunks: tuple[bytes, ...]) -> tuple[str, ...]:
+        decoder = self.decoder
+        return tuple(decoder.decode(chunk) for chunk in chunks)
+
+    def flush(self, leftover: Any) -> AnyPull:
+        ended = self.ended = end_with(leftover)
+        last = self.decoder.decode(b"", final=True)
+        return _Succeed((last,)) if last else ended
 
 
 def encode_text[E = Never, D = None]() -> Channel[tuple[bytes, ...], E, D, tuple[str, ...], E, D]:
@@ -128,37 +137,45 @@ class LineTooLongError(Exception):
 def _splitter(max_length: int | None) -> Channel[Any, Any, Any, Any, Any, Any, Any]:
     def transform(upstream: AnyPull, _scope: CloseableScope) -> Effect[AnyPull]:
         def build() -> AnyPull:
-            lines = _LineSplitter()
-            ended: list[Any] = []
-
-            def written(chunks: tuple[str, ...]) -> AnyPull:
-                split = lines.split(chunks)
-                if max_length is not None and (
-                    lines.pending_length > max_length
-                    or any(len(line) > max_length for line in split)
-                ):
-                    return _FailCause(fail_cause(LineTooLongError(max_length)))
-                return _Succeed(split) if split else pull_or_flush
-
-            def done(leftover: Any) -> AnyPull:
-                ended.append(leftover)
-                last = lines.flush()
-                return _Succeed((last,)) if last else end_with(leftover)
-
-            def failed(cause: Cause[Any]) -> AnyPull:
-                return _FailCause(cause)
-
-            def next_pull() -> AnyPull:
-                if ended:
-                    return end_with(ended[0])
-                return match_effect(upstream, on_success=written, on_failure=failed, on_done=done)
-
-            pull_or_flush = _Suspend(next_pull)
-            return pull_or_flush
+            return _Suspend(_Splitting(upstream, max_length).next_pull)
 
         return _Sync(build)
 
     return from_transform(transform)
+
+
+class _Splitting:
+    """One run of ``split_lines``: ``ended`` holds upstream's leftover once
+    it has ended."""
+
+    __slots__ = ("ended", "lines", "max_length", "upstream")
+
+    def __init__(self, upstream: AnyPull, max_length: int | None) -> None:
+        self.upstream = upstream
+        self.max_length = max_length
+        self.lines = _LineSplitter()
+        self.ended: tuple[Any] | None = None
+
+    def next_pull(self) -> AnyPull:
+        if self.ended is not None:
+            return end_with(self.ended[0])
+        return match_effect(
+            self.upstream, on_success=self.written, on_failure=_FailCause, on_done=self.done
+        )
+
+    def written(self, chunks: tuple[str, ...]) -> AnyPull:
+        lines, max_length = self.lines, self.max_length
+        split = lines.split(chunks)
+        if max_length is not None and (
+            lines.pending_length > max_length or any(len(line) > max_length for line in split)
+        ):
+            return _FailCause(fail_cause(LineTooLongError(max_length)))
+        return _Succeed(split) if split else _Suspend(self.next_pull)
+
+    def done(self, leftover: Any) -> AnyPull:
+        self.ended = (leftover,)
+        last = self.lines.flush()
+        return _Succeed((last,)) if last else end_with(leftover)
 
 
 def split_lines[E = Never, D = None]() -> Channel[tuple[str, ...], E, D, tuple[str, ...], E, D]:

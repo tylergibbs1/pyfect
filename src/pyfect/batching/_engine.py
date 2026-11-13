@@ -140,22 +140,23 @@ class Batch:
         return _VOID
 
 
-def add_entry(
-    resolver: RequestResolver[Any, Any],
-    request: object,
-    resume: Callable[[Exit[Any, Any]], None],
-    origin: Origin,
-) -> Entry[Any]:
-    """Add a request to its batch. ``resume`` gets its exit, once, unless
-    the caller left first."""
-    batch: Batch | None = None
-    completed = False
+@final
+class _Completion:
+    """Completes one entry, once: then it drops what it holds, so the entry
+    it is stored on (and its request) is not kept alive by it."""
 
-    def complete(ex: Exit[Any, Any]) -> None:
-        nonlocal completed
-        if completed:
+    __slots__ = ("batch", "entry", "resume")
+
+    def __init__(self, resume: Callable[[Exit[Any, Any]], None]) -> None:
+        self.resume: Callable[[Exit[Any, Any]], None] | None = resume
+        self.entry: Entry[Any] | None = None
+        self.batch: Batch | None = None
+
+    def __call__(self, ex: Exit[Any, Any]) -> None:
+        resume, entry, batch = self.resume, self.entry, self.batch
+        if resume is None:
             return
-        completed = True
+        self.resume = self.entry = self.batch = None
         # A removed entry still reaches resolver hooks (``with_cache``
         # wraps this function), but not its caller, who has left.
         if batch is not None:
@@ -164,7 +165,18 @@ def add_entry(
             del batch.pending[entry]
         resume(ex)
 
-    entry = Entry[Any](request, context=origin.context, complete_unsafe=complete)
+
+def add_entry(
+    resolver: RequestResolver[Any, Any],
+    request: object,
+    resume: Callable[[Exit[Any, Any]], None],
+    origin: Origin,
+) -> Entry[Any]:
+    """Add a request to its batch. ``resume`` gets its exit, once, unless
+    the caller left first."""
+    completion = _Completion(resume)
+    entry = Entry[Any](request, context=origin.context, complete_unsafe=completion)
+    completion.entry = entry
     if resolver.pre_check is not None and not resolver.pre_check(entry):
         return entry
     key = resolver.batch_key(entry)
@@ -173,15 +185,17 @@ def add_entry(
     batch = batches.get(slot)
     if batch is None:
         batch = batches[slot] = Batch(resolver, key, origin)
+        completion.batch = batch
         batch.pending[entry] = None
         batch.entries[entry] = None
         delay_fiber: Fiber[Any, Any] = new_root(origin.run_scheduler, origin.context)
         batch.fiber = delay_fiber
         start_root(delay_fiber, batch.wait_then_run(), now=origin.now)
         # A delay that ended at once has run (and removed) the batch.
-        if completed or batches.get(slot) is not batch:
+        if completion.resume is None or batches.get(slot) is not batch:
             return entry
     else:
+        completion.batch = batch
         batch.pending[entry] = None
         batch.entries[entry] = None
     if resolver.collect_while(batch.entries.keys()):

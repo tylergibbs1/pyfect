@@ -37,24 +37,37 @@ class Runtime(Protocol):
     def close(self) -> None: ...
 
 
+class _Expiry:
+    """Interrupts ``fiber`` when called, and remembers that it did."""
+
+    __slots__ = ("expired", "fiber")
+
+    def __init__(self, fiber: Fiber[Any, Any]) -> None:
+        self.fiber = fiber
+        self.expired = False
+
+    def __call__(self) -> None:
+        self.expired = True
+        self.fiber.interrupt_as_unsafe(None)
+
+
 class _Deadline:
     """Interrupts a fiber once ``timeout`` of real time has passed."""
 
-    __slots__ = ("_cancel", "expired", "timeout")
+    __slots__ = ("_cancel", "_expiry", "timeout")
 
     def __init__(self, fiber: Fiber[Any, Any], timeout: Duration | None) -> None:
         self.timeout = timeout
-        self.expired = False
+        self._expiry = _Expiry(fiber)
         self._cancel: Cancel | None = None
         if timeout is None:
             return
-
-        def expire() -> None:
-            self.expired = True
-            fiber.interrupt_as_unsafe(None)
-
         # A daemon timer: a stalled test still fails fast with StalledError.
-        self._cancel = fiber._scheduler.call_later(timeout, expire, daemon=True)
+        self._cancel = fiber._scheduler.call_later(timeout, self._expiry, daemon=True)
+
+    @property
+    def expired(self) -> bool:
+        return self._expiry.expired
 
     def _seconds(self) -> float | None:
         return None if self.timeout is None else self.timeout.to_seconds()

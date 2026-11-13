@@ -506,19 +506,21 @@ def _in_definition_order(definitions: dict[str, tuple[str, str]]) -> list[str]:
     one, which can read another non-recursive one."""
     lines: list[str] = []
     seen: set[str] = set()
-
-    def visit(name: str) -> None:
-        if name in seen:
-            return
-        seen.add(name)
-        line, runtime = definitions[name]
-        for dependency in sorted(_direct_names(runtime) & definitions.keys()):
-            visit(dependency)
-        lines.append(line)
-
     for name in definitions:
-        visit(name)
+        _visit_definition(definitions, seen, lines, name)
     return lines
+
+
+def _visit_definition(
+    definitions: dict[str, tuple[str, str]], seen: set[str], lines: list[str], name: str
+) -> None:
+    if name in seen:
+        return
+    seen.add(name)
+    line, runtime = definitions[name]
+    for dependency in sorted(_direct_names(runtime) & definitions.keys()):
+        _visit_definition(definitions, seen, lines, dependency)
+    lines.append(line)
 
 
 def to_code_module(document: CodeDocument, /, *, names: Sequence[str] = ()) -> str:

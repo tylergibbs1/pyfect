@@ -60,30 +60,32 @@ def require_layers(values: Iterable[object], name: str) -> None:
 class _Entry:
     """A shared build: its result, its scope, and how many scopes use it."""
 
-    __slots__ = ("deferred", "finalizer", "observers", "scope")
+    __slots__ = ("deferred", "layer", "memo", "observers", "scope")
 
     def __init__(self, memo: MemoMap, layer: Layer[Any, Any, Any]) -> None:
         self.observers = 0
         self.deferred: Deferred[Context, Any] = Deferred()
         self.scope = CloseableScope()
+        self.memo = memo
+        self.layer = layer
 
-        def leave(ex: Exit[Any, Any]) -> Effect[None]:
-            self.observers -= 1
-            if self.observers > 0:
-                return _VOID
-            memo._entries.pop(layer, None)
-            return self.scope.close(ex)
+    def _leave(self, ex: Exit[Any, Any]) -> Effect[None]:
+        self.observers -= 1
+        if self.observers > 0:
+            return _VOID
+        self.memo._entries.pop(self.layer, None)
+        return self.scope.close(ex)
 
-        def finalizer(ex: Exit[Any, Any]) -> Effect[None]:
-            return _Suspend(lambda: leave(ex))
-
-        self.finalizer = finalizer
+    def _finalizer(self, ex: Exit[Any, Any]) -> Effect[None]:
+        return _Suspend(lambda: self._leave(ex))
 
     def observe(self, scope: CloseableScope) -> bool:
         """Count ``scope`` as a user until it closes, at once, so no
-        interruption can lose the count. A closed scope can't use it."""
+        interruption can lose the count. A closed scope can't use it.
+        The observing scope holds the finalizer, not the entry: an entry
+        holding a closure over itself would be a cycle."""
         self.observers += 1
-        if scope._add(object(), self.finalizer) is not None:
+        if scope._add(object(), self._finalizer) is not None:
             self.observers -= 1
             return False
         return True

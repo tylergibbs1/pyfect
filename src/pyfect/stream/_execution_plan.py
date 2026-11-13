@@ -34,27 +34,41 @@ def _retry_without_reset(self: AnyStream, schedule: Schedule[Any, Any, Any, Any]
     ``Stream.retry``, items written before a failure do not reset the
     schedule, so a stream that always fails part-way still stops."""
 
-    def build(step: Any) -> _AnyStream:
-        meta: Metadata[Any, Any] = CurrentMetadata.default()
+    return unwrap(
+        to_step_with_metadata(schedule).map(lambda step: _RetryWithoutReset(self, step).loop())
+    )
 
-        def loop() -> _AnyStream:
-            return self.pipe(provide_service_effect(CurrentMetadata, sync(lambda: meta))).catch_all(
-                again
-            )
 
-        def again(error: Any) -> _AnyStream:
-            def decided(decision: Metadata[Any, Any] | Stop[Any]) -> _AnyStream:
-                nonlocal meta
-                if isinstance(decision, Stop):
-                    return fail(error)
-                meta = decision
-                return unwrap(yield_now().as_(suspend(loop)))
+class _RetryWithoutReset:
+    """One run of ``_retry_without_reset``: a loop on a state object, not
+    closures that reach each other (that cycle would keep the last error and
+    the stream alive after the run)."""
 
-            return unwrap(step(error).map(decided))
+    __slots__ = ("meta", "step", "stream")
 
-        return loop()
+    def __init__(self, stream: AnyStream, step: Any) -> None:
+        self.stream = stream
+        self.step = step
+        self.meta: Metadata[Any, Any] = CurrentMetadata.default()
 
-    return unwrap(to_step_with_metadata(schedule).map(build))
+    def current_meta(self) -> Metadata[Any, Any]:
+        return self.meta
+
+    def loop(self) -> _AnyStream:
+        provided = self.stream.pipe(
+            provide_service_effect(CurrentMetadata, sync(self.current_meta))
+        )
+        return provided.catch_all(self.again)
+
+    def again(self, error: Any) -> _AnyStream:
+        decision: Effect[Metadata[Any, Any] | Stop[Any], Any, Any] = self.step(error)
+        return unwrap(decision.map(lambda d: self.decided(error, d)))
+
+    def decided(self, error: Any, decision: Metadata[Any, Any] | Stop[Any]) -> _AnyStream:
+        if isinstance(decision, Stop):
+            return fail(error)
+        self.meta = decision
+        return unwrap(yield_now().as_(suspend(self.loop)))
 
 
 class _StreamPlanRun(PlanRun):
@@ -90,50 +104,70 @@ def _run_plan(
     on_event: OnEvent[Any, Any] | None,
 ) -> _AnyStream:
     def start() -> _AnyStream:
-        run = _StreamPlanRun(on_event)
-
-        def step_stream(step: Step[Any, Any, Any, Any]) -> _AnyStream:
-            provided = run.instrument(provide(step.provide)(self))
-            attempt = provided.pipe(provide_service_effect(PlanMetadata, sync(run.next_meta)))
-            if run.last_error is None:
-                policy = first_schedule(step)
-                return attempt if policy is None else _retry_without_reset(attempt, policy)
-            (error,) = run.last_error
-            replayed = False
-
-            def next_run() -> AnyStream:
-                nonlocal replayed
-                if replayed:
-                    return attempt
-                replayed = True
-                return fail(error)
-
-            return _retry_without_reset(suspend(next_run), fallback_schedule(step))
-
-        def loop() -> _AnyStream:
-            received = False
-
-            def first_item(_: Any) -> Effect[None]:
-                nonlocal received
-                received = True
-                return _VOID
-
-            def on_error(error: Any) -> _AnyStream:
-                run.index += 1
-                partial = prevent_fallback_on_partial_stream and received
-                if partial or run.index >= len(plan.steps):
-                    return fail(error)
-                run.last_error = (error,)
-                return suspend(loop)
-
-            attempt = step_stream(plan.steps[run.index])
-            if prevent_fallback_on_partial_stream:
-                attempt = attempt.on_first(first_item)
-            return attempt.catch_all(on_error)
-
-        return suspend(loop)
+        return suspend(_PlanLoop(self, plan, prevent_fallback_on_partial_stream, on_event).loop)
 
     return suspend(start)
+
+
+class _PlanLoop:
+    """One run of ``_run_plan``: a loop on a state object, not closures that
+    reach each other (that cycle would keep the last error and the stream
+    alive after the run)."""
+
+    __slots__ = ("plan", "prevent_fallback_on_partial_stream", "run", "stream")
+
+    def __init__(
+        self,
+        stream: AnyStream,
+        plan: ExecutionPlan[Any, Any, Any, Any],
+        prevent_fallback_on_partial_stream: bool,
+        on_event: OnEvent[Any, Any] | None,
+    ) -> None:
+        self.stream = stream
+        self.plan = plan
+        self.prevent_fallback_on_partial_stream = prevent_fallback_on_partial_stream
+        self.run = _StreamPlanRun(on_event)
+
+    def step_stream(self, step: Step[Any, Any, Any, Any]) -> _AnyStream:
+        run = self.run
+        provided = run.instrument(provide(step.provide)(self.stream))
+        attempt = provided.pipe(provide_service_effect(PlanMetadata, sync(run.next_meta)))
+        if run.last_error is None:
+            policy = first_schedule(step)
+            return attempt if policy is None else _retry_without_reset(attempt, policy)
+        (error,) = run.last_error
+        replayed = False
+
+        def next_run() -> AnyStream:
+            nonlocal replayed
+            if replayed:
+                return attempt
+            replayed = True
+            return fail(error)
+
+        return _retry_without_reset(suspend(next_run), fallback_schedule(step))
+
+    def loop(self) -> _AnyStream:
+        run = self.run
+        received = False
+
+        def first_item(_: Any) -> Effect[None]:
+            nonlocal received
+            received = True
+            return _VOID
+
+        def on_error(error: Any) -> _AnyStream:
+            run.index += 1
+            partial = self.prevent_fallback_on_partial_stream and received
+            if partial or run.index >= len(self.plan.steps):
+                return fail(error)
+            run.last_error = (error,)
+            return suspend(self.loop)
+
+        attempt = self.step_stream(self.plan.steps[run.index])
+        if self.prevent_fallback_on_partial_stream:
+            attempt = attempt.on_first(first_item)
+        return attempt.catch_all(on_error)
 
 
 class _WithExecutionPlan(Generic[P_contra, In_contra, PE_co, PR_co]):

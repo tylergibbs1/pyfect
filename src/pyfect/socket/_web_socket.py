@@ -16,9 +16,10 @@ from __future__ import annotations
 
 import contextlib
 import threading
+import weakref
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Literal, Never, Protocol, runtime_checkable
+from typing import Literal, Never, Protocol, final, runtime_checkable
 
 from pyfect._core import Effect
 from pyfect._effect_args import require_effect
@@ -215,6 +216,25 @@ def _byte_length(data: bytes | str) -> int:
     return len(text_encode(data)) if isinstance(data, str) else len(data)
 
 
+@final
+class _Forward:
+    """A listener calling one of a buffer's handlers. It holds the buffer
+    weakly: the buffer keeps its listeners (to remove them), and a bound
+    method would point back, a cycle that kept the socket alive after the
+    run."""
+
+    __slots__ = ("buffer", "handler")
+
+    def __init__(self, buffer: _Buffer, handler: Callable[[_Buffer, WebSocketEvent], None]) -> None:
+        self.buffer = weakref.ref(buffer)
+        self.handler = handler
+
+    def __call__(self, event: WebSocketEvent) -> None:
+        buffer = self.buffer()
+        if buffer is not None:
+            self.handler(buffer, event)
+
+
 class _Buffer:
     """The reader's state, shared with the listeners."""
 
@@ -235,10 +255,10 @@ class _Buffer:
         self.size = 0
         self.error: SocketError | None = None
         # One object per listener, so removing it finds the one added.
-        self.on_message: Listener = self._on_message
-        self.on_error: Listener = self._on_error
-        self.on_close: Listener = self._on_close
-        self.on_open: Listener = self._on_open
+        self.on_message: Listener = _Forward(self, _Buffer._on_message)
+        self.on_error: Listener = _Forward(self, _Buffer._on_error)
+        self.on_close: Listener = _Forward(self, _Buffer._on_close)
+        self.on_open: Listener = _Forward(self, _Buffer._on_open)
 
     def attach(self) -> None:
         self.ws.add_event_listener("message", self.on_message)
@@ -386,11 +406,55 @@ def _open_timeout(target: str | None) -> Effect[Never, SocketError]:
 
 
 class _Current:
-    __slots__ = ("latch", "ws")
+    """The WebSocket the current reader got, which its writes use; a write
+    waits while ``write_limit`` bytes are unsent."""
 
-    def __init__(self) -> None:
+    __slots__ = ("latch", "write_limit", "ws")
+
+    def __init__(self, write_limit: int) -> None:
         self.ws: WebSocketLike | None = None
         self.latch = Latch(False)
+        self.write_limit = write_limit
+
+    def _drained(self, ws: WebSocketLike) -> Effect[None, SocketError]:
+        write_limit = self.write_limit
+        if not isinstance(ws, Drainable) or ws.buffered_amount < write_limit:
+            return void
+
+        def register(resume: Resume[None, SocketError]) -> Callable[[], None]:
+            return ws.when_drained(write_limit, lambda: resume(void))
+
+        return os_wait(register, waits_for="event")
+
+    def write(self, chunk: Chunk | CloseEvent) -> Effect[None, SocketError]:
+        def start() -> Effect[None, SocketError]:
+            ws = self.ws
+            if ws is None:
+                return self.latch.when_open(self.write(chunk))
+            try:
+                if isinstance(chunk, CloseEvent):
+                    ws.close(chunk.code, chunk.reason)
+                    return void
+                ws.send(chunk)
+            except Exception as cause:
+                return fail(write_error(cause))
+            return self._drained(ws)
+
+        return suspend(start)
+
+    def write_all(self, chunks: Sequence[Chunk]) -> Effect[None, SocketError]:
+        def start() -> Effect[None, SocketError]:
+            ws = self.ws
+            if ws is None:
+                return self.latch.when_open(self.write_all(chunks))
+            try:
+                for chunk in chunks:
+                    ws.send(chunk)
+            except Exception as cause:
+                return fail(write_error(cause))
+            return self._drained(ws)
+
+        return suspend(start)
 
 
 def from_web_socket(
@@ -405,18 +469,8 @@ def from_web_socket(
     (code 1000 for a normal close). On a ``Drainable`` WebSocket a write
     waits while ``high_water_mark`` (64 KiB by default) bytes are unsent."""
     require_effect(acquire, "acquire")
-    current = _Current()
+    current = _Current(DEFAULT_HIGH_WATER_MARK if high_water_mark is None else high_water_mark)
     timeout = DEFAULT_OPEN_TIMEOUT if open_timeout is None else open_timeout
-    write_limit = DEFAULT_HIGH_WATER_MARK if high_water_mark is None else high_water_mark
-
-    def drained(ws: WebSocketLike) -> Effect[None, SocketError]:
-        if not isinstance(ws, Drainable) or ws.buffered_amount < write_limit:
-            return void
-
-        def register(resume: Resume[None, SocketError]) -> Callable[[], None]:
-            return ws.when_drained(write_limit, lambda: resume(void))
-
-        return os_wait(register, waits_for="event")
 
     def reader():
         scope = yield from Scope()
@@ -444,37 +498,7 @@ def from_web_socket(
         current.latch.open_unsafe()
         return Reader(buffer.pull(), unsupported_upgrade)
 
-    def write(chunk: Chunk | CloseEvent) -> Effect[None, SocketError]:
-        def start() -> Effect[None, SocketError]:
-            ws = current.ws
-            if ws is None:
-                return current.latch.when_open(write(chunk))
-            try:
-                if isinstance(chunk, CloseEvent):
-                    ws.close(chunk.code, chunk.reason)
-                    return void
-                ws.send(chunk)
-            except Exception as cause:
-                return fail(write_error(cause))
-            return drained(ws)
-
-        return suspend(start)
-
-    def write_all(chunks: Sequence[Chunk]) -> Effect[None, SocketError]:
-        def start() -> Effect[None, SocketError]:
-            ws = current.ws
-            if ws is None:
-                return current.latch.when_open(write_all(chunks))
-            try:
-                for chunk in chunks:
-                    ws.send(chunk)
-            except Exception as cause:
-                return fail(write_error(cause))
-            return drained(ws)
-
-        return suspend(start)
-
-    return make(gen(reader), succeed(Writer(write, write_all)))
+    return make(gen(reader), succeed(Writer(current.write, current.write_all)))
 
 
 def make_web_socket(

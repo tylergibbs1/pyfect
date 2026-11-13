@@ -25,6 +25,19 @@
   shutdown waited for it. Once both sides have ended, the connection closes (after `ws`'s 30
   second `closeTimeout` if the client never ends its side), and the handler is interrupted as
   a client abort. Found by dogfooding (stockroom).
+- Loops written as nested functions that reached themselves through a closure (by name, or
+  through a variable or object holding something built from them) formed a reference cycle, so
+  the last value, error or pull they handled stayed alive until the cycle collector ran: an HTTP
+  response kept its socket open that way. Affected were stream and channel operators (`filter`,
+  `filter_map`, `map_accum`, `flat_map`, `switch_map`, `catch_cause`, `rechunk`, `drop`,
+  `debounce`, `throttle`, `repeat`, ...), the CSV, JSON array, NDJSON, XML, SSE, tar, zip and
+  binary decoders and encoders, schedule combinators, `PersistedQueue.take`, `Queue` and
+  `PubSub` takes, `Pool`, `RcMap`, socket writes, the live server's readers, SQL pools, config
+  loading, shared layer builds (which kept a run's result), and recursive walkers such as schema
+  and logger formatting. They are now module-level functions or methods on a small state object.
+  `tests/test_closure_cycles.py` fails for any nested function in `pyfect` that reaches itself
+  through a closure cell, and `tests/test_release_*.py` check that the public loops free what
+  they handled once the run ends, with the cycle collector off.
 
 ### Docs
 

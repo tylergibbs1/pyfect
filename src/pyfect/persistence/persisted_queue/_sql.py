@@ -227,15 +227,9 @@ class _SqlStore:
                 TakenElement(element.id, element.attempts, parsed)
             )
 
-        def next_or_retry(taken: TakenElement | None) -> Effect[TakenElement, Never, Scope]:
-            return suspend(loop) if taken is None else succeed(taken)
-
-        def loop() -> Effect[TakenElement, Never, Scope]:
-            return take_from(self._mailboxes, options.name, claimed).flat_map(next_or_retry)
-
         def body() -> Effect[TakenElement, Never, Scope]:
             self._states.get(options.name).max_attempts = options.max_attempts
-            return loop()
+            return _take_parsed(self._mailboxes, options.name, claimed)
 
         return suspend(body)
 
@@ -254,6 +248,22 @@ class _SqlStore:
                 yield from self._cleanup_state("failed", failed_time_to_live)
 
         return gen(body).catch_cause(_cleanup_failed)
+
+
+def _take_parsed(
+    mailboxes: RcMap[str, Mailbox[Element], Any],
+    name: str,
+    claimed: Callable[[Element], Effect[TakenElement | None, Never, Scope]],
+) -> Effect[TakenElement, Never, Scope]:
+    """Take until a row parses; module-level, as closures reaching each other
+    would keep the store's take alive after it ends."""
+    return take_from(mailboxes, name, claimed).flat_map(
+        lambda taken: (
+            suspend(lambda: _take_parsed(mailboxes, name, claimed))
+            if taken is None
+            else succeed(taken)
+        )
+    )
 
 
 def make_store_sql(

@@ -282,24 +282,24 @@ class _Session:
         """Read and parse the connection, answering pings and the client's
         close, until it ends; paused while ``HIGH_WATER_MARK`` bytes of
         messages wait for ``pull``."""
+        return suspend(self._read_step)
+
+    def _read_step(self) -> Effect[None]:
+        if self._leftover:
+            leftover, self._leftover = self._leftover, b""
+            self._feed((leftover,))
+        return self.flush().flat_map(self._after_flush)
+
+    def _after_flush(self, _: None) -> Effect[None]:
+        if self._publish():
+            return self._close_connection()
+        if not self._room():
+            return self._signal.wait(self._room).flat_map(self._read_again)
         conn = self.exchange.conn
+        return conn.pull_into(self._feed).catch_all(self._lost).flat_map(self._read_again)
 
-        def step() -> Effect[None]:
-            if self._leftover:
-                leftover, self._leftover = self._leftover, b""
-                self._feed((leftover,))
-            return self.flush().flat_map(after_flush)
-
-        def after_flush(_: None) -> Effect[None]:
-            if self._publish():
-                return self._close_connection()
-            if not self._room():
-                return self._signal.wait(self._room).flat_map(lambda _: suspend(step))
-            return (
-                conn.pull_into(self._feed).catch_all(self._lost).flat_map(lambda _: suspend(step))
-            )
-
-        return suspend(step)
+    def _read_again(self, _: object) -> Effect[None]:
+        return suspend(self._read_step)
 
     def _close_connection(self) -> Effect[None]:
         """Once the close is answered (or the connection lost): close the
@@ -315,26 +315,28 @@ class _Session:
     def pull(self) -> Effect[tuple[Chunk, ...], SocketError]:
         """The messages ``read`` parsed, waiting for some; the close's error
         once they are taken."""
+        return suspend(self._pull_step)
 
-        def step() -> Effect[tuple[Chunk, ...], SocketError]:
-            with self._lock:
-                if self._ready:
-                    ready = tuple(self._ready)
-                    self._ready.clear()
-                    self._ready_size = 0
-                    waiters = self._signal.notify_locked()
-                else:
-                    ready, waiters = None, []
-                error = self._pull_error
-            for wake in waiters:
-                wake()
-            if ready is not None:
-                return succeed(ready)
-            if error is not None:
-                return fail(error)
-            return self._signal.wait(self._readable).flat_map(lambda _: suspend(step))
+    def _pull_step(self) -> Effect[tuple[Chunk, ...], SocketError]:
+        with self._lock:
+            if self._ready:
+                ready = tuple(self._ready)
+                self._ready.clear()
+                self._ready_size = 0
+                waiters = self._signal.notify_locked()
+            else:
+                ready, waiters = None, []
+            error = self._pull_error
+        for wake in waiters:
+            wake()
+        if ready is not None:
+            return succeed(ready)
+        if error is not None:
+            return fail(error)
+        return self._signal.wait(self._readable).flat_map(self._pull_again)
 
-        return suspend(step)
+    def _pull_again(self, _: object) -> Effect[tuple[Chunk, ...], SocketError]:
+        return suspend(self._pull_step)
 
     # --- writing --------------------------------------------------------------------
 

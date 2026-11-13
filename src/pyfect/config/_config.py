@@ -225,30 +225,43 @@ def gen[A](f: Callable[[], Generator[Effect[Any, ConfigError, Never], Any, A]]) 
     def run(provider: ConfigProvider, prefix: Path) -> Effect[Resolution[A], ConfigError]:
         def start() -> Effect[Resolution[A], ConfigError]:
             generator = f()
-
-            def advance(send: Callable[[], Effect[Any, ConfigError, Never]]) -> Effect[Any, Any]:
-                try:
-                    yielded = send()
-                except StopIteration as stop:
-                    done: Resolution[A] = Ok(stop.value)
-                    return succeed(done)
-
-                def next_step(resolution: Resolution[Any]) -> Effect[Any, Any]:
-                    match resolution:
-                        case Ok(value):
-                            return advance(lambda: generator.send(value))
-                        case Err():
-                            return succeed(resolution)
-
-                return _evaluate_at(yielded, provider, prefix).flat_map(next_step)
-
+            reads = _GenRun(generator, provider, prefix)
             # Closing runs the generator's ``finally`` blocks however the
             # read ends: absent, failed, interrupted or done (a no-op then).
-            return advance(lambda: next(generator)).ensuring(sync(generator.close))
+            return reads.advance(lambda: next(generator)).ensuring(sync(generator.close))
 
         return _Suspend(start)
 
     return Config(run)
+
+
+class _GenRun:
+    """One run of a ``gen`` config's generator."""
+
+    __slots__ = ("generator", "prefix", "provider")
+
+    def __init__(
+        self, generator: Generator[Any, Any, Any], provider: ConfigProvider, prefix: Path
+    ) -> None:
+        self.generator = generator
+        self.provider = provider
+        self.prefix = prefix
+
+    def advance(self, send: Callable[[], Effect[Any, ConfigError, Never]]) -> Effect[Any, Any]:
+        try:
+            yielded = send()
+        except StopIteration as stop:
+            done: Resolution[Any] = Ok(stop.value)
+            return succeed(done)
+        return _evaluate_at(yielded, self.provider, self.prefix).flat_map(self.next_step)
+
+    def next_step(self, resolution: Resolution[Any]) -> Effect[Any, Any]:
+        match resolution:
+            case Ok(value):
+                generator = self.generator
+                return self.advance(lambda: generator.send(value))
+            case Err():
+                return succeed(resolution)
 
 
 def unwrap(wrapped: Config[Any] | Mapping[str, Any]) -> Config[Any]:

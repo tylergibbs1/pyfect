@@ -87,24 +87,22 @@ def _outbound(message: JsonObject) -> Message:
     return {"_tag": "Exit", "requestId": message.get("id"), "exit": exit}
 
 
-@dataclass(eq=False)
+@dataclass(eq=False, slots=True)
 class _Client:
-    """One client of the protocol: its session and the tail of its writes."""
+    """One client of the protocol: its session."""
 
-    connection: Connection = field(init=False)
+    connection: Connection
+
+
+@dataclass(eq=False, slots=True)
+class _Writes:
+    """What a client's session writes, each message after the earlier ones."""
+
+    protocol: ServerProtocolService
+    client_id: int
     tail: Deferred[None] | None = None
 
-
-@dataclass(eq=False)
-class _Transport:
-    protocol: ServerProtocolService
-    server: McpServerService
-    info: ServerInfo
-    registry: Registry
-    level: Severity
-    clients: dict[int, _Client] = field(default_factory=dict[int, _Client])
-
-    def write(self, client: _Client, message: JsonObject) -> Effect[None]:
+    def write(self, message: JsonObject) -> Effect[None]:
         """Write ``message`` after the client's earlier writes (Effect's
         notification tails), so one client that stopped reading holds up only
         itself, and its messages keep their order."""
@@ -117,32 +115,40 @@ class _Transport:
             return _VOID
 
         def ordered() -> Effect[None]:
-            previous, done = client.tail, Deferred[None]()
-            client.tail = done
-            sent = self.protocol.send(client.connection.client_id, _outbound(message))
+            previous, done = self.tail, Deferred[None]()
+            self.tail = done
+            sent = self.protocol.send(self.client_id, _outbound(message))
             waited = sent if previous is None else previous.wait().and_then(sent)
             return waited.ensuring(done.succeed(None).as_void())
 
         return suspend(ordered)
 
+
+@dataclass(eq=False)
+class _Transport:
+    protocol: ServerProtocolService
+    server: McpServerService
+    info: ServerInfo
+    registry: Registry
+    level: Severity
+    clients: dict[int, _Client] = field(default_factory=dict[int, _Client])
+
     def client(self, client_id: int) -> _Client:
         found = self.clients.get(client_id)
         if found is not None:
             return found
-        created = _Client()
-
-        def write(message: JsonObject) -> Effect[None]:
-            return self.write(created, message)
-
-        created.connection = Connection(
-            self.server,
-            self.info,
-            self.registry,
-            client_id,
-            "custom",
-            broadcast=write,
-            default_log_level=self.level,
-            supports_subscriptions=self.protocol.supports_notifications,
+        writes = _Writes(self.protocol, client_id)
+        created = _Client(
+            Connection(
+                self.server,
+                self.info,
+                self.registry,
+                client_id,
+                "custom",
+                broadcast=writes.write,
+                default_log_level=self.level,
+                supports_subscriptions=self.protocol.supports_notifications,
+            )
         )
         self.clients[client_id] = created
         self.server.connect(_Peer(self, created))

@@ -11,7 +11,9 @@ when its stream is left, or that failed with anything but
 
 from __future__ import annotations
 
+import functools
 import re
+import weakref
 from collections.abc import Callable
 from typing import Any, Literal, Never, NotRequired, Self, TypedDict, cast, final
 
@@ -246,6 +248,21 @@ def _open(
     return acquire
 
 
+class _RefSlot:
+    """The connection ref, held weakly by its own connections, which
+    invalidate it when they end: its acquire must not hold the ref."""
+
+    __slots__ = ("__weakref__", "ref")
+
+    ref: RcRef[_Connection, Never]
+
+
+def _forget(slot: weakref.ref[_RefSlot]) -> Effect[None]:
+    """A connection that ends is forgotten."""
+    held = slot()
+    return fx.void if held is None else held.ref.invalidate()
+
+
 def make(
     http_client: Effect[HttpClientService[Any], Any, Any],
 ) -> Effect[tuple[SocketService, RIT.Service], Never, Any]:
@@ -261,21 +278,21 @@ def make(
             lambda http: http.preprocess(http_request.post("/responses"))
         ).or_die()
 
-        def forget() -> Effect[None]:
-            # A connection that ends is forgotten; ``ref`` is bound by then.
-            return ref.invalidate()
-
+        slot = _RefSlot()
         invalidate = scope_mod.fork_in(
-            fx.suspend(forget), socket_scope, start_immediately=True
+            fx.suspend(functools.partial(_forget, weakref.ref(slot))),
+            socket_scope,
+            start_immediately=True,
         ).as_(None)
         ref: RcRef[_Connection, Never] = yield from RcRef.make(
             make_request.flat_map(lambda request: _open(request, tracker, invalidate)),
             idle_time_to_live=_IDLE_TIME_TO_LIVE,
         )
+        slot.ref = ref
         yield from scope_mod.scoped(ref.get())
         semaphore: Semaphore = yield from Semaphore.make(1)
         request: _Request = yield from make_request
-        service = SocketService(lambda options: _stream(ref, semaphore, request, options))
+        service = SocketService(lambda options: _stream(slot.ref, semaphore, request, options))
         return service, tracker
 
     return build

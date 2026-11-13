@@ -156,18 +156,34 @@ class BodyReader:
         ``maximum`` bytes are left or it cannot be read. An unread body sends
         no ``100 Continue``: the client was not asked for it."""
         self.started = True
-        start = self.bytes_read
         if self._state == "length" and self._left > maximum:
             return succeed(False)
 
-        def loop() -> Effect[bool]:
-            if self.bytes_read - start > maximum:
-                return succeed(False)
-            if self.complete:
-                return succeed(True)
-            return self.pull().match_effect(
-                on_failure=lambda error: succeed(isinstance(error, Done)),
-                on_success=lambda _: suspend(loop),
-            )
+        return suspend(_Drain(self, self.bytes_read + maximum).loop)
 
-        return suspend(loop)
+
+class _Drain:
+    """One ``drain``: a loop on a state object, not a closure that calls
+    itself (that cycle would keep the reader alive). ``until`` is the
+    ``bytes_read`` past which the body is too long."""
+
+    __slots__ = ("reader", "until")
+
+    def __init__(self, reader: BodyReader, until: int) -> None:
+        self.reader = reader
+        self.until = until
+
+    def loop(self) -> Effect[bool]:
+        reader = self.reader
+        if reader.bytes_read > self.until:
+            return succeed(False)
+        if reader.complete:
+            return succeed(True)
+        return reader.pull().match_effect(on_failure=_drained, on_success=self.again)
+
+    def again(self, _: object) -> Effect[bool]:
+        return suspend(self.loop)
+
+
+def _drained(error: BodyError | SocketError | Done) -> Effect[bool]:
+    return succeed(isinstance(error, Done))

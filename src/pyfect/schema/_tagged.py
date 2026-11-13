@@ -198,6 +198,29 @@ def _guard[A](member: Codec[A, object, object, object]) -> Callable[[object], Ty
     return guard
 
 
+def _collect_case[A, I, RD, RE](
+    member: Codec[A, I, RD, RE],
+    tag: str,
+    keys: set[str],
+    discriminants: list[LiteralValue],
+    cases: dict[LiteralValue, Codec[A, I, RD, RE]],
+) -> None:
+    if isinstance(member, UnionSchema):
+        nested: UnionSchema[A, I, RD, RE] = member
+        for inner in nested.members:
+            _collect_case(inner, tag, keys, discriminants, cases)
+        return
+    found = [lit for key, lit in collect_sentinels(member.__codec__().ast) if key == tag]
+    key = _key(found[0]) if found else None
+    if key is None:
+        raise ValueError("No literal or unique symbol found")
+    if key in keys:
+        raise ValueError(f"Duplicate discriminant: {key}")
+    keys.add(key)
+    discriminants.append(found[0])
+    cases[found[0]] = member
+
+
 class ToTaggedUnion:
     """``to_tagged_union(tag)``: apply with ``.pipe`` to a ``UnionSchema``."""
 
@@ -213,25 +236,8 @@ class ToTaggedUnion:
         discriminants: list[LiteralValue] = []
         cases: dict[LiteralValue, Codec[A, I, RD, RE]] = {}
         keys: set[str] = set()
-
-        def walk(member: Codec[A, I, RD, RE]) -> None:
-            if isinstance(member, UnionSchema):
-                nested: UnionSchema[A, I, RD, RE] = member
-                for inner in nested.members:
-                    walk(inner)
-                return
-            found = [lit for key, lit in collect_sentinels(member.__codec__().ast) if key == tag]
-            key = _key(found[0]) if found else None
-            if key is None:
-                raise ValueError("No literal or unique symbol found")
-            if key in keys:
-                raise ValueError(f"Duplicate discriminant: {key}")
-            keys.add(key)
-            discriminants.append(found[0])
-            cases[found[0]] = member
-
         for member in union.members:
-            walk(member)
+            _collect_case(member, tag, keys, discriminants, cases)
         guards = {literal: _guard(case) for literal, case in cases.items()}
         return TaggedUnionSchema(union.ast, union.members, tag, tuple(discriminants), cases, guards)
 

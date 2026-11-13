@@ -290,31 +290,32 @@ class EntityManager:
     def interrupt_shard(self, shard_id: ShardId, *, force: bool = False) -> Effect[None]:
         """Stop every entity of ``shard_id`` and wait until each has closed;
         with ``force``, without waiting for their handlers."""
+        return suspend(lambda: self._interrupt_shard_round(shard_id, force))
+
+    def _interrupt_shard_round(self, shard_id: ShardId, force: bool) -> Effect[None]:
         core = self._core
         entities = self._entities
-
-        def loop() -> Effect[None]:
-            latches = [
-                (address, found)
-                for address, found in list(core.server_close_latches.items())
-                if address.shard_id == shard_id
-            ]
-            if force:
-                for _, found in latches:
-                    found.force.open_unsafe()
-            # Look entities up by address: ``active_servers`` is keyed by
-            # entity id, so an entity with the same id on another shard
-            # can hide this one.
-            fibers: list[Fiber[Any, Any]] = []
-            for address, found in latches:
-                if not found.closing:
-                    fibers.append(_run_fork(core.context, entities.remove_ignore(address)))
-                fibers.append(_run_fork(core.context, found.closed.wait()))
-            if not fibers:
-                return _VOID
-            return Fiber.join_all(fibers).flat_map(lambda _: suspend(loop))
-
-        return suspend(loop)
+        latches = [
+            (address, found)
+            for address, found in list(core.server_close_latches.items())
+            if address.shard_id == shard_id
+        ]
+        if force:
+            for _, found in latches:
+                found.force.open_unsafe()
+        # Look entities up by address: ``active_servers`` is keyed by
+        # entity id, so an entity with the same id on another shard
+        # can hide this one.
+        fibers: list[Fiber[Any, Any]] = []
+        for address, found in latches:
+            if not found.closing:
+                fibers.append(_run_fork(core.context, entities.remove_ignore(address)))
+            fibers.append(_run_fork(core.context, found.closed.wait()))
+        if not fibers:
+            return _VOID
+        return Fiber.join_all(fibers).flat_map(
+            lambda _: suspend(lambda: self._interrupt_shard_round(shard_id, force))
+        )
 
 
 def _without_log_annotations[A, E, R](effect: Effect[A, E, R]) -> Effect[A, E, R]:

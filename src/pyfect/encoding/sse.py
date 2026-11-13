@@ -258,16 +258,7 @@ def decode[E = Never, D = None](
     before it are written; an oversized event fails it with ``SseError``."""
 
     def build(upstream: AnyPull) -> AnyPull:
-        events: list[Event] = []
-        retry: Retry | None = None
-
-        def parsed(event: AnyEvent) -> None:
-            nonlocal retry
-            if isinstance(event, Retry):
-                retry = event
-            else:
-                events.append(event)
-
+        parsed = _Parsed()
         parser = make_parser(
             parsed,
             max_event_size=max_event_size,
@@ -281,23 +272,52 @@ def decode[E = Never, D = None](
                     return _FailCause(fail_cause(error))
             return _Succeed(None)
 
-        pump = upstream.flat_map(feed)
-
-        def loop() -> AnyPull:
-            if events:
-                out = tuple(events)
-                events.clear()
-                return _Succeed(out)
-            if retry is not None:
-                return _FailCause(fail_cause(retry))
-            return pump.flat_map(lambda _: loop())
-
-        return _Suspend(loop)
+        return _Suspend(_DecodeLoop(parsed, upstream.flat_map(feed)).loop)
 
     channel: Channel[tuple[Event, ...], E | Retry | SseError, D, tuple[str, ...], E, D] = (
         from_transform(lambda upstream, _scope: _Sync(lambda: build(upstream)))
     )
     return channel
+
+
+class _Parsed:
+    """What ``decode``'s parser has read and not yet written."""
+
+    __slots__ = ("events", "retry")
+
+    def __init__(self) -> None:
+        self.events: list[Event] = []
+        self.retry: Retry | None = None
+
+    def __call__(self, event: AnyEvent) -> None:
+        if isinstance(event, Retry):
+            self.retry = event
+        else:
+            self.events.append(event)
+
+
+class _DecodeLoop:
+    """``decode``'s pull: a loop on a state object, so a finished run does
+    not keep its events alive."""
+
+    __slots__ = ("parsed", "pump")
+
+    def __init__(self, parsed: _Parsed, pump: AnyPull) -> None:
+        self.parsed = parsed
+        self.pump = pump
+
+    def loop(self) -> AnyPull:
+        events = self.parsed.events
+        if events:
+            out = tuple(events)
+            events.clear()
+            return _Succeed(out)
+        if self.parsed.retry is not None:
+            return _FailCause(fail_cause(self.parsed.retry))
+        return self.pump.flat_map(self.pumped)
+
+    def pumped(self, _: object) -> AnyPull:
+        return self.loop()
 
 
 # --- encoding ---------------------------------------------------------------------

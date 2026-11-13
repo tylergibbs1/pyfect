@@ -59,28 +59,32 @@ def to_codec_anthropic[T, E, RD, RE](
 
 
 def _has_reference_cycle(root: JsonSchema, definitions: Definitions) -> bool:
-    visiting: set[int] = set()
-    visited: set[int] = set()
+    return _reaches_cycle(root, root, definitions, set(), set())
 
-    def visit(schema: JsonSchema) -> bool:
-        if id(schema) in visiting:
-            return True
-        if id(schema) in visited:
-            return False
-        visiting.add(id(schema))
-        cycle = False
-        for node in J.subschemas(schema):
-            ref = node.get("$ref")
-            if isinstance(ref, str):
-                target = root if ref == "#" else J.resolve_reference(ref, definitions)
-                if visit(target):
-                    cycle = True
-                    break
-        visiting.discard(id(schema))
-        visited.add(id(schema))
-        return cycle
 
-    return visit(root)
+def _reaches_cycle(
+    schema: JsonSchema,
+    root: JsonSchema,
+    definitions: Definitions,
+    visiting: set[int],
+    visited: set[int],
+) -> bool:
+    if id(schema) in visiting:
+        return True
+    if id(schema) in visited:
+        return False
+    visiting.add(id(schema))
+    cycle = False
+    for node in J.subschemas(schema):
+        ref = node.get("$ref")
+        if isinstance(ref, str):
+            target = root if ref == "#" else J.resolve_reference(ref, definitions)
+            if _reaches_cycle(target, root, definitions, visiting, visited):
+                cycle = True
+                break
+    visiting.discard(id(schema))
+    visited.add(id(schema))
+    return cycle
 
 
 def _rewrite(schema: JsonSchema) -> JsonSchema:

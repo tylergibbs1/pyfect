@@ -42,7 +42,7 @@ from pyfect._js import same_value
 from pyfect._waiters import wake_soon_from_here
 from pyfect.cause import Cause
 from pyfect.cause import interrupt as interrupt_cause
-from pyfect.clock import Clock
+from pyfect.clock import Clock, ClockService
 from pyfect.context import Tag
 from pyfect.exit import Exit, Success
 
@@ -284,17 +284,32 @@ def _boundary[A, E](
             .exit()
         )
 
-        def step(ex: Exit[A, E]) -> Effect[A, E]:
-            if state._retry or not state._try_commit(isinstance(ex, Success)):
-                state._next_attempt(clock.now_nanos_unsafe())
-                return attempt.flat_map(step)
-            state._clear()
-            state._completed = True
-            return _FromExit(ex)
-
-        return attempt.flat_map(step)
+        return attempt.flat_map(_Attempts(state, clock, attempt).step)
 
     return uninterruptible_mask(run) if restore is None else run(restore)
+
+
+class _Attempts[A, E]:
+    """Reruns a transaction's ``attempt`` until it commits; a state object, as
+    a closure calling itself would keep the body alive after the run."""
+
+    __slots__ = ("attempt", "clock", "state")
+
+    def __init__(
+        self, state: TransactionMeta, clock: ClockService, attempt: Effect[Exit[A, E]]
+    ) -> None:
+        self.state = state
+        self.clock = clock
+        self.attempt = attempt
+
+    def step(self, ex: Exit[A, E]) -> Effect[A, E]:
+        state = self.state
+        if state._retry or not state._try_commit(isinstance(ex, Success)):
+            state._next_attempt(self.clock.now_nanos_unsafe())
+            return self.attempt.flat_map(self.step)
+        state._clear()
+        state._completed = True
+        return _FromExit(ex)
 
 
 _VOID: Effect[None] = _Succeed(None)

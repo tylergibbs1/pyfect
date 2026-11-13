@@ -278,7 +278,7 @@ def decode[IE = Never, D = None]() -> Channel[
     return decode_channel(Decoder, Entry, TarError)
 
 
-def encode[E = Never, R = Never, IE = Never, D = None]() -> Channel[  # noqa: PLR0915
+def encode[E = Never, R = Never, IE = Never, D = None]() -> Channel[
     tuple[bytes, ...], TarError | IE | E, D, tuple[Entry[E, R], ...], IE, D, R
 ]:
     """A channel encoding entries into archive bytes: a USTAR header per entry, a
@@ -300,97 +300,102 @@ def encode[E = Never, R = Never, IE = Never, D = None]() -> Channel[  # noqa: PL
     Entries that differ in their bodies' errors or services do not infer one ``E`` and
     ``R``: annotate the stream, as ``Stream[Entry[E1 | E2, R1 | R2]]``."""
 
-    def transform(upstream: AnyPull, scope: CloseableScope) -> AnyPull:  # noqa: PLR0915
-        encoder = Encoder()
-        entries: tuple[Entry[Any, Any], ...] = ()
-        index = 0
-        done: tuple[Any] | None = None
-        body: AnyPull | None = None
-        body_scope: CloseableScope | None = None
-
-        def on_body(chunks: tuple[bytes, ...] | None) -> Any:
-            nonlocal body, body_scope
-            try:
-                if chunks is not None:
-                    for chunk in chunks:
-                        encoder.body(chunk)
-                    return pull
-            except TarError as error:
-                return fail_exit(error)
-            body = None
-            assert body_scope is not None
-            closing = body_scope.close(void)
-            body_scope = None
-            return closing.flat_map(on_body_closed)
-
-        def on_body_closed(_: None) -> Any:
-            try:
-                encoder.end()
-            except TarError as error:
-                return fail_exit(error)
-            return pull
-
-        def begin(entry: Entry[Any, Any]) -> Any:
-            nonlocal body, body_scope
-            # Directories, links and in-memory files have nothing to stream
-            source = entry.body
-            data = (
-                b"" if source is empty else source.content if isinstance(source, _Content) else None
-            )
-            try:
-                encoder.begin(entry.header)
-                if data is not None:
-                    encoder.body(data)
-                    encoder.end()
-            except TarError as error:
-                return fail_exit(error)
-            if data is not None:
-                return pull
-            body_scope = scope.fork_unsafe()
-
-            def opened(opened_pull: AnyPull) -> Any:
-                nonlocal body
-                body = opened_pull
-                return pull
-
-            return source._channel.to_pull_scoped(body_scope).flat_map(opened)
-
-        def upstream_done(value: object) -> AnyPull:
-            nonlocal done
-            done = (value,)
-            encoder.finish()
-            return _Succeed(None)
-
-        def on_upstream(next_entries: tuple[Entry[Any, Any], ...] | None) -> Any:
-            nonlocal entries, index
-            if next_entries is not None:
-                entries = next_entries
-                index = 0
-            return pull
-
-        def step() -> Any:
-            nonlocal index
-            if encoder.buffered >= SLAB_SIZE:
-                return Success(encoder.flush())
-            if body is not None:
-                return catch_done(body, lambda _: _Succeed(None)).flat_map(on_body)
-            if index < len(entries):
-                entry = entries[index]
-                index += 1
-                return begin(entry)
-            if encoder.buffered > 0:
-                return Success(encoder.flush())
-            if done is not None:
-                return end_with(done[0])
-            return catch_done(upstream, upstream_done).flat_map(on_upstream)
-
-        pull: AnyPull = _Suspend(step)
-        return _Succeed(pull)
+    def transform(upstream: AnyPull, scope: CloseableScope) -> AnyPull:
+        return _Succeed(_Suspend(_EncodePull(upstream, scope).step))
 
     channel: Any = from_transform(
         lambda upstream, scope: _Suspend(lambda: transform(upstream, scope))
     )
     return channel
+
+
+def _body_done(_: object) -> AnyPull:
+    return _Succeed(None)
+
+
+class _EncodePull:
+    """``encode``'s pull: a state object rather than closures over the pull
+    itself, so a finished run does not keep its entries alive."""
+
+    __slots__ = ("body", "body_scope", "done", "encoder", "entries", "index", "scope", "upstream")
+
+    def __init__(self, upstream: AnyPull, scope: CloseableScope) -> None:
+        self.upstream = upstream
+        self.scope = scope
+        self.encoder = Encoder()
+        self.entries: tuple[Entry[Any, Any], ...] = ()
+        self.index = 0
+        self.done: tuple[Any] | None = None
+        self.body: AnyPull | None = None
+        self.body_scope: CloseableScope | None = None
+
+    def step(self) -> Any:
+        encoder = self.encoder
+        if encoder.buffered >= SLAB_SIZE:
+            return Success(encoder.flush())
+        if self.body is not None:
+            return catch_done(self.body, _body_done).flat_map(self.on_body)
+        if self.index < len(self.entries):
+            entry = self.entries[self.index]
+            self.index += 1
+            return self.begin(entry)
+        if encoder.buffered > 0:
+            return Success(encoder.flush())
+        if self.done is not None:
+            return end_with(self.done[0])
+        return catch_done(self.upstream, self.upstream_done).flat_map(self.on_upstream)
+
+    def on_body(self, chunks: tuple[bytes, ...] | None) -> Any:
+        try:
+            if chunks is not None:
+                for chunk in chunks:
+                    self.encoder.body(chunk)
+                return _Suspend(self.step)
+        except TarError as error:
+            return fail_exit(error)
+        self.body = None
+        assert self.body_scope is not None
+        closing = self.body_scope.close(void)
+        self.body_scope = None
+        return closing.flat_map(self.on_body_closed)
+
+    def on_body_closed(self, _: None) -> Any:
+        try:
+            self.encoder.end()
+        except TarError as error:
+            return fail_exit(error)
+        return _Suspend(self.step)
+
+    def begin(self, entry: Entry[Any, Any]) -> Any:
+        # Directories, links and in-memory files have nothing to stream
+        source = entry.body
+        data = b"" if source is empty else source.content if isinstance(source, _Content) else None
+        try:
+            self.encoder.begin(entry.header)
+            if data is not None:
+                self.encoder.body(data)
+                self.encoder.end()
+        except TarError as error:
+            return fail_exit(error)
+        if data is not None:
+            return _Suspend(self.step)
+        self.body_scope = self.scope.fork_unsafe()
+        return source._channel.to_pull_scoped(self.body_scope).flat_map(self.opened)
+
+    def opened(self, opened_pull: AnyPull) -> Any:
+        self.body = opened_pull
+        return _Suspend(self.step)
+
+    def upstream_done(self, value: object) -> AnyPull:
+        self.done = (value,)
+        self.encoder.finish()
+        return _Succeed(None)
+
+    def on_upstream(self, next_entries: tuple[Entry[Any, Any], ...] | None) -> Any:
+        if next_entries is not None:
+            self.entries = next_entries
+            self.index = 0
+        return _Suspend(self.step)
 
 
 publish(globals())

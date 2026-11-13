@@ -257,26 +257,31 @@ def paginate[S, A, E = Never, R = Never](
     where ``next`` is ``Some(state)`` for another page or ``None`` after
     this one. Empty pages write nothing."""
 
-    def make_pull() -> AnyPull:
-        state = initial
-        done = False
+    return from_pull(_Sync(lambda: _Suspend(_Paginate(initial, f).loop)))
 
-        def loop() -> AnyPull:
-            return _ENDED if done else f(state).flat_map(written)
 
-        def written(page: tuple[Iterable[A], Option[S]]) -> AnyPull:
-            nonlocal state, done
-            items, following = page
-            if following is None:
-                done = True
-            else:
-                state = following.value
-            chunk = tuple(items)
-            return _Succeed(chunk) if chunk else _Suspend(loop)
+class _Paginate:
+    """One run of ``paginate``: a loop on a state object, not closures that
+    reach each other (that cycle would keep the page state alive after the run)."""
 
-        return _Suspend(loop)
+    __slots__ = ("done", "f", "state")
 
-    return from_pull(_Sync(make_pull))
+    def __init__(self, initial: object, f: Callable[[Any], AnyPull]) -> None:
+        self.state = initial
+        self.f = f
+        self.done = False
+
+    def loop(self) -> AnyPull:
+        return _ENDED if self.done else self.f(self.state).flat_map(self.written)
+
+    def written(self, page: tuple[Iterable[Any], Option[Any]]) -> AnyPull:
+        items, following = page
+        if following is None:
+            self.done = True
+        else:
+            self.state = following.value
+        chunk = tuple(items)
+        return _Succeed(chunk) if chunk else _Suspend(self.loop)
 
 
 def iterate[A](initial: A, f: Callable[[A], A]) -> Stream[A]:

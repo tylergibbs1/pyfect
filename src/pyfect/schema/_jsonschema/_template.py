@@ -24,27 +24,36 @@ def escape(text: str) -> str:
 
 def template_pattern(compiler: Compiler, node: ast.TemplateLiteral) -> tuple[str, bool]:
     """The pattern of ``node``'s parts and whether it is exact."""
-    exact = True
-    active: set[str] = set()
+    walk = _TemplatePattern(compiler)
+    pattern = f"^{''.join(map(walk.part, node.parts))}$"
+    return pattern, walk.exact
 
-    def part(node: ast.AST) -> str:
-        candidate = compiler.references.candidate(node)
+
+class _TemplatePattern:
+    __slots__ = ("active", "compiler", "exact")
+
+    def __init__(self, compiler: Compiler) -> None:
+        self.compiler = compiler
+        self.exact = True
+        self.active: set[str] = set()
+
+    def part(self, node: ast.AST) -> str:
+        candidate = self.compiler.references.candidate(node)
         reference = candidate.reference
         if reference is None:
-            return local(candidate.ast)
-        compiler.definition_of(candidate)
-        if reference in active:
+            return self.local(candidate.ast)
+        self.compiler.definition_of(candidate)
+        if reference in self.active:
             raise ValueError(f"Invalid recursive TemplateLiteral part {reference}")
-        active.add(reference)
-        out = local(candidate.ast)
-        active.discard(reference)
+        self.active.add(reference)
+        out = self.local(candidate.ast)
+        self.active.discard(reference)
         return out
 
-    def local(node: ast.AST) -> str:  # noqa: PLR0911
-        nonlocal exact
+    def local(self, node: ast.AST) -> str:  # noqa: PLR0911
         # A segment check cannot be written into the enclosing pattern.
         if node.checks:
-            exact = False
+            self.exact = False
         match node:
             case ast.Literal():
                 return escape(to_string(node.literal))
@@ -55,15 +64,12 @@ def template_pattern(compiler: Compiler, node: ast.TemplateLiteral) -> tuple[str
             case ast.BigInt():
                 return ast.BIG_INT_PATTERN
             case ast.TemplateLiteral():
-                return "".join(map(part, node.parts))
+                return "".join(map(self.part, node.parts))
             case ast.Union():
                 if not node.types:
                     return "(?!)"
                 if node.mode == "one_of":
-                    exact = False
-                return f"(?:{'|'.join(map(part, node.types))})"
+                    self.exact = False
+                return f"(?:{'|'.join(map(self.part, node.types))})"
             case _:
                 raise ValueError(f"Invalid TemplateLiteral part {node.tag}")
-
-    pattern = f"^{''.join(map(part, node.parts))}$"
-    return pattern, exact

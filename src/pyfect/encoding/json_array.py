@@ -21,7 +21,6 @@ schema, or encode each value before writing it, failing with
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from typing import Any, Never, Unpack
 
 from pyfect import channel_schema
@@ -60,36 +59,46 @@ def _failed(cause: Cause[Any]) -> AnyPull:
 
 
 def _decode_pull(upstream: AnyPull, config: Config) -> AnyPull:
-    scanner = Scanner(config)
-    ended: AnyPull | None = None
+    return _Suspend(_DecodePull(upstream, Scanner(config)).next)
 
-    def emit(run: Callable[[list[Json]], None]) -> AnyPull:
+
+class _DecodePull:
+    """``decode_string``'s pull: a state object rather than closures over the
+    pull itself, so a finished run does not keep its input alive."""
+
+    __slots__ = ("ended", "scanner", "upstream")
+
+    def __init__(self, upstream: AnyPull, scanner: Scanner) -> None:
+        self.upstream = upstream
+        self.scanner = scanner
+        self.ended: AnyPull | None = None
+
+    def next(self) -> AnyPull:
+        if self.ended is not None:
+            return self.ended
+        return match_effect(
+            self.upstream, on_success=self.written, on_failure=_failed, on_done=self.done
+        )
+
+    def written(self, texts: tuple[str, ...]) -> AnyPull:
         out: list[Json] = []
         try:
-            run(out)
+            for text in texts:
+                self.scanner.feed(text, out)
         except JsonArrayError as error:
             return _FailCause(fail_cause(error))
-        return _Succeed(tuple(out)) if out else pull
+        return self.emit(out)
 
-    def written(texts: tuple[str, ...]) -> AnyPull:
-        def run(out: list[Json]) -> None:
-            for text in texts:
-                scanner.feed(text, out)
+    def done(self, leftover: object) -> AnyPull:
+        self.ended = end_with(leftover)
+        try:
+            self.scanner.end()
+        except JsonArrayError as error:
+            return _FailCause(fail_cause(error))
+        return self.emit([])
 
-        return emit(run)
-
-    def done(leftover: object) -> AnyPull:
-        nonlocal ended
-        ended = end_with(leftover)
-        return emit(lambda _out: scanner.end())
-
-    def next_pull() -> AnyPull:
-        if ended is not None:
-            return ended
-        return match_effect(upstream, on_success=written, on_failure=_failed, on_done=done)
-
-    pull: AnyPull = _Suspend(next_pull)
-    return pull
+    def emit(self, out: list[Json]) -> AnyPull:
+        return _Succeed(tuple(out)) if out else _Suspend(self.next)
 
 
 def decode_string[E = Never, D = None](

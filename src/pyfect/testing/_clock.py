@@ -99,7 +99,6 @@ class _NotAdvanced:
         context = contextvars.copy_context()
 
         def warn() -> None:
-            self._done = True
             context.run(warnings.warn, _NOT_ADVANCED_WARNING, ClockNotAdvancedWarning, stacklevel=1)
 
         self._cancel = scheduler.call_later(delay, warn, daemon=True)

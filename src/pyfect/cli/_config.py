@@ -125,21 +125,7 @@ def parse_config(config: type[Config], last: tuple[str, ...] = ()) -> ConfigInte
     """``config`` flattened. Fields named in ``last`` are taken after the
     others, so a command's own params come before shared ones it inherits."""
     ordered: list[p.Param[Any]] = []
-
-    def parse(klass: type[Config], last: tuple[str, ...]) -> Tree:
-        fields = klass.__cli_fields__
-        names = [n for n in fields if n not in last] + [n for n in fields if n in last]
-        tree: list[tuple[str, Node]] = []
-        for name in names:
-            value = fields[name]
-            if isinstance(value, Nested):
-                tree.append((name, NestedNode(value.config, parse(value.config, ()))))
-            else:
-                tree.append((name, ParamNode(len(ordered))))
-                ordered.append(value.param)
-        return tuple(tree)
-
-    tree = parse(config, last)
+    tree = _parse_tree(config, last, ordered)
     params = tuple(ordered)
     return ConfigInternal(
         config,
@@ -148,6 +134,20 @@ def parse_config(config: type[Config], last: tuple[str, ...] = ()) -> ConfigInte
         params,
         tree,
     )
+
+
+def _parse_tree(klass: type[Config], last: tuple[str, ...], ordered: list[p.Param[Any]]) -> Tree:
+    fields = klass.__cli_fields__
+    names = [n for n in fields if n not in last] + [n for n in fields if n in last]
+    tree: list[tuple[str, Node]] = []
+    for name in names:
+        value = fields[name]
+        if isinstance(value, Nested):
+            tree.append((name, NestedNode(value.config, _parse_tree(value.config, (), ordered))))
+        else:
+            tree.append((name, ParamNode(len(ordered))))
+            ordered.append(value.param)
+    return tuple(tree)
 
 
 def _build(config: type[Config], tree: Tree, values: tuple[object, ...]) -> Config:

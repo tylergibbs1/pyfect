@@ -36,6 +36,7 @@ from pyfect.reactivity.atom_registry._registry import (
     RegistryDisposedError,
     RegistryThreadError,
 )
+from pyfect.reactivity.atom_registry._unsubscribe import Unsubscribe
 from pyfect.scheduler import Scheduler
 from pyfect.scope import CloseableScope, Scope, acquire_release
 
@@ -159,12 +160,14 @@ def get_result[A, E](
             resume(result_effect(result))
             return None
 
+        cancel = Unsubscribe()
+
         def on_change(value: AsyncResult[A, E]) -> None:
             if ready(value):
                 resume(result_effect(value))
                 cancel()
 
-        cancel = self.subscribe(atom, on_change)
+        cancel.set(self.subscribe(atom, on_change))
         return _Sync(cancel)
 
     return _Callback(register)

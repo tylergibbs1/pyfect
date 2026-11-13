@@ -44,38 +44,49 @@ def rechunk(self: AnyStream, size: int) -> AnyStream_:
     target = size_of(size)
 
     def build(pull: AnyEffect) -> AnyEffect:
-        held: list[Any] = []
-        stopped: Cause[Any] | None = None
-
-        def emit() -> AnyEffect:
-            out = tuple(held[:target])
-            del held[:target]
-            return _Succeed(out)
-
-        def got(chunk: Chunk) -> AnyEffect:
-            if not held and len(chunk) == target:
-                return _Succeed(chunk)
-            held.extend(chunk)
-            return loop()
-
-        def loop() -> AnyEffect:
-            if stopped is not None:
-                return _FailCause(stopped)
-            return emit() if len(held) >= target else _FlatMap(pull, got)
-
-        def flush(cause: Cause[Any]) -> AnyEffect:
-            # The upstream's end or failure: emit what is held first, then stop with it.
-            nonlocal stopped
-            if not held:
-                return _FailCause(cause)
-            stopped = cause
-            out = tuple(held)
-            held.clear()
-            return _Succeed(out)
-
-        return _MatchCause(_Suspend(loop), flush, None)
+        state = _Rechunk(pull, target)
+        return _MatchCause(_Suspend(state.loop), state.flush, None)
 
     return _pulling(self, build)
+
+
+class _Rechunk:
+    """One run of ``rechunk``: a loop on a state object, not closures that
+    reach each other (that cycle would keep the pull alive after the run)."""
+
+    __slots__ = ("held", "pull", "stopped", "target")
+
+    def __init__(self, pull: AnyEffect, target: int) -> None:
+        self.pull = pull
+        self.target = target
+        self.held: list[Any] = []
+        self.stopped: Cause[Any] | None = None
+
+    def emit(self) -> AnyEffect:
+        held = self.held
+        out = tuple(held[: self.target])
+        del held[: self.target]
+        return _Succeed(out)
+
+    def got(self, chunk: Chunk) -> AnyEffect:
+        if not self.held and len(chunk) == self.target:
+            return _Succeed(chunk)
+        self.held.extend(chunk)
+        return self.loop()
+
+    def loop(self) -> AnyEffect:
+        if self.stopped is not None:
+            return _FailCause(self.stopped)
+        return self.emit() if len(self.held) >= self.target else _FlatMap(self.pull, self.got)
+
+    def flush(self, cause: Cause[Any]) -> AnyEffect:
+        # The upstream's end or failure: emit what is held first, then stop with it.
+        if not self.held:
+            return _FailCause(cause)
+        self.stopped = cause
+        out = tuple(self.held)
+        self.held.clear()
+        return _Succeed(out)
 
 
 def accumulate(self: AnyStream) -> AnyStream_:
@@ -91,47 +102,59 @@ def sliding_size(self: AnyStream, size: int, step: int) -> AnyStream_:
     stride = size_of(step)
 
     def build(upstream: AnyEffect) -> AnyEffect:
-        held: deque[Any] = deque()
-        stopped: Cause[Any] | None = None
-        emitted = False
-        skip = 0
-
-        def drop_front(n: int) -> None:
-            for _ in range(min(n, len(held))):
-                held.popleft()
-
-        def on_success(chunk: Chunk) -> AnyEffect:
-            nonlocal emitted, skip
-            held.extend(chunk)
-            if skip > 0:
-                length = len(held)
-                drop_front(skip)
-                skip = max(0, skip - length)
-            if len(held) < window:
-                return pull
-            emitted = True
-            windows: list[Chunk] = []
-            while len(held) >= window:
-                windows.append(tuple(held[i] for i in range(window)))
-                length = len(held)
-                drop_front(stride)
-                skip = max(0, stride - length)
-            return _Succeed(tuple(windows))
-
-        def on_failure(cause: Cause[Any]) -> AnyEffect:
-            nonlocal stopped
-            # A full window already moved the buffer on by the step.
-            if not held or (emitted and len(held) <= window - stride):
-                return _FailCause(cause)
-            stopped = cause
-            rest = tuple(held)
-            held.clear()
-            return _Succeed((rest,))
-
-        pull = _MatchCause(upstream, on_failure, on_success)
-        return _Suspend(lambda: pull if stopped is None else _FailCause(stopped))
+        sliding = _Sliding(upstream, window, stride)
+        pull = _MatchCause(upstream, sliding.on_failure, sliding)
+        return _Suspend(lambda: pull if sliding.stopped is None else _FailCause(sliding.stopped))
 
     return _pulling(self, build)
+
+
+class _Sliding:
+    """One run of ``sliding_size``, called with each chunk."""
+
+    __slots__ = ("emitted", "held", "skip", "stopped", "stride", "upstream", "window")
+
+    def __init__(self, upstream: AnyEffect, window: int, stride: int) -> None:
+        self.upstream = upstream
+        self.window = window
+        self.stride = stride
+        self.held: deque[Any] = deque()
+        self.stopped: Cause[Any] | None = None
+        self.emitted = False
+        self.skip = 0
+
+    def _drop_front(self, n: int) -> None:
+        held = self.held
+        for _ in range(min(n, len(held))):
+            held.popleft()
+
+    def __call__(self, chunk: Chunk) -> AnyEffect:
+        held, window, stride = self.held, self.window, self.stride
+        held.extend(chunk)
+        if self.skip > 0:
+            length = len(held)
+            self._drop_front(self.skip)
+            self.skip = max(0, self.skip - length)
+        if len(held) < window:
+            return _MatchCause(self.upstream, self.on_failure, self)
+        self.emitted = True
+        windows: list[Chunk] = []
+        while len(held) >= window:
+            windows.append(tuple(held[i] for i in range(window)))
+            length = len(held)
+            self._drop_front(stride)
+            self.skip = max(0, stride - length)
+        return _Succeed(tuple(windows))
+
+    def on_failure(self, cause: Cause[Any]) -> AnyEffect:
+        held = self.held
+        # A full window already moved the buffer on by the step.
+        if not held or (self.emitted and len(held) <= self.window - self.stride):
+            return _FailCause(cause)
+        self.stopped = cause
+        rest = tuple(held)
+        held.clear()
+        return _Succeed((rest,))
 
 
 def split(self: AnyStream, predicate: Callable[[Any], bool]) -> AnyStream_:

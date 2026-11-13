@@ -46,48 +46,61 @@ class _Options:
 
 
 def _to_xml(root_name: str, tree: object, options: _Options) -> str:
-    lines: list[str] = []
-    seen: set[int] = set()
+    writer = _XmlWriter(options)
+    writer.recur(root_name, tree, 0, None)
+    return ("\n" if options.pretty else "").join(writer.lines)
 
-    def push(depth: int, text: str) -> None:
-        lines.append(options.indent * depth + text if options.pretty else text)
+
+class _XmlWriter:
+    __slots__ = ("lines", "options", "seen")
+
+    def __init__(self, options: _Options) -> None:
+        self.options = options
+        self.lines: list[str] = []
+        self.seen: set[int] = set()
+
+    def push(self, depth: int, text: str) -> None:
+        options = self.options
+        self.lines.append(options.indent * depth + text if options.pretty else text)
 
     def container(
-        tag: str, attrs: str, depth: int, node: object, children: Sequence[tuple[str, object, str]]
+        self,
+        tag: str,
+        attrs: str,
+        depth: int,
+        node: object,
+        children: Sequence[tuple[str, object, str]],
     ) -> None:
-        if id(node) in seen:
+        if id(node) in self.seen:
             raise ValueError("Cycle detected while serializing to XML.")
         if not children:
-            push(depth, f"<{tag}{attrs}/>")
+            self.push(depth, f"<{tag}{attrs}/>")
             return
-        seen.add(id(node))
-        push(depth, f"<{tag}{attrs}>")
+        self.seen.add(id(node))
+        self.push(depth, f"<{tag}{attrs}>")
         for child_name, child, original in children:
-            recur(child_name, child, depth + 1, original)
-        push(depth, f"</{tag}>")
-        seen.discard(id(node))
+            self.recur(child_name, child, depth + 1, original)
+        self.push(depth, f"</{tag}>")
+        self.seen.discard(id(node))
 
-    def recur(name: str, node: object, depth: int, original: str | None) -> None:
+    def recur(self, name: str, node: object, depth: int, original: str | None) -> None:
         tag, attrs = _tag_info(name, original)
         match node:
             case None:
-                push(depth, f"<{tag}{attrs}/>")
+                self.push(depth, f"<{tag}{attrs}/>")
             case str():
-                push(depth, f"<{tag}{attrs}>{_escape_text(node)}</{tag}>")
+                self.push(depth, f"<{tag}{attrs}>{_escape_text(node)}</{tag}>")
             case Mapping():
                 entries = cast("Mapping[str, object]", node)
-                keys = sorted(entries) if options.sort_keys else list(entries)
+                keys = sorted(entries) if self.options.sort_keys else list(entries)
                 children = [(_safe_name(key), entries[key], key) for key in keys]
-                container(tag, attrs, depth, entries, children)
+                self.container(tag, attrs, depth, entries, children)
             case list() | tuple():
                 items = cast("Sequence[object]", node)
-                item = options.array_item_name
-                container(tag, attrs, depth, items, [(item, value, item) for value in items])
+                item = self.options.array_item_name
+                self.container(tag, attrs, depth, items, [(item, value, item) for value in items])
             case _:
-                push(depth, f"<{tag}{attrs}>{_escape_text(_format(node))}</{tag}>")
-
-    recur(root_name, tree, 0, None)
-    return ("\n" if options.pretty else "").join(lines)
+                self.push(depth, f"<{tag}{attrs}>{_escape_text(_format(node))}</{tag}>")
 
 
 def _format(value: object) -> str:

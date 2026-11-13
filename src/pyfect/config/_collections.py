@@ -11,6 +11,7 @@ the node held something either reading could use.
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+from functools import partial
 from typing import Any, Never
 
 from pyfect import _js
@@ -240,18 +241,22 @@ def _sequence_until_issue[A](
 ) -> Effect[list[Decoded[A]], ConfigError]:
     """Run the reads in order, stopping after the first issue (later items
     are not decoded, as a schema stops at its first error)."""
+    return _sequence_from(reads, 0, [])
 
-    def step(i: int, done: list[Decoded[A]]) -> Effect[list[Decoded[A]], ConfigError]:
-        if i == len(reads):
-            return succeed(done)
 
-        def next_read(item: Decoded[A]) -> Effect[list[Decoded[A]], ConfigError]:
-            done.append(item)
-            return succeed(done) if isinstance(item, Err) else step(i + 1, done)
+def _sequence_from[A](
+    reads: list[Effect[Decoded[A], ConfigError]], i: int, done: list[Decoded[A]]
+) -> Effect[list[Decoded[A]], ConfigError]:
+    if i == len(reads):
+        return succeed(done)
+    return reads[i].flat_map(partial(_sequence_next, reads, i, done))
 
-        return reads[i].flat_map(next_read)
 
-    return step(0, [])
+def _sequence_next[A](
+    reads: list[Effect[Decoded[A], ConfigError]], i: int, done: list[Decoded[A]], item: Decoded[A]
+) -> Effect[list[Decoded[A]], ConfigError]:
+    done.append(item)
+    return succeed(done) if isinstance(item, Err) else _sequence_from(reads, i + 1, done)
 
 
 def _read_item[A](

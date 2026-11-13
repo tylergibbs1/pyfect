@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import threading
 from collections.abc import Callable, Hashable
+from functools import partial
 from typing import Any, Final, Literal, Never, overload
 
 from pyfect._core import (
@@ -343,7 +344,7 @@ class Cache[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never, R = Never
             fiber._run_scheduler, self._context.merge(fiber._context)
         )
         entry = _Entry[A, E](lookup_fiber, self._lock)
-        entry.release = lambda: self._remove(key, entry)
+        entry.release = partial(self._remove, key)
 
         def decide_time_to_live(ex: Exit[A, E]) -> Effect[None]:
             if not _interrupted(ex):
@@ -407,9 +408,10 @@ class _Entry[A, E]:
         self.expires_at: int | None = None
         # Set as the lookup ends; stays zero if ``time_to_live`` raised.
         self.time_to_live: Duration = zero
-        # Drops the entry from the cache when its waiters abandon it; call
-        # holding the lock.
-        self.release: Callable[[], None] | None = None
+        # Drops the entry (its argument) from the cache when its waiters
+        # abandon it; call holding the lock. It holds the key, not the entry,
+        # so the entry is no cycle.
+        self.release: Callable[[_Entry[A, E]], None] | None = None
 
     def wait(self) -> Effect[A, E]:
         """Wait for the lookup as one more caller (Effect's ``entry.await``)."""
@@ -437,7 +439,7 @@ class _Entry[A, E]:
             # Detached first, so a get made while the lookup's finalizers run
             # starts a new lookup.
             if self.release is not None:
-                self.release()
+                self.release(self)
         return self.fiber.interrupt()
 
 

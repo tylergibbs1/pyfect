@@ -23,7 +23,6 @@ from pyfect.cluster.envelope import AckChunk, Request
 from pyfect.cluster.message import (
     Incoming,
     IncomingEnvelope,
-    IncomingLocal,
     IncomingRequest,
     Outgoing,
     OutgoingRequest,
@@ -80,77 +79,87 @@ class Routing:
         state = self._state
         address = message.envelope.address
         is_request = isinstance(message, (IncomingRequest, OutgoingRequest))
-
-        def loop() -> Effect[None, Any]:
-            # Entities draining from a released shard still take interrupts
-            # and acks.
-            if not state.is_entity_on_local_shards(address) and (
-                is_request or address.shard_id not in state.releasing_shards
-            ):
-                return fail(EntityNotAssignedToRunner(address=address))
-            found = state.entity_managers.get(address.entity_type)
-            if found is None:
-                return self.wait_for_entity_manager(address.entity_type).and_then(suspend(loop))
-            if found.status == "closed" or (
-                found.status == "closing" and isinstance(message, IncomingRequest)
-            ):
-                # Shutting down: no new requests.
-                return fail(EntityNotAssignedToRunner(address=address))
-            if isinstance(message, (IncomingRequest, IncomingEnvelope)):
-                return found.manager.send(message)
-            return state.runners.send_local(
-                message,
-                send=found.manager.send_local,
-                simulate_remote_serialization=state.config.simulate_remote_serialization,
-            )
-
-        send = suspend(loop)
+        send = suspend(lambda: self._send_local_now(message))
         return state.await_shard_lock(address.shard_id).and_then(send) if is_request else send
+
+    def _send_local_now(self, message: Outgoing | Incoming) -> Effect[None, Any]:
+        state = self._state
+        address = message.envelope.address
+        is_request = isinstance(message, (IncomingRequest, OutgoingRequest))
+        # Entities draining from a released shard still take interrupts
+        # and acks.
+        if not state.is_entity_on_local_shards(address) and (
+            is_request or address.shard_id not in state.releasing_shards
+        ):
+            return fail(EntityNotAssignedToRunner(address=address))
+        found = state.entity_managers.get(address.entity_type)
+        if found is None:
+            return self.wait_for_entity_manager(address.entity_type).and_then(
+                suspend(lambda: self._send_local_now(message))
+            )
+        if found.status == "closed" or (
+            found.status == "closing" and isinstance(message, IncomingRequest)
+        ):
+            # Shutting down: no new requests.
+            return fail(EntityNotAssignedToRunner(address=address))
+        if isinstance(message, (IncomingRequest, IncomingEnvelope)):
+            return found.manager.send(message)
+        return state.runners.send_local(
+            message,
+            send=found.manager.send_local,
+            simulate_remote_serialization=state.config.simulate_remote_serialization,
+        )
 
     def notify_local(
         self, message: Outgoing | Incoming, discard: bool, *, wait_until_read: bool = False
     ) -> Effect[None, Any]:
+        return suspend(lambda: self._notify_local_now(message, discard, wait_until_read))
+
+    def _notify_local_now(  # noqa: PLR0911
+        self, message: Outgoing | Incoming, discard: bool, wait_until_read: bool
+    ) -> Effect[None, Any]:
         state = self._state
-
-        def notify_now() -> Effect[None, EntityNotAssignedToRunner]:
-            if not state.storage_enabled:
-                return die(RuntimeError("Sharding.notifyLocal: storage is disabled"))
-            _read_when_due(state, message)
-            return state.storage_read_latch.open().as_void()
-
-        def notify_storage(_: IncomingLocal) -> Effect[None, EntityNotAssignedToRunner]:
-            return notify_now()
-
-        def loop() -> Effect[None, Any]:  # noqa: PLR0911
-            address = message.envelope.address
-            found = state.entity_managers.get(address.entity_type)
-            if found is None:
-                return self.wait_for_entity_manager(address.entity_type).and_then(suspend(loop))
-            if found.status == "closed":
-                return fail(EntityNotAssignedToRunner(address=address))
-            is_local = state.is_entity_on_local_shards(address)
-            if isinstance(message, (IncomingRequest, IncomingEnvelope)):
-                if not is_local:
-                    return fail(EntityNotAssignedToRunner(address=address))
-                if isinstance(message, IncomingRequest) and found.manager.is_processing_for(
-                    message, exclude_replies=True
-                ):
-                    return fail(
-                        AlreadyProcessingMessage(
-                            address=address, envelope_id=message.envelope.request_id
-                        )
-                    )
-                if isinstance(message, IncomingRequest) and wait_until_read:
-                    if not state.storage_enabled:
-                        return notify_now()
-                    request = message
-                    return callback(lambda resume: self._park(request, resume))
-                return notify_now()
-            return state.runners.notify_local(
-                message, notify=notify_storage, discard=discard, storage_only=not is_local
+        address = message.envelope.address
+        found = state.entity_managers.get(address.entity_type)
+        if found is None:
+            return self.wait_for_entity_manager(address.entity_type).and_then(
+                suspend(lambda: self._notify_local_now(message, discard, wait_until_read))
             )
+        if found.status == "closed":
+            return fail(EntityNotAssignedToRunner(address=address))
+        is_local = state.is_entity_on_local_shards(address)
+        if isinstance(message, (IncomingRequest, IncomingEnvelope)):
+            if not is_local:
+                return fail(EntityNotAssignedToRunner(address=address))
+            if isinstance(message, IncomingRequest) and found.manager.is_processing_for(
+                message, exclude_replies=True
+            ):
+                return fail(
+                    AlreadyProcessingMessage(
+                        address=address, envelope_id=message.envelope.request_id
+                    )
+                )
+            if isinstance(message, IncomingRequest) and wait_until_read:
+                if not state.storage_enabled:
+                    return self._notify_storage_now(message)
+                request = message
+                return callback(lambda resume: self._park(request, resume))
+            return self._notify_storage_now(message)
+        return state.runners.notify_local(
+            message,
+            notify=lambda _: self._notify_storage_now(message),
+            discard=discard,
+            storage_only=not is_local,
+        )
 
-        return suspend(loop)
+    def _notify_storage_now(
+        self, message: Outgoing | Incoming
+    ) -> Effect[None, EntityNotAssignedToRunner]:
+        state = self._state
+        if not state.storage_enabled:
+            return die(RuntimeError("Sharding.notifyLocal: storage is disabled"))
+        _read_when_due(state, message)
+        return state.storage_read_latch.open().as_void()
 
     def _park(
         self,

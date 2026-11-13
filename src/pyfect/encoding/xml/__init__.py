@@ -83,43 +83,52 @@ def _check_limit(name: str, value: float | None, default: int) -> float:
 
 def _make_channel(make: Callable[[], Machine[Any, Any]]) -> Any:
     def transform(upstream: AnyPull, _: CloseableScope) -> AnyPull:
-        machine = make()
-        done: AnyPull | None = None
-        failure: XmlError | None = None
-
-        # Output completed before an error is emitted before the failure
-        def emit(inputs: tuple[Any, ...] | None) -> Any:
-            nonlocal failure
-            try:
-                if inputs is None:
-                    machine.end()
-                else:
-                    for value in inputs:
-                        machine.push(value)
-            except XmlError as error:
-                failure = error
-            out = machine.out
-            if out:
-                machine.out = []
-                return Success(tuple(out))
-            return pull
-
-        def ended(leftover: object) -> Any:
-            nonlocal done
-            done = end_with(leftover)
-            return emit(None)
-
-        step = match_effect(upstream, on_success=emit, on_failure=_FailCause, on_done=ended)
-
-        def next_pull() -> Any:
-            if failure is not None:
-                return fail_exit(failure)
-            return step if done is None else done
-
-        pull: AnyPull = _Suspend(next_pull)
-        return _Succeed(pull)
+        return _Succeed(_Suspend(_DecodePull(upstream, make()).next))
 
     return from_transform(transform)
+
+
+class _DecodePull:
+    """The decoders' pull: a state object rather than closures over the pull
+    itself, so a finished run does not keep its input alive."""
+
+    __slots__ = ("done", "failure", "machine", "upstream")
+
+    def __init__(self, upstream: AnyPull, machine: Machine[Any, Any]) -> None:
+        self.upstream = upstream
+        self.machine = machine
+        self.done: AnyPull | None = None
+        self.failure: XmlError | None = None
+
+    def next(self) -> Any:
+        if self.failure is not None:
+            return fail_exit(self.failure)
+        if self.done is not None:
+            return self.done
+        return match_effect(
+            self.upstream, on_success=self.emit, on_failure=_FailCause, on_done=self.ended
+        )
+
+    # Output completed before an error is emitted before the failure
+    def emit(self, inputs: tuple[Any, ...] | None) -> Any:
+        machine = self.machine
+        try:
+            if inputs is None:
+                machine.end()
+            else:
+                for value in inputs:
+                    machine.push(value)
+        except XmlError as error:
+            self.failure = error
+        out = machine.out
+        if out:
+            machine.out = []
+            return Success(tuple(out))
+        return _Suspend(self.next)
+
+    def ended(self, leftover: object) -> Any:
+        self.done = end_with(leftover)
+        return self.emit(None)
 
 
 def _make_parser(

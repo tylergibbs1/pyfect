@@ -186,32 +186,43 @@ def group_by_key(
 
 def group_adjacent_by(self: AnyStream, f: Callable[[Any], object]) -> AnyStream_:
     def build(pull: AnyEffect, _scope: CloseableScope) -> AnyEffect:
-        key: object = None
-        group: list[Any] = []
-        stopped: Cause[Any] | None = None
-
-        def split(chunk: Chunk) -> AnyEffect:
-            nonlocal key, group
-            ready: list[tuple[object, Chunk]] = []
-            for item in chunk:
-                item_key = f(item)
-                if group and item_key != key:
-                    ready.append((key, tuple(group)))
-                    group = []
-                if not group:
-                    key = item_key
-                group.append(item)
-            return _Succeed(tuple(ready)) if ready else loop
-
-        def flush(cause: Cause[Any]) -> AnyEffect:
-            # The upstream's end or failure: emit the group held first, then stop with it.
-            nonlocal stopped, group
-            stopped = cause
-            last, group = group, []
-            return _Succeed(((key, tuple(last)),)) if last else _FailCause(cause)
-
-        loop: AnyEffect = _FlatMap(pull, split)
-        pulled = _Suspend(lambda: loop if stopped is None else _FailCause(stopped))
-        return _Succeed(_MatchCause(pulled, flush, None))
+        grouping = _GroupAdjacent(pull, f)
+        loop: AnyEffect = _FlatMap(pull, grouping)
+        pulled = _Suspend(
+            lambda: loop if grouping.stopped is None else _FailCause(grouping.stopped)
+        )
+        return _Succeed(_MatchCause(pulled, grouping.flush, None))
 
     return transform_pull(self, build)
+
+
+class _GroupAdjacent:
+    """One run of ``group_adjacent_by``, called with each chunk."""
+
+    __slots__ = ("f", "group", "key", "pull", "stopped")
+
+    def __init__(self, pull: AnyEffect, f: Callable[[Any], object]) -> None:
+        self.pull = pull
+        self.f = f
+        self.key: object = None
+        self.group: list[Any] = []
+        self.stopped: Cause[Any] | None = None
+
+    def __call__(self, chunk: Chunk) -> AnyEffect:
+        f = self.f
+        ready: list[tuple[object, Chunk]] = []
+        for item in chunk:
+            item_key = f(item)
+            if self.group and item_key != self.key:
+                ready.append((self.key, tuple(self.group)))
+                self.group = []
+            if not self.group:
+                self.key = item_key
+            self.group.append(item)
+        return _Succeed(tuple(ready)) if ready else _FlatMap(self.pull, self)
+
+    def flush(self, cause: Cause[Any]) -> AnyEffect:
+        """The upstream's end or failure: emit the group held first, then stop with it."""
+        self.stopped = cause
+        last, self.group = self.group, []
+        return _Succeed(((self.key, tuple(last)),)) if last else _FailCause(cause)

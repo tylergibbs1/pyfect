@@ -12,7 +12,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from pyfect._core import Effect, _FailCause, _Locally, _Succeed, _Suspend
+from pyfect._core import Effect, _FailCause, _Locally, _MatchCause, _Succeed, _Suspend
 from pyfect.cause import Fail
 from pyfect.cause import fail as fail_cause
 from pyfect.channel._base import AnyChannel, AnyPull, end_with
@@ -39,27 +39,49 @@ def repeat_loop(self: AnyChannel, on_exit: OnExit) -> Channel_:
     a run; its failure (or end) is the channel's."""
 
     def transform(upstream: AnyPull, scope: CloseableScope) -> Effect[AnyPull]:
-        current: AnyPull | None = None
-
-        def make_pull() -> AnyPull:
-            run_scope = scope.fork_unsafe()
-
-            def recover(cause: Any) -> AnyPull:
-                ex = done_exit_from_cause(cause)
-                return (
-                    run_scope.close(ex).and_then(on_exit(ex, scope)).and_then(_Suspend(make_pull))
-                )
-
-            def started(pull: AnyPull) -> AnyPull:
-                nonlocal current
-                current = pull.catch_cause(recover)
-                return current
-
-            return self._transform(upstream, run_scope).flat_map(started)
-
-        return _Succeed(_Suspend(lambda: make_pull() if current is None else current))
+        return _Succeed(_Suspend(_RepeatLoop(self, upstream, scope, on_exit).next_pull))
 
     return from_transform(transform)
+
+
+class _RepeatLoop:
+    """One run of ``repeat_loop``. It keeps the current run's pull bare and
+    wraps it with its recovery (itself) on each pull: a stored wrapped pull
+    would refer back here and keep the run alive after it ends."""
+
+    __slots__ = ("channel", "current", "on_exit", "scope", "upstream")
+
+    def __init__(
+        self, channel: AnyChannel, upstream: AnyPull, scope: CloseableScope, on_exit: OnExit
+    ) -> None:
+        self.channel = channel
+        self.upstream = upstream
+        self.scope = scope
+        self.on_exit = on_exit
+        self.current: tuple[AnyPull, CloseableScope] | None = None
+
+    def next_pull(self) -> AnyPull:
+        current = self.current
+        return self.make_pull() if current is None else _MatchCause(current[0], self, None)
+
+    def make_pull(self) -> AnyPull:
+        run_scope = self.scope.fork_unsafe()
+
+        def started(pull: AnyPull) -> AnyPull:
+            self.current = (pull, run_scope)
+            return _MatchCause(pull, self, None)
+
+        return self.channel._transform(self.upstream, run_scope).flat_map(started)
+
+    def __call__(self, cause: Any) -> AnyPull:
+        assert self.current is not None
+        ex = done_exit_from_cause(cause)
+        return (
+            self.current[1]
+            .close(ex)
+            .and_then(self.on_exit(ex, self.scope))
+            .and_then(_Suspend(self.make_pull))
+        )
 
 
 def _with_metadata(self: AnyChannel, read: Callable[[], Metadata[Any, Any]]) -> AnyChannel:

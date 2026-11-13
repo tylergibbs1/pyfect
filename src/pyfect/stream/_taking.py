@@ -209,63 +209,82 @@ def drop(self: AnyStream, n: int) -> AnyStream_:
     count = count_of(n)
     if count == 0:
         return Stream(self._channel)
+    return _pulling(self, lambda pull: _FlatMap(pull, _Drop(pull, count)))
 
-    def build(pull: AnyEffect) -> AnyEffect:
-        dropped = 0
 
-        def skip(chunk: Chunk) -> AnyEffect:
-            nonlocal dropped
-            if dropped >= count:
-                return _Succeed(chunk)
-            before = dropped
-            dropped += len(chunk)
-            if dropped <= count:
-                return pump
-            return _Succeed(chunk[count - before :])
+class _Drop:
+    """One run of ``drop``, called with each chunk."""
 
-        pump = _FlatMap(pull, skip)
-        return pump
+    __slots__ = ("count", "dropped", "pull")
 
-    return _pulling(self, build)
+    def __init__(self, pull: AnyEffect, count: int) -> None:
+        self.pull = pull
+        self.count = count
+        self.dropped = 0
+
+    def __call__(self, chunk: Chunk) -> AnyEffect:
+        count = self.count
+        if self.dropped >= count:
+            return _Succeed(chunk)
+        before = self.dropped
+        self.dropped += len(chunk)
+        if self.dropped <= count:
+            return _FlatMap(self.pull, self)
+        return _Succeed(chunk[count - before :])
 
 
 def drop_right(self: AnyStream, n: int) -> AnyStream_:
     count = count_of(n)
     if count == 0:
         return Stream(self._channel)
+    return _pulling(self, lambda pull: _FlatMap(pull, _DropRight(pull, count)))
 
-    def build(pull: AnyEffect) -> AnyEffect:
-        held: deque[Any] = deque()
 
-        def emit(chunk: Chunk) -> AnyEffect:
-            held.extend(chunk)
-            ready = len(held) - count
-            if ready <= 0:
-                return pump
-            return _Succeed(tuple(held.popleft() for _ in range(ready)))
+class _DropRight:
+    """One run of ``drop_right``, called with each chunk."""
 
-        pump = _FlatMap(pull, emit)
-        return pump
+    __slots__ = ("count", "held", "pull")
 
-    return _pulling(self, build)
+    def __init__(self, pull: AnyEffect, count: int) -> None:
+        self.pull = pull
+        self.count = count
+        self.held: deque[Any] = deque()
+
+    def __call__(self, chunk: Chunk) -> AnyEffect:
+        held = self.held
+        held.extend(chunk)
+        ready = len(held) - self.count
+        if ready <= 0:
+            return _FlatMap(self.pull, self)
+        return _Succeed(tuple(held.popleft() for _ in range(ready)))
 
 
 def drop_while(self: AnyStream, predicate: Callable[[Any], bool]) -> AnyStream_:
     def build(pull: AnyEffect) -> AnyEffect:
-        dropping = True
-
-        def skip(chunk: Chunk) -> AnyEffect:
-            nonlocal dropping
-            for index, item in enumerate(chunk):
-                if not predicate(item):
-                    dropping = False
-                    return _Succeed(chunk[index:])
-            return filtered
-
-        filtered = _FlatMap(pull, skip)
-        return _Suspend(lambda: filtered if dropping else pull)
+        dropping = _DropWhile(pull, predicate)
+        filtered = _FlatMap(pull, dropping)
+        return _Suspend(lambda: filtered if dropping.dropping else pull)
 
     return _pulling(self, build)
+
+
+class _DropWhile:
+    """One run of ``drop_while``, called with each chunk while dropping."""
+
+    __slots__ = ("dropping", "predicate", "pull")
+
+    def __init__(self, pull: AnyEffect, predicate: Callable[[Any], bool]) -> None:
+        self.pull = pull
+        self.predicate = predicate
+        self.dropping = True
+
+    def __call__(self, chunk: Chunk) -> AnyEffect:
+        predicate = self.predicate
+        for index, item in enumerate(chunk):
+            if not predicate(item):
+                self.dropping = False
+                return _Succeed(chunk[index:])
+        return _FlatMap(self.pull, self)
 
 
 def drop_while_effect(self: AnyStream, predicate: Callable[[Any], AnyEffect]) -> AnyStream_:

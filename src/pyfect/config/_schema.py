@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, replace
+from functools import partial
 from typing import Any, Never, cast, final
 
 from pyfect._core import Effect
@@ -259,20 +260,7 @@ def _objects(node: ast.Objects) -> _Materialize:
             for key in found.keys:
                 if key not in keys and any(i.selects(key) for i in node.index_signatures):
                     keys.append(key)
-        out: dict[str, _Cursor] = {}
-
-        def load(i: int) -> Effect[object]:
-            if i == len(keys):
-                return succeed(out)
-
-            def keep(child: _Cursor) -> Effect[object]:
-                if child.node is not None:
-                    out[keys[i]] = child
-                return load(i + 1)
-
-            return _child(cursor, keys[i]).flat_map(keep)
-
-        return load(0)
+        return _load_record(cursor, keys, {}, 0)
 
     return materialize
 
@@ -281,19 +269,36 @@ def _arrays(cursor: _Cursor) -> Effect[object]:
     found = cursor.node
     if not isinstance(found, Array):
         return succeed(_UNDEFINED)
-    out: list[_Cursor] = []
+    return _load_array(cursor, found.length, [], 0)
 
-    def load(i: int) -> Effect[object]:
-        if i == found.length:
-            return succeed(out)
 
-        def keep(child: _Cursor) -> Effect[object]:
-            out.append(child)
-            return load(i + 1)
+def _load_record(
+    cursor: _Cursor, keys: list[str], out: dict[str, _Cursor], i: int
+) -> Effect[object]:
+    if i == len(keys):
+        return succeed(out)
+    return _child(cursor, keys[i]).flat_map(partial(_keep_entry, cursor, keys, out, i))
 
-        return _child(cursor, i).flat_map(keep)
 
-    return load(0)
+def _keep_entry(
+    cursor: _Cursor, keys: list[str], out: dict[str, _Cursor], i: int, child: _Cursor
+) -> Effect[object]:
+    if child.node is not None:
+        out[keys[i]] = child
+    return _load_record(cursor, keys, out, i + 1)
+
+
+def _load_array(cursor: _Cursor, length: int, out: list[_Cursor], i: int) -> Effect[object]:
+    if i == length:
+        return succeed(out)
+    return _child(cursor, i).flat_map(partial(_keep_element, cursor, length, out, i))
+
+
+def _keep_element(
+    cursor: _Cursor, length: int, out: list[_Cursor], i: int, child: _Cursor
+) -> Effect[object]:
+    out.append(child)
+    return _load_array(cursor, length, out, i + 1)
 
 
 class _CursorShape:

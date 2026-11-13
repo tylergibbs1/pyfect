@@ -219,13 +219,20 @@ def find_first_filter[A, B, E = Never, R = Never](
     """The value of the first item ``filter`` passes (``Ok(value)``), as
     ``Some(value)``, checking one at a time and stopping there; ``None`` if
     every item is rejected (``Err``)."""
+    return _Suspend(lambda: _find_first_check(iter(items), filter))
 
-    def check(it: Iterator[A]) -> Effect[Option[B], E, R]:
-        for item in it:
-            return filter(item).flat_map(lambda passed: _found(passed, it))
-        return _Succeed(None)
 
-    def _found(passed: Result[B, object], it: Iterator[A]) -> Effect[Option[B], E, R]:
-        return _Succeed(Some(passed.value)) if isinstance(passed, Ok) else check(it)
+def _find_first_check[A, B, E, R](
+    it: Iterator[A], filter: Callable[[A], Effect[Result[B, object], E, R]]
+) -> Effect[Option[B], E, R]:
+    for item in it:
+        return filter(item).flat_map(lambda passed: _find_first_found(passed, it, filter))
+    return _Succeed(None)
 
-    return _Suspend(lambda: check(iter(items)))
+
+def _find_first_found[A, B, E, R](
+    passed: Result[B, object],
+    it: Iterator[A],
+    filter: Callable[[A], Effect[Result[B, object], E, R]],
+) -> Effect[Option[B], E, R]:
+    return _Succeed(Some(passed.value)) if isinstance(passed, Ok) else _find_first_check(it, filter)

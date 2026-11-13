@@ -13,6 +13,7 @@ the factory's global layer (``Reactivity.layer``, plus what
 from __future__ import annotations
 
 from collections.abc import Callable
+from functools import partial
 from typing import Any, Generic, Never, TypeVar, cast, overload
 
 from pyfect._core import Effect
@@ -227,6 +228,20 @@ class AtomRuntime(Atom[AsyncResult[Context[Any], Any]], Generic[R_co, ER_co]):
         return make_sub_ref(remove_ttl(readable(read_ref)), read)
 
 
+def _resolve_memo_map(memo: Atom[MemoMap] | MemoMap, get: AtomContext) -> MemoMap:
+    return get(memo) if isinstance(memo, Atom) else memo
+
+
+def _build_reactivity(memo_map: Atom[MemoMap] | MemoMap, get: AtomContext) -> Any:
+    memo = _resolve_memo_map(memo_map, get)
+
+    def body(scope: Any) -> Effect[Any, Any, Any]:
+        built = _reactivity.layer.build_with_memo_map(memo, cast("CloseableScope", scope))
+        return built.map(lambda services: services.get_unsafe(Reactivity))
+
+    return make_effect(get, Scope().flat_map(body), async_result.initial())
+
+
 class RuntimeFactory:
     """Makes runtimes sharing one memo map and one global layer (Effect's
     ``Atom.context()``)."""
@@ -239,20 +254,12 @@ class RuntimeFactory:
         )
         self.global_layer: Layer[Any, Any, Any] = _reactivity.layer
 
-        def build_reactivity(get: AtomContext) -> Any:
-            memo = self._resolve_memo_map(get)
-
-            def body(scope: Any) -> Effect[Any, Any, Any]:
-                built = _reactivity.layer.build_with_memo_map(memo, cast("CloseableScope", scope))
-                return built.map(lambda services: services.get_unsafe(Reactivity))
-
-            return make_effect(get, Scope().flat_map(body), async_result.initial())
-
-        self._reactivity_atom: Atom[AsyncResult[Any, Any]] = remove_ttl(readable(build_reactivity))
+        self._reactivity_atom: Atom[AsyncResult[Any, Any]] = remove_ttl(
+            readable(partial(_build_reactivity, self.memo_map))
+        )
 
     def _resolve_memo_map(self, get: AtomContext) -> MemoMap:
-        memo = self.memo_map
-        return get(memo) if isinstance(memo, Atom) else memo
+        return _resolve_memo_map(self.memo_map, get)
 
     def __call__[R, E = Never](
         self,

@@ -138,20 +138,9 @@ class Child:
         def start(scheduler: Scheduler) -> Effect[None]:
             def register(resume: Callable[[Effect[None]], None]) -> Effect[None]:
                 deadline = time.monotonic() + timeout.to_seconds()
-                pending: list[Cancel] = []
-
-                def poll() -> None:
-                    if time.monotonic() >= deadline or not self.alive():
-                        resume(succeed(None))
-                    else:
-                        pending[:] = [scheduler.call_later(_POLL, poll)]
-
-                def stop() -> None:
-                    for cancel in pending:
-                        cancel()
-
-                poll()
-                return sync(stop)
+                polling = _GroupPoll(self, scheduler, resume, deadline)
+                polling.poll()
+                return sync(polling.stop)
 
             return callback(register)
 
@@ -207,6 +196,39 @@ class Child:
                 path_or_descriptor=self.command_line,
             )
         )
+
+
+class _GroupPoll:
+    """``_await_group``'s polling until the group is gone or time is up.
+    The pending timer is dropped once it fires or is stopped: it holds
+    ``poll``, so keeping it would be a cycle."""
+
+    __slots__ = ("child", "deadline", "pending", "resume", "scheduler")
+
+    def __init__(
+        self,
+        child: Child,
+        scheduler: Scheduler,
+        resume: Callable[[Effect[None]], None],
+        deadline: float,
+    ) -> None:
+        self.child = child
+        self.scheduler = scheduler
+        self.resume = resume
+        self.deadline = deadline
+        self.pending: Cancel | None = None
+
+    def poll(self) -> None:
+        self.pending = None
+        if time.monotonic() >= self.deadline or not self.child.alive():
+            self.resume(succeed(None))
+        else:
+            self.pending = self.scheduler.call_later(_POLL, self.poll)
+
+    def stop(self) -> None:
+        cancel, self.pending = self.pending, None
+        if cancel is not None:
+            cancel()
 
 
 def command_line(commands: tuple[StandardCommand, ...]) -> str:

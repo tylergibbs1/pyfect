@@ -75,25 +75,31 @@ def _text_literal(escape: Callable[[object], str]) -> Callable[[object, bool], s
     assignment list is ``\`key\` = value`` pairs. Elsewhere a dict is its JSON
     text, where mysql2 writes JavaScript's ``'[object Object]'``."""
 
-    def value(item: object) -> str:
-        # sql-escaper's ``escape(item, stringifyObjects=true)``.
-        if isinstance(item, list):
-            return listed(cast("list[object]", item))
-        return escape(_parameter(item))
-
-    def listed(items: list[object]) -> str:
-        return ", ".join(
-            f"({listed(cast('list[object]', item))})" if isinstance(item, list) else value(item)
-            for item in items
-        )
-
     def literal(param: object, assigns: bool) -> str:
         if assigns and isinstance(param, dict):
             pairs = cast("dict[object, object]", param).items()
-            return ", ".join(f"{_identifier(str(key))} = {value(item)}" for key, item in pairs)
-        return value(param)
+            return ", ".join(
+                f"{_identifier(str(key))} = {_escaped_value(item, escape)}" for key, item in pairs
+            )
+        return _escaped_value(param, escape)
 
     return literal
+
+
+def _escaped_value(item: object, escape: Callable[[object], str]) -> str:
+    # sql-escaper's ``escape(item, stringifyObjects=true)``.
+    if isinstance(item, list):
+        return _escaped_list(cast("list[object]", item), escape)
+    return escape(_parameter(item))
+
+
+def _escaped_list(items: list[object], escape: Callable[[object], str]) -> str:
+    return ", ".join(
+        f"({_escaped_list(cast('list[object]', item), escape)})"
+        if isinstance(item, list)
+        else _escaped_value(item, escape)
+        for item in items
+    )
 
 
 class Session:

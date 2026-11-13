@@ -229,17 +229,20 @@ class ShardingState:
         at most ``shard_lock_expiration``, instead of bouncing while the
         previous owner drains."""
 
-        def loop() -> Effect[None]:
-            if not self.is_awaiting_shard_lock(shard_id):
-                return _VOID
-            return self.shard_locks_changed.wait().and_then(suspend(loop))
-
         def start() -> Effect[None]:
             if not self.is_awaiting_shard_lock(shard_id):
                 return _VOID
-            return suspend(loop).timeout_option(self.config.shard_lock_expiration).as_void()
+            waiting = suspend(lambda: self._await_shard_lock_round(shard_id))
+            return waiting.timeout_option(self.config.shard_lock_expiration).as_void()
 
         return suspend(start)
+
+    def _await_shard_lock_round(self, shard_id: ShardId) -> Effect[None]:
+        if not self.is_awaiting_shard_lock(shard_id):
+            return _VOID
+        return self.shard_locks_changed.wait().and_then(
+            suspend(lambda: self._await_shard_lock_round(shard_id))
+        )
 
     def release_lost_shards(
         self, refreshed: Sequence[ShardId], acquired: Sequence[ShardId]

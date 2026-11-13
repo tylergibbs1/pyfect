@@ -16,7 +16,7 @@ from typing import Any, Never, Unpack
 from warnings import deprecated
 
 from pyfect._core import Effect, _Suspend, _WithFiber
-from pyfect.clock import Clock, sleep
+from pyfect.clock import Clock, ClockService, sleep
 from pyfect.config import Config, ConfigError, unwrap
 from pyfect.context import Context, Tag
 from pyfect.duration import Input as DurationInput
@@ -130,25 +130,40 @@ def _enable_wal(conn: SqliteConnection, busy_timeout: int) -> Effect[None, SqlEr
     def body(fiber: Any) -> Effect[None, SqlError]:
         clock = fiber.get_ref(Clock)
         deadline = clock.monotonic_nanos_unsafe() + busy_timeout * 1_000_000
-
-        def remaining() -> int:
-            return max(0, (deadline - clock.monotonic_nanos_unsafe()) // 1_000_000)
-
-        def retry(error: SqlError) -> Effect[None, SqlError]:
-            return sleep(_WAL_RETRY).and_then(_Suspend(attempt))
-
-        def attempt() -> Effect[None, SqlError]:
-            return (
-                conn.exec_config(f"PRAGMA busy_timeout = {remaining()}")
-                .and_then(conn.exec_config("PRAGMA journal_mode = WAL"))
-                .catch_if(
-                    lambda e: isinstance(e.reason, LockTimeoutError) and remaining() > 0, retry
-                )
-            )
-
-        return attempt().and_then(conn.exec_config(f"PRAGMA busy_timeout = {busy_timeout}"))
+        attempt = _EnableWal(conn, clock, deadline).attempt()
+        return attempt.and_then(conn.exec_config(f"PRAGMA busy_timeout = {busy_timeout}"))
 
     return _WithFiber(body)
+
+
+class _EnableWal:
+    """The attempts of one ``_enable_wal``: a loop on a state object, not
+    closures that call each other (that cycle would keep the connection
+    alive)."""
+
+    __slots__ = ("clock", "conn", "deadline")
+
+    def __init__(self, conn: SqliteConnection, clock: ClockService, deadline: int) -> None:
+        self.conn = conn
+        self.clock = clock
+        self.deadline = deadline
+
+    def remaining(self) -> int:
+        return max(0, (self.deadline - self.clock.monotonic_nanos_unsafe()) // 1_000_000)
+
+    def retryable(self, error: SqlError) -> bool:
+        return isinstance(error.reason, LockTimeoutError) and self.remaining() > 0
+
+    def retry(self, _: SqlError) -> Effect[None, SqlError]:
+        return sleep(_WAL_RETRY).and_then(_Suspend(self.attempt))
+
+    def attempt(self) -> Effect[None, SqlError]:
+        conn = self.conn
+        return (
+            conn.exec_config(f"PRAGMA busy_timeout = {self.remaining()}")
+            .and_then(conn.exec_config("PRAGMA journal_mode = WAL"))
+            .catch_if(self.retryable, self.retry)
+        )
 
 
 def make(config: SqliteClientConfig) -> Effect[SqliteClientService, SqlError, Scope | Reactivity]:

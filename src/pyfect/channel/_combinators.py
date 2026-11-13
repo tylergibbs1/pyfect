@@ -7,16 +7,27 @@ sequential ``flat_map``, ``drain``, ``concat_with``, ``or_else_if_empty``,
 from __future__ import annotations
 
 from collections.abc import Callable
+from functools import partial
 from typing import Any
 
 from pyfect._concurrency import Concurrency
-from pyfect._core import Effect, _FailCause, _FlatMap, _Map, _Succeed, _Suspend, _Sync
-from pyfect.cause import fail
+from pyfect._core import (
+    Effect,
+    _FailCause,
+    _FlatMap,
+    _Map,
+    _MatchCause,
+    _Succeed,
+    _Suspend,
+    _Sync,
+)
+from pyfect.cause import Cause, fail
 from pyfect.channel._base import AnyChannel, AnyPull, end_with, is_done
 from pyfect.channel._channel import Channel, from_transform, transform_pull
 from pyfect.channel._loop import PullLoop
 from pyfect.exit import Success
-from pyfect.pull import catch_done
+from pyfect.pull import catch_done, filter_done
+from pyfect.result import Ok
 from pyfect.scope import CloseableScope
 
 type Channel_ = Channel[Any, Any, Any, Any, Any, Any, Any]
@@ -96,60 +107,69 @@ def flat_map(self: AnyChannel, f: Callable[[Any], AnyChannel]) -> Channel_:
     ends; a child scope left open without finalizers is reused."""
 
     def transform(upstream: AnyPull, scope: CloseableScope) -> Effect[AnyPull]:
-        def with_outer(pull: AnyPull) -> AnyPull:
-            child_pull: AnyPull | None = None
-            child_scope: CloseableScope | None = None
-
-            def next_inner(used: CloseableScope) -> AnyPull:
-                nonlocal child_pull, child_scope
-                child_pull = None
-                if used.is_empty:
-                    return make_pull
-                child_scope = None
-                return used.close(Success(None)).and_then(make_pull)
-
-            def start(value: Any) -> AnyPull:
-                nonlocal child_scope
-                if child_scope is None:
-                    child_scope = scope.fork_unsafe()
-                used = child_scope
-                return f(value)._transform(upstream, used).flat_map(lambda inner: keep(inner, used))
-
-            def keep(inner: AnyPull, used: CloseableScope) -> AnyPull:
-                nonlocal child_pull
-                child_pull = catch_done(inner, lambda _: next_inner(used))
-                return child_pull
-
-            make_pull: AnyPull = _FlatMap(pull, start)
-            return _Suspend(lambda: make_pull if child_pull is None else child_pull)
-
-        return self._transform(upstream, scope).map(with_outer)
+        return self._transform(upstream, scope).map(
+            lambda pull: _Suspend(_FlatMapRun(f, upstream, scope, pull).next_pull)
+        )
 
     return from_transform(transform)
+
+
+class _FlatMapRun:
+    """One run of ``flat_map``: ``inner`` is the inner channel's pull while
+    it runs, in ``used``; ``child_scope`` is the child scope to reuse. It is
+    called with the inner pull's failure."""
+
+    __slots__ = ("child_scope", "f", "inner", "pull", "scope", "upstream", "used")
+
+    def __init__(
+        self,
+        f: Callable[[Any], AnyChannel],
+        upstream: AnyPull,
+        scope: CloseableScope,
+        pull: AnyPull,
+    ) -> None:
+        self.f = f
+        self.upstream = upstream
+        self.scope = scope
+        self.pull = pull
+        self.inner: AnyPull | None = None
+        self.child_scope: CloseableScope | None = None
+        self.used: CloseableScope = scope
+
+    def next_pull(self) -> AnyPull:
+        inner = self.inner
+        return _FlatMap(self.pull, self.start) if inner is None else _MatchCause(inner, self, None)
+
+    def start(self, value: Any) -> AnyPull:
+        if self.child_scope is None:
+            self.child_scope = self.scope.fork_unsafe()
+        used = self.child_scope
+        return self.f(value)._transform(self.upstream, used).flat_map(partial(self.keep, used))
+
+    def keep(self, used: CloseableScope, inner: AnyPull) -> AnyPull:
+        self.inner, self.used = inner, used
+        return _MatchCause(inner, self, None)
+
+    def __call__(self, cause: Cause[Any]) -> AnyPull:
+        found = filter_done(cause)
+        return self._next_inner() if isinstance(found, Ok) else _FailCause(found.error)
+
+    def _next_inner(self) -> AnyPull:
+        used = self.used
+        self.inner = None
+        make_pull = _FlatMap(self.pull, self.start)
+        if used.is_empty:
+            return make_pull
+        self.child_scope = None
+        return used.close(Success(None)).and_then(make_pull)
 
 
 def concat_with(self: AnyChannel, f: Callable[[Any], AnyChannel]) -> Channel_:
     def transform(upstream: AnyPull, scope: CloseableScope) -> Effect[AnyPull]:
         def make() -> AnyPull:
-            current: AnyPull | None = None
-            forked = scope.fork_unsafe()
-
-            def switch(pull: AnyPull) -> AnyPull:
-                nonlocal current
-                current = pull
-                return pull
-
-            def next_channel(leftover: Any) -> AnyPull:
-                return (
-                    forked.close(Success(None))
-                    .and_then(_Suspend(lambda: f(leftover)._transform(upstream, scope)))
-                    .flat_map(switch)
-                )
-
-            first = self._transform(upstream, forked).flat_map(
-                lambda pull: switch(catch_done(pull, next_channel))
-            )
-            return _Suspend(lambda: first if current is None else current)
+            run = _Concat(f, upstream, scope)
+            first = self._transform(upstream, run.forked).flat_map(run.started)
+            return _Suspend(lambda: run.next_pull(first))
 
         return _Sync(make)
 
@@ -159,34 +179,83 @@ def concat_with(self: AnyChannel, f: Callable[[Any], AnyChannel]) -> Channel_:
 def or_else_if_empty(self: AnyChannel, f: Callable[[Any], AnyChannel]) -> Channel_:
     def transform(upstream: AnyPull, scope: CloseableScope) -> Effect[AnyPull]:
         def make() -> AnyPull:
-            current: AnyPull | None = None
-            forked = scope.fork_unsafe()
-
-            def switch(pull: AnyPull) -> AnyPull:
-                nonlocal current
-                current = pull
-                return pull
-
-            def otherwise(leftover: Any) -> AnyPull:
-                return (
-                    forked.close(Success(leftover))
-                    .and_then(_Suspend(lambda: f(leftover)._transform(upstream, scope)))
-                    .flat_map(switch)
-                )
-
-            def first_pull(pull: AnyPull) -> AnyPull:
-                def wrote(item: Any) -> Effect[Any]:
-                    switch(pull)
-                    return _Succeed(item)
-
-                return switch(catch_done(_FlatMap(pull, wrote), otherwise))
-
-            first = self._transform(upstream, forked).flat_map(first_pull)
-            return _Suspend(lambda: first if current is None else current)
+            run = _OrElseIfEmpty(f, upstream, scope)
+            first = self._transform(upstream, run.forked).flat_map(run.started)
+            return _Suspend(lambda: run.next_pull(first))
 
         return _Sync(make)
 
     return from_transform(transform)
+
+
+class _Concat:
+    """One run of ``concat_with``: the first channel's pull until it is done,
+    then ``f(leftover)``'s. It keeps the first pull bare and wraps it with
+    itself (the done handler) on each pull: a stored wrapped pull would refer
+    back here, a cycle that kept the run alive after it ended."""
+
+    __slots__ = ("current", "f", "first", "forked", "scope", "upstream")
+
+    def __init__(
+        self,
+        f: Callable[[Any], AnyChannel],
+        upstream: AnyPull,
+        scope: CloseableScope,
+    ) -> None:
+        self.f = f
+        self.upstream = upstream
+        self.scope = scope
+        self.forked = scope.fork_unsafe()
+        self.first: AnyPull | None = None
+        self.current: AnyPull | None = None
+
+    def started(self, pull: AnyPull) -> AnyPull:
+        self.first = pull
+        return self.wrapped(pull)
+
+    def wrapped(self, pull: AnyPull) -> AnyPull:
+        return _MatchCause(pull, self, None)
+
+    def next_pull(self, first: AnyPull) -> AnyPull:
+        if self.current is not None:
+            return self.current
+        return first if self.first is None else self.wrapped(self.first)
+
+    def switch(self, pull: AnyPull) -> AnyPull:
+        self.current = pull
+        return pull
+
+    def close_with(self, leftover: Any) -> Success[Any]:
+        del leftover
+        return Success(None)
+
+    def __call__(self, cause: Cause[Any]) -> AnyPull:
+        found = filter_done(cause)
+        if not isinstance(found, Ok):
+            return _FailCause(found.error)
+        leftover = found.value.value
+        return (
+            self.forked.close(self.close_with(leftover))
+            .and_then(_Suspend(lambda: self.f(leftover)._transform(self.upstream, self.scope)))
+            .flat_map(self.switch)
+        )
+
+
+class _OrElseIfEmpty(_Concat):
+    """One run of ``or_else_if_empty``: like ``_Concat``, but only until the
+    first channel writes, which makes its bare pull the current one."""
+
+    __slots__ = ()
+
+    def wrapped(self, pull: AnyPull) -> AnyPull:
+        return _MatchCause(_FlatMap(pull, self.wrote), self, None)
+
+    def wrote(self, item: Any) -> Effect[Any]:
+        self.current = self.first
+        return _Succeed(item)
+
+    def close_with(self, leftover: Any) -> Success[Any]:
+        return Success(leftover)
 
 
 def combine(

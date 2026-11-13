@@ -144,34 +144,43 @@ def transform_schema(node: object, transform: Callable[[JsonSchema, bool], None]
     """A copy of a Draft 2020-12 schema with ``transform(schema,
     in_embedded_resource)`` run on every schema node, children first."""
 
-    def walk(node: object, inherited: bool, is_root: bool = False) -> object:
-        if not is_object(node):
-            return node
-        source = as_object(node)
-        in_embedded = inherited or (not is_root and creates_resource(source.get("$id")))
-        out: JsonSchema = {}
-        for key, value in source.items():
-            match subschema_kind(key):
-                case "map":
-                    out[key] = (
-                        map_object(as_object(value), lambda item, _: walk(item, in_embedded))
-                        if is_object(value)
-                        else value
-                    )
-                case "array":
-                    out[key] = (
-                        [walk(item, in_embedded) for item in as_array(value)]
-                        if is_array(value)
-                        else value
-                    )
-                case "schema":
-                    out[key] = walk(value, in_embedded)
-                case None:
-                    out[key] = value
-        transform(out, in_embedded)
-        return out
+    return _transform_node(transform, node, False, True)
 
-    return walk(node, False, True)
+
+def _transform_node(
+    transform: Callable[[JsonSchema, bool], None], node: object, inherited: bool, is_root: bool
+) -> object:
+    if not is_object(node):
+        return node
+    source = as_object(node)
+    in_embedded = inherited or (not is_root and creates_resource(source.get("$id")))
+    out: JsonSchema = {}
+    for key, value in source.items():
+        match subschema_kind(key):
+            case "map":
+                out[key] = (
+                    map_object(
+                        as_object(value),
+                        lambda item, _: _transform_node(transform, item, in_embedded, False),
+                    )
+                    if is_object(value)
+                    else value
+                )
+            case "array":
+                out[key] = (
+                    [
+                        _transform_node(transform, item, in_embedded, False)
+                        for item in as_array(value)
+                    ]
+                    if is_array(value)
+                    else value
+                )
+            case "schema":
+                out[key] = _transform_node(transform, value, in_embedded, False)
+            case None:
+                out[key] = value
+    transform(out, in_embedded)
+    return out
 
 
 def rewrite_schema_ref(schema: JsonSchema, rewrite: Callable[[str, str], str]) -> None:

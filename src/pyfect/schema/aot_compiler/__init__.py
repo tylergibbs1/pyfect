@@ -93,51 +93,54 @@ def compile(targets: Sequence[Target], /) -> str:
     transformation; an empty list gives a module whose ``install`` does
     nothing."""
     seen: dict[int, tuple[AST, _Plan]] = {}
-
-    def add_source(node: AST, plan: _Plan, operation: DecoderOperation) -> bool:
-        if operation in plan.attempted:
-            return operation in plan.sources
-        plan.attempted.add(operation)
-        if not plan.compilable:
-            return False
-        source = codegen.generate(node, operation)
-        if source is None:
-            return False
-        plan.sources[operation] = source
-        return True
-
-    def visit(node: AST, reference: str, operation: _Planned) -> None:
-        found = seen.get(id(node))
-        if found is None:
-            plan = _Plan(f"a{len(seen)}", reference, codegen.should_compile_parser(node))
-            seen[id(node)] = (node, plan)
-        else:
-            plan = found[1]
-        if operation in plan.requested:
-            return
-        plan.requested.add(operation)
-        match operation:
-            case "decode":
-                add_source(node, plan, "decode")
-                visit(node, reference, "decode_effect")
-            case "decode_effect":
-                add_source(node, plan, "decode_effect")
-                for child, path in _dependencies(node, plan.name):
-                    visit(child, path, operation)
-            case "is":
-                if not add_source(node, plan, "is"):
-                    visit(node, reference, "decode")
-            case "make":
-                add_source(node, plan, "make")
-                add_source(node, plan, "make_effect")
-                for child, path in _dependencies(node, plan.name):
-                    visit(child, path, operation)
-
     for index, target in enumerate(targets):
         for operation in _OPERATION_ORDER:
             if operation in target.operations:
-                visit(target.ast, f"asts[{index}]", operation)
+                _visit(seen, target.ast, f"asts[{index}]", operation)
     return _module([plan for _, plan in seen.values()])
+
+
+def _add_source(node: AST, plan: _Plan, operation: DecoderOperation) -> bool:
+    if operation in plan.attempted:
+        return operation in plan.sources
+    plan.attempted.add(operation)
+    if not plan.compilable:
+        return False
+    source = codegen.generate(node, operation)
+    if source is None:
+        return False
+    plan.sources[operation] = source
+    return True
+
+
+def _visit(
+    seen: dict[int, tuple[AST, _Plan]], node: AST, reference: str, operation: _Planned
+) -> None:
+    found = seen.get(id(node))
+    if found is None:
+        plan = _Plan(f"a{len(seen)}", reference, codegen.should_compile_parser(node))
+        seen[id(node)] = (node, plan)
+    else:
+        plan = found[1]
+    if operation in plan.requested:
+        return
+    plan.requested.add(operation)
+    match operation:
+        case "decode":
+            _add_source(node, plan, "decode")
+            _visit(seen, node, reference, "decode_effect")
+        case "decode_effect":
+            _add_source(node, plan, "decode_effect")
+            for child, path in _dependencies(node, plan.name):
+                _visit(seen, child, path, operation)
+        case "is":
+            if not _add_source(node, plan, "is"):
+                _visit(seen, node, reference, "decode")
+        case "make":
+            _add_source(node, plan, "make")
+            _add_source(node, plan, "make_effect")
+            for child, path in _dependencies(node, plan.name):
+                _visit(seen, child, path, operation)
 
 
 def _module(plans: list[_Plan]) -> str:

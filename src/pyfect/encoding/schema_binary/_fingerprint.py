@@ -43,37 +43,46 @@ _CAUSE_REASON = 24
 _LITERAL = 25
 
 
-def layout_fingerprint(root: L.Layout) -> int:  # noqa: PLR0915
-    cache: dict[int, int] = {}
-    stack: list[L.Layout] = []
-    never_escapes = 2**62
-    escape = never_escapes
+def layout_fingerprint(root: L.Layout) -> int:
+    return _Fingerprinter().go(root)
 
-    def go(layout: L.Layout) -> int:
-        nonlocal escape
+
+_NEVER_ESCAPES = 2**62
+
+
+class _Fingerprinter:
+    __slots__ = ("cache", "escape", "stack")
+
+    def __init__(self) -> None:
+        self.cache: dict[int, int] = {}
+        self.stack: list[L.Layout] = []
+        self.escape = _NEVER_ESCAPES
+
+    def go(self, layout: L.Layout) -> int:
+        stack = self.stack
         at = next((i for i in range(len(stack) - 1, -1, -1) if stack[i] is layout), -1)
         if at >= 0:
-            escape = min(escape, at)
+            self.escape = min(self.escape, at)
             return W.fnv64(bytes((_BACK_EDGE,)) + W.uvarint_bytes(len(stack) - at))
-        cached = cache.get(id(layout))
+        cached = self.cache.get(id(layout))
         if cached is not None:
             return cached
         here = len(stack)
-        outer = escape
-        escape = never_escapes
+        outer = self.escape
+        self.escape = _NEVER_ESCAPES
         stack.append(layout)
-        hash_ = W.fnv64(structure(layout))
+        hash_ = W.fnv64(self.structure(layout))
         stack.pop()
-        closed = escape >= here
+        closed = self.escape >= here
         if closed:
-            cache[id(layout)] = hash_
-        escape = outer if closed else min(outer, escape)
+            self.cache[id(layout)] = hash_
+        self.escape = outer if closed else min(outer, self.escape)
         return hash_
 
-    def u64(layout: L.Layout) -> bytes:
-        return go(layout).to_bytes(8, "little")
+    def u64(self, layout: L.Layout) -> bytes:
+        return self.go(layout).to_bytes(8, "little")
 
-    def structure(layout: L.Layout) -> bytes:  # noqa: PLR0911, PLR0912
+    def structure(self, layout: L.Layout) -> bytes:  # noqa: PLR0911, PLR0912
         match layout:
             case L.LeafLayout(kind=kind):
                 return bytes((_LEAF_CODES[kind],))
@@ -86,19 +95,19 @@ def layout_fingerprint(root: L.Layout) -> int:  # noqa: PLR0915
                 for field in layout.fields:
                     out += W.U32.pack(field.id)
                     out.append(1 if field.optional else 0)
-                    out += u64(field.layout)
+                    out += self.u64(field.layout)
                 out += W.uvarint_bytes(len(layout.extra))
                 for signature in layout.extra:
-                    out += u64(signature.layout)
+                    out += self.u64(signature.layout)
                 return bytes(out)
             case L.ArrayLayout():
                 out = bytearray((_ARRAY,)) + W.uvarint_bytes(len(layout.elements))
                 for slot in layout.elements:
                     out.append(1 if slot.optional else 0)
-                    out += u64(slot.layout)
+                    out += self.u64(slot.layout)
                 out += W.uvarint_bytes(len(layout.rest))
                 for rest in layout.rest:
-                    out += u64(rest)
+                    out += self.u64(rest)
                 return bytes(out)
             case L.UnionLayout():
                 out = bytearray((_UNION,)) + W.uvarint_bytes(len(layout.by_pos))
@@ -109,24 +118,22 @@ def layout_fingerprint(root: L.Layout) -> int:  # noqa: PLR0915
                     else:
                         out += bytes((1, 1 if variant.tuple_ else 0))
                         out += W.U32.pack(variant.tag)
-                    out += u64(position.layout)
+                    out += self.u64(position.layout)
                 return bytes(out)
             case L.OptionLayout():
-                return bytes((_OPTION,)) + u64(layout.value)
+                return bytes((_OPTION,)) + self.u64(layout.value)
             case L.ResultLayout():
-                return bytes((_RESULT,)) + u64(layout.success) + u64(layout.failure)
+                return bytes((_RESULT,)) + self.u64(layout.success) + self.u64(layout.failure)
             case L.ExitLayout():
                 return (
                     bytes((_EXIT,))
-                    + u64(layout.value)
-                    + u64(layout.cause.error)
-                    + u64(layout.cause.defect)
+                    + self.u64(layout.value)
+                    + self.u64(layout.cause.error)
+                    + self.u64(layout.cause.defect)
                 )
             case L.ReasonLayout():
                 code = _CAUSE if layout.kind == "cause" else _CAUSE_REASON
-                return bytes((code,)) + u64(layout.error) + u64(layout.defect)
-
-    return go(root)
+                return bytes((code,)) + self.u64(layout.error) + self.u64(layout.defect)
 
 
 def _literal(layout: L.LiteralLayout) -> bytes:
