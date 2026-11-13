@@ -87,6 +87,59 @@
 - `retry_transient` reads a `Retry-After` HTTP date against the schedule's clock in epoch
   milliseconds, as Effect's `retryAfterOf(input, now)`. It multiplied the time by 1000 first, so
   a date in the future read as long past and the retry did not wait for it.
+- Shared-state types shared by runs on different threads (`fx.run_blocking` from a thread pool,
+  `ThreadWorker`s, a `ManagedRuntime` per thread) lost updates, handed out items twice and left
+  waiters asleep. Each operation counted on one fiber step being atomic, which holds for one
+  run's fibers but not for runs on other threads, on 3.14t or with the GIL. Eight threads
+  making 10,000 runs each of `fx.tx(ref.update(+1))` on one `TxRef` ended near 69,000 of 80,000
+  on 3.14t (two transactions checked the same version and both committed; a `TxHashMap` of
+  stock sold 106 items it did not have), and `Ref.update` lost updates the same way. Now each
+  primitive holds a lock of its own while it reads and changes its state, and lets it go to
+  resume a fiber; transactions check and commit under one process-wide lock. Effect's deferred
+  wake-ups (a queue's taker, a semaphore's waiter, a latch's) were queued on the waking run,
+  which never ran them once its root fiber ended, so a waiter in another run slept forever;
+  they now go through the waiter's own run. `tests/cross_run` shares every such type between
+  eight threads' runs on both builds (the free-threaded CI job runs it too), forces the `Ref`
+  and wake-up races to happen every time, and fails when a public class whose effects change
+  its own state has no case there. Docs: [Threads](/docs/threads#sharing-state-between-runs)
+  states the contract. Found by dogfooding (stockroom).
+  What went wrong where, before (both builds unless noted):
+  - `Ref` read-modify-writes lost updates, `get_and_set` handed a value back twice (3.14t).
+    The update function now runs once, holding the ref's lock.
+  - `TxRef` lost commits, transfers between two refs changed their sum, a `tx_retry` waiter
+    missed a commit from another run, and so every `Tx*` collection broke: `TxHashMap` sold
+    more than its stock, `TxQueue` and `TxPriorityQueue` handed items out twice, `TxSemaphore`
+    and `TxReentrantLock` let holders overlap, `TxDeferred` completed twice.
+  - `Semaphore`, `SynchronizedRef`, `SubscriptionRef`, `Latch`, `Queue` (bounded, unbounded,
+    rendezvous), `PubSub` (every strategy, and with replay) and `PartitionedSemaphore` hung on
+    lost wake-ups and let holders overlap; `Deferred` lost a waiter on 3.14t.
+  - `Pool` hung, also because its resize fiber was forked on the borrower's short run; it now
+    forks on the run that made the pool. `Cache`, `ScopedCache`, `fx.cached` and a resolver's
+    `with_cache` ran a lookup twice or raised `KeyError`. `RcRef` and `RcMap` used a released
+    resource or hung on an idle time to live, whose timer ran on the releasing caller's run;
+    it now runs on the run that made them.
+  - `FiberMap` and `FiberHandle` lost a fiber set from two runs at once, `FiberSet` missed an
+    add racing its close, a scope lost finalizers and forks added while it closed (or raised
+    "dictionary changed size"), and an observer added to a fiber finishing on another thread
+    was never called.
+  - Metrics lost increments (counters, gauges, frequencies, histograms, summaries), two runs
+    could get different `Reference` defaults (and so two metric registries),
+    `MutableHashMap.modify` lost updates, a shared `SnowflakeGenerator` handed out the same
+    snowflake twice and `MemoryRateLimiterStore` lost tokens.
+- `EventLogService.synced` (a pyfect addition) no longer waits forever when a remote
+  acknowledges this log's upload before the entry before it has been replayed. The remote
+  leaves a connection's own writes out of its change stream and the journal's cursor crosses
+  only acks that continue straight on from it (both as in Effect), so the cursor stopped
+  short of the server's latest sequence. `synced` now counts the sequences the remote
+  acknowledged for this log's uploads as seen, on top of the cursor, which every journal
+  still reports as Effect's does. Once `destroy` has run on the log, `synced` fails with the
+  new `EventLogDestroyedError` (exported from `pyfect.eventlog.event_log`) instead of
+  counting the acks of destroyed entries or waiting for a change stream that does not start
+  again; a journal destroyed directly, not through the log, is not noticed. `synced`'s error
+  type gains `EventLogDestroyedError`, so code that handles its errors exhaustively must add
+  it. A property test commits acks and replays in every order on
+  the memory and SQL journals and checks `synced` sees the end, and never a sequence the log
+  lacks. Found by dogfooding (quill).
 - `S.Finite` and `S.is_finite` read an `int` as a JavaScript number, so one past the largest
   double (a 400-digit JSON literal, which `JSON.parse` reads as `Infinity`) is not finite, as
   in Effect. `jwt.verify` checks `exp`, `nbf` and `iat` with `S.Finite`, so a token signed
@@ -215,6 +268,32 @@
   is weak at every level, as Effect's is (on the options, then on the API). Every
   weak-keyed table and `weakref.finalize` in pyfect is now listed with what makes it free
   (`tests/test_weak_tables.py`), so a new one is checked before it lands.
+- `S.UnknownFromJsonString`, `S.from_json_string` and the `stringify_json` getter write `NaN`
+  and infinities as `null`, as Effect's `JSON.stringify` does. A JSON number past the largest
+  double (`1e400`, `555555555E555555555555`) decodes to an infinity, in Effect too, but encoding
+  it failed with "Expected a JSON-serializable value", so decode accepted what encode
+  rejected; `S.encode_unknown_sync(S.UnknownFromJsonString)(decoded)` of `[1e400]` is now
+  `"[null]"`. The fuzz differential now compares `UnknownFromJsonString`'s decode and encode
+  with Effect's on the `schema_json` corpus. Found by the `schema_json` fuzz target.
+
+### Performance
+
+- Forking and yielding cost what they did in 0.6.1 again. The per-fiber dispatchers added in
+  this release made `benchmarks/streams.py`'s fork-heavy case 30 to 37% slower: each fiber
+  allocated a dispatcher and a batch, and each task went through a thread check and an extra
+  scheduling hop. A fiber now keeps its batch in its own slots, a batch of one task allocates
+  nothing (a yield is held as is), and the fiber's own yields, forks and wakes queue without
+  the thread check; Effect's ordering is unchanged. A queue asks for its waker only when it
+  wakes a taker, and the scheduler checks for due timers with one comparison per turn, as it
+  did before the soak's `TimerHeap`. On CI, alternating on one runner: fork-heavy x0.90 to
+  x0.98 of 0.6.1 (x0.57 to x0.66 of the release branch before this), queue offer/take x1.02
+  to x1.07, map + filter unchanged.
+- `benchmarks/compare.py` compares a commit with its branch base (the merge base with
+  `origin/main`, or the first parent on `main`), alternating the two on one machine, and CI
+  runs it after the gate: fork-heavy and queue fail beyond x1.10 of the base, set from twelve
+  CI runners comparing a commit with itself (x0.93 to x1.04), and the other cases beyond
+  x1.25. The gate's x1.6
+  against a fixed baseline had let the x1.37 through, as runners differ by that much.
 
 ### Docs
 

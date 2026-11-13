@@ -8617,7 +8617,12 @@ def eventlog_typed_api_checks() -> None:
     def synced_use(log: ev_log.EventLogService) -> None:
         assert_type(
             log.synced,
-            fx.Effect[None, ev_journal.EventJournalError | ev_remote.EventLogRemoteError],
+            fx.Effect[
+                None,
+                ev_journal.EventJournalError
+                | ev_remote.EventLogRemoteError
+                | ev_log.EventLogDestroyedError,
+            ],
         )
 
     del synced_use

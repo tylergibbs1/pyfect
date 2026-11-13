@@ -26,8 +26,9 @@ from pyfect._core import (
     uninterruptible_mask,
 )
 from pyfect._effect_args import require_effect
-from pyfect._fiber import Fiber
+from pyfect._fiber import Fiber, current_fiber
 from pyfect._interrupt_reason import closed
+from pyfect._root import new_root, start_root
 from pyfect._unsubscripted import Unsubscripted
 from pyfect.cause import Cause
 from pyfect.cause import interrupt as interrupt_cause
@@ -39,6 +40,7 @@ from pyfect.exit import Exit, Failure, Success
 from pyfect.logger._log import log_unhandled
 from pyfect.pool._state import PoolConfig, PoolItem, PoolState, PoolStats, Strategy
 from pyfect.pool._waiters import Waiter
+from pyfect.scheduler import Scheduler
 from pyfect.scope import CloseableScope, Scope, acquire_release, fork_in
 from pyfect.semaphore import Semaphore
 
@@ -56,7 +58,7 @@ class Pool[A = Unsubscripted, E = Never]:
     scope; closing that scope shuts the pool down, waiting for borrowed
     items to come back before releasing everything."""
 
-    __slots__ = ("_acquire", "_clock", "_context", "config", "state")
+    __slots__ = ("_acquire", "_clock", "_context", "_owner", "config", "state")
 
     def __init__(
         self,
@@ -65,12 +67,17 @@ class Pool[A = Unsubscripted, E = Never]:
         clock: ClockService,
         config: PoolConfig[A, E],
         state: PoolState[A, E],
+        *,
+        owner: Scheduler,
     ) -> None:
         self._acquire = acquire
         self._context = context
         self._clock = clock
         self.config = config
         self.state = state
+        # The run that made the pool, which lives as long as its scope:
+        # the pool's own fibers (resizes, cleanups) run on it.
+        self._owner = owner
 
     # --- constructors ---------------------------------------------------------
 
@@ -227,7 +234,8 @@ class Pool[A = Unsubscripted, E = Never]:
                     target_utilization=_clamp(target_utilization, 0.1, 1.0),
                 )
                 state: PoolState[T, X] = PoolState(scope, Semaphore(1))
-                pool = Pool(acquire, context, context.lookup(Clock)[1], config, state)
+                clock = context.lookup(Clock)[1]
+                pool = Pool(acquire, context, clock, config, state, owner=fiber._run_scheduler)
                 return _Gen(lambda: pool._start(scope, restore))
 
             return _WithFiber(with_fiber)
@@ -254,7 +262,8 @@ class Pool[A = Unsubscripted, E = Never]:
         the item failed; interrupted once the pool is shutting down."""
 
         def body(fiber: Fiber[Any, Any]) -> Effect[A, E, Scope]:
-            fast = self._fast_item()
+            with self.state.lock:
+                fast = self._fast_item()
             if fast is not None:
                 item, value = fast
                 return self._lease_scoped(item, value, fiber)
@@ -270,7 +279,8 @@ class Pool[A = Unsubscripted, E = Never]:
         """Borrow an item for as long as ``f(item)`` runs."""
 
         def body(fiber: Fiber[Any, Any]) -> Effect[B, E | E2, R2]:
-            fast = self._fast_item()
+            with self.state.lock:
+                fast = self._fast_item()
             if fast is not None:
                 item, value = fast
                 return self._use_item(item, value, f, fiber, None)
@@ -286,12 +296,13 @@ class Pool[A = Unsubscripted, E = Never]:
         ``===``."""
 
         def body() -> Effect[None]:
-            if self.state.is_shutting_down:
-                return _VOID
-            pool_item = self._find(item)
-            if pool_item is None:
-                return _VOID
-            pool_item.disable_reclaim = True
+            with self.state.lock:
+                if self.state.is_shutting_down:
+                    return _VOID
+                pool_item = self._find(item)
+                if pool_item is None:
+                    return _VOID
+                pool_item.disable_reclaim = True
             return self._invalidate_item(pool_item).uninterruptible()
 
         return _Suspend(body)
@@ -307,31 +318,33 @@ class Pool[A = Unsubscripted, E = Never]:
         def take() -> PoolItem[A, E] | None:
             if concurrency == 1:
                 return None
-            pool_item = self._find(item)
-            if pool_item is None:
-                return None
-            if pool_item.reservations == 0:
-                state.usage += concurrency - 1
-            pool_item.reservations += 1
-            state._remove_available(pool_item)
-            return pool_item
+            with state.lock:
+                pool_item = self._find(item)
+                if pool_item is None:
+                    return None
+                if pool_item.reservations == 0:
+                    state.usage += concurrency - 1
+                pool_item.reservations += 1
+                state._remove_available(pool_item)
+                return pool_item
 
         def give_back(pool_item: PoolItem[A, E] | None) -> Effect[None]:
             def run(fiber: Fiber[Any, Any]) -> Effect[None]:
                 if pool_item is None:
                     return _VOID
-                pool_item.reservations -= 1
-                if pool_item.reservations > 0:
-                    return _VOID
-                state.usage -= concurrency - 1
-                if (
-                    not state.is_shutting_down
-                    and pool_item in state.items
-                    and pool_item not in state.invalidated
-                    and pool_item.ref_count < concurrency
-                ):
-                    state._add_available_front(pool_item)
-                    self._wake_waiters(fiber, concurrency - pool_item.ref_count)
+                with state.lock:
+                    pool_item.reservations -= 1
+                    if pool_item.reservations > 0:
+                        return _VOID
+                    state.usage -= concurrency - 1
+                    if (
+                        not state.is_shutting_down
+                        and pool_item in state.items
+                        and pool_item not in state.invalidated
+                        and pool_item.ref_count < concurrency
+                    ):
+                        state._add_available_front(pool_item)
+                        self._wake_waiters(fiber, concurrency - pool_item.ref_count)
                 return _VOID
 
             return _WithFiber(run)
@@ -348,17 +361,19 @@ class Pool[A = Unsubscripted, E = Never]:
         def snapshot() -> PoolStats:
             state = self.state
             idle = used = 0
-            for item in state.items:
-                if not isinstance(item.exit, Success):
-                    continue
-                if item.ref_count > 0 or item.reservations > 0:
-                    used += 1
-                else:
-                    idle += 1
+            with state.lock:
+                for item in state.items:
+                    if not isinstance(item.exit, Success):
+                        continue
+                    if item.ref_count > 0 or item.reservations > 0:
+                        used += 1
+                    else:
+                        idle += 1
+                pending = state.waiters.sleeping
             return PoolStats(
                 idle=idle,
                 used=used,
-                pending=state.waiters.sleeping,
+                pending=pending,
                 min=self.config.min_size,
                 max=self.config.max_size,
             )
@@ -366,7 +381,8 @@ class Pool[A = Unsubscripted, E = Never]:
         return _Sync(snapshot)
 
     def _find(self, value: A) -> PoolItem[A, E] | None:
-        """The pool item holding ``value`` itself; an equal value is another item."""
+        """The pool item holding ``value`` itself; an equal value is another
+        item. Call holding the lock."""
         for pool_item in self.state.items:
             if isinstance(pool_item.exit, Success) and pool_item.exit.value is value:
                 return pool_item
@@ -375,8 +391,9 @@ class Pool[A = Unsubscripted, E = Never]:
     # --- leases ---------------------------------------------------------------
 
     def _fast_item(self) -> tuple[PoolItem[A, E], A] | None:
-        """The item a borrower takes without waiting, counted in ``usage``,
-        if one is free, nobody waits and the pool need not grow first."""
+        """The item a borrower takes without waiting, counted in ``usage``
+        and leased, if one is free, nobody waits and the pool need not grow
+        first. Call holding the lock."""
         state = self.state
         head = state.available_head
         if state.is_shutting_down or state.waiters or head is None:
@@ -385,17 +402,19 @@ class Pool[A = Unsubscripted, E = Never]:
             return None
         state.usage += 1
         if self.config.is_fixed or self._target_size() <= self._active_size():
+            self._bookkeep(head)
             return head, head.exit.value
         state.usage -= 1
         return None
 
     def _bookkeep(self, item: PoolItem[A, E]) -> None:
+        """Count a lease of ``item``. Call holding the lock."""
         item.ref_count += 1
         if item.ref_count >= self.config.concurrency:
             self.state._remove_available(item)
 
     def _lease_scoped(self, item: PoolItem[A, E], value: A, fiber: Fiber[Any, Any]) -> Effect[A]:
-        self._bookkeep(item)
+        """Hand out ``item``, leased already."""
         scope = fiber._context.get_unsafe(Scope)
         if scope.is_closed:
             fiber._push(_Release(self._release_item(item)))
@@ -411,8 +430,7 @@ class Pool[A = Unsubscripted, E = Never]:
         fiber: Fiber[Any, Any],
         restore: Restore | None,
     ) -> Effect[B, E2, R2]:
-        # Count the lease and install its release in the same step.
-        self._bookkeep(item)
+        # The lease is counted: install its release in the same step.
         fiber._push(_Release(self._release_item(item)))
         body: Effect[B, E2, R2] = _Suspend(lambda: f(value))
         return body if restore is None else restore(body)
@@ -420,16 +438,18 @@ class Pool[A = Unsubscripted, E = Never]:
     def _get_slow[X, R](self, lease: _Lease[A, E, X, R]) -> Effect[X, Any, R]:
         def body(restore: Restore) -> Effect[X, Any, R]:
             state = self.state
-            state.usage += 1
+            with state.lock:
+                state.usage += 1
             waiter = Waiter()
 
             def leave(fiber: Fiber[Any, Any]) -> Effect[None]:
-                state.usage -= 1
-                # Only a woken waiter is still registered here: one cancelled
-                # while asleep already left. It passes its wake on, so the
-                # capacity it was woken for is not stranded.
-                if state.waiters.leave(waiter):
-                    self._wake_waiters(fiber, 1)
+                with state.lock:
+                    state.usage -= 1
+                    # Only a woken waiter is still registered here: one
+                    # cancelled while asleep already left. It passes its wake
+                    # on, so the capacity it was woken for is not stranded.
+                    if state.waiters.leave(waiter):
+                        self._wake_waiters(fiber, 1)
                 return _VOID
 
             wait: Effect[X, Any, R] = (
@@ -439,35 +459,39 @@ class Pool[A = Unsubscripted, E = Never]:
             )
 
             def attempt(fiber: Fiber[Any, Any]) -> Effect[X, Any, R]:
-                if state.is_shutting_down:
-                    state.usage -= 1
-                    return _FailCause(interrupt_cause(fiber.id).annotate(closed("Pool")))
-                # A borrower that has not waited yet queues behind those
-                # already waiting, who keep their place until they take an
-                # item.
-                if state.waiters and waiter not in state.waiters:
-                    return wait
-                # Replace failed slots only when the pool cannot grow.
-                item = state._first_healthy_available()
-                if item is None and self._target_size() <= self._active_size():
-                    item = state.available_head
-                if item is None:
-                    return wait
-                if isinstance(item.exit, Failure):
-                    state._remove(item)
-                    return loop
-                state.waiters.leave(waiter)
-                return lease(item, item.exit.value, fiber, restore)
+                with state.lock:
+                    if state.is_shutting_down:
+                        state.usage -= 1
+                        return _FailCause(interrupt_cause(fiber.id).annotate(closed("Pool")))
+                    # A borrower that has not waited yet queues behind those
+                    # already waiting, who keep their place until they take
+                    # an item.
+                    if state.waiters and waiter not in state.waiters:
+                        return wait
+                    # Replace failed slots only when the pool cannot grow.
+                    item = state._first_healthy_available()
+                    if item is None and self._target_size() <= self._active_size():
+                        item = state.available_head
+                    if item is None:
+                        return wait
+                    ex = item.exit
+                    if isinstance(ex, Failure):
+                        state._remove(item)
+                        return loop
+                    state.waiters.leave(waiter)
+                    self._bookkeep(item)
+                return lease(item, ex.value, fiber, restore)
 
             step: Effect[X, Any, R] = _WithFiber(attempt)
 
             def grow(fiber: Fiber[Any, Any]) -> Effect[X, Any, R]:
-                if state.is_shutting_down:
-                    state.usage -= 1
-                    return _FailCause(interrupt_cause(fiber.id).annotate(closed("Pool")))
-                if self._target_size() <= self._active_size():
-                    return step
-                resize = fork_in(self._resize().interruptible(), state.scope)
+                with state.lock:
+                    if state.is_shutting_down:
+                        state.usage -= 1
+                        return _FailCause(interrupt_cause(fiber.id).annotate(closed("Pool")))
+                    if self._target_size() <= self._active_size():
+                        return step
+                resize = self._fork(self._resize().interruptible())
                 return state.resize_semaphore.with_permits_if_available(resize).and_then(step)
 
             loop: Effect[X, Any, R] = _WithFiber(grow)
@@ -479,34 +503,43 @@ class Pool[A = Unsubscripted, E = Never]:
         state = self.state
 
         def register(resume: Callable[[Effect[None, Any]], None]) -> Effect[None] | None:
-            if state.is_shutting_down or (
-                state.waiters.is_next(waiter) and state._first_healthy_available() is not None
-            ):
+            with state.lock:
+                go_on = state.is_shutting_down or (
+                    state.waiters.is_next(waiter) and state._first_healthy_available() is not None
+                )
+                if not go_on:
+                    state.waiters.park(waiter, resume, current_fiber())
+            if go_on:
                 resume(_VOID)
                 return None
-            state.waiters.park(waiter, resume)
-            return _Sync(lambda: state.waiters.cancel(waiter))
+            return _Sync(lambda: self._cancel(waiter))
 
         return _Callback(register)
+
+    def _cancel(self, waiter: Waiter) -> None:
+        with self.state.lock:
+            self.state.waiters.cancel(waiter)
 
     def _release_item(self, item: PoolItem[A, E]) -> Effect[None]:
         def run(fiber: Fiber[Any, Any]) -> Effect[None]:
             state = self.state
-            item.ref_count -= 1
-            state.usage -= 1
-            if item.ref_count == 0:
-                item.idle_since = self._clock.now_nanos_unsafe()
-            if item in state.invalidated:
-                return self._invalidate_item(item)
-            # Every release frees one slot, so it admits one waiter.
-            if item.ref_count < self.config.concurrency:
-                state._add_available_front(item)
-                self._wake_waiters(fiber, 1)
-            return _VOID
+            with state.lock:
+                item.ref_count -= 1
+                state.usage -= 1
+                if item.ref_count == 0:
+                    item.idle_since = self._clock.now_nanos_unsafe()
+                if item in state.invalidated:
+                    return self._invalidate_item(item)
+                # Every release frees one slot, so it admits one waiter.
+                if item.ref_count < self.config.concurrency:
+                    state._add_available_front(item)
+                    self._wake_waiters(fiber, 1)
+                return _VOID
 
         return _WithFiber(run)
 
     def _wake_waiters(self, fiber: Fiber[Any, Any], count: int) -> None:
+        """Call holding the lock."""
         state = self.state
         state.waiters.wake(fiber.dispatcher(), count, lambda: state.available_head is not None)
 
@@ -534,22 +567,36 @@ class Pool[A = Unsubscripted, E = Never]:
         state = self.state
 
         def body() -> Effect[None]:
-            if item not in state.items:
-                return _VOID
-            resize = fork_in(
-                self._resize().interruptible(), state.scope, start_immediately=True
-            ).as_void()
-            if item.ref_count == 0:
-                state._remove(item)
-                return item.finalizer.and_then(resize)
-            # An invalidated item stops counting towards the active size, so
-            # the pool tops itself up now: borrowers already queued would
-            # otherwise wait for an item that is never coming back.
-            state.invalidated[item] = None
-            state._remove_available(item)
-            return resize
+            resize = self._fork(self._resize().interruptible(), start_immediately=True).as_void()
+            with state.lock:
+                if item not in state.items:
+                    return _VOID
+                if item.ref_count == 0:
+                    state._remove(item)
+                    return item.finalizer.and_then(resize)
+                # An invalidated item stops counting towards the active size,
+                # so the pool tops itself up now: borrowers already queued
+                # would otherwise wait for an item that is never coming back.
+                state.invalidated[item] = None
+                state._remove_available(item)
+                return resize
 
         return _Suspend(body)
+
+    def _fork(self, eff: Effect[None], *, start_immediately: bool = False) -> Effect[Any]:
+        """Fork ``eff`` into the pool's scope on the run that made the pool.
+        A borrower's run may end while it runs, or before a wake-up it
+        waits for (a resize waits for the resize permit) reaches it."""
+
+        def body(fiber: Fiber[Any, Any]) -> Effect[Any]:
+            if fiber._run_scheduler is self._owner:
+                return fork_in(eff, self.state.scope, start_immediately=start_immediately)
+            background: Fiber[None, Never] = new_root(self._owner, fiber._context)
+            start_root(background, eff)
+            background.run_in(self.state.scope)
+            return _Succeed(background)
+
+        return _WithFiber(body)
 
     def _resize(self) -> Effect[None]:
         resize = self.state.resize_semaphore.with_permits(self._resize_loop())
@@ -560,14 +607,16 @@ class Pool[A = Unsubscripted, E = Never]:
         # one. Effect resumes the resize as its acquisitions finish, so it is
         # done by then; here it resumes later, so if the pool still needs to
         # grow, the borrowers retry and start the next resize.
-        if self._target_size() > self._active_size():
-            self.state.waiters.wake_all(fiber.dispatcher())
+        with self.state.lock:
+            if self._target_size() > self._active_size():
+                self.state.waiters.wake_all(fiber.dispatcher())
         return _VOID
 
     def _resize_loop(self) -> Effect[None]:
         def body() -> Effect[None]:
-            active = self._active_size()
-            target = self._target_size()
+            with self.state.lock:
+                active = self._active_size()
+                target = self._target_size()
             if math.isnan(target):
                 # Effect's loop acquires nothing and goes round for good here,
                 # holding the resize permit until it is interrupted.
@@ -606,8 +655,9 @@ class Pool[A = Unsubscripted, E = Never]:
             if item is None:
                 return self._allocate()
             # A reclaimed item rejoins circulation like a released one.
-            if item in state.items and item not in state.invalidated:
-                state._add_available_front(item)
+            with state.lock:
+                if item in state.items and item not in state.invalidated:
+                    state._add_available_front(item)
             return _Succeed(item)
 
         item = self._allocate() if strategy is _NOOP else strategy.reclaim(self).flat_map(rejoin)
@@ -615,10 +665,11 @@ class Pool[A = Unsubscripted, E = Never]:
         def wake(fiber: Fiber[Any, Any], item: PoolItem[A, E]) -> Effect[None]:
             # A failed acquisition wakes everyone to retry it. A new item
             # serves as many waiters as it has slots.
-            if isinstance(item.exit, Failure):
-                self.state.waiters.wake_all(fiber.dispatcher())
-            else:
-                self._wake_waiters(fiber, self.config.concurrency)
+            with self.state.lock:
+                if isinstance(item.exit, Failure):
+                    self.state.waiters.wake_all(fiber.dispatcher())
+                else:
+                    self._wake_waiters(fiber, self.config.concurrency)
             return _VOID
 
         return item.tap(lambda i: _WithFiber(lambda fiber: wake(fiber, i)))
@@ -652,41 +703,50 @@ class Pool[A = Unsubscripted, E = Never]:
             return strategy.on_acquire(item) if item in state.items else _VOID
 
         if isinstance(ex, Success):
-            state.items[item] = None
-            state._add_available(item)
+            with state.lock:
+                state.items[item] = None
+                state._add_available(item)
             return _Succeed(item) if strategy is _NOOP else _Suspend(on_acquire).as_(item)
         # Hand a waiting borrower its own failure; otherwise keep the slot.
-        waiter = (
-            state.waiters.first_sleeping() if state._first_healthy_available() is None else None
-        )
-        if waiter is not None:
-            waiter(_FailCause(ex.cause))
-        else:
-            state.items[item] = None
-            state._add_available(item)
+        with state.lock:
+            waiter = (
+                state.waiters.first_sleeping() if state._first_healthy_available() is None else None
+            )
+            if waiter is not None:
+                handed = waiter.take(_FailCause(ex.cause))
+            else:
+                handed = None
+                state.items[item] = None
+                state._add_available(item)
+        if handed is not None:
+            handed()
         # Cleanup must not delay a replacement acquisition.
         cleanup = item.finalizer.and_then(_Suspend(on_acquire))
-        return fork_in(cleanup, state.scope, start_immediately=True).as_(item)
+        return self._fork(cleanup, start_immediately=True).as_(item)
 
     # --- shutdown -------------------------------------------------------------
 
     def _shutdown(self) -> Effect[None]:
         def body() -> Generator[Effect[Any, Any, Any], Any]:
             state = self.state
-            if state.is_shutting_down:
-                return
-            state.is_shutting_down = True
-            size = len(state.items)
+            with state.lock:
+                if state.is_shutting_down:
+                    return
+                state.is_shutting_down = True
+                items = list(state.items)
+            size = len(items)
             returned = Semaphore(size)
-            for item in list(state.items):
-                if item.ref_count > 0:
-                    item.finalizer = item.finalizer.and_then(returned.release(1).as_void())
-                    state.invalidated[item] = None
-                    yield from returned.take(1)
-                else:
-                    state._remove(item)
-                    yield from item.finalizer
-            state.waiters.release_all()
+            for item in items:
+                with state.lock:
+                    borrowed = item.ref_count > 0
+                    if borrowed:
+                        item.finalizer = item.finalizer.and_then(returned.release(1).as_void())
+                        state.invalidated[item] = None
+                    else:
+                        state._remove(item)
+                yield from (returned.take(1) if borrowed else item.finalizer)
+            with state.lock:
+                state.waiters.release_all()
             # Wait for every borrowed item to come back and be released.
             yield from returned.take(size)
 

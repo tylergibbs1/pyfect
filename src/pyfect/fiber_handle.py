@@ -15,6 +15,7 @@ from plain code, as Effect's ``FiberHandle.runtime``.
 from __future__ import annotations
 
 import asyncio
+import threading
 from typing import Any, Generic, Never, TypeVar
 
 from pyfect._core import (
@@ -61,10 +62,13 @@ E_co = TypeVar("E_co", covariant=True, default=object)
 class FiberHandle(Generic[A_co, E_co]):
     """Make one with ``FiberHandle[A, E].make()`` inside a scope."""
 
-    __slots__ = ("_state", "deferred")
+    __slots__ = ("_lock", "_state", "deferred")
 
     def __init__(self) -> None:
         self._state: _Open[A_co, E_co] | None = _Open()  # None once the scope has closed
+        # Runs on other threads share a handle: its fibers change holding
+        # this; no fiber is interrupted or observed while it is held.
+        self._lock = threading.Lock()
         # Completed by the first reported failure, or when the scope closes.
         # Typed as Effect's ``Deferred<void, unknown>``, so the class stays covariant.
         self.deferred: Deferred[None, Any] = Deferred()
@@ -90,9 +94,8 @@ class FiberHandle(Generic[A_co, E_co]):
         return cls.make().flat_map(lambda h: h.runtime_async(*tags))
 
     def __repr__(self) -> str:
-        if self._state is None:
-            return "FiberHandle(closed)"
-        return f"FiberHandle({self._state.current!r})"
+        state = self._state
+        return "FiberHandle(closed)" if state is None else f"FiberHandle({state.current!r})"
 
     def set_unsafe[XA, XE](
         self: FiberHandle[XA, XE],
@@ -103,31 +106,42 @@ class FiberHandle(Generic[A_co, E_co]):
     ) -> None:
         """Make a running fiber the current one, interrupting the one there
         (or, with ``only_if_missing``, interrupting ``fiber`` instead). Into
-        a closed handle the fiber is interrupted. Call on the scheduler
-        thread."""
-        state = self._state
-        if state is None:
-            fiber.interrupt_as_unsafe(INTERNAL_FIBER_ID, closed("FiberHandle"))
-            return
-        previous = state.current
-        if previous is fiber:
-            return
-        if previous is not None and only_if_missing:
-            fiber.interrupt_as_unsafe(INTERNAL_FIBER_ID)
-            return
-        # Install the replacement before the interrupt can re-enter the
-        # handle through a finalizer.
-        state.current = fiber
-        state.owned[fiber] = None
-        if previous is not None:
-            previous.interrupt_as_unsafe(INTERNAL_FIBER_ID)
+        a closed handle the fiber is interrupted."""
+        with self._lock:
+            state = self._state
+            previous = None if state is None else state.current
+            if state is None:
+                outcome = "closed"
+            elif previous is fiber:
+                outcome = "there"
+            elif previous is not None and only_if_missing:
+                outcome = "refused"
+            else:
+                outcome = "set"
+                # Install the replacement before the interrupt can re-enter the
+                # handle through a finalizer.
+                state.current = fiber
+                state.owned[fiber] = None
+        match outcome:
+            case "closed":
+                fiber.interrupt_as_unsafe(INTERNAL_FIBER_ID, closed("FiberHandle"))
+                return
+            case "there":
+                return
+            case "refused":
+                fiber.interrupt_as_unsafe(INTERNAL_FIBER_ID)
+                return
+            case "set":
+                if previous is not None:
+                    previous.interrupt_as_unsafe(INTERNAL_FIBER_ID)
 
         def observer(ex: Exit[XA, XE]) -> None:
-            state = self._state
-            if state is not None:
-                state.owned.pop(fiber, None)
-                if state.current is fiber:
-                    state.current = None
+            with self._lock:
+                state = self._state
+                if state is not None:
+                    state.owned.pop(fiber, None)
+                    if state.current is fiber:
+                        state.current = None
             if reports_failure(ex, propagate_interruption):
                 self.deferred.done_unsafe(ex)
 
@@ -149,7 +163,8 @@ class FiberHandle(Generic[A_co, E_co]):
         )
 
     def get_unsafe(self) -> Fiber[A_co, E_co] | None:
-        return None if self._state is None else self._state.current
+        state = self._state
+        return None if state is None else state.current
 
     def get(self) -> Effect[Fiber[A_co, E_co] | None]:
         return _Sync(self.get_unsafe)
@@ -164,8 +179,9 @@ class FiberHandle(Generic[A_co, E_co]):
                 return _Succeed(None)
 
             def forget() -> None:
-                if self._state is not None and self._state.current is fiber:
-                    self._state.current = None
+                with self._lock:
+                    if self._state is not None and self._state.current is fiber:
+                        self._state.current = None
 
             return restore(fiber.interrupt_as(INTERNAL_FIBER_ID)).and_then(_Sync(forget))
 
@@ -233,11 +249,12 @@ class FiberHandle(Generic[A_co, E_co]):
 
     def _close(self) -> Effect[None]:
         def body() -> Effect[None]:
-            state = self._state
+            with self._lock:
+                state, self._state = self._state, None
+                owned = [] if state is None else list(state.owned)
             if state is None:
                 return _Succeed(None)
-            self._state = None
-            interrupting = Fiber.interrupt_all_as(list(state.owned), INTERNAL_FIBER_ID)
+            interrupting = Fiber.interrupt_all_as(owned, INTERNAL_FIBER_ID)
             return self.deferred.into(interrupting).as_void()
 
         return _Suspend(body)

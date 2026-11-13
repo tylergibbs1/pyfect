@@ -390,6 +390,225 @@ null
 }
 ],
 [
+"json_string",
+"555555555E555555555555",
+[
+null
+]
+],
+[
+"json_string",
+"[1, {\"b\": [1e400]}, {\"a\": -1e400}]",
+[
+[
+1,
+{
+"b": [
+null
+]
+},
+{
+"a": null
+}
+]
+]
+],
+[
+"json_string",
+"{\"n\": 1, \"s\": \"x\", \"f\": 1.5, \"b\": true, \"items\": [\"a\", 1, null, false], \"counts\": {\"k\": [1, 2]}, \"pair\": [\"p\", 2], \"kind\": \"a\", \"when\": \"2024-01-02T03:04:05.000Z\", \"span\": \"5 seconds\", \"amount\": \"12.50\", \"tree\": {\"label\": \"r\", \"children\": [{\"label\": \"c\", \"children\": []}]}, \"raw\": {\"x\": [1, \"y\"]}}",
+[
+{
+"n": 1,
+"s": "x",
+"f": 1.5,
+"b": true,
+"items": [
+"a",
+1,
+null,
+false
+],
+"counts": {
+"k": [
+1,
+2
+]
+},
+"pair": [
+"p",
+2
+],
+"kind": "a",
+"when": "2024-01-02T03:04:05.000Z",
+"span": "5 seconds",
+"amount": "12.50",
+"tree": {
+"label": "r",
+"children": [
+{
+"label": "c",
+"children": []
+}
+]
+},
+"raw": {
+"x": [
+1,
+"y"
+]
+}
+}
+]
+],
+[
+"json_string",
+"{\"n\": 1, \"s\": \"x\", \"f\": 1.5, \"b\": true, \"items\": [1e400], \"counts\": {}, \"pair\": [\"p\", -1e400], \"kind\": \"a\"}",
+[
+{
+"n": 1,
+"s": "x",
+"f": 1.5,
+"b": true,
+"items": [
+null
+],
+"counts": {},
+"pair": [
+"p",
+null
+],
+"kind": "a"
+}
+]
+],
+[
+"json_string",
+"{\"n\": 1, \"s\": \"x\", \"f\": 1.5, \"b\": true, \"items\": null, \"counts\": null, \"pair\": [\"p\", 2], \"kind\": \"a\", \"when\": \"2024-01-02T03:04:05.000Z\", \"span\": \"5 seconds\", \"amount\": \"12.50\", \"tree\": {\"label\": \"r\", \"children\": [{\"label\": \"c\", \"children\": []}]}, \"raw\": {\"x\": [1, \"y\"]}}",
+[
+{
+"n": 1,
+"s": "x",
+"f": 1.5,
+"b": true,
+"items": null,
+"counts": null,
+"pair": [
+"p",
+2
+],
+"kind": "a",
+"when": "2024-01-02T03:04:05.000Z",
+"span": "5 seconds",
+"amount": "12.50",
+"tree": {
+"label": "r",
+"children": [
+{
+"label": "c",
+"children": []
+}
+]
+},
+"raw": {
+"x": [
+1,
+"y"
+]
+}
+}
+]
+],
+[
+"json_string",
+"{\"n\": 1, \"s\": \"x\", \"f\": 155555555555555555555.5, \"b\": true, \"items\": [\"a\", 2, null, false], \"counts\": {\"k\": [1, 2]}, \"pair\": [\"p\", 2], \"tree\": {\"labei\": \"r\", \"children\": [{\"dabel\":  \"c\", \"children\": []}]}, \"raw\": {\"x\": [1, \"y\"]}}",
+[
+{
+"n": 1,
+"s": "x",
+"f": 155555555555555540000,
+"b": true,
+"items": [
+"a",
+2,
+null,
+false
+],
+"counts": {
+"k": [
+1,
+2
+]
+},
+"pair": [
+"p",
+2
+],
+"tree": {
+"labei": "r",
+"children": [
+{
+"dabel": "c",
+"children": []
+}
+]
+},
+"raw": {
+"x": [
+1,
+"y"
+]
+}
+}
+]
+],
+[
+"json_string",
+"{\"n\": 1.5, \"s\": \"x\", \"f\": 1.5, \"b\": true, \"items\": [\"a\", 1, null, false], \"counts\": {\"k\": [1, 2]}, \"pair\": [\"p\", 2], \"kind\": \"z\", \"when\": \"2024-01-02T03:04:05.000Z\", \"span\": \"5 seconds\", \"amount\": \"12.50\", \"tree\": {\"label\": \"r\", \"children\": [{\"label\": \"c\", \"children\": []}]}, \"raw\": {\"x\": [1, \"y\"]}}",
+[
+{
+"n": 1.5,
+"s": "x",
+"f": 1.5,
+"b": true,
+"items": [
+"a",
+1,
+null,
+false
+],
+"counts": {
+"k": [
+1,
+2
+]
+},
+"pair": [
+"p",
+2
+],
+"kind": "z",
+"when": "2024-01-02T03:04:05.000Z",
+"span": "5 seconds",
+"amount": "12.50",
+"tree": {
+"label": "r",
+"children": [
+{
+"label": "c",
+"children": []
+}
+]
+},
+"raw": {
+"x": [
+1,
+"y"
+]
+}
+}
+]
+],
+[
 "jsonc",
 "/* c */ {\"a\": 1, // x\n}",
 null

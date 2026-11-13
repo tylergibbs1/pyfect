@@ -772,7 +772,9 @@ def _send_request_with_key(key: str):
     yield from testing.adjust("1 millis")
 
 
-@testing.effect
+# Effect's config refreshes assignments with no interval, so the refresh loop runs as
+# fast as the scheduler lets it through 10 s of test time: about 1.8 s of CPU here.
+@testing.effect(timeout="20 seconds")
 def test_holds_durable_messages_while_entity_layers_are_still_building():
     """holds durable messages while entity layers are still building"""
     config = make_config(

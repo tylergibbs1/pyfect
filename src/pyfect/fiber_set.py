@@ -14,6 +14,7 @@ fibers into the set from plain code, as Effect's ``FiberSet.runtime``.
 from __future__ import annotations
 
 import asyncio
+import threading
 from collections.abc import Iterator
 from typing import Any, Generic, Never, TypeVar
 
@@ -42,11 +43,14 @@ E_co = TypeVar("E_co", covariant=True, default=object)
 class FiberSet(Generic[A_co, E_co]):
     """Make one with ``FiberSet[A, E].make()`` inside a scope."""
 
-    __slots__ = ("_fibers", "deferred")
+    __slots__ = ("_fibers", "_lock", "deferred")
 
     def __init__(self) -> None:
         # None once the scope has closed. A dict keeps insertion order.
         self._fibers: dict[Fiber[A_co, E_co], None] | None = {}
+        # Runs on other threads share a set: joining, leaving and closing it
+        # hold this; no fiber is interrupted or observed while it is held.
+        self._lock = threading.Lock()
         # Completed by the first reported failure, or when the scope closes.
         # Typed as Effect's ``Deferred<void, unknown>``, so the class stays covariant.
         self.deferred: Deferred[None, Any] = Deferred()
@@ -71,29 +75,35 @@ class FiberSet(Generic[A_co, E_co]):
         return cls.make().flat_map(lambda s: s.runtime_async(*tags))
 
     def __iter__(self) -> Iterator[Fiber[A_co, E_co]]:
-        return iter(() if self._fibers is None else list(self._fibers))
+        with self._lock:
+            return iter(() if self._fibers is None else list(self._fibers))
 
     def __repr__(self) -> str:
-        return "FiberSet(closed)" if self._fibers is None else f"FiberSet(size={len(self._fibers)})"
+        fibers = self._fibers
+        return "FiberSet(closed)" if fibers is None else f"FiberSet(size={len(fibers)})"
 
     def add_unsafe[XA, XE](
         self: FiberSet[XA, XE], fiber: Fiber[XA, XE], *, propagate_interruption: bool = False
     ) -> None:
         """Add a running fiber; it leaves the set when it completes. Into a
-        closed set the fiber is interrupted. Call on the scheduler thread."""
-        fibers = self._fibers
+        closed set the fiber is interrupted."""
+        with self._lock:
+            fibers = self._fibers
+            added = fibers is not None and fiber not in fibers
+            if fibers is not None and added:
+                fibers[fiber] = None
         if fibers is None:
             fiber.interrupt_as_unsafe(INTERNAL_FIBER_ID, closed("FiberSet"))
             return
-        if fiber in fibers:
+        if not added:
             return
-        fibers[fiber] = None
 
         def observer(ex: Exit[XA, XE]) -> None:
-            if self._fibers is None:
-                return
-            self._fibers.pop(fiber, None)
-            if reports_failure(ex, propagate_interruption):
+            with self._lock:
+                fibers = self._fibers
+                if fibers is not None:
+                    fibers.pop(fiber, None)
+            if fibers is not None and reports_failure(ex, propagate_interruption):
                 self.deferred.done_unsafe(ex)
 
         fiber.add_observer_unsafe(observer)
@@ -149,13 +159,13 @@ class FiberSet(Generic[A_co, E_co]):
             if self._fibers is None:
                 return _Succeed(None)
             return Fiber.interrupt_all_as(
-                (fiber for fiber, _ in live_items(self._fibers)), INTERNAL_FIBER_ID
+                (fiber for fiber, _ in live_items(self._members)), INTERNAL_FIBER_ID
             )
 
         return _Suspend(body)
 
     def size(self) -> Effect[int]:
-        return _Sync(lambda: 0 if self._fibers is None else len(self._fibers))
+        return _Sync(lambda: len(self._members()))
 
     def join(self) -> Effect[None, E_co]:
         """Wait for the first reported failure and fail with it; succeed
@@ -166,17 +176,25 @@ class FiberSet(Generic[A_co, E_co]):
         """Wait until the set is empty (or closed)."""
 
         def loop():
-            while self._fibers:
-                yield from next(iter(self._fibers)).await_exit()
+            while fiber := self._first():
+                yield from fiber.await_exit()
 
         return _Gen(loop)
 
+    def _members(self) -> list[tuple[Fiber[A_co, E_co], None]]:
+        with self._lock:
+            return [] if self._fibers is None else list(self._fibers.items())
+
+    def _first(self) -> Fiber[A_co, E_co] | None:
+        with self._lock:
+            return next(iter(self._fibers), None) if self._fibers else None
+
     def _close(self) -> Effect[None]:
         def body() -> Effect[None]:
-            fibers = self._fibers
+            with self._lock:
+                fibers, self._fibers = self._fibers, None
             if fibers is None:
                 return _Succeed(None)
-            self._fibers = None
             return self.deferred.into(Fiber.interrupt_all(list(fibers))).as_void()
 
         return _Suspend(body)

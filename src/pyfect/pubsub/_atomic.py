@@ -18,6 +18,7 @@ does for all of them.
 
 from __future__ import annotations
 
+import threading
 from collections import deque
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -34,10 +35,11 @@ class _Slot[A]:
 
 
 class Atomic[A]:
-    """A store of messages for a set of subscribers. Not thread-safe: use it
-    from one scheduler thread, as a ``PubSub`` does."""
+    """A store of messages for a set of subscribers. Its methods take no
+    lock: a ``PubSub`` over it holds ``_lock`` around every use, so runs on
+    several threads can share the hub."""
 
-    __slots__ = ("_capacity", "_replay", "_slots", "_start", "_subscribers")
+    __slots__ = ("_capacity", "_lock", "_replay", "_slots", "_start", "_subscribers")
 
     def __init__(self, capacity: int | None, replay: int | None = None) -> None:
         if capacity is not None and capacity <= 0:
@@ -48,6 +50,9 @@ class Atomic[A]:
         # The publish index of the oldest stored message.
         self._start = 0
         self._subscribers = 0
+        # The hub's lock: everything a ``PubSub`` over this store keeps (its
+        # subscriptions, parked takes and publishers) changes holding it.
+        self._lock = threading.Lock()
 
     @classmethod
     def bounded(cls, capacity: int | None, *, replay: int | None = None) -> Atomic[A]:

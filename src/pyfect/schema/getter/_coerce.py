@@ -143,14 +143,14 @@ def stringify_json(
     *, replacer: JsonReplacer | None = None, space: int | str | None = None
 ) -> Getter[str, object]:
     """The JSON text of a value (``JSON.stringify``, through ``replacer``
-    and indented by ``space``); an ``InvalidValue`` when it has none or
-    ``replacer`` raises (Effect's ``stringifyJson``; ``NaN`` and infinities
-    have none, where JavaScript writes ``null``)."""
+    and indented by ``space``; ``NaN`` and infinities as ``null``); an
+    ``InvalidValue`` when it has none or ``replacer`` raises (Effect's
+    ``stringifyJson``)."""
 
     def run(value: object, options: ParseOptions) -> Exit[str, Issue]:
         try:
             replaced = value if replacer is None else replace_json(value, replacer)
-            return Success(_json.stringify(replaced, indent=space))
+            return Success(_json.stringify(replaced, indent=space, null_non_finite=True))
         except Exception:
             expected = {"expected": "a JSON-serializable value"}
             return fail_exit(InvalidValue(expected, reported(value, options)))

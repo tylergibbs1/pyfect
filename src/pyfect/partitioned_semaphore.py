@@ -8,11 +8,16 @@ and is woken once it has them all. Only the wait is interruptible: an interrupt 
 point before the permits are guarded gives back what the waiter collected.
 
 A request for more permits than the capacity never completes, as in Effect.
+
+Runs on other threads share a semaphore: its counts and queues change
+holding its lock, which is let go to wake a waiter (a woken fiber of the run
+on this thread runs at once and may release again).
 """
 # pyright: reportPrivateUsage=false
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Callable, Hashable
 from typing import TYPE_CHECKING, Any
 
@@ -30,6 +35,7 @@ from pyfect._core import (
 )
 from pyfect._effect_args import require_effect
 from pyfect._round_robin import RoundRobin
+from pyfect._waiters import Lock, unlocked
 from pyfect.cause import Cause
 from pyfect.effect import never
 from pyfect.exit import Failure
@@ -42,17 +48,20 @@ _VOID: Effect[None] = _Succeed(None)
 
 
 class _Waiter:
-    __slots__ = ("missing", "resume")
+    __slots__ = ("lock", "missing", "resume")
 
-    def __init__(self, missing: int) -> None:
+    def __init__(self, missing: int, lock: Lock) -> None:
         self.missing = missing
+        self.lock = lock
         self.resume: Callable[[Effect[None]], None] | None = None
 
     def register(self, resume: Callable[[Effect[None]], None]) -> None:
-        if self.missing == 0:  # handed its permits before it parked
+        with self.lock:
+            handed = self.missing == 0  # handed its permits before it parked
+            if not handed:
+                self.resume = resume
+        if handed:
             resume(_VOID)
-        else:
-            self.resume = resume
 
     def wake(self) -> None:
         if self.resume is not None:
@@ -78,6 +87,7 @@ class _GiveBackOnFailure(Frame):
 
 class PartitionedSemaphore[K: Hashable = Hashable]:
     __slots__ = (
+        "_lock",
         "_partial",
         "_pending",
         "_releasing",
@@ -97,6 +107,7 @@ class PartitionedSemaphore[K: Hashable = Hashable]:
         self._partial: tuple[Hashable, _Waiter] | None = None
         # Typed by Hashable, not K, so K only goes in (contravariant, as in Effect).
         self._waiters: RoundRobin[Hashable, _Waiter] = RoundRobin()
+        self._lock = threading.Lock()
 
     @classmethod
     def make(cls, permits: int) -> Effect[PartitionedSemaphore[K]]:
@@ -154,9 +165,10 @@ class PartitionedSemaphore[K: Hashable = Hashable]:
 
         def body(restore: Restore) -> Effect[Option[A], E, R]:
             def run() -> Effect[Option[A], E, R]:
-                if self._total < n:
-                    return _Succeed(None)
-                self._total -= n
+                with self._lock:
+                    if self._total < n:
+                        return _Succeed(None)
+                    self._total -= n
                 return restore(eff.map(Some)).ensuring(self.release(n))
 
             return _Suspend(run)
@@ -168,13 +180,14 @@ class PartitionedSemaphore[K: Hashable = Hashable]:
         restored. Once it succeeds the caller holds them."""
 
         def run() -> Effect[None]:
-            if self._total >= n:
-                self._total -= n
-                return _VOID
-            waiter = _Waiter(n - self._total)
-            self._total = 0
-            self._waiting += waiter.missing
-            self._waiters.add(key, waiter)
+            with self._lock:
+                if self._total >= n:
+                    self._total -= n
+                    return _VOID
+                waiter = _Waiter(n - self._total, self._lock)
+                self._total = 0
+                self._waiting += waiter.missing
+                self._waiters.add(key, waiter)
             return restore(_Callback(waiter.register)).on_error(
                 lambda _: _Sync(lambda: self._give_up(key, n, waiter))
             )
@@ -182,17 +195,23 @@ class PartitionedSemaphore[K: Hashable = Hashable]:
         return _Suspend(run)
 
     def _give_up(self, key: K, n: int, waiter: _Waiter) -> None:
-        if self._partial is not None and self._partial[1] is waiter:
-            self._partial = None
-        self._waiters.remove(key, waiter)
-        self._waiting -= waiter.missing
-        self._release(n - waiter.missing)
+        with self._lock:
+            if self._partial is not None and self._partial[1] is waiter:
+                self._partial = None
+            self._waiters.remove(key, waiter)
+            self._waiting -= waiter.missing
+            self._release_locked(n - waiter.missing)
 
     def _release(self, n: int) -> int:
+        with self._lock:
+            return self._release_locked(n)
+
+    def _release_locked(self, n: int) -> int:
         if n > 0:
             self._pending += n
-        # A woken waiter can release again from inside this loop; the
-        # running loop hands those permits out instead of recursing.
+        # A woken waiter can release again from inside this loop, and other
+        # runs can while the lock is let go to wake it; the running loop
+        # hands those permits out instead of recursing.
         if not self._releasing:
             self._releasing = True
             try:
@@ -218,7 +237,7 @@ class PartitionedSemaphore[K: Hashable = Hashable]:
             if waiter.missing == 0:
                 self._partial = None
                 self._waiters.remove(key, waiter)
-                waiter.wake()
+                unlocked(self._lock, [waiter.wake])
             else:
                 self._partial = found
 

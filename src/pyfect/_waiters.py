@@ -17,29 +17,73 @@ to the item it was waiting for.
 A wake-up resumes the fiber at once (fibers resume synchronously, as in
 Effect). Where Effect defers it to a scheduled task instead (a queue's
 ``scheduleReleaseTaker``, a semaphore release), use ``notify_ready_soon``
-or ``wake_soon``, so the notifier finishes its step first.
+or ``wake_soon_from_here``, so the notifier finishes its step first.
+
+Runs on other threads share these lists. A list belongs to a primitive and
+takes its lock: ``wait`` checks and registers holding it, the notifiers are
+called holding it and let it go while they wake fibers, since a woken fiber
+of the run on this thread runs at once and may come back for the lock. A
+deferred wake of a fiber of another run goes to that run at once rather
+than to a task here: the notifier's run may end before running its tasks.
 """
 # pyright: reportPrivateUsage=false
 
 from __future__ import annotations
 
 import contextlib
+import threading
 from collections import deque
 from collections.abc import Callable
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from pyfect._core import Effect, _Callback, _Succeed, _Sync
 
 if TYPE_CHECKING:
+    from pyfect._fiber import Fiber
     from pyfect.scheduler import Scheduler
+
+type Lock = threading.Lock
+"""A primitive's lock: held only while reading and changing its own fields."""
 
 
 class _Waiter:
-    __slots__ = ("ready", "wake")
+    __slots__ = ("fiber", "ready", "wake")
 
-    def __init__(self, ready: Callable[[], bool], wake: Callable[[], None]) -> None:
+    def __init__(
+        self, ready: Callable[[], bool], wake: Callable[[], None], fiber: Fiber[Any, Any] | None
+    ) -> None:
         self.ready = ready
         self.wake = wake
+        self.fiber = fiber
+
+
+def unlocked(lock: Lock, wakes: list[Callable[[], None]]) -> None:
+    """Call ``wakes`` with ``lock``, which the caller holds, let go meanwhile: a woken
+    fiber of the run on this thread runs at once and may take it."""
+    if not wakes:
+        return
+    lock.release()
+    try:
+        for wake in wakes:
+            wake()
+    finally:
+        lock.acquire()
+
+
+def of_this_run(fiber: Fiber[Any, Any] | None) -> bool:
+    """Whether ``fiber`` belongs to the run of the fiber running on this thread."""
+    from pyfect._fiber import current_run_scheduler
+
+    return fiber is not None and fiber._run_scheduler is current_run_scheduler()
+
+
+def wake_soon_from_here(waiter: Fiber[Any, Any] | None, task: Callable[[], None]) -> None:
+    """``wake_soon(task)`` for a wake-up of ``waiter``, if it belongs to the run of the
+    fiber running here; otherwise ``task`` in a task of ``waiter``'s own run."""
+    if waiter is None or of_this_run(waiter):
+        wake_soon(task)
+    else:
+        waiter._scheduler.schedule(task)
 
 
 def wake_soon(task: Callable[[], None]) -> None:
@@ -52,13 +96,16 @@ def wake_soon(task: Callable[[], None]) -> None:
     if fiber is None:
         task()
     else:
-        fiber.dispatcher().schedule(task)
+        fiber._queue(task)
 
 
 class WaitList:
-    __slots__ = ("_soon", "_waiters")
+    """Fibers waiting on ``lock``'s primitive. Call the notifiers holding ``lock``."""
 
-    def __init__(self) -> None:
+    __slots__ = ("_lock", "_soon", "_waiters")
+
+    def __init__(self, lock: Lock) -> None:
+        self._lock = lock
         self._waiters: deque[_Waiter] = deque()
         # Whether a ``notify_ready_soon`` task is pending.
         self._soon = False  # pragma: no mutate, falsy either way
@@ -67,37 +114,57 @@ class WaitList:
         """Park until notified, or not at all if ``ready()`` already holds."""
 
         def register(resume: Callable[[Effect[None]], None]) -> Effect[None] | None:
-            if ready():
-                resume(_Succeed(None))
-                return None
+            from pyfect._fiber import current_fiber
 
-            waiter = _Waiter(ready, lambda: resume(_Succeed(None)))
-            self._waiters.append(waiter)
+            with self._lock:
+                if ready():
+                    resume(_Succeed(None))
+                    return None
+                waiter = _Waiter(ready, lambda: resume(_Succeed(None)), current_fiber())
+                self._waiters.append(waiter)
             return _Sync(lambda: self._discard(waiter))
 
         return _Callback(register)
 
     def notify_ready(self) -> None:
         """Wake, in order, each waiter whose condition holds when its turn
-        comes (Effect's ``releaseTakers``): a woken fiber runs at once and
-        may change what the waiters behind it see."""
+        comes (Effect's ``releaseTakers``): a woken fiber of this run runs at
+        once and may change what the waiters behind it see."""
         for waiter in list(self._waiters):
             if waiter not in self._waiters or not waiter.ready():
                 continue
             self._waiters.remove(waiter)
-            waiter.wake()
+            unlocked(self._lock, [waiter.wake])
 
-    def notify_ready_soon(self, scheduler: Scheduler | None = None) -> None:
-        """``notify_ready`` in a task on ``scheduler``, else as ``wake_soon``;
-        several calls before it runs share it, as Effect's
-        ``scheduleReleaseTaker``."""
+    def _take(self, which: Callable[[_Waiter], bool]) -> list[_Waiter]:
+        """Take out the waiters ``which`` picks whose condition holds now."""
+        ready: list[_Waiter] = []
+        parked: deque[_Waiter] = deque()
+        for waiter in self._waiters:
+            # pragma: no mutate, wakes retry
+            (ready if which(waiter) and waiter.ready() else parked).append(waiter)
+        self._waiters = parked
+        return ready
+
+    def notify_ready_soon(self, where: Callable[[], Scheduler | None] | None = None) -> None:
+        """``notify_ready`` in a task on the scheduler ``where`` gives, else as
+        ``wake_soon``; several calls before it runs share it, as Effect's
+        ``scheduleReleaseTaker``. Waiters of other runs are woken now, through
+        their own runs. ``where`` is asked only when a task is queued, which
+        most calls (an offer with no taker) skip."""
+        if not self._waiters:
+            return
+        foreign = self._take(lambda waiter: not of_this_run(waiter.fiber))
+        unlocked(self._lock, [waiter.wake for waiter in foreign])
         if self._soon or not self._waiters:
             return
         self._soon = True
+        scheduler = None if where is None else where()
 
         def flush() -> None:
-            self._soon = False  # pragma: no mutate, falsy either way
-            self.notify_ready()
+            with self._lock:
+                self._soon = False  # pragma: no mutate, falsy either way
+                self.notify_ready()
 
         if scheduler is not None:
             scheduler.schedule(flush)
@@ -105,23 +172,25 @@ class WaitList:
         from pyfect._fiber import current_fiber
         from pyfect.scheduler import SyncOnlyScheduler
 
-        # Effect's queue holds the dispatcher of the fiber that made it, whichever
-        # fiber offers: under a ``run_sync`` the root flushes it.
         fiber = current_fiber()
-        run = None if fiber is None else fiber._scheduler
-        if isinstance(run, SyncOnlyScheduler):
-            run.schedule_as_root(flush)
+        if fiber is None:
+            # No fiber runs here to wait for, as ``wake_soon``: now.
+            self._soon = False  # pragma: no mutate, falsy either way
+            self.notify_ready()
+        elif isinstance(fiber._scheduler, SyncOnlyScheduler):
+            # Effect's queue holds the dispatcher of the fiber that made it,
+            # whichever fiber offers: under a ``run_sync`` the root flushes it.
+            fiber._scheduler.schedule_as_root(flush)
         else:
-            wake_soon(flush)
+            fiber._queue(flush)
 
     def notify_all(self) -> None:
         waiters, self._waiters = self._waiters, deque()
-        for waiter in waiters:
-            waiter.wake()
+        unlocked(self._lock, [waiter.wake for waiter in waiters])
 
     def __len__(self) -> int:
         return len(self._waiters)
 
     def _discard(self, waiter: _Waiter) -> None:
-        with contextlib.suppress(ValueError):
+        with self._lock, contextlib.suppress(ValueError):
             self._waiters.remove(waiter)

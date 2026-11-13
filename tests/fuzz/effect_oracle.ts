@@ -26,6 +26,7 @@ const JsonPointer = await import(R + "JsonPointer.ts")
 const Cookies = await import(R + "http/Cookies.ts")
 const Option = await import(R + "Option.ts")
 const Result = await import(R + "Result.ts")
+const Schema = await import(R + "Schema.ts")
 
 const hex = (bytes: Uint8Array) => Buffer.from(bytes).toString("hex")
 const ok = <A>(result: any, f: (a: A) => unknown) => (Result.isSuccess(result) ? f(result.success) : null)
@@ -71,6 +72,13 @@ const answers: Record<string, (text: string) => unknown> = {
   },
   pointer: (t) => JsonPointer.parseUriFragment(t) ?? null,
   cookies: (t) => Cookies.parseHeader(t),
+  json_string: (t) => {
+    const decoded = Schema.decodeUnknownResult(Schema.UnknownFromJsonString)(t)
+    if (!Result.isSuccess(decoded)) return null
+    return ok(Schema.encodeUnknownResult(Schema.UnknownFromJsonString)(decoded.success), (e: string) => [
+      json(JSON.parse(e))
+    ])
+  },
 }
 
 const inputs: Array<[string, string]> = JSON.parse(readFileSync(process.argv[2], "utf8"))

@@ -17,6 +17,7 @@ Completion, named as in Effect:
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Callable
 from typing import Any, Never
 
@@ -39,11 +40,14 @@ from pyfect.exit import interrupt as interrupt_exit
 
 
 class Deferred[A, E = Never]:
-    __slots__ = ("_effect", "_waiters")
+    __slots__ = ("_effect", "_lock", "_waiters")
 
     def __init__(self) -> None:
         self._effect: Effect[A, E] | None = None
         self._waiters: list[Callable[[Effect[A, E]], None]] = []
+        # Runs on other threads share a deferred: completing it and
+        # registering a waiter hold this, so no waiter misses the result.
+        self._lock = threading.Lock()
 
     @classmethod
     def make(cls) -> Effect[Deferred[A, E]]:
@@ -54,13 +58,21 @@ class Deferred[A, E = Never]:
         """Wait for the result and take it on."""
 
         def register(resume: Callable[[Effect[A, E]], None]) -> Effect[None] | None:
-            if self._effect is not None:
-                resume(self._effect)
+            with self._lock:
+                effect = self._effect
+                if effect is None:
+                    self._waiters.append(resume)
+            if effect is not None:
+                resume(effect)
                 return None
-            self._waiters.append(resume)
-            return _Sync(lambda: self._waiters.remove(resume) if resume in self._waiters else None)
+            return _Sync(lambda: self._leave(resume))
 
         return _Callback(register)
+
+    def _leave(self, resume: Callable[[Effect[A, E]], None]) -> None:
+        with self._lock:
+            if resume in self._waiters:
+                self._waiters.remove(resume)
 
     def done(self, ex: Exit[A, E]) -> Effect[bool]:
         return _Sync(lambda: self.done_unsafe(ex))
@@ -128,15 +140,15 @@ class Deferred[A, E = Never]:
         return _Suspend(lambda: _Succeed(self._effect))
 
     def done_unsafe(self, ex: Exit[A, E]) -> bool:
-        """Complete from outside an effect. Call on the fiber's scheduler
-        thread (e.g. inside ``sync``)."""
+        """Complete from outside an effect, from any thread."""
         return self._settle(_FromExit(ex))
 
     def _settle(self, effect: Effect[A, E, Any]) -> bool:
-        if self._effect is not None:
-            return False
-        self._effect = effect
-        waiters, self._waiters = self._waiters, []
+        with self._lock:
+            if self._effect is not None:
+                return False
+            self._effect = effect
+            waiters, self._waiters = self._waiters, []
         for resume in waiters:
             resume(effect)
         return True

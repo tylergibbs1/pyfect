@@ -48,6 +48,7 @@ class Hub[A]:
         "atomic",
         "ended",
         "is_shutdown",
+        "lock",
         "scope",
         "shutdown_waiters",
         "strategy",
@@ -58,7 +59,12 @@ class Hub[A]:
         self.atomic = atomic
         self.strategy = strategy
         self.subscribers = Subscribers[A]()
-        self.shutdown_waiters = WaitList()
+        # Runs on other threads share a hub: everything in it, the store
+        # included, changes holding this. A parked take or publisher is
+        # resumed with it let go (``unlocked``), so a woken fiber of the run
+        # on this thread, which runs at once, can take it.
+        self.lock = atomic._lock
+        self.shutdown_waiters = WaitList(self.lock)
         # Subscriptions are closed with this scope.
         self.scope = CloseableScope()
         self.ended: Option[A] = None
@@ -74,6 +80,8 @@ class Hub[A]:
     def ended_now(self) -> Option[A]:
         return self.ended
 
+    # The methods below are called holding ``lock``.
+
     def complete_subscribers(self) -> None:
         self.strategy.complete_subscribers_unsafe(self.atomic, self.subscribers)
 
@@ -81,10 +89,15 @@ class Hub[A]:
         self.strategy.on_pubsub_empty_space_unsafe(self.atomic, self.subscribers)
 
     def subscribe(self) -> Reader[A]:
-        backing = self.atomic.subscribe()
-        return Reader(backing, self.atomic.replay_window(), Pollers(backing))
+        with self.lock:
+            backing = self.atomic.subscribe()
+            return Reader(backing, self.atomic.replay_window(), Pollers(backing))
 
     def unsubscribe(self, reader: Reader[A], by: int) -> None:
+        with self.lock:
+            self._unsubscribe(reader, by)
+
+    def _unsubscribe(self, reader: Reader[A], by: int) -> None:
         """Interrupt the parked takes (by fiber ``by``), then leave."""
         if reader.unsubscribed:
             return

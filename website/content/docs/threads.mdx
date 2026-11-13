@@ -26,6 +26,49 @@ thread of its own), DNS lookups and `ThreadWorker`s, each of which runs a runtim
 the GIL build, Python code on those threads takes turns holding the GIL with the run's thread
 (waiting on I/O or in C code that releases the GIL doesn't); on 3.14t it runs at the same time.
 
+## Sharing state between runs
+
+A program often makes several runs at once: `fx.run_blocking` from each thread of a thread
+pool or a threaded web server, `ThreadWorker`s, a `ManagedRuntime` per thread. Each run's
+fibers take turns on its own thread, but runs on different threads go at the same time: on
+3.14t in parallel, on the GIL build switching at any bytecode. pyfect's shared-state types
+can be shared between them, at module level or handed from one run to another, and each
+operation stays atomic, as it is in Effect, where one thread runs everything:
+
+- refs: `Ref`, `SynchronizedRef`, `SubscriptionRef`
+- transactions: `TxRef` and every `Tx*` collection (see [Transactions](/docs/transactions))
+- coordination: `Deferred`, `Latch`, `Semaphore`, `PartitionedSemaphore`, `Queue`, `PubSub`
+- resources: `Pool`, `Cache`, `ScopedCache`, `fx.cached`, `RcRef`, `RcMap`, `ScopedRef`,
+  `LayerMap`, a request resolver's `with_cache`
+- fibers and scopes: `FiberSet`, `FiberMap`, `FiberHandle`, a `Fiber`'s `await_exit`, `join`
+  and `interrupt`, a scope's finalizers
+- process-wide state: metrics, `Reference` defaults, `MutableHashMap`, snowflake generators,
+  the in-memory rate limiter store
+
+A fiber waiting on one of them in one run (a `take`, a `wait`, a `tx_retry`) is woken by a
+change another run makes, through its own run, even when the other run ends right after.
+
+<CodeOutput>
+
+<include meta='title="shared_state.py"'>../../snippets/threads/shared_state.py</include>
+
+<include lang="text">../../snippets/threads/shared_state.out</include>
+
+</CodeOutput>
+
+A fiber runs on the run that forked it, and a `run_blocking` that has returned runs nothing
+more. So make what forks fibers or keeps timers for as long as it lives (a `Pool`, an `RcRef`
+or `RcMap` with an idle time to live, a `LayerMap`, a `FiberSet` you add fibers to) in a run
+that outlives its users, such as the app's main run or a `ManagedRuntime`, and fork into a
+`FiberSet` only from runs that stay alive while the fiber does. The same goes for a lookup:
+when the caller that started a `Cache` lookup is interrupted and its run ends, callers from
+other runs waiting on that lookup wait forever.
+
+Two more limits. A plain Python value your own code changes inside `fx.sync`, a dict or a counter,
+is not guarded by anything: keep shared values in a `Ref`. And `Ref.update`'s function runs
+while the ref is locked, so runs on other threads updating the same ref wait for it: keep it
+pure and quick, as in Effect.
+
 ## CPU-heavy work
 
 A fiber that computes for 200 ms holds up every other fiber of the run for 200 ms: timers fire

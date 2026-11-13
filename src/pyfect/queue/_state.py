@@ -17,10 +17,10 @@ from __future__ import annotations
 
 from collections import deque
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from pyfect._core import Effect, _Succeed  # pyright: ignore[reportPrivateUsage]
-from pyfect._waiters import WaitList
+from pyfect._waiters import Lock, WaitList, unlocked
 from pyfect.cause import Cause
 
 
@@ -44,9 +44,9 @@ type Offer[A] = OfferOne[A] | OfferMany[A]
 
 @dataclass(eq=False, slots=True)
 class Open[A]:
-    takers: WaitList = field(default_factory=WaitList)
-    offers: deque[Offer[A]] = field(default_factory=deque[Offer[A]])
-    awaiters: WaitList = field(default_factory=WaitList)
+    takers: WaitList
+    offers: deque[Offer[A]]
+    awaiters: WaitList
 
 
 @dataclass(eq=False, slots=True)
@@ -65,33 +65,36 @@ class Done[E]:
 type State[A, E] = Open[A] | Closing[A, E] | Done[E]
 
 
-def take_offer[A](offers: deque[Offer[A]]) -> A:
-    """Take the next item straight from the oldest parked offer."""
+def take_offer[A](offers: deque[Offer[A]], lock: Lock) -> A:
+    """Take the next item straight from the oldest parked offer. ``lock`` is
+    the queue's, which the caller holds and which is let go to resume the
+    offerer."""
     match offers[0]:
         case OfferOne(item=item, resume=resume):
             offers.popleft()
-            resume(_Succeed(True))
+            unlocked(lock, [lambda: resume(_Succeed(True))])
             return item
         case OfferMany() as entry:
             item = entry.items[entry.admitted]
             entry.admitted += 1
             if entry.admitted == len(entry.items):
                 offers.popleft()
-                entry.resume(_Succeed([]))
+                unlocked(lock, [lambda: entry.resume(_Succeed([]))])
             return item
 
 
-def admit[A](offers: deque[Offer[A]], buffer: deque[A], capacity: int) -> None:
+def admit[A](offers: deque[Offer[A]], buffer: deque[A], capacity: int, lock: Lock) -> None:
     """Move parked items into ``buffer`` while it holds fewer than
     ``capacity``, oldest first, resuming each offer once all of its items
-    are in. A resumed offerer runs at once and may offer again, so the free
-    space is read again after each resume (Effect's ``releaseCapacity``)."""
+    are in. A resumed offerer runs at once and may offer again, and other
+    runs may too while ``lock`` is let go to resume it, so the free space is
+    read again after each resume (Effect's ``releaseCapacity``)."""
     while offers and len(buffer) < capacity:
         match offers[0]:
             case OfferOne(item=item, resume=resume):
                 buffer.append(item)
                 offers.popleft()
-                resume(_Succeed(True))
+                unlocked(lock, [lambda: resume(_Succeed(True))])
             case OfferMany() as entry:
                 n = min(capacity - len(buffer), len(entry.items) - entry.admitted)
                 buffer.extend(entry.items[entry.admitted : entry.admitted + n])
@@ -99,13 +102,13 @@ def admit[A](offers: deque[Offer[A]], buffer: deque[A], capacity: int) -> None:
                 if entry.admitted < len(entry.items):
                     return
                 offers.popleft()
-                entry.resume(_Succeed([]))
+                unlocked(lock, [lambda: entry.resume(_Succeed([]))])
 
 
-def reject[A](entry: Offer[A]) -> None:
+def reject[A](entry: Offer[A], lock: Lock) -> None:
     """Resume a parked offer the queue will never admit."""
     match entry:
         case OfferOne(resume=resume):
-            resume(_Succeed(False))
+            unlocked(lock, [lambda: resume(_Succeed(False))])
         case OfferMany(items=items, admitted=admitted, resume=resume):
-            resume(_Succeed(items[admitted:]))
+            unlocked(lock, [lambda: resume(_Succeed(items[admitted:]))])
