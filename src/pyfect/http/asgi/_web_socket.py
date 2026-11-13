@@ -262,7 +262,7 @@ def _request(ws: AsgiWebSocket, scope: Scope, url: str) -> SourceRequest:
     joined = _header_lines.joined(lines)
     socket = _socket(ws, scope)
 
-    def upgrade(headers: Headers) -> Effect[SocketService, object]:
+    def upgrade(_request: ServerRequest, headers: Headers) -> Effect[SocketService, object]:
         if headers:
             return fail(RuntimeError("WebSocket upgrades do not support custom response headers"))
         return succeed(socket)
