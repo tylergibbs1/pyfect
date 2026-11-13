@@ -4,6 +4,31 @@
 
 ### Fixed
 
+- What a run starts goes on after its caller returns, as on Effect's always-alive scheduler.
+  A fiber ran only while the run that forked it was being driven, so once `fx.run_blocking`
+  returned, whatever it left waiting stopped for good, silently. In threaded handlers: 0 of
+  20 tasks forked into a `FiberSet` ran and closing its scope hung; a timeout could not end a
+  wait on a `Cache`, `RcMap` or `RcRef` lookup whose starter's run had ended, and one timed
+  out request on a hot `Cache` key made every later one time out; a `Pool` made in a short run
+  had no items after two invalidations, a TTL pool never grew past its minimum, and an `RcMap`
+  with an idle time to live never released and hung its scope's close. Now, when
+  `run_blocking`, `run_sync` (whose waiting fiber goes on, as Effect's `runSync`), a
+  `ManagedRuntime`'s sync runs or a standard schema's validation return, their scheduler is
+  adopted by one background scheduler (`scheduler.BACKGROUND`, a daemon thread started when
+  first needed): its ready tasks and timers move there, and every later wake goes there too.
+  `tests/cross_run/test_run_ownership.py` ports each dogfood repro, on both builds, and
+  `tests/test_run_adoption_guard.py` allows only the functions that hand their scheduler on to
+  drive one and checks every public run function leaves a waiting fork running. Docs:
+  [Threads](/docs/threads#sharing-state-between-runs) drops the limits this lifts. Found by
+  dogfooding (pyfect-39).
+- A `ManagedRuntime`'s `run_blocking` calls on different threads no longer wait for each
+  other. They shared one scheduler and held the runtime's lock for a whole drive, so a quick
+  run waited for the slowest one in flight (1.8 s behind a 2 s run), and a run waiting for
+  another thread's run of the same runtime (`runtime.run_blocking(fx.blocking(serve))`)
+  deadlocked. Each sync run now has a scheduler of its own and no lock, and `run_fork` and
+  `run_callback` called outside any run start on the background scheduler instead of waiting
+  for a sync run to drive the runtime's. Found by dogfooding (pyfect-39).
+
 - `json_patch.get` gives `[]` for two NaN floats that are different objects (`inf - inf` and
   `inf * 0`), as Effect's `Object.is` does; it gave a `replace`. Numbers are compared by
   `pyfect._js.same_json_value`, and `tests/test_object_is_guard.py` keeps hand-written sign

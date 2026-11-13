@@ -52,8 +52,7 @@ from pyfect.json_schema import (
     JsonSchema,
     to_document_draft_07,
 )
-from pyfect.run import drive
-from pyfect.scheduler import SyncScheduler
+from pyfect.scheduler import BACKGROUND, SyncScheduler
 from pyfect.schema import ast as ast_module
 from pyfect.schema._jsonschema import to_json_schema_document
 from pyfect.schema._options import ParseOptions
@@ -262,12 +261,20 @@ def _run[A](effect: Any) -> Result[A] | Awaitable[Result[A]]:
     fiber: Fiber[Result[A], object] = new_root(scheduler, Context.empty())
     fiber._start(effect)  # pyright: ignore[reportPrivateUsage]
     scheduler.flush()
+    scheduler.adopt(BACKGROUND)  # what is left waiting goes on in the background
     done = fiber._exit  # pyright: ignore[reportPrivateUsage]
     if done is not None:
         return _result(done)
 
     async def later() -> Result[A]:
-        return _result(await asyncio.to_thread(drive, scheduler, fiber))
+        loop = asyncio.get_running_loop()
+        exited: asyncio.Future[Exit[Result[A], object]] = loop.create_future()
+
+        def observe(ex: Exit[Result[A], object]) -> None:
+            loop.call_soon_threadsafe(exited.set_result, ex)
+
+        fiber.add_observer_unsafe(observe)
+        return _result(await exited)
 
     return later()
 

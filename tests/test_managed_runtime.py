@@ -322,8 +322,14 @@ def _exit_of_fork_in_a_fiber(runtime: fx.ManagedRuntime[Name]) -> fx.Exit[object
 
 def _exit_of_callback(runtime: fx.ManagedRuntime[Name]) -> fx.Exit[object, object]:
     exits: list[fx.Exit[object, object]] = []
-    runtime.run_callback(Name(), on_exit=exits.append)
-    runtime.run_blocking_exit(fx.void)  # drives the runtime's scheduler
+    called = threading.Event()
+
+    def on_exit(ex: fx.Exit[object, object]) -> None:
+        exits.append(ex)
+        called.set()
+
+    runtime.run_callback(Name(), on_exit=on_exit)  # outside a run: on the background thread
+    assert called.wait(2)
     return exits[0]
 
 

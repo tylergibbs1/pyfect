@@ -4,8 +4,9 @@ description: "All of a run's fibers share one thread: what that means for CPU-he
 ---
 
 Fibers are cheap and many of them can be waiting at once, but they don't run in parallel. Every
-fiber of a run executes on that run's thread: the thread that called `fx.run_blocking`, or the
-asyncio event loop's thread for `run_async` and a `ManagedRuntime` used from an asyncio app.
+fiber of a run executes on that run's thread: the thread that called `fx.run_blocking` (until
+it returns; see [below](#sharing-state-between-runs)), or the asyncio event loop's thread for
+`run_async` and a `ManagedRuntime` used from an asyncio app.
 A fiber runs until it waits (a sleep, a queue, a socket, `fx.blocking`) or uses up its step
 budget, then the next one runs, as in Effect on Node's single thread.
 
@@ -56,15 +57,22 @@ change another run makes, through its own run, even when the other run ends righ
 
 </CodeOutput>
 
-A fiber runs on the run that forked it, and a `run_blocking` that has returned runs nothing
-more. So make what forks fibers or keeps timers for as long as it lives (a `Pool`, an `RcRef`
-or `RcMap` with an idle time to live, a `LayerMap`, a `FiberSet` you add fibers to) in a run
-that outlives its users, such as the app's main run or a `ManagedRuntime`, and fork into a
-`FiberSet` only from runs that stay alive while the fiber does. The same goes for a lookup:
-when the caller that started a `Cache` lookup is interrupted and its run ends, callers from
-other runs waiting on that lookup wait forever.
+What a run starts goes on after its caller returns, as on Effect's scheduler, which is always
+alive. When `fx.run_blocking`, `fx.run_sync` or a `ManagedRuntime`'s sync run returns, the
+fibers it left waiting move to one background thread that pyfect starts when first needed: a
+fork, a `Cache` or `RcRef` lookup other callers wait on, a `FiberSet` member, a `Pool`'s
+refill, an idle timer. Interrupts and scope closes still reach them. So a handler can make a
+lookup that outlives it, and a `ManagedRuntime`'s sync runs on different threads each return
+as soon as their own effect is done.
 
-Two more limits. A plain Python value your own code changes inside `fx.sync`, a dict or a counter,
+The background thread is one thread for the whole process, so fibers on it take turns as a
+run's fibers do: keep CPU-heavy work in `fx.blocking` there too. It is a daemon thread, so the
+process does not wait for it at exit; to wait for background work, wait for it in a run (join
+the fiber, `await_empty` a `FiberSet`). An asyncio loop runs its own fibers and stops with the
+loop: a fiber left on a loop that has closed never runs again, and waking it raises
+`LoopClosedError` where the wake comes from.
+
+Two limits remain. A plain Python value your own code changes inside `fx.sync`, a dict or a counter,
 is not guarded by anything: keep shared values in a `Ref`. And `Ref.update`'s function runs
 while the ref is locked, so runs on other threads updating the same ref wait for it: keep it
 pure and quick, as in Effect.

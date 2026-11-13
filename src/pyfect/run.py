@@ -52,7 +52,13 @@ from pyfect.errors import AsyncFiberError
 from pyfect.exit import Exit, Success
 from pyfect.exit import die as exit_die
 from pyfect.logger import log_error
-from pyfect.scheduler import AsyncioScheduler, Scheduler, SyncOnlyScheduler, SyncScheduler
+from pyfect.scheduler import (
+    BACKGROUND,
+    AsyncioScheduler,
+    Scheduler,
+    SyncOnlyScheduler,
+    SyncScheduler,
+)
 
 _EMPTY: Context[Never] = Context.empty()
 _VOID: Effect[None] = _Succeed(None)
@@ -76,8 +82,13 @@ def run_sync_exit(eff: Effect[Any, Any, Any], *, context: Context = _EMPTY) -> E
 
 
 def flush_exit[A, E](scheduler: SyncOnlyScheduler, fiber: Fiber[A, E]) -> Exit[A, E]:
-    """What ``fiber`` comes to without waiting on anything."""
-    scheduler.flush_as(fiber)
+    """What ``fiber`` comes to without waiting on anything. What it left
+    waiting goes on in the background (``SyncScheduler.adopt``), as an Effect
+    fiber that ``runSync`` gave up on does."""
+    try:
+        scheduler.flush_as(fiber)
+    finally:
+        scheduler.adopt(BACKGROUND)
     return exit_die(AsyncFiberError(fiber=fiber)) if fiber._exit is None else fiber._exit
 
 
@@ -121,13 +132,17 @@ def run_blocking(eff: Effect[Any, Never, Any], *, context: Context = _EMPTY) -> 
 def drive[A, E](scheduler: SyncScheduler, fiber: Fiber[A, E]) -> Exit[A, E]:
     """Run ``scheduler`` on this thread until ``fiber`` is done. On Ctrl-C
     the fiber is interrupted and its finalizers run before the
-    ``KeyboardInterrupt`` propagates; a second Ctrl-C aborts."""
+    ``KeyboardInterrupt`` propagates; a second Ctrl-C aborts. Then the fibers
+    still waiting go on in the background (``SyncScheduler.adopt``), as on
+    Effect's always-alive scheduler: forks, lookups others wait on, timers."""
     try:
         scheduler.run_until(lambda: fiber._exit is not None)
     except KeyboardInterrupt:
         fiber.interrupt_as_unsafe(None)
         scheduler.run_until(lambda: fiber._exit is not None)
         raise
+    finally:
+        scheduler.adopt(BACKGROUND)
     ex = fiber._exit
     assert ex is not None
     return ex

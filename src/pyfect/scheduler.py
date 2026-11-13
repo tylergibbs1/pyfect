@@ -29,6 +29,7 @@ is bound to the run, whose scheduler still owns the timers.
 from __future__ import annotations
 
 import asyncio
+import os
 import threading
 import time
 from abc import ABC, abstractmethod
@@ -292,30 +293,82 @@ class SyncScheduler(Tracking):
         self._cond = threading.Condition()
         # The thread inside ``run_until``, if any.
         self._driver: int | None = None
+        # The scheduler that runs this one's tasks and timers once its caller has
+        # returned (``adopt``).
+        self._adopter: SyncScheduler | None = None
 
     def runs_here(self) -> bool:
         """Whether this thread is the one running the scheduler's tasks."""
+        adopter = self._adopter
+        if adopter is not None:
+            return adopter.runs_here()
         return self._driver == threading.get_ident()
 
     def driver(self) -> int | None:
-        return self._driver
+        adopter = self._adopter
+        return self._driver if adopter is None else adopter.driver()
+
+    def adopt(self, into: SyncScheduler) -> None:
+        """Hand what is left to ``into`` for good: the tasks ready now, the timers
+        pending, and every task or timer scheduled from now on. The run whose caller
+        drove this scheduler has returned, and its fibers go on (Effect's scheduler is
+        always alive)."""
+        with self._cond:
+            if self._adopter is not None:
+                return
+            self._adopter = into
+            batch = self._take_batch() if self._ready or self._prioritized else deque[Task]()
+            timers = [entry for _, _, entry in self._timers.entries if entry.owner is not None]
+        for task in batch:
+            into.schedule(task)
+        for entry in timers:
+            timer = entry.value
+            if timer is not None:
+                into.call_at(entry.when, self._fire(entry), daemon=timer.daemon)
+
+    def _fire(self, entry: _timer_heap.TimerEntry[_Timer]) -> Task:
+        """A timer moved to the adopter: runs ``entry``'s task unless it was
+        cancelled through the cancel this scheduler handed out."""
+
+        def fire() -> None:
+            with self._cond:
+                timer = entry.value
+                entry.owner = entry.value = None
+            if timer is not None:
+                timer.task()
+
+        return fire
 
     def schedule(self, task: Task, priority: int = 0) -> None:
         task = self._tracked(task)
         with self._cond:
-            if priority == 0:
-                self._ready.append(task)
-            else:
-                self._prioritized = self._prioritized or PriorityBuckets()
-                self._prioritized.schedule_task(task, priority)
-            self._last_activity = time.monotonic()
-            self._cond.notify()
+            adopter = self._adopter
+            if adopter is None:
+                if priority == 0:
+                    self._ready.append(task)
+                else:
+                    self._prioritized = self._prioritized or PriorityBuckets()
+                    self._prioritized.schedule_task(task, priority)
+                self._last_activity = time.monotonic()
+                self._cond.notify()
+                return
+        adopter.schedule(task, priority)
 
     def call_later(self, delay: Duration, task: Task, *, daemon: bool = False) -> Cancel:
-        when = time.monotonic() + max(delay.to_seconds(), 0.0)
+        return self.call_at(time.monotonic() + max(delay.to_seconds(), 0.0), task, daemon=daemon)
+
+    def call_at(self, when: float, task: Task, *, daemon: bool = False) -> Cancel:
+        """``call_later`` at ``when`` on the ``time.monotonic`` clock."""
         with self._cond:
-            entry = self._timers.push(when, _Timer(task, daemon=daemon))
-            self._cond.notify()
+            adopter = self._adopter
+            if adopter is None:
+                entry = self._timers.push(when, _Timer(task, daemon=daemon))
+                self._cond.notify()
+            else:
+                entry = None
+        if entry is None:
+            assert adopter is not None
+            return adopter.call_at(when, task, daemon=daemon)
 
         def cancel() -> None:
             with self._cond:
@@ -334,6 +387,8 @@ class SyncScheduler(Tracking):
         A ``KeyboardInterrupt`` raised while blocked propagates; the caller
         decides how to unwind.
         """
+        if self._adopter is not None:
+            raise RuntimeError("run_until on an adopted scheduler: its tasks run elsewhere")
         self._last_activity = time.monotonic()
         driver, self._driver = self._driver, threading.get_ident()
         try:
@@ -415,6 +470,67 @@ class SyncScheduler(Tracking):
             return None
         # An infinite (or absurdly far) deadline still has to fit a lock wait.
         return min(max(when - time.monotonic(), 0.0), threading.TIMEOUT_MAX)
+
+
+class BackgroundScheduler(SyncScheduler):
+    """The process-wide scheduler that runs what a run leaves behind once its caller
+    returns (``SyncScheduler.adopt``): fibers still waiting, their timers, the wakes
+    other threads send them. Effect's scheduler is always alive; this is that
+    scheduler for runs whose own driver has gone. A daemon thread drives it, started
+    with its first task or timer."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._started = False
+        self._start_lock = threading.Lock()
+
+    def schedule(self, task: Task, priority: int = 0) -> None:
+        if not self._started:
+            self._start()
+        super().schedule(task, priority)
+
+    def call_at(self, when: float, task: Task, *, daemon: bool = False) -> Cancel:
+        if not self._started:
+            self._start()
+        return super().call_at(when, task, daemon=daemon)
+
+    def _start(self) -> None:
+        with self._start_lock:
+            if not self._started:
+                thread = threading.Thread(target=self._serve, name="pyfect-background", daemon=True)
+                thread.start()
+                self._started = True
+
+    def _serve(self) -> None:
+        while True:
+            try:
+                self.run_until(_never)
+            except KeyboardInterrupt:  # pragma: no cover - only the main thread gets it
+                raise
+            except BaseException:  # pragma: no cover - a task raised past its fiber
+                # Every fiber of every adopted run depends on this thread: report the
+                # raise and go on, the rest of the batch first (``_run_tasks``).
+                import traceback
+
+                traceback.print_exc()
+
+    def _after_fork_in_child(self) -> None:
+        """The thread did not survive ``os.fork``: start a new one when needed."""
+        self._cond = threading.Condition()
+        self._start_lock = threading.Lock()
+        self._driver = None
+        self._started = False
+
+
+def _never() -> bool:
+    return False
+
+
+BACKGROUND = BackgroundScheduler()
+"""Runs every adopted scheduler's tasks and timers."""
+
+if hasattr(os, "register_at_fork"):
+    os.register_at_fork(after_in_child=BACKGROUND._after_fork_in_child)  # pyright: ignore[reportPrivateUsage]
 
 
 class SyncOnlyScheduler(SyncScheduler):

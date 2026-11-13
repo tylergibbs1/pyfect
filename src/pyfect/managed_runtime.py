@@ -16,15 +16,16 @@ Built for an application's lifetime, such as a web server's lifespan::
 Where runs go:
 
 - ``run_async`` / ``run_async_exit``: on the running asyncio loop.
-- ``run_blocking`` / ``run_blocking_exit``: on a scheduler the runtime owns,
-  driven by the calling thread until the effect is done. These runs share it,
-  one thread at a time, so fibers the layer forked go on running during
-  each of them.
-- ``run_sync`` / ``run_sync_exit``: the same scheduler, flushed once; an
+- ``run_blocking`` / ``run_blocking_exit``: on a scheduler of its own, driven
+  by the calling thread until the effect is done, as ``fx.run_blocking``. Runs
+  on other threads go on meanwhile; none waits for another.
+- ``run_sync`` / ``run_sync_exit``: a scheduler of its own, flushed once; an
   effect that waits dies with ``AsyncFiberError``, as Effect's ``runSync``.
 - ``run_fork`` / ``run_callback``: on the current fiber's run, else the
-  running loop, else the runtime's own scheduler (they then make progress
-  while a sync run or ``dispose`` drives it).
+  running loop, else the background scheduler (``scheduler.BACKGROUND``).
+
+Fibers a run leaves behind (the layer's, forks, lookups) go on in the
+background once its caller returns, as on Effect's always-alive scheduler.
 
 Each run reads its caller's ``contextvars`` (a request id set before the
 call), however many callers share the runtime.
@@ -55,7 +56,12 @@ from pyfect.effect import die
 from pyfect.exit import Exit, Failure, Success
 from pyfect.layer import Layer, MemoMap
 from pyfect.run import Interruptor, await_fiber, drive, flush_exit, unwrap
-from pyfect.scheduler import AsyncioScheduler, Scheduler, SyncOnlyScheduler, SyncScheduler
+from pyfect.scheduler import (
+    BACKGROUND,
+    AsyncioScheduler,
+    Scheduler,
+    SyncOnlyScheduler,
+)
 from pyfect.scope import CloseableScope
 
 R_contra = TypeVar("R_contra", contravariant=True)
@@ -85,13 +91,13 @@ class ManagedRuntime(Generic[R_contra, ER_co]):
         "_disposed",
         "_disposing",
         "_fiber_scope",
+        "_fork_outside_runs",
         "_layer",
         "_layer_scope",
         "_loop",
         "_managed",
+        "_run_scheduler",
         "_scope",
-        "_sync",
-        "_sync_lock",
         "memo_map",
     )
 
@@ -113,9 +119,10 @@ class ManagedRuntime(Generic[R_contra, ER_co]):
         self._disposed: Deferred[None] | None = None
         self._cached: Context | None = None
         self._context_effect: Effect[Context, Any] = _WithFiber(self._context_in)
-        self._sync = SyncOnlyScheduler()
-        self._sync_lock = threading.RLock()
         self._loop: tuple[asyncio.AbstractEventLoop, AsyncioScheduler] | None = None
+        # Each sync run's scheduler, and where ``run_fork`` outside a run starts.
+        self._run_scheduler: Callable[[], SyncOnlyScheduler] = SyncOnlyScheduler
+        self._fork_outside_runs: Scheduler = BACKGROUND
 
     @staticmethod
     def make[R, ER = Never](
@@ -196,9 +203,9 @@ class ManagedRuntime(Generic[R_contra, ER_co]):
         elif loop_running_here():
             run = self._loop_scheduler()
         else:
-            # Another thread may be driving the runtime's scheduler: queue it.
+            # No run here: the fiber starts on the background scheduler's thread.
             return self._start(
-                self._sync, eff, scheduler=scheduler, uninterruptible=uninterruptible
+                self._fork_outside_runs, eff, scheduler=scheduler, uninterruptible=uninterruptible
             )
         return self._start(run, eff, scheduler=scheduler, uninterruptible=uninterruptible, now=True)
 
@@ -224,10 +231,8 @@ class ManagedRuntime(Generic[R_contra, ER_co]):
 
     def run_sync_exit[A, E = Never](self, eff: Effect[A, E, R_contra]) -> Exit[A, E | ER_co]:
         require_effect(eff, "eff")
-        scheduler = SyncOnlyScheduler() if current_run_scheduler() is self._sync else self._sync
-        fiber = self._start(scheduler, eff)
-        with self._sync_lock:
-            return flush_exit(scheduler, fiber)
+        scheduler = self._run_scheduler()
+        return flush_exit(scheduler, self._start(scheduler, eff))
 
     def run_sync[A](self: ManagedRuntime[R_contra, Never], eff: Effect[A, Never, R_contra]) -> A:
         require_effect(eff, "eff")
@@ -235,12 +240,8 @@ class ManagedRuntime(Generic[R_contra, ER_co]):
 
     def run_blocking_exit[A, E = Never](self, eff: Effect[A, E, R_contra]) -> Exit[A, E | ER_co]:
         require_effect(eff, "eff")
-        # Called from one of the runtime's own sync fibers, driving its
-        # scheduler would stall that fiber's run: the nested run gets its own.
-        scheduler = SyncScheduler() if current_run_scheduler() is self._sync else self._sync
-        fiber = self._start(scheduler, eff)
-        with self._sync_lock:
-            return drive(scheduler, fiber)
+        scheduler = self._run_scheduler()
+        return drive(scheduler, self._start(scheduler, eff))
 
     def run_blocking[A](
         self: ManagedRuntime[R_contra, Never], eff: Effect[A, Never, R_contra]
@@ -303,10 +304,10 @@ class ManagedRuntime(Generic[R_contra, ER_co]):
         Raises ``RuntimeError`` inside a fiber or a running asyncio loop,
         whose fibers it could never see finish."""
         _refuse_to_block("ManagedRuntime.dispose()", "await dispose_async()")
-        fiber = new_root(self._sync, Context.empty())
+        scheduler = self._run_scheduler()
+        fiber = new_root(scheduler, Context.empty())
         fiber._start(self.dispose_effect)
-        with self._sync_lock:
-            unwrap(drive(self._sync, fiber))
+        unwrap(drive(scheduler, fiber))
 
     async def dispose_async(self) -> None:
         """Dispose on the running loop."""
@@ -347,10 +348,10 @@ class ManagedRuntime(Generic[R_contra, ER_co]):
         """Build the layer, so startup errors surface here (disposing what
         was built before raising). Refused where ``dispose`` is."""
         _refuse_to_block("A sync `with` on a ManagedRuntime", "async with")
-        fiber = new_root(self._sync, Context.empty())
+        scheduler = self._run_scheduler()
+        fiber = new_root(scheduler, Context.empty())
         fiber._start(self._context_effect)
-        with self._sync_lock:
-            ex = drive(self._sync, fiber)
+        ex = drive(scheduler, fiber)
         if isinstance(ex, Failure):
             self.dispose()
             unwrap(ex)

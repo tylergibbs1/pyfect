@@ -461,7 +461,8 @@ def _managed_runtime(w: World) -> None:
     ``contextvars``."""
     built = layer.effect(Greeting, resource(w, "layer").as_("hi"))
     runtime = fx.ManagedRuntime.make(built)
-    runtime._sync = w.scheduler
+    runtime._run_scheduler = lambda: w.scheduler
+    runtime._fork_outside_runs = w.scheduler
     reads: list[tuple[str, str]] = []
     started = Slot[AnyFiber]()
 

@@ -77,9 +77,7 @@ once:
   as an asyncio task does.
 - `fx.run_sync` and `fx.run_blocking` run in the caller's own context, so a variable set by
   the effect is still set after it. A `ManagedRuntime`'s `run_sync` and `run_blocking` run in
-  a copy, as its `run_async` does: callers on several threads share its scheduler, and driving
-  it from each one's own context would deadlock runs across threads. Effect has no such
-  difference, since Node has one thread.
+  a copy, as its `run_async` does. Effect has no such difference, since Node has one thread.
 
 <CodeOutput>
 

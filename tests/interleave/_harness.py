@@ -38,7 +38,7 @@ import pyfect as fx
 from pyfect._fiber import Fiber, current_fiber, current_run_scheduler
 from pyfect.duration import Duration
 from pyfect.exit import Exit
-from pyfect.scheduler import Cancel, StalledError, SyncOnlyScheduler, Task
+from pyfect.scheduler import Cancel, StalledError, SyncOnlyScheduler, SyncScheduler, Task
 
 type Guard = Callable[[], bool]
 """Yielded by a simulated thread: its next step waits until this holds."""
@@ -139,6 +139,9 @@ class InterleaveScheduler(SyncOnlyScheduler):
 
     def schedule_as_root(self, task: Task) -> None:
         self._enqueue(task)
+
+    def adopt(self, into: SyncScheduler) -> None:
+        """Kept: the world goes on choosing what runs after a run's caller returns."""
 
     def _enqueue(self, task: Task) -> None:
         world = self._world
