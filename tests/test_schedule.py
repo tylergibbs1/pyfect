@@ -1,3 +1,5 @@
+# Schedule steps here use 0.6's Continue/Stop protocol, deprecated until 0.7.0.
+# pyright: reportDeprecated=false
 """Schedules driving effects on the test clock, beyond Effect's own
 ``Schedule.test.ts`` (ported in ``tests/oracle/test_schedule.py``)."""
 
@@ -5,14 +7,13 @@ from collections.abc import Sequence
 from typing import TypeIs
 
 import pytest
-from _schedule_steps import Continue, Decision, Stop, decided, or_stop
 
 import pyfect as fx
 from pyfect import schedule, testing
 from pyfect.cause import Fail
 from pyfect.duration import Duration, millis, seconds, to_millis, zero
 from pyfect.result import Err
-from pyfect.schedule import CurrentMetadata, Metadata, Schedule
+from pyfect.schedule import Continue, CurrentMetadata, Decision, Metadata, Schedule, Stop
 from pyfect.testing import run_test as run
 
 
@@ -37,9 +38,7 @@ def decisions[O](s: Schedule[O, None], times: Sequence[float]) -> list[Decision[
     @fx.gen
     def go():
         step = yield from schedule.to_step(s)
-        return (
-            yield from fx.for_each(times, lambda now: decided(step(to_millis(seconds(now)), None)))
-        )
+        return (yield from fx.for_each(times, lambda now: step(to_millis(seconds(now)), None)))
 
     return run(go)
 
@@ -216,7 +215,7 @@ def test_passthrough_outputs_the_inputs():
     @fx.gen
     def go():
         step = yield from schedule.to_step(ids)
-        return [(yield from decided(step(0.0, 7))), (yield from decided(step(0.0, 8)))]
+        return [(yield from step(0.0, 7)), (yield from step(0.0, 8))]
 
     assert run(go) == [Continue(7, zero), Stop(8)]
 
@@ -432,16 +431,16 @@ def test_a_failing_map_effect_fails_the_repeat():
 
 
 @testing.effect
-def test_to_step_with_sleep_sleeps_then_returns_the_output():
+def test_to_step_with_sleep_sleeps_then_returns_the_decision():
     # Effect: toStepWithSleep(spaced("1 second").pipe(upTo({ times: 2 }))) gives 0, 1, Done(2).
     step = yield from schedule.to_step_with_sleep(schedule.spaced("1 second").up_to(times=2))
     times: list[float] = []
 
-    def timed_step(i: int) -> fx.Effect[int | Stop[int]]:
-        return or_stop(step(i)).tap(lambda _: fx.clock.current_time_millis().map(times.append))
+    def timed_step(i: int) -> fx.Effect[Decision[int]]:
+        return step(i).tap(lambda _: fx.clock.current_time_millis().map(times.append))
 
     fiber = yield from fx.for_each([0, 1, 2], timed_step).fork()
     yield from testing.adjust("2 seconds")
     decisions = yield from fiber.join()
-    assert decisions == [0, 1, Stop(2)]
+    assert decisions == [Continue(0, millis(1000)), Continue(1, millis(1000)), Stop(2)]
     assert times == [1_000, 2_000, 2_000]

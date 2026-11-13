@@ -1,10 +1,12 @@
+# Schedule steps here use 0.6's Continue/Stop protocol, deprecated until 0.7.0.
+# pyright: reportDeprecated=false
 """Ports of Effect's ``Schedule.test.ts``.
 
 Each test's docstring is the Effect test title. A step takes epoch
-milliseconds, as in Effect; delays are ``Duration``s. Steps are Effect's
-``Pull``s; ``decided`` (``tests/_schedule_steps.py``) reads one as
-``Continue(output, delay)`` where it succeeds with ``(output, delay)``, and
-``Stop(output)`` where it fails with ``Cause.done(output)``.
+milliseconds, as in Effect; delays are ``Duration``s. A step
+returns ``Continue(output, delay)`` where Effect's ``Pull`` succeeds with
+``[output, delay]``, and ``Stop(output)`` where it fails with
+``Cause.done(output)``.
 
 Every title is ported. The cron ports read the times in local time, as
 Effect's ``new Date(2024, 0, 1)`` does.
@@ -15,14 +17,13 @@ from collections.abc import Callable, Iterable
 from datetime import UTC, datetime
 
 import pytest
-from _schedule_steps import Continue, Stop, decided, or_stop
 
 import pyfect as fx
 from pyfect import cron, random, schedule, testing
 from pyfect.cron import CronParseError
 from pyfect.duration import Duration, infinity, millis, nanos, seconds, zero
 from pyfect.result import Err, Ok
-from pyfect.schedule import Metadata, Schedule
+from pyfect.schedule import Continue, Metadata, Schedule, Stop
 
 
 def run[A, E](eff: fx.Effect[A, E]) -> fx.Effect[A, E]:
@@ -47,7 +48,7 @@ def run_delays[I, E](
         step = yield from schedule.to_step_with_metadata(s)
         out: list[Duration] = []
         for value in inputs:
-            meta = yield from or_stop(step(value))
+            meta = yield from step(value)
             if isinstance(meta, Stop):
                 out.append(zero)
                 break
@@ -76,7 +77,7 @@ def secs(values: list[float]) -> list[Duration]:
 def test_during_recurs_while_the_duration_has_not_elapsed():
     """during recurs while the duration has not elapsed"""
     step = yield from schedule.to_step(schedule.during("1 second"))
-    decision = yield from decided(step(0.0, None))
+    decision = yield from step(0.0, None)
     assert isinstance(decision, Continue)
 
 
@@ -130,9 +131,9 @@ def test_concat_sequences_self_then_other_and_merges_their_outputs():
     left = left_ids.up_to(times=2).map(lambda m: f"left:{m.output}")
     right = right_ids.map(lambda m: f"right:{m.output}")
     step = yield from schedule.to_step(left.concat(right))
-    first = yield from decided(step(0.0, "a"))
-    second = yield from decided(step(0.0, "b"))
-    third = yield from decided(step(0.0, "c"))
+    first = yield from step(0.0, "a")
+    second = yield from step(0.0, "b")
+    third = yield from step(0.0, "c")
     assert [first, second, third] == [
         Continue("left:a", zero),
         Continue("left:b", zero),
@@ -175,8 +176,8 @@ def test_tap_provides_full_metadata():
 
     s = schedule.spaced(ms(250)).pipe(schedule.set_input_type(str)).tap(record)
     step = yield from schedule.to_step(s)
-    first = yield from decided(step(1_000, "a"))
-    second = yield from decided(step(1_250, "b"))
+    first = yield from step(1_000, "a")
+    second = yield from step(1_250, "b")
     assert first == Continue(0, ms(250))
     assert second == Continue(1, ms(250))
     assert observed == expected_metadata()
@@ -193,8 +194,8 @@ def test_modify_delay_provides_full_metadata():
 
     s = schedule.spaced(ms(250)).pipe(schedule.set_input_type(str)).modify_delay(modify)
     step = yield from schedule.to_step(s)
-    first = yield from decided(step(1_000, "a"))
-    second = yield from decided(step(1_250, "b"))
+    first = yield from step(1_000, "a")
+    second = yield from step(1_250, "b")
     assert first == Continue(0, ms(250))
     assert second == Continue(1, ms(500))
     assert observed == expected_metadata()
@@ -211,8 +212,8 @@ def test_add_delay_provides_full_metadata():
 
     s = schedule.spaced(ms(250)).pipe(schedule.set_input_type(str)).add_delay(extra)
     step = yield from schedule.to_step(s)
-    first = yield from decided(step(1_000, "a"))
-    second = yield from decided(step(1_250, "b"))
+    first = yield from step(1_000, "a")
+    second = yield from step(1_250, "b")
     assert first == Continue(0, ms(250))
     assert second == Continue(1, ms(500))
     assert observed == expected_metadata()
@@ -240,9 +241,9 @@ def test_concat_result_wraps_self_outputs_as_failure_and_other_outputs_as_succes
     left_ids: Schedule[str, str] = schedule.identity()
     right: Schedule[str, str] = schedule.identity()
     step = yield from schedule.to_step(left_ids.up_to(times=2).concat_result(right))
-    first = yield from decided(step(0.0, "left-1"))
-    second = yield from decided(step(0.0, "left-2"))
-    third = yield from decided(step(0.0, "right-1"))
+    first = yield from step(0.0, "left-1")
+    second = yield from step(0.0, "left-2")
+    third = yield from step(0.0, "right-1")
     assert [first, second, third] == [
         Continue(Err("left-1"), zero),
         Continue(Err("left-2"), zero),
@@ -266,8 +267,8 @@ def test_duration_recurs_once_after_the_provided_duration():
 def test_once_recurs_immediately_once_then_completes_with_void():
     """recurs immediately once, then completes with void"""
     step = yield from schedule.to_step(schedule.once)
-    first = yield from decided(step(0.0, "first"))
-    second = yield from decided(step(1.0, "second"))
+    first = yield from step(0.0, "first")
+    second = yield from step(1.0, "second")
     assert first == Continue(None, zero)
     assert second == Stop(None)
 
@@ -293,9 +294,9 @@ def test_up_to_limits_by_times():
     """limits by times"""
     ids: Schedule[str, str] = schedule.identity()
     step = yield from schedule.to_step(ids.up_to(times=2))
-    first = yield from decided(step(0.0, "a"))
-    second = yield from decided(step(0.0, "b"))
-    third = yield from decided(step(0.0, "c"))
+    first = yield from step(0.0, "a")
+    second = yield from step(0.0, "b")
+    third = yield from step(0.0, "c")
     assert [first, second, third] == [Continue("a", zero), Continue("b", zero), Stop("c")]
 
 
@@ -304,9 +305,9 @@ def test_up_to_limits_by_duration():
     """limits by duration"""
     ids: Schedule[str, str] = schedule.identity()
     step = yield from schedule.to_step(ids.up_to(duration="1 second"))
-    first = yield from decided(step(0.0, "a"))
-    second = yield from decided(step(1_000, "b"))
-    third = yield from decided(step(1_001, "c"))
+    first = yield from step(0.0, "a")
+    second = yield from step(1_000, "b")
+    third = yield from step(1_001, "c")
     assert [first, second, third] == [Continue("a", zero), Continue("b", zero), Stop("c")]
 
 
@@ -315,8 +316,8 @@ def test_up_to_limits_by_the_first_exhausted_option():
     """limits by the first exhausted option"""
     ids: Schedule[str, str] = schedule.identity()
     step = yield from schedule.to_step(ids.up_to(duration="1 hour", times=1))
-    first = yield from decided(step(0.0, "a"))
-    second = yield from decided(step(0.0, "b"))
+    first = yield from step(0.0, "a")
+    second = yield from step(0.0, "b")
     assert [first, second] == [Continue("a", zero), Stop("b")]
 
 
@@ -325,8 +326,8 @@ def test_up_to_leaves_the_schedule_unchanged_when_no_options_are_specified():
     """leaves the schedule unchanged when no options are specified"""
     ids: Schedule[str, str] = schedule.identity()
     step = yield from schedule.to_step(ids.up_to())
-    first = yield from decided(step(0.0, "a"))
-    second = yield from decided(step(0.0, "b"))
+    first = yield from step(0.0, "a")
+    second = yield from step(0.0, "b")
     assert [first, second] == [Continue("a", zero), Continue("b", zero)]
 
 
@@ -419,8 +420,8 @@ def test_waits_a_full_window_when_the_delay_to_the_boundary_rounds_to_zero(
 ):
     """waits a full window when the delay to the boundary rounds to zero"""
     step = yield from schedule.to_step(make("1 second"))
-    yield from decided(step(1000, None))
-    decision = yield from decided(step(1999.9999999999998, None))
+    yield from step(1000, None)
+    decision = yield from step(1999.9999999999998, None)
     assert isinstance(decision, Continue)
     assert decision.delay == seconds(1)
 
@@ -465,7 +466,7 @@ def cron_times(
 def test_cron_waits_for_the_next_match_when_the_delay_to_the_current_one_rounds_to_zero():
     """waits for the next match when the delay to the current one rounds to zero"""
     step = yield from schedule.to_step(schedule.cron("* * * * * *"))
-    decision = yield from decided(step(1999.9999999999998, None))
+    decision = yield from step(1999.9999999999998, None)
     assert isinstance(decision, Continue)
     assert decision.delay == seconds(1)
 
@@ -567,7 +568,7 @@ def _node_delays(s: Schedule[object, None], times: list[float]) -> list[Duration
         step = yield from schedule.to_step(s)
         out: list[Duration | None] = []
         for now in times:
-            decision = yield from decided(step(now, None))
+            decision = yield from step(now, None)
             out.append(decision.delay if isinstance(decision, Continue) else None)
         return out
 
