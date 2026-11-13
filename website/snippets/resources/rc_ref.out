@@ -1,0 +1,8 @@
+connect printer
+printer: a1
+printer: a2
+printer: a3
+disconnect printer
+connect printer
+printer: a4
+disconnect printer

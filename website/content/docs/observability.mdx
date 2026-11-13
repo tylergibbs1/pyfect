@@ -79,6 +79,32 @@ convention of seconds, pass a `histogram` to `track_duration` with a function fr
 `Duration` to what it records, as in Effect
 (`fx.sleep("10 millis").track_duration(metric.histogram("checkout_seconds", boundaries=[1.0]), duration.to_seconds)`).
 
+## Reporting errors
+
+An error reporter hands failures to an error tracker such as Sentry. `eff.with_error_reporting()`
+sends the cause of a failure of `eff` to the reporters in `CurrentErrorReporters`, then fails
+with it as before (`defects_only=True` reports only causes with a defect), and
+`error_reporter.report(cause)` sends one cause. There are no reporters by default.
+`error_reporter.layer([...])` installs some, replacing the current ones unless you pass
+`merge_with_existing=True`. HTTP servers and `HttpApi` handlers report the failures they
+turn into responses, so installing the layer is all a server needs.
+
+`error_reporter.make(f)` builds a reporter that calls `f` with one `Report` per typed error
+or defect: `error` as an exception, `severity`, `attributes`, the `cause`, the `fiber` and a
+`timestamp`. It skips interruptions, and causes and errors it has already reported, so an
+error passing several reporting boundaries is reported once. An error sets how it is
+reported through class attributes: `report_ignored = True` for expected failures such as a
+declined card, `report_severity` (a `LogLevel`; `INFO` otherwise) and `report_attributes`.
+
+<CodeOutput>
+
+<include meta='title="error_reporting.py"'>../../snippets/observability/error_reporting.py</include>
+
+<include lang="text">../../snippets/observability/error_reporting.out</include>
+
+</CodeOutput>
+
 Reference: [`pyfect.logger`](/docs/reference/logger), [`pyfect.tracer`](/docs/reference/tracer),
 [`pyfect.metric`](/docs/reference/metric), [`pyfect.otel`](/docs/reference/otel),
-[`pyfect.observability`](/docs/reference/observability).
+[`pyfect.observability`](/docs/reference/observability),
+[`pyfect.error_reporter`](/docs/reference/error_reporter).

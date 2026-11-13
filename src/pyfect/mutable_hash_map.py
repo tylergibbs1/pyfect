@@ -54,6 +54,13 @@ class MutableHashMap[K = Unsubscripted, V = Unsubscripted]:
     def make[K2, V2](cls, *entries: tuple[K2, V2]) -> MutableHashMap[K2, V2]:
         return MutableHashMap.from_iterable(entries)
 
+    # A list's own type is invariant, so pyright widens its literals: a list of
+    # pairs gives `MutableHashMap[str, int]`, not `MutableHashMap[Literal["a"], Literal[1]]`.
+    @overload
+    @classmethod
+    def from_iterable[K2, V2](
+        cls: type[MutableHashMap[Unsubscripted, Unsubscripted]], entries: list[tuple[K2, V2]]
+    ) -> MutableHashMap[K2, V2]: ...
     @overload
     @classmethod
     def from_iterable[K2, V2](

@@ -1,5 +1,55 @@
 # Changelog
 
+## 0.6.3 (unreleased)
+
+### Fixed
+
+- `json_patch.get` gives `[]` for two NaN floats that are different objects (`inf - inf` and
+  `inf * 0`), as Effect's `Object.is` does; it gave a `replace`. Numbers are compared by
+  `pyfect._js.same_json_value`, and `tests/test_object_is_guard.py` keeps hand-written sign
+  comparisons out of every other module. Found by dogfooding (stockroom).
+- `json_patch.apply` raises `TypeError` for a value that is not a patch, as Effect's does: an
+  operation that is not an object, has no string `path`, or is an `add` or `replace` without a
+  `value`. It raised `KeyError` for some of these. An operation with no `op` is a `replace`,
+  as in Effect, where it raised `KeyError`. Found by dogfooding (stockroom).
+- `TxHashMap.from_iterable`, `HashMap.from_iterable`, `MutableHashMap.from_iterable` and
+  `Trie.from_iterable` of a list of pairs infer `str` and `int`, as `make` does, where pyright
+  kept the literals (`TxHashMap[Literal["a"], Literal[1]]` for `[("a", 1)]`), so a later
+  `set("b", 2)` was a type error. `tests/test_pair_literals_guard.py` makes every overloaded
+  `Iterable[tuple[K, V]]` parameter come with the `list` overload that widens them. Found by
+  dogfooding (stockroom).
+- The live server's WebSockets answer pings and the client's close while the handler is not
+  pulling, as `ws` does under Node: the connection is read on until 64 KiB of messages wait
+  (Effect's high-water mark). A handler that only wrote left the client waiting for the close
+  reply, and the connection open, until the client gave up, so the handler ran on and server
+  shutdown waited for it. Once both sides have ended, the connection closes (after `ws`'s 30
+  second `closeTimeout` if the client never ends its side), and the handler is interrupted as
+  a client abort. Found by dogfooding (stockroom).
+
+### Docs
+
+- A request batching page: requests and resolvers, why requests batch only when made
+  concurrently, failures (`entry.fail`, a failing run, `UncompletedRequestError`), shaping
+  batches (`batch_n`, `grouped`, `set_delay`, `from_function_batched`, ...) and `with_cache`.
+- Observability has a section on error reporting (`with_error_reporting`,
+  `error_reporter.make` / `layer`, `report_ignored` / `report_severity` / `report_attributes`);
+  `RcRef` and `FiberHandle` have examples in Resources and Concurrency.
+- Transactions shows `TxHashSet` and `TxChunk`, `TxDeferred`, `TxSemaphore` and
+  `TxReentrantLock` coordinating fibers, and `TxPubSub` and `TxSubscriptionRef`. A new section
+  says that a failure caught inside `tx` keeps the writes made before it (there are no
+  savepoints), as in Effect.
+- optics.mdx says what `json_patch.apply` does not check, as Effect's does not: an `op` other
+  than `add` or `remove` is a `replace` (so a `test` overwrites the value it should check),
+  and a value that is not a patch raises `TypeError`; decode a client's patch with a schema
+  first.
+- schema.mdx says that `S.to_codec_json(...)` encodes to `JsonValue`, as Effect's is typed
+  `Json`, and that arrays encode as their schema's container (`tuple` for `S.Array`, `list`
+  for `S.List`).
+- http-server.mdx says how a WebSocket is read while the handler does not pull, what happens
+  to the handler when the client leaves, and how to end a handler that only writes. PARITY §4
+  records the Effect bug not copied: under Node, `ws` keeps Effect from interrupting the
+  handler when its client leaves.
+
 ## 0.6.2 (2026-11-13)
 
 ### Deprecated

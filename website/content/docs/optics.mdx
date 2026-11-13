@@ -34,6 +34,19 @@ operations (`add`, `remove` and `replace`) that turn one JSON value into another
 as in Effect). An operation that does not fit the
 value raises `ValueError`. Patches are plain dicts, ready to store or send as JSON.
 
+`apply` checks only what it needs to run a patch, as Effect's does:
+
+- A value that is not a patch raises `TypeError`: something that is not a list of objects, an
+  operation without a string `path`, or an `add` or `replace` without a `value` (Effect writes
+  `undefined` there; Python has no `undefined`).
+- Any `op` other than `add` or `remove` is applied as a `replace`. RFC 6902's `test`, `move` and
+  `copy` are not supported, so a `test` operation overwrites the value it was meant to check
+  instead of failing.
+
+A patch that comes from a client is untrusted input: decode it with a schema that accepts only
+`add`, `remove` and `replace` before you pass it to `apply`, and answer anything else with a
+400.
+
 <CodeOutput>
 
 <include meta='title="patches.py"'>../../snippets/optics/patches.py</include>

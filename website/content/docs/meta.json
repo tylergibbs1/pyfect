@@ -9,6 +9,7 @@
     "errors",
     "services",
     "concurrency",
+    "batching",
     "resources",
     "schedules",
     "streams",

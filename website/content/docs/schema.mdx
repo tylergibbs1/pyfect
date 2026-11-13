@@ -30,6 +30,12 @@ Each decoder and encoder comes in several forms: `_sync` raises, `_result` and `
 the outcome, `_effect` fails in the error channel. `decode_unknown_*` accepts any input, while
 `decode_*` expects the encoded type. They all take parse options such as `errors="all"`.
 
+`S.to_codec_json(schema)` reads and writes JSON values, so its encoded type is `JsonValue`
+whatever the schema, as Effect types it `Json`: the struct's fields are not part of the type.
+Encoding gives each array as the container its schema decodes to, a `tuple` for `S.Array`
+(Effect's readonly array) and a `list` for `S.List` (Effect's mutable one). Both are JSON
+arrays, so they write the same JSON text and compare alike in `json_patch.get`.
+
 `S.Record(key, value)` decodes a dict whose keys match `key`. As in Effect, a key that fails the
 key schema is not reported with that schema's message: it is an excess property, which is dropped
 unless you pass `on_excess_property="error"`.

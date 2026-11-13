@@ -136,6 +136,16 @@ Two more rules, also Effect's:
   fail. Keep the reader's scope open for as long as the handler writes, as `shout` does.
 - `reader.pull` and `so.to_stream` fail with a `SocketError` when the socket closes, even with
   code 1000 (a normal close). `catch_if(so.is_clean_close, ...)` ends the stream instead.
+- While the reader is open, the server reads whether or not the handler pulls: it answers pings
+  and the client's close, and stops reading only while 64 KiB of messages wait for a pull. A
+  write after the client has gone is dropped, not failed.
+
+When the client leaves, the live server interrupts the handler as a client abort, so one that only
+writes ends then too. Effect's Node server means to do the same, but `ws` keeps it from happening,
+so there a handler that only writes runs until the server shuts down. To end it as soon as the
+client closes whichever server runs it, race the writes against the reader with `race_first`
+(`race` waits for one side to succeed):
+`messages.run_for_each(writer.write).race_first(reader.pull.forever())`.
 
 ## Security defaults
 

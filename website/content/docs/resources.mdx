@@ -53,10 +53,23 @@ used items, waiting borrowers, `min` and `max`) to report as metrics.
 
 `fx.RcMap.make(lookup)` acquires `lookup(key)` for the first scope that asks for a key and
 shares it with every other scope that asks while it is held. When the last one closes, the
-resource is released, at once or after `idle_time_to_live`. `RcRef` is the same for a single
-resource.
+resource is released, at once or after `idle_time_to_live`.
 
 <include meta='title="rc_map.py"'>../../snippets/resources/rc_map.py</include>
+
+`fx.RcRef.make(acquire)` is the same for one resource, such as a printer connection: the
+first `get` acquires it, every scope that calls `get` while it is held shares it, and it is
+released once the last of them closes, here after a second of idling. The next `get`
+acquires it again. `invalidate()` makes the next `get` acquire afresh, releasing the current
+one once nobody holds it.
+
+<CodeOutput>
+
+<include meta='title="rc_ref.py"'>../../snippets/resources/rc_ref.py</include>
+
+<include lang="text">../../snippets/resources/rc_ref.out</include>
+
+</CodeOutput>
 
 `fx.LayerMapService` does this for whole layers: `Greeters.layer(lookup)` builds
 `lookup(key)` the first time `Greeters.get(key)` is provided, and shares its services while
@@ -102,6 +115,7 @@ acquires anew. `Resource.auto(acquire, schedule)` refreshes it on a schedule.
 
 Reference: [`pyfect.scope`](/docs/reference/scope), [`pyfect.cache`](/docs/reference/cache),
 [`pyfect.pool`](/docs/reference/pool), [`pyfect.rc_map`](/docs/reference/rc_map),
+[`pyfect.rc_ref`](/docs/reference/rc_ref),
 [`pyfect.layer_map`](/docs/reference/layer_map),
 [`pyfect.scoped_ref`](/docs/reference/scoped_ref),
 [`pyfect.resource`](/docs/reference/resource).
