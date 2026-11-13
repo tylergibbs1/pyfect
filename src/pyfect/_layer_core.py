@@ -82,10 +82,10 @@ class _Entry:
     def observe(self, scope: CloseableScope) -> bool:
         """Count ``scope`` as a user until it closes, at once, so no
         interruption can lose the count. A closed scope can't use it."""
-        if scope._closed is not None:
-            return False
         self.observers += 1
-        scope._add(object(), self.finalizer)
+        if scope._add(object(), self.finalizer) is not None:
+            self.observers -= 1
+            return False
         return True
 
 

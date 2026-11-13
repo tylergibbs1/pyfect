@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import threading
 from collections import deque
 from collections.abc import Callable, Generator, Iterable
 from typing import Any, Literal, Never, overload
@@ -40,17 +41,20 @@ _FALSE: Effect[bool] = _FromExit(Success(False))
 
 
 class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
-    __slots__ = ("_capacity", "_items", "_scheduler", "_state", "_strategy")
+    __slots__ = ("_capacity", "_items", "_lock", "_scheduler", "_state", "_strategy")
 
     def __init__(self, capacity: int | None = None, strategy: Strategy = "suspend") -> None:
         self._capacity = capacity
+        # Runs on other threads share a queue: every look at its state and
+        # change to it holds this, letting it go only to resume a fiber.
+        self._lock = threading.Lock()
         # The dispatcher of the fiber making the queue holds its wakes, as
         # Effect keeps that fiber's (see ``_waker``).
         fiber = current_fiber()
         self._scheduler: Scheduler | None = None if fiber is None else fiber.dispatcher()
         self._strategy: Strategy = strategy
         self._items: deque[A] = deque()
-        self._state: st.State[A, E] = st.Open()
+        self._state: st.State[A, E] = st.Open(WaitList(self._lock), deque(), WaitList(self._lock))
 
     def _waker(self) -> Scheduler | None:
         """Where the queue's wakes wait: its maker's dispatcher, unless that
@@ -112,22 +116,29 @@ class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
         and drops new items."""
 
         def register(resume: Callable[[Effect[bool]], None]) -> Effect[None] | None:
-            if self.offer_unsafe(item):
-                resume(_TRUE)
-            elif isinstance(self._state, st.Open):
-                return self._park(self._state.offers, st.OfferOne(item, resume))
-            else:
-                resume(_FALSE)
-            return None
+            with self._lock:
+                if self._offer(item):
+                    resume(_TRUE)
+                elif isinstance(self._state, st.Open):
+                    return self._park(self._state.offers, st.OfferOne(item, resume))
+                else:
+                    resume(_FALSE)
+                return None
 
         def attempt() -> Effect[bool]:
             # As Effect's ``offer``: an item that fits is added in this step,
-            # and only a full suspending queue parks the offer.
-            if self.offer_unsafe(item):
-                return _TRUE
-            if isinstance(self._state, st.Open) and self._strategy == "suspend":
-                return _Callback(register)
-            return _FALSE
+            # and only a full suspending queue parks the offer. ``acquire``
+            # rather than ``with``: this is the hot path, and it is cheaper.
+            lock = self._lock
+            lock.acquire()
+            try:
+                if self._offer(item):
+                    return _TRUE
+                if isinstance(self._state, st.Open) and self._strategy == "suspend":
+                    return _Callback(register)
+                return _FALSE
+            finally:
+                lock.release()
 
         return _Suspend(attempt)
 
@@ -136,12 +147,17 @@ class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
         return _Sync(self.flush_unsafe)
 
     def flush_unsafe(self) -> None:
-        if isinstance(self._state, (st.Open, st.Closing)):
-            self._state.takers.notify_ready()
+        with self._lock:
+            if isinstance(self._state, (st.Open, st.Closing)):
+                self._state.takers.notify_ready()
 
     def offer_unsafe(self, item: A) -> bool:
         """``offer`` without waiting, from outside an effect: ``False`` if it
-        would have to wait. Call on the queue's fibers' scheduler thread."""
+        would have to wait."""
+        with self._lock:
+            return self._offer(item)
+
+    def _offer(self, item: A) -> bool:
         match self._state:
             case st.Open(takers=takers):
                 if self._strategy == "sliding" and self._is_full():
@@ -169,16 +185,21 @@ class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
         what is left if the queue is finished meanwhile."""
 
         def register(resume: Callable[[Effect[list[T]]], None]) -> Effect[None] | None:
-            rest = self.offer_all_unsafe(items)
-            if rest and isinstance(self._state, st.Open) and self._strategy == "suspend":
-                return self._park(self._state.offers, st.OfferMany(rest, resume))
-            resume(_Succeed(rest))
-            return None
+            with self._lock:
+                rest = self._offer_all(items)
+                if rest and isinstance(self._state, st.Open) and self._strategy == "suspend":
+                    return self._park(self._state.offers, st.OfferMany(rest, resume))
+                resume(_Succeed(rest))
+                return None
 
         return _Callback(register)
 
     def offer_all_unsafe[T](self: Queue[T, Any], items: Iterable[T]) -> list[T]:
         """``offer_all`` without waiting: the items that did not fit."""
+        with self._lock:
+            return self._offer_all(items)
+
+    def _offer_all[T](self: Queue[T, Any], items: Iterable[T]) -> list[T]:
         batch = list(items)
         match self._state:
             case st.Open(takers=takers):
@@ -210,15 +231,16 @@ class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
         return _Sync(lambda: self.fail_cause_unsafe(cause))
 
     def fail_cause_unsafe(self, cause: Cause[E]) -> bool:
-        match self._state:
-            case st.Open(takers=takers, offers=offers, awaiters=awaiters):
-                self._state = st.Closing(takers, offers, awaiters, cause)
-                # A batch take waiting for its minimum can now drain the rest.
-                takers.notify_ready_soon(self._waker)
-                self._finish_if_drained()
-                return True
-            case st.Closing() | st.Done():
-                return False
+        with self._lock:
+            match self._state:
+                case st.Open(takers=takers, offers=offers, awaiters=awaiters):
+                    self._state = st.Closing(takers, offers, awaiters, cause)
+                    # A batch take waiting for its minimum can now drain the rest.
+                    takers.notify_ready_soon(self._waker)
+                    self._finish_if_drained()
+                    return True
+                case st.Closing() | st.Done():
+                    return False
 
     def shutdown(self) -> Effect[bool]:
         """Drop all items and waiting offers; takers are interrupted (or see
@@ -227,14 +249,15 @@ class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
         return _Sync(self.shutdown_unsafe)
 
     def shutdown_unsafe(self) -> bool:
-        match self._state:
-            case st.Done():
-                return False
-            case st.Open(offers=offers):
-                self._shut(interrupt_cause(), offers)
-            case st.Closing(offers=offers, cause=cause):
-                self._shut(cause, offers)
-        return True
+        with self._lock:
+            match self._state:
+                case st.Done():
+                    return False
+                case st.Open(offers=offers):
+                    self._shut(interrupt_cause(), offers)
+                case st.Closing(offers=offers, cause=cause):
+                    self._shut(cause, offers)
+            return True
 
     def into[R, EE](
         self: Queue[Any, EE | Done], eff: Effect[object, EE | Done, R]
@@ -254,14 +277,23 @@ class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
         """Wait for an item."""
 
         def attempt() -> Effect[A, E]:
-            ex = self.take_unsafe()
-            return self._wait_then(1, attempt) if ex is None else _FromExit(ex)
+            lock = self._lock  # ``acquire`` rather than ``with``, as in ``offer``
+            lock.acquire()
+            try:
+                ex = self._take()
+                return self._wait_then(1, attempt) if ex is None else _FromExit(ex)
+            finally:
+                lock.release()
 
         return _Suspend(attempt)
 
     def take_unsafe(self) -> Exit[A, E] | None:
         """An item, the failure of a finished queue, or ``None`` if ``take``
         would wait."""
+        with self._lock:
+            return self._take()
+
+    def _take(self) -> Exit[A, E] | None:
         match self._state:
             case st.Done(cause=cause):
                 return Failure(cause)
@@ -303,14 +335,15 @@ class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
         Offers waiting on a rendezvous queue are not visible to ``peek``."""
 
         def attempt() -> Effect[A, E]:
-            match self._state:
-                case st.Done(cause=cause):
-                    return _FailCause(cause)
-                case st.Open(takers=takers) | st.Closing(takers=takers):
-                    if not self._items:
-                        ready = self._finished_or(lambda: bool(self._items))
-                        return takers.wait(ready).and_then(_Suspend(attempt))
-                    return _Succeed(self._items[0])
+            with self._lock:
+                match self._state:
+                    case st.Done(cause=cause):
+                        return _FailCause(cause)
+                    case st.Open(takers=takers) | st.Closing(takers=takers):
+                        if not self._items:
+                            ready = self._finished_or(lambda: bool(self._items))
+                            return takers.wait(ready).and_then(_Suspend(attempt))
+                        return _Succeed(self._items[0])
 
         return _Suspend(attempt)
 
@@ -326,18 +359,19 @@ class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
         failure (without ``Done``)."""
 
         def attempt() -> Effect[list[Any], Any]:
-            match self._state:
-                case st.Done(cause=cause):
-                    return _catch_done(cause, [])
-                case st.Open(offers=offers) | st.Closing(offers=offers):
-                    if self._items:
-                        items = self._take_buffered(len(self._items))
-                    elif self._takes_from(offers):
-                        items = [st.take_offer(offers)]
-                    else:
-                        return _Succeed([])
-                    self._release()
-                    return _Succeed(items)
+            with self._lock:
+                match self._state:
+                    case st.Done(cause=cause):
+                        return _catch_done(cause, [])
+                    case st.Open(offers=offers) | st.Closing(offers=offers):
+                        if self._items:
+                            items = self._take_buffered(len(self._items))
+                        elif self._takes_from(offers):
+                            items = [st.take_offer(offers, self._lock)]
+                        else:
+                            return _Succeed([])
+                        self._release()
+                        return _Succeed(items)
 
         return _Suspend(attempt)
 
@@ -375,13 +409,14 @@ class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
         (Effect's ``Queue.await``)."""
 
         def attempt() -> Effect[None, Any]:
-            match self._state:
-                case st.Done(cause=cause):
-                    return _catch_done(cause, None)
-                case st.Open(awaiters=awaiters) | st.Closing(awaiters=awaiters):
-                    return awaiters.wait(self._finished_or(lambda: False)).and_then(
-                        _Suspend(attempt)
-                    )
+            with self._lock:
+                match self._state:
+                    case st.Done(cause=cause):
+                        return _catch_done(cause, None)
+                    case st.Open(awaiters=awaiters) | st.Closing(awaiters=awaiters):
+                        return awaiters.wait(self._finished_or(lambda: False)).and_then(
+                            _Suspend(attempt)
+                        )
 
         return _Suspend(attempt)
 
@@ -440,7 +475,7 @@ class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
         rejected = list(offers)
         offers.clear()
         for entry in rejected:
-            st.reject(entry)
+            st.reject(entry, self._lock)
 
     def _park(self, offers: deque[st.Offer[A]], entry: st.Offer[A]) -> Effect[None]:
         offers.append(entry)
@@ -448,33 +483,35 @@ class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
 
     def _withdraw(self, entry: st.Offer[A]) -> None:
         """An interrupted offer gives up the items not yet admitted."""
-        match self._state:
-            case st.Open(offers=offers) | st.Closing(offers=offers):
-                if entry in offers:
-                    offers.remove(entry)
-                self._finish_if_drained()
-            case st.Done():
-                pass
+        with self._lock:
+            match self._state:
+                case st.Open(offers=offers) | st.Closing(offers=offers):
+                    if entry in offers:
+                        offers.remove(entry)
+                    self._finish_if_drained()
+                case st.Done():
+                    pass
 
     def _take_between(self, minimum: int, maximum: int | None) -> Effect[list[A], E]:
         """``maximum=None`` takes every buffered item. The items are taken in
         the taking fiber's own step, so none is handed to a parked fiber."""
 
         def attempt() -> Effect[list[A], E]:
-            match self._state:
-                case st.Done(cause=cause):
-                    return _FailCause(cause)
-                case st.Open(offers=offers) | st.Closing(offers=offers):
-                    if minimum <= 0 or (maximum is not None and maximum <= 0):
-                        return _Succeed([])
-                    if not self._can_take(minimum):
-                        return self._wait_then(minimum, attempt)
-                    if self._items:
-                        items = self._take_buffered(maximum or len(self._items))
-                    else:
-                        items = [st.take_offer(offers)]
-                    self._release()
-                    return _Succeed(items)
+            with self._lock:
+                match self._state:
+                    case st.Done(cause=cause):
+                        return _FailCause(cause)
+                    case st.Open(offers=offers) | st.Closing(offers=offers):
+                        if minimum <= 0 or (maximum is not None and maximum <= 0):
+                            return _Succeed([])
+                        if not self._can_take(minimum):
+                            return self._wait_then(minimum, attempt)
+                        if self._items:
+                            items = self._take_buffered(maximum or len(self._items))
+                        else:
+                            items = [st.take_offer(offers, self._lock)]
+                        self._release()
+                        return _Succeed(items)
 
         return _Suspend(attempt)
 
@@ -511,7 +548,7 @@ class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
     def _take_one(self, offers: deque[st.Offer[A]]) -> A:
         """Buffered items come first; a rendezvous queue then takes straight
         from the oldest waiting offer."""
-        return self._items.popleft() if self._items else st.take_offer(offers)
+        return self._items.popleft() if self._items else st.take_offer(offers, self._lock)
 
     def _take_buffered(self, n: int) -> list[A]:
         return [self._items.popleft() for _ in range(min(n, len(self._items)))]
@@ -523,8 +560,8 @@ class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
         ``releaseCapacity``)."""
         match self._state:
             case st.Open(offers=offers) | st.Closing(offers=offers):
-                if self._capacity is not None:
-                    st.admit(offers, self._items, self._capacity)
+                if offers and self._capacity is not None:
+                    st.admit(offers, self._items, self._capacity, self._lock)
                 self._finish_if_drained()
             case st.Done():
                 pass

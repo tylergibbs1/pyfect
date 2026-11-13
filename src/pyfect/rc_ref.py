@@ -10,11 +10,19 @@ acquisition; a ``get`` after that is interrupted.
 The acquisition runs on a fiber of its own, so callers can leave without
 killing it while others still wait; it is interrupted once every waiting
 caller has left.
+
+Runs on other threads share a ref. Its state changes holding its lock, and
+nothing runs under it: acquisitions start, timers start and scopes close
+once it is let go. The idle timer runs on the run that made the ref, which
+lives as long as the ref's scope; the run of the caller that let go last
+may end first.
 """
 # pyright: reportPrivateUsage=false
 
 from __future__ import annotations
 
+import threading
+from collections.abc import Callable
 from typing import Any, Final, Generic, Literal, Never, TypeVar, overload
 
 from pyfect._core import (
@@ -38,6 +46,7 @@ from pyfect.duration import Input as DurationInput
 from pyfect.effect import interrupt
 from pyfect.exit import Exit, Failure, Success
 from pyfect.logger._log import log_unhandled
+from pyfect.scheduler import Scheduler
 from pyfect.scope import CloseableScope, Scope
 
 _VOID: Final[Effect[None]] = _Succeed(None)
@@ -61,7 +70,7 @@ class _Acquiring[A]:
 
 
 class _Acquired[A]:
-    __slots__ = ("fiber", "invalidated", "ref_count", "scope", "value")
+    __slots__ = ("fiber", "idle", "invalidated", "ref_count", "scope", "value")
 
     def __init__(self, value: A, scope: CloseableScope, ref_count: int) -> None:
         self.value = value
@@ -69,6 +78,9 @@ class _Acquired[A]:
         self.ref_count = ref_count
         self.invalidated = False
         self.fiber: Fiber[None, Never] | None = None  # the idle timer
+        # Counts the times the references ran out: a timer releases the
+        # resource only if no reference was taken since it started.
+        self.idle = 0
 
 
 type _State[A] = _Acquiring[A] | _Acquired[A] | Literal["empty", "closed"]
@@ -78,7 +90,15 @@ class RcRef(Generic[A_co, E_co]):
     """Make one with ``RcRef.make(acquire)`` inside a scope. Covariant, as
     in Effect: the resource is only read."""
 
-    __slots__ = ("_acquire", "_context", "_idle_time_to_live", "_scope", "_state")
+    __slots__ = (
+        "_acquire",
+        "_context",
+        "_idle_time_to_live",
+        "_lock",
+        "_owner",
+        "_scope",
+        "_state",
+    )
 
     def __init__(
         self,
@@ -86,12 +106,16 @@ class RcRef(Generic[A_co, E_co]):
         context: Context,
         scope: CloseableScope,
         idle_time_to_live: Duration | None,
+        owner: Scheduler,
     ) -> None:
         self._acquire = acquire
         self._context = context
         self._scope = scope
         self._idle_time_to_live = idle_time_to_live
+        # The run that made the ref: idle timers run on it.
+        self._owner = owner
         self._state: _State[A_co] = "empty"
+        self._lock = threading.Lock()
 
     @overload
     @classmethod
@@ -119,7 +143,7 @@ class RcRef(Generic[A_co, E_co]):
         def body(fiber: Fiber[Any, Any]) -> Effect[RcRef[T, X]]:
             context = fiber._context
             scope = context.get_unsafe(Scope)
-            ref = RcRef(acquire, context, scope, ttl)
+            ref = RcRef(acquire, context, scope, ttl, fiber._run_scheduler)
             return scope.add_finalizer(lambda _: ref._close()).as_(ref)
 
         return _WithFiber(body)
@@ -145,15 +169,17 @@ class RcRef(Generic[A_co, E_co]):
         released now if nobody holds it, else when the last holder lets go."""
 
         def body() -> Effect[None]:
-            state = self._state
-            if not isinstance(state, _Acquired):
-                return _VOID
-            self._state = "empty"
-            state.invalidated = True
-            if state.ref_count > 0:
-                return _VOID
-            if state.fiber is not None:
-                state.fiber.interrupt_as_unsafe(None)
+            with self._lock:
+                state = self._state
+                if not isinstance(state, _Acquired):
+                    return _VOID
+                self._state = "empty"
+                state.invalidated = True
+                if state.ref_count > 0:
+                    return _VOID
+                idle, state.fiber = state.fiber, None
+            if idle is not None:
+                idle.interrupt_as_unsafe(None)
             return state.scope.close(_DONE)
 
         return _Suspend(body).uninterruptible()
@@ -165,63 +191,69 @@ class RcRef(Generic[A_co, E_co]):
         return f"RcRef({'acquiring' if isinstance(state, _Acquiring) else state})"
 
     def _get_state(self, fiber: Fiber[Any, Any], restore: Restore) -> Effect[_Acquired[A_co], E_co]:
-        state = self._state
-        if state == "closed":
-            return interrupt()
-        if isinstance(state, _Acquired):
-            state.ref_count += 1
-            idle = state.fiber
-            return _Succeed(state) if idle is None else idle.interrupt().as_(state)
-        if isinstance(state, _Acquiring):
-            state.awaiters += 1
-            return self._await_acquiring(state, restore)
-        return self._start_acquiring(fiber, restore)
+        with self._lock:
+            state = self._state
+            if state == "closed":
+                return interrupt()
+            if isinstance(state, _Acquired):
+                state.ref_count += 1
+                idle, state.fiber = state.fiber, None
+                return _Succeed(state) if idle is None else idle.interrupt().as_(state)
+            if isinstance(state, _Acquiring):
+                state.awaiters += 1
+                return self._await_acquiring(state, restore)
+            acquiring, start = self._acquiring(fiber)
+            self._state = acquiring
+        start()
+        return self._await_acquiring(acquiring, restore)
 
-    def _start_acquiring(
-        self, parent: Fiber[Any, Any], restore: Restore
-    ) -> Effect[_Acquired[A_co], E_co]:
+    def _acquiring(self, parent: Fiber[Any, Any]) -> tuple[_Acquiring[A_co], Callable[[], None]]:
+        """A new acquisition and the call that starts it, to make without
+        the lock."""
         scope = CloseableScope()
         context = self._context.add(Scope, scope)
         acquiring: _Acquiring[A_co] = _Acquiring(new_root(parent._run_scheduler, parent._context))
 
         def publish(value: A_co) -> Effect[_Acquired[A_co]]:
-            if self._state is not acquiring:  # closed, or abandoned
-                return interrupt()
-            # Every caller still waiting holds a reference.
-            acquired = _Acquired(value, scope, acquiring.awaiters)
-            self._state = acquiring.acquired = acquired
-            return _Succeed(acquired)
+            with self._lock:
+                if self._state is not acquiring:  # closed, or abandoned
+                    return interrupt()
+                # Every caller still waiting holds a reference.
+                acquired = _Acquired(value, scope, acquiring.awaiters)
+                self._state = acquiring.acquired = acquired
+                return _Succeed(acquired)
 
         def settle(ex: Exit[_Acquired[A_co], E_co]) -> Effect[None]:
             if isinstance(ex, Success):
                 return _VOID
-            if self._state is acquiring:
-                self._state = "empty"
+            with self._lock:
+                if self._state is acquiring:
+                    self._state = "empty"
             return scope.close(ex)
 
-        self._state = acquiring
         acquire: Effect[A_co, E_co] = _Locally(
             self._acquire, lambda current: current.merge(context)
         )
-        start_root(acquiring.fiber, acquire.flat_map(publish).on_exit(settle))
-        return self._await_acquiring(acquiring, restore)
+        eff = acquire.flat_map(publish).on_exit(settle)
+        return acquiring, lambda: start_root(acquiring.fiber, eff)
 
     def _await_acquiring(
         self, acquiring: _Acquiring[A_co], restore: Restore
     ) -> Effect[_Acquired[A_co], E_co]:
         def leave(ex: Exit[_Acquired[A_co], E_co]) -> Effect[None]:
-            acquired = acquiring.acquired
-            if acquired is not None:
-                # Counted as a reference, maybe before the fiber exited:
-                # give it back if this caller was interrupted before it
-                # could register its release.
-                return self._release(acquired) if isinstance(ex, Failure) else _VOID
-            acquiring.awaiters -= 1
-            if acquiring.awaiters > 0 or self._state is not acquiring:
-                return _VOID
-            # Detach it first, so a new caller starts afresh rather than
-            # joining an acquisition being interrupted.
-            self._state = "empty"
+            with self._lock:
+                acquired = acquiring.acquired
+                if acquired is not None:
+                    # Counted as a reference, maybe before the fiber exited:
+                    # give it back if this caller was interrupted before it
+                    # could register its release.
+                    return self._release(acquired) if isinstance(ex, Failure) else _VOID
+                acquiring.awaiters -= 1
+                if acquiring.awaiters > 0 or self._state is not acquiring:
+                    return _VOID
+                # Detach it first, so a new caller starts afresh rather than
+                # joining an acquisition being interrupted.
+                self._state = "empty"
             return acquiring.fiber.interrupt()
 
         return restore(acquiring.fiber.join()).on_exit(leave)
@@ -230,41 +262,53 @@ class RcRef(Generic[A_co, E_co]):
         return _WithFiber(lambda fiber: self._release_now(fiber, state))
 
     def _release_now(self, fiber: Fiber[Any, Any], state: _Acquired[A_co]) -> Effect[None]:
-        state.ref_count -= 1
-        if state.ref_count > 0:
-            return _VOID
         ttl = self._idle_time_to_live
-        if ttl is None or state.invalidated:
-            if self._state is state:
-                self._state = "empty"
-            return state.scope.close(_DONE)
-        if not ttl.is_finite():
-            return _VOID
+        with self._lock:
+            state.ref_count -= 1
+            if state.ref_count > 0:
+                return _VOID
+            if ttl is None or state.invalidated:
+                if self._state is state:
+                    self._state = "empty"
+                return state.scope.close(_DONE)
+            if not ttl.is_finite():
+                return _VOID
+            state.idle += 1
+            idle = state.idle
 
         def expire(_: None) -> Effect[None]:
-            if self._state is state and state.ref_count == 0:
+            with self._lock:
+                if self._state is not state or state.ref_count or state.idle != idle:
+                    return _VOID
                 self._state = "empty"
-                # Nobody waits for this release: report its failure (Effect 4.1.2).
-                return state.scope.close(_DONE).catch_cause(
-                    lambda cause: log_unhandled("Unhandled error in RcRef finalizer", cause)
-                )
-            return _VOID
+            # Nobody waits for this release: report its failure (Effect 4.1.2).
+            return state.scope.close(_DONE).catch_cause(
+                lambda cause: log_unhandled("Unhandled error in RcRef finalizer", cause)
+            )
 
         def forget() -> None:
-            state.fiber = None
+            with self._lock:
+                if state.fiber is timer:
+                    state.fiber = None
 
-        idle = uninterruptible_mask(lambda restore: restore(sleep(ttl)).flat_map(expire)).ensuring(
+        wait = uninterruptible_mask(lambda restore: restore(sleep(ttl)).flat_map(expire)).ensuring(
             _Sync(forget)
         )
-        timer: Fiber[None, Never] = new_root(fiber._run_scheduler, self._context)
-        state.fiber = timer
-        start_root(timer, idle)
+        timer: Fiber[None, Never] = new_root(self._owner, self._context)
+        start_root(timer, wait)
         timer.run_in(self._scope)
+        with self._lock:
+            stale = state.ref_count > 0 or state.idle != idle
+            if not stale:
+                state.fiber = timer
+        if stale:
+            timer.interrupt_as_unsafe(None)
         return _VOID
 
     def _close(self) -> Effect[None]:
-        state = self._state
-        self._state = "closed"
+        with self._lock:
+            state = self._state
+            self._state = "closed"
         if isinstance(state, _Acquired):
             return state.scope.close(_DONE)
         if isinstance(state, _Acquiring):

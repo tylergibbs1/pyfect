@@ -12,6 +12,7 @@ some fail.
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Callable
 from typing import Any, Literal, Never, overload
 
@@ -39,6 +40,11 @@ type Finalizer = Callable[[Exit[Any, Any]], Effect[object, Never, Any]]
 
 
 type Strategy = Literal["sequential", "parallel"]
+
+_LOCK = threading.Lock()
+"""Held to change any scope's finalizers or close it: runs on other threads
+share scopes (a layer's, a ``ManagedRuntime``'s), and a scope is made too
+often for a lock of its own. Nothing runs under it but dict operations."""
 
 
 class CloseableScope:
@@ -93,29 +99,39 @@ class CloseableScope:
             def finalizer(ex: Exit[Any, Any]) -> Effect[object, Never, Any]:
                 return _Locally(_call_user(f, ex), lambda current: current.merge(ctx))
 
-            if self._closed is not None:
-                return finalizer(self._closed).as_void()
-            self._add(object(), finalizer)
-            return _Succeed(None)
+            ended = self._add(object(), finalizer)
+            return _Succeed(None) if ended is None else finalizer(ended).as_void()
 
         return _WithFiber(body)
 
-    def _add(self, key: object, finalizer: Finalizer) -> None:
-        """Register under ``key``, which ``_remove`` takes. The scope must be
-        open."""
-        self._finalizers[key] = finalizer
+    def _add(self, key: object, finalizer: Finalizer) -> Exit[Any, Any] | None:
+        """Register under ``key``, which ``_remove`` takes. ``None``, or the
+        scope's exit if it is closed (another run may just have closed it):
+        then nothing is registered, and the caller runs ``finalizer`` itself."""
+        with _LOCK:
+            ended = self._closed
+            if ended is None:
+                self._finalizers[key] = finalizer
+            return ended
 
     def _remove(self, key: object) -> None:
-        self._finalizers.pop(key, None)
+        with _LOCK:
+            self._finalizers.pop(key, None)
 
     def _watch(self, fiber: Fiber[Any, Any]) -> None:
         """Interrupt ``fiber`` on close (unless it is the fiber closing the
         scope), until it exits. Watching again moves its finalizer last, so
-        it runs first. The scope must be open."""
-        self._remove(fiber)
-        self._add(
-            fiber, lambda _: _WithFiber(lambda current: _interrupt_unless_self(fiber, current))
-        )
+        it runs first. A scope closed meanwhile interrupts it at once."""
+        with _LOCK:
+            ended = self._closed
+            if ended is None:
+                self._finalizers.pop(fiber, None)
+                self._finalizers[fiber] = lambda _: _WithFiber(
+                    lambda current: _interrupt_unless_self(fiber, current)
+                )
+        if ended is not None:
+            fiber.interrupt_as_unsafe(fiber.id, closed("Scope"))
+            return
         fiber.add_observer_unsafe(lambda _: self._remove(fiber))
 
     def close(self, ex: Exit[Any, Any]) -> Effect[None]:
@@ -130,15 +146,17 @@ class CloseableScope:
         """Mark the scope closed now and return the effect that runs its
         finalizers, or ``None`` if it was closed already or had none. The
         caller must run the effect uninterruptibly (Effect's ``closeUnsafe``)."""
-        if self._closed is not None:
+        with _LOCK:
+            if self._closed is not None:
+                return None
+            self._closed = ex
+            parent = self._parent
+            entries = list(reversed(self._finalizers.items()))
+            self._finalizers = {}
+        if parent is not None:
+            parent._remove(self)
+        if not entries:
             return None
-        self._closed = ex
-        if self._parent is not None:
-            self._parent._remove(self)
-        if not self._finalizers:
-            return None
-        entries = list(reversed(self._finalizers.items()))
-        self._finalizers = {}
         run = _run_parallel if self._strategy == "parallel" else _run_sequential
         return run(entries, ex)
 
@@ -151,11 +169,11 @@ class CloseableScope:
     def fork_unsafe(self, strategy: Strategy = "sequential") -> CloseableScope:
         """``fork``, run at once."""
         child = CloseableScope(strategy)
-        if self._closed is not None:
-            child._closed = self._closed
-            return child
         child._parent = self
-        self._add(child, child.close)
+        ended = self._add(child, child.close)
+        if ended is not None:
+            child._parent = None
+            child._closed = ended
         return child
 
 

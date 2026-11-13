@@ -6,10 +6,15 @@ Like a ``dict`` updated in place, but keyed by ``pyfect._equal.equal_key``:
 sets are keys by their items. Setting an equal key keeps the key first
 stored, as ``dict`` does. Iteration yields ``(key, value)`` pairs in
 insertion order. Being mutable, it is unhashable.
+
+Each operation is atomic, also when several threads share the map, as each
+is in JavaScript: ``set``, ``modify`` and ``modify_at`` read and write
+holding the map's lock, calling ``f`` once under it.
 """
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Callable, Hashable, Iterable, Iterator
 from typing import cast, overload
 
@@ -22,12 +27,15 @@ class MutableHashMap[K = Unsubscripted, V = Unsubscripted]:
     """Build one with ``MutableHashMap.empty()``, ``make(*entries)`` or
     ``from_iterable(entries)``. Updates return the map itself."""
 
-    __slots__ = ("_entries",)
+    __slots__ = ("_entries", "_lock")
 
     _entries: dict[Hashable, tuple[K, V]]
 
     def __init__(self) -> None:
         self._entries = {}
+        # Reentrant: ``modify_at`` goes through ``set`` and ``remove``, and an
+        # ``f`` may touch the map.
+        self._lock = threading.RLock()
 
     @classmethod
     def empty(cls) -> MutableHashMap[K, V]:
@@ -91,25 +99,28 @@ class MutableHashMap[K = Unsubscripted, V = Unsubscripted]:
 
     def set(self, key: K, value: V) -> MutableHashMap[K, V]:
         k = equal_key(key)
-        found = self._entries.get(k)
-        self._entries[k] = (key if found is None else found[0], value)
+        with self._lock:
+            found = self._entries.get(k)
+            self._entries[k] = (key if found is None else found[0], value)
         return self
 
     def modify(self, key: K, f: Callable[[V], V]) -> MutableHashMap[K, V]:
         """Replace ``key``'s value with ``f(value)``; nothing without ``key``."""
         k = equal_key(key)
-        found = self._entries.get(k)
-        if found is not None:
-            self._entries[k] = (found[0], f(found[1]))
+        with self._lock:
+            found = self._entries.get(k)
+            if found is not None:
+                self._entries[k] = (found[0], f(found[1]))
         return self
 
     def modify_at(self, key: K, f: Callable[[Option[V]], Option[V]]) -> MutableHashMap[K, V]:
         """Set or remove ``key`` by what ``f`` makes of its current value."""
-        match f(self.get(key)):
-            case Some(value):
-                return self.set(key, value)
-            case None:
-                return self.remove(key)
+        with self._lock:
+            match f(self.get(key)):
+                case Some(value):
+                    return self.set(key, value)
+                case None:
+                    return self.remove(key)
 
     def remove(self, key: K) -> MutableHashMap[K, V]:
         self._entries.pop(equal_key(key), None)

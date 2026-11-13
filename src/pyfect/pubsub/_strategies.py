@@ -11,6 +11,7 @@ from typing import Any, Literal
 
 from pyfect._core import Effect, _Callback, _FailCause, _Succeed, _Sync, _WithFiber
 from pyfect._fiber import _MAX_NESTED_RUNS, Fiber
+from pyfect._waiters import Lock, unlocked
 from pyfect.cause import interrupt as interrupt_cause
 from pyfect.option import Option
 from pyfect.pubsub._atomic import Atomic
@@ -29,39 +30,49 @@ def _interrupt_self() -> Effect[bool]:
 class _Publish[A]:
     """A parked publish (Effect keeps one ``(value, deferred, last)`` entry
     per message). ``items[admitted:]`` still wait. ``outcome`` is set when
-    it ended before its fiber was resumable."""
+    it ended before its fiber was resumable. ``lock`` is the hub's."""
 
     items: list[A]
+    lock: Lock
     admitted: int = 0
     resume: Callable[[Effect[bool]], None] | None = None
     outcome: Effect[bool] | None = None
 
     def complete(self, outcome: Effect[bool]) -> None:
-        if self.resume is None:
+        """Call holding ``lock``; it is let go while the publisher resumes."""
+        resume = self.resume
+        if resume is None:
             self.outcome = outcome
         else:
-            self.resume(outcome)
+            unlocked(self.lock, [lambda: resume(outcome)])
 
 
 class BackPressureStrategy[A](Strategy[A]):
     """Publishers wait until every message they publish fits, oldest
     publish first; a slow subscriber slows everyone."""
 
-    __slots__ = ("_depth", "publishers")
+    __slots__ = ("_depth", "_lock", "publishers")
 
     def __init__(self) -> None:
         self.publishers: deque[_Publish[A]] = deque()
         # Nested ``on_pubsub_empty_space_unsafe`` calls.
         self._depth = 0
+        # The hub's lock, known once a publisher has parked.
+        self._lock: Lock | None = None
 
     @property
     def shutdown(self) -> Effect[None]:
         """Interrupt the publishers still waiting."""
 
         def interrupt_all(fiber: Fiber[Any, Any]) -> Effect[None]:
-            entries, self.publishers = self.publishers, deque[_Publish[A]]()
-            for entry in entries:
-                entry.complete(_FailCause(interrupt_cause(fiber.id)))
+            # The hub is shut down, so no publisher parks from now on.
+            lock = self._lock
+            if lock is None:
+                return _VOID
+            with lock:
+                entries, self.publishers = self.publishers, deque[_Publish[A]]()
+                for entry in entries:
+                    entry.complete(_FailCause(interrupt_cause(fiber.id)))
             return _VOID
 
         return _WithFiber(interrupt_all)
@@ -75,26 +86,28 @@ class BackPressureStrategy[A](Strategy[A]):
         ended: Callable[[], Option[A]],
     ) -> Effect[bool]:
         def register(resume: Callable[[Effect[bool]], None]) -> Effect[None] | None:
-            # ``end`` only rejects publishers already waiting.
-            if ended() is not None:
-                resume(_FALSE)
-                return None
-            entry = _Publish(list(elements))
-            if entry.items:
-                self.publishers.append(entry)
-            else:
-                entry.outcome = _TRUE
-            self.on_pubsub_empty_space_unsafe(pubsub, subscribers)
-            self.complete_subscribers_unsafe(pubsub, subscribers)
-            if is_shutdown():
-                self._remove(entry)
-                resume(_interrupt_self())
-                return None
-            if entry.outcome is not None:
-                resume(entry.outcome)
-                return None
-            entry.resume = resume
-            return _Sync(lambda: self._remove(entry))
+            with pubsub._lock:
+                self._lock = pubsub._lock
+                # ``end`` only rejects publishers already waiting.
+                if ended() is not None:
+                    resume(_FALSE)
+                    return None
+                entry = _Publish(list(elements), pubsub._lock)
+                if entry.items:
+                    self.publishers.append(entry)
+                else:
+                    entry.outcome = _TRUE
+                self.on_pubsub_empty_space_unsafe(pubsub, subscribers)
+                self.complete_subscribers_unsafe(pubsub, subscribers)
+                if is_shutdown():
+                    self._remove(entry)
+                    resume(_interrupt_self())
+                    return None
+                if entry.outcome is not None:
+                    resume(entry.outcome)
+                    return None
+                entry.resume = resume
+            return _Sync(lambda: self._leave(entry))
 
         return _Callback(register)
 
@@ -113,8 +126,9 @@ class BackPressureStrategy[A](Strategy[A]):
             self._depth -= 1
 
     def _admit(self, pubsub: Atomic[A], subscribers: Subscribers[A]) -> None:
-        publishers = self.publishers
-        while publishers and not pubsub.is_full():
+        # ``self.publishers`` is read again after each resume: a run on
+        # another thread may have ended or shut the hub down meanwhile.
+        while (publishers := self.publishers) and not pubsub.is_full():
             entry = publishers[0]
             published = pubsub.publish(entry.items[entry.admitted])
             last = False
@@ -132,6 +146,10 @@ class BackPressureStrategy[A](Strategy[A]):
     def _remove(self, entry: _Publish[A]) -> None:
         if entry in self.publishers:
             self.publishers.remove(entry)
+
+    def _leave(self, entry: _Publish[A]) -> None:
+        with entry.lock:
+            self._remove(entry)
 
     def _end_publishers(self) -> None:
         """The hub ended: every waiting publish returns ``False``."""
@@ -183,14 +201,15 @@ class SlidingStrategy[A](Strategy[A]):
         ended: Callable[[], Option[A]],
     ) -> Effect[bool]:
         def publish() -> bool:
-            if ended() is not None:
-                return False
-            for item in elements:
-                pubsub.slide()
-                while not pubsub.publish(item):
+            with pubsub._lock:
+                if ended() is not None:
+                    return False
+                for item in elements:
                     pubsub.slide()
-            self.complete_subscribers_unsafe(pubsub, subscribers)
-            return True
+                    while not pubsub.publish(item):
+                        pubsub.slide()
+                self.complete_subscribers_unsafe(pubsub, subscribers)
+                return True
 
         return _Sync(publish)
 

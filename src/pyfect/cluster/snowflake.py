@@ -5,6 +5,7 @@ then a 10-bit machine id and a 12-bit sequence."""
 from __future__ import annotations
 
 import random
+import threading
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Never, NewType
@@ -71,10 +72,13 @@ class SnowflakeGenerator:
     millisecond, and a clock behind it (gone back, or behind the borrowed
     milliseconds) keeps counting on the last one."""
 
-    __slots__ = ("_clock", "_machine_id", "_sequence", "_sequence_at")
+    __slots__ = ("_clock", "_lock", "_machine_id", "_sequence", "_sequence_at")
 
     def __init__(self, clock: ClockService, machine_id: MachineId) -> None:
         self._clock = clock
+        # Runs on other threads may share a generator: each snowflake is
+        # counted out holding this, so none is handed out twice.
+        self._lock = threading.Lock()
         self._machine_id = machine_id
         self._sequence = 0
         self._sequence_at = self._now()
@@ -89,6 +93,10 @@ class SnowflakeGenerator:
         return sync(run)
 
     def next_unsafe(self) -> Snowflake:
+        with self._lock:
+            return self._next()
+
+    def _next(self) -> Snowflake:
         now = self._now()
         if now > self._sequence_at:
             self._sequence = 0

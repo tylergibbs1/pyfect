@@ -41,6 +41,7 @@ before the fiber completes.
 
 from __future__ import annotations
 
+import contextlib
 import contextvars
 import itertools
 import math
@@ -465,12 +466,24 @@ class Fiber(Generic[A_co, E_co]):
         self, observer: Callable[[Exit[A_co, E_co]], None]
     ) -> Callable[[], None]:
         """Call ``observer`` with the exit once the fiber is done (at once if
-        it already is). Returns a function that removes the observer. Must
-        be called on the scheduler thread."""
+        it already is), exactly once, from any thread. Returns a function
+        that removes the observer."""
         if self._exit is not None:
             observer(self._exit)
             return _no_op
-        self._observers.append(observer)
+        observers = self._observers
+        observers.append(observer)
+        ex = self._exit
+        if ex is not None:
+            # It finished meanwhile on another thread (its run's), and the
+            # finish may or may not have seen the append: whichever of the two
+            # takes the observer out of the list calls it.
+            try:
+                observers.remove(observer)
+            except ValueError:
+                return _no_op
+            observer(ex)
+            return _no_op
         return lambda: self._remove_observer(observer)
 
     # --- runtime internals --------------------------------------------------
@@ -822,14 +835,23 @@ class Fiber(Generic[A_co, E_co]):
         if self._parent is not None:
             self._parent._children.pop(self, None)
         observers, self._observers = self._observers, []
-        for observer in observers:
+        # Each taken out before it is called: an observer added from another
+        # thread as the fiber finishes is called by whichever side takes it
+        # (see ``add_observer_unsafe``), and a waiter of another run may take
+        # its own out meanwhile.
+        while observers:
+            try:
+                observer = observers.pop(0)
+            except IndexError:
+                break
             # As Effect: a raise stops the observers after it.
             observer(ex)
         return None
 
     def _remove_observer(self, observer: Callable[[Exit[Any, Any]], None]) -> None:
-        if self._exit is None and observer in self._observers:
-            self._observers.remove(observer)
+        if self._exit is None:
+            with contextlib.suppress(ValueError):
+                self._observers.remove(observer)
 
     def _fork(
         self,

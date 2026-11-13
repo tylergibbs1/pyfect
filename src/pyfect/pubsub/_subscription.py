@@ -30,6 +30,7 @@ from pyfect._core import (
     _Sync,
     _WithFiber,
 )
+from pyfect._waiters import unlocked
 from pyfect.cause import Cause
 from pyfect.cause import interrupt as interrupt_cause
 from pyfect.exit import Failure, Success
@@ -61,17 +62,18 @@ class Subscription[A]:
         hub = self._hub
 
         def attempt() -> Effect[A]:
-            if reader.unsubscribed:
-                return _interrupt()
-            replayed = reader.replay.take()
-            if replayed is not None:
-                return _Succeed(replayed.value)
-            polled = reader.poll_up_to(1)
-            if polled:
-                hub.on_empty_space()
-                return _Succeed(polled[0])
-            if hub.ended is not None:
-                return _Succeed(hub.ended.value)
+            with hub.lock:
+                if reader.unsubscribed:
+                    return _interrupt()
+                replayed = reader.replay.take()
+                if replayed is not None:
+                    return _Succeed(replayed.value)
+                polled = reader.poll_up_to(1)
+                if polled:
+                    hub.on_empty_space()
+                    return _Succeed(polled[0])
+                if hub.ended is not None:
+                    return _Succeed(hub.ended.value)
             return self._park(_identity, attempt)
 
         return _Suspend(attempt)
@@ -82,21 +84,23 @@ class Subscription[A]:
         hub = self._hub
 
         def more(first: A) -> list[A]:
+            # Called by ``_Collect`` holding the hub's lock.
             rest = reader.poll_up_to(reader.backing.size())
             hub.on_empty_space()
             return [first, *rest]
 
         def attempt() -> Effect[list[A]]:
-            if reader.unsubscribed:
-                return _interrupt()
-            polled = reader.poll_up_to(reader.backing.size())
-            hub.on_empty_space()
-            if reader.replay.remaining:
-                return _Succeed(reader.replay.take_all() + polled)
-            if polled:
-                return _Succeed(polled)
-            if hub.ended is not None:
-                return _Succeed([hub.ended.value])
+            with hub.lock:
+                if reader.unsubscribed:
+                    return _interrupt()
+                polled = reader.poll_up_to(reader.backing.size())
+                hub.on_empty_space()
+                if reader.replay.remaining:
+                    return _Succeed(reader.replay.take_all() + polled)
+                if polled:
+                    return _Succeed(polled)
+                if hub.ended is not None:
+                    return _Succeed([hub.ended.value])
             return self._park(more, attempt)
 
         return _Suspend(attempt)
@@ -105,17 +109,19 @@ class Subscription[A]:
         """Take up to ``n`` messages without waiting (none if ``n`` is 0 or
         less, or while other takes wait)."""
         reader = self._reader
+        hub = self._hub
 
         def attempt() -> Effect[list[A]]:
-            if reader.unsubscribed:
-                return _interrupt()
-            limit = max(n, 0)
-            if reader.replay.remaining >= limit:
-                return _Succeed(reader.replay.take_n(limit))
-            replayed = reader.replay.take_all()
-            polled = reader.poll_up_to(limit - len(replayed))
-            self._hub.on_empty_space()
-            return _Succeed(replayed + polled)
+            with hub.lock:
+                if reader.unsubscribed:
+                    return _interrupt()
+                limit = max(n, 0)
+                if reader.replay.remaining >= limit:
+                    return _Succeed(reader.replay.take_n(limit))
+                replayed = reader.replay.take_all()
+                polled = reader.poll_up_to(limit - len(replayed))
+                hub.on_empty_space()
+                return _Succeed(replayed + polled)
 
         return _Suspend(attempt)
 
@@ -152,9 +158,10 @@ class Subscription[A]:
     def remaining_unsafe(self) -> int | None:
         """``remaining`` now; ``None`` once unsubscribed."""
         reader = self._reader
-        if reader.unsubscribed:
-            return None
-        return reader.backing.size() + reader.replay.remaining
+        with self._hub.lock:
+            if reader.unsubscribed:
+                return None
+            return reader.backing.size() + reader.replay.remaining
 
     def _park[X](self, then: Callable[[A], X], again: Callable[[], Effect[X]]) -> Effect[X]:
         """Wait behind the takes already parked (Effect's ``pollForItem``).
@@ -164,24 +171,33 @@ class Subscription[A]:
         hub = self._hub
         pollers = reader.pollers
         poller = Poller(pollers)
+        lock = hub.lock
 
         def register(resume: Callable[[Effect[None]], None]) -> Effect[None] | None:
-            if reader.unsubscribed or hub.ended is not None:
-                resume(_VOID)
-                return None
-            poller._wake = lambda: resume(_VOID)
-            subscribers = hub.subscribers
-            if reader.backing not in subscribers:
-                subscribers[reader.backing] = pollers
-            pollers.append(poller)
-            hub.strategy.complete_pollers_unsafe(hub.atomic, subscribers, reader.backing, pollers)
-            return _Sync(lambda: pollers._remove(poller))
+            with lock:
+                if reader.unsubscribed or hub.ended is not None:
+                    resume(_VOID)
+                    return None
+                # Woken holding the hub's lock, which it lets go meanwhile.
+                poller._wake = lambda: unlocked(lock, [lambda: resume(_VOID)])
+                subscribers = hub.subscribers
+                if reader.backing not in subscribers:
+                    subscribers[reader.backing] = pollers
+                pollers.append(poller)
+                hub.strategy.complete_pollers_unsafe(
+                    hub.atomic, subscribers, reader.backing, pollers
+                )
+            return _Sync(lambda: self._leave(poller))
 
         def run(fiber: Fiber[Any, Any]) -> Effect[None]:
             fiber._push(_Collect(hub, reader, poller, then, again))
             return _Callback(register)
 
         return cast("Effect[X]", _WithFiber(run))
+
+    def _leave(self, poller: Poller[Any]) -> None:
+        with self._hub.lock:
+            self._reader.pollers._remove(poller)
 
 
 _VOID: Effect[None] = _Succeed(None)
@@ -214,19 +230,21 @@ class _Collect[A, X](Frame):
 
     def _on_success(self, value: Any, fiber: Fiber[Any, Any]) -> Step:
         poller = self.poller
-        state = poller._finish()
-        if state == _RESERVED:
-            return Success(self.then(self.reader.pollers._collect()))
+        with self.hub.lock:
+            state = poller._finish()
+            if state == _RESERVED:
+                return Success(self.then(self.reader.pollers._collect()))
         if state == _FAILED:
             return Failure(cast("Cause[Any]", poller._cause))
         return self.again()
 
     def _on_failure(self, cause: Cause[Any], fiber: Fiber[Any, Any]) -> Step:
-        if self.poller._finish() == _RESERVED:
-            reader = self.reader
-            hub = self.hub
-            reader.pollers._release()
-            hub.strategy.complete_pollers_unsafe(
-                hub.atomic, hub.subscribers, reader.backing, reader.pollers
-            )
+        hub = self.hub
+        with hub.lock:
+            if self.poller._finish() == _RESERVED:
+                reader = self.reader
+                reader.pollers._release()
+                hub.strategy.complete_pollers_unsafe(
+                    hub.atomic, hub.subscribers, reader.backing, reader.pollers
+                )
         return Failure(cause)

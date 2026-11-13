@@ -8,8 +8,9 @@ the run is discarded and the body runs again (a ``"conflict"``). ``tx_retry``
 discards the run on purpose and parks the fiber until one of the refs it read
 is written (a ``"retry"``).
 
-The check and the commit happen in one fiber step, so no other fiber of the
-run sees a half-published transaction. ``tx`` inside a running transaction
+The check and the commit happen in one fiber step, holding the process-wide
+commit lock, so no other fiber, of this run or of a run on another thread,
+sees a half-published transaction or commits in between. ``tx`` inside a running transaction
 joins it: nested calls share one journal and commit together, and a failure
 caught inside the transaction keeps the writes made before it.
 
@@ -19,6 +20,7 @@ Yield ``Transaction()`` inside a body to read its ``TransactionMeta``.
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Callable, Mapping
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal, Never, final, overload
@@ -37,7 +39,7 @@ from pyfect._core import (
 )
 from pyfect._effect_args import require_effect
 from pyfect._js import same_value
-from pyfect._waiters import wake_soon
+from pyfect._waiters import wake_soon_from_here
 from pyfect.cause import Cause
 from pyfect.cause import interrupt as interrupt_cause
 from pyfect.clock import Clock
@@ -54,6 +56,12 @@ type TransactionRetryReason = Literal["retry", "conflict"]
 commit."""
 
 _NANOS_PER_MILLI = 1_000_000
+
+_COMMIT = threading.Lock()
+"""Held to read a ref's version and value together, to check a journal and
+commit it, and to register a ``tx_retry`` waiter: runs on other threads share
+``TxRef`` values, and a transaction spans many refs. Nothing else runs under
+it, so it is never held long and never taken twice."""
 
 
 @final
@@ -149,7 +157,9 @@ class TransactionMeta:
     def _entry(self, ref: TxRef[Any]) -> JournalEntry:
         entry = self._journal.get(ref)
         if entry is None:
-            entry = self._journal[ref] = JournalEntry(ref._version, ref._value)
+            with _COMMIT:
+                entry = JournalEntry(ref._version, ref._value)
+            self._journal[ref] = entry
         return entry
 
     def _consistent(self) -> bool:
@@ -162,18 +172,27 @@ class TransactionMeta:
         self._now_ns = now_ns
         self._clear()
 
-    def _commit(self) -> None:
-        for ref, entry in self._journal.items():
-            if not entry._written:
-                continue
-            if not same_value(entry._value, ref._value):
-                ref._version += 1
-                ref._value = entry._value
-            if ref._pending:
-                wakes = list(ref._pending.values())
-                ref._pending.clear()
-                for wake in wakes:
-                    wake()
+    def _try_commit(self, publish: bool) -> bool:
+        """Check the journal against the refs and, if no ref it read has
+        changed and ``publish``, publish its writes and wake the waiters of
+        the refs written, all at once. ``False``: a ref changed."""
+        wakes: list[Callable[[], None]] = []
+        with _COMMIT:
+            if not self._consistent():
+                return False
+            if publish:
+                for ref, entry in self._journal.items():
+                    if not entry._written:
+                        continue
+                    if not same_value(entry._value, ref._value):
+                        ref._version += 1
+                        ref._value = entry._value
+                    if ref._pending:
+                        wakes.extend(ref._pending.values())
+                        ref._pending.clear()
+        for wake in wakes:
+            wake()
+        return True
 
     def _clear(self) -> None:
         self._retry = False
@@ -266,11 +285,9 @@ def _boundary[A, E](
         )
 
         def step(ex: Exit[A, E]) -> Effect[A, E]:
-            if state._retry or not state._consistent():
+            if state._retry or not state._try_commit(isinstance(ex, Success)):
                 state._next_attempt(clock.now_nanos_unsafe())
                 return attempt.flat_map(step)
-            if isinstance(ex, Success):
-                state._commit()
             state._clear()
             state._completed = True
             return _FromExit(ex)
@@ -306,29 +323,28 @@ def _await_change(state: TransactionMeta) -> Effect[None]:
 
     def park(fiber: Fiber[Any, Any]) -> Effect[None]:
         def register(resume: Callable[[Effect[None]], None]) -> Effect[None] | None:
-            if not state._consistent():
-                resume(_VOID)
-                return None
             key = object()
             refs = list(state._journal)
 
             def clear() -> None:
-                for ref in refs:
-                    ref._pending.pop(key, None)
+                with _COMMIT:
+                    for ref in refs:
+                        ref._pending.pop(key, None)
 
             def wake() -> None:
                 clear()
                 resume(_VOID)
 
-            def wake_later() -> None:
-                if fiber._on_run_thread():
-                    wake_soon(wake)
+            with _COMMIT:
+                if not state._consistent():
+                    stale = True
                 else:
-                    # A commit in another run, which may end right after it.
-                    fiber._scheduler.schedule(wake)
-
-            for ref in refs:
-                ref._pending[key] = wake_later
+                    stale = False
+                    for ref in refs:
+                        ref._pending[key] = lambda: wake_soon_from_here(fiber, wake)
+            if stale:
+                resume(_VOID)
+                return None
             return _Sync(clear)
 
         return _Callback(register)

@@ -1,10 +1,15 @@
 """The metric kinds: counter, gauge, frequency, histogram, summary and
-timer, each a series with its own state."""
+timer, each a series with its own state.
+
+Runs on other threads update the same series (the registry is
+process-wide by default), so each series reads and changes its state
+holding a lock of its own."""
 
 from __future__ import annotations
 
 import math
 import sys
+import threading
 from collections.abc import Iterable, Sequence
 from typing import Any, Literal, overload
 
@@ -52,6 +57,7 @@ class _Counter(Series[Any, Any]):
     def _create_hooks(self) -> Hooks:
         incremental = self._incremental
         count: float = 0
+        lock = threading.Lock()
 
         def get(_: Context) -> CounterState[float]:
             return CounterState(count, incremental)
@@ -59,7 +65,8 @@ class _Counter(Series[Any, Any]):
         def update(value: float, _: Context) -> None:
             nonlocal count
             if not incremental or value >= 0:
-                count += value
+                with lock:
+                    count += value
 
         return Hooks(get, update, update)
 
@@ -73,13 +80,17 @@ class _Gauge(Series[Any, Any]):
         def get(_: Context) -> GaugeState[float]:
             return GaugeState(current)
 
+        lock = threading.Lock()
+
         def update(value: float, _: Context) -> None:
             nonlocal current
-            current = value
+            with lock:
+                current = value
 
         def modify(value: float, _: Context) -> None:
             nonlocal current
-            current += value
+            with lock:
+                current += value
 
         return Hooks(get, update, modify)
 
@@ -104,8 +115,11 @@ class _Frequency(Series[Any, Any]):
             # The live map, as in Effect.
             return FrequencyState(occurrences)
 
+        lock = threading.Lock()
+
         def update(word: str, _: Context) -> None:
-            occurrences[word] = occurrences.get(word, 0) + 1
+            with lock:
+                occurrences[word] = occurrences.get(word, 0) + 1
 
         return Hooks(get, update, update)
 
@@ -131,22 +145,28 @@ class _Histogram(Series[Any, Any]):
         total: float = 0
         low = _MAX_VALUE
         high = -_MAX_VALUE
+        lock = threading.Lock()
 
         def update(value: float, _: Context) -> None:
             nonlocal count, total, low, high
-            values[_bucket(bounds, value)] += 1
-            count += 1
-            total += value
-            low = min(low, value)
-            high = max(high, value)
+            bucket = _bucket(bounds, value)
+            with lock:
+                values[bucket] += 1
+                count += 1
+                total += value
+                low = min(low, value)
+                high = max(high, value)
 
         def get(_: Context) -> HistogramState:
+            with lock:
+                seen_values = list(values)
+                state = (count, low, high, total)
             buckets: list[tuple[float, int]] = []
             cumulated = 0
-            for boundary, seen in zip(bounds, values, strict=False):
+            for boundary, seen in zip(bounds, seen_values, strict=False):
                 cumulated += seen
                 buckets.append((boundary, cumulated))
-            return HistogramState(tuple(buckets), count, low, high, total)
+            return HistogramState(tuple(buckets), *state)
 
         return Hooks(get, update, update)
 
@@ -202,28 +222,31 @@ class _Summary(Series[Any, Any]):
         total: float = 0
         low = _MAX_VALUE
         high = -_MAX_VALUE
+        lock = threading.Lock()
 
         def update(observation: tuple[float, float], _: Context) -> None:
             nonlocal head, count, total, low, high
             value, timestamp = observation
-            if max_size > 0:
-                observations[head % max_size] = (timestamp, value)
-                head += 1
-            count += 1
-            total += value
-            low = min(low, value)
-            high = max(high, value)
+            with lock:
+                if max_size > 0:
+                    observations[head % max_size] = (timestamp, value)
+                    head += 1
+                count += 1
+                total += value
+                low = min(low, value)
+                high = max(high, value)
 
         def get(context: Context) -> SummaryState:
             now = context.get_unsafe(Clock).now_nanos_unsafe()
+            with lock:
+                seen = list(observations)
+                state = (count, low, high, total)
             samples = sorted(
                 observed[1]
-                for observed in observations
+                for observed in seen
                 if observed is not None and 0 <= now - observed[0] <= max_age_ns
             )
-            return SummaryState(
-                tuple((q, _quantile(samples, q)) for q in quantiles), count, low, high, total
-            )
+            return SummaryState(tuple((q, _quantile(samples, q)) for q in quantiles), *state)
 
         return Hooks(get, update, update)
 

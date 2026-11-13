@@ -9,6 +9,7 @@ in which items are visited is part of the behavior.
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
@@ -58,7 +59,9 @@ class PoolItem[A, E]:
 
 class PoolState[A, E]:
     """The mutable state of a pool. The available list is a doubly linked
-    list through the items, most recently released first."""
+    list through the items, most recently released first. Runs on other
+    threads share a pool: its state is read and changed holding ``lock``,
+    which is let go only to resume a fiber."""
 
     __slots__ = (
         "available_head",
@@ -66,6 +69,7 @@ class PoolState[A, E]:
         "invalidated",
         "is_shutting_down",
         "items",
+        "lock",
         "resize_semaphore",
         "scope",
         "usage",
@@ -79,7 +83,8 @@ class PoolState[A, E]:
         self.usage = 0
         self.items: dict[PoolItem[A, E], None] = {}
         self.invalidated: dict[PoolItem[A, E], None] = {}
-        self.waiters = PoolWaiters()
+        self.lock = threading.Lock()
+        self.waiters = PoolWaiters(self.lock)
         self.available_head: PoolItem[A, E] | None = None
         self.available_tail: PoolItem[A, E] | None = None
 

@@ -99,11 +99,12 @@ class PubSub[A = Unsubscripted]:
         hub = self._hub
 
         def run() -> Effect[bool]:
-            if not hub.accepts():
-                return _FALSE
-            if hub.atomic.publish(value):
-                hub.complete_subscribers()
-                return _TRUE
+            with hub.lock:
+                if not hub.accepts():
+                    return _FALSE
+                if hub.atomic.publish(value):
+                    hub.complete_subscribers()
+                    return _TRUE
             return hub.strategy.handle_surplus(
                 hub.atomic, hub.subscribers, [value], hub.is_shutdown_now, hub.ended_now
             )
@@ -112,12 +113,13 @@ class PubSub[A = Unsubscripted]:
 
     def publish_unsafe(self, value: A) -> bool:
         """Publish without waiting, sliding or dropping: ``False`` if the
-        store is full. Call on the scheduler thread of the hub's fibers."""
+        store is full."""
         hub = self._hub
-        if not hub.accepts() or not hub.atomic.publish(value):
-            return False
-        hub.complete_subscribers()
-        return True
+        with hub.lock:
+            if not hub.accepts() or not hub.atomic.publish(value):
+                return False
+            hub.complete_subscribers()
+            return True
 
     def publish_all(self, items: Iterable[A]) -> Effect[bool]:
         """Publish ``items`` in order; ``True`` if every one was published.
@@ -125,10 +127,11 @@ class PubSub[A = Unsubscripted]:
         hub = self._hub
 
         def run() -> Effect[bool]:
-            if not hub.accepts():
-                return _FALSE
-            surplus = hub.atomic.publish_all(items)
-            hub.complete_subscribers()
+            with hub.lock:
+                if not hub.accepts():
+                    return _FALSE
+                surplus = hub.atomic.publish_all(items)
+                hub.complete_subscribers()
             if not surplus:
                 return _TRUE
             return hub.strategy.handle_surplus(
@@ -145,13 +148,14 @@ class PubSub[A = Unsubscripted]:
 
     def end_unsafe(self, value: A) -> bool:
         hub = self._hub
-        if not hub.accepts():
-            return False
-        hub.ended = Some(value)
-        if isinstance(hub.strategy, BackPressureStrategy):
-            hub.strategy._end_publishers()
-        hub.wake_takers()
-        return True
+        with hub.lock:
+            if not hub.accepts():
+                return False
+            hub.ended = Some(value)
+            if isinstance(hub.strategy, BackPressureStrategy):
+                hub.strategy._end_publishers()
+            hub.wake_takers()
+            return True
 
     # --- subscribing ------------------------------------------------------
 
@@ -182,10 +186,11 @@ class PubSub[A = Unsubscripted]:
 
         def body(fiber: Fiber[Any, Any]) -> Effect[None]:
             hub = self._hub
-            if hub.is_shutdown:
-                return _VOID
-            hub.is_shutdown = True
-            hub.shutdown_waiters.notify_all()
+            with hub.lock:
+                if hub.is_shutdown:
+                    return _VOID
+                hub.is_shutdown = True
+                hub.shutdown_waiters.notify_all()
             return hub.scope.close(Failure(interrupt_cause(fiber.id))).and_then(
                 _Suspend(lambda: hub.strategy.shutdown)
             )
@@ -207,7 +212,9 @@ class PubSub[A = Unsubscripted]:
         return _Sync(self.size_unsafe)
 
     def size_unsafe(self) -> int:
-        return 0 if self._hub.is_shutdown else self._hub.atomic.size()
+        hub = self._hub
+        with hub.lock:
+            return 0 if hub.is_shutdown else hub.atomic.size()
 
     def is_full(self) -> Effect[bool]:
         return _Sync(lambda: self.size_unsafe() == self.capacity)

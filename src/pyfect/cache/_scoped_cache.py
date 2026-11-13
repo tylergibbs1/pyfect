@@ -9,6 +9,7 @@ every operation that needs its entries.
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Callable, Hashable
 from typing import Any, Final, Literal, Never, overload
 
@@ -52,7 +53,7 @@ class ScopedCache[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never, R =
     """Make one with ``ScopedCache.make(lookup, capacity=...)`` inside a
     scope."""
 
-    __slots__ = ("_capacity", "_context", "_entries", "_lookup", "_time_to_live")
+    __slots__ = ("_capacity", "_context", "_entries", "_lock", "_lookup", "_time_to_live")
 
     def __init__(
         self,
@@ -67,6 +68,10 @@ class ScopedCache[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never, R =
         self._time_to_live = time_to_live
         # Least recently used first; None once the cache's scope closed.
         self._entries: dict[K, _Entry[A, E]] | None = {}
+        # Runs on other threads share a cache: the entries and their waiter
+        # counts change holding this; no scope closes and no lookup runs
+        # while it is held.
+        self._lock = threading.Lock()
 
     @overload
     @classmethod
@@ -206,16 +211,18 @@ class ScopedCache[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never, R =
         lookup, closing the scope of the entry it replaces."""
 
         def body(fiber: Fiber[Any, Any]) -> Effect[None]:
-            entries = self._entries
-            if entries is None:
-                return interrupt()
-            replaced = entries.get(key)
             ex: Exit[A, E] = Success(value)
             entry = _Entry[A, E]()
             entry.complete(ex)
             entry.expires_at = deadline(clock_of(fiber), self._time_to_live(ex, key))
-            entries[key] = entry
-            evicting = self._evict_overflow(fiber, entries)
+            with self._lock:
+                entries = self._entries
+                if entries is None:
+                    return interrupt()
+                replaced = entries.get(key)
+                entries[key] = entry
+                evicted = self._overflow(entries)
+            evicting = _close_overflow(fiber, evicted)
             if replaced is None:
                 return evicting
             return replaced.scope.close(_DONE).and_then(evicting)
@@ -233,10 +240,11 @@ class ScopedCache[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never, R =
         """Forget ``key`` and close its scope."""
 
         def body() -> Effect[None]:
-            entries = self._entries
-            if entries is None:
-                return interrupt()
-            entry = entries.pop(key, None)
+            with self._lock:
+                entries = self._entries
+                if entries is None:
+                    return interrupt()
+                entry = entries.pop(key, None)
             return _VOID if entry is None else entry.scope.close(_DONE)
 
         return _Suspend(body).uninterruptible()
@@ -253,12 +261,13 @@ class ScopedCache[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never, R =
                         return _Succeed(False)
 
                     def check(value: A) -> Effect[bool]:
-                        entries = self._entries
-                        if entries is None or not predicate(value):
+                        if self.is_closed or not predicate(value):
                             return _Succeed(False)
-                        if entries.get(key) is not entry:
-                            return _Succeed(False)
-                        del entries[key]
+                        with self._lock:
+                            entries = self._entries
+                            if entries is None or entries.get(key) is not entry:
+                                return _Succeed(False)
+                            del entries[key]
                         return entry.scope.close(_DONE).as_(True)
 
                     waited = self._await(key, entry, restore).flat_map(check)
@@ -286,8 +295,13 @@ class ScopedCache[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never, R =
         with every release failure."""
 
         def body(fiber: Fiber[Any, Any]) -> Effect[None]:
-            entries = self._entries
-            return interrupt() if entries is None else _release_all(fiber, entries)
+            with self._lock:
+                entries = self._entries
+                if entries is None:
+                    return interrupt()
+                taken = list(entries.values())
+                entries.clear()
+            return _release_all(fiber, taken)
 
         return _WithFiber(body)
 
@@ -321,17 +335,23 @@ class ScopedCache[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never, R =
         return f"ScopedCache(size={len(self._entries)}, capacity={self._capacity})"
 
     def _get(self, fiber: Fiber[Any, Any], key: K, restore: Restore) -> Effect[A, E]:
-        entries = self._entries
-        if entries is None:
-            return interrupt()
-        found = entries.get(key)
-        if found is not None and not is_expired(found.expires_at, _now(fiber)):
-            del entries[key]
-            entries[key] = found  # the most recently used now
-            return self._await(key, found, restore)
         entry = _Entry[A, E]()
-        entries[key] = entry  # an expired entry is replaced in place
-        evicting = self._evict_overflow(fiber, entries)
+        hit: _Entry[A, E] | None = None
+        evicted: list[_Entry[A, E]] = []
+        with self._lock:
+            entries = self._entries
+            if entries is None:
+                return interrupt()
+            found = entries.get(key)
+            if found is not None and not is_expired(found.expires_at, _now(fiber)):
+                del entries[key]
+                entries[key] = hit = found  # the most recently used now
+            else:
+                entries[key] = entry  # an expired entry is replaced in place
+                evicted = self._overflow(entries)
+        if hit is not None:
+            return self._await(key, hit, restore)
+        evicting = _close_overflow(fiber, evicted)
         if found is not None:
             evicting = evicting.and_then(_close_evicted(found))
         return evicting.and_then(_Suspend(lambda: self._start(fiber, key, entry, restore)))
@@ -349,7 +369,8 @@ class ScopedCache[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never, R =
 
         def settle(ex: Exit[A, E]) -> Effect[None]:
             if _interrupted(ex):
-                self._remove(key, entry)
+                with self._lock:
+                    self._remove(key, entry)
                 entry.complete(ex)
                 return entry.scope.close(ex)
             try:
@@ -367,16 +388,18 @@ class ScopedCache[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never, R =
         leave a lookup in progress interrupts it."""
         if entry.exit is not None:
             return restore(entry.deferred.wait())
-        entry.awaiters += 1
+        with self._lock:
+            entry.awaiters += 1
 
         def leave(_: Exit[A, E]) -> Effect[None]:
-            entry.awaiters -= 1
-            lookup = entry.fiber
-            if entry.awaiters > 0 or lookup is None or entry.exit is not None:
-                return _VOID
-            # Detached first, so a get made while the lookup's finalizers
-            # run starts a new lookup.
-            self._remove(key, entry)
+            with self._lock:
+                entry.awaiters -= 1
+                lookup = entry.fiber
+                if entry.awaiters > 0 or lookup is None or entry.exit is not None:
+                    return _VOID
+                # Detached first, so a get made while the lookup's finalizers
+                # run starts a new lookup.
+                self._remove(key, entry)
 
             def report(_: None) -> Effect[None]:
                 ex = lookup.poll_unsafe()
@@ -391,10 +414,12 @@ class ScopedCache[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never, R =
         return restore(entry.deferred.wait()).on_exit(leave)
 
     def _refresh(self, fiber: Fiber[Any, Any], key: K, restore: Restore) -> Effect[A, E, R]:
-        entries = self._entries
-        if entries is None:
-            return interrupt()
-        if key not in entries:
+        with self._lock:
+            entries = self._entries
+            if entries is None:
+                return interrupt()
+            missing = key not in entries
+        if missing:
             return restore(self.get(key))
         scope = CloseableScope()
         lookup = _Suspend(lambda: self._lookup(key))
@@ -406,15 +431,17 @@ class ScopedCache[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never, R =
         def replace(ex: Exit[A, E]) -> Effect[A, E]:
             if _interrupted(ex):
                 return scope.close(ex).and_then(from_exit(ex))
-            entries = self._entries
-            if entries is None:
-                return scope.close(_DONE).and_then(interrupt())
             entry = _Entry[A, E](scope)
             entry.complete(ex)
             entry.expires_at = deadline(clock, self._time_to_live(ex, key))
-            replaced = entries.get(key)
-            entries[key] = entry
-            done = self._evict_overflow(fiber, entries)
+            with self._lock:
+                entries = self._entries
+                if entries is None:
+                    return scope.close(_DONE).and_then(interrupt())
+                replaced = entries.get(key)
+                entries[key] = entry
+                evicted = self._overflow(entries)
+            done = _close_overflow(fiber, evicted)
             if replaced is not None:
                 done = done.and_then(replaced.scope.close(_DONE))
             return done.and_then(from_exit(ex))
@@ -425,66 +452,65 @@ class ScopedCache[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never, R =
         """The unexpired entry for ``key``; an expired one is dropped and
         closed. ``touch`` makes it the most recently used. Interrupted once
         closed."""
-        entries = self._entries
-        if entries is None:
-            return interrupt()
-        entry = entries.get(key)
-        if entry is None:
-            return _Succeed(None)
-        if is_expired(entry.expires_at, _now(fiber)):
-            del entries[key]
-            return _close_evicted(entry).as_(None)
-        if touch:
-            del entries[key]
-            entries[key] = entry
-        return _Succeed(entry)
+        with self._lock:
+            entries = self._entries
+            if entries is None:
+                return interrupt()
+            entry = entries.get(key)
+            if entry is None:
+                return _Succeed(None)
+            expired = is_expired(entry.expires_at, _now(fiber))
+            if expired:
+                del entries[key]
+            elif touch:
+                del entries[key]
+                entries[key] = entry
+        return _close_evicted(entry).as_(None) if expired else _Succeed(entry)
 
     def _read[B](self, pick: Callable[[K, _Entry[A, E]], B | None]) -> Effect[list[B]]:
         """``pick`` over the unexpired entries in use order, keeping what
         is not ``None``; the expired ones are dropped and closed."""
 
         def body(fiber: Fiber[Any, Any]) -> Effect[list[B]]:
-            entries = self._entries
-            if entries is None:
-                return _Succeed([])
             now = _now(fiber)
             picked: list[B] = []
             expired: list[Effect[None]] = []
-            for key, entry in list(entries.items()):
-                if is_expired(entry.expires_at, now):
-                    del entries[key]
-                    expired.append(_close_evicted(entry))
-                else:
-                    item = pick(key, entry)
-                    if item is not None:
-                        picked.append(item)
+            with self._lock:
+                entries = self._entries
+                if entries is None:
+                    return _Succeed([])
+                for key, entry in list(entries.items()):
+                    if is_expired(entry.expires_at, now):
+                        del entries[key]
+                        expired.append(_close_evicted(entry))
+                    else:
+                        item = pick(key, entry)
+                        if item is not None:
+                            picked.append(item)
             if not expired:
                 return _Succeed(picked)
             return _await_forked(fiber, expired, daemon=True).as_(picked)
 
         return _WithFiber(body)
 
-    def _evict_overflow(
-        self, fiber: Fiber[Any, Any], entries: dict[K, _Entry[A, E]]
-    ) -> Effect[None]:
-        """Drop the least recently used entries beyond capacity and close
-        their scopes at once, reporting no failure."""
-        evicted = [_close_evicted(entries.pop(key)) for key in overflow(entries, self._capacity)]
-        if not evicted:
-            return _VOID
-        return _await_forked(fiber, evicted, daemon=False).as_void()
+    def _overflow(self, entries: dict[K, _Entry[A, E]]) -> list[_Entry[A, E]]:
+        """Take out the least recently used entries beyond capacity, to
+        close with ``_close_overflow``. Call holding the lock."""
+        return [entries.pop(key) for key in overflow(entries, self._capacity)]
 
     def _remove(self, key: K, entry: _Entry[A, E]) -> None:
+        """Call holding the lock."""
         entries = self._entries
         if entries is not None and entries.get(key) is entry:
             del entries[key]
 
     def _close(self, fiber: Fiber[Any, Any]) -> Effect[None]:
-        entries = self._entries
-        if entries is None:
-            return _VOID
-        self._entries = None
-        return _release_all(fiber, entries)
+        with self._lock:
+            entries = self._entries
+            if entries is None:
+                return _VOID
+            self._entries = None
+        return _release_all(fiber, list(entries.values()))
 
 
 class _Entry[A, E]:
@@ -506,14 +532,21 @@ class _Entry[A, E]:
         self.deferred.done_unsafe(ex)
 
 
-def _release_all(fiber: Fiber[Any, Any], entries: dict[Any, _Entry[Any, Any]]) -> Effect[None]:
-    """Empty ``entries`` and close every scope at once; fails with every
-    release failure. Emptied before any finalizer runs, so finalizers that
-    use the cache see it empty."""
-    closing = [entry.scope.close(_DONE) for entry in entries.values()]
-    entries.clear()
+def _release_all(fiber: Fiber[Any, Any], entries: list[_Entry[Any, Any]]) -> Effect[None]:
+    """Close the scopes of ``entries``, taken out of the cache already, at
+    once; fails with every release failure."""
+    closing = [entry.scope.close(_DONE) for entry in entries]
     exits = _await_forked(fiber, closing, daemon=True, uninterruptible=True)
     return exits.flat_map(lambda done: from_exit(as_void_all(done)))
+
+
+def _close_overflow(fiber: Fiber[Any, Any], evicted: list[_Entry[Any, Any]]) -> Effect[None]:
+    """Close the scopes of the entries evicted for capacity at once,
+    reporting no failure."""
+    if not evicted:
+        return _VOID
+    closing = [_close_evicted(entry) for entry in evicted]
+    return _await_forked(fiber, closing, daemon=False).as_void()
 
 
 def _close_evicted(entry: _Entry[Any, Any]) -> Effect[None]:

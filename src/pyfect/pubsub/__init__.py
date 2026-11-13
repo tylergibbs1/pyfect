@@ -26,8 +26,13 @@ one written by the user. ``"suspend"``, ``"dropping"`` and ``"sliding"``
 name the built-ins.
 
 ``Atomic`` is the store under a hub, with no waiting, for building a hub
-with ``PubSub.make``. The ``unsafe_*`` methods act at once, outside an
-effect; call them on the scheduler thread of the hub's fibers.
+with ``PubSub.make``. The ``*_unsafe`` methods act at once, outside an
+effect.
+
+Runs on several threads can share a hub: every change to it, its store and
+its subscriptions holds the hub's lock, and the built-in strategies' waits
+take it too. A ``Strategy`` written by the user is called holding it, but an
+effect its ``handle_surplus`` returns runs later, without it.
 """
 
 from pyfect.pubsub._atomic import Atomic, BackingSubscription

@@ -6,7 +6,7 @@ interrupt with, which exits their ``join`` reports, and the runtime their
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Hashable, Iterator
+from collections.abc import Callable, Hashable, Iterator
 from typing import Any, TypeGuard
 
 from pyfect._core import Effect
@@ -34,15 +34,18 @@ def reports_failure[E](ex: Exit[Any, E], propagate_interruption: bool) -> TypeGu
     return not ex.cause.has_interrupts_only
 
 
-def live_items[K: Hashable, V: Hashable](entries: dict[K, V]) -> Iterator[tuple[K, V]]:
-    """The items of ``entries`` in order, as Effect's iteration over a live
-    ``Set`` or ``Map``: items added while iterating are visited too, and a
-    key whose value was replaced after its visit is not visited again.
+def live_items[K: Hashable, V: Hashable](
+    entries: Callable[[], list[tuple[K, V]]],
+) -> Iterator[tuple[K, V]]:
+    """The items ``entries()`` gives in order, as Effect's iteration over a
+    live ``Set`` or ``Map``: items added while iterating are visited too, and
+    a key whose value was replaced after its visit is not visited again.
     ``clear`` interrupts what this yields, and interrupts run finalizers
     that change members. (Items removed meanwhile are done fibers, which
-    interrupting leaves alone.)"""
+    interrupting leaves alone.) ``entries`` copies them under the
+    collection's lock, which runs on other threads change them under."""
     seen: set[tuple[K, V]] = set()
-    while fresh := [item for item in entries.items() if item not in seen]:
+    while fresh := [item for item in entries() if item not in seen]:
         seen.update(fresh)
         yield from fresh
 

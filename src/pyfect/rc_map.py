@@ -10,11 +10,18 @@ drops a key so the next ``get`` looks it up afresh.
 ``capacity`` bounds the number of keys, idle ones included; nothing is
 evicted, so a new key fails with ``ExceededCapacityError`` while the map is
 full. Closing the scope that made the map releases every entry.
+
+Runs on other threads share a map. Its entries and their reference counts
+change holding its lock, and nothing runs under it: lookups start, timers
+start and scopes close once it is let go. Idle timers run on the run that
+made the map, which lives as long as the map's scope; the run of the caller
+that let go last may end first.
 """
 # pyright: reportPrivateUsage=false
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Callable, Hashable
 from typing import Any, Final, Never, overload
 
@@ -50,6 +57,7 @@ from pyfect.errors import ExceededCapacityError
 from pyfect.exit import Exit, Failure, Success, as_void_all
 from pyfect.logger._log import log_unhandled
 from pyfect.option import Option, Some
+from pyfect.scheduler import Scheduler
 from pyfect.scope import CloseableScope, Scope
 
 _VOID: Final[Effect[None]] = _Succeed(None)
@@ -83,7 +91,16 @@ class _Entry[A, E]:
 class RcMap[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never]:
     """Make one with ``RcMap.make(lookup)`` inside a scope."""
 
-    __slots__ = ("_capacity", "_context", "_entries", "_idle_time_to_live", "_lookup", "_scope")
+    __slots__ = (
+        "_capacity",
+        "_context",
+        "_entries",
+        "_idle_time_to_live",
+        "_lock",
+        "_lookup",
+        "_owner",
+        "_scope",
+    )
 
     def __init__(
         self,
@@ -92,6 +109,8 @@ class RcMap[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never]:
         scope: CloseableScope,
         idle_time_to_live: Callable[[K], Duration],
         capacity: int | None,
+        *,
+        owner: Scheduler,
     ) -> None:
         self._lookup = lookup
         self._context = context
@@ -99,6 +118,9 @@ class RcMap[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never]:
         self._idle_time_to_live = idle_time_to_live
         self._capacity = capacity
         self._entries: dict[K, _Entry[A, E]] | None = {}  # None once closed
+        # The run that made the map: idle timers run on it.
+        self._owner = owner
+        self._lock = threading.Lock()
 
     @overload
     @classmethod
@@ -154,7 +176,7 @@ class RcMap[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never]:
         def body(fiber: Fiber[Any, Any]) -> Effect[RcMap[Any, Any, Any]]:
             context = fiber._context
             scope = context.get_unsafe(Scope)
-            rc_map = RcMap(lookup, context, scope, ttl, bound)
+            rc_map = RcMap(lookup, context, scope, ttl, bound, owner=fiber._run_scheduler)
             return scope.add_finalizer(lambda _: rc_map._close()).as_(rc_map)
 
         return _WithFiber(body)
@@ -180,9 +202,11 @@ class RcMap[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never]:
 
         def body(restore: Restore) -> Effect[Option[A], E, Scope]:
             def run(fiber: Fiber[Any, Any]) -> Effect[Option[A], E]:
-                entry = None if self._entries is None else self._entries.get(key)
-                if entry is None:
-                    return _Succeed(None)
+                with self._lock:
+                    entry = None if self._entries is None else self._entries.get(key)
+                    if entry is None:
+                        return _Succeed(None)
+                    entry.ref_count += 1
                 return self._retain(fiber, entry, restore(entry.deferred.wait().map(Some)))
 
             return _WithFiber(run)
@@ -191,13 +215,22 @@ class RcMap[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never]:
 
     def keys(self) -> Effect[list[K]]:
         """The keys held now. Interrupted once the map is closed."""
-        return _Suspend(
-            lambda: interrupt() if self._entries is None else _Succeed(list(self._entries))
-        )
+
+        def body() -> Effect[list[K]]:
+            with self._lock:
+                entries = self._entries
+                return interrupt() if entries is None else _Succeed(list(entries))
+
+        return _Suspend(body)
 
     def has(self, key: K) -> Effect[bool]:
         """Whether the map holds ``key``; ``False`` once it is closed."""
-        return _Sync(lambda: self._entries is not None and key in self._entries)
+
+        def body() -> bool:
+            with self._lock:
+                return self._entries is not None and key in self._entries
+
+        return _Sync(body)
 
     def invalidate(self, key: K) -> Effect[None]:
         """Drop ``key``, so the next ``get`` looks it up afresh. Its resource
@@ -205,10 +238,11 @@ class RcMap[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never]:
         go."""
 
         def body() -> Effect[None]:
-            entries = self._entries
-            entry = None if entries is None else entries.pop(key, None)
-            if entry is None or entry.ref_count > 0:
-                return _VOID
+            with self._lock:
+                entries = self._entries
+                entry = None if entries is None else entries.pop(key, None)
+                if entry is None or entry.ref_count > 0:
+                    return _VOID
             return _close_entry(entry)
 
         return _Suspend(body).uninterruptible()
@@ -224,49 +258,48 @@ class RcMap[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never]:
 
     def touch_unsafe(self, key: K, fiber: Fiber[Any, Any]) -> None:
         """``touch`` in ``fiber``'s step, on the clock of its context."""
-        entry = None if self._entries is None else self._entries.get(key)
-        if entry is not None and not entry.idle_time_to_live.is_zero():
-            clock: ClockService = fiber._context.lookup(Clock)[1]
-            entry.expires_at = clock.monotonic_nanos_unsafe() + nanos_or_infinite(
-                entry.idle_time_to_live
-            )
+        clock: ClockService = fiber._context.lookup(Clock)[1]
+        with self._lock:
+            entry = None if self._entries is None else self._entries.get(key)
+            if entry is not None and not entry.idle_time_to_live.is_zero():
+                entry.expires_at = clock.monotonic_nanos_unsafe() + nanos_or_infinite(
+                    entry.idle_time_to_live
+                )
 
     def __repr__(self) -> str:
-        if self._entries is None:
-            return "RcMap(closed)"
-        return f"RcMap(size={len(self._entries)})"
-
-    def _get(self, parent: Fiber[Any, Any], key: K, restore: Restore) -> Effect[A, E]:
         entries = self._entries
         if entries is None:
-            return interrupt()
-        entry = entries.get(key)
-        if entry is not None:
-            entry.ref_count += 1
-        elif self._capacity is not None and len(entries) >= self._capacity:
-            # ``make`` puts the error in E whenever there is a capacity.
-            full: Any = ExceededCapacityError(
-                f"RcMap attempted to exceed capacity of {self._capacity}"
-            )
-            return fail(full)
-        else:
-            entry = _Entry[A, E](self._idle_time_to_live(key))
-            entry.finalizer = self._release(key, entry)
-            entries[key] = entry
+            return "RcMap(closed)"
+        return f"RcMap(size={len(entries)})"
+
+    def _get(self, parent: Fiber[Any, Any], key: K, restore: Restore) -> Effect[A, E]:
+        # Read outside the lock: it is the user's function.
+        new = _Entry[A, E](self._idle_time_to_live(key))
+        new.finalizer = self._release(key, new)
+        with self._lock:
+            entries = self._entries
+            if entries is None:
+                return interrupt()
+            entry = entries.get(key)
+            if entry is not None:
+                entry.ref_count += 1
+            elif self._capacity is not None and len(entries) >= self._capacity:
+                # ``make`` puts the error in E whenever there is a capacity.
+                full: Any = ExceededCapacityError(
+                    f"RcMap attempted to exceed capacity of {self._capacity}"
+                )
+                return fail(full)
+            else:
+                entry = entries[key] = new
+        if entry is new:
             self._start_lookup(parent, key, entry)
-        return self._retain(parent, entry, restore(entry.deferred.wait()), counted=True)
+        return self._retain(parent, entry, restore(entry.deferred.wait()))
 
     def _retain[B](
-        self,
-        fiber: Fiber[Any, Any],
-        entry: _Entry[A, E],
-        then: Effect[B, E],
-        *,
-        counted: bool = False,
+        self, fiber: Fiber[Any, Any], entry: _Entry[A, E], then: Effect[B, E]
     ) -> Effect[B, E]:
-        """Hold ``entry`` until the caller's scope closes, then run ``then``."""
-        if not counted:
-            entry.ref_count += 1
+        """Hold ``entry``, counted already, until the caller's scope closes,
+        then run ``then``."""
         scope = fiber._context.get_unsafe(Scope)
         return scope.add_finalizer(lambda _: entry.finalizer).and_then(then)
 
@@ -286,13 +319,14 @@ class RcMap[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never]:
         fiber.add_observer_unsafe(observe)
 
     def _remove_interrupted(self, lookup: Fiber[Any, Any], key: K, entry: _Entry[A, E]) -> None:
-        entries = self._entries
-        if entries is None or entries.get(key) is not entry:
-            return
-        del entries[key]
-        if entry.ref_count > 0:  # the borrowers close it as they let go
-            return
-        closer: Fiber[None, Never] = new_root(lookup._run_scheduler, lookup._context)
+        with self._lock:
+            entries = self._entries
+            if entries is None or entries.get(key) is not entry:
+                return
+            del entries[key]
+            if entry.ref_count > 0:  # the borrowers close it as they let go
+                return
+        closer: Fiber[None, Never] = new_root(self._owner, lookup._context)
         start_root(closer, _report_unhandled(_close_entry(entry)))
         closer.run_in(self._scope)
 
@@ -300,22 +334,23 @@ class RcMap[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never]:
         return _WithFiber(lambda fiber: self._release_now(fiber, key, entry))
 
     def _release_now(self, fiber: Fiber[Any, Any], key: K, entry: _Entry[A, E]) -> Effect[None]:
-        entry.ref_count -= 1
-        if entry.ref_count > 0:
-            return _VOID
-        entries = self._entries
-        if entries is None or entries.get(key) is not entry:
-            return _close_entry(entry)
         ttl = entry.idle_time_to_live
-        if ttl.is_zero():
-            del entries[key]
-            return _close_entry(entry)
-        if not ttl.is_finite():
-            return _VOID
         clock: ClockService = fiber._context.lookup(Clock)[1]
-        entry.expires_at = clock.monotonic_nanos_unsafe() + ttl.to_nanos_unsafe()
-        if entry.fiber is not None:
-            return _VOID
+        with self._lock:
+            entry.ref_count -= 1
+            if entry.ref_count > 0:
+                return _VOID
+            entries = self._entries
+            if entries is None or entries.get(key) is not entry:
+                return _close_entry(entry)
+            if ttl.is_zero():
+                del entries[key]
+                return _close_entry(entry)
+            if not ttl.is_finite():
+                return _VOID
+            entry.expires_at = clock.monotonic_nanos_unsafe() + ttl.to_nanos_unsafe()
+            if entry.fiber is not None:
+                return _VOID
 
         def expire_when_due(restore: Restore) -> Effect[None]:
             def check() -> Effect[None]:
@@ -324,28 +359,44 @@ class RcMap[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never]:
                     return restore(clock.sleep(from_nanos_or_infinite(remaining))).and_then(
                         _Suspend(check)
                     )
-                current = self._entries
-                if current is None or entry.ref_count > 0 or current.get(key) is not entry:
-                    return _VOID
-                del current[key]
+                with self._lock:
+                    current = self._entries
+                    if current is None or entry.ref_count > 0 or current.get(key) is not entry:
+                        return _VOID
+                    del current[key]
                 return _report_unhandled(entry.scope.close(_DONE))
 
             return _Suspend(check)
 
-        def forget() -> None:
-            entry.fiber = None
+        finished = [False]
 
-        timer: Fiber[None, Never] = new_root(fiber._run_scheduler, fiber._context)
-        entry.fiber = timer
+        def forget() -> None:
+            with self._lock:
+                finished[0] = True
+                if entry.fiber is timer:
+                    entry.fiber = None
+
+        # Started before it is published: closing the map interrupts the
+        # published timer, which must have started by then.
+        timer: Fiber[None, Never] = new_root(self._owner, fiber._context)
         start_root(timer, uninterruptible_mask(expire_when_due).ensuring(_Sync(forget)))
         timer.run_in(self._scope)
+        with self._lock:
+            # Done already, another release started one meanwhile, or the
+            # map closed.
+            spare = finished[0] or entry.fiber is not None or self._entries is None
+            if not spare:
+                entry.fiber = timer
+        if spare:
+            timer.interrupt_as_unsafe(None)
         return _VOID
 
     def _close(self) -> Effect[None]:
-        entries = self._entries
-        if entries is None:
-            return _VOID
-        self._entries = None
+        with self._lock:
+            entries = self._entries
+            if entries is None:
+                return _VOID
+            self._entries = None
 
         def finish(exits: list[Exit[None, Never]]) -> Effect[None]:
             entries.clear()

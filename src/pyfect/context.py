@@ -376,11 +376,17 @@ _EMPTY: Context[Never] = Context()
 _defaults: dict[type[Reference[Any]], Any] = {}
 
 
+_NO_DEFAULT = object()
+
+
 def _default_of(tag: type[Reference[Any]]) -> Any:
-    """Each reference's default is built once, on first use."""
-    if tag not in _defaults:
-        _defaults[tag] = tag.default()
-    return _defaults[tag]
+    """Each reference's default is built once, on first use. Runs on other
+    threads may build it at the same time; the first stored is the one all
+    of them get (``setdefault`` is atomic)."""
+    found = _defaults.get(tag, _NO_DEFAULT)
+    if found is _NO_DEFAULT:
+        found = _defaults.setdefault(tag, tag.default())
+    return found
 
 
 def tag_class[S, T](tag: TagLike[S, T]) -> type[Tag[S]]:

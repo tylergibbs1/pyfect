@@ -38,7 +38,9 @@ def creation_ttl(ttl: Duration) -> Effect[Strategy[Any, Any]]:
         def run(pool: _Pool) -> Effect[None]:
             def process(item: _Item) -> Effect[None]:
                 def body() -> Effect[None]:
-                    if item not in pool.state.items or item in pool.state.invalidated:
+                    with pool.state.lock:
+                        gone = item not in pool.state.items or item in pool.state.invalidated
+                    if gone:
                         return _VOID
                     remaining = ttl_nanos - (clock.now_nanos_unsafe() - created[item])
                     if remaining > 0:
@@ -76,17 +78,18 @@ def usage_ttl(ttl: Duration) -> Effect[Strategy[Any, Any]]:
             state = pool.state
 
             def retire() -> Effect[None]:
-                if pool._active_size() <= pool._target_size():
-                    return _VOID
-                expired = clock.now_nanos_unsafe() - ttl_nanos
                 oldest: _Item | None = None
-                for item in state.items:
-                    if item.ref_count > 0 or item.idle_since > expired:
-                        continue
-                    if item in state.invalidated or item.reservations:
-                        continue
-                    if oldest is None or item.idle_since < oldest.idle_since:
-                        oldest = item
+                with state.lock:
+                    if pool._active_size() <= pool._target_size():
+                        return _VOID
+                    expired = clock.now_nanos_unsafe() - ttl_nanos
+                    for item in state.items:
+                        if item.ref_count > 0 or item.idle_since > expired:
+                            continue
+                        if item in state.invalidated or item.reservations:
+                            continue
+                        if oldest is None or item.idle_since < oldest.idle_since:
+                            oldest = item
                 if oldest is None:
                     return _VOID
                 return pool._invalidate_item(oldest).and_then(process)
