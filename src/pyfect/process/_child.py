@@ -51,7 +51,6 @@ class Child:
         "_exit",
         "_on_exit",
         "_on_exit_lock",
-        "_scheduler",
         "command",
         "command_line",
         "pid",
@@ -73,11 +72,12 @@ class Child:
         self.pid = popen.pid
         self.command_line = command_line
         self.referenced = True
-        self._scheduler = scheduler
         self._on_exit: Callable[[], None] | None = on_exit
         self._on_exit_lock = threading.Lock()
         self._exit: Latch[int] = Latch(waits_for="event")
-        threading.Thread(target=self._watch, name="pyfect-process-exit", daemon=True).start()
+        threading.Thread(
+            target=self._watch, args=(scheduler,), name="pyfect-process-exit", daemon=True
+        ).start()
 
     # --- state ------------------------------------------------------------------
 
@@ -134,7 +134,7 @@ class Child:
             return False
         return True
 
-    def _watch(self) -> None:
+    def _watch(self, scheduler: Scheduler) -> None:
         code = self.popen.wait()
         if code > 0 and self.command.options.detached is not False and os.name != "nt":
             # Best effort, as Node's exit listener: a failed leader takes its
@@ -144,7 +144,7 @@ class Child:
         self._exit.set(code)
         # A run that has ended leaves ``on_exit`` to the first call that sees the exit.
         with contextlib.suppress(LoopClosedError):
-            self._scheduler.schedule(lambda: self._seen(None))
+            scheduler.schedule(lambda: self._seen(None))
 
     # --- signals ----------------------------------------------------------------
 
