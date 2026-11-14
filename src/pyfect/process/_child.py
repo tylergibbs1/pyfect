@@ -9,6 +9,10 @@ group gets a final second. Waits poll the group on the scheduler's
 real-time timers, never on the ``Clock``. A group whose leader has exited
 is found by its numeric id, so if that id were reused before cleanup an
 unrelated group could be signalled.
+
+As in Node, where the exit handler destroys ``stdin`` before anything hears of the exit, a
+child's ``on_exit`` runs once, before any of its methods reports the exit: in a task of the
+scheduler it was spawned on, or in the first call that sees the exit before that task runs.
 """
 
 from __future__ import annotations
@@ -30,7 +34,7 @@ from pyfect.platform_error import PlatformError, from_exception, system_error
 from pyfect.process._command import StandardCommand
 from pyfect.process._os import Latch
 from pyfect.process.command_line import Format, display
-from pyfect.scheduler import Cancel, CurrentScheduler, Scheduler
+from pyfect.scheduler import Cancel, CurrentScheduler, LoopClosedError, Scheduler
 
 GROUP_GRACE = millis(1000)
 """How long the rest of a process group gets to exit after its leader."""
@@ -43,16 +47,35 @@ _SIGKILL: signal.Signals = getattr(signal, "SIGKILL", signal.SIGTERM)
 class Child:
     """A started process, watched by a thread that waits for its exit."""
 
-    __slots__ = ("_exit", "command", "command_line", "pid", "popen", "referenced")
+    __slots__ = (
+        "_exit",
+        "_on_exit",
+        "_on_exit_lock",
+        "_scheduler",
+        "command",
+        "command_line",
+        "pid",
+        "popen",
+        "referenced",
+    )
 
     def __init__(
-        self, command: StandardCommand, popen: subprocess.Popen[bytes], command_line: str
+        self,
+        command: StandardCommand,
+        popen: subprocess.Popen[bytes],
+        command_line: str,
+        *,
+        scheduler: Scheduler,
+        on_exit: Callable[[], None],
     ) -> None:
         self.command = command
         self.popen = popen
         self.pid = popen.pid
         self.command_line = command_line
         self.referenced = True
+        self._scheduler = scheduler
+        self._on_exit: Callable[[], None] | None = on_exit
+        self._on_exit_lock = threading.Lock()
         self._exit: Latch[int] = Latch(waits_for="event")
         threading.Thread(target=self._watch, name="pyfect-process-exit", daemon=True).start()
 
@@ -62,17 +85,32 @@ class Child:
         """``subprocess``'s code once the leader has exited (``-N`` for
         signal ``N``)."""
         code = self._exit.get()
-        return None if code is None else code[0]
+        if code is None:
+            return None
+        return self._seen(code[0])
 
     def exited(self) -> bool:
-        return self._exit.get() is not None
+        return self.returncode() is not None
 
     def after_exit(self, callback: Callable[[], None]) -> None:
         """Call ``callback`` once the leader has exited (now if it has)."""
-        self._exit.on_set(callback)
+
+        def call() -> None:
+            self._seen(None)
+            callback()
+
+        self._exit.on_set(call)
 
     def wait_exit(self) -> Effect[int]:
-        return self._exit.wait()
+        return self._exit.wait().map(self._seen)
+
+    def _seen[A](self, value: A) -> A:
+        """``value``, once ``on_exit`` has run."""
+        with self._on_exit_lock:
+            on_exit, self._on_exit = self._on_exit, None
+            if on_exit is not None:
+                on_exit()
+        return value
 
     def owns_group(self) -> bool:
         """A non-detached leader shares its parent's group, so once it has
@@ -104,6 +142,9 @@ class Child:
             with contextlib.suppress(OSError):
                 os.killpg(self.pid, self.command.options.kill_signal or signal.SIGTERM)
         self._exit.set(code)
+        # A run that has ended leaves ``on_exit`` to the first call that sees the exit.
+        with contextlib.suppress(LoopClosedError):
+            self._scheduler.schedule(lambda: self._seen(None))
 
     # --- signals ----------------------------------------------------------------
 

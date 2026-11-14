@@ -63,7 +63,7 @@ from pyfect.process._spawner import ChildProcessSpawner, ChildProcessSpawnerServ
 from pyfect.process.command_line import Word
 from pyfect.redacted import Redacted
 from pyfect.redacted import value as reveal
-from pyfect.scheduler import CurrentScheduler, Scheduler
+from pyfect.scheduler import CurrentScheduler
 from pyfect.scope import Scope, acquire_release
 from pyfect.sink import Sink
 from pyfect.stream import Stream
@@ -247,14 +247,12 @@ class _Pipes:
         for fd in fds:
             os.close(fd)
 
-    def started_child(self, child: Child, scheduler: Scheduler) -> None:
-        """Watch ``child``: its exit destroys stdin in a task of ``scheduler``,
-        as Node destroys ``stdin`` when the child exits (a write still in
-        progress fails)."""
-        self.child = child
+    def exited(self) -> None:
+        """The child's ``on_exit``: destroy stdin, as Node does before it reports the exit
+        (a write still in progress fails)."""
         stdin = self.inputs.get(0)
         if stdin is not None:
-            child.after_exit(lambda: stdin.destroy_soon(scheduler))
+            stdin.destroy()
 
     def release(self) -> None:
         """Close the pipes once the child is gone: one the scope leaves
@@ -450,16 +448,23 @@ class _Spawner:
         pipes = yield from acquire_release(
             sync(lambda: _Pipes.open(command.options, line)), lambda p, _: sync(p.release)
         )
+        scheduler = yield from CurrentScheduler()
         child = yield from acquire_release(
             try_blocking(
-                lambda: Child(command, _popen(command, cwd, pipes), line),
+                lambda: Child(
+                    command,
+                    _popen(command, cwd, pipes),
+                    line,
+                    scheduler=scheduler,
+                    on_exit=pipes.exited,
+                ),
                 lambda error: from_exception(
                     error, module="ChildProcess", method="spawn", path_or_descriptor=line
                 ),
             ),
             lambda c, _: c.release(),
         )
-        pipes.started_child(child, (yield from CurrentScheduler()))
+        pipes.child = child
         return (yield from _wire(child, pipes))
 
     def _pipeline(

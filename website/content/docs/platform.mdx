@@ -81,8 +81,8 @@ lookup fails with a `NotFound` `PlatformError`.
 
 `process.make(command, args)` describes a process. Running it in a scope starts the process
 and gives a handle whose `stdout` and `stderr` are byte streams and whose `stdin` is a sink.
-As in Node, `stdin` closes as soon as the process exits, and a write still in progress then
-fails. When the scope closes, a process still running is killed. The spawner's `string`, `lines`
+As in Node, `stdin` closes as soon as the process exits, before `exit_code` reports the exit,
+and a write still in progress then fails, as does any write after it. When the scope closes, a process still running is killed. The spawner's `string`, `lines`
 and `stream_lines` start a command, read its output and clean up in one call.
 
 <CodeOutput>

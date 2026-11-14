@@ -227,6 +227,67 @@ def test_a_write_after_the_child_exited_fails_as_nodes_premature_close(
 
 
 @testing.live(timeout="10 seconds")
+def test_exit_code_seen_before_the_exit_task_runs_has_closed_stdin(
+    process_services: Services[Platform],
+):
+    # Dogfood (0.6.2, 0.6.3): the fiber saw the exit, from the same step that waited for
+    # the reap, before the scheduler ran the task that destroys stdin, so its write went
+    # to the pipe the grandchild holds. As in Node, the exit is seen only with stdin
+    # destroyed: the write fails as Effect's does, with Premature close.
+    handle = yield from _exits_while_a_grandchild_holds_stdin("3")
+    yield from fx.sync(lambda: _wait_until_gone(handle.pid))
+    assert (yield from handle.exit_code) == 0
+    error = yield from stream.make(b"late").run(handle.stdin).flip()
+    cause = _stdin_failure(error)[3]
+    assert isinstance(cause, StreamError)
+    assert (cause.code, str(cause)) == ("ERR_STREAM_PREMATURE_CLOSE", "Premature close")
+
+
+def _assert_stdin_destroyed(handle: process.ChildProcessHandle) -> fx.Effect[None, None]:
+    def check(error: PlatformError) -> None:
+        cause = _stdin_failure(error)[3]
+        assert isinstance(cause, StreamError), error
+        assert (cause.code, str(cause)) == ("ERR_STREAM_PREMATURE_CLOSE", "Premature close")
+
+    return stream.make(b"late").run(handle.stdin).flip().map(check)
+
+
+_ENDINGS = {
+    "exits": "exit 0",
+    "fails": "exit 3",
+    "is signalled": "kill -TERM $$",
+}
+
+
+@pytest.mark.parametrize("ending", _ENDINGS)
+@pytest.mark.parametrize("seen_through", ["exit_code", "is_running"])
+@testing.live(timeout="10 seconds")
+def test_stdin_is_destroyed_whenever_the_exit_is_visible(
+    process_services: Services[Platform], ending: str, seen_through: str
+):
+    # However the child ends, the exit is seen only once stdin is destroyed, as in Node,
+    # even read from the step that waited for the reap, before the scheduler's exit task.
+    # Not detached, so neither a failed exit nor the scope kills the grandchild that keeps
+    # the pipe open: only destroying stdin fails the write.
+    handle = yield from make(
+        "sh", ["-c", f"exec 3<&0; sleep 2 <&3 & {_ENDINGS[ending]}"], detached=False
+    )
+    yield from fx.sync(lambda: _wait_until_gone(handle.pid))
+    if seen_through == "exit_code":
+        yield from handle.exit_code.exit()
+    else:
+        assert not (yield from handle.is_running)
+    yield from _assert_stdin_destroyed(handle)
+
+
+@testing.live(timeout="10 seconds")
+def test_stdin_is_destroyed_once_kill_returns(process_services: Services[Platform]):
+    handle = yield from make("sh", ["-c", "exec 3<&0; sleep 2 <&3 & exec sleep 30"], detached=False)
+    yield from handle.kill()
+    yield from _assert_stdin_destroyed(handle)
+
+
+@testing.live(timeout="10 seconds")
 def test_a_write_the_child_refuses_fails_with_epipe_from_write(
     process_services: Services[Platform],
 ):

@@ -32,7 +32,6 @@ from pyfect._os_wait import Cancel, Resume, os_wait
 from pyfect.effect import die, fail, succeed, suspend, sync
 from pyfect.errors import Done
 from pyfect.platform_error import PREMATURE_CLOSE, WRITE_AFTER_END, PlatformError, StreamError
-from pyfect.scheduler import Scheduler
 from pyfect.sink import Sink
 from pyfect.stream import Stream
 
@@ -328,14 +327,6 @@ class Writer:
         made before fail with ``ECANCELED``, later ones with ``Premature close``. A pipe
         already ended stays ended."""
         self._close(PREMATURE_CLOSE)
-
-    def destroy_soon(self, scheduler: Scheduler) -> None:
-        """``destroy`` in a task of ``scheduler``, as Node destroys ``stdin`` in a turn of
-        its event loop: a write a fiber makes before the task runs fails with
-        ``ECANCELED``, not ``Premature close``. The lock orders the task after the resume
-        of a write the thread has finished."""
-        with self._cond:
-            scheduler.schedule(self.destroy)
 
     def _close(self, why: tuple[str, str]) -> None:
         """A write in progress or queued stops and fails with ``ECANCELED``
