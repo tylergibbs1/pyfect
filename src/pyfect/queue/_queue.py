@@ -514,9 +514,9 @@ class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
         its own step (``_state.admit``)."""
         match entry:
             case st.OfferOne() as one:
-                one.resume(_Retry(lambda: self._admit_own_one(one)))
+                one.resume(_Retry(_Suspend(lambda: self._admit_own_one(one))))
             case st.OfferMany() as many:
-                many.resume(_Retry(lambda: self._admit_own_many(many)))
+                many.resume(_Retry(_Suspend(lambda: self._admit_own_many(many))))
 
     def _room(self) -> int:
         """How many items a woken offer may add: one at a time on a rendezvous

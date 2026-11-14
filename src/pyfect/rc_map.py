@@ -88,6 +88,19 @@ class _Entry[A, E]:
         self.ref_count = 1
 
 
+class _Releasing:
+    """A key whose last reference went and whose resource is being released.
+    In Effect a release that does not suspend ends before any other fiber
+    runs, so a get from another run waits for it; one from the run releasing
+    it looks the key up afresh, as in Effect."""
+
+    __slots__ = ("done", "run")
+
+    def __init__(self, run: Scheduler) -> None:
+        self.run = run
+        self.done: Deferred[None] = Deferred()
+
+
 class RcMap[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never]:
     """Make one with ``RcMap.make(lookup)`` inside a scope."""
 
@@ -99,6 +112,7 @@ class RcMap[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never]:
         "_lock",
         "_lookup",
         "_owner",
+        "_releasing",
         "_scope",
     )
 
@@ -118,6 +132,7 @@ class RcMap[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never]:
         self._idle_time_to_live = idle_time_to_live
         self._capacity = capacity
         self._entries: dict[K, _Entry[A, E]] | None = {}  # None once closed
+        self._releasing: dict[K, _Releasing] = {}
         # The run that made the map: idle timers run on it.
         self._owner = owner
         self._lock = threading.Lock()
@@ -237,15 +252,18 @@ class RcMap[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never]:
         is released now if nobody holds it, else when the last holder lets
         go."""
 
-        def body() -> Effect[None]:
+        def body(fiber: Fiber[Any, Any]) -> Effect[None]:
             with self._lock:
                 entries = self._entries
-                entry = None if entries is None else entries.pop(key, None)
-                if entry is None or entry.ref_count > 0:
+                entry = None if entries is None else entries.get(key)
+                if entries is None or entry is None:
                     return _VOID
-            return _close_entry(entry)
+                if entry.ref_count > 0:
+                    del entries[key]
+                    return _VOID
+                return self._released(entries, key, entry, fiber._run_scheduler, _close_entry)
 
-        return _Suspend(body).uninterruptible()
+        return _WithFiber(body).uninterruptible()
 
     def touch(self, key: K) -> Effect[None]:
         """Restart ``key``'s idle time to live."""
@@ -281,6 +299,14 @@ class RcMap[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never]:
             if entries is None:
                 return interrupt()
             entry = entries.get(key)
+            releasing = self._releasing.get(key)
+            if (
+                entry is None
+                and releasing is not None
+                and releasing.run is not parent._run_scheduler
+            ):
+                again = _WithFiber(lambda current: self._get(current, key, restore))
+                return restore(releasing.done.wait()).and_then(again)
             if entry is not None:
                 entry.ref_count += 1
             elif self._capacity is not None and len(entries) >= self._capacity:
@@ -344,8 +370,7 @@ class RcMap[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never]:
             if entries is None or entries.get(key) is not entry:
                 return _close_entry(entry)
             if ttl.is_zero():
-                del entries[key]
-                return _close_entry(entry)
+                return self._released(entries, key, entry, fiber._run_scheduler, _close_entry)
             if not ttl.is_finite():
                 return _VOID
             entry.expires_at = clock.monotonic_nanos_unsafe() + ttl.to_nanos_unsafe()
@@ -363,8 +388,7 @@ class RcMap[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never]:
                     current = self._entries
                     if current is None or entry.ref_count > 0 or current.get(key) is not entry:
                         return _VOID
-                    del current[key]
-                return _report_unhandled(entry.scope.close(_DONE))
+                    return self._released(current, key, entry, self._owner, _close_idle)
 
             return _Suspend(check)
 
@@ -391,6 +415,27 @@ class RcMap[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never]:
             timer.interrupt_as_unsafe(None)
         return _VOID
 
+    def _released(
+        self,
+        entries: dict[K, _Entry[A, E]],
+        key: K,
+        entry: _Entry[A, E],
+        run: Scheduler,
+        close: Callable[[_Entry[A, E]], Effect[None]],
+    ) -> Effect[None]:
+        """Drop ``key``, which nobody holds, and release its resource with
+        ``close`` from ``run``. Call holding the lock."""
+        del entries[key]
+        releasing = self._releasing[key] = _Releasing(run)
+
+        def finish() -> None:
+            with self._lock:
+                if self._releasing.get(key) is releasing:
+                    del self._releasing[key]
+            releasing.done.done_unsafe(_DONE)
+
+        return close(entry).ensuring(_Sync(finish))
+
     def _close(self) -> Effect[None]:
         with self._lock:
             entries = self._entries
@@ -412,6 +457,10 @@ def _report_unhandled(closing: Effect[None]) -> Effect[None]:
     return closing.catch_cause(
         lambda cause: log_unhandled("Unhandled error in RcMap finalizer", cause)
     )
+
+
+def _close_idle(entry: _Entry[Any, Any]) -> Effect[None]:
+    return _report_unhandled(entry.scope.close(_DONE))
 
 
 def _close_entry(entry: _Entry[Any, Any]) -> Effect[None]:

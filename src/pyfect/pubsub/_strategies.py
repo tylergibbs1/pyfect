@@ -9,7 +9,16 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from pyfect._core import Effect, _Callback, _FailCause, _Retry, _Succeed, _Sync, _WithFiber
+from pyfect._core import (
+    Effect,
+    _Callback,
+    _FailCause,
+    _Retry,
+    _Succeed,
+    _Suspend,
+    _Sync,
+    _WithFiber,
+)
 from pyfect._fiber import _MAX_NESTED_RUNS, Fiber, current_fiber
 from pyfect._waiters import Lock, of_this_run, unlocked
 from pyfect.cause import interrupt as interrupt_cause
@@ -168,7 +177,7 @@ class BackPressureStrategy[A](Strategy[A]):
         subscribers: Subscribers[A],
     ) -> None:
         entry.woken = True
-        retry = _Retry(lambda: self._publish_own(entry, pubsub, subscribers))
+        retry = _Retry(_Suspend(lambda: self._publish_own(entry, pubsub, subscribers)))
         unlocked(entry.lock, [lambda: resume(retry)])
 
     def _publish_own(

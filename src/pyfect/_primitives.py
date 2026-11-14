@@ -121,22 +121,22 @@ class _Suspend[A, E, R](Effect[A, E, R]):
 
 @final
 class _Retry[A, E, R](Effect[A, E, R]):
-    """A resume that only wakes the fiber: ``thunk`` decides (takes the item,
-    admits the offer) in the woken fiber's own step. An interrupt that
+    """A resume that only wakes the fiber: ``effect`` decides (takes the item,
+    admits the offer), stepped in the woken fiber's own step. An interrupt that
     reaches the fiber before that step wins over it, and the wait's canceler
     runs instead (``Fiber._resume``), so a wake from another thread's run
     never claims anything for a fiber whose interrupt was already decided."""
 
-    __slots__ = ("thunk",)
+    __slots__ = ("effect",)
 
-    def __init__(self, thunk: Callable[[], Effect[A, E, R]]) -> None:
-        self.thunk = thunk
+    def __init__(self, effect: Effect[A, E, R]) -> None:
+        self.effect = effect
 
     def _step(self, fiber: Fiber[Any, Any]) -> Step:
-        return run_known(self.thunk())
+        return self.effect._step(fiber)
 
 
-WOKEN: Effect[None] = _Retry(lambda: _Succeed(None))
+WOKEN: Effect[None] = _Retry(_Succeed(None))
 """Resume a fiber parked to wait for a change, to check again."""
 
 
@@ -145,7 +145,7 @@ def woken_with[A, E, R](effect: Effect[A, E, R]) -> Effect[A, E, R]:
     result, a finished fiber's exit), so an interrupt that reaches the
     waiter first wins over it, as in Effect, where the resume would have
     run the waiter at once."""
-    return _Retry(lambda: effect)
+    return _Retry(effect)
 
 
 @final

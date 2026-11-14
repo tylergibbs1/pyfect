@@ -30,10 +30,11 @@
   counted the caller only after letting go of the lock it found the entry under, so the
   leaving waiter saw nobody waiting and interrupted the lookup. The caller is now counted
   under that lock, as Effect finds and counts in one step. Found by dogfooding (gap probe).
-- An `RcRef.get` from a run on another thread no longer acquires a new resource while the
-  last one's release runs (20 times in 25 s on 3.14t in the gap probe). In Effect a release
-  that does not suspend ends before any other fiber runs; such a get now waits for it, while
-  a get from the releasing run still acquires afresh, as in Effect.
+- An `RcRef.get`, or an `RcMap.get` of the same key, from a run on another thread no longer
+  acquires a new resource while the last one's release runs, including `RcMap`'s release on
+  `invalidate` or idle expiry (`RcRef`: 20 times in 25 s on 3.14t in the gap probe). In Effect
+  a release that does not suspend ends before any other fiber runs; such a get now waits for
+  it, while a get from the releasing run still acquires afresh, as in Effect.
 
 ## 0.6.3 (2026-11-13)
 

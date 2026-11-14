@@ -194,3 +194,72 @@ def test_rc_ref_get_from_another_run_waits_for_a_release_that_does_not_suspend()
 
     assert fx.run_blocking(fx.scoped(program)) == 1
     assert got == [None, None]
+
+
+class _ReleaseProbe:
+    """Counts live resources; each release first runs a get from a run on
+    another thread, which must not acquire while the release is under way."""
+
+    def __init__(self) -> None:
+        self.live = 0
+        self.most = 0
+        self.got: list[object] = []
+        self.rc_maps: list[fx.RcMap[str, None]] = []
+
+    def lookup(self, key: str) -> fx.Effect[None, Never, fx.Scope]:
+        def acquire() -> None:
+            self.live += 1
+            self.most = max(self.most, self.live)
+
+        def release(_a: None, _ex: fx.Exit[object, object]) -> fx.Effect[None]:
+            def run() -> None:
+                self.get_elsewhere(key)
+                self.live -= 1
+
+            return fx.sync(run)
+
+        return fx.acquire_release(fx.sync(acquire), release)
+
+    def get_elsewhere(self, key: str) -> None:
+        rc_map = self.rc_maps[0]
+
+        def run() -> None:
+            self.got.append(
+                fx.run_blocking(fx.scoped(rc_map.get(key)).timeout_option("200 millis"))
+            )
+
+        thread = threading.Thread(target=run)
+        thread.start()
+        thread.join(10)
+
+
+def test_rc_map_get_from_another_run_waits_for_a_release_that_does_not_suspend():
+    """As for RcRef: in Effect a release that does not suspend ends before any
+    other fiber runs, so a get from another run waits for it."""
+    probe = _ReleaseProbe()
+
+    @fx.gen
+    def program():
+        rc_map = yield from fx.RcMap.make(probe.lookup)
+        probe.rc_maps.append(rc_map)
+        yield from fx.scoped(rc_map.get("a"))
+        yield from fx.scoped(rc_map.get("a"))  # acquires afresh once the release is over
+        return probe.most
+
+    assert fx.run_blocking(fx.scoped(program)) == 1
+    assert probe.got == [None, None]
+
+
+def test_rc_map_get_from_another_run_waits_for_an_invalidated_release():
+    probe = _ReleaseProbe()
+
+    @fx.gen
+    def program():
+        rc_map = yield from fx.RcMap.make(probe.lookup, idle_time_to_live="1 minute")
+        probe.rc_maps.append(rc_map)
+        yield from fx.scoped(rc_map.get("a"))
+        yield from rc_map.invalidate("a")
+        return probe.most
+
+    assert fx.run_blocking(fx.scoped(program)) == 1
+    assert probe.got == [None]
