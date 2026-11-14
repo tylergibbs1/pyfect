@@ -1,3 +1,5 @@
+# Schedule steps here use 0.6's Continue/Stop protocol, deprecated until 0.7.0.
+# pyright: reportDeprecated=false
 """Ports of the ``schedule``, ``repeat`` and ``retry`` sections of Effect's
 ``Effect.test.ts``.
 
@@ -6,14 +8,11 @@ Effect's option objects (``{ times, while, until, schedule }``) are keyword
 arguments: ``eff.repeat(times=2)``, ``eff.retry(schedule=..., until=...)``.
 """
 
-from typing import Never
-
 import pyfect as fx
 from pyfect import schedule, testing
-from pyfect.cause import Die, Fail, done
+from pyfect.cause import Die, Fail
 from pyfect.duration import zero
-from pyfect.errors import Done
-from pyfect.schedule import CurrentMetadata, Metadata
+from pyfect.schedule import CurrentMetadata, Decision, Metadata, Stop
 
 
 @testing.effect
@@ -82,8 +81,8 @@ def test_preserves_finalizer_defects_accompanying_schedule_completion():
     """preserves finalizer defects accompanying schedule completion"""
     cleanup_failed = RuntimeError("cleanup failed")
 
-    def step(_now: float, _input: object) -> fx.Effect[Never, Done[int]]:
-        return done(42).ensuring(fx.die(cleanup_failed))
+    def step(_now: float, _input: object) -> fx.Effect[Decision[int]]:
+        return fx.succeed(Stop(42)).ensuring(fx.die(cleanup_failed))
 
     policy = schedule.from_step(fx.succeed(step))
     ex = yield from fx.void.repeat(policy).exit()
