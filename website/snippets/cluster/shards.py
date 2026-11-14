@@ -34,7 +34,7 @@ def ids():
     generator = yield from snowflake.Generator()
     yield from generator.set_machine_id(MachineId(7))
     first, second = generator.next_unsafe(), generator.next_unsafe()
-    print(first < second, snowflake.machine_id(first), snowflake.sequence(second))
+    print(first < second, snowflake.machine_id(first), snowflake.sequence(first))
 
 
 fx.run_main(ids().pipe(fx.provide(snowflake.layer_generator)))
