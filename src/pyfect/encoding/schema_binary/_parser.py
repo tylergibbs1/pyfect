@@ -65,6 +65,9 @@ class FrameParser[T]:
     decode_encoded: Callable[[object], object] | None
     dict_: D.DictRead | None
     buffer: bytearray = field(default_factory=bytearray)
+    needed: int = 0
+    """The buffered bytes the next frame needs, once its header is read: chunks are only
+    appended until then, so a frame trickled in small chunks costs linear time."""
     stashed: SchemaError | None = None
     spent: bool = False
 
@@ -100,9 +103,24 @@ class FrameParser[T]:
                 return value, i + 1
         return self._error("uvarint", buf[pos : pos + 10]) if buffered >= 10 else None
 
+    def _whole(self, chunk: bytes) -> bytes | None:
+        """The buffered bytes with ``chunk``, or ``None`` while the next frame is still short
+        of them (``chunk`` is then only appended)."""
+        if not self.buffer:
+            return bytes(chunk)
+        self.buffer += chunk
+        if len(self.buffer) < self.needed:
+            return None
+        return bytes(self.buffer)
+
     def feed_sync(self, chunk: bytes, /) -> list[T]:
         self._take_stashed()
-        buf = bytes(self.buffer) + chunk if self.buffer else bytes(chunk)
+        buf = self._whole(chunk)
+        return [] if buf is None else self._frames(buf)
+
+    def _frames(self, buf: bytes) -> list[T]:
+        """The frames whole in ``buf``; the rest is buffered."""
+        self.needed = 0
         pos = 0
         out: list[T] = []
         while True:
@@ -117,6 +135,7 @@ class FrameParser[T]:
             if self.max_frame_size is not None and length > self.max_frame_size:
                 return self._fail(self._error("frame within maxFrameSize", length), out)
             if header_length + length > len(buf) - pos:
+                self.needed = header_length + length
                 break
             start = pos + header_length
             reader = Reader(

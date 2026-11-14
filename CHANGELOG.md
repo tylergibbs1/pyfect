@@ -42,6 +42,26 @@
 - The docstrings of `socket.ws.web_socket_constructor`, `layer_web_socket_constructor` and
   `socket.server` give the default message size limit, 100 MiB; they said 16 MiB.
 
+- A MySQL connection is checked at connect for the two asyncmy internals the driver uses
+  (`_encoding` and `_next_seq_id`), and an asyncmy without them fails there with
+  `UnsupportedAsyncmyError` naming its version, where it would have failed later or read
+  results wrongly; `tests/test_mysql_asyncmy_internals.py` pins both against the installed
+  asyncmy. A statement failing after a multiple of 256 packets of its result counted as never
+  sent (asyncmy's sequence id wraps to 0, the value the driver marked unsent), so its
+  connection went back to the pool out of step; the driver marks an unsent command with -1.
+
+### Performance
+
+- The RPC NDJSON parser, the ClickHouse row splitter, the CSV parser, the `schema_binary`
+  frame parser and the multipart header parser take time linear in their input however a
+  peer chunks it. Each searched its whole buffered line again, or copied it, for every chunk,
+  so one long line sent a few bytes at a time cost quadratic CPU (a 1 MiB RPC line in 16-byte
+  frames took 1.5 s, a 16 MiB one minutes), as Effect's RPC parser still does. `split_lines`
+  and `split_lines_within` search a chunk of many lines once, where they searched it again
+  for each line (4 Mi line breaks in one chunk took 12 s). `tests/test_splitter_linear_time.py`
+  feeds every line and frame splitter a long line in small chunks and many lines in one
+  chunk, and fails one whose time grows faster than its input.
+
 ### Added
 
 - `Stream.split_lines_within(max_length)`, as `channel.split_lines_within`: a line longer
@@ -59,6 +79,9 @@
   security defaults name the 16 KiB request head limit, the chunk and trailer limits, the
   100 MiB WebSocket message limit and the multipart `MaxFieldSize`, `MaxFileSize` and
   `MaxParts`.
+- The HttpApi guide gives `StreamNdjson`'s 1 MiB `max_element_bytes` line limit and its unset
+  `max_bytes`, and the RPC guide the 16 MiB `max_buffer_size` of NDJSON framing and how to
+  change it.
 
 ## 0.6.3 (2026-11-13)
 

@@ -59,7 +59,17 @@ def _decode(data: bytes) -> str:
 
 
 class HeadersParser:
-    __slots__ = ("_crlf", "_headers", "_key", "_pairs", "_previous", "_size", "_state", "_value")
+    __slots__ = (
+        "_crlf",
+        "_headers",
+        "_key",
+        "_key_parts",
+        "_pairs",
+        "_previous",
+        "_size",
+        "_state",
+        "_value_parts",
+    )
 
     def __init__(self) -> None:
         self._reset()
@@ -68,7 +78,10 @@ class HeadersParser:
         self._state = _KEY
         self._headers: PartHeaders = {}
         self._key = ""
-        self._value: bytes | None = None
+        # A key's and a value's pieces across chunks, joined once each ends, so a header
+        # trickled a byte at a time costs linear time.
+        self._key_parts: list[bytes] = []
+        self._value_parts: list[bytes] = []
         self._crlf = 0
         self._previous: bytes | None = None
         self._pairs = 0
@@ -110,7 +123,9 @@ class HeadersParser:
                     if self._size - 1 > _MAX_SIZE:
                         return self._error("HeaderTooLarge")
                     if chunk[i] == 58:
-                        self._key += _decode(chunk[start:i]).lower()
+                        self._key_parts.append(chunk[start:i])
+                        self._key = _decode(b"".join(self._key_parts)).lower()
+                        self._key_parts = []
                         if not self._key:
                             return self._error("InvalidHeaderName")
                         after, second = _at(chunk, i + 1), _at(chunk, i + 2)
@@ -129,7 +144,7 @@ class HeadersParser:
                         return self._error("InvalidHeaderName")
                     i += 1
                 if i == end:
-                    self._key += _decode(chunk[start:end]).lower()
+                    self._key_parts.append(chunk[start:end])
                     return _CONTINUE
 
             if self._state == _WHITESPACE:
@@ -180,8 +195,8 @@ class HeadersParser:
                             return _CONTINUE
                         if self._crlf >= 2:
                             piece = chunk[start : i - self._crlf]
-                            self._value = piece if self._value is None else self._value + piece
-                            self._add(_decode(self._value))
+                            self._value_parts.append(piece)
+                            self._add(_decode(b"".join(self._value_parts)))
                             start = i
                             self._size -= 1
                             if self._crlf != 4 and self._pairs == _MAX_PAIRS:
@@ -194,7 +209,7 @@ class HeadersParser:
                                 return Parsed(headers, start - end_offset)
                             self._pairs += 1
                             self._key = ""
-                            self._value = None
+                            self._value_parts = []
                             self._crlf = 0
                             self._state = _KEY
                             restart = True
@@ -206,7 +221,7 @@ class HeadersParser:
                     continue
                 if i == end:
                     piece = chunk[start:end]
-                    self._value = piece if self._value is None else self._value + piece
+                    self._value_parts.append(piece)
                     return _CONTINUE
 
         if start > end:

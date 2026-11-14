@@ -55,7 +55,9 @@ class Parser:
         self.ignore_empty_lines = ignore_empty_lines
         self.special = re.compile(f'[{re.escape(delimiter)}\r\n"]')
         self.state = _FIELD_START
-        self.field = ""  # the partial field, carried across chunks
+        # The partial field's pieces, carried across chunks and joined once it ends, so a field
+        # trickled in small chunks costs linear time.
+        self.field: list[str] = []
         self.cells: list[str] = []
         self.size = 0  # the current record's size before the current chunk
         self.record = 1
@@ -133,7 +135,7 @@ class Parser:
                 found = self.special.search(text, i)
                 j = length if found is None else found.start()
                 if j > i:
-                    field = text[i:j] if field == "" else field + text[i:j]
+                    field.append(text[i:j])
                 if found is None:
                     i = j
                     break
@@ -142,8 +144,8 @@ class Parser:
                     raise self.fail_syntax(
                         self.size + j - start, "Unexpected quote in an unquoted field"
                     )
-                self.push_cell(field)
-                field = ""
+                self.push_cell("".join(field))
+                field = []
                 state = _FIELD_START
                 i = j + 1
                 if c != delimiter:
@@ -157,7 +159,7 @@ class Parser:
                 end = text.find('"', i)
                 j = length if end == -1 else end
                 if j > i:
-                    field += text[i:j]
+                    field.append(text[i:j])
                     self.count_lines(text, i, j)
                 if end == -1:
                     i = j
@@ -168,13 +170,13 @@ class Parser:
             # _QUOTE_IN_QUOTED
             c = text[i]
             if c == '"':
-                field += '"'
+                field.append('"')
                 state = _QUOTED
                 self.quoted_cr = False
                 i += 1
             elif c in (delimiter, "\r", "\n"):
-                self.push_cell(field)
-                field = ""
+                self.push_cell("".join(field))
+                field = []
                 state = _FIELD_START
                 i += 1
                 if c != delimiter:
@@ -197,7 +199,7 @@ class Parser:
         if self.state == _QUOTED:
             raise self.fail("Syntax", "Unterminated quoted field")
         if self.size > 0 or self.cells:
-            self.push_cell(self.field)
-            self.field = ""
+            self.push_cell("".join(self.field))
+            self.field = []
             self.state = _FIELD_START
             self.end_record(self.size, out)

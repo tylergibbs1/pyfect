@@ -41,11 +41,13 @@ def body_error(body: bytes, tag: str | None) -> ClickhouseError | None:
 class RowSplitter:
     """Rows (lines, as text) from a body's chunks."""
 
-    __slots__ = ("_pending", "_tag", "_tail")
+    __slots__ = ("_pending", "_scanned", "_tag", "_tail")
 
     def __init__(self, tag: str | None) -> None:
         self._tag = None if tag is None else text_encode(tag)
         self._pending = bytearray()
+        self._scanned = 0
+        """How much of ``_pending`` holds no line break: each byte is searched once."""
         self._tail: bytearray | None = None
 
     def feed(self, chunk: bytes) -> list[str]:
@@ -57,7 +59,7 @@ class RowSplitter:
         rows: list[str] = []
         start = 0
         pending = self._pending
-        while (end := pending.find(b"\n", start)) >= 0:
+        while (end := pending.find(b"\n", max(start, self._scanned))) >= 0:
             if self._tag is not None and end > 0 and pending[end - 1] == 0x0D:
                 # ``start`` is past the row before the exception's ``\r\n``.
                 self._tail = bytearray(pending[end - 1 :])
@@ -66,6 +68,7 @@ class RowSplitter:
             rows.append(pending[start:end].decode())
             start = end + 1
         del pending[:start]
+        self._scanned = len(pending)
         return rows
 
     def failure(self) -> ClickhouseError | None:

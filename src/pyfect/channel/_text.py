@@ -92,25 +92,33 @@ class _LineSplitter:
                 if text.startswith("\n"):
                     start = 1
                 self.mid_crlf = False
-            while True:
-                cr = text.find("\r", start)
-                lf = text.find("\n", start)
-                if cr == -1 and lf == -1:
-                    break
-                if cr == -1 or (lf != -1 and lf < cr):
-                    lines.append(self._line(text[start:lf]))
-                    start = lf + 1
-                else:
-                    lines.append(self._line(text[start:cr]))
-                    if cr + 1 == len(text):
-                        self.mid_crlf = True
-                        start = len(text)
-                    else:
-                        start = cr + (2 if lf == cr + 1 else 1)
+            start = self._split_chunk(text, start, lines)
             if start < len(text):
                 self._pending.append(text[start:])
                 self.pending_length += len(text) - start
         return tuple(lines)
+
+    def _split_chunk(self, text: str, start: int, lines: list[str]) -> int:
+        """Appends the lines of ``text`` from ``start``; returns where the unfinished rest
+        starts. The next CR and LF are each searched for again only once passed, so a chunk
+        of many lines is searched once, not once per line for the break it lacks."""
+        cr = text.find("\r", start)
+        lf = text.find("\n", start)
+        while cr != -1 or lf != -1:
+            if cr == -1 or (lf != -1 and lf < cr):
+                lines.append(self._line(text[start:lf]))
+                start = lf + 1
+            else:
+                lines.append(self._line(text[start:cr]))
+                if cr + 1 == len(text):
+                    self.mid_crlf = True
+                    return len(text)
+                start = cr + (2 if lf == cr + 1 else 1)
+            if 0 <= cr < start:
+                cr = text.find("\r", start)
+            if 0 <= lf < start:
+                lf = text.find("\n", start)
+        return start
 
     def flush(self) -> str:
         last = self._line("")

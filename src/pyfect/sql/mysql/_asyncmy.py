@@ -167,31 +167,66 @@ def _replacing_utf8(name: str) -> codecs.CodecInfo | None:
 codecs.register(_replacing_utf8)
 
 
-async def connect(options: Mapping[str, Any]) -> RawConnection:
-    """A connection whose UTF-8 text reads bytes that are not UTF-8 as U+FFFD, as mysql2
-    does (Node's ``Buffer.toString``). asyncmy's own decoding fails part way through a
-    result, so a parameter's bytes echoed back as text (``SELECT ? AS b``) failed the
-    statement."""
-    connecting = cast(
-        "Callable[..., Awaitable[object]]",
-        asyncmy.connect,  # pyright: ignore[reportUnknownMemberType]
-    )
-    conn: Any = await connecting(**options)
-    if conn._encoding == "utf8":
+_UNSENT = -1
+"""``_next_seq_id`` before a command is written; asyncmy keeps it in 0..255 (it wraps), and
+sets it to 1 once it writes a command's first packet."""
+
+
+class UnsupportedAsyncmyError(RuntimeError):
+    """The installed asyncmy lacks the connection internals the driver relies on."""
+
+
+def adapt(conn: Any) -> RawConnection:
+    """``conn`` checked and set up for the driver. Two of asyncmy's internals are used, so an
+    asyncmy that renames or retypes them fails here, at connect, never later and quietly:
+
+    - ``_encoding``, the codec asyncmy decodes text with, swapped for one that reads bytes
+      that are not UTF-8 as U+FFFD, as mysql2 does (Node's ``Buffer.toString``); asyncmy's
+      own fails part way through a result (``SELECT ?`` of such bytes on the prepared path);
+    - ``_next_seq_id``, the protocol sequence id, which ``begin_command`` / ``command_sent``
+      read to tell whether a failed command was written (``tests/test_mysql_asyncmy_internals.py``
+      pins both against the installed asyncmy)."""
+    from asyncmy.version import __VERSION__
+
+    encoding: object = getattr(conn, "_encoding", None)
+    sequence: object = getattr(conn, "_next_seq_id", None)
+    if not isinstance(encoding, str) or type(sequence) is not int:
+        raise UnsupportedAsyncmyError(
+            f"asyncmy {__VERSION__} is not supported by pyfect.sql.mysql: its connection has "
+            f"no str _encoding or int _next_seq_id (got {encoding!r} and {sequence!r})"
+        )
+    try:
+        is_utf8 = codecs.lookup(encoding).name == "utf-8"
+    except LookupError as cause:
+        raise UnsupportedAsyncmyError(
+            f"asyncmy {__VERSION__} is not supported by pyfect.sql.mysql: its connection's "
+            f"_encoding {encoding!r} is not a codec"
+        ) from cause
+    if is_utf8:
         conn._encoding = _REPLACING_UTF8
     return cast("RawConnection", conn)
 
 
+async def connect(options: Mapping[str, Any]) -> RawConnection:
+    """A connection, checked and set up by ``adapt``."""
+    connecting = cast(
+        "Callable[..., Awaitable[object]]",
+        asyncmy.connect,  # pyright: ignore[reportUnknownMemberType]
+    )
+    return adapt(await connecting(**options))
+
+
 def begin_command(conn: RawConnection) -> None:
-    """Note that no part of the next command has been sent yet (see ``command_sent``)."""
-    cast("Any", conn)._next_seq_id = 0
+    """Note that no part of the next command has been written yet (see ``command_sent``)."""
+    cast("Any", conn)._next_seq_id = _UNSENT
 
 
 def command_sent(conn: RawConnection) -> bool:
     """Whether the command begun with ``begin_command`` has been written: asyncmy sets the
-    sequence id past 0 once it writes the command's first packet. A failure before that left
-    the connection in step; one after it, unless the server's own error packet, did not."""
-    return cast("Any", conn)._next_seq_id != 0
+    sequence id to 1 once it writes the command's first packet, and never back to -1. A
+    failure before that left the connection in step; one after it, unless the server's own
+    error packet, did not."""
+    return cast("Any", conn)._next_seq_id != _UNSENT
 
 
 __all__ = [
@@ -200,6 +235,8 @@ __all__ = [
     "PreparedStatement",
     "RawConnection",
     "Result",
+    "UnsupportedAsyncmyError",
+    "adapt",
     "begin_command",
     "command_sent",
     "connect",

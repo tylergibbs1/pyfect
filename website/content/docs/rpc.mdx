@@ -108,6 +108,11 @@ current user.
   working. An `Exit` that doesn't decode with the procedure's schemas is a defect of the
   call holding the `SchemaError`, as in Effect. Closing a client's scope sends an Interrupt for each call still running and drops
   late replies for it.
+- An NDJSON frame (`serialization.layer_ndjson`, `layer_nd_json_rpc()`) holds at most 16 MiB
+  of an unfinished line; a peer sending more fails its connection with
+  `MaxBufferSizeExceeded`. `layer_ndjson_with(max_buffer_size=...)` sets another limit, in
+  characters, and `max_buffer_size="unbounded"` removes it. A line trickled in small frames
+  costs time linear in its length.
 
 ## Testing handlers
 

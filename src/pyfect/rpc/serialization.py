@@ -145,42 +145,62 @@ json = RpcSerializationService(
 
 
 class _NdjsonParser:
-    __slots__ = ("_buffer", "_decoder", "_max")
+    """Lines of JSON across frames. The unfinished line is kept as pieces with its length,
+    and each arriving frame is searched once, so a line trickled in small frames costs linear
+    time (Effect's parser searches its whole buffer again for every frame)."""
+
+    __slots__ = ("_decoder", "_max", "_pending", "_pending_length")
 
     def __init__(self, max_buffer_size: MaxBufferSize) -> None:
         self._max = max_buffer_size
-        self._buffer = ""
+        self._pending: list[str] = []
+        self._pending_length = 0
         self._decoder = text_decoder()
 
     def _exceeded(self, size: int) -> bool:
         return isinstance(self._max, int) and size > self._max
 
+    def _drop_pending(self) -> None:
+        self._pending = []
+        self._pending_length = 0
+
     def _fail_max(self) -> MaxBufferSizeExceeded:
-        self._buffer = ""
+        self._drop_pending()
         return MaxBufferSizeExceeded(cast("int", self._max))
 
+    def _parse(self, line: str, items: list[object]) -> None:
+        if line.endswith("\r"):
+            line = line[:-1]
+        if not line:
+            return
+        try:
+            items.append(parse(line))
+        except ValueError as cause:
+            self._drop_pending()
+            raise NdjsonDecodeError(cause) from cause
+
     def decode(self, data: Frame, /) -> list[object]:
-        self._buffer += data if isinstance(data, str) else self._decoder.decode(data)
-        buffer = self._buffer
-        position = 0
+        text = data if isinstance(data, str) else self._decoder.decode(data)
         items: list[object] = []
-        newline = buffer.find("\n", position)
+        position = 0
+        newline = text.find("\n")
         while newline != -1:
-            if self._exceeded(newline - position):
+            if self._exceeded(self._pending_length + newline - position):
                 raise self._fail_max()
-            end = newline - 1 if newline > 0 and buffer[newline - 1] == "\r" else newline
-            line = buffer[position:end] if end >= position else ""
+            if self._pending:
+                self._pending.append(text[position:newline])
+                line = "".join(self._pending)
+                self._drop_pending()
+            else:
+                line = text[position:newline]
+            self._parse(line, items)
             position = newline + 1
-            if line:
-                try:
-                    items.append(parse(line))
-                except ValueError as cause:
-                    self._buffer = ""
-                    raise NdjsonDecodeError(cause) from cause
-            newline = buffer.find("\n", position)
-        self._buffer = buffer[position:]
-        if self._exceeded(len(self._buffer)):
-            raise self._fail_max()
+            newline = text.find("\n", position)
+        if position < len(text):
+            self._pending.append(text[position:])
+            self._pending_length += len(text) - position
+            if self._exceeded(self._pending_length):
+                raise self._fail_max()
         return items
 
     def encode(self, response: object, /) -> Frame | None:

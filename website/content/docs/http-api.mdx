@@ -132,6 +132,13 @@ gives back a `Stream` of the decoded events, so `run_for_each` follows them as t
 and `error=` encodes a failure of the stream as an event the client fails with. Event data
 goes through its schema's JSON codec, so dates and big integers are strings on the wire.
 
+As a payload, `StreamNdjson(schema)` takes lines of at most 1 MiB; set `max_element_bytes=`
+for another limit. `max_bytes=` limits the whole body and is unset by default, since a stream
+may run for as long as the client sends. A `content-length` over `max_bytes` gets a 413
+before the handler runs; otherwise the handler's stream fails with `HttpApiPayloadTooLarge`
+when it reaches a limit, whose `limit` is `"maxElementBytes"` or `"maxBytes"` and which
+answers 413 unless the handler catches it. `StreamUint8Array` takes `max_bytes=` too.
+
 `StreamUint8Array` and `StreamNdjson` also take a list of content types,
 `content_type=["application/jsonl", "application/json"]`: a payload is accepted under any of
 them, a response is sent with the first unless a declared `content-type` header picks
