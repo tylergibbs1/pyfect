@@ -17,7 +17,7 @@ from pyfect.cluster.runner import Runner
 from pyfect.cluster.runner_address import RunnerAddress
 from pyfect.cluster.shard_id import ShardId
 from pyfect.context import Context
-from pyfect.duration import millis, to_millis
+from pyfect.duration import millis, seconds, to_millis
 from pyfect.effect import gen, succeed
 from pyfect.hash_ring import HashRing
 from pyfect.logger import log_debug, log_warning
@@ -28,8 +28,11 @@ from ._state import ShardingState
 _VOID: Effect[None] = succeed(None)
 
 
+_STORAGE_TIMEOUT = seconds(5)
+
+
 def _with_timeout[A, E](effect: Effect[A, E]) -> Effect[A, Any]:
-    return effect.timeout("5 seconds")
+    return effect.timeout(_STORAGE_TIMEOUT)
 
 
 class _Membership:

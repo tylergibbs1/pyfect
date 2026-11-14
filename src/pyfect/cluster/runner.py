@@ -3,6 +3,8 @@ weight in shard assignment (Effect's ``Runner``)."""
 
 from __future__ import annotations
 
+from functools import lru_cache
+
 from pyfect import schema as S
 from pyfect._string_hash import string_hash
 from pyfect.cluster.runner_address import RunnerAddress
@@ -22,7 +24,12 @@ class Runner(S.Class, identifier="~effect/cluster/Runner"):
         return self.address == other.address and self.weight == other.weight
 
     def __hash__(self) -> int:
-        return string_hash(f"{self.address}:{self.weight}")
+        return _key_hash(f"{self.address}:{self.weight}")
+
+
+# The sharding loops hash every runner on each refresh, as often as every op
+# budget: Effect's string hash is too slow in Python to recompute each time.
+_key_hash = lru_cache(maxsize=4096)(string_hash)
 
 
 def make(*, address: RunnerAddress, groups: tuple[str, ...], weight: float) -> Runner:

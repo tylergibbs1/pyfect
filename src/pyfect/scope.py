@@ -296,12 +296,12 @@ def scoped(eff: Effect[Any, Any, Any]) -> Effect[Any, Any, Any]:
     # fiber's context and pushes an ``OnExit`` frame, which puts the context
     # back and closes the scope (handing the exit straight on if it is empty).
     def enter(fiber: Fiber[Any, Any]) -> Effect[Any, Any, Any]:
-        before = fiber._context
+        before = fiber._view
         scope = CloseableScope()
-        fiber._set_context(before.add(Scope, scope))
+        fiber._set_context(fiber._context.add(Scope, scope))
 
         def finish(ex: Exit[Any, Any]) -> Step:
-            fiber._set_context(before)
+            fiber._use_view(before)
             after = scope.close_unsafe(ex)
             return _FromExit(ex) if after is None else _run_finalizer(after, ex)
 

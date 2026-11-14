@@ -301,6 +301,7 @@ class Fiber(Generic[A_co, E_co]):
         "_stack",
         "_stack_frame",
         "_tracer_hook",
+        "_view",
         "_waiting",
         "_yielded",
         "current_op_count",
@@ -524,10 +525,16 @@ class Fiber(Generic[A_co, E_co]):
         view = _last_view[0]
         if (
             view is None
-            or view.given is not context
+            or (view.given is not context and view.context is not context)
             or view.run_scheduler is not self._run_scheduler
         ):
             view = _last_view[0] = _RunView.of(context, self._run_scheduler)
+        self._use_view(view)
+
+    def _use_view(self, view: _RunView) -> None:
+        """Switch to ``view``'s context (one this fiber computed before)."""
+        _last_view[0] = view
+        self._view = view
         self._ctx = view.context
         self._scheduler: Scheduler = view.scheduler
         self._ops_budget: float = view.ops_budget
@@ -730,7 +737,16 @@ class Fiber(Generic[A_co, E_co]):
                     ops += 1
                     if ops >= self._ops_budget and self._pause_due(cur, ops):
                         return
-                cur = self._continue(self._stack.pop(), cur)
+                frame = self._stack.pop()
+                if self._tracer_hook is None and isinstance(cur, Success):
+                    # ``_continue``'s common case, inlined: this runs for
+                    # every frame a success reaches.
+                    try:
+                        cur = frame._on_success(cur.value, self)
+                    except BaseException as exc:
+                        cur = self._raised(exc)
+                else:
+                    cur = self._continue(frame, cur)
             elif cur is SUSPEND:
                 return  # a resume callback will call _run again
             else:  # untyped user code handed back something that is not an effect
@@ -771,7 +787,7 @@ class Fiber(Generic[A_co, E_co]):
         # claimed success, Effect's exit op.
         resumed = 1
         decided = isinstance(cur, Effect) and cur._holds_decided
-        if isinstance(cur, HandedOn | Decided):
+        if type(cur) is HandedOn or type(cur) is Decided:
             # A claimed success is an op too, which the resumed run counts.
             decided = type(cur) is Decided
             cur = Success(cur.value)
