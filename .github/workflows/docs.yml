@@ -1,8 +1,10 @@
 name: docs
 
 on:
+  # One commit, one run: pull requests are checked by their pull_request run, so a push runs
+  # only on main.
   push:
-    branches: ["**"]
+    branches: [main]
   pull_request:
   merge_group:
   workflow_call:
@@ -10,7 +12,7 @@ on:
 permissions:
   contents: read
 
-# A newer push to a pull request replaces its run; runs on branches, tags and the merge queue
+# A newer push to a pull request replaces its run; runs on main, releases and the merge queue
 # are never cancelled.
 concurrency:
   # github.event.number is the pull request's number (tests/test_workflow_security.py bans
@@ -23,7 +25,7 @@ concurrency:
 # a job that gets slower fails instead of quietly taking longer.
 jobs:
   # Whether the site has to be built. Only a pull request may skip it, when its diff touches
-  # nothing the site or its checks read; pushes, the merge queue and releases always build.
+  # nothing the site or its checks read; pushes to main, the merge queue and releases always build.
   changes:
     runs-on: ubuntu-latest
     timeout-minutes: 1
