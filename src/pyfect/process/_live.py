@@ -344,7 +344,15 @@ def _wire(
     input_failure: Deferred[Never, PlatformError] = Deferred()
 
     def feed(stream: Stream[bytes, PlatformError], sink: _InputSink) -> Effect[Any, Never, Scope]:
-        return stream.tap_error(input_failure.fail).run(sink).ignore().fork_scoped()
+        # Started at once: the exit is seen whenever its thread sets it, so a
+        # feed left for a later turn could find the exit already decided. Node
+        # hears no exit before the forked feed has run up to its first wait.
+        return (
+            stream.tap_error(input_failure.fail)
+            .run(sink)
+            .ignore()
+            .fork_scoped(start_immediately=True)
+        )
 
     writer = pipes.inputs.get(0)
     encoding = options.stdin.encoding

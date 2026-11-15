@@ -8,16 +8,19 @@ import errno
 import os
 import signal
 import time
+from typing import Literal
 
 import pytest
 
 import pyfect as fx
 from pyfect import file_system, path, platform, process, sink, stream, testing
+from pyfect.deferred import Deferred
 from pyfect.file_system import FileSystem
 from pyfect.layer import Layer, merge, provide_merge
 from pyfect.path import Path
 from pyfect.platform_error import PlatformError, StreamError, Unknown, system_error
 from pyfect.process import (
+    ChildProcessHandle,
     ChildProcessSpawner,
     DuplexFd,
     InputFd,
@@ -418,15 +421,71 @@ def test_additional_descriptors_may_sit_on_each_others_numbers(
     assert outputs == tuple(f"{fd}\n" for fd in fds)
 
 
+_INPUT_ERROR = system_error("Unknown", module="FileSystem", method="read", description="failed")
+
+
+type _Into = Literal["stdin", "fd3"]
+
+
+def _fed(
+    input: Stream[bytes, PlatformError], into: _Into
+) -> fx.Effect[ChildProcessHandle, PlatformError, ChildProcessSpawner | Scope]:
+    """``true``, its stdin or its descriptor 3 fed ``input``."""
+    if into == "stdin":
+        return make("true", stdin=input)
+    return make("true", stdin="ignore", additional_fds={3: InputFd(input)})
+
+
+def _block_until_exited(handle: ChildProcessHandle) -> None:
+    """Hold this fiber's thread until the exit is seen, so nothing scheduled
+    meanwhile runs first: the exit wins every race it can win."""
+    while fx.run_sync(handle.is_running.or_die()):
+        time.sleep(0.001)
+
+
+@pytest.mark.parametrize("into", ["stdin", "fd3"])
 @testing.live
-def test_a_failed_input_stream_wins_over_an_exit_that_came_first(
+def test_an_input_stream_that_fails_at_once_wins_over_an_exit_seen_before_any_yield(
+    process_services: Services[Platform], into: _Into
+):
+    # As under Node, where no exit event is heard before the forked input
+    # has run up to its first wait.
+    handle = yield from _fed(stream.fail(_INPUT_ERROR), into)
+    yield from fx.sync(lambda: _block_until_exited(handle))
+    assert (yield from handle.exit_code.flip()) == _INPUT_ERROR
+
+
+@pytest.mark.parametrize("into", ["stdin", "fd3"])
+@testing.live
+def test_an_input_stream_that_fails_after_the_exit_was_seen_still_wins(
+    process_services: Services[Platform], into: _Into
+):
+    gate: Deferred[None] = Deferred()
+    failing = stream.from_effect(gate.wait()).flat_map(lambda _: stream.fail(_INPUT_ERROR))
+    handle = yield from _fed(failing, into)
+    yield from fx.sync(lambda: _block_until_exited(handle))
+    yield from gate.succeed(None)
+    assert (yield from handle.exit_code.flip()) == _INPUT_ERROR
+
+
+@testing.live
+def test_a_failed_input_stream_wins_without_waiting_for_the_exit(
     process_services: Services[Platform],
 ):
-    error = system_error("Unknown", module="FileSystem", method="read", description="failed")
-    handle = yield from make("true", stdin=stream.fail(error))
-    while (yield from handle.is_running):
-        yield from fx.sleep("10 millis")
-    assert (yield from handle.exit_code.flip()) == error
+    handle = yield from make("sleep", ["30"], stdin=stream.fail(_INPUT_ERROR))
+    assert (yield from handle.exit_code.flip()) == _INPUT_ERROR
+    assert (yield from handle.is_running)
+
+
+@testing.live
+def test_an_exit_code_read_before_the_input_fails_is_the_exit_status(
+    process_services: Services[Platform],
+):
+    gate: Deferred[None] = Deferred()
+    failing = stream.from_effect(gate.wait()).flat_map(lambda _: stream.fail(_INPUT_ERROR))
+    handle = yield from make("true", stdin=failing)
+    assert (yield from handle.exit_code) == 0
+    yield from gate.succeed(None)
 
 
 @testing.live
