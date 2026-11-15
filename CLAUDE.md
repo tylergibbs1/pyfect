@@ -80,3 +80,14 @@ only if they pass (`tests/test_ci_workflows.py`). After a deliberate speed chang
 Patch releases only fix, add, deprecate, speed up or document; behaviour a working program
 could rely on, removals and stricter types wait for the next minor release
 (`docs/VERSIONING.md`, enforced by `tests/test_changelog.py`).
+
+## Tests run in parallel, in random order
+
+CI runs `pytest -n 4` with pytest-randomly (the header prints the seed; `-p randomly
+--randomly-seed=N` repeats an order). So a test may not rely on another having run first,
+and a file must leave the process as it found it: `tests/_parallel.py` fails a file that
+leaves `os.environ`, the working directory, `sys.path`, signal handlers, the root logger or
+the default socket timeout changed (use `monkeypatch`). A file whose tests are a sequence
+(ports of vitest describe blocks) sets `pytestmark = pytest.mark.in_order`. Tests that
+start a database container run on one worker per database, which `tests/_parallel.py` works
+out from the file.

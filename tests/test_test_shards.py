@@ -2,6 +2,7 @@
 shards together ran every test exactly once (scripts/test_shards.py verify)."""
 
 import importlib.util
+import json
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -130,3 +131,22 @@ def test_update_keeps_the_slower_pythons_time(tmp_path: Path):
         "tests/test_a.py": 3.0,
         "tests/test_b.py": 5.0,
     }
+
+
+def test_a_parallel_shard_records_every_test_and_every_files_time(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Under xdist the controller writes the manifest and the durations from all workers'
+    reports; a worker writing its own share would leave tests out."""
+    monkeypatch.setenv("PYTHONPATH", str(Path(__file__).parent))
+    for n in range(1, 7):
+        pytester.makepyfile(**{f"test_f{n}": "\n".join(f"def test_{t}(): pass" for t in range(n))})
+    manifest = pytester.path / "manifest.txt"
+    durations = pytester.path / "durations.json"
+    result = pytester.runpytest_subprocess(
+        "-p", "_shards", "-n", "3", "--shard-manifest", str(manifest),
+        "--shard-durations", str(durations), timeout=SUBPROCESS_TIMEOUT,
+    )  # fmt: skip
+    result.assert_outcomes(passed=sum(range(1, 7)))
+    assert len(manifest.read_text().splitlines()) == sum(range(1, 7))
+    assert sorted(json.loads(durations.read_text())) == [f"test_f{n}.py" for n in range(1, 7)]

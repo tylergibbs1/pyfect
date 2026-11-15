@@ -17,6 +17,7 @@ pytest_plugins = [
     "_skips",
     "_git_config_guard",
     "_metric_registry",
+    "_parallel",
 ]
 
 # pytest imports readline before this file loads, and GNU readline (Linux) exports COLUMNS and
@@ -64,3 +65,11 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
         raise pytest.UsageError(
             f"{len(unstable)} test ids hold an object address, e.g. {unstable[0][:300]}"
         )
+
+
+@pytest.fixture
+def pytester(pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch) -> pytest.Pytester:
+    """Pytester whose inner runs keep their files' order: pytest-randomly loads in every
+    session from its entry point, and the inner tests here are written as sequences."""
+    monkeypatch.setenv("PYTEST_ADDOPTS", "-p no:randomly")
+    return pytester

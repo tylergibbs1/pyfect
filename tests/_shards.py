@@ -122,11 +122,19 @@ class _Selection:
 class _Manifest:
     path: Path
 
+    def write(self, ids: list[str]) -> None:
+        self.path.write_text("".join(f"{nodeid}\n" for nodeid in ids), encoding="utf-8")
+
     @pytest.hookimpl
     def pytest_collection_finish(self, session: pytest.Session) -> None:
-        self.path.write_text(
-            "".join(f"{item.nodeid}\n" for item in session.items), encoding="utf-8"
-        )
+        if session.items:  # under xdist the controller collects nothing; the workers report
+            self.write([item.nodeid for item in session.items])
+
+    @pytest.hookimpl(optionalhook=True)
+    def pytest_xdist_node_collection_finished(self, node: object, ids: list[str]) -> None:
+        # Every worker collects the same tests (xdist checks); the first one's ids are the run's.
+        if not self.path.exists():
+            self.write(ids)
 
 
 @dataclass(eq=False)  # a plugin: pluggy hashes it
@@ -162,7 +170,11 @@ def pytest_configure(config: pytest.Config) -> None:
         recorded: Path | None = config.getoption("shard_recorded")
         plan = assign(load_durations(recorded or DURATIONS), shard.count)
         config.pluginmanager.register(_Selection(shard, plan, patterns, config.rootpath))
-    if manifest is not None:
+    # Under xdist the controller sees every test's report, so only it writes; a worker would
+    # overwrite the files with its own share.
+    is_worker = hasattr(config, "workerinput")
+    if manifest is not None and not is_worker:
+        manifest.unlink(missing_ok=True)
         config.pluginmanager.register(_Manifest(manifest))
-    if timings is not None:
+    if timings is not None and not is_worker:
         config.pluginmanager.register(_Timings(timings))

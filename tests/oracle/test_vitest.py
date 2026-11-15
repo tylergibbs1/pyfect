@@ -29,6 +29,9 @@ from pyfect import layer, testing
 from pyfect.duration import millis
 from pyfect.testing import Services
 
+# Ports of describe blocks whose tests read what earlier ones left (tests/_parallel.py).
+pytestmark = pytest.mark.in_order
+
 
 @testing.effect
 def test_effect():

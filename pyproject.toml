@@ -124,6 +124,8 @@ dev = [
     "pyright>=1.1.414",
     "pytest>=9.2.0",
     "ruff>=0.17.2",
+    "pytest-xdist>=3.8",
+    "pytest-randomly>=3.16",
 ]
 docs = ["griffe-typingdoc==0.2.9"]
 # Atheris, the coverage-guided fuzzer tests/fuzz runs (`python -m fuzz`, from tests/); it has
