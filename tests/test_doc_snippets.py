@@ -56,6 +56,9 @@ def included_files(guide: Path) -> list[Path]:
 
 
 def run(*args: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+    """Runs on a worker thread (see `runs`), so the child gets a copy of the environment:
+    inheriting it would have the child exec with the process's own environment array, which
+    pytest rewrites on the main thread (PYTEST_CURRENT_TEST), and exec failed with EFAULT."""
     # -P: don't put the snippet's directory on sys.path, as `python file.py` would.
     return subprocess.run(
         [sys.executable, "-P", *args],
@@ -64,7 +67,7 @@ def run(*args: str, env: dict[str, str] | None = None) -> subprocess.CompletedPr
         text=True,
         timeout=60,
         cwd=ROOT,
-        env=None if env is None else os.environ | env,
+        env=os.environ | (env or {}),
     )
 
 

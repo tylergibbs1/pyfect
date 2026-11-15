@@ -13,7 +13,9 @@ permissions:
 # A newer push to a pull request replaces its run; runs on branches, tags and the merge queue
 # are never cancelled.
 concurrency:
-  group: docs-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  # github.event.number is the pull request's number (tests/test_workflow_security.py bans
+  # interpolating github.event.pull_request).
+  group: docs-${{ github.workflow }}-${{ github.event.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # `snippets`, `reference` and `site` run side by side; `build`, the job branch protection
