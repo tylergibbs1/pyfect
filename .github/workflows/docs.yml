@@ -4,16 +4,54 @@ on:
   push:
     branches: ["**"]
   pull_request:
+  merge_group:
   workflow_call:
 
 permissions:
   contents: read
 
-# `snippets` and `site` run side by side; `build`, the job branch protection requires, passes
-# only if both did.
+# A newer push to a pull request replaces its run; runs on branches, tags and the merge queue
+# are never cancelled.
+concurrency:
+  group: docs-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# `snippets`, `reference` and `site` run side by side; `build`, the job branch protection
+# requires, passes only if all of them did. Each job's timeout is about its p95 plus 30%, so
+# a job that gets slower fails instead of quietly taking longer.
 jobs:
+  # Whether the site has to be built. Only a pull request may skip it, when its diff touches
+  # nothing the site or its checks read; pushes, the merge queue and releases always build.
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      site: ${{ steps.diff.outputs.site }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        if: github.event_name == 'pull_request'
+        with:
+          # A pull request checks out its merge commit: its first parent is the base.
+          fetch-depth: 2
+
+      - name: Does the change touch the site?
+        id: diff
+        env:
+          EVENT: ${{ github.event_name }}
+          # What the site, its build and its checks read.
+          SITE_INPUTS: '^(website/|src/|tests/|assets/|\.github/|README\.md$|pyproject\.toml$|uv\.lock$|\.python-version$)'
+        run: |
+          site=true
+          if [ "$EVENT" = pull_request ]; then
+            changed=$(git diff --name-only HEAD^1 HEAD)
+            grep -qE "$SITE_INPUTS" <<< "$changed" || site=false
+          fi
+          echo "site: $site"
+          echo "site=$site" >> "$GITHUB_OUTPUT"
+
   snippets:
     runs-on: ubuntu-latest
+    timeout-minutes: 4
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
@@ -24,8 +62,9 @@ jobs:
           uv run pyright website/snippets
           uv run pytest -q tests/test_doc_snippets.py
 
-  site:
+  reference:
     runs-on: ubuntu-latest
+    timeout-minutes: 3
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
@@ -46,6 +85,24 @@ jobs:
         working-directory: website
         run: node scripts/readme-diagram.mjs --check
 
+  site:
+    needs: [changes]
+    if: needs.changes.outputs.site == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.2
+
+      - name: Install site dependencies
+        working-directory: website
+        run: bun install --frozen-lockfile
+
       - name: Generate the API reference JSON
         working-directory: website
         run: bun run generate:api
@@ -59,15 +116,20 @@ jobs:
         run: bun run check:layout
 
   build:
-    needs: [snippets, site]
+    needs: [changes, snippets, reference, site]
     # Runs when one failed too: a skipped required check would count as passed.
     if: always()
     runs-on: ubuntu-latest
+    timeout-minutes: 2
     steps:
-      - name: The snippets and the site passed
+      - name: The snippets, the reference and the site passed
         env:
+          CHANGES: ${{ needs.changes.result }}
           SNIPPETS: ${{ needs.snippets.result }}
+          REFERENCE: ${{ needs.reference.result }}
           SITE: ${{ needs.site.result }}
+          SITE_NEEDED: ${{ needs.changes.outputs.site }}
         run: |
-          echo "snippets: $SNIPPETS, site: $SITE"
-          [ "$SNIPPETS" = success ] && [ "$SITE" = success ]
+          echo "changes: $CHANGES (site needed: $SITE_NEEDED), snippets: $SNIPPETS, reference: $REFERENCE, site: $SITE"
+          [ "$CHANGES" = success ] && [ "$SNIPPETS" = success ] && [ "$REFERENCE" = success ] &&
+            { [ "$SITE" = success ] || { [ "$SITE" = skipped ] && [ "$SITE_NEEDED" = false ]; }; }

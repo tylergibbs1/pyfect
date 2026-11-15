@@ -1,10 +1,9 @@
 'use client';
 import { type SearchResultRecord, useStaticSearch } from 'fumadocs-core/search/client';
-import type * as PageTree from 'fumadocs-core/page-tree';
 import { ArrowRight, CornerDownLeft, Hash, Text } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { navSections } from '@/lib/page-tree';
+import type { NavSection } from '@/lib/page-tree';
 import { cn } from '@/lib/cn';
 import { Button } from './ui/button';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from './ui/command';
@@ -32,16 +31,15 @@ function Kbd({ className, ...props }: React.ComponentProps<'kbd'>) {
 }
 
 export function CommandMenu({
-  tree,
+  sections,
   navItems,
 }: {
-  tree: PageTree.Root;
+  sections: NavSection[];
   navItems: { href: string; label: string }[];
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const { search, onSearchChange: setSearch, data } = useStaticSearch();
-  const sections = useMemo(() => navSections(tree), [tree]);
 
   useEffect(() => {
     const down = (e: KeyboardEvent) => {

@@ -22,6 +22,8 @@ import os
 import re
 import subprocess
 import sys
+from collections.abc import Iterator
+from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -141,11 +143,52 @@ def name(path: Path) -> str:
 
 SCRIPTS = [p for p in snippet_files() if not p.name.startswith("test_")]
 TESTS = [p for p in snippet_files() if p.name.startswith("test_")]
+SERVERS = (POSTGRES, MYSQL, MSSQL, CLICKHOUSE)
+
+
+def snippet_args(path: Path) -> tuple[str, ...]:
+    """A snippet runs as `python file.py`; a `test_*.py` snippet under pytest."""
+    if path.name.startswith("test_"):
+        return ("-m", "pytest", "-q", "-p", "no:cacheprovider", str(path))
+    return (str(path),)
+
+
+Runs = dict[Path, Future[subprocess.CompletedProcess[str]]]
+
+
+@pytest.fixture(scope="module")
+def runs(request: pytest.FixtureRequest) -> Iterator[Runs]:
+    """The runs of this session's snippets, started side by side in the order their tests run,
+    so a test waits only for the few runs ahead of it.
+
+    A run is mostly an interpreter importing pyfect, so one after another they took minutes.
+    One CPU stays free: some snippets time their own wake-ups (threads/lag.py), and a CPU
+    taken by another run would make them late. Snippets of a database server start and fill
+    it in their own test, one at a time.
+    """
+    paths = [
+        path
+        for item in request.session.items
+        if isinstance(item, pytest.Function)
+        and item.originalname in ("test_snippet_runs", "test_snippet_tests_pass")
+        and isinstance(path := item.callspec.params["path"], Path)
+        and not any(path.is_relative_to(server) for server in SERVERS)
+    ]
+    pool = ThreadPoolExecutor(max_workers=max(1, (os.process_cpu_count() or 1) - 1))
+    try:
+        yield {path: pool.submit(run, *snippet_args(path)) for path in paths}
+    finally:
+        pool.shutdown(cancel_futures=True)
+
+
+def run_snippet(runs: Runs, path: Path) -> subprocess.CompletedProcess[str]:
+    started = runs.get(path)
+    return started.result() if started else run(*snippet_args(path), env=snippet_env(path))
 
 
 @pytest.mark.parametrize("path", SCRIPTS, ids=name)
-def test_snippet_runs(path: Path):
-    done = run(str(path), env=snippet_env(path))
+def test_snippet_runs(path: Path, runs: Runs):
+    done = run_snippet(runs, path)
     assert done.returncode == 0, done.stderr
     expected = path.with_suffix(".out")
     if os.environ.get("UPDATE_SNIPPET_OUTPUT") and done.stdout:
@@ -176,8 +219,8 @@ def test_outputs_belong_to_snippets(path: Path):
 
 
 @pytest.mark.parametrize("path", TESTS, ids=name)
-def test_snippet_tests_pass(path: Path):
-    done = run("-m", "pytest", "-q", "-p", "no:cacheprovider", str(path), env=snippet_env(path))
+def test_snippet_tests_pass(path: Path, runs: Runs):
+    done = run_snippet(runs, path)
     assert done.returncode == 0, done.stdout + done.stderr
 
 

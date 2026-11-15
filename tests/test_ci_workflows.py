@@ -76,7 +76,29 @@ def test_the_docs_build_check_passes_only_if_every_docs_job_did():
     assert "if: always()" in build
     for job in others:
         assert f"${{{{ needs.{job}.result }}}}" in build, job
+        assert re.search(r"(?m)^    timeout-minutes: \d+$", _job("docs.yml", job)), job
     assert build.count("= success ]") == len(others)
+
+
+def test_only_a_pull_request_may_skip_the_site_build():
+    """The merge queue, pushes and releases build the site; a pull request whose diff touches
+    nothing the site reads may skip it, and `build` passes a skipped site only then."""
+    text = (WORKFLOWS / "docs.yml").read_text(encoding="utf-8")
+    triggers = text.split("\njobs:\n", 1)[0]
+    for trigger in ("push:", "pull_request:", "merge_group:", "workflow_call:"):
+        assert f"\n  {trigger}" in triggers, trigger
+    assert "cancel-in-progress: ${{ github.event_name == 'pull_request' }}" in triggers
+
+    changes = _job("docs.yml", "changes")
+    assert "site=true\n" in changes
+    narrowing = changes.split('if [ "$EVENT" = pull_request ]; then', 1)
+    assert len(narrowing) == 2 and "site=false" not in narrowing[0], "only a PR may skip"
+    assert "EVENT: ${{ github.event_name }}" in changes
+
+    assert "if: needs.changes.outputs.site == 'true'" in _job("docs.yml", "site")
+    build = _job("docs.yml", "build")
+    assert "SITE_NEEDED: ${{ needs.changes.outputs.site }}" in build
+    assert '{ [ "$SITE" = skipped ] && [ "$SITE_NEEDED" = false ]; }' in build
 
 
 def test_ci_gates_benchmarks_and_free_threaded():
