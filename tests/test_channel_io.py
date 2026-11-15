@@ -5,9 +5,10 @@ Expected values were printed by Effect's ``Channel.ts`` under Node (see
 docs/PARITY.md).
 """
 
-import time
+from collections.abc import Callable
 
 import pytest
+from _timing import assert_scales
 
 import pyfect as fx
 from pyfect import channel, schedule, testing
@@ -139,16 +140,17 @@ def test_split_lines_within_keeps_lines_at_the_limit():
 
 
 @pytest.mark.parametrize("within", [False, True])
-@testing.effect
-def test_split_lines_is_linear_in_tiny_pieces(within: bool):
+def test_split_lines_is_linear_in_tiny_pieces(within: bool) -> None:
     """A peer sending one character at a time must not make the unfinished
     line cost quadratic time (800k pieces took about 7 s that way)."""
-    pieces = ("a",) * 800_000
-    split = channel.split_lines_within(10**7) if within else channel.split_lines()
-    start = time.perf_counter()
-    lines = yield from channel.from_iterable([pieces]).pipe_to(split).run_collect()
-    assert time.perf_counter() - start < 2
-    assert lines == [("a" * 800_000,)]
+
+    def run(n: int) -> Callable[[], object]:
+        split = channel.split_lines_within(10**7) if within else channel.split_lines()
+        lines = channel.from_iterable([("a",) * n]).pipe_to(split).run_collect().or_die()
+        return lambda: fx.run_sync(lines)
+
+    assert run(1000)() == [("a" * 1000,)]
+    assert_scales(run, 200_000)
 
 
 @testing.effect

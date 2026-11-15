@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-import time
+from collections.abc import Callable
 from typing import NamedTuple
 
 import pytest
+from _timing import assert_scales
 
 from pyfect import glob
 
@@ -73,10 +74,13 @@ def test_braces_beyond_the_expansion_limit() -> None:
 
 def test_repeated_wildcards() -> None:
     """matches repeated wildcards without exponential backtracking"""
-    compiled = glob.make("*a" * 15 + "b")
-    start = time.perf_counter()
-    assert not compiled.match("a" * 30)
-    assert time.perf_counter() - start < 0.5
+    assert not glob.make("*a" * 15 + "b").match("a" * 30)
+
+    def run(n: int) -> Callable[[], object]:
+        compiled, text = glob.make("*a" * n + "b"), "a" * (2 * n)
+        return lambda: compiled.match(text)
+
+    assert_scales(run, 4000)
 
 
 def test_adversarial_patterns() -> None:

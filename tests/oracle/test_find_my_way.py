@@ -14,9 +14,10 @@ Omitted, with the reason:
   compiles code from parameter names.
 """
 
-import time
+from collections.abc import Callable
 
 import pytest
+from _timing import assert_scales
 
 from pyfect.http.find_my_way import FindResult, Router, RouterConfig
 
@@ -511,17 +512,20 @@ def test_falls_back_when_a_parameter_exceeds_max_param_length() -> None:
 
 
 @pytest.mark.parametrize(
-    ("name", "path"),
+    ("name", "unit", "end"),
     [
-        ("avoids backtracking across static parameter separators", "/" + "-" * 16_000 + "a"),
-        ("avoids backtracking across mixed static parameter separators", "/" + "a-" * 8_000 + "b"),
+        ("avoids backtracking across static parameter separators", "-", "a"),
+        ("avoids backtracking across mixed static parameter separators", "a-", "b"),
     ],
 )
-def test_avoids_backtracking(name: str, path: str) -> None:
+def test_avoids_backtracking(name: str, unit: str, end: str) -> None:
     """$name"""
     del name
     router = Router[bool]()
     router.on("GET", "/:foo-:bar-", True)
-    started = time.monotonic()
-    router.find("GET", path)
-    assert time.monotonic() - started < 1
+
+    def run(n: int) -> Callable[[], object]:
+        path = "/" + unit * (n // len(unit)) + end
+        return lambda: router.find("GET", path)
+
+    assert_scales(run, 64_000)

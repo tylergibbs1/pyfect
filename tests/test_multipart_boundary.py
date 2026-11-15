@@ -3,9 +3,10 @@ one would make every small body write scan the whole boundary."""
 
 from __future__ import annotations
 
-import time
+from collections.abc import Callable
 
 import pytest
+from _timing import assert_scales
 
 from pyfect.http import multipart_parser as mp
 
@@ -46,17 +47,23 @@ def test_a_boundary_outside_rfc_2046_is_invalid(boundary: str) -> None:
 
 def test_small_writes_with_the_longest_boundary_stay_cheap() -> None:
     """2-byte writes of the boundary's own byte: each scans at most the
-    boundary, so 20k of them take well under a second."""
+    boundary, so the work grows with the writes, not with what came before."""
     errors: list[str] = []
-    parser = mp.make(
-        headers={"content-type": "multipart/form-data; boundary=" + "a" * 70},
-        on_file=lambda _info: lambda _chunk: None,
-        on_field=lambda _info, _value: None,
-        on_error=lambda error: errors.append(error.tag),
-        on_done=lambda: None,
-    )
-    started = time.monotonic()
-    for _ in range(20_000):
-        parser.write(b"aa")
-    assert time.monotonic() - started < 1.0
+
+    def run(writes: int) -> Callable[[], object]:
+        parser = mp.make(
+            headers={"content-type": "multipart/form-data; boundary=" + "a" * 70},
+            on_file=lambda _info: lambda _chunk: None,
+            on_field=lambda _info, _value: None,
+            on_error=lambda error: errors.append(error.tag),
+            on_done=lambda: None,
+        )
+
+        def write() -> None:
+            for _ in range(writes):
+                parser.write(b"aa")
+
+        return write
+
+    assert_scales(run, 20_000)
     assert errors == []

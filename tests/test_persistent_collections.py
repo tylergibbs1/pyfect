@@ -6,8 +6,9 @@ at a time quadratic (collections review)."""
 from __future__ import annotations
 
 import random
-import time
 from collections.abc import Callable
+
+from _timing import assert_scales
 
 from pyfect._js import js_sort_key
 from pyfect.hash_map import HashMap
@@ -16,19 +17,9 @@ from pyfect.option import Some
 from pyfect.trie import Trie
 
 
-def _seconds(build: Callable[[int], object], n: int) -> float:
-    runs: list[float] = []
-    for _ in range(3):
-        start = time.perf_counter()
-        build(n)
-        runs.append(time.perf_counter() - start)
-    # Load only ever adds time, so the fastest run is the one to compare.
-    return min(runs)
-
-
 def _grows_linearly(build: Callable[[int], object]) -> None:
-    # Four times the entries: about four times as long (copying took sixteen).
-    assert _seconds(build, 16000) < 9 * _seconds(build, 4000)
+    # Four times the entries: about four times the work (copying took sixteen).
+    assert_scales(lambda n: lambda: build(n), 4000)
 
 
 def _hash_map(n: int) -> HashMap[int, int]:

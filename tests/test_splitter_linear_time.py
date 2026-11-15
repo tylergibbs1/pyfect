@@ -5,17 +5,16 @@ the buffer to add a chunk to it, cost quadratic time when a peer trickled one lo
 small chunks (Effect's RPC NDJSON parser does this too): a 16 MiB line sent 16 bytes at a time
 took minutes of CPU. Here each splitter is fed a long line in small chunks, and many short
 lines in one chunk, at two sizes four times apart. Linear work grows four times; the check
-allows eight, where quadratic work grows sixteen. The time is the thread's CPU time, the least
-of a few runs, so a loaded machine does not decide it.
+allows eight, where quadratic work grows sixteen (``tests/_timing.py``).
 """
 
 from __future__ import annotations
 
-import time
 from collections.abc import Callable
 from typing import Any
 
 import pytest
+from _timing import assert_scales
 
 from pyfect import schema as S
 from pyfect.channel._text import (
@@ -30,19 +29,9 @@ from pyfect.sql.clickhouse._rows import RowSplitter
 
 _SIZE = 256 * 1024
 _CHUNK = 16
-_RUNS = 3
 
 type Run = Callable[[int], Callable[[], None]]
 """Given a size, the work of splitting that much input."""
-
-
-def _cpu(work: Callable[[], None]) -> float:
-    best = float("inf")
-    for _ in range(_RUNS):
-        start = time.thread_time()
-        work()
-        best = min(best, time.thread_time() - start)
-    return best
 
 
 def _pieces[T: (str, bytes)](data: T, size: int = _CHUNK) -> list[T]:
@@ -141,10 +130,7 @@ _CASES: dict[str, Run] = {
 
 @pytest.mark.parametrize("name", list(_CASES))
 def test_a_splitter_takes_linear_time(name: str) -> None:
-    run = _CASES[name]
-    small = _cpu(run(_SIZE))
-    large = _cpu(run(4 * _SIZE))
-    assert large < 8 * small, f"{name}: {small:.3f}s for {_SIZE}, {large:.3f}s for 4x"
+    assert_scales(_CASES[name], _SIZE)
 
 
 def test_multipart_header_values_are_joined_once() -> None:

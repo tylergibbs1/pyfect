@@ -2,12 +2,12 @@
 under Node (``Effect.request`` with the same resolvers)."""
 
 import asyncio
-import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
 import pytest
+from _timing import wait_until
 
 import pyfect as fx
 from pyfect import batching, exit, testing
@@ -280,9 +280,8 @@ def test_a_batch_left_pending_by_a_finished_run_does_not_hold_up_later_runs():
     fx.run_blocking(fx.request(Get(1), resolver).fork_daemon(start_immediately=True).as_void())
     later = fx.request(Get(2), resolver).timeout_option("1 second").or_die()
     assert fx.run_blocking(later) == fx.option.Some("2")
-    deadline = time.monotonic() + 5
-    while 1 not in log and time.monotonic() < deadline:
-        time.sleep(0.01)  # the daemon's batch runs on the background thread
+    # The daemon's batch runs on the background thread.
+    wait_until(lambda: 1 in log, what="the daemon's batch")
     assert sorted(log) == [1, 2]
 
 

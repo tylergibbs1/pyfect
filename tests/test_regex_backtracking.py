@@ -5,15 +5,14 @@ backtracks through every split and holds the GIL while it does)."""
 from __future__ import annotations
 
 import ast
-import gc
 import importlib
 import re
-import time
 from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import pytest
 from _pyfect_modules import modules
+from _timing import assert_scales, scaling_problem
 
 import pyfect
 from pyfect import schema as S
@@ -27,28 +26,9 @@ from pyfect.schema.getter._coerce import to_number
 _RUN_CHARACTERS = "0 1aA-./\\\t\n,;:=%\"'_~#&+(<x"
 
 
-def _seconds(call: Callable[[], object]) -> float:
-    gc.disable()
-    try:
-        start = time.perf_counter()
-        call()
-        return time.perf_counter() - start
-    finally:
-        gc.enable()
-
-
 def _is_linear(call: Callable[[int], object], n: int = 4000) -> bool:
-    """Doubling the input at most triples the time (a quadratic one is 4x),
-    or the larger input takes under 5 ms either way. A quadratic pattern fails
-    every measurement, so one of three passing is linear: a slow CI runner's
-    single stall once failed a linear pattern."""
-    return any(_doubling_is_linear(call, n) for _ in range(3))
-
-
-def _doubling_is_linear(call: Callable[[int], object], n: int) -> bool:
-    small = min(_seconds(lambda: call(n)) for _ in range(3))
-    large = min(_seconds(lambda: call(2 * n)) for _ in range(3))
-    return large < 0.005 or large < 3 * small
+    """Doubling the input about doubles the work (a quadratic one is 4x)."""
+    return scaling_problem(lambda size: lambda: call(size), n, factor=2) is None
 
 
 def _module_patterns() -> Iterator[tuple[str, re.Pattern[str] | re.Pattern[bytes]]]:
@@ -124,7 +104,7 @@ def test_a_resource_uri_template_matches_in_linear_time() -> None:
     template = mcp_server.uri_template(
         "x://", S.String, "-", S.String, "-", mcp_schema.param("c", S.String)
     )
-    assert _seconds(lambda: template.match("x://" + "-" * 1500 + "/")) < 0.25
+    assert_scales(lambda n: lambda: template.match("x://" + "-" * n + "/"), 1500)
     assert template.match("x://a-b-c") == {"param0": "a", "param1": "b", "c": "c"}
     assert template.match("x://a-b") is None
 
