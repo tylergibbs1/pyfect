@@ -8,7 +8,7 @@ from __future__ import annotations
 import random
 from collections.abc import Callable
 
-from _timing import assert_scales
+from _growth import assert_near_linear
 
 from pyfect._js import js_sort_key
 from pyfect.hash_map import HashMap
@@ -19,7 +19,7 @@ from pyfect.trie import Trie
 
 def _grows_linearly(build: Callable[[int], object]) -> None:
     # Four times the entries: about four times the work (copying took sixteen).
-    assert_scales(lambda n: lambda: build(n), 4000)
+    assert_near_linear(lambda n: lambda: build(n), 4000, factor=4)
 
 
 def _hash_map(n: int) -> HashMap[int, int]:
