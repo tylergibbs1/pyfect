@@ -52,9 +52,17 @@ from pyfect.cluster import (
     sql_runner_storage,
 )
 from pyfect.cluster import sharding_config as sharding_config_
+from pyfect.cluster.cluster_error import PersistenceError
 from pyfect.cluster.entity import Entity
+from pyfect.cluster.entity_address import EntityAddress
 from pyfect.cluster.entity_id import EntityId
-from pyfect.cluster.message_storage import MessageStorage, MessageStorageService, StorageBase
+from pyfect.cluster.message_storage import (
+    MessageStorage,
+    MessageStorageService,
+    SaveSuccess,
+    StorageBase,
+)
+from pyfect.cluster.reply import WithExit
 from pyfect.cluster.runner_address import RunnerAddress
 from pyfect.cluster.runner_storage import RunnerStorage, RunnerStorageService
 from pyfect.cluster.runners import RpcClientProtocol, RpcClientProtocolService
@@ -262,6 +270,70 @@ class _LockFaultController:
         return fx.sync(apply)
 
 
+EVENT_SEQUENCE = itertools.count()
+"""Orders the storage events and anything a test records with them
+(pyfect-only)."""
+
+
+@dataclass(frozen=True)
+class StoredRequest:
+    seq: int
+    address: EntityAddress
+    payload: Any
+
+
+@dataclass(frozen=True)
+class LockEvent:
+    """A runner abandoned requests (its reply's fence failed, so they are
+    left for the shard's owner) or acquired shards: either way, a request
+    pending then may run again."""
+
+    seq: int
+    runner: str
+    abandoned: frozenset[int] = frozenset()
+    acquired: frozenset[ShardId] = frozenset()
+
+
+@dataclass(eq=False)
+class StorageEvents:
+    """What the runners' storage did, in ``EVENT_SEQUENCE`` order: the
+    requests saved, the first exit reply saved for each, and the lock
+    events (pyfect-only)."""
+
+    requests: dict[int, StoredRequest] = field(default_factory=lambda: {})
+    replied: dict[int, int] = field(default_factory=lambda: {})
+    lock_events: list[LockEvent] = field(default_factory=lambda: [])
+
+    def saved(self, request_id: int, address: EntityAddress, payload: Any) -> None:
+        self.requests[request_id] = StoredRequest(next(EVENT_SEQUENCE), address, payload)
+
+    def replied_to(self, request_id: int) -> None:
+        self.replied.setdefault(request_id, next(EVENT_SEQUENCE))
+
+    def abandoned(self, runner: str, request_ids: Sequence[int]) -> None:
+        self.lock_events.append(
+            LockEvent(next(EVENT_SEQUENCE), runner, abandoned=frozenset(map(int, request_ids)))
+        )
+
+    def acquired(self, runner: str, shard_ids: Sequence[ShardId]) -> None:
+        if shard_ids:
+            self.lock_events.append(
+                LockEvent(next(EVENT_SEQUENCE), runner, acquired=frozenset(shard_ids))
+            )
+
+    def pending_at(self, event: LockEvent) -> list[int]:
+        """The requests saved and not yet replied to when ``event``
+        happened that it frees: the ones it abandoned, or those on a shard
+        it acquired."""
+        return [
+            request_id
+            for request_id, request in self.requests.items()
+            if request.seq < event.seq
+            and self.replied.get(request_id, event.seq + 1) > event.seq
+            and (request_id in event.abandoned or request.address.shard_id in event.acquired)
+        ]
+
+
 class _RunnerStorageController:
     """Runner storage that can be frozen (heartbeats and lock refreshes
     wait) or killed (no more writes) (Effect's
@@ -269,13 +341,17 @@ class _RunnerStorageController:
 
     ``synced_runners`` (pyfect-only) are the healthy runners of the last
     read of the runners that its reader finished with: the sync loop reads
-    again only after acting on the previous read."""
+    again only after acting on the previous read.
 
-    def __init__(self, storage: RunnerStorageService) -> None:
+    ``events`` (pyfect-only) records the shards each acquisition takes.
+    While ``failing_refreshes`` (pyfect-only), lock refreshes fail."""
+
+    def __init__(self, storage: RunnerStorageService, events: StorageEvents, runner: str) -> None:
         self.gate = Latch(True)
         self.refresh_paused = Latch(False)
         self.sync_paused = Latch(False)
         self.mode: Literal["frozen", "killed", "running"] = "running"
+        self.failing_refreshes = False
         self.last_runners: list[Any] = []
         self.synced_runners: frozenset[RunnerAddress] | None = None
         read_once = [False]
@@ -292,8 +368,15 @@ class _RunnerStorageController:
 
         def refresh(address: RunnerAddress, shard_ids: Any) -> fx.Effect[list[ShardId], Any]:
             shards = list(shard_ids)
+            if self.failing_refreshes:
+                return fx.fail(PersistenceError(cause=RuntimeError("Lock refresh failed")))
             return self._while_frozen(
                 self.refresh_paused, storage.refresh(address, shards), lambda: shards
+            )
+
+        def acquire(address: RunnerAddress, shard_ids: Any) -> fx.Effect[list[ShardId], Any]:
+            return storage.acquire(address, shard_ids).tap(
+                lambda acquired: fx.sync(lambda: events.acquired(runner, acquired))
             )
 
         def unless_killed(effect: Callable[[], fx.Effect[None, Any]]) -> fx.Effect[None, Any]:
@@ -317,6 +400,7 @@ class _RunnerStorageController:
                     lambda: self.last_runners,
                 )
             ),
+            acquire=acquire,
             refresh=refresh,
             release=release,
             release_all=release_all,
@@ -409,9 +493,17 @@ class _ControlledStorageBase:
     give nothing, or a read after the replacement's ``reset_shards`` would
     strand a message the same way."""
 
-    def __init__(self, base: StorageBase, controller: _RunnerStorageController) -> None:
+    def __init__(
+        self,
+        base: StorageBase,
+        controller: _RunnerStorageController,
+        events: StorageEvents,
+        runner: str,
+    ) -> None:
         self._base = base
         self._controller = controller
+        self._events = events
+        self._runner = runner
 
     def __getattr__(self, name: str) -> Callable[..., fx.Effect[Any, Any]]:
         operation: Callable[..., fx.Effect[Any, Any]] = getattr(self._base, name)
@@ -424,17 +516,39 @@ class _ControlledStorageBase:
                     return controller.gate.wait().uninterruptible().and_then(fx.suspend(start))
                 if controller.mode == "killed" and claims:
                     return fx.succeed([])
-                return operation(*args, **kwargs)
+                return self._recorded(name, args, operation(*args, **kwargs))
 
             return fx.suspend(start)
 
         return run
 
+    def _recorded(self, name: str, args: Any, effect: fx.Effect[Any, Any]) -> fx.Effect[Any, Any]:
+        events = self._events
+        if name == "save_request":
+            envelope = args[0].envelope
+
+            def saved(result: Any) -> None:
+                if isinstance(result, SaveSuccess):
+                    events.saved(int(envelope.request_id), envelope.address, envelope.payload)
+
+            return effect.tap(lambda result: fx.sync(lambda: saved(result)))
+        if name == "save_reply":
+            reply = args[0].reply
+            if not isinstance(reply, WithExit):
+                return effect
+            return effect.tap(lambda _: fx.sync(lambda: events.replied_to(int(reply.request_id))))
+        if name == "reset_requests":
+            return fx.sync(lambda: events.abandoned(self._runner, args[0])).and_then(effect)
+        return effect
+
 
 def _controlled_message_storage(
-    storage: MessageStorageService, controller: _RunnerStorageController
+    storage: MessageStorageService,
+    controller: _RunnerStorageController,
+    events: StorageEvents,
+    runner: str,
 ) -> MessageStorageService:
-    base = cast("StorageBase", _ControlledStorageBase(storage.base, controller))
+    base = cast("StorageBase", _ControlledStorageBase(storage.base, controller, events, runner))
     return replace(storage, base=base)
 
 
@@ -603,6 +717,8 @@ class Cluster:
     sockets: _SocketController
     runner_layer: Callable[..., Layer[Any, Never, Any]]
     runners: list[ClusterRunner] = field(default_factory=lambda: [])
+    events: StorageEvents = field(default_factory=StorageEvents)
+    """The runners' storage events (pyfect-only)."""
     _next_index: itertools.count[int] = field(default_factory=itertools.count)
 
     # Lifecycle
@@ -648,10 +764,15 @@ class Cluster:
             runner_database = self.database.add(SqlClient, lock_fault.client)
             raw_storage = yield from self._runner_storage(scope, config, runner_database)
             yield from scope.add_finalizer(lambda _: lock_fault.set("clear"))
-            controller = _RunnerStorageController(raw_storage.get_unsafe(RunnerStorage))
+            controller = _RunnerStorageController(
+                raw_storage.get_unsafe(RunnerStorage), self.events, address_key(address)
+            )
             storage = Context.make(RunnerStorage, controller.controlled)
             messages = _controlled_message_storage(
-                self.shared.get_unsafe(MessageStorage), controller
+                self.shared.get_unsafe(MessageStorage),
+                controller,
+                self.events,
+                address_key(address),
             )
             built = (
                 yield from self.runner_layer(
@@ -746,6 +867,18 @@ class Cluster:
             yield from runner.controller.freeze()
 
         return freeze_
+
+    def fail_lock_refreshes(
+        self, runner: ClusterRunner, *, failing: bool = True
+    ) -> fx.Effect[None]:
+        """Makes ``runner``'s lock refreshes fail (or, with ``failing``
+        false, succeed again), as while its lock storage is unreachable
+        (pyfect-only)."""
+
+        def apply() -> None:
+            runner.controller.failing_refreshes = failing
+
+        return fx.sync(apply)
 
     def freeze_client(self) -> fx.Effect[None]:
         """Stops the client's reads of the runners: it keeps routing by
@@ -1028,7 +1161,9 @@ def make(
             .build_with_scope(client_scope)
             .pipe(fx.provide(database_context))
         )
-        client_storage = _RunnerStorageController(client_storage_context.get_unsafe(RunnerStorage))
+        client_storage = _RunnerStorageController(
+            client_storage_context.get_unsafe(RunnerStorage), StorageEvents(), CLIENT_PEER
+        )
         client_base = yield from (
             socket_runner.layer_client_only.pipe(
                 fx.layer.provide(tracked_client_protocol(sockets, CLIENT_PEER))
