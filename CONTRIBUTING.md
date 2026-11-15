@@ -13,6 +13,9 @@ cd pyfect
 uv sync
 ```
 
+`scripts/install-hooks` turns on a pre-push hook that runs ruff and pyright on the Python
+files a push changes, so those mistakes fail in seconds instead of in CI.
+
 ## The one check
 
 A change is ready when this passes:

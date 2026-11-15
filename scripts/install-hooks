@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Points git at .githooks, whose pre-push hook runs ruff and pyright on the Python files a push
+# changes. Run once per clone; worktrees share the setting. `git push --no-verify` skips it.
+set -euo pipefail
+git -C "$(dirname "$0")/.." config core.hooksPath .githooks
+echo "core.hooksPath = .githooks"
