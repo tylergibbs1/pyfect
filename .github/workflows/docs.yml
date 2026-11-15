@@ -109,7 +109,11 @@ jobs:
 
       - name: Build the site
         working-directory: website
-        run: bun run build
+        # Next retries a page that takes over a minute (up to three attempts, not configurable):
+        # a retried page is a slow page, so it fails the build here.
+        run: |
+          bun run build 2>&1 | tee "$RUNNER_TEMP/build.log"
+          ! grep -F "Retrying again shortly" "$RUNNER_TEMP/build.log"
 
       - name: Check that every page uses the same frame and nothing shifts
         working-directory: website
