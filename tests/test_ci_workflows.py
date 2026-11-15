@@ -85,20 +85,23 @@ def test_the_shards_run_every_test_once_and_the_check_says_so():
     assert "scripts/test_shards.py verify .shards/full.txt .shards/shard-*.txt" in check
 
 
-def test_a_branch_push_checks_its_pull_request():
-    """A pull request from this repository's own branch gets its checks from the push of that
-    branch (the same commit); its pull_request run would only double the runners. A fork's runs
-    here."""
-    for workflow in ("ci.yml", "audit.yml"):
-        text = (WORKFLOWS / workflow).read_text(encoding="utf-8")
-        jobs = re.findall(r"(?m)^  ([\w-]+):\n", text.split("\njobs:\n", 1)[1])
-        for job in jobs:
-            condition = re.search(r"(?m)^    if: (.*)$", _job(workflow, job))
-            assert condition, f"{workflow}'s {job} has no condition"
-            assert (
-                "github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork"
-                in condition.group(1)
-            ), f"{workflow}'s {job}"
+def test_one_commit_gets_one_run():
+    """A pull request is checked by its pull_request run and a push runs only on main. A branch
+    push would check the same commit again, and cancelling either copy leaves a failed required
+    check on a commit main may move to (it once blocked a fast-forward)."""
+    for path in sorted(WORKFLOWS.glob("*.yml")):
+        text = path.read_text(encoding="utf-8")
+        if not re.search(r"(?m)^  pull_request:", text):
+            continue
+        push = re.search(r"(?m)^  push:\n    branches: (.*)$", text)
+        assert push and push.group(1) == "[main]", path.name
+        assert "head.repo.fork" not in text, path.name
+    for name in ("ci.yml", "extras.yml", "docs.yml", "audit.yml"):
+        text = (WORKFLOWS / name).read_text(encoding="utf-8")
+        triggers = text.split("\njobs:\n", 1)[0]
+        for trigger in ("push:", "pull_request:", "merge_group:", "workflow_call:"):
+            assert f"\n  {trigger}" in triggers, (name, trigger)
+        assert "cancel-in-progress: ${{ github.event_name == 'pull_request' }}" in triggers, name
 
 
 def test_the_docs_build_check_passes_only_if_every_docs_job_did():
@@ -158,10 +161,9 @@ def test_the_extras_check_waits_for_every_extra_that_runs():
     assert f"needs: [{', '.join(extras)}]" in check and "if: always()" in check
     for job in extras:
         assert f"${{{{ needs.{job}.result }}}}" in check, job
-    # Never on a pull request, always on main, in the merge queue and for a release.
-    assert runs.group(1).startswith("github.event_name != 'pull_request' && (")
-    assert "github.ref == 'refs/heads/main'" in runs.group(1)
-    assert "startsWith(github.ref, 'refs/tags/')" in runs.group(1)
+    # Always on main, in the merge queue and for a release; on a pull request until the merge
+    # queue runs them.
+    assert runs.group(1) == "github.event_name != 'pull_request' || vars.MERGE_QUEUE != 'on'"
 
 
 def test_runs_on_main_tags_and_the_merge_queue_are_never_cancelled():
@@ -170,10 +172,8 @@ def test_runs_on_main_tags_and_the_merge_queue_are_never_cancelled():
         cancel = re.search(r"(?m)^  cancel-in-progress: (.*)$", text)
         if cancel is None or cancel.group(1) == "false":
             continue
-        assert cancel.group(1) == (
-            "${{ github.event_name == 'pull_request' || (github.event_name == 'push' && "
-            "github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/')) }}"
-        ), path.name
+        # Only a pull request's superseded commit, which main can never move to.
+        assert cancel.group(1) == "${{ github.event_name == 'pull_request' }}", path.name
 
 
 def test_every_check_main_needs_runs_in_the_merge_queue():

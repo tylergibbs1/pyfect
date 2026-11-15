@@ -2,7 +2,7 @@ name: ci
 
 on:
   push:
-    branches: ["**"]
+    branches: [main]
   pull_request:
   merge_group:
   # release.yml runs this whole workflow and publishes only if it passes.
@@ -11,11 +11,11 @@ on:
 permissions:
   contents: read
 
-# A newer push to a branch or pull request replaces its unfinished run. Runs on main, on tags
-# and in the merge queue always finish.
+# A newer push to a pull request replaces the run of its older commit, which can never reach
+# main. Runs on main, for a release and in the merge queue always finish.
 concurrency:
   group: ci-${{ github.event_name }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/')) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # The project's full check (CLAUDE.md) on every Python pyproject.toml lists (classifiers;
 # tests/test_ci_workflows.py keeps them equal), as parallel jobs: `lint` (ruff), `types`
@@ -24,13 +24,12 @@ concurrency:
 # and the shards together ran exactly the tests `collect` found. The tests read the Effect 4.1.2
 # checkout; server-backed tests start their databases themselves.
 #
-# A pull request from a branch of this repository is checked by the push of that branch, on the
-# same commit, so its pull_request run does nothing (twice the runners for one answer). Pull
-# requests from forks run here. Each job's timeout is its time budget: a job that grows past it
-# fails instead of slowly making every run longer.
+# One commit gets one run: a pull request is checked by its pull_request run, and a push runs
+# only on main. A branch push would check the same commit a second time, and cancelling either
+# copy leaves a failed required check on a commit main may move to. Each job's timeout is its
+# time budget: a job that grows past it fails instead of slowly making every run longer.
 jobs:
   lint:
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
@@ -51,7 +50,6 @@ jobs:
   types:
     # Pyright reads pythonVersion from pyproject.toml, not from the interpreter, and both
     # Pythons' environments resolve the same packages, so one run checks both.
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork
     runs-on: ubuntu-latest
     timeout-minutes: 6
     steps:
@@ -69,7 +67,6 @@ jobs:
 
   collect:
     name: collect (${{ matrix.python }})
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork
     strategy:
       fail-fast: false
       matrix:
@@ -106,7 +103,6 @@ jobs:
     # digest), pulled once and cached as archives under a key made from that file. The shards
     # restore them and never pull from a registry: one registry hiccup used to fail a shard's
     # SQL Server tests. A failed pull fails this job once, with the image, and nothing retries.
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -121,7 +117,6 @@ jobs:
   test:
     name: test (${{ matrix.python }}, ${{ matrix.shard }}/5)
     needs: images
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork
     strategy:
       fail-fast: false
       matrix:
@@ -181,7 +176,7 @@ jobs:
   check:
     needs: [lint, types, collect, images, test]
     # Runs when a job failed too: a skipped required check would count as passed.
-    if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork)
+    if: always()
     strategy:
       fail-fast: false
       matrix:

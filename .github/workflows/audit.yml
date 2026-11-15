@@ -1,13 +1,16 @@
 name: audit
 
 # Checks the locked dependencies (uv.lock and website/bun.lock) against known vulnerabilities
-# (OSV) on every push and pull request, and weekly, so an advisory published after a release
-# still shows up. tests/test_workflow_security.py keeps every workflow's actions pinned.
+# (OSV) on pushes to main, pull requests and the merge queue, and weekly, so an advisory
+# published after a release still shows up. tests/test_workflow_security.py keeps every
+# workflow's actions pinned.
 
 on:
   push:
-    branches: ["**"]
+    branches: [main]
   pull_request:
+  merge_group:
+  workflow_call:
   schedule:
     - cron: "41 6 * * 1"
   workflow_dispatch:
@@ -17,12 +20,10 @@ permissions:
 
 concurrency:
   group: audit-${{ github.event_name }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/')) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   python:
-    # A branch's own push checks its pull request's commit; forks' pull requests run here.
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -40,7 +41,6 @@ jobs:
         run: uv audit --locked --preview-features audit-command
 
   website:
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

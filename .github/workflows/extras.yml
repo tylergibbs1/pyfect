@@ -4,14 +4,14 @@ name: extras
 # runtime suites and a six-minute soak. They guard main and every release, but no single change
 # needs their answer to move on, so they run on main, in the merge queue, before a release
 # (release.yml) and on demand. Until the merge queue is on (repository variable MERGE_QUEUE=on),
-# a branch push runs them too, as it did before they moved here.
+# a pull request runs them too, as it did before they moved here.
 #
 # `extras` is their one check: it passes when they all passed, or when this run is one that
-# doesn't run them (a pull request, or a branch push once the merge queue checks them).
+# doesn't run them (a pull request once the merge queue checks them).
 
 on:
   push:
-    branches: ["**"]
+    branches: [main]
   pull_request:
   merge_group:
   workflow_call:
@@ -22,10 +22,10 @@ permissions:
 
 concurrency:
   group: extras-${{ github.event_name }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/')) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
-  RUNS_EXTRAS: ${{ github.event_name != 'pull_request' && (github.event_name != 'push' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') || vars.MERGE_QUEUE != 'on') }}
+  RUNS_EXTRAS: ${{ github.event_name != 'pull_request' || vars.MERGE_QUEUE != 'on' }}
 
 jobs:
   benchmarks:
@@ -33,7 +33,7 @@ jobs:
     # measured against a pure-Python calibration so the runner's speed cancels out; runners still
     # differ by up to 1.6x on fork-heavy, so it catches only drift. compare.py catches one change:
     # it alternates this commit with its branch base on the same runner, within a few percent.
-    if: github.event_name != 'pull_request' && (github.event_name != 'push' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') || vars.MERGE_QUEUE != 'on')
+    if: github.event_name != 'pull_request' || vars.MERGE_QUEUE != 'on'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -56,7 +56,7 @@ jobs:
     # What `uv add pyfect-dev` gives a user: no extras, no pytest.
     # QA api-surface F1/F2: `import pyfect` and the pytest plugin once failed
     # without httpx, and no test ran without the extras.
-    if: github.event_name != 'pull_request' && (github.event_name != 'push' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') || vars.MERGE_QUEUE != 'on')
+    if: github.event_name != 'pull_request' || vars.MERGE_QUEUE != 'on'
     runs-on: ubuntu-latest
     timeout-minutes: 4
     steps:
@@ -80,7 +80,7 @@ jobs:
     # QA concurrency 2: a cross-thread resume racing registration hung only
     # without the GIL. Runs the stress, the shared-state primitives shared by runs
     # on several threads (tests/cross_run) and the runtime suites on CPython 3.14t.
-    if: github.event_name != 'pull_request' && (github.event_name != 'push' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') || vars.MERGE_QUEUE != 'on')
+    if: github.event_name != 'pull_request' || vars.MERGE_QUEUE != 'on'
     runs-on: ubuntu-latest
     timeout-minutes: 4
     env:
@@ -123,7 +123,7 @@ jobs:
     # Six minutes of tests/soak (soak.yml runs it for hours): leaks, stuck fibers, stalls,
     # unexpected failures and the shutdown are judged; latency needs a longer baseline
     # than minutes on a shared runner, so it is not.
-    if: github.event_name != 'pull_request' && (github.event_name != 'push' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') || vars.MERGE_QUEUE != 'on')
+    if: github.event_name != 'pull_request' || vars.MERGE_QUEUE != 'on'
     strategy:
       fail-fast: false
       matrix:
