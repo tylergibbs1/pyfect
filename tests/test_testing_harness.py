@@ -203,6 +203,20 @@ def test_a_stalled_test_is_interrupted_so_its_finalizers_run() -> None:
     assert "1 fiber(s) are sleeping on the TestClock" in "\n".join(caught.value.__notes__)
 
 
+def test_a_test_that_finishes_after_its_timeout_fails_saying_it_finished() -> None:
+    """The deadline passes while a finalizer runs, uninterruptibly, after the body
+    succeeded: the test still fails, as vitest fails a test still running at its
+    timeout, but says the test finished rather than that it was interrupted."""
+
+    @testing.effect(timeout="50 millis")
+    def finishes_late():
+        slow = fx.sync(lambda: time.sleep(0.2)).and_then(fx.yield_now())
+        yield from fx.add_finalizer(lambda _: slow)
+
+    with pytest.raises(testing.TestTimeoutError, match="it finished, but after its timeout"):
+        finishes_late()
+
+
 def test_the_not_advancing_warning_does_not_delay_a_stall() -> None:
     started = time.monotonic()
     with pytest.raises(testing.StalledError):

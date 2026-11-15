@@ -78,10 +78,16 @@ class _Deadline:
             self._cancel()
         if not self.expired:
             return ex
+        if not isinstance(ex, Failure):
+            # The interrupt came while the test could not be interrupted (a finalizer, an
+            # uninterruptible region), which then finished it.
+            raise TestTimeoutError(
+                f"test timed out after {self._seconds()}s; it finished, but after its timeout"
+            )
         error = TestTimeoutError(
             f"test timed out after {self._seconds()}s; it was interrupted and its finalizers ran"
         )
-        if isinstance(ex, Failure) and not ex.cause.has_interrupts_only:
+        if not ex.cause.has_interrupts_only:
             error.add_note("While interrupting it:\n" + ex.cause.pretty())
         _note_sleepers(error, context)
         raise error

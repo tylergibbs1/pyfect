@@ -775,8 +775,14 @@ def _send_request_with_key(key: str):
 @testing.effect
 def test_holds_durable_messages_while_entity_layers_are_still_building():
     """holds durable messages while entity layers are still building"""
+    # Effect's test refreshes assignments every 0 ms: the sync loop never sleeps, so on
+    # every scheduler turn it runs a whole step budget of storage reads (about 400 per
+    # TestClock wake, 62k in all, 1.3 s of CPU here). A 100 ms refresh, the poll
+    # interval, still refreshes within each adjust.
     config = make_config(
-        entity_registration_timeout=millis(6000), entity_message_poll_interval=millis(100)
+        entity_registration_timeout=millis(6000),
+        entity_message_poll_interval=millis(100),
+        refresh_assignments_interval=millis(100),
     )
 
     @fx.gen

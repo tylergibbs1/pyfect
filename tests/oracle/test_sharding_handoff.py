@@ -356,8 +356,17 @@ def test_warns_immediately_on_release_failure_and_throttles_retries_to_one_warni
     def body():
         warnings: list[tuple[float, str]] = []
         logger = yield from _warning_logger(warnings)
+        # Effect's harness refreshes assignments and polls every 10 ms, a TestClock
+        # wake each across the 60 s this test moves (1.9 s of CPU here); every 100 ms
+        # still refreshes inside each step of _advance_until.
         built = yield from _with_loggers(
-            _build_sharding(state, shards_per_group=1, shard_lock_refresh_interval=millis(100)),
+            _build_sharding(
+                state,
+                shards_per_group=1,
+                shard_lock_refresh_interval=millis(100),
+                refresh_assignments_interval=millis(100),
+                entity_message_poll_interval=millis(100),
+            ),
             logger,
         )
 

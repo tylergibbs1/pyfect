@@ -21,6 +21,9 @@
   finds the table never touches its indexes. Effect's `makeStorage` still creates the index
   separately, so it has the same stall. A table whose index an older version never finished
   creating keeps working without that index.
+- A `@testing.effect` test whose deadline passed while it could not be interrupted (in a
+  finalizer, say), and which then finished, fails with a `TestTimeoutError` saying it finished
+  after its timeout, not that it was interrupted.
 
 ## 0.6.9 (2026-11-16)
 
