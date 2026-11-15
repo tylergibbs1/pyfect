@@ -509,23 +509,22 @@ _MANY = 2 * ((os.cpu_count() or 1) + 4) + 8
 
 
 @testing.live
-def test_concurrent_pipelines_each_get_their_own_writers(process_services: Services[Platform]):
-    # Every stage-1 write waits for its `cat` to drain into a stage-2 write;
-    # waits sharing a bounded pool would fill it with stage-1 writes and
-    # never run the stage-2 ones.
-    data = b"x" * (1 << 20)
-
-    def one(_: int) -> fx.Effect[int, PlatformError, Platform]:
-        @fx.fn
-        def run():
-            command = make("cat", stdin=stream.make(data)).pipe_to(make("cat"))
-            handle = yield from command
-            return len((yield from handle.stdout.run_bytes()))
-
-        return fx.scoped(run())
-
-    sizes = yield from fx.for_each(range(_MANY), one, concurrency="unbounded").timeout("30 seconds")
-    assert sizes == [len(data)] * _MANY
+def test_pipes_waiting_on_children_do_not_hold_up_another_pipeline(
+    process_services: Services[Platform],
+):
+    # More writes and reads than a default thread pool has workers, each
+    # waiting on a child that never reads or writes. Waits sharing a bounded
+    # pool would fill it and never run the pipeline's own writes and reads.
+    unread = b"x" * (1 << 20)  # More than a pipe holds: its write waits for a reader.
+    stuck = yield from fx.for_each(
+        range(_MANY), lambda _: make("sleep", ["30"]), concurrency="unbounded"
+    )
+    for handle in stuck:
+        # Started at once, so every wait is under way before the pipeline starts.
+        yield from stream.make(unread).run(handle.stdin).fork_scoped(start_immediately=True)
+        yield from handle.stdout.run_drain().fork_scoped(start_immediately=True)
+    piped = yield from make("cat", stdin=stream.make(unread)).pipe_to(make("cat"))
+    assert len((yield from piped.stdout.run_bytes())) == len(unread)
 
 
 @testing.live
