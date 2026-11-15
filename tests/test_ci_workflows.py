@@ -1,7 +1,8 @@
-"""CI runs the project's full check, and a release publishes only after CI and the docs pass.
+"""CI runs the project's full check, and a release publishes only after CI, its extras and the
+docs pass.
 
-The check line in CLAUDE.md is what "done" means locally; CI's `lint` and `test` jobs must run
-the same four tools, or a commit green on one machine is red on the other.
+The check line in CLAUDE.md is what "done" means locally; CI's `lint`, `types` and `test` jobs
+must run the same four tools, or a commit green on one machine is red on the other.
 """
 
 import ast
@@ -30,18 +31,30 @@ def test_ci_runs_the_check_in_claude_md():
     line = next(ln for ln in claude.splitlines() if "uv run ruff format" in ln)
     tools = [part.split()[2] for part in line.strip().split("&&")]
     assert tools == ["ruff", "ruff", "pyright", "pytest"], line
-    lint, test = _job("ci.yml", "lint"), _job("ci.yml", "test")
-    for command in ("ruff format --check .", "ruff check .", "uv run pyright"):
+    lint, types, test = _job("ci.yml", "lint"), _job("ci.yml", "types"), _job("ci.yml", "test")
+    for command in ('uvx "$ruff" format --check .', 'uvx "$ruff" check .'):
         assert command in lint, f"ci.yml's lint job does not run `{command}`"
-    assert "uv run pytest" in test, "ci.yml's test job does not run the tests"
-    for job in (lint, test):
-        assert "PYFECT_EFFECT_REF" in job, "the oracle tests need Effect's checkout"
+    assert 'p["name"] == "ruff"' in lint, "lint runs the ruff uv.lock pins"
+    assert "uv run --no-sync pyright" in types, "ci.yml's types job does not run pyright"
+    assert "uv run --no-sync pytest" in test, "ci.yml's test job does not run the tests"
+    for job in (types, test, _job("ci.yml", "collect")):
         assert "uses: ./.github/actions/check-setup" in job
+    for job in (test, _job("ci.yml", "collect")):
+        assert "PYFECT_EFFECT_REF" in job, "the oracle tests need Effect's checkout"
+
+
+def test_one_pyright_run_checks_every_python():
+    """Pyright analyses for pyproject's pythonVersion whatever runs it; the types job syncs that
+    Python."""
+    pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    version = re.search(r'(?m)^pythonVersion = "(3\.\d+)"$', pyproject)
+    assert version, "pyproject.toml pins pyright's pythonVersion"
+    assert f'python: "{version.group(1)}"' in _job("ci.yml", "types")
 
 
 def test_the_shards_run_every_test_once_and_the_check_says_so():
     """The tests run split across runners; `check (3.x)`, the name branch protection requires,
-    passes only if lint and every shard passed and the shards' tests are a full collection's."""
+    passes only if every job passed and the shards' tests are a full collection's."""
     test = _job("ci.yml", "test")
     shards = re.search(r"(?m)^\s+shard: \[(.*)\]$", test)
     assert shards, "ci.yml's test job has no shard matrix"
@@ -56,19 +69,36 @@ def test_the_shards_run_every_test_once_and_the_check_says_so():
     assert "--shard-manifest .shards/shard-${{ matrix.shard }}.txt" in run.group(1)
     assert "name: manifest-${{ matrix.python }}-${{ matrix.shard }}" in test
 
-    lint = _job("ci.yml", "lint")
-    assert "--collect-only -p no:randomly --shard-manifest .shards/full.txt" in lint
-    assert "name: manifest-${{ matrix.python }}-full" in lint
+    collect = _job("ci.yml", "collect")
+    assert "--collect-only -p no:randomly --shard-manifest .shards/full.txt" in collect
+    assert "name: manifest-${{ matrix.python }}-full" in collect
 
     check = _job("ci.yml", "check")
-    assert "needs: [lint, images, test]" in check
-    # A required check that is skipped counts as passed, so it must run when a shard failed.
+    jobs = ["lint", "types", "collect", "images", "test"]
+    assert f"needs: [{', '.join(jobs)}]" in check
+    # A required check that is skipped counts as passed, so it must run when a job failed.
     assert "if: always()" in check
-    assert '[ "$LINT" = success ] && [ "$IMAGES" = success ] && [ "$TEST" = success ]' in check
-    assert "LINT: ${{ needs.lint.result }}" in check and "TEST: ${{ needs.test.result }}" in check
-    assert "IMAGES: ${{ needs.images.result }}" in check
+    for job in jobs:
+        assert f"${{{{ needs.{job}.result }}}}" in check, job
+        assert f'[ "${job.upper()}" = success ]' in check, job
     assert "pattern: manifest-${{ matrix.python }}-*" in check
     assert "scripts/test_shards.py verify .shards/full.txt .shards/shard-*.txt" in check
+
+
+def test_a_branch_push_checks_its_pull_request():
+    """A pull request from this repository's own branch gets its checks from the push of that
+    branch (the same commit); its pull_request run would only double the runners. A fork's runs
+    here."""
+    for workflow in ("ci.yml", "audit.yml"):
+        text = (WORKFLOWS / workflow).read_text(encoding="utf-8")
+        jobs = re.findall(r"(?m)^  ([\w-]+):\n", text.split("\njobs:\n", 1)[1])
+        for job in jobs:
+            condition = re.search(r"(?m)^    if: (.*)$", _job(workflow, job))
+            assert condition, f"{workflow}'s {job} has no condition"
+            assert (
+                "github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork"
+                in condition.group(1)
+            ), f"{workflow}'s {job}"
 
 
 def test_the_docs_build_check_passes_only_if_every_docs_job_did():
@@ -106,21 +136,69 @@ def test_only_a_pull_request_may_skip_the_site_build():
     assert '{ [ "$SITE" = skipped ] && [ "$SITE_NEEDED" = false ]; }' in build
 
 
-def test_ci_gates_benchmarks_and_free_threaded():
-    job = _job("ci.yml", "benchmarks")
+def test_extras_gate_benchmarks_and_free_threaded():
+    job = _job("extras.yml", "benchmarks")
     assert "gate.py" in job
     # The comparison with the branch base needs the history to find it.
     assert "python compare.py\n" in job and "fetch-depth: 0" in job
-    assert "3.14t" in _job("ci.yml", "free-threaded")
+    assert "3.14t" in _job("extras.yml", "free-threaded")
 
 
-def test_a_release_needs_ci_and_the_docs():
+def test_the_extras_check_waits_for_every_extra_that_runs():
+    """`extras` passes only if every extra passed, or none ran because this run doesn't run
+    them; each extra and the check decide that with one condition."""
+    text = (WORKFLOWS / "extras.yml").read_text(encoding="utf-8")
+    runs = re.search(r"(?m)^  RUNS_EXTRAS: \$\{\{ (.*) \}\}$", text)
+    assert runs, "extras.yml defines RUNS_EXTRAS"
+    jobs = re.findall(r"(?m)^  ([\w-]+):\n", text.split("\njobs:\n", 1)[1])
+    extras = [job for job in jobs if job != "extras"]
+    for job in extras:
+        assert f"    if: {runs.group(1)}\n" in _job("extras.yml", job), job
+    check = _job("extras.yml", "extras")
+    assert f"needs: [{', '.join(extras)}]" in check and "if: always()" in check
+    for job in extras:
+        assert f"${{{{ needs.{job}.result }}}}" in check, job
+    # Never on a pull request, always on main, in the merge queue and for a release.
+    assert runs.group(1).startswith("github.event_name != 'pull_request' && (")
+    assert "github.ref == 'refs/heads/main'" in runs.group(1)
+    assert "startsWith(github.ref, 'refs/tags/')" in runs.group(1)
+
+
+def test_runs_on_main_tags_and_the_merge_queue_are_never_cancelled():
+    for path in sorted(WORKFLOWS.glob("*.yml")):
+        text = path.read_text(encoding="utf-8")
+        cancel = re.search(r"(?m)^  cancel-in-progress: (.*)$", text)
+        if cancel is None or cancel.group(1) == "false":
+            continue
+        assert cancel.group(1) == (
+            "${{ github.event_name == 'pull_request' || (github.event_name == 'push' && "
+            "github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/')) }}"
+        ), path.name
+
+
+def test_every_check_main_needs_runs_in_the_merge_queue():
+    for workflow in ("ci.yml", "extras.yml"):
+        text = (WORKFLOWS / workflow).read_text(encoding="utf-8")
+        assert re.search(r"(?m)^  merge_group:$", text), workflow
+
+
+def test_every_ci_job_has_a_time_budget():
+    """A job's timeout is its budget: one that grows past it fails instead of slowing every
+    run down."""
+    for workflow in ("ci.yml", "extras.yml"):
+        text = (WORKFLOWS / workflow).read_text(encoding="utf-8")
+        jobs = re.findall(r"(?m)^  ([\w-]+):\n", text.split("\njobs:\n", 1)[1])
+        for job in jobs:
+            budget = re.search(r"(?m)^    timeout-minutes: (\d+)$", _job(workflow, job))
+            assert budget, f"{workflow}'s {job} has no timeout-minutes"
+
+
+def test_a_release_needs_ci_its_extras_and_the_docs():
     release = (WORKFLOWS / "release.yml").read_text(encoding="utf-8")
-    assert "uses: ./.github/workflows/ci.yml" in _job("release.yml", "ci")
-    assert "uses: ./.github/workflows/docs.yml" in _job("release.yml", "docs")
-    assert re.search(r"needs: \[ci, docs\]", _job("release.yml", "build")), release
-    for workflow in ("ci.yml", "docs.yml"):
-        assert "workflow_call:" in (WORKFLOWS / workflow).read_text(encoding="utf-8")
+    for job in ("ci", "extras", "docs"):
+        assert f"uses: ./.github/workflows/{job}.yml" in _job("release.yml", job)
+        assert "workflow_call:" in (WORKFLOWS / f"{job}.yml").read_text(encoding="utf-8")
+    assert re.search(r"needs: \[ci, extras, docs\]", _job("release.yml", "build")), release
 
 
 def test_the_check_runs_on_every_python_pyproject_lists():
@@ -130,12 +208,12 @@ def test_the_check_runs_on_every_python_pyproject_lists():
     listed = re.findall(r'"Programming Language :: Python :: (3\.\d+)"', pyproject)
     minimum = re.search(r'requires-python = ">=(3\.\d+)"', pyproject)
     assert minimum and listed and listed[0] == minimum.group(1), "classifiers start at the minimum"
-    for name in ("lint", "test", "check"):
+    for name in ("collect", "test", "check"):
         job = _job("ci.yml", name)
         matrix = re.search(r"(?m)^\s+python: \[(.*)\]$", job)
         assert matrix, f"ci.yml's {name} job has no python matrix"
         assert re.findall(r'"(3\.\d+)"', matrix.group(1)) == listed, name
-    for name in ("lint", "test"):
+    for name in ("collect", "test"):
         job = _job("ci.yml", name)
         assert "UV_PYTHON: ${{ matrix.python }}" in job
         assert "python: ${{ matrix.python }}" in job

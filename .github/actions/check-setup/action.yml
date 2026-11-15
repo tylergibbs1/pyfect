@@ -1,22 +1,40 @@
 name: check setup
 description: >
-  What ci.yml's lint and test jobs both need: uv, Node (.node-version), the Effect checkout the
-  oracle tests read (at $EFFECT_COMMIT into $PYFECT_EFFECT_REF), the project synced on one
-  Python, and the free-threaded CPython 3.14t.
+  What ci.yml's jobs need: uv, the project synced on one Python into a .venv cached by uv.lock,
+  and, when asked, Node (.node-version) and the Effect checkout the oracle tests read (at
+  $EFFECT_COMMIT into $PYFECT_EFFECT_REF). The environment is saved only from main, so a branch
+  starts from main's and the cache holds one entry per lockfile and Python.
 inputs:
   python:
-    description: The Python to sync and check, as in the job's matrix.
+    description: The Python to sync, as in the job's matrix.
     required: true
+  tests:
+    description: Also set up what the tests read (Node, the Effect checkout, CPython 3.14t).
+    default: "true"
 runs:
   using: composite
   steps:
     - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+      with:
+        # The synced .venv is cached below; uv's own download cache would only duplicate it.
+        enable-cache: false
 
-    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+    - name: Restore the environment
+      id: venv
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: |
+          .venv
+          ~/.local/share/uv/python
+        key: venv-v1-${{ runner.os }}-${{ runner.arch }}-${{ inputs.python }}-${{ inputs.tests }}-${{ hashFiles('uv.lock', 'pyproject.toml') }}
+
+    - if: inputs.tests == 'true'
+      uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
       with:
         node-version-file: .node-version
 
     - name: Check out Effect 4.1.2
+      if: inputs.tests == 'true'
       shell: bash
       run: |
         git init -q "$PYFECT_EFFECT_REF"
@@ -27,8 +45,18 @@ runs:
       shell: bash
       env:
         PYTHON: ${{ inputs.python }}
+        TESTS: ${{ inputs.tests }}
       run: |
         uv sync --locked --python "$PYTHON"
+        uv run --no-sync python -c "import sys; assert f'{sys.version_info.major}.{sys.version_info.minor}' == '$PYTHON', sys.version"
         # tests/test_free_threaded.py runs programs on the free-threaded build.
-        uv python install -q 3.14t
-        uv run python -c "import sys; assert f'{sys.version_info.major}.{sys.version_info.minor}' == '$PYTHON', sys.version"
+        if [ "$TESTS" = true ]; then uv python install -q 3.14t; fi
+
+    - name: Save the environment
+      if: steps.venv.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main' && github.event_name == 'push'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: |
+          .venv
+          ~/.local/share/uv/python
+        key: ${{ steps.venv.outputs.cache-primary-key }}

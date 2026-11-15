@@ -16,15 +16,18 @@ permissions:
   contents: read
 
 jobs:
-  # Publish only a commit that passes the whole of CI and the docs build.
+  # Publish only a commit that passes the whole of CI, its extras and the docs build.
   ci:
     uses: ./.github/workflows/ci.yml
+
+  extras:
+    uses: ./.github/workflows/extras.yml
 
   docs:
     uses: ./.github/workflows/docs.yml
 
   build:
-    needs: [ci, docs]
+    needs: [ci, extras, docs]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

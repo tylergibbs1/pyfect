@@ -1,20 +1,23 @@
 name: fuzz
 
 # Coverage-guided fuzzing (Atheris) of every parser of untrusted input (tests/fuzz). The
-# checked-in corpus also replays in ci.yml's pytest run; this adds new inputs. Each push
-# fuzzes every target for 30 seconds; the weekly run (and a manual one) for 20 minutes,
-# growing a cached corpus between runs. A crash fails the job and is uploaded: minimize it,
-# add it to tests/fuzz/corpus and tests/fuzz/test_regressions.py, then fix it.
+# checked-in corpus also replays in ci.yml's pytest run; this adds new inputs. Each push to main
+# fuzzes every target for 30 seconds; the weekly run (and a manual one) for 20 minutes, growing a
+# cached corpus between runs. A crash fails the job and is uploaded: minimize it, add it to
+# tests/fuzz/corpus and tests/fuzz/test_regressions.py, then fix it.
 #
 # runtime-differential runs freshly generated programs (tests/runtime_diff) in pyfect and in
-# Effect 4.1.2 under Node, comparing exits, cause shapes and event order: 300 programs per
-# push, 20000 weekly. A difference fails the job with Hypothesis' shrunk program and its seed:
-# add the program to tests/runtime_diff/corpus.json (python -m runtime_diff --add) and fix it.
+# Effect 4.1.2 under Node, comparing exits, cause shapes and event order: 300 programs per push
+# to main, 20000 weekly. A difference fails the job with Hypothesis' shrunk program and its
+# seed: add the program to tests/runtime_diff/corpus.json (python -m runtime_diff --add) and fix
+# it.
+#
+# Fresh inputs find old bugs as often as new ones, so a branch's run would fail changes that
+# did not cause what it found; branches and the merge queue get the replayed corpus instead.
 
 on:
   push:
-    branches: ["**"]
-  pull_request:
+    branches: [main]
   schedule:
     - cron: "23 5 * * 1"
   workflow_dispatch:
@@ -28,6 +31,10 @@ on:
 
 permissions:
   contents: read
+
+concurrency:
+  group: fuzz-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   fuzz:
