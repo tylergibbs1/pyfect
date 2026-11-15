@@ -34,13 +34,13 @@ IN_ORDER = "in_order"
 CONTAINERS = ("mysql", "mssql", "clickhouse", "libsql")
 """Databases the tests run in Docker, one container per process that asks."""
 
-_USES = {
-    name: re.compile(rf"\b_{name}\b|\b{name}_server\b|\[{name}\d*\]|[-\[]{name}\d*[-\]]")
-    for name in CONTAINERS
-}
+# A test id names its database as a word of its own (``[mysql]``, ``[pyfect.sql.mssql.layer]``);
+# a file that starts one uses its fixture module (``_mysql``) or fixture (``mysql_server``).
+_NAMES = {name: re.compile(rf"(?<![A-Za-z0-9]){name}(?![A-Za-z])") for name in CONTAINERS}
+_STARTS = {name: re.compile(rf"\b_{name}\b|\b{name}_server\b") for name in CONTAINERS}
 _MARKED_IN_ORDER = re.compile(rf"\bmark\.{IN_ORDER}\b")
 _SIGNALS = tuple(
-    getattr(signal, name)
+    name
     for name in ("SIGINT", "SIGTERM", "SIGHUP", "SIGUSR1", "SIGUSR2", "SIGCHLD", "SIGWINCH")
     if hasattr(signal, name)
 )
@@ -54,8 +54,8 @@ def scope_of(nodeid: str, file_text: str) -> str:
     file, _, test = nodeid.partition("::")
     if _MARKED_IN_ORDER.search(file_text):
         return f"in-order:{file}"
-    used = [name for name in CONTAINERS if _USES[name].search(test)] or [
-        name for name in CONTAINERS if _USES[name].search(file_text)
+    used = [name for name in CONTAINERS if _NAMES[name].search(test)] or [
+        name for name in CONTAINERS if _STARTS[name].search(file_text)
     ]
     return "container:" + "+".join(used) if used else nodeid
 
@@ -115,9 +115,11 @@ class _Part:
 
     def describe(self, before: Any, after: Any) -> str:
         if isinstance(before, dict) and isinstance(after, dict):
-            was = cast("dict[str, object]", before)
-            now = cast("dict[str, object]", after)
-            keys = sorted(key for key in was.keys() | now.keys() if was.get(key) != now.get(key))
+            was = cast("dict[object, object]", before)
+            now = cast("dict[object, object]", after)
+            keys = sorted(
+                str(key) for key in was.keys() | now.keys() if was.get(key) != now.get(key)
+            )
             return f"{self.name} ({', '.join(keys)})"
         return self.name
 
@@ -135,10 +137,14 @@ def _restore_environ(saved: dict[str, str]) -> None:
     os.environ.update(saved)
 
 
-def _restore_signals(saved: dict[int, Any]) -> None:
-    for number, handler in saved.items():
+def _signal_handlers() -> dict[str, Any]:
+    return {name: signal.getsignal(getattr(signal, name)) for name in _SIGNALS}
+
+
+def _restore_signals(saved: dict[str, Any]) -> None:
+    for name, handler in saved.items():
         if handler is not None:
-            signal.signal(number, handler)
+            signal.signal(getattr(signal, name), handler)
 
 
 def _root_logger() -> tuple[int, list[logging.Handler], list[Any]]:
@@ -162,11 +168,7 @@ PARTS = (
     _Part("os.environ", _environ, _restore_environ),
     _Part("the working directory", os.getcwd, os.chdir),
     _Part("sys.path", lambda: list(sys.path), _restore_path),
-    _Part(
-        "signal handlers",
-        lambda: {number: signal.getsignal(number) for number in _SIGNALS},
-        _restore_signals,
-    ),
+    _Part("signal handlers", _signal_handlers, _restore_signals),
     _Part("the root logger", _root_logger, _restore_root_logger),
     _Part("socket.getdefaulttimeout()", socket.getdefaulttimeout, socket.setdefaulttimeout),
 )

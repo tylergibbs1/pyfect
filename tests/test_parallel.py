@@ -56,7 +56,11 @@ def test_the_scope_of_a_test() -> None:
     assert _parallel.scope_of("t/test_a.py::test_x[mssql]", "from . import _mysql, _mssql\n") == (
         "container:mssql"
     )
-    assert _parallel.scope_of("t/test_a.py::test_x", "def test_x(): ...\n") == (
+    assert _parallel.scope_of("t/test_a.py::test_x[pyfect.sql.mssql.layer]", "") == (
+        "container:mssql"
+    )
+    # A database only mentioned (a docstring, another dialect's name in prose) is not used.
+    assert _parallel.scope_of("t/test_a.py::test_x", '"""Unlike mysql."""\n') == (
         "t/test_a.py::test_x"
     )
 
@@ -79,3 +83,19 @@ def test_a_file_that_leaves_the_environment_changed_fails(pytester: pytest.Pytes
     result = pytester.runpytest_subprocess("-p", "_parallel", "-p", "no:randomly")
     result.assert_outcomes(passed=2, errors=1)
     result.stdout.fnmatch_lines(["*this file left os.environ (PYFECT_LEFT_BEHIND) changed*"])
+
+
+def test_a_file_that_leaves_a_signal_handler_installed_fails_naming_the_signal(
+    pytester: pytest.Pytester,
+):
+    pytester.makepyfile(
+        test_handler="""
+        import signal
+
+        def test_installs():
+            signal.signal(signal.SIGUSR1, lambda *_: None)
+        """
+    )
+    result = pytester.runpytest_subprocess("-p", "_parallel", "-p", "no:randomly")
+    result.assert_outcomes(passed=1, errors=1)
+    result.stdout.fnmatch_lines(["*this file left signal handlers (SIGUSR1) changed*"])
