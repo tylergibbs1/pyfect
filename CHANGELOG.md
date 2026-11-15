@@ -7,6 +7,12 @@
 - `redis_py`: a connection `reserve` was opening when the client's scope closed is closed.
   An interrupt that landed after the connection opened on the client's loop, but before the
   pool took it, left it open with nothing to close it.
+- A WebSocket socket hears the events its WebSocket dispatched before the socket listened, as
+  a browser's listeners attached in the task that made it do. A client whose connection was
+  refused, or opened, got messages or closed, before `from_web_socket` attached its listeners
+  failed with a `SocketCloseError` 1006 (or lost the messages) instead of a `SocketOpenError`,
+  the messages and the close's code. `WsWebSocket` and the ASGI WebSocket keep such events
+  until listeners are added and add several at once (`add_event_listeners`).
 
 ## 0.6.7 (2026-11-15)
 

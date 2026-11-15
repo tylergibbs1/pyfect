@@ -17,7 +17,7 @@ from __future__ import annotations
 import contextlib
 import threading
 import weakref
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Literal, Never, Protocol, final, runtime_checkable
 
@@ -96,6 +96,18 @@ class WebSocketLike(Protocol):
     def close(self, code: int | None = None, reason: str | None = None) -> None: ...
 
     def send(self, data: bytes | str) -> None: ...
+
+
+@runtime_checkable
+class ListensAtOnce(Protocol):
+    """A WebSocket that adds several listeners in one call, none hearing an
+    event before all are added. One that dispatches from another thread
+    keeps its events until then (``EventTarget``), as a browser dispatches
+    none before the task that made the socket ends."""
+
+    def add_event_listeners(
+        self, entries: Iterable[tuple[WebSocketEventType, Listener, bool]]
+    ) -> None: ...
 
 
 @runtime_checkable
@@ -261,14 +273,24 @@ class _Buffer:
         self.on_open: Listener = _Forward(self, _Buffer._on_open)
 
     def attach(self) -> None:
-        self.ws.add_event_listener("message", self.on_message)
-        self.ws.add_event_listener("error", self.on_error, once=True)
-        self.ws.add_event_listener("close", self.on_close, once=True)
+        # "open" too: an error after an open that came in before is a read error.
+        entries: tuple[tuple[WebSocketEventType, Listener, bool], ...] = (
+            ("open", self.on_open, True),
+            ("message", self.on_message, False),
+            ("error", self.on_error, True),
+            ("close", self.on_close, True),
+        )
+        if isinstance(self.ws, ListensAtOnce):
+            self.ws.add_event_listeners(entries)
+            return
+        for type, listener, once in entries:
+            self.ws.add_event_listener(type, listener, once=once)
 
     def detach(self) -> None:
         # Resume a pull parked in another fiber before detaching.
         self.fail(close_error(1006))
         ws = self.ws
+        ws.remove_event_listener("open", self.on_open)
         ws.remove_event_listener("message", self.on_message)
         # Keep late errors handled when release aborts a pending handshake.
         ws.add_event_listener("error", _ignore)
