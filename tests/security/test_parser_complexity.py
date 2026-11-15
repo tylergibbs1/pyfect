@@ -13,11 +13,11 @@ from collections.abc import Iterator
 from typing import Any
 
 import pytest
+from _growth import assert_near_linear, cpu_pair
 from _pyfect_modules import modules
 
 from pyfect import schema as S
 
-from ._growth import assert_near_linear, cpu_pair
 from ._parser_cases import AMPLIFIED, CASES, NOT_MEASURED, Amplified, Case
 
 _PARSER_NAME = re.compile(

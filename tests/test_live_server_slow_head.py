@@ -6,8 +6,9 @@ CPU, and a few such connections could stall every other request. llhttp parses
 incrementally; each byte is now searched once.
 """
 
-import time
 from collections.abc import Callable
+
+from _growth import assert_near_linear
 
 import pyfect as fx
 from pyfect.effect import Effect, succeed
@@ -37,18 +38,17 @@ def _head(size: int) -> bytes:
     return b"GET / HTTP/1.1\r\nhost: a\r\nx: " + b"a" * size
 
 
-def _seconds_to_read(size: int) -> float:
-    inbound = _inbound(_head(size) + b"\r\n\r\n")
-    start = time.perf_counter()
-    assert fx.run_sync(inbound.read_head(10**7).or_die()) == _head(size)
-    return time.perf_counter() - start
+def _read(size: int) -> Callable[[], None]:
+    def work() -> None:
+        inbound = _inbound(_head(size) + b"\r\n\r\n")
+        assert fx.run_sync(inbound.read_head(10**7).or_die()) == _head(size)
+
+    return work
 
 
 def test_a_dripped_head_costs_linear_time():
-    small = min(_seconds_to_read(8 * 1024) for _ in range(3))
-    large = min(_seconds_to_read(32 * 1024) for _ in range(3))
-    # Four times the bytes: about four times the time when linear, sixteen when quadratic.
-    assert large / small < 8, (small, large)
+    # Four times the bytes: about four times the work when linear, sixteen when quadratic.
+    assert_near_linear(_read, 8 * 1024, 32 * 1024, factor=4, bound=8, floor=0)
 
 
 def test_dripped_heads_and_lines_parse_as_whole_ones():

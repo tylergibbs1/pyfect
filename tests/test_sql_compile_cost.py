@@ -22,7 +22,7 @@ def test_and_of_many_clauses_compiles_in_near_linear_time() -> None:
         # A fresh compiler each run: no cached result.
         return lambda: make_compiler_sqlite().compile(fragment)
 
-    assert_near_linear(sized, 5_000)
+    assert_near_linear(sized, 5_000, 8 * 5_000, bound=32, floor=0.0032)
 
 
 def test_many_empty_in_lists_on_one_line_compile_in_near_linear_time() -> None:
@@ -32,7 +32,7 @@ def test_many_empty_in_lists_on_one_line_compile_in_near_linear_time() -> None:
         fragment = and_([sql("a IN {}", sql.in_([])) for _ in range(n)])
         return lambda: make_compiler_sqlite().compile(fragment)
 
-    assert_near_linear(sized, 2_000)
+    assert_near_linear(sized, 2_000, 8 * 2_000, bound=32, floor=0.0032)
 
 
 _KEYWORD = re.compile(r"\b(NOT\s+)?IN\s*$", re.IGNORECASE)

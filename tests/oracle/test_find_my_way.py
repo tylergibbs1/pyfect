@@ -14,9 +14,8 @@ Omitted, with the reason:
   compiles code from parameter names.
 """
 
-import time
-
 import pytest
+from _growth import cpu
 
 from pyfect.http.find_my_way import FindResult, Router, RouterConfig
 
@@ -522,6 +521,4 @@ def test_avoids_backtracking(name: str, path: str) -> None:
     del name
     router = Router[bool]()
     router.on("GET", "/:foo-:bar-", True)
-    started = time.monotonic()
-    router.find("GET", path)
-    assert time.monotonic() - started < 1
+    assert cpu(lambda: router.find("GET", path)) < 1

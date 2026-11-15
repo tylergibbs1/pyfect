@@ -10,7 +10,7 @@ from collections.abc import Callable
 from typing import TypedDict
 
 import pytest
-from _complexity import is_linear
+from _growth import assert_near_linear
 
 from pyfect import schema as S
 from pyfect.http import cookies
@@ -69,7 +69,7 @@ stay at seconds, so it fails quickly)."""
 @pytest.mark.parametrize("name", sorted(CASES))
 def test_peer_input_is_parsed_in_linear_time(name: str) -> None:
     make, size = CASES[name]
-    assert is_linear(make, size)
+    assert_near_linear(make, size, 8 * size, bound=16, floor=16e-6)
 
 
 def test_comma_joined_parameters_still_match() -> None:

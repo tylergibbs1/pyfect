@@ -16,12 +16,11 @@ from pathlib import Path
 from typing import Literal, TypedDict
 
 import pytest
+from _growth import Work, assert_near_linear, cpu
 
 import pyfect as fx
 from pyfect import schema as S
 from pyfect._stack import stack_nearly_full
-
-from ._growth import Work, assert_near_linear, cpu
 
 _RAISED_LIMIT = 100_000
 

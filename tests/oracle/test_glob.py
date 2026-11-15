@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import time
 from typing import NamedTuple
 
 import pytest
+from _growth import cpu
 
 from pyfect import glob
 
@@ -74,9 +74,9 @@ def test_braces_beyond_the_expansion_limit() -> None:
 def test_repeated_wildcards() -> None:
     """matches repeated wildcards without exponential backtracking"""
     compiled = glob.make("*a" * 15 + "b")
-    start = time.perf_counter()
-    assert not compiled.match("a" * 30)
-    assert time.perf_counter() - start < 0.5
+    matched: list[bool] = []
+    assert cpu(lambda: matched.append(compiled.match("a" * 30))) < 0.5
+    assert not any(matched)
 
 
 def test_adversarial_patterns() -> None:

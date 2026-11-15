@@ -69,8 +69,8 @@ def test_peer_key_dict_and_set_take_colliding_ids_in_near_linear_time() -> None:
 
         return work
 
-    assert_near_linear(dict_of, 2000)
-    assert_near_linear(set_of, 2000)
+    assert_near_linear(dict_of, 2000, 8 * 2000, bound=32, floor=0.0032)
+    assert_near_linear(set_of, 2000, 8 * 2000, bound=32, floor=0.0032)
 
 
 def test_peer_key_dict_behaves_as_a_dict() -> None:
@@ -135,7 +135,7 @@ def test_schema_sets_and_maps_of_colliding_numbers_fail_in_near_linear_time(
         return lambda: decode(value)
 
     assert isinstance(sized(1000)(), fx.Failure)
-    assert_near_linear(sized, 1000)
+    assert_near_linear(sized, 1000, 8 * 1000, bound=32, floor=0.0032)
 
 
 def test_is_unique_says_a_hash_flood_is_not_a_duplicate() -> None:
@@ -178,7 +178,7 @@ def test_json_rpc_batches_of_colliding_ids_take_near_linear_time() -> None:
 
         return work
 
-    assert_near_linear(sized, 2000)
+    assert_near_linear(sized, 2000, 8 * 2000, bound=32, floor=0.0032)
 
 
 def test_json_rpc_skips_ids_that_are_not_request_ids_in_a_batch() -> None:

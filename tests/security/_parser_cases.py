@@ -24,6 +24,8 @@ from dataclasses import dataclass
 from itertools import cycle, islice
 from typing import Any, TypedDict, cast
 
+from _growth import MAX_SIZE, Make, Work
+
 import pyfect as fx
 from pyfect import (
     big_decimal,
@@ -90,8 +92,6 @@ from pyfect.rpc import serialization
 from pyfect.sql.clickhouse import driver as clickhouse
 from pyfect.sql.libsql import config as libsql_config
 from pyfect.sql.mysql import config as mysql_config
-
-from ._growth import MAX_SIZE, Make, Work
 
 
 @dataclass(frozen=True, slots=True)

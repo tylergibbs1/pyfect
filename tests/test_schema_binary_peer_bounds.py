@@ -3,7 +3,7 @@
 from typing import Any, TypedDict
 
 import pytest
-from _growth import Sized, Work, assert_near_linear
+from _growth import Make, Work, assert_near_linear
 
 import pyfect as fx
 from pyfect import schema as S
@@ -30,7 +30,7 @@ class _Big(TypedDict):
     n: int
 
 
-def _with_run(schema: S.Codec[Any, Any, Any, Any], value: object) -> Sized:
+def _with_run(schema: S.Codec[Any, Any, Any, Any], value: object) -> Make:
     codec = make_schema_binary().codec_for(schema)
     decode = S.decode_unknown_exit(codec)
     base: bytes = S.encode_unknown_sync(codec)(value)
@@ -50,7 +50,7 @@ def _with_run(schema: S.Codec[Any, Any, Any, Any], value: object) -> Sized:
 def test_a_long_number_varint_fails_after_the_longest_finite_double() -> None:
     sized = _with_run(S.Struct(_Number), {"n": 1})
     assert isinstance(sized(148)(), fx.Failure)
-    assert_near_linear(sized, 16_000)
+    assert_near_linear(sized, 16_000, 8 * 16_000, bound=32, floor=0.0032)
 
 
 def test_a_long_big_int_varint_decodes_in_near_linear_time() -> None:
@@ -65,7 +65,7 @@ def test_a_long_big_int_varint_decodes_in_near_linear_time() -> None:
         return lambda: decode(frame)["n"] == value
 
     assert sized(1000)()
-    assert_near_linear(sized, 16_000)
+    assert_near_linear(sized, 16_000, 8 * 16_000, bound=32, floor=0.0032)
 
 
 class _Row(TypedDict):

@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 from typing import Any, TypedDict, cast
 
+from _growth import Work, assert_near_linear
 from oracle._ai_http import MockHttp, sse_response
 
 import pyfect as fx
@@ -31,8 +32,6 @@ from pyfect.http import request as http_request
 from pyfect.http import response as http_response
 from pyfect.layer import succeed as layer_succeed
 from pyfect.redacted import make as redact
-
-from ._growth import Work, assert_near_linear
 
 
 def test_text_deltas_fold_into_a_prompt_in_linear_time() -> None:

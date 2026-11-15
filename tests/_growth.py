@@ -1,35 +1,197 @@
-"""How a piece of work grows with its input: for tests that pin peer input to
-near-linear cost. The work is timed at two sizes ``factor`` apart, by the
-thread's CPU time and the least of a few runs, so a loaded machine does not
-decide it; linear work grows ``factor`` times, quadratic ``factor**2``."""
+"""How a piece of work grows with its input, for inputs a peer chooses: the one helper for
+tests that bound it (linear, not quadratic; cheap).
+
+Count the work when you can (visits, comparisons, steps through a hook, as
+``test_semaphore_queue_cost`` and ``test_equal_depth`` do). Measure it here when the work
+that can blow up runs where nothing counts it: ``re`` backtracking, ``str.find`` over a
+growing buffer, a buffer copied on every token, or a string attribute appended to (CPython's
+in-place ``str +=`` only applies to a local variable; JavaScript's ropes, which Effect relies
+on, make the same code linear there).
+
+``growth`` measures a piece of work at a size and at ``factor`` times it (``FACTOR`` unless
+given): linear work grows ``factor`` times, ``n log n`` a little more, quadratic work
+``factor**2`` times; ``EXPONENT`` sits between. Times are the thread's CPU time (the
+process's, ``clock=time.process_time``, for work that can move to other threads) with the
+collector off, so waiting for a CPU on a loaded machine does not count; the two sizes are
+measured in turn, the least of a few runs each, so a stretch on a slower core or with a cold
+cache does not decide it. The size first doubles until the small run takes ``MIN_SECONDS``,
+so fixed costs do not hide the growth.
+
+An input that outgrows a CPU cache between the two sizes costs more per unit once, which can
+look superlinear over one step; a ratio over the bound is checked again over the next
+doubling past the large size, which superlinear work also exceeds and a one-time step does
+not. Never time a growth check with a wall clock (``tests/test_growth_checks.py``).
+"""
 
 from __future__ import annotations
 
+import gc
+import math
 import time
 from collections.abc import Callable
+from dataclasses import dataclass
+
+FACTOR = 8
+BOUND = 24
+"""Linear work grows 8 times, ``n log n`` about 10, ``n ** 1.5`` about 23, quadratic 64."""
+EXPONENT = math.log(BOUND, FACTOR)
+"""The growth exponent ``BOUND`` allows, about 1.53, for steps of other factors."""
+MIN_SECONDS = 0.002
+MAX_SIZE = 1 << 22
+RUNS = 3
+YOUNG = 1
+"""The generations collected before measuring: the garbage earlier runs left. A full
+collection walks the whole test process's heap (40 to 120 ms a call) and changes nothing
+measured: the collector is off while the work runs."""
 
 type Work = Callable[[], object]
-type Sized = Callable[[int], Work]
-"""Given a size, the work at that size (built before the timing starts)."""
+type Make = Callable[[int], Work]
+"""Given a size, the work at that size (built before the clock starts)."""
+type Clock = Callable[[], float]
+"""``time.thread_time`` unless the work can move to other threads: then ``time.process_time``."""
 
 
-def cpu(work: Work, runs: int = 3) -> float:
-    best = float("inf")
-    for _ in range(runs):
-        start = time.thread_time()
-        work()
-        best = min(best, time.thread_time() - start)
+def cpu(work: Work, runs: int = RUNS, *, clock: Clock = time.thread_time) -> float:
+    """The least CPU time (the thread's, by default) of ``runs`` runs of ``work``."""
+    return _least((work,), runs, clock)[0]
+
+
+def cpu_pair(
+    first: Work, second: Work, runs: int = RUNS, *, clock: Clock = time.thread_time
+) -> tuple[float, float]:
+    """The least CPU time of each of two pieces of work, run in turn, so a stretch in
+    which the machine runs slower (a lower clock speed, a busy neighbour sharing its cache)
+    falls on both instead of inflating their ratio."""
+    a, b = _least((first, second), runs, clock)
+    return a, b
+
+
+def _least(works: tuple[Work, ...], runs: int, clock: Clock) -> list[float]:
+    best = [float("inf")] * len(works)
+    enabled = gc.isenabled()
+    gc.collect(YOUNG)
+    gc.disable()
+    try:
+        for _ in range(runs):
+            for index, work in enumerate(works):
+                start = clock()
+                work()
+                best[index] = min(best[index], clock() - start)
+    finally:
+        if enabled:
+            gc.enable()
     return best
 
 
-def growth(sized: Sized, size: int, factor: int = 8) -> float:
-    """CPU time at ``size * factor`` over CPU time at ``size``."""
-    small, large = sized(size), sized(size * factor)
-    return cpu(large) / max(cpu(small), 1e-4)
+@dataclass(frozen=True, slots=True)
+class Growth:
+    size: int
+    small: float
+    large: float
+    factor: int = FACTOR
+    bound: float = BOUND
+    """The ratio past which the work is superlinear."""
+    floor: float = MIN_SECONDS * FACTOR
+    """A large run under this many seconds is too quick to judge."""
+
+    @property
+    def ratio(self) -> float:
+        return self.large / max(self.small, 1e-6)
+
+    @property
+    def superlinear(self) -> bool:
+        return self.ratio > self.bound
+
+    @property
+    def cheap(self) -> bool:
+        """Both runs are too quick to measure: the input is refused or bounded early."""
+        return self.large < self.floor
+
+    def __str__(self) -> str:
+        return (
+            f"size {self.size}: {self.small * 1000:.2f} ms, size {self.size * self.factor}: "
+            f"{self.large * 1000:.2f} ms, {self.ratio:.1f}x (linear is {self.factor}x, "
+            f"the bound {self.bound:.1f}x)"
+        )
 
 
-def assert_near_linear(sized: Sized, size: int, factor: int = 8) -> None:
-    """Fails when the work grows by ``factor**2 / 2`` or more over a
-    ``factor`` times larger input (linear grows ``factor``)."""
-    ratio = growth(sized, size, factor)
-    assert ratio < factor * factor / 2, f"{factor}x the input took {ratio:.1f}x the time"
+def growth(
+    make: Make,
+    size: int,
+    max_size: int = MAX_SIZE,
+    *,
+    factor: int = FACTOR,
+    bound: float | None = None,
+    floor: float | None = None,
+    clock: Clock = time.thread_time,
+) -> Growth:
+    """``make``'s work at ``size`` (doubled until it takes ``MIN_SECONDS``, while
+    ``factor`` times it stays within ``max_size``) and at ``factor`` times that size.
+    ``bound`` is ``factor ** EXPONENT`` unless given, ``floor`` ``MIN_SECONDS * factor``."""
+    while size * 2 * factor <= max_size and cpu(make(size), clock=clock) < MIN_SECONDS:
+        size *= 2
+    small, large = cpu_pair(make(size), make(size * factor), clock=clock)
+    return Growth(
+        size,
+        small,
+        large,
+        factor,
+        factor**EXPONENT if bound is None else bound,
+        MIN_SECONDS * factor if floor is None else floor,
+    )
+
+
+def superlinear(
+    make: Make,
+    size: int,
+    max_size: int = MAX_SIZE,
+    *,
+    factor: int = FACTOR,
+    bound: float | None = None,
+    floor: float | None = None,
+    clock: Clock = time.thread_time,
+) -> str | None:
+    """How ``make``'s work grows past ``bound`` over ``factor`` times the size, and again
+    (at the same exponent) over the next doubling past the larger size, or ``None``."""
+    found = growth(make, size, max_size, factor=factor, bound=bound, floor=floor, clock=clock)
+    if found.cheap or not found.superlinear:
+        return None
+    large = found.size * factor
+    exponent = math.log(found.bound, factor)
+    beyond = Growth(
+        large, *cpu_pair(make(large), make(large * 2), clock=clock), factor=2, bound=2**exponent
+    )
+    return f"superlinear: {found}; then {beyond}" if beyond.superlinear else None
+
+
+def is_near_linear(
+    make: Make,
+    size: int,
+    max_size: int = MAX_SIZE,
+    *,
+    factor: int = FACTOR,
+    bound: float | None = None,
+    floor: float | None = None,
+    clock: Clock = time.thread_time,
+) -> bool:
+    return (
+        superlinear(make, size, max_size, factor=factor, bound=bound, floor=floor, clock=clock)
+        is None
+    )
+
+
+def assert_near_linear(
+    make: Make,
+    size: int,
+    max_size: int = MAX_SIZE,
+    *,
+    factor: int = FACTOR,
+    bound: float | None = None,
+    floor: float | None = None,
+    clock: Clock = time.thread_time,
+) -> None:
+    """Fails when ``make``'s work grows past ``bound`` (see ``superlinear``)."""
+    problem = superlinear(
+        make, size, max_size, factor=factor, bound=bound, floor=floor, clock=clock
+    )
+    assert problem is None, problem

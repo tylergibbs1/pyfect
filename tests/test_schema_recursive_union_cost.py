@@ -6,6 +6,7 @@ value (2**depth parses under ``errors="all"``)."""
 
 from __future__ import annotations
 
+import time
 from typing import Literal, TypedDict
 
 import pytest
@@ -68,7 +69,7 @@ def test_mutually_recursive_typed_dicts_decode_in_linear_time(errors: str) -> No
         return lambda: decode(value)
 
     assert isinstance(sized(30)(), fx.Success)
-    assert_near_linear(sized, 6, factor=4)
+    assert_near_linear(sized, 6, 6 * 4, factor=4, bound=8, floor=0.0008, clock=time.process_time)
 
 
 def test_a_discriminator_after_the_recursive_field_still_picks_the_member() -> None:
@@ -79,7 +80,7 @@ def test_a_discriminator_after_the_recursive_field_still_picks_the_member() -> N
         return lambda: decode(value)
 
     assert isinstance(sized(40)(), fx.Success)
-    assert_near_linear(sized, 8, factor=4)
+    assert_near_linear(sized, 8, 8 * 4, factor=4, bound=8, floor=0.0008, clock=time.process_time)
 
 
 def test_issues_name_the_members_a_discriminator_picks() -> None:

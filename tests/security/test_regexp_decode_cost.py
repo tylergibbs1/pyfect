@@ -11,11 +11,11 @@ from __future__ import annotations
 
 import re
 
+from _growth import cpu
+
 from pyfect import schema as S
 from pyfect.exit import Failure, Success
 from pyfect.result import Err
-
-from ._growth import cpu
 
 _decode = S.decode_unknown_exit(S.to_codec_json(S.RegExp))
 _CLASSES = f"[ -{chr(0xFFFF)}]" * 1000
