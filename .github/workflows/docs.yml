@@ -24,7 +24,7 @@ jobs:
   # nothing the site or its checks read; pushes, the merge queue and releases always build.
   changes:
     runs-on: ubuntu-latest
-    timeout-minutes: 2
+    timeout-minutes: 1
     outputs:
       site: ${{ steps.diff.outputs.site }}
     steps:
@@ -51,7 +51,7 @@ jobs:
 
   snippets:
     runs-on: ubuntu-latest
-    timeout-minutes: 4
+    timeout-minutes: 3
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
@@ -64,7 +64,7 @@ jobs:
 
   reference:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 2
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
@@ -124,7 +124,7 @@ jobs:
     # Runs when one failed too: a skipped required check would count as passed.
     if: always()
     runs-on: ubuntu-latest
-    timeout-minutes: 2
+    timeout-minutes: 1
     steps:
       - name: The snippets, the reference and the site passed
         env:
