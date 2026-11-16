@@ -234,13 +234,15 @@ def _rename_legacy_files(
     its key, upper-case letters and a trailing ``.`` kept) its current name,
     once, when the store opens: a file system that ignores letter case
     would otherwise give one key's legacy file to another key's name. Of a
-    legacy file and one already under the current name, the newer stays."""
+    legacy file and one already under the current name, the newer stays.
 
-    def newer(first: str, second: str) -> Effect[bool, PlatformError]:
-        def compare(a: FileInfo, b: FileInfo) -> bool:
-            return a.mtime is not None and b.mtime is not None and a.mtime > b.mtime
+    Processes opening the store together each do this: a file another one
+    has moved or removed meanwhile is done, and a legacy file replaces the
+    current one in a single rename, so no step removes a file another
+    process has just moved there."""
 
-        return fs.stat(first).zip(fs.stat(second)).map(lambda pair: compare(*pair))
+    def stat(file: str) -> Effect[FileInfo | None, PlatformError]:
+        return fs.stat(file).catch_all(_none_if_missing)
 
     def body():
         for name in (yield from fs.read_directory(directory)):
@@ -252,15 +254,24 @@ def _rename_legacy_files(
                 continue
             source, target = path.join(directory, name), path.join(directory, current)
             if (yield from fs.exists(target)):
-                if not (yield from newer(source, target)):
+                legacy = yield from stat(source)
+                if legacy is None:
+                    continue
+                existing = yield from stat(target)
+                if existing is not None and not _newer(legacy, existing):
                     yield from fs.remove(source, force=True)
                     continue
-                yield from fs.remove(target, force=True)
-            yield from fs.rename(source, target).catch_all(
-                lambda cause: succeed(None) if isinstance(cause.reason, NotFound) else fail(cause)
-            )
+            yield from fs.rename(source, target).catch_all(_none_if_missing)
 
     return gen(body)
+
+
+def _none_if_missing(cause: PlatformError) -> Effect[None, PlatformError]:
+    return succeed(None) if isinstance(cause.reason, NotFound) else fail(cause)
+
+
+def _newer(a: FileInfo, b: FileInfo) -> bool:
+    return a.mtime is not None and b.mtime is not None and a.mtime > b.mtime
 
 
 def _legacy_file_name(key: str) -> str | None:

@@ -26,6 +26,12 @@
   worker message carried `S.Bytes` as base64 text while its transfer list held the raw bytes.
   As in Effect, a declaration wrapped by `transferable.schema` now passes through the JSON
   codec as itself, so the message carries the value the transfer list names.
+- `key_value_store.layer_file_system`: processes opening a 0.6.5 store together failed with
+  `PlatformError` `NotFound` (`FileSystem.stat`) while renaming its files (0.6.6 to 0.6.10):
+  one found the file another had just moved. A file moved or removed meanwhile is now taken
+  as done. Opening together could also lose a key whose 0.6.5 file was newer than its
+  current one: one process removed the current file just after another had moved the
+  0.6.5 file there. The 0.6.5 file now replaces the current one in a single rename.
 
 ### Performance
 

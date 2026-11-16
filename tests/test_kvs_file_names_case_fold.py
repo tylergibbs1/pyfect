@@ -107,13 +107,17 @@ class _MemoryFiles(NoopFileSystem):
         return fx.sync(remove)
 
     def rename(self, old_path: str, new_path: str):
-        def rename() -> None:
-            _, data, mtime = self.files.pop(self._id(old_path))
+        def rename() -> fx.Effect[None, PlatformError]:
+            found = self.files.pop(self._id(old_path), None)
+            if found is None:
+                return fx.fail(self._missing(old_path))
+            _, data, mtime = found
             self.files[self._id(new_path)] = (new_path.rsplit("/", 1)[-1], data, mtime)
+            return fx.void
 
-        return fx.sync(rename)
+        return fx.suspend(rename)
 
-    def stat(self, path: str):
+    def stat(self, path: str) -> fx.Effect[FileInfo, PlatformError]:
         found = self.files.get(self._id(path))
         if found is None:
             return fx.fail(self._missing(path))
@@ -244,3 +248,94 @@ def test_a_0_6_5_store_on_this_machines_file_system_reads_back(
         fx.run_blocking(fx.gen(write).pipe(fx.provide(layer)).or_die())
     snapshot = fx.run_blocking(fx.gen(_snapshot(list(entries))).pipe(fx.provide(layer)).or_die())
     assert snapshot == (sorted(entries), 3, entries, dict.fromkeys(entries, True))
+
+
+class _Interleaved(_MemoryFiles):
+    """The files of ``shared``, where another process opens the store
+    (``other``) just before this one's ``at``-th file system call."""
+
+    def __init__(self, shared: _MemoryFiles, at: int, other: fx.Effect[object, Any]) -> None:
+        super().__init__(fold=shared.fold)
+        self.files = shared.files
+        self.clock = shared.clock
+        self.at = at
+        self.other = other
+        self.calls = 0
+
+    def _call[A, E](self, effect: fx.Effect[A, E]) -> fx.Effect[A, E]:
+        def call() -> fx.Effect[A, E]:
+            self.calls += 1
+            if self.calls - 1 == self.at:
+                return self.other.or_die().and_then(effect)
+            return effect
+
+        return fx.suspend(call)
+
+    def exists(self, path: str):
+        return self._call(super().exists(path))
+
+    def read_directory(self, path: str, *, recursive: bool = False):
+        return self._call(super().read_directory(path))
+
+    def remove(self, path: str, *, recursive: bool = False, force: bool = False):
+        return self._call(super().remove(path, recursive=recursive, force=force))
+
+    def rename(self, old_path: str, new_path: str):
+        return self._call(super().rename(old_path, new_path))
+
+    def stat(self, path: str):
+        return self._call(super().stat(path))
+
+
+def _open_layer(files: NoopFileSystem) -> fx.Layer[kvs.KeyValueStore, Any, Any]:
+    return (
+        kvs.layer_file_system("kv").pipe(fx.provide(layer_noop(files))).pipe(fx.provide(path.layer))
+    )
+
+
+@pytest.mark.parametrize(
+    "current",
+    [None, "current, written earlier", "current, written later"],
+    ids=["legacy-only", "legacy-newer", "current-newer"],
+)
+def test_processes_opening_a_0_6_5_store_together_all_open_and_keep_the_newer_value(
+    monkeypatch: pytest.MonkeyPatch, current: str | None
+) -> None:
+    """Another process may open the store at any point of this one's
+    renames: both open, and the key keeps its newer value."""
+    template = _MemoryFiles(fold=False)
+
+    def set_current():
+        assert current is not None
+        store = yield from kvs.KeyValueStore()
+        yield from store.set("Key", current)
+
+    if current == "current, written earlier":
+        _run(template, set_current)
+    _write_as_0_6_5(template, monkeypatch, {"Key": "legacy"})
+    if current == "current, written later":
+        _run(template, set_current)
+    expected = "current, written later" if current == "current, written later" else "legacy"
+
+    def get_key():
+        return (yield from (yield from kvs.KeyValueStore()).get("Key"))
+
+    def open_alone(files: _MemoryFiles) -> fx.Effect[object, Any]:
+        return fx.gen(get_key).pipe(fx.provide(_open_layer(files)))
+
+    counted = _Interleaved(_copy(template), -1, fx.void)
+    fx.run_blocking(open_alone(counted).or_die())
+    assert counted.calls > 0
+    for at in range(counted.calls):
+        files = _copy(template)
+        other = open_alone(files)
+        racing = _Interleaved(files, at, other)
+        read = fx.run_blocking(fx.gen(get_key).pipe(fx.provide(_open_layer(racing))).exit())
+        assert read == fx.exit.succeed(expected), (at, read)
+
+
+def _copy(files: _MemoryFiles) -> _MemoryFiles:
+    copied = _MemoryFiles(fold=files.fold)
+    copied.files = dict(files.files)
+    copied.clock = files.clock
+    return copied
