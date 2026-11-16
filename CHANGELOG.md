@@ -7,6 +7,10 @@
 - `PYFECT_WARN_BARE_DURATIONS=error` raises `BareNumberDurationWarning` at the first duration
   given as a bare number (other than 0 or an infinity), so a run fails on one without a warning
   filter. `=1` still only warns.
+- The `HttpClientError` of a relative URL sent to `router.in_memory_client` /
+  `layer_in_memory_client` carries a note naming the fix the Testing page gives:
+  `client.map_request(lambda request: request.prepend_url("http://localhost"))`, or an absolute
+  URL. Its message is still Effect's `InvalidUrl error (GET /check)`.
 
 ### Fixed
 

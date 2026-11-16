@@ -71,7 +71,8 @@ picks the route and the host is not used. A relative URL such as `"/events"` fai
 `InvalidUrlError`, as with Effect's `HttpClient.make`, which resolves nothing. That differs from
 `uvicorn_server.layer_test()`, whose client prepends the test server's address to every URL, as
 Effect's `layerTest` does. To send paths to the in-memory client, prepend the host yourself:
-`client.map_request(lambda request: request.prepend_url("http://localhost"))`.
+`client.map_request(lambda request: request.prepend_url("http://localhost"))`. The
+`InvalidUrlError` of a relative URL carries a note that says so.
 
 <include meta='title="test_streaming_http.py"'>../../snippets/testing/test_streaming_http.py</include>
 
