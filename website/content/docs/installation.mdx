@@ -33,9 +33,14 @@ environment with it. In a project you already have, `uv add pyfect-dev` (or
 uv adds dependencies there and refuses a file that only configures tools.
 
 Extras add integrations: `otel` (OpenTelemetry, `pyfect.otel`), `hypothesis`, `pydantic` and
-`msgspec` ([Pydantic and msgspec](/docs/pydantic-msgspec)), `httpx` (the HTTP client backend), `websockets`, `server` (the uvicorn HTTP server),
-`http2` (the HTTP/2 server on hypercorn), `pg` (PostgreSQL on psycopg), `mysql`, `mssql`, `redis`, `crypto` ([cryptography and JOSE](/docs/crypto)), `eventlog` (event log encryption), `brotli` (`br`
-response compression, on brotlicffi), `regex` (more ECMAScript patterns in schemas) and `watch` ([`FileSystem.watch`](/docs/platform) on the operating system's change notification, on watchfiles). For example:
+`msgspec` ([Pydantic and msgspec](/docs/pydantic-msgspec)), `httpx` (the HTTP client backend),
+`websockets` (WebSocket clients and servers), `server` (the uvicorn HTTP server), `http2` (the
+HTTP/2 server on hypercorn), `pg` (PostgreSQL on psycopg), `mysql` (MySQL on asyncmy), `mssql`
+(SQL Server on python-tds), `redis` (Redis on redis-py), `crypto` ([cryptography and
+JOSE](/docs/crypto), on cryptography), `eventlog` (event log encryption, on cryptography),
+`brotli` (`br` response compression, on brotlicffi), `regex` (more ECMAScript patterns in
+schemas) and `watch` ([`FileSystem.watch`](/docs/platform) on the operating system's change
+notification, on watchfiles). For example:
 
 <InstallCommand
   uv='uv add "pyfect-dev[otel]"'

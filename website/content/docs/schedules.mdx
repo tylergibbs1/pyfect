@@ -31,10 +31,11 @@ Effect (the type is `duration.Input`). An invalid string raises `ValueError`.
 
 Each one is parsed once, at the boundary, into a `duration.Duration`: Effect's `Duration`, an
 immutable value of whole milliseconds, whole nanoseconds or an infinity. It stays exact past what
-a float can count, adds and compares with other durations (not with numbers), and gives units back
-with `to_millis()`, `to_seconds()`, `to_nanos()`, `to_timedelta()`, `format()` and
-`format_iso()`. A schedule's delay and `timed`'s result are durations too; a schedule step's
-`elapsed` is milliseconds, as in Effect.
+a float can count (since 0.5.0; before it, a duration was a float of seconds). It adds and
+compares with other durations (not with numbers), and gives units back with `to_millis()`,
+`to_seconds()`, `to_nanos()`, `to_timedelta()`, `format()` and `format_iso()`. A schedule's
+delay and `timed`'s result are durations too; a schedule step's `elapsed` is milliseconds, as in
+Effect.
 
 <CodeOutput>
 
