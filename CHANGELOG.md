@@ -49,6 +49,7 @@
   migrator now holds a `GET_LOCK` on its transaction's session while it runs on MySQL, as
   `LOCK TABLE` already held a second migrator back on PostgreSQL. Effect's migrator has the
   same race on MySQL.
+- Hex decoding uses constant memory, as do URI component decoding, JSON5/JSONC whitespace, TOML numbers, JSON array pointers, `filename*` values and `If-None-Match` lists.
 
 ### Performance
 

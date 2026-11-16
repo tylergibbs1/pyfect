@@ -10,7 +10,6 @@ before it started.
 from __future__ import annotations
 
 import gc
-import time
 import tracemalloc
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -28,28 +27,24 @@ type Work = Callable[[], object]
 class Peak:
     size: int
     peak: int
-    seconds: float
 
     def __str__(self) -> str:
         return (
             f"peak {self.peak / 1e6:.1f} MB ({self.peak / max(self.size, 1):.1f} per input "
-            f"byte) and {self.seconds * 1000:.1f} ms for a {self.size / 1e6:.2f} MB input"
+            f"byte) for a {self.size / 1e6:.2f} MB input"
         )
 
 
 def peak(work: Work, size: int) -> Peak:
-    """The peak memory ``work`` traced and its real time (slowed by tracing), for an input of
-    ``size`` bytes."""
+    """The peak memory ``work`` traced, for an input of ``size`` bytes."""
     gc.collect()
     tracemalloc.start()
     try:
-        start = time.perf_counter()
         work()
-        seconds = time.perf_counter() - start
         _, most = tracemalloc.get_traced_memory()
     finally:
         tracemalloc.stop()
-    return Peak(size, most, seconds)
+    return Peak(size, most)
 
 
 def assert_bounded_memory(work: Work, size: int, per_byte: int = PER_BYTE) -> None:
