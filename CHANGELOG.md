@@ -13,6 +13,14 @@
   tables to a pair (0.6.9). It is now logged once per process, and not at all once the
   operator has given the tables away, with or without `taken_from`. The server's other
   once-only messages about legacy stores are also logged once per process.
+- `sql_event_log_server_encrypted` on SQL Server: two servers opening the same store at once
+  could stall for up to 5 seconds (0.4.0 to 0.6.9). Each created the store's snapshot table
+  index with its own `CREATE INDEX` after checking `sys.indexes`. One server's check then
+  deadlocked with the other's `CREATE INDEX`, and SQL Server only breaks such a deadlock after
+  up to 5 seconds. Each table's indexes are now part of its `CREATE TABLE`, so a server that
+  finds the table never touches its indexes. Effect's `makeStorage` still creates the index
+  separately, so it has the same stall. A table whose index an older version never finished
+  creating keeps working without that index.
 
 ## 0.6.9 (2026-11-16)
 

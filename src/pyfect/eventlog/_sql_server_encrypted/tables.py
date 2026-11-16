@@ -92,18 +92,23 @@ def create_table(
         )
 
     def mssql():
-        yield from sql("IF OBJECT_ID({}, N'U') IS NULL CREATE TABLE {} ({})", name, table, columns)
-        for i, index in enumerate(indexes):
-            index_name = f"{name}_i{i}"
-            yield from sql(
-                "IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = {} "
-                "AND object_id = OBJECT_ID({})) CREATE INDEX {} ON {} ({})",
-                index_name,
-                name,
-                sql.identifier(index_name),
-                table,
-                sql.literal(index),
-            )
+        # The indexes are part of the one CREATE TABLE: a separate CREATE INDEX
+        # deadlocks with another instance's check for it.
+        definitions = [
+            columns,
+            *(
+                sql(
+                    "INDEX {} NONCLUSTERED ({})", sql.identifier(f"{name}_i{i}"), sql.literal(index)
+                )
+                for i, index in enumerate(indexes)
+            ),
+        ]
+        yield from sql(
+            "IF OBJECT_ID({}, N'U') IS NULL CREATE TABLE {} ({})",
+            name,
+            table,
+            sql.join(", ", False)(definitions),
+        )
 
     def other():
         yield from sql("CREATE TABLE IF NOT EXISTS {} ({})", table, columns)
