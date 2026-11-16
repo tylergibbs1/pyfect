@@ -3,7 +3,7 @@
 Worktrees share one config file, so a test (or conftest) that sets ``core.hooksPath`` or any
 other key changes every checkout of the repo behind its owner's back. The guard records the
 repository's local config when the session starts and fails the session when it differs at the
-end, naming the keys that changed. Hooks are installed by ``scripts/install-hooks``, a step
+end, naming the keys that changed. Hooks are installed by ``uv run lefthook install``, a step
 someone runs on purpose.
 """
 

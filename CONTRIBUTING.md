@@ -13,8 +13,19 @@ cd pyfect
 uv sync
 ```
 
-`scripts/install-hooks` turns on a pre-push hook that runs ruff and pyright on the Python
-files a push changes, so those mistakes fail in seconds instead of in CI.
+Then install the git hooks, once per clone (worktrees share `.git/hooks`, so they get them too):
+
+```sh
+uv run lefthook install
+```
+
+The pre-commit hook runs `ruff check --fix` and `ruff format` on the staged Python files and
+stages the fixes; a lint error ruff can't fix stops the commit. The pre-push hook runs ruff
+and pyright on the Python files the pushed commits add, where the working tree holds the
+pushed version (CI checks the rest). Both are configured in `lefthook.yml`.
+
+A clone that used the old `scripts/install-hooks` has `core.hooksPath` set, and Lefthook
+won't install over it. Remove it first with `git config --unset core.hooksPath`.
 
 ## The one check
 

@@ -1,0 +1,53 @@
+# Git hooks: `uv run lefthook install`, once per clone (worktrees share .git/hooks).
+# pre-commit lint-fixes and formats the staged Python files and stages the fixes; pre-push also
+# runs pyright, too slow for every commit, on the files the pushed refs add. CI still runs the
+# full check on everything.
+# `git commit --no-verify` / `git push --no-verify` skip them.
+glob_matcher: doublestar
+# Only `lefthook install` installs: `lefthook run` would otherwise install into .git/hooks,
+# which every worktree shares, as a side effect.
+no_auto_install: true
+
+pre-commit:
+  jobs:
+    - name: python
+      glob: "**/*.py"
+      # research/ plus [tool.ruff] extend-exclude; tests/test_git_hooks.py keeps them in step.
+      exclude: &excluded
+        - "research/**"
+        - "src/pyfect/ai/openai/generated/**"
+        - "src/pyfect/ai/openrouter/generated/**"
+        - "tests/oracle/_generated_code_sample.py"
+      group:
+        # In order, not parallel: a fix can leave code unformatted (removing an import leaves a
+        # blank line), and two tools rewriting one file at once can commit either's version.
+        piped: true
+        jobs:
+          - name: ruff check
+            run: uv run --frozen --quiet ruff check --fix {staged_files}
+            stage_fixed: true
+          - name: ruff format
+            run: uv run --frozen --quiet ruff format {staged_files}
+            stage_fixed: true
+
+pre-push:
+  jobs:
+    - name: pushed files
+      # Reads git's pushed refs on stdin and runs pushed-files below on what they add.
+      run: uv run --frozen --quiet python scripts/pre_push.py
+      use_stdin: true
+
+# Not a git hook: scripts/pre_push.py runs it with the pushed files.
+pushed-files:
+  jobs:
+    - name: python
+      glob: "**/*.py"
+      exclude: *excluded
+      group:
+        jobs:
+          - name: ruff format
+            run: uv run --frozen --quiet ruff format --check {files}
+          - name: ruff check
+            run: uv run --frozen --quiet ruff check {files}
+          - name: pyright
+            run: uv run --frozen --quiet pyright {files}
