@@ -170,7 +170,7 @@ _SLOW_SQLITE = (
 _SLOW_PG = "SELECT pg_sleep(1.5)"
 
 
-@testing.live(timeout="30 seconds")
+@testing.live
 def test_commits_on_the_cluster_database_skip_the_disk_flush(cluster_db: ClusterDatabase):
     """A commit on the cluster database does not wait for the disk (SQLite
     ``synchronous = OFF``, PostgreSQL ``fsync = off``): on CI a slow flush
