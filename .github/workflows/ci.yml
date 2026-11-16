@@ -145,9 +145,9 @@ jobs:
         run: python3 scripts/test_shards.py verify .shards/full.txt .shards/shard-*.txt
 
   benchmarks:
-    # Fails when a stream or fiber pipeline is more than 1.6x slower than benchmarks/baseline.json,
-    # measured against a pure-Python calibration so the runner's speed cancels out; runners still
-    # differ by up to 1.6x on fork-heavy, so it catches only drift. compare.py catches one change:
+    # Fails when a stream or fiber pipeline is more than 1.6x slower than benchmarks/baseline.json:
+    # the median of five processes, each case over a pure-Python calibration next to it so the
+    # runner's speed cancels out; runners still differ by up to 1.41x, so it catches only drift. compare.py catches one change:
     # it alternates this commit with its branch base on the same runner, within a few percent.
     runs-on: ubuntu-latest
     timeout-minutes: 30
