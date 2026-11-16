@@ -16,6 +16,7 @@ from pyfect.effect import gen, succeed
 from pyfect.eventlog._server_encrypted.audit import hour_of
 from pyfect.eventlog._server_encrypted.models import CompactionOptions, make_compaction_config
 from pyfect.eventlog._server_encrypted.storage import StorageService
+from pyfect.eventlog._sql_server_encrypted import upgrade
 from pyfect.eventlog._sql_server_encrypted.compaction import SqlCompaction
 from pyfect.eventlog._sql_server_encrypted.db import CHUNK, Db, Steps, StoreResources, new_id
 from pyfect.eventlog._sql_server_encrypted.legacy import (
@@ -27,10 +28,7 @@ from pyfect.eventlog._sql_server_encrypted.legacy import (
 )
 from pyfect.eventlog._sql_server_encrypted.rows import to_batch
 from pyfect.eventlog._sql_server_encrypted.sweeper import Sweeper
-from pyfect.eventlog._sql_server_encrypted.tables import (
-    create_global_tables,
-    create_scope_tables,
-)
+from pyfect.eventlog._sql_server_encrypted.tables import create_scope_tables
 from pyfect.eventlog.event_journal import EntryId, RemoteId, StoreId, make_remote_id_unsafe
 from pyfect.eventlog.event_log_encryption import EncryptedBatch, EncryptedRemoteBatch
 from pyfect.eventlog.event_log_message import WriteAck
@@ -148,8 +146,8 @@ def _resolve(
             case "migrated":
                 message = (
                     f"Store {store_id!r} of {public_key!r} now holds its tables from pyfect "
-                    f"0.6.5 ({legacy!r}): it is the only identity that has authenticated "
-                    "among those sharing that name"
+                    f"0.6.5 ({legacy!r}): it is the only identity sharing that name that had "
+                    "authenticated before the upgrade"
                 )
                 return once.log(pair, "migrated", log_info(message)).as_(resolved.scope)
             case "split":
@@ -224,7 +222,7 @@ def make_storage(
         sql = (yield from SqlClient()).without_transforms()
         config = yield from make_compaction_config(compaction)
         db = Db(sql, entry_table_prefix, config)
-        yield from create_global_tables(sql, entry_table_prefix, remote_id_table)
+        yield from upgrade.prepare(db, remote_id_table)
         remote_ids = sql.identifier(remote_id_table)
         rows = yield from sql("SELECT remote_id FROM {}", remote_ids)
         if rows:
