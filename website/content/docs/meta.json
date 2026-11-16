@@ -43,7 +43,7 @@
     "models",
     "graphql",
     "eventlog",
-    "eventlog-upgrade-0-6-7",
+    "eventlog-upgrade",
     "cluster",
     "atoms",
     "observability",

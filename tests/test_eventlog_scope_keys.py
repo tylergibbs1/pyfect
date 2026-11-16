@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from oracle._legacy_eventlog import Earlier
 
 import pyfect as fx
 from pyfect import layer
@@ -72,29 +73,43 @@ def _run(path: Path, body: Any) -> Any:
 
 
 def _migrate(
-    path: Path, public_key: str, store_id: str, not_written_by: tuple[str, ...] | list[str] = ()
+    path: Path,
+    public_key: str,
+    store_id: str,
+    not_written_by: tuple[str, ...] | list[str] = (),
+    *,
+    without_binding: bool = False,
 ) -> fx.Effect[bool, Any]:
     from pyfect.crypto.digest import layer_web_crypto
 
     client = sqlite.layer(sqlite.SqliteClientConfig(filename=str(path)))
     return (
-        migrate_legacy_store(public_key, store_id, not_written_by=not_written_by)
+        migrate_legacy_store(
+            public_key, store_id, not_written_by=not_written_by, without_binding=without_binding
+        )
         .pipe(fx.provide(layer_web_crypto))
         .pipe(fx.provide(client))
     )
 
 
 def _write(
-    path: Path, monkeypatch: pytest.MonkeyPatch, pairs: list[tuple[str, str]]
+    path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    pairs: list[tuple[str, str]],
+    *,
+    authenticated: bool = True,
 ) -> dict[Any, Any]:
-    """Write one batch per pair with 0.6.5's table names; their entry ids."""
+    """Write one batch per pair as 0.6.5 did, authenticating each key first
+    as its server did (unless not ``authenticated``: written straight
+    through the storage); their entry ids."""
     written: dict[Any, Any] = {}
-    with monkeypatch.context() as patched:
-        patched.setattr(legacy, "scope_key", legacy.legacy_key)
+    with Earlier(monkeypatch, "0.6.5"):
 
         def body():
             storage = yield from Storage()
             for pair in pairs:
+                if authenticated:
+                    yield from storage.get_or_create_session_auth_binding(pair[0], bytes(32))
                 batch = _batch()
                 yield from storage.write(pair[0], StoreId(pair[1]), [batch])
                 written[pair] = batch.entry_ids
@@ -137,17 +152,20 @@ def _bind(path: Path, public_key: str) -> None:
     _run(path, body)
 
 
-@pytest.mark.parametrize("pair", [("ab/cd+ef==", "notes"), ("victim", "notes/2024")])
+@pytest.mark.parametrize(
+    ("pair", "other"), [(("ab/cd+ef==", "notes"), "ab"), (("victim", "notes/2024"), "victim/notes")]
+)
 def test_a_store_with_ambiguous_0_6_5_data_does_not_open_empty(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, pair: tuple[str, str]
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, pair: tuple[str, str], other: str
 ) -> None:
     db = tmp_path / "log.db"
-    written = _write(db, monkeypatch, [pair])
-    # Nothing shows who wrote them until the key authenticates.
+    written = _write(db, monkeypatch, [pair], authenticated=False)
+    # Nothing shows who wrote them, even once the key authenticates.
+    _bind(db, pair[0])
     with pytest.raises(LegacyStoreNeedsMigration) as raised:
         _read(db, *pair)
-    assert "never authenticated" in raised.value.message
-    _bind(db, pair[0])
+    assert "no key sharing that name had authenticated" in raised.value.message
+    assert fx.run_blocking(_migrate(db, *pair, [other], without_binding=True)) is True
     assert _read(db, *pair) == (1, 1)
     assert fx.run_blocking(_migrate(db, *pair)) is True  # done already; a no-op
 
@@ -164,7 +182,6 @@ def test_only_one_pair_can_claim_shared_0_6_5_tables(
     db = tmp_path / "log.db"
     owner, other = ("a/b", "c"), ("a", "b/c")
     _write(db, monkeypatch, [owner])
-    _bind(db, owner[0])
     assert fx.run_blocking(_migrate(db, *owner)) is True
     _bind(db, other[0])
     with pytest.raises(LegacyStoreMigrationError):
@@ -247,8 +264,7 @@ def test_a_lone_surrogate_pair_gets_no_0_6_5_tables_of_its_replacement(
 ) -> None:
     db = tmp_path / "log.db"
     victim, other = ("a\ufffd/b", "c"), ("a\ud800/b", "c")
-    _write(db, monkeypatch, [victim])
-    _bind(db, victim[0])  # the victim authenticated, as a real server records
+    _write(db, monkeypatch, [victim])  # the victim authenticated, as a real server records
     assert fx.run_blocking(_migrate(db, *other)) is False  # no 0.6.5 tables are its
     assert _read(db, *other) == (None, 0)
     assert fx.run_blocking(_migrate(db, *victim)) is True

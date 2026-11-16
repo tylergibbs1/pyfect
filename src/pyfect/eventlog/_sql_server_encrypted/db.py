@@ -95,6 +95,7 @@ class Db:
         self.stages = sql.identifier(f"{prefix}_compaction_stages")
         self.bindings = sql.identifier(f"{prefix}_session_auth_bindings")
         self.aliases = sql.identifier(f"{prefix}_scope_aliases")
+        self.alias_origins = sql.identifier(f"{prefix}_scope_alias_origins")
         none = sql.literal("")
         self.none = none
         self.lock_hint = sql.on_dialect_or_else(

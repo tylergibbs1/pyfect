@@ -18,6 +18,16 @@
   frame the innermost `Fiber._loop` called, so the fiber loop has no code for it: unset (or
   `0`), no thread starts and a run does no extra work. A value that is not a positive number of
   milliseconds fails the import with a `ValueError` naming the variable.
+- `sql_event_log_server_encrypted.migrate_legacy_store` takes `without_binding=True`, for a
+  store whose key had no session auth binding before the upgrade (one written straight
+  through the storage), with `not_written_by` naming every other key that shares its 0.6.5
+  name; and `taken_from=(public_key, store_id)`, to give the tables back to the pair that
+  wrote them when an earlier version gave them to another.
+- `legacy_stores(store_ids, public_keys=...)` also checks the names of keys that wrote
+  straight through the storage. Each `LegacyStore` has `legacy_name`, `binding` (when its
+  key authenticated: `"before_upgrade"`, `"after_upgrade"` or `"none"`) and `migrated_by`
+  (`"server"`, `"operator"` or `"earlier_version"`). `LegacyStoreNeedsMigration` has
+  `automatic`.
 
 ### Fixed
 
@@ -25,6 +35,19 @@
   (an `async def`, say) began `fn('Effect.fn'): `, the internal frame name of an unnamed
   `fx.fn`. It now begins `fn: ` (`fn('name'): ` under `fx.fn("name")`), as the other `fx.fn`
   messages do; a generic body without a return annotation under `fx.fn("name")` names it too.
+- The SQL encrypted event log server moves a store written by 0.6.5 or earlier, under a name
+  another pair shares, by itself only on the session auth bindings that existed before the
+  upgrade. The first start of 0.6.8 or later copies them into
+  `<entry_table_prefix>_legacy_bindings`. A binding made after the upgrade neither gives a
+  store to its key nor holds it back from the pair whose key had one, and the name's other
+  pairs open tables of their own. On a database 0.6.6 or 0.6.7 opened first, the server
+  migrates no store by itself: `legacy_stores` lists each as `"unconfirmed"`, and the
+  operator runs `migrate_legacy_store`. A store no key had a binding for before the upgrade
+  waits for `migrate_legacy_store(..., without_binding=True)`, however its keys authenticate
+  later.
+- `legacy_stores` lists every pair sharing each name that holds 0.6.5 batches, those with no
+  binding included (`"unbound"`), and the migrations 0.6.6 and 0.6.7 made, as
+  `migrated_by="earlier_version"`, for the operator to check.
 
 ### Docs
 
@@ -50,6 +73,11 @@
 - The Services page links to the HTTP server's "Routes that need services" section, for a
   route that reads a service per request. The Effects page says a plain `@fx.fn` shows in a
   failure's trace as `at Effect.fn`, and that `@fx.fn("name")` names it and adds a span.
+- The upgrade guide moved to
+  [/docs/eventlog-upgrade](https://pyfect.dev/docs/eventlog-upgrade); the old URL redirects
+  there. It now covers stores with no binding, upgrades and rolling upgrades from 0.6.6 and
+  0.6.7, downgrades, and stores two identities wrote. `tests/test_doc_urls.py` checks that
+  every docs URL the code and the changelog give is still served.
 
 ## 0.6.7 (2026-11-15)
 

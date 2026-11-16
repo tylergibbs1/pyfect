@@ -1,10 +1,13 @@
 """The tables of the SQL encrypted storage, per dialect.
 
 Global: the remote id, session auth bindings, and the compaction stores,
-buckets, activations and stages. Per store (named by a hash of its scope
-under the prefix): ``T`` (batches), ``T_ids`` (entry ids with the sequence
-each was first stored at) and ``T_snapshot`` (staged and committed
-snapshot batches). Two instances can open one table at once, and
+buckets, activations and stages, as 0.6.5 made them
+(``create_065_tables``); the scope aliases 0.6.6 added
+(``create_alias_tables``, with their origins from 0.6.8); and the record
+of the upgrade (``create_upgrade_tables``, see ``upgrade.py``). Per store
+(named by a hash of its scope under the prefix): ``T`` (batches), ``T_ids``
+(entry ids with the sequence each was first stored at) and ``T_snapshot``
+(staged and committed snapshot batches). Two instances can open one table at once, and
 PostgreSQL and SQL Server can fail the loser of a concurrent create, so
 creation retries.
 """
@@ -115,7 +118,78 @@ def create_table(
     return gen(body).retry(times=3)
 
 
-def create_global_tables(
+def _exact_key_table(sql: SqlClientService, name: str) -> Effect[None, SqlError]:
+    """A table of ``public_key`` text, keyed as exactly as the session auth
+    bindings, so a key copied from them stays one row."""
+    table = sql.identifier(name)
+
+    def body():
+        if sql.dialect == "pg":
+            yield from sql("CREATE TABLE IF NOT EXISTS {} (public_key TEXT PRIMARY KEY)", table)
+        elif sql.dialect == "mssql":
+            yield from sql(
+                "IF OBJECT_ID({}, N'U') IS NULL CREATE TABLE {} ("
+                "public_key {} NOT NULL, "
+                "public_key_length AS DATALENGTH(public_key) PERSISTED NOT NULL, "
+                "PRIMARY KEY (public_key, public_key_length))",
+                name,
+                table,
+                sql.literal(MSSQL_PAIR_KEY),
+            )
+        elif sql.dialect == "mysql":
+            yield from sql(
+                "CREATE TABLE IF NOT EXISTS {} (public_key {} PRIMARY KEY)",
+                table,
+                sql.literal(MYSQL_KEY),
+            )
+        else:
+            yield from sql("CREATE TABLE IF NOT EXISTS {} (public_key TEXT PRIMARY KEY)", table)
+
+    return gen(body).retry(times=3)
+
+
+def create_upgrade_tables(sql: SqlClientService, prefix: str) -> Effect[None, SqlError]:
+    """``<prefix>_legacy_upgrade``: one row, written once by the first start
+    of 0.6.8 or later, saying whether the server may migrate legacy stores
+    by itself; ``<prefix>_legacy_bindings``: the keys bound at that moment."""
+    types = types_for(sql)
+
+    def body():
+        yield from create_table(
+            sql,
+            f"{prefix}_legacy_upgrade",
+            sql("id {int} PRIMARY KEY, automatic {int} NOT NULL", int=types.int),
+        )
+        yield from _exact_key_table(sql, f"{prefix}_legacy_bindings")
+
+    return gen(body)
+
+
+def create_alias_tables(sql: SqlClientService, prefix: str) -> Effect[None, SqlError]:
+    """The aliases 0.6.6 added, and who made each one since 0.6.8."""
+    types = types_for(sql)
+
+    def body():
+        # A legacy scope (named as 0.6.5 did) given to the pair whose new
+        # scope is ``scope`` (``legacy.migrate_legacy_store``).
+        yield from create_table(
+            sql,
+            f"{prefix}_scope_aliases",
+            sql("legacy_scope {id} PRIMARY KEY, scope {id} NOT NULL", id=types.id),
+            ["scope"],
+        )
+        # ``origin``: ``server`` or ``operator``. An alias with no row was
+        # made by 0.6.6 or 0.6.7.
+        yield from create_table(
+            sql,
+            f"{prefix}_scope_alias_origins",
+            sql("legacy_scope {id} PRIMARY KEY, origin {id} NOT NULL", id=types.id),
+        )
+
+    return gen(body)
+
+
+def create_065_tables(
     sql: SqlClientService, prefix: str, remote_id_table: str
 ) -> Effect[None, SqlError]:
     remote_ids = sql.identifier(remote_id_table)
@@ -185,14 +259,6 @@ def create_global_tables(
                 bigint=types.bigint,
             ),
             ["next_sweep_at"],
-        )
-        # A legacy scope (named as 0.6.5 did) given to the pair whose new
-        # scope is ``scope`` (``legacy.migrate_legacy_store``).
-        yield from create_table(
-            sql,
-            f"{prefix}_scope_aliases",
-            sql("legacy_scope {id} PRIMARY KEY, scope {id} NOT NULL", id=types.id),
-            ["scope"],
         )
         # The highest last sequence stored in each storage-time hour.
         yield from create_table(

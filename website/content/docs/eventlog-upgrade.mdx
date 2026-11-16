@@ -1,0 +1,184 @@
+---
+title: Upgrading event log stores from 0.6.5
+description: "SQL encrypted event log stores written by pyfect 0.6.5 or earlier, under a public key or store id with a '/': what changed, what the server does by itself, and when you act."
+---
+
+Up to 0.6.5, `sql_event_log_server_encrypted` named a store's tables after the text
+`publicKey/storeId`, as Effect does. Two (public key, store id) pairs can share that text:
+`("Kq9/xT2+bQ==", "main")` and `("Kq9", "xT2+bQ==/main")` both make `Kq9/xT2+bQ==/main`, so
+they shared one store. From 0.6.6 each pair has tables of its own, and a store whose old
+tables could belong to either pair has to be handed to the right one.
+
+Upgrade to 0.6.8 or later. 0.6.7 also counted keys that first authenticated after the
+upgrade, so it could give a store to a pair that didn't write it, or hold it back from the
+pair that did. If you ran 0.6.7, check the stores it migrated ([below](#check-what-066-and-067-migrated)).
+
+## Who is affected
+
+Only the SQL storage of the encrypted server, `sql_event_log_server_encrypted`, on any
+database. The memory storage and the unencrypted server are not affected.
+
+Within it, only stores written by 0.6.5 or earlier whose `publicKey/storeId` holds more than
+one `/`: a public key with a `/` in it, which standard base64 keys often have, or a store
+id with one, such as `"notes/2024"`. A pair whose text has exactly one `/`, such as a UUID
+key with the store id `"main"`, keeps its tables and needs nothing. So does a store with no
+batches from 0.6.5.
+
+## Symptoms
+
+Under 0.6.6, an affected store did not open. Clients got an `EventLogProtocolError` with
+code `InternalServerError` and the message "Decoding failure" (changes) or "Persistence
+failure" (writes and the latest sequence), retried forever, and the server logged nothing.
+Storage calls died with `LegacyStoreNeedsMigration`.
+
+From 0.6.7 most stores open by themselves (below). One that still can't says so: the client
+gets an `InternalServerError` whose message says the store waits for the server's operator,
+with its `store_id` set, and the server logs a warning naming the store once.
+
+## Stop every 0.6.5 node first
+
+Stop every server running 0.6.5 or earlier before you start a newer one on the same
+database. While both run, a store not migrated yet is written under its old tables by the
+0.6.5 node and under its new ones by the newer node, so each sees only its own writes. A
+migrated store uses its old tables on both, so both see every write to it.
+
+The two halves of a store that was written both ways can't be merged. Each numbers its
+batches from 1, and clients keep their place in the store by that number, so batches moved
+from one half to the other would land below the place of clients that synced through the
+other node, and those clients would never receive them. The newer version serves the new
+tables, logs a warning that the store was split, and refuses to migrate it.
+
+## What the server does by itself
+
+A key that wrote through a server had authenticated first, and every version records each
+key that authenticates, in `<entry_table_prefix>_session_auth_bindings`. Anyone can
+authenticate as a key nobody has used yet, so only the keys recorded before the upgrade
+count. The first start of 0.6.8 or later copies them into
+`<entry_table_prefix>_legacy_bindings`, once.
+
+When an affected store is first asked for, the server looks up every key its old name
+splits into. If exactly one of them had authenticated before the upgrade, that pair gets
+the old tables, whichever pair asked, and the server logs that it did; every other pair
+opens tables of its own. For most deployments the upgrade has no manual step.
+
+A key that authenticates after the upgrade can't claim a store and can't stop its owner
+from getting it.
+
+If 0.6.6 or 0.6.7 ran on the database before, the server can't tell which keys
+authenticated before their upgrade, so it migrates nothing by itself. Every affected
+store waits for you ([right after upgrading](#right-after-upgrading)).
+
+## Right after upgrading
+
+Run `legacy_stores` and migrate every pending row with `migrate_legacy_store(public_key,
+store_id)`, so each store is settled before clients reconnect, and so a later downgrade to
+0.6.6 finds it migrated. Rows that are `"unconfirmed"` need the same call; check that the
+pair wrote the store first. Then deal with the rest, below.
+
+<include meta='title="migrate_legacy_store.py"'>../../snippets/eventlog/migrate_legacy_store.py</include>
+
+`migrate_legacy_store` and `legacy_stores` need a `SqlClient` and a `Digest`. Their
+`entry_table_prefix` and `remote_id_table` are keyword arguments; pass the values your
+`layer_storage(...)` call uses, or the defaults if it passes none.
+
+## When you need to act
+
+The server refuses a store, and logs why, in these cases:
+
+- **Several keys that split the same name authenticated before the upgrade.** Either
+  identity may have written the old tables, and the server can't read them to tell. Find
+  out which identity wrote the store (which of your users had data in it), then run
+  `migrate_legacy_store(public_key, store_id, not_written_by=[...])` for that one, naming
+  every other key the refusal lists. The call is refused if the list doesn't match.
+- **No key that splits the name authenticated before the upgrade.** Only a store written
+  without the server, straight through the storage, gets here, and authenticating later
+  doesn't change that. If you know which pair wrote it, run
+  `migrate_legacy_store(public_key, store_id, without_binding=True, not_written_by=[...])`,
+  naming every other key that splits the name (the refusal of the call without them lists
+  them).
+- **0.6.6 or 0.6.7 ran on this database first.** Migrate each store once you know which pair
+  wrote it, as for `"unconfirmed"` rows above.
+
+Refusals describe the store that asked, never a store to migrate. Don't migrate a store
+because a log line names it: run the call for the identity you have confirmed.
+
+## Finding the affected stores
+
+`legacy_stores(store_ids, public_keys=...)` lists, for every name that holds batches from
+0.6.5, each pair that shares it and where it stands:
+
+- `"pending"`: its key alone authenticated before the upgrade. It migrates on the next
+  request to any of the name's pairs.
+- `"unconfirmed"`: the same, on a database 0.6.6 or 0.6.7 opened first. It waits for you.
+- `"ambiguous"`: other keys of the name authenticated before the upgrade too (`other_keys`).
+- `"unbound"`: its key hadn't authenticated before the upgrade. When every pair of a name is
+  `"unbound"`, the name waits for you.
+- `"split"`: a 0.6.5 node wrote it after the upgrade.
+- `"migrated"` or `"taken"`: this pair, or another pair of the name, has the tables.
+  `migrated_by` says who gave them: `"server"`, `"operator"` or `"earlier_version"`.
+
+`binding` says when the pair's key authenticated: `"before_upgrade"`, `"after_upgrade"` or
+`"none"`. On a database 0.6.6 or 0.6.7 opened first, `"before_upgrade"` means before 0.6.8
+first started, which can be after the upgrade from 0.6.5.
+
+The server stores neither store ids nor, for a store written straight through the storage,
+the public key: tables are named by a hash. So the names checked are each key that has
+authenticated (before or since the upgrade) and each key in `public_keys`, followed by `/`
+and each id in `store_ids`. A name made of a key and a store id that neither list holds is
+not found. Pass the ids your app opens (often a few fixed names such as `"main"`, plus any
+it builds at run time), and in `public_keys` the keys that wrote straight through the
+storage.
+
+<include meta='title="legacy_stores.py"'>../../snippets/eventlog/legacy_stores.py</include>
+
+## Check what 0.6.6 and 0.6.7 migrated
+
+0.6.6 gave the tables to whichever pair `migrate_legacy_store` named, and 0.6.7 could give
+them to a key that first authenticated after the upgrade. Neither recorded why, so
+`legacy_stores` marks their migrations `migrated_by="earlier_version"`. Check each one:
+did the pair that has the tables write them?
+
+If not, give them to the pair that did with `taken_from`, naming the pair that has them
+(the call's refusal names it), as in the last call of `migrate_legacy_store.py`
+([above](#right-after-upgrading)). It needs the same `not_written_by` as any other
+migration of that pair, and `without_binding=True` if its key had no binding before the
+upgrade.
+
+The pair you take them from then opens tables of its own, and any batches it wrote since
+the migration go with the old tables. Run it with every server stopped, or restart them
+afterwards: a server that has the store open keeps serving it from the old tables until
+then.
+
+## Rolling upgrades
+
+- **From 0.6.5:** not node by node ([above](#stop-every-065-node-first)).
+- **From 0.6.6:** one node at a time. A 0.6.6 node remembers a store it refused, so it
+  keeps refusing it after a newer node or `migrate_legacy_store` migrates it, until you
+  restart that node. Never run `migrate_legacy_store` from 0.6.6: it gives the tables to
+  whichever pair you name without checking anything. Use the newer version's.
+- **From 0.6.7:** stop every 0.6.7 node before starting the newer one, or keep the overlap
+  short. Until a 0.6.7 node stops, it keeps migrating stores by its own rule. Afterwards,
+  [check what it migrated](#check-what-066-and-067-migrated).
+
+## Downgrading
+
+- **To 0.6.7 or 0.6.6:** each reads every store, migrated or not; a store not migrated yet
+  waits for the operator on 0.6.6 and may be migrated by 0.6.7's rule.
+- **To 0.6.5:** it reads a migrated store, which keeps its old tables, but not a store with
+  new tables of its own: one first written after the upgrade, or one whose old tables went
+  to another pair. It doesn't see what those hold, and its writes split them
+  ([above](#stop-every-065-node-first)).
+
+## Stores two identities shared can't be split
+
+If two pairs that share a name both wrote under 0.6.5, their batches are in the same
+tables, encrypted under different keys. The server can't tell them apart, so whichever pair
+gets the tables gets both histories, and the other starts empty. Its entries survive only
+in its clients' local journals.
+
+The pair that gets them can't decrypt the other identity's batches: its clients fail on
+the first one with `CryptoError(Aead, decrypt, DecryptionFailed)`. 0.6.5 did the same to
+both pairs, because they read one store. The server can't remove those batches, since it
+can't tell which they are. Give the tables to the identity whose data matters most, and
+expect its clients to fail as they did on 0.6.5. If that isn't acceptable, don't migrate
+the store: it stays refused, and the identity can start on a new store id.
