@@ -1,12 +1,13 @@
-"""No pattern in ``src`` repeats a group that itself holds a quantifier, unless the repeat is
-possessive.
+"""No pattern in ``src`` repeats, greedily or lazily, anything wider than one character.
 
-``re`` keeps a backtrack frame for every iteration of a greedy or lazy group repeat until the
-match ends, so ``(?:[0-9a-fA-F]{2})*`` held about 75 bytes per byte of hex it read, and a
-nested quantifier can also backtrack in more ways than the input is long. A possessive
-repeat (``*+``, ``++``, ``{n,m}+``) keeps no frames; ``tests/security/test_regex_memory.py``
-shows each rewrite matches what the greedy pattern did. A pattern measured safe (its repeat
-bounded) goes in ``SAFE`` with its measurement.
+``re`` keeps a backtrack frame for every iteration of a greedy or lazy repeat until the match
+ends, unless the repeated thing is one character (a literal, a class, ``.``): then it only
+counts. So ``(?:[0-9a-fA-F]{2})*`` held about 75 bytes per byte of hex it read, and
+``"(?:\\\\"|[^"])*"`` about 180 per byte of quoted text; a quantifier inside such a repeat can
+also backtrack in more ways than the input is long. A possessive repeat (``*+``, ``++``,
+``{n,m}+``) keeps no frames; ``tests/security/test_regex_memory.py`` shows each rewrite
+matches what the greedy pattern did. A pattern measured safe (its repeat bounded) goes in
+``SAFE`` with its measurement.
 
 Patterns are read from every ``re`` call in ``src``: a literal as written, one assigned to a
 module global from the compiled module, and any other in ``BUILT_AT_RUN_TIME`` with why it
@@ -34,17 +35,23 @@ SRC = ROOT / "src"
 _CALLS = frozenset(
     {"compile", "match", "fullmatch", "search", "sub", "subn", "split", "findall", "finditer"}
 )
+_RE_CALL = re.compile(rf"\bre\.(?:{'|'.join(_CALLS)})\(")
+"""A quick look for an ``re`` call before parsing a file (most files have none)."""
 _REPEATS = (sre.MAX_REPEAT, sre.MIN_REPEAT)
 
 SAFE: dict[tuple[str, str], str] = {
     (
         "src/pyfect/net/net_address/_mac.py",
         r"(?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}",
-    ): "five iterations at most: 1.3 KB peak and under 0.01 ms on the 17-character match",
+    ): "five iterations at most: 1.5 KB peak on the 17-character match, 1.4 KB on 2 MB",
     (
         "src/pyfect/schema/_net.py",
         r"\A[a-z](?:-?[a-z0-9]){0,9}(?:\.[a-z](?:-?[a-z0-9]){0,9}){0,3}\Z",
-    ): "39 iterations at most, generation only: 6.6 KB peak on the 79-character match",
+    ): "39 iterations at most, generation only: 6.8 KB peak on the 79-character match",
+    (
+        "src/pyfect/ai/_generated_client.py",
+        r"(?:\.|%2e){1,2}",
+    ): "two iterations at most: 1.5 KB peak on '%2e%2e', 1.4 KB on 2 MB of dots",
 }
 
 BUILT_AT_RUN_TIME: dict[tuple[str, str], str] = {
@@ -175,7 +182,10 @@ def patterns() -> tuple[tuple[Found, ...], frozenset[tuple[str, str]]]:
     found: list[Found] = []
     built: set[tuple[str, str]] = set()
     for path in sorted((SRC / "pyfect").rglob("*.py")):
-        tree = ast.parse(path.read_text())
+        source = path.read_text()
+        if _RE_CALL.search(source) is None:
+            continue
+        tree = ast.parse(source)
         name = path.relative_to(ROOT).as_posix()
         globals_ = _module_globals(tree)
         for node in ast.walk(tree):
@@ -196,11 +206,18 @@ def patterns() -> tuple[tuple[Found, ...], frozenset[tuple[str, str]]]:
     return tuple(found), frozenset(built)
 
 
-def _has_repeat(items: Any) -> bool:
-    return any(
-        op in (*_REPEATS, sre.POSSESSIVE_REPEAT) or _has_repeat(_children(op, av))
-        for op, av in items
-    )
+_ONE_CHARACTER = ("LITERAL", "NOT_LITERAL", "IN", "ANY", "CATEGORY")
+
+
+def _one_character(items: Any) -> bool:
+    """``re``'s own test for a repeat it runs without frames: one character, or a
+    non-capturing group of one."""
+    if len(items) != 1:
+        return False
+    op, av = items[0]
+    if op is sre.SUBPATTERN:
+        return av[0] is None and _one_character(av[3])
+    return str(op) in _ONE_CHARACTER
 
 
 def _children(op: Any, av: Any) -> list[Any]:
@@ -223,17 +240,17 @@ def _children(op: Any, av: Any) -> list[Any]:
     return [item for sub in inner for item in sub]
 
 
-def _nested_repeats(items: Any) -> Iterator[str]:
-    """Each greedy or lazy repeat of more than one iteration whose body holds a quantifier."""
+def _framed_repeats(items: Any) -> Iterator[str]:
+    """Each greedy or lazy repeat of more than one iteration of more than one character."""
     for op, av in items:
-        if op in _REPEATS and av[1] > 1 and _has_repeat(av[2]):
+        if op in _REPEATS and av[1] > 1 and not _one_character(av[2]):
             most = "" if av[1] == sre.MAXREPEAT else av[1]
             yield f"{'lazy' if op is sre.MIN_REPEAT else 'greedy'} {{{av[0]},{most}}}"
-        yield from _nested_repeats(_children(op, av))
+        yield from _framed_repeats(_children(op, av))
 
 
-def nested_repeats(pattern: str | bytes, flags: int = 0) -> list[str]:
-    return list(_nested_repeats(_parser.parse(pattern, flags)))
+def framed_repeats(pattern: str | bytes, flags: int = 0) -> list[str]:
+    return list(_framed_repeats(_parser.parse(pattern, flags)))
 
 
 @pytest.mark.parametrize(
@@ -246,10 +263,15 @@ def nested_repeats(pattern: str | bytes, flags: int = 0) -> list[str]:
         r"(?=(?:a\d+)*)",
         r"(?:%[0-9A-Fa-f]{2})+",
         r"(?:a{2}){3,}",
+        r"(?:ab|cd)*",
+        r'"(?:\\"|[^"])*"',
+        r"(?:ab)*?",
+        r"(a)*",
+        r"(?:a|bc){2,5}",
     ],
 )
-def test_a_repeated_group_holding_a_quantifier_is_found(pattern: str | bytes) -> None:
-    assert nested_repeats(pattern) != []
+def test_a_repeat_wider_than_one_character_is_found(pattern: str | bytes) -> None:
+    assert framed_repeats(pattern) != []
 
 
 @pytest.mark.parametrize(
@@ -258,20 +280,23 @@ def test_a_repeated_group_holding_a_quantifier_is_found(pattern: str | bytes) ->
         rb"[0-9a-fA-F]*",
         r"(?:%[0-9A-Fa-f]{2})++",
         r"[a-z0-9]++(?:-[a-z0-9]++)*+",
-        r"(?:ab|cd)*",
+        r"(?:ab|cd)*+",
         r"(?:a+)?",
-        r"(?:a+){1}",
+        r"(?:ab){1}",
+        r"(?:a)*",
+        r'"[^"]*"',
+        r"a*?\d+.*",
     ],
 )
-def test_a_flat_or_possessive_repeat_is_allowed(pattern: str | bytes) -> None:
-    assert nested_repeats(pattern) == []
+def test_a_one_character_or_possessive_repeat_is_allowed(pattern: str | bytes) -> None:
+    assert framed_repeats(pattern) == []
 
 
-def test_no_src_pattern_repeats_a_group_holding_a_quantifier() -> None:
+def test_no_src_pattern_repeats_more_than_one_character() -> None:
     offenders = [
         f"{found.path}:{found.line} {found.pattern!r}: {', '.join(repeats)}"
         for found in patterns()[0]
-        if (repeats := nested_repeats(found.pattern, found.flags))
+        if (repeats := framed_repeats(found.pattern, found.flags))
         and (found.path, _text(found.pattern)) not in SAFE
     ]
     assert offenders == [], "\n".join(offenders)
