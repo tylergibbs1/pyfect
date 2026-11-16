@@ -19,12 +19,13 @@ store's row and then checks it still resolves there
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Never
+from typing import Never, NewType
 
 from pyfect._core import Effect
 from pyfect.crypto.digest import DigestService
-from pyfect.effect import fail, gen
+from pyfect.effect import fail, gen, succeed
 from pyfect.eventlog._sql_server_encrypted.db import Db
 from pyfect.eventlog._sql_server_encrypted.legacy import (
     UPGRADE_NOTES,
@@ -50,6 +51,9 @@ from pyfect.sql.error import SqlError
 
 type Pair = tuple[str, str]
 
+LastSequence = NewType("LastSequence", int)
+"""The last sequence of a batch, so 1 or more (``confirmation`` parses it)."""
+
 
 @dataclass(frozen=True, slots=True)
 class Confirmation:
@@ -58,7 +62,27 @@ class Confirmation:
     not_written_by: tuple[str, ...]
     without_binding: bool
     taken_from: Pair | None
-    through_sequence: int | None
+    through_sequence: LastSequence | None
+
+
+def confirmation(
+    not_written_by: Sequence[str],
+    without_binding: bool,
+    taken_from: Pair | None,
+    through_sequence: int | None,
+) -> Effect[Confirmation, LegacyStoreMigrationError]:
+    """The ``Confirmation`` of ``migrate_legacy_store``'s arguments, or why
+    they are refused."""
+    if through_sequence is None:
+        through = None
+    elif through_sequence >= 1:
+        through = LastSequence(through_sequence)
+    else:
+        return _refuse(
+            "through_sequence must be 1 or more: the last sequence the store you take the "
+            "tables back for wrote before they were given away, which ends one of its batches"
+        )
+    return succeed(Confirmation(tuple(not_written_by), without_binding, taken_from, through))
 
 
 def _bound_refusal(
@@ -127,7 +151,13 @@ def _recorded_bound(db: Db, legacy_scope: str) -> Effect[int | None, SqlError]:
 
 
 def _taker_bound(
-    db: Db, legacy: str, legacy_scope: str, row: StoreRow, taken: Pair, *, asked: int | None
+    db: Db,
+    legacy: str,
+    legacy_scope: str,
+    row: StoreRow,
+    taken: Pair,
+    *,
+    asked: LastSequence | None,
 ) -> Effect[int | str, SqlError]:
     """The last sequence of the legacy tables from before they were given to
     ``taken``, or why it is not known."""
@@ -153,9 +183,9 @@ def _taker_bound(
                 f"its journal. The batches after it go to {taken!r}'s own tables. If "
                 f"{taken!r} wrote nothing, pass through_sequence={last}"
             )
-        if through < 0 or through > last:
+        if through > last:
             return (
-                f"through_sequence must be between 0 and {last}, the last sequence of the tables "
+                f"through_sequence must be between 1 and {last}, the last sequence of the tables "
                 f"of {legacy!r}"
             )
         inside = yield from db.sql(
@@ -336,4 +366,4 @@ def migrate_legacy_store(
     return gen(body)
 
 
-__all__ = ["Confirmation", "migrate_legacy_store"]
+__all__ = ["Confirmation", "LastSequence", "confirmation", "migrate_legacy_store"]

@@ -179,8 +179,9 @@ pair's own tables, at the same sequences, and the server logs how many moved.
   `through_sequence`: the last sequence written before they were given away. A client of the
   store that wrote them, last synced before the upgrade, has it as
   `journal.next_remote_sequence(remote_id) - 1`. The refusal of the call without it gives
-  the last sequence the tables hold; pass that if the other pair wrote nothing. The call is
-  refused if the tables were compacted past that sequence since.
+  the last sequence the tables hold; pass that if the other pair wrote nothing. It is 1 or
+  more and ends a batch, since the store you take the tables back for wrote the first one.
+  The call is refused if the tables were compacted past that sequence since.
 
 It takes effect at once on every running server of 0.6.9 or later: the next request of
 either pair goes to its new tables. A server of 0.6.8 or earlier keeps serving the store from

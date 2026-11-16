@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.10 (unreleased)
+
+### Fixed
+
+- `migrate_legacy_store(..., taken_from=pair, through_sequence=0)` was accepted (0.6.9) and
+  moved every batch, the first ones of the store taking the tables back included, to `pair`'s
+  tables. `through_sequence` is now parsed where the call takes it and refused unless it is 1
+  or more; a value inside a batch is still refused, so it ends a batch at or after the first.
+
 ## 0.6.9 (2026-11-16)
 
 ### Deprecated

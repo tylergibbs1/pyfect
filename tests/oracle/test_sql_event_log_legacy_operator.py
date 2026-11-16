@@ -157,7 +157,7 @@ def test_tables_an_earlier_version_gave_away_come_back_without_the_takers_batche
     refused = migration_refused(take_back())
     assert "through_sequence=2" in refused
     assert "next_remote_sequence" in refused
-    assert "between 0 and 2" in migration_refused(take_back(3))
+    assert "between 1 and 2" in migration_refused(take_back(3))
     assert "goes with taken_from" in migration_refused(db.migrate(OWNER, through_sequence=1))
     assert take_back(1) == fx.Success(True)
     assert db.read(OWNER) == ["owner"]
@@ -172,6 +172,33 @@ def test_tables_an_earlier_version_gave_away_come_back_without_the_takers_batche
 
     # The taker's batch keeps its sequence; the owner's store goes on from its own.
     assert db.run(sequences) == fx.Success((1, 2, ["owner", "owner-2"]))
+
+
+@pytest.mark.parametrize("through_sequence", [0, -1])
+def test_tables_are_not_taken_back_through_a_sequence_before_the_first_batch(
+    db: LegacyDb, earlier: Callable[[str], Earlier], through_sequence: int
+) -> None:
+    """``taken_from`` says the store taking them back wrote the first batch,
+    so no sequence before its end can be the last it wrote."""
+    with earlier("0.6.5"):
+        db.write(OWNER, "owner")
+    with earlier("0.6.7"):
+        db.bind(OTHER[0])
+        db.alias_as_067(OTHER)
+        db.write(OTHER, "taker")
+    db.start()
+    refused = migration_refused(
+        db.migrate(
+            OWNER,
+            [OTHER[0]],
+            without_binding=True,
+            taken_from=OTHER,
+            through_sequence=through_sequence,
+        )
+    )
+    assert "through_sequence must be 1 or more" in refused
+    assert db.read(OTHER) == ["owner", "taker"]
+    assert db.read(OWNER) == []
 
 
 def test_tables_the_server_gave_away_come_back_without_the_takers_batches(
@@ -191,7 +218,7 @@ def test_tables_the_server_gave_away_come_back_without_the_takers_batches(
         LegacyStore(*OWNER, "taken", (OTHER[0],), "none", "server"),
     ]
     assert "drop through_sequence" in migration_refused(
-        db.migrate(OWNER, [OTHER[0]], without_binding=True, taken_from=OTHER, through_sequence=0)
+        db.migrate(OWNER, [OTHER[0]], without_binding=True, taken_from=OTHER, through_sequence=2)
     )
     assert db.migrate(OWNER, [OTHER[0]], without_binding=True, taken_from=OTHER) == fx.Success(True)
     assert db.read(OWNER) == ["owner"]
@@ -250,3 +277,4 @@ def test_a_store_opening_beside_tables_another_pair_was_given_is_logged(
     logs: list[str] = []
     assert db.read(OWNER, logs) == []
     assert _beside(logs, "Kq9/xT2+bQ==/main")
+

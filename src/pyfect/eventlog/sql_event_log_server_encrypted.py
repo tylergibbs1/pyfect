@@ -92,18 +92,19 @@ def migrate_legacy_store(
     and name every other key sharing the name. ``taken_from`` names the
     pair the tables were given to, to take them back from it; the batches
     it wrote after then go to its own tables. ``through_sequence``, with
-    ``taken_from``: the last sequence written before then, needed when
-    0.6.6, 0.6.7 or 0.6.8 gave them away. ``entry_table_prefix`` must be
+    ``taken_from``: the last sequence written before then (1 or more), needed
+    when 0.6.6, 0.6.7 or 0.6.8 gave them away. ``entry_table_prefix`` must be
     that of the ``layer_storage`` call; ``remote_id_table`` is unused."""
     del remote_id_table
-    confirmation = migrate.Confirmation(
-        tuple(not_written_by), without_binding, taken_from, through_sequence
-    )
-    return legacy.with_operator_db(
-        entry_table_prefix,
-        lambda db, digest: migrate.migrate_legacy_store(
-            db, digest, public_key, store_id, confirmation
-        ),
+    return migrate.confirmation(
+        not_written_by, without_binding, taken_from, through_sequence
+    ).flat_map(
+        lambda confirmation: legacy.with_operator_db(
+            entry_table_prefix,
+            lambda db, digest: migrate.migrate_legacy_store(
+                db, digest, public_key, store_id, confirmation
+            ),
+        )
     )
 
 

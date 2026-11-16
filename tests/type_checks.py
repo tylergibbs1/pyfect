@@ -8505,6 +8505,15 @@ def eventlog_sql_checks() -> None:
         Layer[ev_encrypted.Storage, EvSqlError, EvSqlClient],
     )
     ev_sql_encrypted.layer_storage(compaction={"threshold_floor": "many"})  # pyright: ignore[reportArgumentType]
+    # migrate_legacy_store's through_sequence reaches the migration only parsed,
+    # 1 or more, by migrate.confirmation.
+    from pyfect.eventlog._sql_server_encrypted import migrate as ev_migrate
+
+    ev_migrate.Confirmation((), False, None, 0)  # pyright: ignore[reportArgumentType]
+    assert_type(
+        ev_migrate.confirmation((), False, None, 1),
+        fx.Effect[ev_migrate.Confirmation, ev_sql_encrypted.LegacyStoreMigrationError],
+    )
     assert_type(
         ev_sql_unencrypted.layer_storage(insert_batch_size=50),
         Layer[ev_unencrypted.Storage, EvSqlError, EvSqlClient],
