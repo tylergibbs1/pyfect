@@ -1,10 +1,13 @@
 """tests/_parallel.py: in-order files and database tests keep to one xdist worker, in random
 order runs too, and a file that leaves process state changed fails."""
 
+import inspect
 from pathlib import Path
 
 import _parallel
+import _source
 import pytest
+import test_doc_snippets
 
 
 @pytest.fixture(autouse=True)
@@ -115,13 +118,19 @@ def test_the_snippet_runs_are_scheduled_together() -> None:
     # They share one module fixture that starts every snippet the session holds. Snippets under
     # website/snippets/mysql/ and libsql/ were scheduled apart from the rest, so a second and a
     # third worker each started every snippet again, and the one test each ran waited behind
-    # them past the hang timeout.
+    # them past the hang timeout. Every test that takes the fixture counts.
     file = Path(__file__).with_name("test_doc_snippets.py")
     text = file.read_text(encoding="utf-8")
     snippets = file.parent.parent / "website" / "snippets"
+    users = [
+        test
+        for test, function in vars(test_doc_snippets).items()
+        if test.startswith("test_") and "runs" in inspect.signature(function).parameters
+    ]
+    assert "test_cluster_snippet_with_a_slow_drain" in users
     scopes = {
         _parallel.scope_of(f"tests/{file.name}::{test}[{path.relative_to(snippets)}]", text)
-        for path in snippets.rglob("*.py")
-        for test in ("test_snippet_runs", "test_snippet_tests_pass")
+        for path in _source.files(snippets)
+        for test in users
     }
     assert len(scopes) == 1, scopes
