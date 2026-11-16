@@ -8,6 +8,13 @@
   given as a bare number (other than 0 or an infinity), so a run fails on one without a warning
   filter. `=1` still only warns.
 
+### Fixed
+
+- The `TypeError` for a body under `@fx.fn` that returns neither an effect nor a generator
+  (an `async def`, say) began `fn('Effect.fn'): `, the internal frame name of an unnamed
+  `fx.fn`. It now begins `fn: ` (`fn('name'): ` under `fx.fn("name")`), as the other `fx.fn`
+  messages do; a generic body without a return annotation under `fx.fn("name")` names it too.
+
 ### Docs
 
 - The Durations section gave `-W error::pyfect.duration.BareNumberDurationWarning`, which
