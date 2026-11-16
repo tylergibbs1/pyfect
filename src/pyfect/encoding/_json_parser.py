@@ -18,8 +18,8 @@ type Format = Literal["JSON5", "JSONC"]
 
 _JSON5_LINES = re.compile("\r\n|[\n\r\u2028\u2029]")
 _JSONC_LINES = re.compile("\r\n|[\n\r]")
-_JSON5_SPACE = re.compile(f"(?:[{SPACE}]|//[^\n\r\u2028\u2029]*|/\\*.*?\\*/)*", re.DOTALL)
-_JSONC_SPACE = re.compile(r"(?:[ \t\r\n]|//[^\r\n]*|/\*.*?\*/)*", re.DOTALL)
+_JSON5_SPACE = re.compile(f"(?:[{SPACE}]++|//[^\n\r\u2028\u2029]*+|/\\*.*?\\*/)*+", re.DOTALL)
+_JSONC_SPACE = re.compile(r"(?:[ \t\r\n]++|//[^\r\n]*+|/\*.*?\*/)*+", re.DOTALL)
 _JSON_NUMBER = re.compile(r"-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?")
 _HEX_DIGITS = re.compile(r"[0-9a-fA-F]*")
 _JSON5_DOUBLE = re.compile(r'[^"\\\n\r]*')

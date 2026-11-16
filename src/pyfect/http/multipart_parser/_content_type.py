@@ -20,7 +20,7 @@ _QUOTED_PAIR = re.compile(r"\\([\t\u0020-\U0010ffff])")
 _MEDIA_TYPE = re.compile(r"^[!#$%&'*+.^\w|~-]+/[!#$%&'*+.^\w|~-]+$", re.ASCII)
 _DISPOSITION_TYPE = re.compile(r"^[!#$%&'*+.^\w|~-]+$", re.ASCII)
 _EXT_VALUE = re.compile(
-    r"^(utf-8|iso-8859-1)'[a-z0-9-]*'((?:%[0-9a-f]{2}|[!#$&+.^_`|~\w-])*)$",
+    r"^(utf-8|iso-8859-1)'[a-z0-9-]*+'((?:%[0-9a-f]{2}|[!#$&+.^_`|~\w-]++)*+)$",
     re.IGNORECASE | re.ASCII,
 )
 _PCT_ENCODED = re.compile(r"%([0-9a-f]{2})", re.IGNORECASE)

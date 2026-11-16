@@ -279,7 +279,7 @@ def _is_negative_zero(number: float) -> bool:
     return isinstance(number, float) and number == 0.0 and math.copysign(1.0, number) < 0
 
 
-_ESCAPES = re.compile(r"(?:%[0-9A-Fa-f]{2})+")
+_ESCAPES = re.compile(r"(?:%[0-9A-Fa-f]{2})++")
 _URI_RESERVED = frozenset(";/?:@&=+$,#")
 
 

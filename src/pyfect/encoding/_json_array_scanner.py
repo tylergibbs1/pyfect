@@ -44,7 +44,7 @@ class JsonArrayError(TaggedError):
     cause: Exception | None = None
 
 
-_POINTER = re.compile(r"(?:/(?:[^~/]|~[01])*)*")
+_POINTER = re.compile(r"(?:/(?:[^~/]++|~[01])*+)*+")
 
 
 @dataclass(frozen=True)

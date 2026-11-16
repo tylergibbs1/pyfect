@@ -20,9 +20,9 @@ _LINE_LIMIT = 4096
 _TRAILERS_LIMIT = 16 * 1024
 """The most bytes of trailer lines, as the head's limit."""
 _TCHAR = rb"[!#$%&'*+\-.^_`|~0-9A-Za-z]"
-_QUOTED = rb'"(?:[\t \x21\x23-\x5b\x5d-\x7e\x80-\xff]|\\[\t\x20-\x7e\x80-\xff])*"'
+_QUOTED = rb'"(?:[\t \x21\x23-\x5b\x5d-\x7e\x80-\xff]++|\\[\t\x20-\x7e\x80-\xff])*+"'
 _CHUNK_SIZE = re.compile(
-    rb"([0-9A-Fa-f]+)(?:;" + _TCHAR + rb"+(?:=(?:" + _TCHAR + rb"*|" + _QUOTED + rb"))?)*\Z"
+    rb"([0-9A-Fa-f]++)(?:;" + _TCHAR + rb"++(?:=(?:" + _QUOTED + rb"|" + _TCHAR + rb"*+))?)*+\Z"
 )
 """A chunk size and its extensions as Node's ``llhttp`` reads them: RFC
 9112's ``chunk-ext`` with no whitespace, a token name and an optional

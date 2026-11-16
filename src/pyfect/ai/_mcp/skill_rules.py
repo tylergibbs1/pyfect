@@ -19,7 +19,7 @@ EXTENSION_ID = "io.modelcontextprotocol/skills"
 _SKILL_MD = "/SKILL.md"
 
 _FRONTMATTER = re.compile(r"﻿?---\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|\Z)")
-_SKILL_NAME = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
+_SKILL_NAME = re.compile(r"[a-z0-9]++(?:-[a-z0-9]++)*+")
 
 
 def is_safe_relative_path(path: str) -> bool:

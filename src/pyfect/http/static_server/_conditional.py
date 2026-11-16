@@ -20,7 +20,7 @@ def _strip_weak(value: str) -> str:
 
 # Tags may hold commas, so a list is read whole rather than split, and a malformed list
 # holds no tags. Every list header is read through ``_entity_tags``.
-_ENTITY_TAG_LIST = re.compile(r'[\s,]*(?:(?:W/)?"[^"]*"\s*(?:,[\s,]*|\Z))*\Z')
+_ENTITY_TAG_LIST = re.compile(r'[\s,]*+(?:(?:W/)?"[^"]*+"\s*+(?:,[\s,]*+|\Z))*+\Z')
 _ENTITY_TAG = re.compile(r'(?:W/)?"[^"]*"')
 
 

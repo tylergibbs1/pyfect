@@ -34,14 +34,14 @@ _NUMERIC_OFFSET = re.compile(r"[+-](\d{2}):(\d{2})", re.ASCII)
 _DAYS_IN_MONTH = (31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
 _MAX_SAFE_INTEGER = 2**53 - 1
 _RADIX = (
-    (re.compile(r"0x[0-9A-Fa-f](?:_?[0-9A-Fa-f])*"), 16),
-    (re.compile(r"0o[0-7](?:_?[0-7])*"), 8),
-    (re.compile(r"0b[01](?:_?[01])*"), 2),
+    (re.compile(r"0x[0-9A-Fa-f]++(?:_[0-9A-Fa-f]++)*+"), 16),
+    (re.compile(r"0o[0-7]++(?:_[0-7]++)*+"), 8),
+    (re.compile(r"0b[01]++(?:_[01]++)*+"), 2),
 )
-_INTEGER = re.compile(r"[+-]?(?:0|[1-9](?:_?\d)*)", re.ASCII)
+_INTEGER = re.compile(r"[+-]?(?:0|[1-9]\d*+(?:_\d++)*+)", re.ASCII)
 _FLOAT = re.compile(
-    r"[+-]?(?:(?:0|[1-9](?:_?\d)*)\.\d(?:_?\d)*(?:[eE][+-]?\d(?:_?\d)*)?"
-    r"|(?:0|[1-9](?:_?\d)*)[eE][+-]?\d(?:_?\d)*)",
+    r"[+-]?(?:(?:0|[1-9]\d*+(?:_\d++)*+)\.\d++(?:_\d++)*+(?:[eE][+-]?\d++(?:_\d++)*+)?"
+    r"|(?:0|[1-9]\d*+(?:_\d++)*+)[eE][+-]?\d++(?:_\d++)*+)",
     re.ASCII,
 )
 _NON_FINITE = re.compile(r"[+-]?(?:inf|nan)")
