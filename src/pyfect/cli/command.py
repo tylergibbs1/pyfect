@@ -33,6 +33,7 @@ from pyfect.cli._command import (
     SubcommandGroup,
     group,
     make,
+    spread,
 )
 from pyfect.cli._config import Config
 from pyfect.cli._environment import Environment
@@ -211,16 +212,24 @@ class _WithGlobalFlags[T]:
         return command._derive(global_flags=merged)  # pyright: ignore[reportPrivateUsage]
 
 
-def with_global_flags[T = Never](*flags: TagLike[Any, T] | Action[Any]) -> _WithGlobalFlags[T]:
+@overload
+def with_global_flags[T = Never](
+    flags: Sequence[TagLike[Any, T] | Action[Any]], /
+) -> _WithGlobalFlags[T]: ...
+@overload
+def with_global_flags[T = Never](*flags: TagLike[Any, T] | Action[Any]) -> _WithGlobalFlags[T]: ...
+def with_global_flags(*flags: Any) -> _WithGlobalFlags[Any]:
     """Global flags for the command and its subcommands: ``Setting``
     classes, provided to the handlers (and removed from ``R``), and
-    ``Action``s. ``cmd.pipe(with_global_flags(Region, Verbose))``."""
-    for flag in flags:
+    ``Action``s, as one list (Effect's form) or one per argument.
+    ``cmd.pipe(with_global_flags([Region, Verbose]))``."""
+    entries = spread(flags, (Action, type), "with_global_flags", "Setting classes and Actions")
+    for flag in entries:
         if not isinstance(flag, Action) and not (
             isinstance(flag, type) and issubclass(flag, Setting)
         ):
             raise TypeError(f"{flag!r} is neither a Setting class nor an Action")
-    return _WithGlobalFlags(cast("tuple[GlobalFlag, ...]", flags))
+    return _WithGlobalFlags(cast("tuple[GlobalFlag, ...]", entries))
 
 
 # --- running -------------------------------------------------------------------------

@@ -88,10 +88,35 @@ class SubcommandGroup(Generic[E_co, R_co]):
     commands: tuple[Command[Any, Any, E_co, R_co], ...]
 
 
+@overload
+def group[EG = Never, RG = Never](
+    name: str, commands: Sequence[Command[Any, Any, EG, RG]], /
+) -> SubcommandGroup[EG, RG]: ...
+@overload
 def group[EG = Never, RG = Never](
     name: str, *commands: Command[Any, Any, EG, RG]
-) -> SubcommandGroup[EG, RG]:
-    return SubcommandGroup(name, commands)
+) -> SubcommandGroup[EG, RG]: ...
+def group(name: str, *commands: Any) -> SubcommandGroup[Any, Any]:
+    """Subcommands under the heading ``name``: ``group(name, [a, b])`` (Effect's
+    ``{ group, commands }``) or ``group(name, a, b)``."""
+    flat = spread(commands, (Command,), "group", "commands")
+    return SubcommandGroup(name, cast("tuple[Command[Any, Any, Any, Any], ...]", flat))
+
+
+def spread(
+    args: tuple[object, ...], kinds: tuple[type, ...], function: str, what: str
+) -> tuple[object, ...]:
+    """The entries of a variadic call that also takes Effect's one-list form
+    (``f([a, b])`` or ``f(a, b)``), each checked to be one of ``kinds``."""
+    entries: tuple[object, ...] = args
+    if len(args) == 1 and isinstance(args[0], (list, tuple)):
+        entries = tuple(cast("Sequence[object]", args[0]))
+    for entry in entries:
+        if not isinstance(entry, kinds):
+            raise TypeError(
+                f"{function} takes {what}, or one list of them; got {type(entry).__name__}"
+            )
+    return entries
 
 
 @dataclass(frozen=True, slots=True)
@@ -258,6 +283,23 @@ class Command(Effect[C_co, Never, CommandContext[C_co]], Generic[In_contra, C_co
     @overload
     def with_subcommands[ES = Never](
         self,
+        subcommands: Sequence[
+            Command[Any, Any, ES, CommandContext[C_co]] | SubcommandGroup[ES, CommandContext[C_co]]
+        ],
+        /,
+    ) -> Command[In_contra | C_co, C_co, E_co | ES, R_co]: ...
+    @overload
+    def with_subcommands[ES = Never, RS = Never](
+        self,
+        subcommands: Sequence[
+            Command[Any, Any, ES, CommandContext[C_co] | RS]
+            | SubcommandGroup[ES, CommandContext[C_co] | RS]
+        ],
+        /,
+    ) -> Command[In_contra | C_co, C_co, E_co | ES, R_co | RS]: ...
+    @overload
+    def with_subcommands[ES = Never](
+        self,
         *subcommands: Command[Any, Any, ES, CommandContext[C_co]]
         | SubcommandGroup[ES, CommandContext[C_co]],
     ) -> Command[In_contra | C_co, C_co, E_co | ES, R_co]: ...
@@ -267,13 +309,17 @@ class Command(Effect[C_co, Never, CommandContext[C_co]], Generic[In_contra, C_co
         *subcommands: Command[Any, Any, ES, CommandContext[C_co] | RS]
         | SubcommandGroup[ES, CommandContext[C_co] | RS],
     ) -> Command[In_contra | C_co, C_co, E_co | ES, R_co | RS]: ...
-    def with_subcommands(
-        self, *subcommands: Command[Any, Any, Any, Any] | SubcommandGroup[Any, Any]
-    ) -> Command[Any, Any, Any, Any]:
-        """Adds subcommands (grouped ones under their heading in help). A
-        chosen subcommand runs in place of this command's handler, with this
-        command's shared flags provided to it."""
-        flat, groups = _normalize(subcommands)
+    def with_subcommands(self, *subcommands: Any) -> Command[Any, Any, Any, Any]:
+        """Adds subcommands (grouped ones under their heading in help), as one
+        list (Effect's form) or one per argument. A chosen subcommand runs in
+        place of this command's handler, with this command's shared flags
+        provided to it."""
+        entries = spread(
+            subcommands, (Command, SubcommandGroup), "with_subcommands", "commands and groups"
+        )
+        flat, groups = _normalize(
+            cast("tuple[Command[Any, Any, Any, Any] | SubcommandGroup[Any, Any], ...]", entries)
+        )
         check_for_duplicate_flags(self.state, flat, self.state.context_config)
         by_name = {command.name: command for command in flat}
         before = self.state.parse

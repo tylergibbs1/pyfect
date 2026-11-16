@@ -13,6 +13,10 @@
   that already fired (Effect's `if (signal.aborted) f() else signal.addEventListener("abort",
   f)`, without a race between the two). pyfect's own backends use it. `add_listener` behaves
   as in 0.6.10.
+- `Command.with_subcommands([a, b])`, Effect's one-list form, raised `AttributeError: 'list'
+  object has no attribute 'group'`. It now takes the subcommands as one list or one per
+  argument, as do `group(name, ...)` and `command.with_global_flags(...)`; any other entry
+  raises a `TypeError` naming what the call takes.
 
 ## 0.6.10 (2026-11-16)
 

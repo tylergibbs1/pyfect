@@ -20,9 +20,10 @@ methods refine them: `with_alias`, `with_default`, `optional`, `with_description
 widens a list's strings to `str`, and Python has no counterpart of the `const` type parameter that
 keeps Effect's array literal.
 
-`with_subcommands` turns a command into a group. Flags every subcommand accepts go in the
-parent's config with `with_shared_flags`, and a handler reads them by yielding the parent
-command.
+`with_subcommands` turns a command into a group. It takes the subcommands as one list, as
+Effect's `withSubcommands` does, or one per argument; `group("Remote", [push, pull])` lists
+some under their own heading in help. Flags every subcommand accepts go in the parent's config
+with `with_shared_flags`, and a handler reads them by yielding the parent command.
 
 <Diagram name="cli-commands" title="The todo command holds the shared --verbose flag; its add and list subcommands each parse their own config and run their own handler" />
 

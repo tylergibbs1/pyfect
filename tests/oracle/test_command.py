@@ -693,6 +693,17 @@ def test_should_expose_setting_global_flags_to_command_handlers(env: Services[An
 
 
 @testing.effect
+def test_accepts_global_flags_as_one_list_as_effect_does(env: Services[Any]):
+    """Effect's ``withGlobalFlags([flag])`` form."""
+    captured: list[str | None] = []
+    app = command.make("deploy", Config, lambda _: Region().map(captured.append)).pipe(
+        command.with_global_flags([Region])
+    )
+    yield from runner(app)(["--region", "eu-west-1"])
+    assert captured == ["eu-west-1"]
+
+
+@testing.effect
 def test_should_expose_setting_global_flags_with_flag_with_default(env: Services[Any]):
     """should expose setting global flags with Flag.withDefault"""
 
@@ -1227,6 +1238,45 @@ def test_should_accept_grouped_and_ungrouped_subcommands(env: Services[Any]):
     yield from run(["login"])
     yield from run(["status"])
     assert executed == ["login", "status"]
+
+
+@testing.effect
+def test_accepts_subcommands_as_one_list_as_effect_does(env: Services[Any]):
+    """Effect's ``withSubcommands([a, b])`` form, groups included."""
+    from pyfect.cli import group
+
+    executed: list[str] = []
+
+    def leaf(name: str) -> AnyCommand:
+        return command.make(name, Config, lambda _: fx.sync(lambda: executed.append(name)))
+
+    app = command.make("tool").with_subcommands(
+        [group("Auth commands", [leaf("login"), leaf("logout")]), leaf("status")]
+    )
+    run = runner(app)
+    yield from run(["logout"])
+    yield from run(["status"])
+    assert executed == ["logout", "status"]
+    assert [(g.group, [c.name for c in g.commands]) for g in app.subcommands] == [
+        (None, ["status"]),
+        ("Auth commands", ["login", "logout"]),
+    ]
+
+
+def test_a_group_heading_can_still_be_passed_by_name():
+    from pyfect.cli import group
+
+    login = command.make("login")
+    assert group(name="Auth commands").group == "Auth commands"
+    assert group("Auth commands", login).commands == (login,)
+
+
+def test_rejects_a_subcommand_entry_that_is_not_a_command_or_group():
+    leaf = command.make("leaf")
+    with pytest.raises(TypeError, match="commands and groups, or one list of them; got list"):
+        command.make("tool").with_subcommands(leaf, [leaf])  # pyright: ignore[reportCallIssue, reportArgumentType]
+    with pytest.raises(TypeError, match="got str"):
+        command.make("tool").with_subcommands(["leaf"])  # pyright: ignore[reportCallIssue, reportArgumentType]
 
 
 @testing.effect

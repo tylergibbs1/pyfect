@@ -5866,6 +5866,14 @@ assert_type(cli_grouped, Command[CliShared, CliShared, CliNotFound, CliUsers])
 cli_only_context = cli_root.with_subcommands(cli_status)
 assert_type(cli_only_context, Command[CliShared, CliShared, Never, Never])
 
+# Effect's one-list form types the same as the varargs one.
+cli_listed = cli_root.with_subcommands([group("Remote", [cli_clone]), cli_status])
+assert_type(cli_listed, Command[CliShared, CliShared, CliNotFound, CliUsers])
+assert_type(cli_root.with_subcommands([cli_status]), Command[CliShared, CliShared, Never, Never])
+cli_root.with_subcommands(cli_status, [cli_clone])  # pyright: ignore[reportCallIssue, reportArgumentType]
+# The heading can still be passed by name, as before the one-list form.
+group(name="Remote")
+
 cli_handled = command.make("plain", CliClone).with_handler(lambda c: fx.succeed(c.repository))
 assert_type(cli_handled, Command[CliClone, Config, Never, Never])
 
@@ -5890,6 +5898,9 @@ cli_regional = command.make("deploy", Config, cli_region_handler)
 assert_type(cli_regional, Command[Config, Config, Never, CliRegion])
 assert_type(
     cli_regional.pipe(command.with_global_flags(CliRegion)), Command[Config, Config, Never, Never]
+)
+assert_type(
+    cli_regional.pipe(command.with_global_flags([CliRegion])), Command[Config, Config, Never, Never]
 )
 assert_type(
     command.make("users", Config, lambda _: CliUsers().map(len).as_void()).pipe(
