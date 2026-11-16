@@ -61,6 +61,7 @@ import typing as _typing
 from types import ModuleType as _ModuleType
 
 from pyfect._all import all, all_dict
+from pyfect._blocking_watchdog import start_from_environment as _start_blocking_watchdog
 from pyfect._concurrency import Concurrency, for_each, race_all, race_all_first
 from pyfect._context_managers import acquire_async_context, acquire_context
 from pyfect._core import Effect, Restore, interruptible_mask, uninterruptible_mask
@@ -733,3 +734,5 @@ __all__ = [
 ]
 
 publish(globals())
+
+_start_blocking_watchdog()

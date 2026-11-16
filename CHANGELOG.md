@@ -11,6 +11,13 @@
   `layer_in_memory_client` carries a note naming the fix the Testing page gives:
   `client.map_request(lambda request: request.prepend_url("http://localhost"))`, or an absolute
   URL. Its message is still Effect's `InvalidUrl error (GET /check)`.
+- `PYFECT_WARN_BLOCKING=<ms>` starts a watchdog thread at `import pyfect` that warns with
+  `pyfect.scheduler.BlockingStepWarning`, at the blocking line, about a fiber step that runs
+  that long without returning (`time.sleep` in an effect, which silently stalls every fiber on
+  the thread and the `.timeout` around it). It samples `sys._current_frames()` and finds the
+  frame the innermost `Fiber._loop` called, so the fiber loop has no code for it: unset (or
+  `0`), no thread starts and a run does no extra work. A value that is not a positive number of
+  milliseconds fails the import with a `ValueError` naming the variable.
 
 ### Fixed
 

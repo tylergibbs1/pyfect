@@ -71,6 +71,11 @@ These run, or fail far from the line that caused them. Most are what a coroutine
 - **`time.sleep` in an effect** blocks the thread, so every fiber of the run waits with it and
   `.timeout` can't interrupt it. Use `fx.sleep("1 second")`, and `fx.blocking(f)` for a blocking
   call you can't avoid: it runs on a thread, and the fiber waits without blocking the others.
+  Nothing fails, so to find one, run with `PYFECT_WARN_BLOCKING=100`: a watchdog thread then
+  warns with `BlockingStepWarning` (in `pyfect.scheduler`), at the blocking line, about any step
+  that runs 100 ms or longer. It is a development tool: off, it starts no thread and the run
+  does no extra work. Under `fx.run_async`, asyncio's debug mode (`python -X dev`) also logs
+  `Executing <Handle AsyncioScheduler._drain() ...> took 0.302 seconds`, without the line.
 - **`run_blocking` in a coroutine or a notebook cell** blocks the running event loop until the
   effect is done, and warns with `RunBlockingInEventLoopWarning`; `run_main` there raises a
   `RuntimeError`, since it starts a loop of its own. There, use `await fx.run_async(eff)`;
