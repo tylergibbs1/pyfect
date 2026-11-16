@@ -1,4 +1,7 @@
-"""Run a durable order workflow with retry, compensation, and approval."""
+"""Run a durable order workflow with retry, compensation, and approval.
+
+Run with: ``uv run examples/workflow.py``.
+"""
 
 from typing import TypedDict
 
@@ -36,7 +39,7 @@ def charge(order: OrderPayload) -> fx.Effect[str]:
         print(f"charged {order['id']}")
         return f"charge-{order['id']}"
 
-    return fx.sync(run).retry(schedule=schedule.exponential("1 millis"), times=2)
+    return fx.try_(run, str).retry(schedule=schedule.exponential("1 millis"), times=2).or_die()
 
 
 def compensate(reservation_id: str, charge_id: str) -> fx.Effect[None]:
