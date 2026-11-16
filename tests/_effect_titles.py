@@ -273,6 +273,7 @@ def read_ports(files: Iterable[Path], effect_files: Iterable[str]) -> dict[str, 
 
     for path in files:
         tree = _source.tree(path)
+        docstrings(path)  # read now, while the file's tree is still kept
         module_doc = ast.get_docstring(tree) or ""
         keys = named_files(module_doc, effect_files)
         omitted = _OMITTED_FROM.search(module_doc)
@@ -313,10 +314,12 @@ def is_noted_as_omitted(title: str, ports: Ports) -> bool:
     return key in ports.module_docstrings
 
 
-def docstrings(path: Path) -> Iterator[str]:
+@functools.cache
+def docstrings(path: Path) -> tuple[str, ...]:
     """The module, class and function docstrings of one Python file."""
-    for node in _source.walk(path):
-        if isinstance(node, ast.Module | ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
-            doc = ast.get_docstring(node)
-            if doc:
-                yield doc
+    return tuple(
+        doc
+        for node in _source.walk(path)
+        if isinstance(node, ast.Module | ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef)
+        and (doc := ast.get_docstring(node))
+    )

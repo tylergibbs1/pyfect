@@ -52,6 +52,8 @@ def test_sinks_render_values_only_through_the_redacting_renderers() -> None:
 def test_a_type_that_redacts_gives_its_redacted_form_to_the_renderers() -> None:
     found: list[str] = []
     for path in _source.files(SRC):
+        if not _source.mentions(path, *REDACTS):
+            continue
         for node in _source.walk(path):
             if not isinstance(node, ast.ClassDef):
                 continue

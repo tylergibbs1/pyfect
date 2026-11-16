@@ -159,7 +159,7 @@ def test_math_pow_only_inside_js_power():
     found = {
         str(p.relative_to(SRC)): math_pow_calls(p)
         for p in _source.files(SRC)
-        if p != SRC / "_js.py"
+        if p != SRC / "_js.py" and _source.mentions(p, "pow")
     }
     assert {p: lines for p, lines in found.items() if lines} == {}
 
@@ -181,5 +181,9 @@ def test_no_float_power_outside_js_power():
     """``10.0 ** n`` raises ``OverflowError`` past float range where
     JavaScript's ``**`` gives ``Infinity`` (``cli.prompt.number`` died with a
     precision over 308); ports of ``Math.pow`` use ``_js.power``."""
-    found = {str(p.relative_to(SRC)): float_literal_powers(p) for p in _source.files(SRC)}
+    found = {
+        str(p.relative_to(SRC)): float_literal_powers(p)
+        for p in _source.files(SRC)
+        if _source.mentions(p, "**")  # how a power is written
+    }
     assert {p: lines for p, lines in found.items() if lines} == {}

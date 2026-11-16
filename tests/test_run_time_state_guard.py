@@ -75,6 +75,7 @@ def test_effect_bodies_make_their_own_mutable_state():
     offenders = [
         offender
         for path in _source.files(SRC)
+        if _source.mentions(path, *_BODY_DECORATORS)  # a cell is shared only into a body
         for offender in _offenders(str(path.relative_to(SRC)), _source.tree(path))
     ]
     assert offenders == [], "make the cell inside the @gen body, so each run has its own"

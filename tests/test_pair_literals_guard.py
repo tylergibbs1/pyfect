@@ -77,6 +77,7 @@ def test_every_iterable_of_pairs_has_a_list_overload() -> None:
     found = {
         str(path.relative_to(SRC)): missing
         for path in _source.files(SRC)
+        if _source.mentions(path, "overload")
         if (missing := _missing_list_overloads(_source.tree(path)))
     }
     assert found == {}, f"add a list[tuple[K, V]] overload first: {found}"

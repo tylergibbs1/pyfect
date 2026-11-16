@@ -24,6 +24,8 @@ def _validated(call: ast.Call) -> bool:
 def test_no_lenient_base64_decoding():
     offenders: list[str] = []
     for path in _source.files(_SRC):
+        if not _source.mentions(path, *_LENIENT, "b64decode"):
+            continue
         for node in _source.walk(path):
             if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)):
                 continue

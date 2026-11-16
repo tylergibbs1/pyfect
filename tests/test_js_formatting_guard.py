@@ -76,6 +76,8 @@ def test_only_json_text_imports_json():
         f"{name}:{getattr(node, 'lineno', 0)}"
         for name, path in _modules()
         if name not in _JSON_HOME
+        # Every library's name holds "json"; a computed import is a call by name.
+        and _source.mentions(path, "json", "__import__", "import_module")
         for node in _source.walk(path)
         if isinstance(node, _IMPORTING)
         and any(_is_json_library(str(m)) for m in _imported_modules(node))
@@ -121,6 +123,8 @@ def test_formatting_code_never_writes_with_repr():
     offenders: list[str] = []
     for name, path in _modules():
         if name in _REPR_HOME or not name.startswith(_FORMATTING):
+            continue
+        if not _source.mentions(path, "repr", "!r"):
             continue
         exempt = _exempt_nodes(path)
         for node in _source.walk(path):

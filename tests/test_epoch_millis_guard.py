@@ -40,6 +40,7 @@ def test_no_float_epoch_millisecond_math():
     offenders = [
         f"{path.relative_to(SRC)}:{getattr(node, 'lineno', 0)}"
         for path in _source.files(SRC)
+        if _source.mentions(path, "timestamp", "fromtimestamp")
         for node in _source.walk(path)
         if _float_epoch_math(node)
     ]

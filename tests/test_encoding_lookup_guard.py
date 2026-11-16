@@ -46,6 +46,7 @@ def test_codecs_are_looked_up_only_by_app_chosen_names():
     offenders = {
         str(path.relative_to(SRC)): lines
         for path in _source.files(SRC)
+        if _source.mentions(path, "codecs")  # only a module importing codecs is read
         if (lines := _computed_codec_lookups(path)) and str(path.relative_to(SRC)) not in APP_CHOSEN
     }
     assert not offenders, offenders

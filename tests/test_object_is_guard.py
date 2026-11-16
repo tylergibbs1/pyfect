@@ -38,6 +38,7 @@ def test_only_js_compares_number_signs() -> None:
         str(path.relative_to(SRC)): lines
         for path in _source.files(SRC)
         if path.name != "_js.py" or path.parent != SRC
+        if _source.mentions(path, "copysign")
         if (lines := _sign_comparisons(_source.tree(path)))
     }
     assert found == {}, f"use pyfect._js.same_value / same_json_value: {found}"

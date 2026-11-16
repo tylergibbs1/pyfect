@@ -1,8 +1,8 @@
 """Tests read and parse the repository's Python files only through ``tests/_source.py``.
 
 Each source guard used to list, read and parse the tree itself, so a serial run parsed
-`src/` about forty times and single guards took up to 9 s. ``_source`` caches the listing,
-the text, the tree and the walk for the process; this keeps the next guard on it.
+`src/` about forty times and single guards took up to 9 s. ``_source`` caches the listing
+and the text for the process and the recent trees; this keeps the next guard on it.
 """
 
 from __future__ import annotations
@@ -78,6 +78,8 @@ def test_only_the_shared_module_lists_reads_and_parses_python_files() -> None:
         f"{path.relative_to(_source.TESTS)}:{line}"
         for path in _source.files(_source.TESTS)
         if path.resolve() != _SHARED
+        # Each finding names parse (imported under any alias, its import says so) or glob.
+        and _source.mentions(path, "parse", "glob")
         for line in _offenders(_source.walk(path))
     ]
     assert not found, "\n".join(found)

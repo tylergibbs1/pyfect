@@ -24,6 +24,7 @@ def test_tests_count_only_their_own_descriptors():
         f"{relative}:{getattr(node, 'lineno', 0)}"
         for path in _source.files(TESTS)
         if (relative := path.relative_to(TESTS)) not in _ALLOWED and relative.parts[0] != "soak"
+        if any(_source.may_hold(path, fds) for fds in _PROCESS_FDS)
         for node in _source.walk(path)
         if _lists_process_fds(node)
     ]

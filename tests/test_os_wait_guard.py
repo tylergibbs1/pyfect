@@ -113,7 +113,12 @@ def _offenders(path: Path, root: Path = _SOURCE) -> list[str]:
 
 
 def test_callbacks_that_wait_on_another_thread_use_os_wait():
-    offenders = [line for path in _source.files(_SOURCE) for line in _offenders(path)]
+    offenders = [
+        line
+        for path in _source.files(_SOURCE)
+        if _source.mentions(path, *_CALLBACKS, "os_wait")  # what _waits_for_an_event names
+        for line in _offenders(path)
+    ]
     assert offenders == []
 
 

@@ -34,6 +34,8 @@ def _float_clock_read(node: ast.AST) -> bool:
 
 def _nodes(root: Path) -> Iterator[tuple[Path, ast.AST]]:
     for path in _source.files(root):
+        if not _source.mentions(path, *_FLOAT_READS):
+            continue  # both checks look only at float clock reads
         for node in _source.walk(path):
             yield path, node
 

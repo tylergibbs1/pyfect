@@ -32,6 +32,7 @@ def test_no_finalizer_interrupts_a_fiber_without_reading_its_exit() -> None:
     found = [
         f"{path.relative_to(_SRC)}:{node.lineno}"
         for path in _source.files(_SRC)
+        if _source.mentions(path, "interrupt")
         for node in _source.walk(path)
         if isinstance(node, ast.Call) and _discards_exit(node)
     ]

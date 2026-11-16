@@ -71,7 +71,8 @@ def _longer_timeouts(path: Path) -> dict[str, str]:
 def _all_longer_timeouts() -> dict[str, str]:
     found: dict[str, str] = {}
     for path in _source.files(TESTS, "test_*.py"):
-        found |= _longer_timeouts(path)
+        if _source.mentions(path, "timeout"):  # the keyword every longer timeout sets
+            found |= _longer_timeouts(path)
     return found
 
 

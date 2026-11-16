@@ -44,7 +44,7 @@ def _is_utf8_encode(node: ast.Call, imported: set[str]) -> bool:
 def test_text_is_encoded_as_text_encoder_encodes_it():
     offenders: list[str] = []
     for path in _source.files(_SRC):
-        if path.name in _EXEMPT:
+        if path.name in _EXEMPT or not _source.mentions(path, "encode"):
             continue
         tree = _source.tree(path)
         imported = _imported_names(tree)

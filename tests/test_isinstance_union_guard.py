@@ -31,7 +31,12 @@ def _union_checks(path: Path) -> list[str]:
 
 def test_no_isinstance_takes_a_union():
     """Every ``isinstance(x, A | B)`` in ``src`` is written ``isinstance(x, (A, B))``."""
-    found = [hit for path in _source.files(SRC) for hit in _union_checks(path)]
+    found = [
+        hit
+        for path in _source.files(SRC)
+        if _source.mentions(path, "isinstance", "issubclass")
+        for hit in _union_checks(path)
+    ]
     assert found == []
 
 

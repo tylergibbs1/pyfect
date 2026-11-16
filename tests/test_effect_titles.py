@@ -46,7 +46,13 @@ def effect_files() -> dict[str, Path]:
 
 def _test_modules() -> list[Path]:
     # The omission list's own patterns are strings too; they must not count as ports of a title.
-    return [path for path in _source.files(TESTS) if path.stem != "_effect_title_omissions"]
+    return [
+        path
+        for path in _source.files(TESTS)
+        if path.stem != "_effect_title_omissions"
+        # A module ports nothing unless a docstring names an Effect file (``*.ts``).
+        and _source.may_hold(path, ".ts")
+    ]
 
 
 @pytest.fixture(scope="module")

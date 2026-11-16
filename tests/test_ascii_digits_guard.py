@@ -29,7 +29,7 @@ _BANNED = frozenset({"isdigit", "isdecimal", "isnumeric"})
 def test_isdigit_is_called_only_by_parse_digits():
     offenders: list[str] = []
     for path in _source.files(SRC):
-        if path.name == "_digits.py":
+        if path.name == "_digits.py" or not _source.mentions(path, *_BANNED):
             continue
         tree = _source.tree(path)
         offenders.extend(
@@ -68,7 +68,9 @@ _SHAPE_ONLY = frozenset({"schema/_checks_string.py"})
 def test_no_regex_parses_a_bare_digit_run():
     offenders: list[str] = []
     for path in _source.files(SRC):
-        if str(path.relative_to(SRC)) in _SHAPE_ONLY:
+        if str(path.relative_to(SRC)) in _SHAPE_ONLY or not _source.mentions(
+            path, "compile", "fullmatch", "match"
+        ):
             continue
         tree = _source.tree(path)
         offenders.extend(
@@ -221,6 +223,7 @@ def test_no_regex_matches_unicode_digits_or_letters():
     offenders = [
         f"{path.relative_to(SRC)}:{line}"
         for path in _source.files(SRC)
+        if _source.mentions(path, *_RE_FUNCTIONS)
         for line in _unicode_class_offenders(_source.tree(path))
     ]
     assert offenders == [], r"write \d as [0-9]; give a \w pattern re.ASCII"

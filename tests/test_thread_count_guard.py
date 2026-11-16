@@ -29,7 +29,7 @@ def test_tests_find_threads_only_through_live_threads():
     offenders = [
         f"{path.relative_to(TESTS)}:{getattr(node, 'lineno', 0)}"
         for path in _source.files(TESTS)
-        if path.name != "_threads.py"
+        if path.name != "_threads.py" and _source.mentions(path, *_BANNED)
         for node in _source.walk(path)
         if _counts_all_threads(node)
     ]

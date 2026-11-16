@@ -65,6 +65,8 @@ class _Scan(ast.NodeVisitor):
 def _drivers() -> set[tuple[str, str]]:
     found: set[tuple[str, str]] = set()
     for path in _source.files(SRC):
+        if not _source.mentions(path, "run_until", "flush"):  # what visit_Call looks for
+            continue
         module = path.relative_to(SRC).as_posix()
         scan = _Scan(module)
         scan.visit(_source.tree(path))

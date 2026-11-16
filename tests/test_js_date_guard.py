@@ -26,6 +26,8 @@ _READS_ITS_OWN_ISOFORMAT = {"schema/_arbitrary_constraint.py"}
 
 def _calls(attr: str) -> Iterator[tuple[str, int]]:
     for path in _source.files(SRC):
+        if not _source.mentions(path, attr):
+            continue
         for node in _source.walk(path):
             if not isinstance(node, ast.Call):
                 continue

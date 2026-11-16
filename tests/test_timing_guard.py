@@ -67,7 +67,7 @@ def _reads_by_file() -> Counter[str]:
     reads: Counter[str] = Counter()
     for path in _source.files(TESTS):
         name = path.relative_to(TESTS).as_posix()
-        if name not in _HELPERS:
+        if name not in _HELPERS and _source.mentions(path, *_CLOCKS):
             reads[name] = _clock_reads(_source.walk(path))
     return +reads
 

@@ -43,6 +43,7 @@ def test_no_duration_times_a_thousand():
     offenders = [
         f"{path.relative_to(SRC)}:{getattr(node, 'lineno', 0)}"
         for path in _source.files(SRC)
+        if _DURATION_NAME.search(_source.folded(path))
         for node in _source.walk(path)
         if _seconds_times_thousand(node)
     ]
