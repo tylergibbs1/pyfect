@@ -83,7 +83,7 @@ could rely on, removals and stricter types wait for the next minor release
 
 ## Tests run in parallel, in random order
 
-CI runs `pytest -n 4` with pytest-randomly (the header prints the seed; `-p randomly
+CI runs `pytest -n 4` with pytest-randomly (the run ends by printing the seed; `-p randomly
 --randomly-seed=N` repeats an order). So a test may not rely on another having run first,
 and a file must leave the process as it found it: `tests/_parallel.py` fails a file that
 leaves `os.environ`, the working directory, `sys.path`, signal handlers, the root logger or

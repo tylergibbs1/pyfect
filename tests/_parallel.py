@@ -3,6 +3,7 @@
 - Each test file starts from the process state the last one found: environment, working
   directory, ``sys.path``, signal handlers, the root logger and the default socket timeout are
   put back after every file, and a file that changed one fails, naming it (CLAUDE.md).
+- A random order run prints its seed at every verbosity.
 - A module marked ``in_order`` (ports of describe blocks whose tests share state in file order,
   as vitest runs them) keeps its order under pytest-randomly and runs on one worker.
 - The tests that use a database container (``_mysql``, ``_mssql``, ``_clickhouse``, ``_libsql``)
@@ -67,6 +68,15 @@ def pytest_configure(config: pytest.Config) -> None:
         " they keep that order and run on one xdist worker",
     )
     config.pluginmanager.register(_KeepOrder(), "pyfect-keep-order")
+
+
+def pytest_terminal_summary(terminalreporter: Any, config: pytest.Config) -> None:
+    """The seed of a random order run, at every verbosity: pytest-randomly prints it in the
+    header, which ``-q`` drops, and CI runs quiet."""
+    if hasattr(config, "workerinput") or not config.pluginmanager.has_plugin("randomly"):
+        return
+    seed = config.getoption("randomly_seed")
+    terminalreporter.write_line(f"random order: repeat it with -p randomly --randomly-seed={seed}")
 
 
 @pytest.hookimpl(optionalhook=True)

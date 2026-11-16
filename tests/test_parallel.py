@@ -99,3 +99,13 @@ def test_a_file_that_leaves_a_signal_handler_installed_fails_naming_the_signal(
     result = pytester.runpytest_subprocess("-p", "_parallel", "-p", "no:randomly")
     result.assert_outcomes(passed=1, errors=1)
     result.stdout.fnmatch_lines(["*this file left signal handlers (SIGUSR1) changed*"])
+
+
+def test_a_quiet_random_parallel_run_prints_the_seed_that_repeats_it(pytester: pytest.Pytester):
+    # CI runs with -q on top of addopts' -q, where pytest drops the header randomly prints in.
+    pytester.makepyfile(test_some=_independent(3))
+    result = pytester.runpytest_subprocess(
+        "-q", "-q", "-p", "_parallel", "-p", "randomly", "--randomly-seed=1234", "-n", "2"
+    )
+    assert result.ret == pytest.ExitCode.OK
+    result.stdout.fnmatch_lines(["random order: repeat it with -p randomly --randomly-seed=1234"])

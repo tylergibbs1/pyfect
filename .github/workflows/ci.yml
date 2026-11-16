@@ -153,9 +153,9 @@ jobs:
       - name: Tests
         run: |
           mkdir -p .shards
-          # Four workers (the runner's vCPUs), in random order (pytest-randomly prints the seed;
-          # -p randomly --randomly-seed=N repeats it). tests/_parallel.py keeps in-order files
-          # and each database's tests on one worker.
+          # Four workers (the runner's vCPUs), in random order; the log's last lines give the
+          # seed (-p randomly --randomly-seed=N repeats it). tests/_parallel.py keeps in-order
+          # files and each database's tests on one worker.
           uv run --no-sync pytest -q -rfEs -n 4 --shard ${{ matrix.shard }}/5 \
             --shard-manifest .shards/shard-${{ matrix.shard }}.txt \
             --shard-durations .shards/durations-${{ matrix.shard }}.json
