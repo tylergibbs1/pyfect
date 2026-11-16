@@ -23,6 +23,7 @@ pytest.importorskip("asyncmy")
 import pyfect as fx
 from pyfect import schema as S
 from pyfect import testing
+from pyfect.latch import Latch
 from pyfect.persistence import persisted_queue as pq
 from pyfect.persistence import persistence
 from pyfect.sql import SqlClient, mysql
@@ -159,6 +160,89 @@ def test_round_trips_queue_payloads_larger_than_64kb(mysql_server: MysqlServer):
         yield from queue.offer(payload)
         value = yield from queue.take(lambda value, _meta: fx.succeed(value))
         assert value == payload
+
+    program = testing.with_live(fx.scoped(fx.gen(body)))
+    testing.run_test(program.pipe(fx.provide(_client(mysql_server))).or_die())
+
+
+def _take_value(value: str, _meta: pq.Metadata) -> fx.Effect[str]:
+    return fx.succeed(value)
+
+
+def test_an_element_longer_than_its_column_fails_instead_of_being_cut(
+    mysql_server: MysqlServer,
+):
+    """``INSERT IGNORE`` cuts an element longer than its ``MEDIUMTEXT``
+    column, storing JSON that never parses."""
+    table = "effect_queue_long_element"
+    _drop(table)
+
+    def body():
+        queue = yield from sql_suite.make_queue(table)
+        # with its JSON quotes, two bytes longer than the column
+        failed = yield from queue.offer("x" * 16_777_215).flip()
+        assert isinstance(failed, pq.PersistedQueueError)
+        yield from queue.offer("fits")
+        assert (yield from queue.take(_take_value)) == "fits"
+
+    program = testing.with_live(fx.scoped(fx.gen(body)))
+    testing.run_test(program.pipe(fx.provide(_client(mysql_server))).or_die())
+
+
+@pytest.mark.parametrize("deduplicate", ["untilRemoved", "untilExecuted"])
+def test_an_offer_does_not_deadlock_an_until_executed_re_offer_of_its_id(
+    mysql_server: MysqlServer, deduplicate: pq.Deduplicate
+):
+    """An offer of an id whose completed row an ``"untilExecuted"`` re-offer
+    is replacing. The re-offer's delete locks the row's primary key, then its
+    ``(id, queue_name)`` entry; an offer that locks them in the other order
+    (``ON DUPLICATE KEY UPDATE`` did) deadlocks with it. The re-offer's
+    transaction locks the primary key first, so the offer always arrives
+    between the delete's two locks."""
+    table = "effect_queue_reoffer_lock_order"
+    _drop(table)
+    query_now("GRANT SELECT ON performance_schema.data_locks TO test", root=True)
+
+    def body():
+        sql = yield from SqlClient()
+        queue = yield from sql_suite.make_queue(table)
+        id = "job"
+        yield from queue.offer("first", id=id)
+        yield from queue.take(_take_value)
+        rows = yield from sql("SELECT sequence FROM {}", sql.identifier(table))
+        locked = Latch()
+        go = Latch()
+
+        def reoffer() -> Any:
+            yield from sql(
+                "SELECT sequence FROM {} WHERE sequence = {} FOR UPDATE",
+                sql.identifier(table),
+                rows[0]["sequence"],
+            )
+            yield from locked.open()
+            yield from go.wait()
+            yield from queue.offer("reoffer", id=id, deduplicate="untilExecuted")
+
+        reoffered = yield from sql.with_transaction(fx.gen(reoffer)).fork()
+        yield from locked.wait()
+        offered = yield from queue.offer("other", id=id, deduplicate=deduplicate).fork()
+
+        # until the offer returns or waits on a lock of the table
+        while offered.poll_unsafe() is None:
+            waits = yield from sql(
+                "SELECT COUNT(*) AS n FROM performance_schema.data_locks "
+                "WHERE object_schema = DATABASE() AND object_name = {} "
+                "AND lock_status = 'WAITING'",
+                table,
+            )
+            if int(str(waits[0]["n"])) > 0:
+                break
+            yield from fx.sleep("10 millis")
+        yield from go.open()
+
+        yield from reoffered.join()
+        yield from offered.join()
+        assert (yield from queue.take(_take_value)) == "reoffer"
 
     program = testing.with_live(fx.scoped(fx.gen(body)))
     testing.run_test(program.pipe(fx.provide(_client(mysql_server))).or_die())

@@ -156,9 +156,12 @@ def replace_executed_statement(dialect: Dialect, table_name: str) -> ReplaceExec
 MYSQL_KEY_BYTES: Final = 1020
 """The bytes of MySQL's ``id`` and ``queue_name`` columns (``VARBINARY(1020)``)."""
 
+MYSQL_ELEMENT_BYTES: Final = 16_777_215
+"""The bytes of MySQL's ``element`` column (``MEDIUMTEXT``)."""
 
-def _too_long(column: str) -> SqlError:
-    message = f"The {column} is longer than its column ({MYSQL_KEY_BYTES} bytes of UTF-8)"
+
+def _too_long(column: str, limit: int) -> SqlError:
+    message = f"The {column} is longer than its column ({limit} bytes of UTF-8)"
     return SqlError(reason=ConstraintError(cause=None, message=message, operation="offer"))
 
 
@@ -182,19 +185,26 @@ def offer_statement(dialect: Dialect, table_name: str) -> OfferStatement:
         )
 
     def mysql() -> OfferStatement:
-        # Not INSERT IGNORE, which also cuts an id or name longer than its
-        # column, so a second id sharing the kept bytes would be dropped as
-        # a duplicate; such an id fails here instead.
+        # INSERT IGNORE, as in Effect: it only takes a shared lock on a
+        # duplicate's (id, queue_name) entry. ON DUPLICATE KEY UPDATE then
+        # also locks the row's primary key, the reverse of the order an
+        # untilExecuted re-offer's DELETE locks them in, and deadlocks it.
+        # IGNORE would cut a value longer than its column (so a second id
+        # sharing the kept bytes is dropped as a duplicate), so such a value
+        # fails here instead.
         def offer(
             id: str, name: str, element: str, visible_at: Fragment
         ) -> Effect[object, SqlError]:
-            for column, value in (("id", id), ("queue_name", name)):
-                if len(value.encode("utf-8", "surrogatepass")) > MYSQL_KEY_BYTES:
-                    return fail(_too_long(column))
+            for column, value, limit in (
+                ("id", id, MYSQL_KEY_BYTES),
+                ("queue_name", name, MYSQL_KEY_BYTES),
+                ("element", element, MYSQL_ELEMENT_BYTES),
+            ):
+                if len(value.encode("utf-8", "surrogatepass")) > limit:
+                    return fail(_too_long(column, limit))
             return sql(
-                "INSERT INTO {} (id, queue_name, element, state, attempts, visible_at, "
-                "created_at, updated_at) VALUES ({}, {}, {}, 'pending', 0, {}, {}, {}) "
-                "ON DUPLICATE KEY UPDATE id = id",
+                "INSERT IGNORE INTO {} (id, queue_name, element, state, attempts, visible_at, "
+                "created_at, updated_at) VALUES ({}, {}, {}, 'pending', 0, {}, {}, {})",
                 table,
                 id,
                 name,

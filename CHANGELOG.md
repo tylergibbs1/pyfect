@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.6.9 (unreleased)
+
+### Fixed
+
+- SQL `PersistedQueue` on MySQL: an offer no longer deadlocks an `"untilExecuted"` re-offer
+  of the same id (0.6.6 to 0.6.8). The offer skips a duplicate with `INSERT IGNORE` again, as in Effect, which
+  only locks the duplicate's `(id, queue_name)` entry. `ON DUPLICATE KEY UPDATE` also locked
+  the row's primary key, the reverse of the order the re-offer's `DELETE` locks them in, so
+  the offer that lost the race failed with a `PersistedQueueError` (MySQL error 1213). An
+  element longer than its `MEDIUMTEXT` column (16 MiB of UTF-8) now fails the offer before it
+  reaches MySQL, as an over-long id or queue name already did, since `INSERT IGNORE` would cut
+  it.
+
 ## 0.6.8 (2026-11-16)
 
 ### Added
