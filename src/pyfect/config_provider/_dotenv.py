@@ -17,9 +17,25 @@ from pyfect.platform_error import PlatformError
 _S = f"[{_js.SPACE}]"
 _START = f"(?:\\A|(?<=[{_js.LINE_END}]))"
 _END = f"(?=[{_js.LINE_END}]|\\Z)"
+_AFTER = f"{_S}*(?:[{_js.LINE_END}#]|\\Z)"
+"""What may follow a value: spaces, then a line end, a comment or the end."""
+
+
+def _quoted(quote: str) -> str:
+    """Effect's ``\\s*'(?:\\\\'|[^'])*'`` for ``quote``, without backtracking.
+
+    A quote after a backslash may close the value or belong to it; Effect's pattern closes
+    at the last such quote, before the first one after no backslash, that ``_AFTER`` accepts.
+    Here an escaped quote is passed only while a later one (or the unescaped one) is
+    accepted, so ``re`` keeps no frame per character."""
+    escaped = rf"(?<=\\){quote}"
+    later = rf"(?=(?:[^{quote}]++|{escaped}(?!{_AFTER}))*+{quote}(?={_AFTER}))"
+    return rf"{_S}*{quote}(?:[^{quote}]++|{escaped}(?:(?!{_AFTER})|{later}))*+{quote}"
+
+
 _LINE = re.compile(
     rf"{_START}{_S}*(?:export{_S}+)?([A-Za-z0-9_.-]+)(?:{_S}*={_S}*?|:{_S}+?)"
-    rf"({_S}*'(?:\\'|[^'])*'|{_S}*\"(?:\\\"|[^\"])*\"|{_S}*`(?:\\`|[^`])*`|[^#\r\n]+)?"
+    rf"({_quoted("'")}|{_quoted('"')}|{_quoted('`')}|[^#\r\n]+)?"
     rf"{_S}*(?:#[^{_js.LINE_END}]*)?{_END}"
 )
 _QUOTED = re.compile(rf"{_START}(['\"`])([\s\S]*)\1{_END}")

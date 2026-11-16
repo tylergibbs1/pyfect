@@ -345,7 +345,7 @@ class _Meridiem(Part):
 
 
 _DATE_PART = re.compile(
-    r'\\(.)|"((?:\\["\\]|[^"])+)"|(D[Do]?|d{3,4}|d)|(M{1,4})|(YY(?:YY)?)|([aA])|([Hh]{1,2})|(m{1,2})|(s{1,2})|(S{1,4})|.'
+    r'\\(.)|"((?:\\["\\]|[^"])++(?=")|(?=(?:\\["\\]|[^"])*+\Z)[\s\S]*(?="))"|(D[Do]?|d{3,4}|d)|(M{1,4})|(YY(?:YY)?)|([aA])|([Hh]{1,2})|(m{1,2})|(s{1,2})|(S{1,4})|.'
 )
 _GROUPS: dict[int, Callable[[str, WallClock, Locales], Part]] = {
     2: lambda token, clock, locales: _Token(re.sub(r"\\(.)", r"\1", token), clock, locales),

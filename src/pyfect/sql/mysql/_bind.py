@@ -13,7 +13,7 @@ from collections.abc import Callable, Sequence
 from typing import cast
 
 _OUTSIDE_STRINGS = r"""
-    | `(?:[^`]|``)*`?              # `name`
+    | `(?:[^`]++|``)*+`?           # `name`
     | /\*(?!M?!).*?(?:\*/|\Z)      # /* comment */, but /*! and /*M! hold statement text
     | --(?=[\x00-\x20\x7f]|\Z)[^\n]* # -- then whitespace or a control character
     | \#[^\n]*                     # comment
@@ -21,16 +21,16 @@ _OUTSIDE_STRINGS = r"""
 """
 _TOKEN = re.compile(
     r"""
-      '(?:[^'\\]|\\.|'')*'?        # 'string', with \ escapes and ''
-    | "(?:[^"\\]|\\.|"")*"?        # "string"
+      '(?:[^'\\]++|\\.|'')*+'?     # 'string', with \ escapes and ''
+    | "(?:[^"\\]++|\\.|"")*+"?     # "string"
     """
     + _OUTSIDE_STRINGS,
     re.VERBOSE | re.DOTALL,
 )
 _TOKEN_NO_BACKSLASH_ESCAPES = re.compile(
     r"""
-      '(?:[^']|'')*'?              # 'string', where \ is plain text
-    | "(?:[^"]|"")*"?              # "string"
+      '(?:[^']++|'')*+'?           # 'string', where \ is plain text
+    | "(?:[^"]++|"")*+"?           # "string"
     """
     + _OUTSIDE_STRINGS,
     re.VERBOSE | re.DOTALL,

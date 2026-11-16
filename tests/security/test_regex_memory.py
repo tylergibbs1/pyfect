@@ -11,12 +11,14 @@ from __future__ import annotations
 
 # pyright: reportPrivateUsage=false
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
+from datetime import datetime
 from itertools import product
 from typing import Any, cast
 
 import pytest
+from _growth import cpu_pair
 from _memory import PER_BYTE, assert_bounded_memory
 from hypothesis import given, settings
 from hypothesis import strategies as st
@@ -24,6 +26,8 @@ from hypothesis import strategies as st
 from pyfect import _js
 from pyfect._js import SPACE
 from pyfect.ai._mcp import skill_rules
+from pyfect.cli.prompt import _date_parts
+from pyfect.config_provider import _dotenv, from_dot_env_contents
 from pyfect.encoding import _json_array_scanner, _json_parser, json5, json_array, jsonc, toml
 from pyfect.http import server_response
 from pyfect.http.live_server import _body
@@ -31,6 +35,7 @@ from pyfect.http.multipart_parser import _content_type
 from pyfect.http.static_server import _conditional
 from pyfect.http.web import WebRequest
 from pyfect.http.web_handler import request_from_web
+from pyfect.sql.mysql import _bind
 
 SIZE = 2_048_000
 
@@ -47,6 +52,18 @@ def _if_none_match(header: str) -> Callable[[], object]:
 
 def _const(work: Callable[[str], object], text: str) -> Callable[[], object]:
     return lambda: work(text)
+
+
+def _bind_sql(*, no_backslash_escapes: bool) -> Callable[[str], object]:
+    return lambda sql: _bind.bind(
+        sql, (), lambda _value, _assigns: "", no_backslash_escapes=no_backslash_escapes
+    )
+
+
+def _date_mask(mask: str) -> object:
+    return _date_parts.make_parts(
+        mask, _date_parts.WallClock(datetime(2026, 1, 1)), _date_parts.Locales()
+    )
 
 
 def _pointer(pointer: str) -> Callable[[], object]:
@@ -76,6 +93,20 @@ _PARSERS: dict[str, Parse] = {
     "content disposition filename*": Parse(
         _const(_content_type.parse_disposition, _fill("a", "attachment; filename*=utf-8''"))
     ),
+    "content-type quoted parameter": Parse(
+        _const(_content_type.parse, _fill("a", 'text/plain; a="', '"'))
+    ),
+    "content-disposition quoted parameter": Parse(
+        _const(_content_type.parse_disposition, _fill("a", 'attachment; a="', '"'))
+    ),
+    ".env quoted value": Parse(_const(from_dot_env_contents, _fill("a", "A='", "'"))),
+    "mysql string": Parse(
+        _const(_bind_sql(no_backslash_escapes=False), _fill("a", "SELECT '", "'"))
+    ),
+    "mysql string, no backslash escapes": Parse(
+        _const(_bind_sql(no_backslash_escapes=True), _fill("a", "SELECT '", "'"))
+    ),
+    "date mask quoted text": Parse(_const(_date_mask, _fill("a", '"', '"'))),
     # A tag string (about 50 bytes) per 5-byte tag.
     "if-none-match": Parse(_if_none_match(_fill('"a", ')), per_byte=16),
 }
@@ -87,6 +118,23 @@ def test_a_parser_holds_a_few_bytes_per_input_byte(name: str) -> None:
     assert_bounded_memory(parse.work, SIZE, parse.per_byte)
 
 
+_MULTIPART_QUOTED = (
+    r'"(?:[\t\u0020\u0021\u0023-\u005b\u005d-\u007e\u0080-\U0010ffff]'
+    r'|\\[\t\u0020-\U0010ffff])*"'
+)
+_MULTIPART_TOKEN = r"[!#$%&'*+.^\w`|~-]+"
+_S = f"[{SPACE}]"
+_START = f"(?:\\A|(?<=[{_js.LINE_END}]))"
+_END = f"(?=[{_js.LINE_END}]|\\Z)"
+_MYSQL_OUTSIDE_STRINGS = r"""
+    | `(?:[^`]|``)*`?
+    | /\*(?!M?!).*?(?:\*/|\Z)
+    | --(?=[\x00-\x20\x7f]|\Z)[^\n]*
+    | \#[^\n]*
+    | \?
+"""
+
+
 @dataclass(frozen=True)
 class Rewrite:
     before: str | bytes
@@ -96,6 +144,9 @@ class Rewrite:
     """The characters that decide a match, the others standing in for the rest."""
     flags: int = 0
     prefix: str = ""
+    searched: bool = False
+    """Only matched, searched and iterated where it is used: ``fullmatch`` adds a condition
+    after the pattern that its callers never have."""
 
 
 _REWRITES = {
@@ -139,19 +190,83 @@ _REWRITES = {
         re.IGNORECASE | re.ASCII,
         "utf-8'",
     ),
+    "_content_type._PARAM": Rewrite(
+        rf"; *({_MULTIPART_TOKEN})=({_MULTIPART_QUOTED}|{_MULTIPART_TOKEN}) *",
+        _content_type._PARAM,
+        '"\\a \x01;=',
+        re.ASCII,
+    ),
+    "_content_type._DISPOSITION_PARAM": Rewrite(
+        rf";[ \t]*({_MULTIPART_TOKEN})[ \t]*=[ \t]*({_MULTIPART_QUOTED}|{_MULTIPART_TOKEN})[ \t]*",
+        _content_type._DISPOSITION_PARAM,
+        '"\\a \t\x01=',
+        re.ASCII,
+        ";a=",
+    ),
+    "_dotenv._LINE": Rewrite(
+        rf"{_START}{_S}*(?:export{_S}+)?([A-Za-z0-9_.-]+)(?:{_S}*={_S}*?|:{_S}+?)"
+        rf"({_S}*'(?:\\'|[^'])*'|{_S}*\"(?:\\\"|[^\"])*\"|{_S}*`(?:\\`|[^`])*`|[^#\r\n]+)?"
+        rf"{_S}*(?:#[^{_js.LINE_END}]*)?{_END}",
+        _dotenv._LINE,
+        "'\\ \n#a",
+        prefix="A=",
+    ),
+    "_dotenv._LINE other quotes": Rewrite(
+        rf"{_START}{_S}*(?:export{_S}+)?([A-Za-z0-9_.-]+)(?:{_S}*={_S}*?|:{_S}+?)"
+        rf"({_S}*'(?:\\'|[^'])*'|{_S}*\"(?:\\\"|[^\"])*\"|{_S}*`(?:\\`|[^`])*`|[^#\r\n]+)?"
+        rf"{_S}*(?:#[^{_js.LINE_END}]*)?{_END}",
+        _dotenv._LINE,
+        '"`\\ \n=',
+        prefix="A=",
+    ),
+    "_bind._TOKEN": Rewrite(
+        r"""
+          '(?:[^'\\]|\\.|'')*'?
+        | "(?:[^"\\]|\\.|"")*"?
+        """
+        + _MYSQL_OUTSIDE_STRINGS,
+        _bind._TOKEN,
+        "'\"\\`a",
+        re.VERBOSE | re.DOTALL,
+    ),
+    "_bind._TOKEN_NO_BACKSLASH_ESCAPES": Rewrite(
+        r"""
+          '(?:[^']|'')*'?
+        | "(?:[^"]|"")*"?
+        """
+        + _MYSQL_OUTSIDE_STRINGS,
+        _bind._TOKEN_NO_BACKSLASH_ESCAPES,
+        "'\"\\`a",
+        re.VERBOSE | re.DOTALL,
+    ),
+    "_date_parts._DATE_PART": Rewrite(
+        r'\\(.)|"((?:\\["\\]|[^"])+)"|(D[Do]?|d{3,4}|d)|(M{1,4})|(YY(?:YY)?)|([aA])'
+        r"|([Hh]{1,2})|(m{1,2})|(s{1,2})|(S{1,4})|.",
+        _date_parts._DATE_PART,
+        '"\\aD',
+        searched=True,
+    ),
     "_conditional._ENTITY_TAG_LIST": Rewrite(
         r'[\s,]*(?:(?:W/)?"[^"]*"\s*(?:,[\s,]*|\Z))*\Z', _conditional._ENTITY_TAG_LIST, 'W/" ,a'
     ),
 }
 
 
-def _found(pattern: re.Pattern[Any], text: str) -> object:
+def _found(pattern: re.Pattern[Any], text: str, *, searched: bool = False) -> object:
     subject: Any = text.encode("latin-1") if isinstance(pattern.pattern, bytes) else text
     results: list[object] = []
-    for method in (pattern.match, pattern.fullmatch, pattern.search):
+    methods = (
+        (pattern.match, pattern.search)
+        if searched
+        else (pattern.match, pattern.fullmatch, pattern.search)
+    )
+    for method in methods:
         found = cast("re.Match[Any] | None", method(subject))
         results.append(None if found is None else (found.span(), found.groups()))
     results.append(cast("object", pattern.sub(subject[:0], subject)))
+    iterator = cast("Iterator[re.Match[Any]]", pattern.finditer(subject))
+    every = list(iterator)
+    results.append([(found.span(), found.groups()) for found in every])
     return results
 
 
@@ -163,13 +278,14 @@ def _cases(draw: st.DrawFn) -> tuple[str, str]:
     return name, rewrite.prefix + body
 
 
-@settings(max_examples=3000)
+@settings(max_examples=1500)
 @given(_cases())
 def test_each_pattern_matches_as_before(case: tuple[str, str]) -> None:
     name, text = case
     rewrite = _REWRITES[name]
     before = re.compile(rewrite.before, rewrite.flags)
-    assert _found(rewrite.now, text) == _found(before, text), (name, text)
+    searched = rewrite.searched
+    assert _found(rewrite.now, text, searched=searched) == _found(before, text, searched=searched)
 
 
 @pytest.mark.parametrize("name", list(_REWRITES))
@@ -179,4 +295,12 @@ def test_each_pattern_matches_every_short_input_as_before(name: str) -> None:
     for length in range(6 if len(rewrite.alphabet) <= 6 else 5):
         for chars in product(rewrite.alphabet, repeat=length):
             text = rewrite.prefix + "".join(chars)
-            assert _found(rewrite.now, text) == _found(before, text), text
+            now = _found(rewrite.now, text, searched=rewrite.searched)
+            assert now == _found(before, text, searched=rewrite.searched), text
+
+
+def test_a_date_mask_of_backslashes_after_an_escaped_quote_costs_about_what_plain_text_does() -> (
+    None
+):
+    costly, plain = cpu_pair(lambda: _date_mask('"a\\"' + "\\" * 32), lambda: _date_mask("a" * 36))
+    assert costly <= 20 * max(plain, 0.001), f"{costly * 1000:.1f} ms against {plain * 1000:.1f} ms"

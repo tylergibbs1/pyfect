@@ -8,8 +8,8 @@ from dataclasses import dataclass, field
 from urllib.parse import unquote_to_bytes
 
 _QUOTED = (
-    r'"(?:[\t\u0020\u0021\u0023-\u005b\u005d-\u007e\u0080-\U0010ffff]'
-    r'|\\[\t\u0020-\U0010ffff])*"'
+    r'"(?:[\t\u0020\u0021\u0023-\u005b\u005d-\u007e\u0080-\U0010ffff]++'
+    r'|\\[\t\u0020-\U0010ffff])*+"'
 )
 _TOKEN = r"[!#$%&'*+.^\w`|~-]+"
 _PARAM = re.compile(rf"; *({_TOKEN})=({_QUOTED}|{_TOKEN}) *", re.ASCII)
