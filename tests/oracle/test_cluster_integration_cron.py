@@ -22,7 +22,7 @@ from pyfect.cron import Cron, parse_unsafe
 from pyfect.date_time import format_iso
 from pyfect.latch import Latch
 
-from ._cluster_harness import ClusterDatabase, make
+from ._cluster_harness import WITHIN_TIMEOUT, ClusterDatabase, make
 from ._cron_schedule import Tick, check_schedule, next_scheduled, tick
 
 type Body = Generator[fx.Effect[Any, Any, Any], Any]
@@ -463,7 +463,7 @@ def test_runs_an_instant_again_when_its_reply_is_fenced(cluster_db: ClusterDatab
     assert path.startswith("relaxed: repeat ") and " after abandoned on " in path, path
 
 
-@testing.live(timeout="1 minute")
+@testing.live
 def test_assigns_cron_singletons_and_executions_to_their_shard_groups(
     cluster_db: ClusterDatabase,
 ):
@@ -489,12 +489,14 @@ def test_assigns_cron_singletons_and_executions_to_their_shard_groups(
             config={"available_shard_groups": ("default", "special"), "shards_per_group": 12},
             entities=fx.layer.merge(default_cron, special_cron),
         )
+        left = yield from cluster.deadline(WITHIN_TIMEOUT)
         [default_runner] = yield from cluster.start(1, assigned_shard_groups=("default",))
         [special_runner] = yield from cluster.start(1, assigned_shard_groups=("special",))
-        yield from cluster.wait_for_stable_assignments()
+        yield from cluster.wait_for_stable_assignments(left())
         yield from cluster.wait_until(
             "The shard-group cron jobs did not execute",
             fx.sync(lambda: len(default_ticks) >= 2 and len(special_ticks) >= 2),
+            left(),
         )
 
         default_owner = yield from cluster.owner_of_entity(cron_probe(default_name), default_name)

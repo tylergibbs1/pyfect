@@ -114,6 +114,11 @@ CLUSTER_CONFIG: dict[str, Any] = {
     "shard_lock_refresh_interval": S(0.5),
 }
 
+WITHIN_TIMEOUT = 4
+"""Seconds for all the waits of a test on the default 5 s timeout, leaving
+room for teardown, so a hung wait fails first, with the cluster's state
+(``Cluster.deadline``; pyfect-only)."""
+
 _clusters = itertools.count()
 
 
@@ -948,6 +953,23 @@ class Cluster:
         ``refresh_assignments_interval`` before the client does."""
         running = frozenset(r.address for r in self.runners if r.state() == "running")
         return self.client_storage.synced_runners == running
+
+    def deadline(self, seconds: float) -> fx.Effect[Callable[[], float]]:
+        """A deadline ``seconds`` from now, as the seconds left until it, for
+        the timeouts of a test's waits: a test that must fit in its own
+        timeout fails at a wait with the cluster's state (pyfect-only)."""
+
+        @fx.gen
+        def start():
+            clock = yield from fx.clock.Clock()
+            at = clock.current_time_millis_unsafe() + seconds * 1000
+
+            def left() -> float:
+                return max(0.0, (at - clock.current_time_millis_unsafe()) / 1000)
+
+            return left
+
+        return start
 
     def wait_for_client_sync(self, timeout: float = 15) -> fx.Effect[None, Exception]:
         return self.wait_until(

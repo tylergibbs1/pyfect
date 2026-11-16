@@ -11,7 +11,7 @@ from pyfect import exit as Exit
 from pyfect import testing
 from pyfect.latch import Latch
 
-from ._cluster_harness import ClusterDatabase, make
+from ._cluster_harness import WITHIN_TIMEOUT, ClusterDatabase, make
 from .test_cluster_integration_entity import (
     EntityRequest,
     StateEntity,
@@ -26,7 +26,7 @@ class Boom(Exception):
     pass
 
 
-@testing.live(timeout="30 seconds")
+@testing.live
 def test_a_test_failing_while_a_runner_is_frozen_reports_its_failure(
     cluster_db: ClusterDatabase,
 ):
@@ -36,8 +36,9 @@ def test_a_test_failing_while_a_runner_is_frozen_reports_its_failure(
 
     def body() -> Body:
         cluster = yield from make(cluster_db, entities=standard_entities, lock_mode="row")
+        left = yield from cluster.deadline(WITHIN_TIMEOUT)
         [runner] = yield from cluster.start(1)
-        yield from cluster.wait_for_stable_assignments()
+        yield from cluster.wait_for_stable_assignments(left())
         yield from cluster.freeze(runner)
         yield from cluster.freeze_client()
         return (yield from fx.fail(Boom()))
@@ -100,7 +101,7 @@ def test_the_client_routes_by_the_runners_of_its_last_sync(cluster_db: ClusterDa
     yield from fx.scoped(fx.gen(body))
 
 
-@testing.live(timeout="1 minute")
+@testing.live
 def test_a_frozen_runner_claims_no_messages(cluster_db: ClusterDatabase):
     """A frozen runner stands for a paused process: its read loop claims no
     message. A claim lasts ten minutes, and the frozen runner's lock refresh
@@ -111,9 +112,10 @@ def test_a_frozen_runner_claims_no_messages(cluster_db: ClusterDatabase):
 
     def body() -> Body:
         cluster = yield from make(cluster_db, entities=standard_entities, lock_mode="row")
+        left = yield from cluster.deadline(WITHIN_TIMEOUT)
         [runner] = yield from cluster.start(1)
-        yield from cluster.wait_for_stable_assignments()
-        yield from cluster.wait_for_client_sync()
+        yield from cluster.wait_for_stable_assignments(left())
+        yield from cluster.wait_for_client_sync(left())
         yield from cluster.freeze(runner)
         client = yield from cluster.get_client(StateEntity)
         yield from (
@@ -125,7 +127,7 @@ def test_a_frozen_runner_claims_no_messages(cluster_db: ClusterDatabase):
             "SELECT last_read FROM {} WHERE kind = 0", cluster.table("messages")
         ).map(lambda rows: [row["last_read"] for row in rows])
         yield from cluster.wait_until(
-            "The request was not saved", claims.map(lambda found: len(found) == 1)
+            "The request was not saved", claims.map(lambda found: len(found) == 1), left()
         )
         # The runner is notified at once and polls every 500 ms.
         yield from fx.sleep("2 seconds")
