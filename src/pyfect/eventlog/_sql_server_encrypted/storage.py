@@ -18,13 +18,15 @@ from pyfect.eventlog._server_encrypted.models import CompactionOptions, make_com
 from pyfect.eventlog._server_encrypted.storage import StorageService
 from pyfect.eventlog._sql_server_encrypted import upgrade
 from pyfect.eventlog._sql_server_encrypted.compaction import SqlCompaction
-from pyfect.eventlog._sql_server_encrypted.db import CHUNK, Db, Steps, StoreResources, new_id
+from pyfect.eventlog._sql_server_encrypted.db import CHUNK, Db, Steps, StoreResources
 from pyfect.eventlog._sql_server_encrypted.legacy import (
     UPGRADE_NOTES,
+    LegacyMigration,
     LegacyStoreNeedsMigration,
     Resolved,
     legacy_key,
     resolve_scope,
+    still_resolves,
 )
 from pyfect.eventlog._sql_server_encrypted.rows import to_batch
 from pyfect.eventlog._sql_server_encrypted.sweeper import Sweeper
@@ -42,75 +44,9 @@ from pyfect.scope import Scope, acquire_release, fork_scoped, scoped
 from pyfect.semaphore import Semaphore
 from pyfect.sql.client import SqlClient
 from pyfect.sql.error import SqlError
-from pyfect.sql.statement import Identifier
 from pyfect.stream import Stream, from_iterable, from_subscription
 from pyfect.stream import die as stream_die
 from pyfect.stream import unwrap as stream_unwrap
-
-
-def _ensure_store(db: Db, scope: str, table: Identifier) -> Effect[None, SqlError]:
-    """Creates the store row on first open. The first instance to insert it
-    also records the originals activation and seeds a bucket at the
-    current last sequence, so data written before the upgrade becomes
-    compactable."""
-    sql = db.sql
-
-    def seed(now: int) -> Steps[None]:
-        last_sequence = yield from db.max_last_sequence(table)
-        originals = new_id()
-        inserted = yield from db.insert_new(
-            db.stores,
-            [
-                {
-                    "scope": scope,
-                    "next_sequence": last_sequence + 1,
-                    "active_activation": originals,
-                    "active_batch_set": None,
-                    "base_sequence": 0,
-                    "active_kept_count": 0,
-                    "no_op_at": None,
-                    "no_op_count": 0,
-                    "open_stage": None,
-                    "next_sweep_at": None,
-                    "sweep_lease_until": None,
-                    "sweep_lease_owner": None,
-                    "pruned_through": 0,
-                }
-            ],
-            ["scope"],
-        )
-        if inserted == 0:
-            return
-        yield from sql(
-            "INSERT INTO {} {}",
-            db.activations,
-            sql.insert(
-                {
-                    "id": originals,
-                    "scope": scope,
-                    "ordinal": 0,
-                    "batch_set": None,
-                    "base_sequence": 0,
-                    "kept_count": None,
-                    "previous": None,
-                    "superseded_at": None,
-                    "prunable_at": None,
-                    "prune_started_at": None,
-                }
-            ),
-        )
-        if last_sequence > 0:
-            yield from db.upsert_bucket(scope, hour_of(now), last_sequence)
-
-    def body():
-        existing = yield from sql("SELECT scope FROM {} WHERE scope = {}", db.stores, scope)
-        if existing:
-            return
-        now = yield from Clock().map(now_millis_unsafe)
-        yield from sql.with_transaction(gen(lambda: seed(now)))
-
-    return gen(body)
-
 
 type _Pair = tuple[str, str]
 """A store's public key and id."""
@@ -135,9 +71,10 @@ class _Once:
 
 
 def _resolve(
-    db: Db, digest: DigestService, once: _Once, pair: _Pair
+    db: Db, digest: DigestService, once: _Once, migration: LegacyMigration, pair: _Pair
 ) -> Effect[str, SqlError | LegacyStoreNeedsMigration]:
-    """The pair's scope, logging a migration, a split or a refusal once."""
+    """The pair's scope, logging a migration, a split, new tables beside
+    legacy ones, or a refusal once."""
     public_key, store_id = pair
     legacy = legacy_key(public_key, store_id)
 
@@ -147,7 +84,8 @@ def _resolve(
                 message = (
                     f"Store {store_id!r} of {public_key!r} now holds its tables from pyfect "
                     f"0.6.5 ({legacy!r}): it is the only identity sharing that name that had "
-                    "authenticated before the upgrade"
+                    "authenticated before the upgrade, and migrate_legacy_stores is "
+                    "'when_server_written'"
                 )
                 return once.log(pair, "migrated", log_info(message)).as_(resolved.scope)
             case "split":
@@ -158,6 +96,14 @@ def _resolve(
                     f"every 0.6.5 node (see {UPGRADE_NOTES})"
                 )
                 return once.log(pair, "split", log_warning(message)).as_(resolved.scope)
+            case "beside":
+                message = (
+                    f"Store {store_id!r} of {public_key!r} opens tables of its own while the "
+                    f"tables pyfect 0.6.5 named {legacy!r} hold batches that another store has "
+                    "or may get. If this store wrote them, they were given to the wrong store: "
+                    f"check {legacy!r} with legacy_stores (see {UPGRADE_NOTES})"
+                )
+                return once.log(pair, "beside", log_warning(message)).as_(resolved.scope)
             case None:
                 return succeed(resolved.scope)
 
@@ -166,10 +112,14 @@ def _resolve(
             return once.log(pair, "refused", log_warning(error.message))
         return succeed(None)
 
-    return resolve_scope(db, digest, public_key, store_id).tap_error(refused).flat_map(logged)
+    return (
+        resolve_scope(db, digest, public_key, store_id, migration)
+        .tap_error(refused)
+        .flat_map(logged)
+    )
 
 
-def _make_lookup(db: Db, digest: DigestService):
+def _make_lookup(db: Db, digest: DigestService, migration: LegacyMigration):
     # Stores whose tables and row this instance has ensured, so a store
     # reopened after idling skips the DDL.
     ensured: set[str] = set()
@@ -177,11 +127,11 @@ def _make_lookup(db: Db, digest: DigestService):
 
     def lookup(pair: _Pair) -> Effect[StoreResources, SqlError | LegacyStoreNeedsMigration, Scope]:
         def body():
-            scope = yield from _resolve(db, digest, once, pair)
+            scope = yield from _resolve(db, digest, once, migration, pair)
             tables = db.scope_tables(scope)
             if scope not in ensured:
                 yield from create_scope_tables(db.sql, f"{db.prefix}_{scope}")
-                yield from _ensure_store(db, scope, tables.table)
+                yield from db.ensure_store(scope, tables.table)
                 ensured.add(scope)
             pubsub = yield from acquire_release(
                 PubSub[EncryptedRemoteBatch].unbounded(), lambda p, _: p.shutdown()
@@ -196,16 +146,36 @@ def _make_lookup(db: Db, digest: DigestService):
 class _Stores:
     """The open stores. A store that failed to open is forgotten at once, so
     the next request tries again (an ``RcMap`` keeps a failed lookup until
-    it idles out, as Effect's does)."""
+    it idles out, as Effect's does). An open store whose legacy tables the
+    operator has given to it or taken from it since is opened again."""
 
-    def __init__(self, stores: RcMap[_Pair, StoreResources, SqlError | LegacyStoreNeedsMigration]):
+    def __init__(
+        self,
+        stores: RcMap[_Pair, StoreResources, SqlError | LegacyStoreNeedsMigration],
+        db: Db,
+        digest: DigestService,
+    ):
         self._stores = stores
+        self._db = db
+        self._digest = digest
+
+    def current(self, pair: _Pair, scope: str) -> Effect[bool, SqlError]:
+        """Whether the pair's store is still in ``scope``."""
+        return still_resolves(self._db, self._digest, *pair, scope)
 
     def open(
         self, public_key: str, store_id: StoreId
     ) -> Effect[StoreResources, SqlError | LegacyStoreNeedsMigration, Scope]:
         pair = (public_key, store_id)
-        return self._stores.get(pair).on_error(lambda _: self._stores.invalidate(pair))
+
+        def body():
+            store = yield from self._stores.get(pair)
+            if (yield from self.current(pair, store.scope)):
+                return store
+            yield from self._stores.invalidate(pair)
+            return (yield from self._stores.get(pair))
+
+        return gen(body).on_error(lambda _: self._stores.invalidate(pair))
 
 
 def make_storage(
@@ -213,9 +183,11 @@ def make_storage(
     entry_table_prefix: str = "effect_events",
     remote_id_table: str = "effect_remote_id",
     compaction: CompactionOptions | None = None,
+    migrate_legacy_stores: LegacyMigration = "never",
 ) -> Effect[StorageService, SqlError, SqlClient | Digest | Scope]:
     """Storage in the ``SqlClient``'s database, creating its tables, with
-    compaction and its sweep (Effect's ``makeStorage``)."""
+    compaction and its sweep (Effect's ``makeStorage``).
+    ``migrate_legacy_stores``: see ``LegacyMigration``."""
 
     def build():
         digest = yield from Digest()
@@ -230,14 +202,16 @@ def make_storage(
         else:
             remote_id = make_remote_id_unsafe()
             yield from sql("INSERT INTO {} (remote_id) VALUES ({})", remote_ids, remote_id)
-        stores = yield from RcMap.make(_make_lookup(db, digest), idle_time_to_live="5 minutes")
+        stores = yield from RcMap.make(
+            _make_lookup(db, digest, migrate_legacy_stores), idle_time_to_live="5 minutes"
+        )
         sweeper = Sweeper(db)
         # A fixed schedule starts an overdue sweep straight away, so slow
         # queries don't push sweeps back.
         yield from fork_scoped(
             sweeper.sweep.repeat(fixed(config.sweep_interval)).delay(config.sweep_interval)
         )
-        return _SqlStorage(db, remote_id, _Stores(stores))
+        return _SqlStorage(db, remote_id, _Stores(stores, db, digest))
 
     return gen(build).with_tracer_enabled(False)
 
@@ -295,7 +269,13 @@ class _SqlStorage(StorageService):
         db = self._db
         sql = db.sql
 
-        def write_batches(store: StoreResources, now: int) -> Steps[list[EncryptedRemoteBatch]]:
+        pair = (public_key, store_id)
+
+        def write_batches(
+            store: StoreResources, now: int
+        ) -> Steps[list[EncryptedRemoteBatch] | None]:
+            """The stored batches, or ``None`` when the operator moved the
+            store's tables since it opened (``migrate.py`` takes this lock)."""
             tables = store.tables
             stored: list[EncryptedRemoteBatch] = []
             # The store row lock makes sequence order commit order. The row's
@@ -303,6 +283,8 @@ class _SqlStorage(StorageService):
             # covers instances that predate the row. Read before inserting
             # ids, which record the sequence they are stored at.
             row = yield from db.lock_store(store.scope)
+            if not (yield from self._stores.current(pair, store.scope)):
+                return None
             next_sequence = max(
                 row.next_sequence, (yield from db.max_last_sequence(tables.table)) + 1
             )
@@ -352,7 +334,7 @@ class _SqlStorage(StorageService):
                 yield from sql.after_commit(store.pubsub.publish_all(stored).as_(None))
             return stored
 
-        def body():
+        def attempt():
             store = yield from self._stores.open(public_key, store_id)
             now = yield from Clock().map(now_millis_unsafe)
             return (
@@ -361,7 +343,13 @@ class _SqlStorage(StorageService):
                 )
             )
 
-        return scoped(gen(body)).with_tracer_enabled(False).or_die()
+        def body():
+            # Opening again resolves the store's tables afresh.
+            while (stored := (yield from scoped(gen(attempt)))) is None:
+                pass
+            return stored
+
+        return gen(body).with_tracer_enabled(False).or_die()
 
     def entry_sequences(
         self, public_key: str, store_id: StoreId, entry_ids: Sequence[EntryId], /

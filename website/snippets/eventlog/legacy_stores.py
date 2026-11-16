@@ -25,22 +25,26 @@ stores = fx.run_blocking(
     .pipe(fx.provide(database))
     .or_die()
 )
+if stores and not stores[0].upgrade_recorded:
+    print("no upgraded server has started yet: bindings made before it still count")
 # Rows come sorted by legacy name: one group per name, one row per pair sharing it.
 for name, group in itertools.groupby(stores, key=lambda store: store.legacy_name):
     rows = list(group)
     states = {store.state for store in rows}
+    direct = [store for store in rows if store.public_key in DIRECT_KEYS]
     if states & {"migrated", "taken"}:
         holder = next(store for store in rows if store.state == "migrated")
-        if holder.migrated_by == "earlier_version":
-            print(f"check {name!r}: 0.6.6 or 0.6.7 gave it to {holder.public_key!r}")
-    elif "pending" in states or "unconfirmed" in states:
-        owner = next(store for store in rows if store.state in {"pending", "unconfirmed"})
-        print(f"migrate {name!r} to {owner.public_key!r}, {owner.store_id!r}")
+        if holder.migrated_by != "operator":
+            print(f"check {name!r}: {holder.migrated_by} gave it to {holder.public_key!r}")
     elif "split" in states:
         print(f"{name!r}: a 0.6.5 node wrote to it after the upgrade")
+    elif (states & {"pending", "unconfirmed"}) and not direct:
+        owner = next(store for store in rows if store.state in {"pending", "unconfirmed"})
+        print(f"{name!r}: migrate to {owner.public_key!r}, {owner.store_id!r} if it wrote it")
     else:
-        # "ambiguous": the pairs bound before the upgrade; else every pair is "unbound".
-        bound = [store for store in rows if store.state == "ambiguous"] or rows
-        candidates = [(store.public_key, store.store_id) for store in bound]
+        # Several bound keys, or a key that wrote straight through the storage: any of
+        # them may have written it. With no bound key, any pair of the name may have.
+        bound = [store for store in rows if store.state != "unbound"]
+        candidates = [(store.public_key, store.store_id) for store in (bound + direct or rows)]
         print(f"decide who wrote {name!r}: one of {candidates}")
 assert stores == []

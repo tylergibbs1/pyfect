@@ -72,6 +72,15 @@ def _run(path: Path, body: Any) -> Any:
     return fx.run_blocking(fx.scoped(fx.gen(body)).pipe(fx.provide(_sql(path))).or_die())
 
 
+def _start(path: Path) -> None:
+    """Starts a server once, which records the upgrade."""
+
+    def body():
+        yield from Storage()
+
+    _run(path, body)
+
+
 def _migrate(
     path: Path,
     public_key: str,
@@ -182,6 +191,7 @@ def test_only_one_pair_can_claim_shared_0_6_5_tables(
     db = tmp_path / "log.db"
     owner, other = ("a/b", "c"), ("a", "b/c")
     _write(db, monkeypatch, [owner])
+    _start(db)
     assert fx.run_blocking(_migrate(db, *owner)) is True
     _bind(db, other[0])
     with pytest.raises(LegacyStoreMigrationError):
@@ -265,6 +275,7 @@ def test_a_lone_surrogate_pair_gets_no_0_6_5_tables_of_its_replacement(
     db = tmp_path / "log.db"
     victim, other = ("a\ufffd/b", "c"), ("a\ud800/b", "c")
     _write(db, monkeypatch, [victim])  # the victim authenticated, as a real server records
+    _start(db)
     assert fx.run_blocking(_migrate(db, *other)) is False  # no 0.6.5 tables are its
     assert _read(db, *other) == (None, 0)
     assert fx.run_blocking(_migrate(db, *victim)) is True

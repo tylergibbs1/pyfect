@@ -15,8 +15,10 @@ from typing import Any, Never
 
 from pyfect._catch import catch_tag
 from pyfect._core import Effect
+from pyfect.clock import Clock, now_millis_unsafe
 from pyfect.effect import die, gen, succeed
 from pyfect.errors import NoSuchElementException
+from pyfect.eventlog._server_encrypted.audit import hour_of
 from pyfect.eventlog._server_encrypted.models import CompactionConfig
 from pyfect.eventlog._sql_server_encrypted.rows import ActivationRow, StageRow, StoreRow
 from pyfect.eventlog.event_log_encryption import EncryptedRemoteBatch
@@ -96,6 +98,7 @@ class Db:
         self.bindings = sql.identifier(f"{prefix}_session_auth_bindings")
         self.aliases = sql.identifier(f"{prefix}_scope_aliases")
         self.alias_origins = sql.identifier(f"{prefix}_scope_alias_origins")
+        self.alias_bounds = sql.identifier(f"{prefix}_scope_alias_bounds")
         none = sql.literal("")
         self.none = none
         self.lock_hint = sql.on_dialect_or_else(
@@ -247,6 +250,80 @@ class Db:
             scope,
             self.for_update,
         ).flat_map(lambda rows: self._store_row(scope, rows))
+
+    def lock_store_if_any(self, scope: str) -> Effect[StoreRow | None, SqlError]:
+        """``lock_store`` for a store that may never have been opened."""
+        return self.sql(
+            "SELECT {} FROM {} {} WHERE scope = {} {}",
+            self.sql.literal(_STORE_COLUMNS),
+            self.stores,
+            self.lock_hint,
+            scope,
+            self.for_update,
+        ).map(lambda rows: StoreRow.parse(rows[0]) if rows else None)
+
+    def ensure_store(self, scope: str, table: Identifier) -> Effect[None, SqlError]:
+        """Creates the store row on first open. The first instance to insert
+        it also records the originals activation and seeds a bucket at the
+        current last sequence, so data written before the upgrade becomes
+        compactable."""
+        sql = self.sql
+
+        def seed(now: int) -> Steps[None]:
+            last_sequence = yield from self.max_last_sequence(table)
+            originals = new_id()
+            inserted = yield from self.insert_new(
+                self.stores,
+                [
+                    {
+                        "scope": scope,
+                        "next_sequence": last_sequence + 1,
+                        "active_activation": originals,
+                        "active_batch_set": None,
+                        "base_sequence": 0,
+                        "active_kept_count": 0,
+                        "no_op_at": None,
+                        "no_op_count": 0,
+                        "open_stage": None,
+                        "next_sweep_at": None,
+                        "sweep_lease_until": None,
+                        "sweep_lease_owner": None,
+                        "pruned_through": 0,
+                    }
+                ],
+                ["scope"],
+            )
+            if inserted == 0:
+                return
+            yield from sql(
+                "INSERT INTO {} {}",
+                self.activations,
+                sql.insert(
+                    {
+                        "id": originals,
+                        "scope": scope,
+                        "ordinal": 0,
+                        "batch_set": None,
+                        "base_sequence": 0,
+                        "kept_count": None,
+                        "previous": None,
+                        "superseded_at": None,
+                        "prunable_at": None,
+                        "prune_started_at": None,
+                    }
+                ),
+            )
+            if last_sequence > 0:
+                yield from self.upsert_bucket(scope, hour_of(now), last_sequence)
+
+        def body():
+            existing = yield from sql("SELECT scope FROM {} WHERE scope = {}", self.stores, scope)
+            if existing:
+                return
+            now = yield from Clock().map(now_millis_unsafe)
+            yield from sql.with_transaction(gen(lambda: seed(now)))
+
+        return gen(body)
 
     def _store_row(self, scope: str, rows: list[Row]) -> Effect[StoreRow]:
         if not rows:
