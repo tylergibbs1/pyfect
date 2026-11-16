@@ -32,7 +32,7 @@ def test_test_runner_serves_volatile_and_durable_requests():
     )
 
 
-@testing.live(timeout="30 seconds")
+@testing.live
 def test_single_runner_persists_durable_requests_in_sql(tmp_path: Path):
     sql = fx.layer.effect(
         SqlClient,

@@ -798,7 +798,7 @@ def test_reads_batch_history_through_id_and_primary_key_lookups():
 
 
 @pytest.mark.parametrize("size", [0, -1])
-@testing.live(timeout="30 seconds")
+@testing.live
 def test_a_batch_size_below_one_writes_a_row_at_a_time(size: int):
     """Effect flushes once it holds ``insertBatchSize`` rows, so every row here."""
 

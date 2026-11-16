@@ -135,7 +135,7 @@ def test_a_frozen_runner_claims_no_messages(cluster_db: ClusterDatabase):
     yield from fx.scoped(fx.gen(body))
 
 
-@testing.live(timeout="20 seconds")
+@testing.live
 def test_wait_until_fails_at_its_deadline_on_a_condition_that_never_returns(
     cluster_db: ClusterDatabase,
 ):

@@ -104,7 +104,7 @@ def test_messages_sent_before_the_worker_is_ready_are_delivered_in_order(backend
     assert (yield from replies.take()) == ("echo", 2)
 
 
-@testing.live(timeout="20 seconds")
+@testing.live
 def test_a_failing_handler_in_the_worker_is_logged_and_the_worker_keeps_serving():
     worker = yield from _spawn(ECHOES["thread"]())
     replies = yield from Queue[object].unbounded()
@@ -157,7 +157,7 @@ def test_a_handler_that_raises_in_the_worker_ends_the_worker(backend: str):
         assert error.message == "The worker has exited with code: 1"
 
 
-@testing.live(timeout="20 seconds")
+@testing.live
 def test_each_run_asks_the_spawner_for_a_new_worker():
     """Effect calls the spawner when a run starts, so a retried run gets a
     fresh worker."""
@@ -220,7 +220,7 @@ def test_a_process_that_exits_before_it_is_ready_fails_the_run_with_its_code():
     assert error.message == "The worker has exited with code: 3"
 
 
-@testing.live(timeout="20 seconds")
+@testing.live
 def test_a_thread_worker_that_raises_fails_the_run_with_an_error_event():
     def target() -> None:
         raise ValueError("boom")
@@ -230,7 +230,7 @@ def test_a_thread_worker_that_raises_fails_the_run_with_an_error_event():
     assert isinstance(error.cause, ValueError)
 
 
-@testing.live(timeout="20 seconds")
+@testing.live
 def test_a_process_that_cannot_start_fails_the_run_with_a_spawn_error():
     error = yield from _run_error(ProcessWorker([], executable="/nonexistent/python"))
     assert isinstance(error.reason, WorkerSpawnError)
@@ -328,7 +328,7 @@ def _serve_initial() -> None:
     fx.run_blocking_exit(main.launch())
 
 
-@testing.live(timeout="20 seconds")
+@testing.live
 def test_each_rpc_worker_gets_the_initial_message_before_any_request():
     client_layer = (
         layer.effect(_InitClient, rpc_client.make(_InitGroup))

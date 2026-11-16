@@ -8,10 +8,10 @@ pure computation (``test_glob``, ``test_multipart_boundary``, ``test_channel_io`
 measures growth in thread CPU time; ``_timing.wait_until`` waits for another thread as a hang
 detector. Timing a test checks goes through the ``TestClock``.
 
-``_TIMED_IO`` lists files that still read the clock themselves, with how many reads each
+``tests/_timed_io.txt`` lists files that still read the clock themselves, with how many reads each
 has: real servers, databases and subprocesses timed against their own timeouts, and growth
 checks not yet measured through ``_growth``. A file leaves the list when its reads go; a
-count that grows, or a new file, fails here.
+count that grows, or a new file, fails here, and so does an entry without a reason.
 """
 
 from __future__ import annotations
@@ -19,6 +19,8 @@ from __future__ import annotations
 import ast
 from collections import Counter
 from pathlib import Path
+
+from _inventory import parse
 
 TESTS = Path(__file__).resolve().parent
 
@@ -30,70 +32,9 @@ _CLOCKS = frozenset(
 
 _HELPERS = frozenset({"_growth.py", "_timing.py"})
 
-_TIMED_IO: dict[str, int] = {
-    "_complexity.py": 2,
-    "_connection_release.py": 2,
-    "cross_run/_hammer.py": 2,
-    "cross_run/cases_fibers.py": 6,
-    "cross_run/test_run_ownership.py": 2,
-    "fuzz/_harness.py": 2,
-    "fuzz/server_target.py": 2,
-    "interleave/_harness.py": 5,
-    "oracle/_clickhouse.py": 2,
-    "oracle/_interrupt_on_server.py": 4,
-    "oracle/_libsql.py": 2,
-    "oracle/_live_http.py": 2,
-    "oracle/_mssql.py": 2,
-    "oracle/_mysql.py": 2,
-    "oracle/_pg_owner.py": 2,
-    "oracle/_postgres.py": 2,
-    "oracle/_redis.py": 4,
-    "oracle/test_child_process_spawner.py": 2,
-    "oracle/test_clickhouse_driver.py": 2,
-    "oracle/test_completions.py": 2,
-    "oracle/test_find_my_way.py": 2,
-    "oracle/test_glob.py": 2,
-    "oracle/test_libsql_driver.py": 4,
-    "oracle/test_live_server_node_semantics.py": 17,
-    "oracle/test_mssql_client.py": 10,
-    "oracle/test_mysql_cancellation.py": 2,
-    "oracle/test_mysql_interrupt_on_server.py": 8,
-    "oracle/test_node_http_server.py": 4,
-    "oracle/test_pg_client.py": 2,
-    "oracle/test_pg_pool.py": 4,
-    "oracle/test_pg_reaping.py": 2,
-    "oracle/test_pg_sql_event_journal.py": 2,
-    "oracle/test_redis_py.py": 4,
-    "oracle/test_sql_event_log_server_encrypted_storage.py": 2,
-    "security/_growth.py": 4,
-    "security/test_stack_probe_cost.py": 1,
-    "soak/_health.py": 1,
-    "soak/_sampler.py": 5,
-    "soak/_soak.py": 6,
-    "soak/_workload.py": 2,
-    "test_asgi_server_startup.py": 2,
-    "test_base_exceptions.py": 3,
-    "test_blocking_pool.py": 4,
-    "test_channel_io.py": 2,
-    "test_fibers.py": 2,
-    "test_file_system_watch.py": 2,
-    "test_gc_census.py": 2,
-    "test_httpx_test_clock.py": 2,
-    "test_live_server_request_parsing.py": 4,
-    "test_live_server_slow_head.py": 2,
-    "test_managed_runtime.py": 2,
-    "test_multipart_boundary.py": 2,
-    "test_process.py": 2,
-    "test_regex_backtracking.py": 2,
-    "test_server_idle_connection_shutdown.py": 6,
-    "test_splitter_linear_time.py": 2,
-    "test_test_clock.py": 6,
-    "test_test_clock_thread_work.py": 2,
-    "test_testing_harness.py": 4,
-    "test_uvicorn_server.py": 14,
-    "test_web_socket_early_events.py": 2,
-    "test_workers.py": 4,
-}
+TIMED_IO = TESTS / "_timed_io.txt"
+"""``path reads  # reason`` per line (``tests/_inventory.py``): a file that still reads the
+clock itself, how many reads it has, and what real time it measures."""
 
 
 def _clock_reads(source: str) -> int:
@@ -121,7 +62,8 @@ def _reads_by_file() -> Counter[str]:
 
 
 def test_tests_read_the_clock_through_the_timing_helpers() -> None:
-    assert dict(_reads_by_file()) == _TIMED_IO, (
+    listed = {path: int(entry.value) for path, entry in parse(TIMED_IO.read_text()).items()}
+    assert dict(_reads_by_file()) == listed, (
         "time work with _growth.assert_near_linear, wait for threads with _timing.wait_until, "
         "and check timing with the TestClock"
     )

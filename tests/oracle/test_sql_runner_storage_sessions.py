@@ -93,7 +93,7 @@ def _end_lock_session(dialect: str, sql: SqlClientService, prefix: str) -> fx.Ef
     return mysql
 
 
-@testing.live(timeout="60 seconds")
+@testing.live
 def test_an_advisory_refresh_does_not_reacquire_locks_lost_with_the_session(
     backend: tuple[str, ClientMaker],
 ):
@@ -148,7 +148,7 @@ def test_the_server_ends_a_lock_session_left_idle_for_the_lock_expiration(
     yield from fx.gen(body)
 
 
-@testing.live(timeout="60 seconds")
+@testing.live
 def test_the_lock_connection_goes_back_to_the_pool_with_its_idle_timeout_restored(
     backend: tuple[str, ClientMaker],
 ):

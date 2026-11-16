@@ -177,25 +177,25 @@ def _assert_serialization(
     return fx.gen(body).pipe(fx.provide(shared_storage))
 
 
-@testing.live(timeout="15 seconds")
+@testing.live
 def test_uses_the_default_serialization_for_tcp_connections():
     """uses SchemaBinary by default for TCP connections"""
     yield from _assert_serialization(serialization.layer_schema_binary(), None)
 
 
-@testing.live(timeout="15 seconds")
+@testing.live
 def test_preserves_an_explicit_ndjson_selection():
     """(not an Effect title) an explicit ndjson selection reaches a runner on ndjson"""
     yield from _assert_serialization(serialization.layer_ndjson, "ndjson")
 
 
-@testing.live(timeout="15 seconds")
+@testing.live
 def test_preserves_an_explicit_binary_selection():
     """preserves an explicit binary selection"""
     yield from _assert_serialization(serialization.layer_schema_binary(), "binary")
 
 
-@testing.live(timeout="15 seconds")
+@testing.live
 def test_applies_serialization_max_buffer_size_to_the_default_parser():
     """applies serializationMaxBufferSize to the default SchemaBinary parser"""
 
@@ -215,7 +215,7 @@ def test_applies_serialization_max_buffer_size_to_the_default_parser():
     yield from fx.gen(body).pipe(fx.provide(shared_storage))
 
 
-@testing.live(timeout="30 seconds")
+@testing.live
 def test_discarded_persisted_requests_and_volatile_requests_do_not_wait_for_replies():
     """discarded persisted requests serialize circular values and volatile requests do not wait for replies"""  # noqa: E501
 
@@ -257,7 +257,7 @@ def test_discarded_persisted_requests_and_volatile_requests_do_not_wait_for_repl
     yield from fx.gen(body).pipe(fx.provide(shared_storage))
 
 
-@testing.live(timeout="30 seconds")
+@testing.live
 def test_a_reply_serialization_failure_fails_only_its_own_request():
     """a reply serialization failure fails only its own request"""
 

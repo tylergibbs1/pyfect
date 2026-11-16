@@ -15,6 +15,8 @@ import ast
 import tomllib
 from pathlib import Path
 
+from _inventory import parse
+
 from pyfect.duration import from_input_unsafe, seconds
 from pyfect.testing._decorators import settings
 
@@ -23,13 +25,13 @@ _DEFAULT_SECONDS = 5.0
 _DECORATORS = frozenset({"effect", "live", "prop", "effect_prop", "live_prop", "layer_fixture"})
 
 LONGER = TESTS / "_longer_timeouts.txt"
-"""``path::name timeout`` per line: the test, or the module-level name bound to the
-decorator, still allowed more than 5 s."""
+"""``path::name timeout  # reason`` per line (``tests/_inventory.py``): the test, or the
+module-level name bound to the decorator, still allowed more than 5 s, and the real time it
+waits on that the TestClock cannot drive."""
 
 
 def _listed() -> dict[str, str]:
-    lines = [line for line in LONGER.read_text().splitlines() if not line.startswith("#")]
-    return dict(line.split(" ", 1) for line in lines)
+    return {test: entry.value for test, entry in parse(LONGER.read_text()).items()}
 
 
 def _longer_timeouts(path: Path) -> dict[str, str]:

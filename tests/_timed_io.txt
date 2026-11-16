@@ -1,0 +1,64 @@
+# Test files that read the clock themselves (tests/test_timing_guard.py), with their read count.
+# A line is `path reads  # reason` (tests/_inventory.py): the reason names the real time the
+# file measures and why the TestClock cannot drive it.
+_complexity.py 2  # growth check: thread CPU time of parser work at two input sizes (linear vs quadratic; CPU work, which the TestClock does not measure); moves to tests/_growth.py in #24
+_connection_release.py 2  # deadline for the OS to close real sockets to a real HTTP server (counted in /dev/fd); the TestClock does not drive kernel sockets
+cross_run/_hammer.py 2  # hang deadline joining real OS threads that each make their own runs; the TestClock belongs to one run and cannot bound other threads
+cross_run/cases_fibers.py 6  # settle deadlines for fibers and scopes ending on other OS threads in other runs; no single run's TestClock covers those threads
+cross_run/test_run_ownership.py 2  # times a quick run while another thread's run sleeps 2 s on its live clock; each run has its own clock, so no TestClock spans both
+fuzz/_harness.py 2  # re-arms the enclosing SIGALRM itimer minus the time a fuzz target ran; signal timers run on real time outside any effect run
+fuzz/server_target.py 2  # deadline for the live server to close a loopback connection after the fuzz client stops; the client is a plain blocking socket
+interleave/_harness.py 5  # optional PYFECT_INTERLEAVE_BUDGET wall-time box for schedule exploration, and its report; bounds the harness's own CPU, not effect time
+oracle/_clickhouse.py 2  # deadline for a ClickHouse Docker container to start serving queries; the server runs on real time in another process
+oracle/_interrupt_on_server.py 4  # deadlines for a statement to appear on, then vanish from, a real database server; the server runs on real time in another process
+oracle/_libsql.py 2  # deadline for a libSQL (sqld) Docker container to answer HTTP; the server runs on real time in another process
+oracle/_live_http.py 2  # deadline reading a live-server response on a blocking client socket in a plain thread; that socket is outside the TestClock
+oracle/_mssql.py 2  # deadline for a SQL Server Docker container to accept logins; the server runs on real time in another process
+oracle/_mysql.py 2  # deadline for a MySQL Docker container to accept TCP logins; the server runs on real time in another process
+oracle/_pg_owner.py 2  # deadline for a PostgreSQL postmaster to exit after SIGQUIT before SIGKILL; the server is another process on real time
+oracle/_postgres.py 2  # deadline polling pg_stat_activity until a backend runs a statement; the PostgreSQL server runs on real time in another process
+oracle/_redis.py 4  # deadlines for a Redis container or redis-server process to accept connections; the server runs on real time in another process
+oracle/test_child_process_spawner.py 2  # measures scope close while real child processes and descendants exit or get killed after grace periods; OS processes run on real time
+oracle/test_clickhouse_driver.py 2  # deadline for an interrupted query to leave a real ClickHouse server's process list; the server runs on real time in another process
+oracle/test_completions.py 2  # deadline for an interactive bash subprocess to print its prompt; the shell runs on real time in another process
+oracle/test_find_my_way.py 2  # growth check: wall time of a router find on a 16k-char backtracking path (CPU work, which the TestClock does not measure); moves to tests/_growth.py in #24
+oracle/test_glob.py 2  # growth check: wall time of a glob match on a backtracking-prone pattern (CPU work, which the TestClock does not measure); moves to tests/_growth.py in #24
+oracle/test_libsql_driver.py 4  # waits for an interrupted statement to finish on a real libSQL server and times the next write lock; the server runs on real time
+oracle/test_live_server_node_semantics.py 17  # times live-server keep-alive, headers and shutdown timeouts seen by a blocking client socket in a plain thread, outside the TestClock
+oracle/test_mssql_client.py 10  # times cancels on a real SQL Server and bounds waits on a fake driver blocking real threads; neither runs on the TestClock
+oracle/test_mysql_cancellation.py 2  # times an interrupt killing a SLEEP(5) on a real MySQL server; the server runs on real time in another process
+oracle/test_mysql_interrupt_on_server.py 8  # times row locks, KILL QUERY and early stream ends on a real MySQL server; the server runs on real time in another process
+oracle/test_node_http_server.py 4  # times live-server graceful shutdown with real client sockets on plain threads; those sockets are outside the TestClock
+oracle/test_pg_client.py 2  # checks adjust returns promptly in wall time while a LISTEN waits on a real PostgreSQL socket; the TestClock is the thing timed
+oracle/test_pg_pool.py 4  # deadlines for a real TCP proxy thread (CancelGate) to accept or deliver PostgreSQL connections; it runs outside any TestClock
+oracle/test_pg_reaping.py 2  # deadline for a throwaway PostgreSQL server and its directory to be reaped after its owner dies; separate OS processes
+oracle/test_pg_sql_event_journal.py 2  # deadline polling a real PostgreSQL server until backends block on a lock; the server runs on real time in another process
+oracle/test_redis_py.py 4  # checks adjust returns promptly in wall time while a subscription or XREAD waits on a real Redis socket; the TestClock is what is timed
+oracle/test_sql_event_log_server_encrypted_storage.py 2  # deadline polling a real database until a connection blocks on a lock; the server runs on real time in another process
+security/_growth.py 4  # growth check helpers: thread or process CPU time of parser work at two sizes (CPU work, which the TestClock does not measure); moves to tests/_growth.py in #24
+security/test_stack_probe_cost.py 1  # growth check passing process CPU time to security/_growth, as the deep decode runs on other threads; CPU cost, which the TestClock does not measure
+soak/_health.py 1  # soak recorder default clock: latency of real HTTPS, HTTP client and SQLite operations; real I/O cannot run on the TestClock
+soak/_sampler.py 5  # soak sampler on a plain thread: elapsed wall time, process CPU and stall checks of a long real-I/O run; outside any TestClock
+soak/_soak.py 6  # soak run duration and shutdown deadline for live fibers of real servers and sockets; the soak measures the real process over time
+soak/_workload.py 2  # times each soak operation against a real HTTPS server, client and SQLite; real I/O latency is the measurement
+test_asgi_server_startup.py 2  # times uvicorn/hypercorn shutdown with a request thread in flight; those engines run their own loops on real time
+test_base_exceptions.py 3  # bounds a real SIGINT reaching the main thread blocked in select; OS signals and select run on real time
+test_blocking_pool.py 4  # times a subprocess exit with stuck blocking work, and real pool threads exiting on their idle timer; OS threads and processes
+test_channel_io.py 2  # growth check: wall time splitting 800k one-char pieces into lines (CPU work, which the TestClock does not measure); moves to tests/_growth.py in #24
+test_fibers.py 2  # deadline for a fiber finishing on another real OS thread inside an observer race; the TestClock does not drive that thread
+test_file_system_watch.py 2  # times interrupting the file watcher's own OS thread until it stops; that thread blocks on OS notifications in real time
+test_httpx_test_clock.py 2  # checks adjust returns promptly in wall time while an httpx body waits on a real trickling server; the TestClock is what is timed
+test_live_server_request_parsing.py 4  # times live-server request timeouts seen by a blocking client socket in a plain thread, outside the TestClock
+test_live_server_slow_head.py 2  # growth check: wall time parsing a head dripped a byte at a time, at two sizes (CPU work, which the TestClock does not measure); moves to tests/_growth.py in #24
+test_managed_runtime.py 2  # deadline for a disposer on a real OS thread to begin closing the runtime; the TestClock does not drive that thread
+test_multipart_boundary.py 2  # growth check: wall time of 20k 2-byte multipart parser writes (CPU work, which the TestClock does not measure); moves to tests/_growth.py in #24
+test_process.py 2  # times concurrent force kills of real sh child processes after 500 ms; OS processes run on real time
+test_regex_backtracking.py 2  # growth check: wall time of regexes on long single-character runs (CPU work, which the TestClock does not measure); moves to tests/_growth.py in #24
+test_server_idle_connection_shutdown.py 6  # times real HTTP server adapters stopping with an idle or stalled real client socket; engines and sockets run on real time
+test_splitter_linear_time.py 2  # growth check: thread CPU time of splitters on trickled input at two sizes (CPU work, which the TestClock does not measure); moves to tests/_growth.py in #24
+test_test_clock.py 6  # checks adjust and run_test finish promptly in wall time, as busy-fiber waits and warning_delay are real time; the TestClock is under test
+test_test_clock_thread_work.py 2  # checks adjust does not wait out a 3 s blocking thread in wall time; thread work is real time and the TestClock is under test
+test_testing_harness.py 4  # times a pytester run hitting pyfect_timeout and a stall_timeout; harness timeouts run on real time, the TestClock is not in charge
+test_uvicorn_server.py 14  # times uvicorn shutdown in a subprocess and thread with real client sockets, and its start; uvicorn runs on real time
+test_web_socket_early_events.py 2  # deadline for a websockets client loop thread to close against a real sync server; those threads run on real time
+test_workers.py 4  # times closing a real worker subprocess and waits for its pid to be reaped; OS processes run on real time

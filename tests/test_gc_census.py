@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import ast
 import threading
-import time
 from pathlib import Path
 
 import pytest
@@ -23,23 +22,30 @@ _ROOT = Path(__file__).resolve().parent.parent
 _CENSUS = _ROOT / "tests" / "_gc_census.py"
 
 
+_TUPLES = 200_000
+"""How many tuples are built while the objects are read (about a second here)."""
+
+
 def test_reading_objects_leaves_tuples_being_built_alone() -> None:
     stop = threading.Event()
+    reads = 0
 
     def read() -> None:
+        nonlocal reads
         while not stop.is_set():
             counts_by_type()
             tracked_of(threading.Event)
+            reads += 1
 
     reader = threading.Thread(target=read, daemon=True)
     reader.start()
     try:
-        deadline = time.monotonic() + 2
-        while time.monotonic() < deadline:
+        for _ in range(_TUPLES):
             tuple(x for x in range(200))
     finally:
         stop.set()
         reader.join()
+    assert reads > 0
 
 
 def test_the_census_finds_what_is_tracked() -> None:

@@ -877,7 +877,7 @@ def test_does_not_replay_for_an_unawaited_deferred_checkpoint():
     yield from run.pipe(fx.provide(context))
 
 
-@testing.effect(timeout="20 seconds")
+@testing.effect
 def test_advances_a_durable_race_continuation_while_a_sibling_is_parked():
     """advances a durable race continuation while a sibling is parked"""
     yield from W.expect_continues_beside_parked_sibling(
@@ -894,7 +894,7 @@ def test_advances_a_durable_race_continuation_while_a_sibling_is_parked():
     )
 
 
-@testing.effect(timeout="20 seconds")
+@testing.effect
 def test_advances_a_durable_deferred_into_continuation_while_a_sibling_is_parked():
     """advances a DurableDeferred.into continuation while a sibling is parked"""
     # Not an activity: ``into`` itself keeps the run active until the exit is recorded.
@@ -904,7 +904,7 @@ def test_advances_a_durable_deferred_into_continuation_while_a_sibling_is_parked
     )
 
 
-@testing.effect(timeout="20 seconds")
+@testing.effect
 def test_lets_an_active_sibling_finish_before_a_durable_deferred_into_body_parks_the_run():
     """lets an active sibling finish before a DurableDeferred.into body parks the run"""
     gate = durable_deferred.make("ActiveSiblingInto/Gate", success=S.String)
@@ -947,7 +947,7 @@ def test_lets_an_active_sibling_finish_before_a_durable_deferred_into_body_parks
     yield from run.pipe(fx.provide(context))
 
 
-@testing.effect(timeout="20 seconds")
+@testing.effect
 def test_retries_a_deferred_wake_after_a_transient_run_reset_failure():
     """retries a deferred wake after a transient run reset failure"""
     gate = durable_deferred.make("ResetRetry/Gate", success=S.String)
@@ -994,7 +994,7 @@ def test_retries_a_deferred_wake_after_a_transient_run_reset_failure():
     yield from run.pipe(fx.provide(context))
 
 
-@testing.effect(timeout="30 seconds")
+@testing.effect
 def test_keeps_a_completed_reply_when_an_older_concurrent_wake_resets_it():
     """keeps a completed reply when an older concurrent wake resets it"""
     first_reset = yield from fx.Latch.make()
@@ -1151,7 +1151,7 @@ def test_keeps_a_newer_activity_reply_when_a_stale_suspended_reply_resets_the_at
 
 
 @pytest.mark.parametrize("mailbox_capacity", [2, 3])
-@testing.effect(timeout="20 seconds")
+@testing.effect
 def test_admits_a_required_completion_after_an_unrelated_completion(mailbox_capacity: int):
     """admits a required completion after an unrelated completion with mailbox capacity 2 | 3"""
     unrelated_read = yield from fx.Latch.make()
@@ -1252,7 +1252,7 @@ def test_admits_a_required_completion_after_an_unrelated_completion(mailbox_capa
     yield from run.pipe(fx.provide(context))
 
 
-@testing.effect(timeout="30 seconds")
+@testing.effect
 def test_retains_a_handover_completion_before_its_deferred_reply_is_persisted():
     """retains a handover completion before its deferred reply is persisted"""
     gate = durable_deferred.make("DeferredHandover/Gate", success=S.String)
@@ -1413,7 +1413,7 @@ class _DelegatingSharding:
 
 
 @pytest.mark.parametrize("lifecycle", ["defect rebuild", "overlapping activations"])
-@testing.effect(timeout="30 seconds")
+@testing.effect
 def test_completes_before_deferred_persistence_across(lifecycle: str):  # noqa: PLR0915
     """completes before deferred persistence across defect rebuild | overlapping activations"""
     saving = yield from fx.Latch.make()
@@ -1965,7 +1965,7 @@ def _race_with_gate(wf: Any, gate: Any, id_: str, value: str = "signal") -> Any:
     return (yield from fiber.join())
 
 
-@testing.effect(timeout="20 seconds")
+@testing.effect
 @_with_test_layer
 def test_durable_deferred_race_all_lets_a_deferred_win_while_another_branch_is_active():
     """DurableDeferred.raceAll lets a deferred win while another branch is active"""
@@ -1974,7 +1974,7 @@ def test_durable_deferred_race_all_lets_a_deferred_win_while_another_branch_is_a
     )
 
 
-@testing.effect(timeout="20 seconds")
+@testing.effect
 @_with_test_layer
 def test_durable_deferred_race_all_lets_an_active_branch_win_while_the_deferred_stays_pending():
     """DurableDeferred.raceAll lets an active branch win while the deferred stays pending"""
@@ -1987,7 +1987,7 @@ def test_durable_deferred_race_all_lets_an_active_branch_win_while_the_deferred_
     assert (yield from fiber.join()) == "activity"
 
 
-@testing.effect(timeout="20 seconds")
+@testing.effect
 @_with_test_layer
 def test_durable_deferred_race_all_does_not_replay_the_run_when_a_losing_deferred_completes_late():
     """DurableDeferred.raceAll does not replay the run when a losing deferred completes late"""
@@ -2011,7 +2011,7 @@ def test_durable_deferred_race_all_does_not_replay_the_run_when_a_losing_deferre
     assert flags.get("losing-deferred-tail-runs") == 1
 
 
-@testing.effect(timeout="20 seconds")
+@testing.effect
 @_with_test_layer
 def test_durable_deferred_race_all_wakes_the_active_run_by_replaying_it():
     """DurableDeferred.raceAll wakes the active run by replaying it"""
@@ -2024,7 +2024,7 @@ def test_durable_deferred_race_all_wakes_the_active_run_by_replaying_it():
     assert flags.get("in-place-wake-runs") in (1, 2)
 
 
-@testing.effect(timeout="20 seconds")
+@testing.effect
 @_with_test_layer
 def test_durable_deferred_race_all_wakes_a_branch_wrapped_in_durable_deferred_into():
     """DurableDeferred.raceAll wakes a branch wrapped in DurableDeferred.into"""
@@ -2033,7 +2033,7 @@ def test_durable_deferred_race_all_wakes_a_branch_wrapped_in_durable_deferred_in
     )
 
 
-@testing.effect(timeout="20 seconds")
+@testing.effect
 @_with_test_layer
 def test_durable_deferred_race_all_does_not_preempt_for_deferreds_awaited_inside_activity_bodies():
     """DurableDeferred.raceAll does not preempt for deferreds awaited inside activity bodies"""
@@ -2051,7 +2051,7 @@ def test_durable_deferred_race_all_does_not_preempt_for_deferreds_awaited_inside
     assert (yield from fiber.join()) == "slow"
 
 
-@testing.effect(timeout="20 seconds")
+@testing.effect
 @_with_test_layer
 def test_durable_deferred_race_all_lets_a_bare_durable_clock_branch_win_while_another_is_active():
     """DurableDeferred.raceAll lets a bare durable clock branch win while another branch is active"""  # noqa: E501
@@ -2066,7 +2066,7 @@ def test_durable_deferred_race_all_lets_a_bare_durable_clock_branch_win_while_an
     assert (yield from fiber.join()) == "clock"
 
 
-@testing.effect(timeout="20 seconds")
+@testing.effect
 @_with_test_layer
 def test_durable_deferred_race_all_runs_a_branchs_transformations_on_a_deferred_wake():
     """DurableDeferred.raceAll runs a branch's transformations on a deferred wake"""
@@ -2075,7 +2075,7 @@ def test_durable_deferred_race_all_runs_a_branchs_transformations_on_a_deferred_
     )
 
 
-@testing.effect(timeout="20 seconds")
+@testing.effect
 @_with_test_layer
 def test_durable_deferred_race_all_wakes_a_branch_that_ran_an_activity_before_its_await():
     """DurableDeferred.raceAll wakes a branch that ran an activity before its await"""
@@ -2091,7 +2091,7 @@ def test_durable_deferred_race_all_wakes_a_branch_that_ran_an_activity_before_it
     assert (yield from fiber.join()) == "act:signal"
 
 
-@testing.effect(timeout="20 seconds")
+@testing.effect
 @_with_test_layer
 def test_durable_deferred_race_all_re_runs_a_multi_await_branch_once_per_completion():
     """DurableDeferred.raceAll re-runs a multi-await branch once per completion"""
@@ -2120,7 +2120,7 @@ def test_durable_deferred_race_all_re_runs_a_multi_await_branch_once_per_complet
     assert flags.get("two-step-branch-runs") in (2, 3)
 
 
-@testing.effect(timeout="20 seconds")
+@testing.effect
 def test_durable_deferred_resumes_a_discarded_execution_when_completion_precedes_the_commit():
     """DurableDeferred resumes a discarded execution when completion precedes the suspension commit"""  # noqa: E501
     saving_run = yield from fx.Latch.make()
@@ -2196,7 +2196,7 @@ def test_durable_deferred_resumes_a_discarded_execution_when_completion_precedes
     yield from run.pipe(fx.provide(context))
 
 
-@testing.effect(timeout="20 seconds")
+@testing.effect
 @_with_test_layer
 def test_durable_deferred_race_all_delivers_a_completion_that_lands_while_a_suspension_commits():
     """DurableDeferred.raceAll delivers a completion that lands while a suspension commits"""
@@ -2291,7 +2291,7 @@ def test_durable_deferred_race_all_replays_a_persisted_result_its_owner_has_not_
     yield from next_owner.pipe(fx.provide(layer))
 
 
-@testing.effect(timeout="20 seconds")
+@testing.effect
 @_with_test_layer
 def test_durable_deferred_race_all_suspends_when_every_branch_is_pending_and_resumes():
     """DurableDeferred.raceAll suspends when every branch is pending and resumes with the winner"""

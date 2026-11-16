@@ -164,7 +164,7 @@ def _staggered_joins(**config: Any) -> fx.Effect[list[_Change]]:
     return fx.scoped(run)
 
 
-@testing.effect(timeout="30 seconds")
+@testing.effect
 def test_hands_each_shard_off_once_for_a_bounded_burst_of_staggered_joins():
     """hands each shard off once for a bounded burst of staggered joins"""
     # By default, each join publishes a new assignment within its interval.
@@ -537,31 +537,31 @@ def _single_handoffs(
     return run().map(lambda result: _assert_single_handoffs(result, lock_churn=lock_churn))
 
 
-@testing.effect(timeout="30 seconds")
+@testing.effect
 def test_hands_each_shard_off_once_across_a_staggered_cluster_startup():
     """hands each shard off once across a staggered cluster startup"""
     yield from _single_handoffs(_staggered_cluster)
 
 
-@testing.effect(timeout="30 seconds")
+@testing.effect
 def test_hands_each_shard_off_once_when_membership_refresh_fails_during_pending_joins():
     """hands each shard off once when membership refresh fails during pending joins"""
     yield from _single_handoffs(lambda: _staggered_cluster(fail_refresh_during_joins=True))
 
 
-@testing.effect(timeout="30 seconds")
+@testing.effect
 def test_hands_each_shard_off_once_when_runners_poll_membership_out_of_phase():
     """hands each shard off once when runners poll membership out of phase"""
     yield from _single_handoffs(lambda: _staggered_cluster(refresh_assignments_interval=3))
 
 
-@testing.effect(timeout="30 seconds")
+@testing.effect
 def test_hands_each_shard_off_once_when_a_joining_runners_membership_refresh_stalls():
     """hands each shard off once when a joining runner's membership refresh stalls"""
     yield from _single_handoffs(lambda: _staggered_cluster(stall_joiner_refresh=True))
 
 
-@testing.effect(timeout="30 seconds")
+@testing.effect
 def test_runs_each_singleton_on_one_new_runner_when_a_joining_runners_acquisition_is_slow():
     """runs each singleton on one new runner when a joining runner's acquisition is slow"""
     # B can still lock shards when its slow acquisition completes, but must

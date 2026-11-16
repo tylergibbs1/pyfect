@@ -1173,7 +1173,7 @@ def _check_lines(output: str) -> None:
     assert (lines[0], lines[99999]) == ("1", "100000")
 
 
-@testing.effect(timeout="10 seconds")
+@testing.effect
 def test_should_not_deadlock_on_large_stdout_output(node_services: Services[Platform]):
     """should not deadlock on large stdout output"""
     handle = yield from make("sh", ["-c", "seq 1 100000"])
@@ -1182,7 +1182,7 @@ def test_should_not_deadlock_on_large_stdout_output(node_services: Services[Plat
     _check_lines(output)
 
 
-@testing.effect(timeout="10 seconds")
+@testing.effect
 def test_child_process_string_should_not_deadlock_on_large_output(
     node_services: Services[Platform],
 ):
@@ -1191,7 +1191,7 @@ def test_child_process_string_should_not_deadlock_on_large_output(
     _check_lines((yield from service.string(make("sh", ["-c", "seq 1 100000"]))))
 
 
-@testing.effect(timeout="10 seconds")
+@testing.effect
 def test_child_process_exit_code_should_not_deadlock_on_large_output(
     node_services: Services[Platform],
 ):
@@ -1201,7 +1201,7 @@ def test_child_process_exit_code_should_not_deadlock_on_large_output(
     assert (yield from service.exit_code(command)) == ExitCode(0)
 
 
-@testing.effect(timeout="10 seconds")
+@testing.effect
 def test_child_process_string_should_not_deadlock_on_large_stderr_output(
     node_services: Services[Platform],
 ):

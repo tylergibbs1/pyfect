@@ -138,7 +138,7 @@ def test_truncated_answer_retried_over_tcp(name_server: na.InetAddress):
     assert len(names) == 20
 
 
-@testing.live(timeout="10 seconds")
+@testing.live
 def test_other_record_types_are_unsupported(name_server: na.InetAddress):
     error = yield from dns.make_system([name_server]).resolve(name("example.test"), dns.Mx).flip()
     assert (error.reason, error.record_type) == ("Unsupported", "MX")

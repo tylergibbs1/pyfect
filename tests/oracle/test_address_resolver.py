@@ -115,7 +115,7 @@ def test_system_hosts_file():
     yield from fx.gen(body).pipe(fx.provide(SYSTEM))
 
 
-@testing.live(timeout="10 seconds")
+@testing.live
 def test_system_zones():
     """resolves IPv6 zones from the network interfaces"""
 

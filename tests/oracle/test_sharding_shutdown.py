@@ -123,7 +123,7 @@ def _arm_and_shut_down(
 
 @pytest.mark.parametrize("preemptive_shutdown", [True, False])
 @pytest.mark.parametrize("persisted", [False, True])
-@testing.live(timeout="20 seconds")
+@testing.live
 def test_shutdown_completes_when_a_finalizing_entity_sends_an_outgoing_message(
     persisted: bool, preemptive_shutdown: bool
 ):
@@ -177,7 +177,7 @@ def test_shutdown_completes_when_a_finalizing_entity_sends_an_outgoing_message(
 
 
 @pytest.mark.parametrize("persisted", [False, True])
-@testing.live(timeout="20 seconds")
+@testing.live
 def test_shutdown_completes_when_a_finalizing_entity_awaits_a_reply_from_an_unroutable_entity(
     persisted: bool,
 ):
@@ -252,7 +252,7 @@ class ShutdownStreamSender(Entity, type="ShutdownStreamSender"):
     arm = make_rpc("Arm").annotate(Persisted, False)
 
 
-@testing.live(timeout="20 seconds")
+@testing.live
 def test_fails_a_stream_when_its_chunk_acknowledgement_is_abandoned_during_shutdown():
     """fails a stream when its chunk acknowledgement is abandoned during shutdown"""
 

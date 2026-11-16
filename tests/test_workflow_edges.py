@@ -349,7 +349,7 @@ def test_a_deferred_refuses_a_token_naming_another_deferred():
     yield from fx.gen(program).pipe(_with_engine(wf.to_layer(handler)))
 
 
-@testing.live(timeout="10 seconds")
+@testing.live
 def test_poll_gives_none_for_an_unknown_and_for_a_running_execution():
     """As Effect's ``poll`` (``Option.none()`` for both, printed under Node):
     a run inside a short (in-memory) durable sleep is running, not suspended
