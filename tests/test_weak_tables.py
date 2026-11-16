@@ -10,9 +10,10 @@ below with what makes it safe, ideally a test that drops the key and checks it i
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
-_SRC = Path(__file__).resolve().parents[1] / "src" / "pyfect"
+import _source
+
+_SRC = _source.SRC
 
 CHECKED = {
     "crypto/_key.py": "the CryptoKey value holds the algorithm and handle, not the KeyBase",
@@ -31,8 +32,8 @@ CHECKED = {
 def test_every_weak_table_is_checked() -> None:
     users = {
         path.relative_to(_SRC).as_posix()
-        for path in _SRC.rglob("*.py")
-        if re.search(r"WeakKeyDictionary|WeakValueDictionary|weakref\.finalize", path.read_text())
+        for path in _source.files(_SRC)
+        if re.search(r"WeakKeyDictionary|WeakValueDictionary|weakref\.finalize", _source.text(path))
     }
     assert users == set(CHECKED), (
         f"check that no value reaches its key, then list it: {sorted(users ^ set(CHECKED))}"

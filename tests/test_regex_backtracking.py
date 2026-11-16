@@ -8,13 +8,12 @@ import ast
 import importlib
 import re
 from collections.abc import Callable, Iterator
-from pathlib import Path
 
+import _source
 import pytest
 from _growth import cpu, is_near_linear
 from _pyfect_modules import modules
 
-import pyfect
 from pyfect import schema as S
 from pyfect.ai import mcp_schema, mcp_server
 from pyfect.encoding import yaml
@@ -135,11 +134,11 @@ _TRUSTED_SCANS = frozenset(
 def _scanning_patterns() -> Iterator[tuple[str, re.Pattern[str] | re.Pattern[bytes]]]:
     """Every pattern pyfect applies with a scanning method: a module-level
     one (``_NAME.sub(...)``) or a literal (``re.sub("...", ...)``)."""
-    root = Path(pyfect.__file__).parent
-    for file in sorted(root.rglob("*.py")):
+    root = _source.SRC
+    for file in _source.files(root):
         relative = file.relative_to(root.parent)
         module_name = ".".join(relative.with_suffix("").parts).removesuffix(".__init__")
-        for node in ast.walk(ast.parse(file.read_text())):
+        for node in _source.walk(file):
             if not (
                 isinstance(node, ast.Call)
                 and isinstance(node.func, ast.Attribute)

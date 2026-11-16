@@ -7,17 +7,18 @@ A raw ``__subclasses__()`` walk saw each frozen ``slots=True`` dataclass twice o
 from dataclasses import dataclass
 from pathlib import Path
 
+import _source
 from _subclasses import subclasses
 
-TESTS = Path(__file__).parent
+TESTS = _source.TESTS
 
 
 def test_no_test_walks_subclasses_itself():
     raw = [
         str(path.relative_to(TESTS))
-        for path in TESTS.rglob("*.py")
+        for path in _source.files(TESTS)
         if path.name not in {"_subclasses.py", Path(__file__).name}
-        and ".__subclasses__()" in path.read_text(encoding="utf-8")
+        and ".__subclasses__()" in _source.text(path)
     ]
     assert raw == [], "walk with tests/_subclasses.py's subclasses()"
 

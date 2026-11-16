@@ -12,9 +12,9 @@ from __future__ import annotations
 import ast
 import threading
 import time
-from pathlib import Path
 
 import _ports
+import _source
 import pytest
 
 import pyfect as fx
@@ -137,15 +137,15 @@ def test_messages_before_listening_are_read_in_order() -> None:
     assert fx.run_blocking(scoped(pull(socket)).timeout("10 seconds").or_die()) == ("a", "b")
 
 
-SRC = Path(__file__).resolve().parent.parent / "src" / "pyfect"
+SRC = _source.SRC
 
 
 def test_every_web_socket_keeps_its_listeners_in_an_event_target() -> None:
     """A WebSocket of pyfect's dispatches from a loop thread, so its
     listeners live in an ``EventTarget``, which holds early events."""
     found: list[str] = []
-    for path in sorted(SRC.rglob("*.py")):
-        for node in ast.walk(ast.parse(path.read_text(), str(path))):
+    for path in _source.files(SRC):
+        for node in _source.walk(path):
             if not isinstance(node, ast.ClassDef) or node.name == "EventTarget":
                 continue
             methods = {item.name for item in node.body if isinstance(item, ast.FunctionDef)}

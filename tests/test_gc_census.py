@@ -15,10 +15,11 @@ import ast
 import threading
 from pathlib import Path
 
+import _source
 import pytest
 from _gc_census import counts_by_type, tracked_count, tracked_of
 
-_ROOT = Path(__file__).resolve().parent.parent
+_ROOT = _source.ROOT
 _CENSUS = _ROOT / "tests" / "_gc_census.py"
 
 
@@ -67,7 +68,7 @@ def test_a_class_whose_metaclass_checks_instances_in_python_is_refused() -> None
 
 def _reads_gc_objects(path: Path) -> list[int]:
     lines: list[int] = []
-    for node in ast.walk(ast.parse(path.read_text())):
+    for node in _source.walk(path):
         match node:
             case ast.Attribute(attr="get_objects", value=ast.Name(id="gc")):
                 lines.append(node.lineno)
@@ -81,7 +82,7 @@ def _reads_gc_objects(path: Path) -> list[int]:
 
 
 def test_only_the_census_reads_the_collectors_objects() -> None:
-    sources = [*(_ROOT / "src").rglob("*.py"), *(_ROOT / "tests").rglob("*.py")]
+    sources = [*_source.files(_ROOT / "src"), *_source.files(_source.TESTS)]
     readers = [
         f"{path.relative_to(_ROOT)}:{line}"
         for path in sorted(sources)

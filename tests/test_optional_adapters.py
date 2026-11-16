@@ -6,13 +6,15 @@ import subprocess
 import sys
 from pathlib import Path
 
-_SOURCE = Path(__file__).parent.parent / "src" / "pyfect"
+import _source
+
+_SOURCE = _source.SRC
 _OWNERS = {"pydantic": "pydantic.py", "pydantic_core": "pydantic.py", "msgspec": "msgspec.py"}
 
 
 def _imported_roots(path: Path) -> set[str]:
     roots: set[str] = set()
-    for node in ast.walk(ast.parse(path.read_text())):
+    for node in _source.walk(path):
         if isinstance(node, ast.Import):
             roots.update(alias.name.split(".")[0] for alias in node.names)
         elif isinstance(node, ast.ImportFrom) and node.module is not None and node.level == 0:
@@ -23,7 +25,7 @@ def _imported_roots(path: Path) -> set[str]:
 def test_only_the_adapter_modules_import_their_library():
     offenders = [
         (str(path.relative_to(_SOURCE)), library)
-        for path in _SOURCE.rglob("*.py")
+        for path in _source.files(_SOURCE)
         for library in _imported_roots(path) & _OWNERS.keys()
         if path.relative_to(_SOURCE) != Path(_OWNERS[library])
     ]

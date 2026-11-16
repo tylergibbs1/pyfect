@@ -6,13 +6,14 @@ does; a schema applied to the raw JSON would reject ``1.0`` where Effect's
 from __future__ import annotations
 
 import ast
-from pathlib import Path
 
-_AI = Path(__file__).parent.parent / "src" / "pyfect" / "ai"
+import _source
+
+_AI = _source.SRC / "ai"
 _PROVIDER_FILES = [
-    *sorted((_AI / "openai_compat").glob("*.py")),
-    *sorted((_AI / "anthropic").glob("*.py")),
-    *sorted((_AI / "openai").glob("*.py")),
+    *_source.files(_AI / "openai_compat", recursive=False),
+    *_source.files(_AI / "anthropic", recursive=False),
+    *_source.files(_AI / "openai", recursive=False),
     _AI / "_openai_errors.py",
 ]
 _RAW_CHECKS = {
@@ -31,7 +32,7 @@ _TEXT_SCHEMAS = {"UnknownFromJsonString"}
 def test_provider_json_is_checked_through_the_wire_helpers():
     offenders: list[str] = []
     for path in _PROVIDER_FILES:
-        for node in ast.walk(ast.parse(path.read_text())):
+        for node in _source.walk(path):
             if not (
                 isinstance(node, ast.Call)
                 and isinstance(node.func, ast.Attribute)

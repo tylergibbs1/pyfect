@@ -15,12 +15,13 @@ import ast
 import tomllib
 from pathlib import Path
 
+import _source
 from _inventory import parse
+from _source import TESTS
 
 from pyfect.duration import from_input_unsafe, seconds
 from pyfect.testing._decorators import settings
 
-TESTS = Path(__file__).resolve().parent
 _DEFAULT_SECONDS = 5.0
 _DECORATORS = frozenset({"effect", "live", "prop", "effect_prop", "live_prop", "layer_fixture"})
 
@@ -63,13 +64,13 @@ def _longer_timeouts(path: Path) -> dict[str, str]:
         for child in ast.iter_child_nodes(node):
             visit(child, owner)
 
-    visit(ast.parse(path.read_text()), "")
+    visit(_source.tree(path), "")
     return found
 
 
 def _all_longer_timeouts() -> dict[str, str]:
     found: dict[str, str] = {}
-    for path in sorted(TESTS.rglob("test_*.py")):
+    for path in _source.files(TESTS, "test_*.py"):
         found |= _longer_timeouts(path)
     return found
 

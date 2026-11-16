@@ -7,12 +7,14 @@ import ast
 import importlib
 from pathlib import Path
 
-_SOURCE = Path(__file__).parent.parent / "src" / "pyfect"
+import _source
+
+_SOURCE = _source.SRC
 
 
 def _offenders(path: Path) -> list[str]:
     found: list[str] = []
-    for node in ast.walk(ast.parse(path.read_text())):
+    for node in _source.walk(path):
         if not (isinstance(node, ast.ImportFrom) and node.level == 0 and node.module):
             continue
         if node.module.split(".")[0] != "pyfect":
@@ -41,7 +43,7 @@ def _offenders(path: Path) -> list[str]:
 def test_no_import_alias_is_named_after_another_class_of_its_module():
     offenders = [
         line
-        for path in sorted(_SOURCE.rglob("*.py"))
+        for path in _source.files(_SOURCE)
         if "__pycache__" not in path.parts
         for line in _offenders(path)
     ]

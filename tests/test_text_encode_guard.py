@@ -11,9 +11,10 @@ A call on an imported name (``ndjson.encode()``) is a function, not
 from __future__ import annotations
 
 import ast
-from pathlib import Path
 
-_SRC = Path(__file__).parent.parent / "src" / "pyfect"
+import _source
+from _source import SRC as _SRC
+
 _EXEMPT = {"_js.py", "json_pointer.py"}
 _UTF8 = {"utf-8", "utf8", "UTF-8"}
 
@@ -42,10 +43,10 @@ def _is_utf8_encode(node: ast.Call, imported: set[str]) -> bool:
 
 def test_text_is_encoded_as_text_encoder_encodes_it():
     offenders: list[str] = []
-    for path in sorted(_SRC.rglob("*.py")):
+    for path in _source.files(_SRC):
         if path.name in _EXEMPT:
             continue
-        tree = ast.parse(path.read_text())
+        tree = _source.tree(path)
         imported = _imported_names(tree)
         offenders.extend(
             f"{path.relative_to(_SRC)}:{node.lineno} {ast.unparse(node)}"

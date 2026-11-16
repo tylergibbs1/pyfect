@@ -30,12 +30,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast
 
+import _source
 import pytest
+from _source import ROOT, SRC, TESTS
 
-ROOT = Path(__file__).parent.parent
-SRC = ROOT / "src" / "pyfect"
 CHECKED = (SRC, ROOT / "examples", ROOT / "website" / "snippets")
-TESTS = ROOT / "tests"
 # Tests whose subject is what a bare number means.
 UNIT_FREE_TESTS = frozenset(
     TESTS / name
@@ -195,7 +194,7 @@ def _facts_of(tree: ast.Module, src: re.Pattern[str] | None = None) -> _Facts:
 
 @functools.cache
 def _facts(path: Path) -> _Facts:
-    tree = ast.parse(path.read_bytes(), filename=str(path))
+    tree = _source.tree(path)
     if not path.is_relative_to(SRC):
         return _facts_of(tree)
     return _facts_of(tree, _OWN_INPUT if path == _DURATION_MODULE else _DURATION)
@@ -210,7 +209,7 @@ def _release_facts() -> Iterator[None]:
 
 
 def _sources(*roots: Path) -> list[Path]:
-    return sorted(path for root in roots for path in root.rglob("*.py"))
+    return sorted(path for root in roots for path in _source.files(root))
 
 
 def _function_slots(
@@ -529,7 +528,7 @@ def test_a_constant_means_what_its_own_module_binds(tmp_path: Path) -> None:
     }
     for name, source in files.items():
         (tmp_path / name).write_text(source)
-    paths = sorted(tmp_path.glob("*.py"))
+    paths = list(_source.files(tmp_path))
     constants = _constants_by_path(paths, roots=(tmp_path,))
     flagged = {
         path.name for path in paths if _call_violations(_facts(path).calls, slots, constants[path])
@@ -575,7 +574,7 @@ def test_no_epoch_seconds_are_given_where_epoch_millis_are_taken() -> None:
 
 
 def test_the_guard_finds_epoch_seconds() -> None:
-    tree = ast.parse(
+    tree = _source.parse(
         "testing.set_time(dt.timestamp())\nclock.set_time(time.time())\n"
         "testing.set_time(dt.timestamp() * 1000)\nTestClock(start=time.time())\n"
     )
@@ -586,7 +585,7 @@ def test_the_guard_finds_duration_slots_and_bare_numbers() -> None:
     slots = _duration_slots()
     assert {0} <= slots["sleep"].positions
     assert "duration" in slots["timeout"].keywords
-    tree = ast.parse(
+    tree = _source.parse(
         "fx.sleep(5)\nfx.sleep(-0.5)\nfx.sleep('5 seconds')\nx.timeout(duration=2 * 3)\n"
         "def f(d: DurationInput = 5): ...\n_WAIT = 0.5\nfx.sleep(_WAIT)\n_TTL_MILLIS = 500\n"
         "fx.sleep(_TTL_MILLIS)\nfx.sleep(math.inf)\nimport asyncio\nasyncio.sleep(0.5)\n"
@@ -602,7 +601,7 @@ def test_a_shared_method_name_counts_only_on_its_own_receiver() -> None:
     """``with_default`` takes a duration only on ``config.duration(...)``."""
     slots = _duration_slots()
     assert slots["with_default"].receivers == {"duration"}
-    tree = ast.parse(
+    tree = _source.parse(
         "config.duration('T').with_default(5)\nconfig.port('P').with_default(8080)\n"
         "config.duration('T').nested('a').with_default(5)\n"
         "config.all(config.duration('T')).with_default(5)\n"
@@ -664,7 +663,7 @@ def _code_in(text: str) -> list[ast.Module]:
     parsed: list[ast.Module] = []
     for piece in pieces:
         try:
-            parsed.append(ast.parse(piece.strip()))
+            parsed.append(_source.parse(piece.strip()))
         except SyntaxError:
             continue
     return parsed
@@ -723,7 +722,7 @@ def test_each_file_is_parsed_and_walked_once(monkeypatch: pytest.MonkeyPatch) ->
     parsed: set[str] = set()
     walked: weakref.WeakKeyDictionary[ast.AST, str] = weakref.WeakKeyDictionary()
     unwalked: weakref.WeakKeyDictionary[ast.AST, str] = weakref.WeakKeyDictionary()
-    parse, walk, flat_walk = ast.parse, ast.walk, _walk
+    parse, walk, flat_walk, tree_of = ast.parse, ast.walk, _walk, _source.tree
 
     def counting_parse(*args: Any, **kwargs: Any) -> Any:
         tree = parse(*args, **kwargs)
@@ -731,7 +730,13 @@ def test_each_file_is_parsed_and_walked_once(monkeypatch: pytest.MonkeyPatch) ->
         if filename != "<unknown>":
             assert filename not in parsed, f"{filename} parsed again"
             parsed.add(filename)
-            unwalked[tree] = filename
+        return tree
+
+    def counting_tree(path: Path) -> ast.Module:
+        """A tree another test parsed (``_source`` shares them) is watched from here on."""
+        tree = tree_of(path)
+        if tree not in walked:
+            unwalked[tree] = str(path)
         return tree
 
     def count_walk(tree: ast.AST) -> None:
@@ -748,6 +753,7 @@ def test_each_file_is_parsed_and_walked_once(monkeypatch: pytest.MonkeyPatch) ->
         return flat_walk(tree)
 
     monkeypatch.setattr(ast, "parse", counting_parse)
+    monkeypatch.setattr(_source, "tree", counting_tree)
     monkeypatch.setattr(ast, "walk", counting_walk)
     monkeypatch.setattr(sys.modules[__name__], "_walk", counting_flat_walk)
     checks: list[Callable[[], None]] = [

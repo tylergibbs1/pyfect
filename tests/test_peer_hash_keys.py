@@ -9,13 +9,12 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Callable
-from pathlib import Path
 from typing import Any, cast
 
+import _source
 import pytest
 from _growth import Work, assert_near_linear
 
-import pyfect
 import pyfect as fx
 from pyfect import schema as S
 from pyfect._equal import dedupe
@@ -197,11 +196,11 @@ _PEER_MAP = re.compile(r"\b(?:dict|set|frozenset)\[RequestId\b")
 def test_no_map_is_keyed_by_raw_request_ids() -> None:
     """Request ids come from peers: maps of them are ``PeerKeyDict`` /
     ``PeerKeySet``, never a plain ``dict`` or ``set``."""
-    root = Path(pyfect.__file__).parent
+    root = _source.SRC
     found = [
         f"{path.relative_to(root)}:{n}"
-        for path in sorted(root.rglob("*.py"))
-        for n, line in enumerate(path.read_text().splitlines(), 1)
+        for path in _source.files(root)
+        for n, line in enumerate(_source.text(path).splitlines(), 1)
         if _PEER_MAP.search(line)
     ]
     assert found == []

@@ -7,9 +7,10 @@ or in a context captured from it (`context.run(warnings.warn, ...)`).
 """
 
 import ast
-from pathlib import Path
 
-SRC = Path(__file__).resolve().parent.parent / "src" / "pyfect"
+import _source
+
+SRC = _source.SRC
 
 
 def _warns_directly(fn: ast.FunctionDef | ast.Lambda) -> bool:
@@ -54,8 +55,8 @@ def _timer_callbacks(tree: ast.Module) -> list[tuple[int, ast.FunctionDef | ast.
 def test_no_timer_callback_warns_in_its_own_context():
     offenders: list[str] = []
     checked = 0
-    for path in SRC.rglob("*.py"):
-        tree = ast.parse(path.read_text(encoding="utf-8"))
+    for path in _source.files(SRC):
+        tree = _source.tree(path)
         for line, callback in _timer_callbacks(tree):
             checked += 1
             if _warns_directly(callback):

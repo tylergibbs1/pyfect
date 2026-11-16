@@ -13,8 +13,10 @@ from __future__ import annotations
 import ast
 import inspect
 import pydoc
+from pathlib import Path
 from types import ModuleType
 
+import _source
 from _pyfect_modules import modules
 
 from pyfect import layer
@@ -23,7 +25,7 @@ from pyfect.layer import Layer
 
 def _assigned_names(module: ModuleType) -> set[str]:
     """The names ``module``'s own top level assigns."""
-    tree = ast.parse(inspect.getsource(module))
+    tree = _source.tree(Path(inspect.getfile(module)))
     names: set[str] = set()
     for statement in tree.body:
         targets = (

@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Never, TypeIs
 
+import _source
 import pytest
 
 import pyfect as fx
@@ -421,12 +422,11 @@ def test_recovery_reads_causes_only_through_find_recoverable_error():
     src/ may bring it back, nor pick a typed error out of ``.failures``:
     combinators go through ``find_recoverable_error`` (or ``find_fail``
     to observe)."""
-    src = Path(__file__).parent.parent / "src" / "pyfect"
     offenders = [
         f"{p.name}:{n}"
-        for p in src.rglob("*.py")
+        for p in _source.files(_source.SRC)
         if p.name != "cause.py"
-        for n, line in enumerate(p.read_text().splitlines(), 1)
+        for n, line in enumerate(_source.text(p).splitlines(), 1)
         if re.search(r"\bfirst_failure\b|\.failures\b", line)
     ]
     assert offenders == []
@@ -440,7 +440,7 @@ _ELECTING_SITES = {
     "combineFinalizerCause": "_cause_election.py: finalizer_cause",
     "iterateConcurrentImpl": "_cause_election.py: late_sibling_cause",
 }
-_SRC = Path(__file__).parent.parent / "src" / "pyfect"
+_SRC = _source.SRC
 _EFFECT_TS = (
     Path(os.environ.get("PYFECT_EFFECT_REF") or _SRC.parent.parent.parent / "pyfect-ref" / "effect")
     / "packages/effect/src/internal/effect.ts"
@@ -454,11 +454,11 @@ def test_only_the_ports_of_effects_electing_sites_elect_defects():
     anywhere else is ``a + b`` or ``exit.as_void_all``."""
     calls = {
         f"{p.relative_to(_SRC)}:{n}"
-        for p in _SRC.rglob("*.py")
-        for n, line in enumerate(p.read_text().splitlines(), 1)
+        for p in _source.files(_SRC)
+        for n, line in enumerate(_source.text(p).splitlines(), 1)
         if ".elect_defects(" in line
     }
-    election = (_SRC / "_cause_election.py").read_text()
+    election = _source.text(_SRC / "_cause_election.py")
     assert {c for c in calls if not c.startswith(("cause.py:", "_cause_election.py:"))} == set()
     ported = {site.split(": ")[1] for site in _ELECTING_SITES.values()}
     functions = set(re.findall(r"^def (\w+)", election, re.MULTILINE))

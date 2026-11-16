@@ -15,6 +15,10 @@ import math
 import sys
 from collections.abc import Callable
 from pathlib import Path
+from typing import TypeIs
+
+import _source
+from _source import SRC
 
 from pyfect import duration
 from pyfect.duration import Duration
@@ -108,9 +112,8 @@ def test_infinite_and_huge_counts_saturate():
     assert duration.from_input_unsafe(10**400) == duration.infinity
 
 
-SRC = Path(__file__).resolve().parent.parent / "src" / "pyfect"
 TIME_CODE = [
-    *sorted((SRC / "schedule").glob("*.py")),
+    *_source.files(SRC / "schedule", recursive=False),
     SRC / "duration.py",
     SRC / "testing" / "_clock.py",
 ]
@@ -120,13 +123,22 @@ def is_int_literal(node: ast.expr) -> bool:
     return isinstance(node, ast.Constant) and type(node.value) is int
 
 
+def is_pow_call(node: ast.AST) -> TypeIs[ast.Call]:
+    """A call of ``math.pow`` or ``pow``; ``ast.unparse`` runs only on calls named ``pow``."""
+    if not isinstance(node, ast.Call):
+        return False
+    func = node.func
+    named = func.id if isinstance(func, ast.Name) else getattr(func, "attr", None)
+    return named == "pow" and ast.unparse(func) in {"math.pow", "pow"}
+
+
 def raw_powers(path: Path) -> list[int]:
     lines: list[int] = []
-    for node in ast.walk(ast.parse(path.read_text())):
+    for node in _source.walk(path):
         if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Pow):
             if not (is_int_literal(node.left) and is_int_literal(node.right)):
                 lines.append(node.lineno)
-        elif isinstance(node, ast.Call) and ast.unparse(node.func) in {"math.pow", "pow"}:
+        elif is_pow_call(node):
             lines.append(node.lineno)
     return lines
 
@@ -138,11 +150,7 @@ def test_time_code_raises_powers_only_through_js_power():
 
 
 def math_pow_calls(path: Path) -> list[int]:
-    return [
-        node.lineno
-        for node in ast.walk(ast.parse(path.read_text()))
-        if isinstance(node, ast.Call) and ast.unparse(node.func) in {"math.pow", "pow"}
-    ]
+    return [node.lineno for node in _source.walk(path) if is_pow_call(node)]
 
 
 def test_math_pow_only_inside_js_power():
@@ -150,7 +158,7 @@ def test_math_pow_only_inside_js_power():
     through ``_js.power`` instead of a private copy."""
     found = {
         str(p.relative_to(SRC)): math_pow_calls(p)
-        for p in sorted(SRC.rglob("*.py"))
+        for p in _source.files(SRC)
         if p != SRC / "_js.py"
     }
     assert {p: lines for p, lines in found.items() if lines} == {}
@@ -162,7 +170,7 @@ def float_literal_powers(path: Path) -> list[int]:
 
     return [
         node.lineno
-        for node in ast.walk(ast.parse(path.read_text()))
+        for node in _source.walk(path)
         if isinstance(node, ast.BinOp)
         and isinstance(node.op, ast.Pow)
         and (is_float(node.left) or is_float(node.right))
@@ -173,5 +181,5 @@ def test_no_float_power_outside_js_power():
     """``10.0 ** n`` raises ``OverflowError`` past float range where
     JavaScript's ``**`` gives ``Infinity`` (``cli.prompt.number`` died with a
     precision over 308); ports of ``Math.pow`` use ``_js.power``."""
-    found = {str(p.relative_to(SRC)): float_literal_powers(p) for p in sorted(SRC.rglob("*.py"))}
+    found = {str(p.relative_to(SRC)): float_literal_powers(p) for p in _source.files(SRC)}
     assert {p: lines for p, lines in found.items() if lines} == {}

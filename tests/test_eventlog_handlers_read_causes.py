@@ -10,6 +10,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+import _source
+
 import pyfect.eventlog
 
 IGNORES_CAUSE_ON_PURPOSE = {
@@ -47,8 +49,8 @@ class _Finder(ast.NodeVisitor):
 def test_handlers_never_drop_a_storage_failures_cause() -> None:
     root = Path(pyfect.eventlog.__file__).parent
     found: set[tuple[str, str]] = set()
-    for path in sorted(root.rglob("*.py")):
+    for path in _source.files(root):
         finder = _Finder(path.name)
-        finder.visit(ast.parse(path.read_text(), str(path)))
+        finder.visit(_source.tree(path))
         found |= finder.found
     assert found == IGNORES_CAUSE_ON_PURPOSE

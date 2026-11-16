@@ -10,9 +10,9 @@ from __future__ import annotations
 
 import ast
 import re
-from pathlib import Path
 
-SRC = Path(__file__).resolve().parent.parent / "src" / "pyfect"
+import _source
+from _source import SRC
 
 _DURATION_NAME = re.compile(r"duration|ttl|timeout|idle|interval|delay", re.IGNORECASE)
 
@@ -42,13 +42,13 @@ def _seconds_times_thousand(node: ast.AST) -> bool:
 def test_no_duration_times_a_thousand():
     offenders = [
         f"{path.relative_to(SRC)}:{getattr(node, 'lineno', 0)}"
-        for path in sorted(SRC.rglob("*.py"))
-        for node in ast.walk(ast.parse(path.read_text(), str(path)))
+        for path in _source.files(SRC)
+        for node in _source.walk(path)
         if _seconds_times_thousand(node)
     ]
     assert offenders == [], "use pyfect.duration.to_millis"
 
 
 def test_the_guard_sees_a_duration_times_a_thousand():
-    tree = ast.parse("clock.duration * 1000 + 1000 * ttl")
+    tree = _source.parse("clock.duration * 1000 + 1000 * ttl")
     assert sum(_seconds_times_thousand(node) for node in ast.walk(tree)) == 2

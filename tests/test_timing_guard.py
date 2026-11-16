@@ -24,11 +24,12 @@ from __future__ import annotations
 
 import ast
 from collections import Counter
-from pathlib import Path
+from collections.abc import Iterable
 
+import _source
 from _inventory import parse
 
-TESTS = Path(__file__).resolve().parent
+TESTS = _source.TESTS
 
 _TIMERS = frozenset({"cpu", "cpu_pair"})
 _TESTS_THE_HELPER = frozenset({"test_growth_checks.py"})
@@ -47,9 +48,9 @@ TIMED_IO = TESTS / "_timed_io.txt"
 clock itself, how many reads it has, and what real time it measures."""
 
 
-def _clock_reads(source: str) -> int:
+def _clock_reads(nodes: Iterable[ast.AST]) -> int:
     reads = 0
-    for node in ast.walk(ast.parse(source)):
+    for node in nodes:
         if (
             isinstance(node, ast.Attribute)
             and node.attr in _CLOCKS
@@ -64,10 +65,10 @@ def _clock_reads(source: str) -> int:
 
 def _reads_by_file() -> Counter[str]:
     reads: Counter[str] = Counter()
-    for path in sorted(TESTS.rglob("*.py")):
+    for path in _source.files(TESTS):
         name = path.relative_to(TESTS).as_posix()
         if name not in _HELPERS:
-            reads[name] = _clock_reads(path.read_text())
+            reads[name] = _clock_reads(_source.walk(path))
     return +reads
 
 
@@ -86,7 +87,7 @@ def test_the_guard_sees_every_way_to_read_the_clock() -> None:
         "d = time.thread_time()\ntime.sleep(1)\nclock.monotonic()\n"
     )
     # The import of perf_counter counts once, the call through it not again.
-    assert _clock_reads(source) == 4
+    assert _clock_reads(ast.walk(_source.parse(source))) == 4
 
 
 def _timings(scope: ast.AST) -> dict[str, int]:
@@ -141,9 +142,8 @@ def _unfloored(node: ast.AST, timings: dict[str, int]) -> bool:
     ) and not any(_floored(part, timings) for part in ast.walk(node))
 
 
-def _timing_comparisons(source: str) -> list[str]:
+def _timing_comparisons(tree: ast.Module) -> list[str]:
     """Lines that combine CPU times other than as one ``cpu_pair`` with a floored side."""
-    tree = ast.parse(source)
     timings = _timings(tree)
     found: list[str] = []
     for node in ast.walk(tree):
@@ -168,9 +168,8 @@ def _timing_comparisons(source: str) -> list[str]:
 def test_timings_are_compared_only_in_pairs_with_a_floor() -> None:
     found = {
         path.relative_to(TESTS).as_posix(): lines
-        for path in sorted(TESTS.rglob("test_*.py"))
-        if path.name not in _TESTS_THE_HELPER
-        and (lines := _timing_comparisons(path.read_text(encoding="utf-8")))
+        for path in _source.files(TESTS, "test_*.py")
+        if path.name not in _TESTS_THE_HELPER and (lines := _timing_comparisons(_source.tree(path)))
     }
     assert found == {}, "measure both with cpu_pair, floor the cheaper one, or count the work"
 
@@ -178,14 +177,19 @@ def test_timings_are_compared_only_in_pairs_with_a_floor() -> None:
 def test_the_guard_sees_a_ratio_of_separate_timings() -> None:
     assert sorted(
         _timing_comparisons(
-            "near = cpu(a)\nfar = cpu(b)\nwalk = cpu(c)\nassert far - walk < 3 * near\n"
+            _source.parse(
+                "near = cpu(a)\nfar = cpu(b)\nwalk = cpu(c)\nassert far - walk < 3 * near\n"
+            )
         )
     ) == ["4: adds or subtracts timings", "4: compares timings not measured by one cpu_pair"]
-    assert _timing_comparisons("assert cpu(a) < 3 * max(cpu(b), 0.001)\n") == [
+    assert _timing_comparisons(_source.parse("assert cpu(a) < 3 * max(cpu(b), 0.001)\n")) == [
         "1: compares timings not measured by one cpu_pair"
     ]
-    assert _timing_comparisons("a, b = cpu_pair(x, y)\nassert a < 3 * b\n") == [
+    assert _timing_comparisons(_source.parse("a, b = cpu_pair(x, y)\nassert a < 3 * b\n")) == [
         "2: compares timings without flooring one"
     ]
-    assert _timing_comparisons("a, b = cpu_pair(x, y)\nassert a < 3 * max(b, 0.001)\n") == []
-    assert _timing_comparisons("assert cpu(a) < 0.25\n") == []
+    assert (
+        _timing_comparisons(_source.parse("a, b = cpu_pair(x, y)\nassert a < 3 * max(b, 0.001)\n"))
+        == []
+    )
+    assert _timing_comparisons(_source.parse("assert cpu(a) < 0.25\n")) == []

@@ -12,6 +12,8 @@ import ast
 from dataclasses import dataclass
 from pathlib import Path
 
+import _source
+
 import pyfect as fx
 from pyfect import layer
 
@@ -42,16 +44,16 @@ def _fixed_type_tuples(tree: ast.AST) -> list[int]:
 def test_no_fixed_length_tuple_of_classes_in_signatures() -> None:
     offenders = [
         f"{path.relative_to(SRC)}:{line}"
-        for path in sorted(SRC.rglob("*.py"))
-        for line in _fixed_type_tuples(ast.parse(path.read_text(), str(path)))
+        for path in _source.files(SRC)
+        for line in _fixed_type_tuples(_source.tree(path))
     ]
     assert offenders == [], f"use pyfect._tags.Tags[T] instead of a fixed tuple: {offenders}"
 
 
 def test_the_guard_finds_a_fixed_tuple() -> None:
-    tree = ast.parse("def f(tag: tuple[type[A], type[B]]) -> None: ...")
+    tree = _source.parse("def f(tag: tuple[type[A], type[B]]) -> None: ...")
     assert _fixed_type_tuples(tree) == [1]
-    assert _fixed_type_tuples(ast.parse("def f(tag: tuple[type[A], ...]) -> None: ...")) == []
+    assert _fixed_type_tuples(_source.parse("def f(tag: tuple[type[A], ...]) -> None: ...")) == []
 
 
 @dataclass

@@ -8,10 +8,11 @@ from __future__ import annotations
 
 import ast
 from collections.abc import Callable
-from pathlib import Path
 from typing import Any
 
+import _source
 import pytest
+from _source import SRC
 from oracle._live_http import parse_responses, port, run_live, until_close
 from oracle.test_http_static_server import precision
 
@@ -22,16 +23,15 @@ from pyfect.http import cookies, headers, router, server_response
 from pyfect.net import host, net_address
 from pyfect.result import Err, Ok
 
-SRC = Path(__file__).resolve().parent.parent / "src" / "pyfect"
 _BANNED = frozenset({"isdigit", "isdecimal", "isnumeric"})
 
 
 def test_isdigit_is_called_only_by_parse_digits():
     offenders: list[str] = []
-    for path in sorted(SRC.rglob("*.py")):
+    for path in _source.files(SRC):
         if path.name == "_digits.py":
             continue
-        tree = ast.parse(path.read_text(), str(path))
+        tree = _source.tree(path)
         offenders.extend(
             f"{path.relative_to(SRC)}:{node.lineno}"
             for node in ast.walk(tree)
@@ -67,10 +67,10 @@ _SHAPE_ONLY = frozenset({"schema/_checks_string.py"})
 
 def test_no_regex_parses_a_bare_digit_run():
     offenders: list[str] = []
-    for path in sorted(SRC.rglob("*.py")):
+    for path in _source.files(SRC):
         if str(path.relative_to(SRC)) in _SHAPE_ONLY:
             continue
-        tree = ast.parse(path.read_text(), str(path))
+        tree = _source.tree(path)
         offenders.extend(
             f"{path.relative_to(SRC)}:{node.lineno}"
             for node in ast.walk(tree)
@@ -220,14 +220,14 @@ def _unicode_class_offenders(tree: ast.Module) -> list[int]:
 def test_no_regex_matches_unicode_digits_or_letters():
     offenders = [
         f"{path.relative_to(SRC)}:{line}"
-        for path in sorted(SRC.rglob("*.py"))
-        for line in _unicode_class_offenders(ast.parse(path.read_text(), str(path)))
+        for path in _source.files(SRC)
+        for line in _unicode_class_offenders(_source.tree(path))
     ]
     assert offenders == [], r"write \d as [0-9]; give a \w pattern re.ASCII"
 
 
 def test_the_unicode_class_guard_sees_constants_and_flags():
-    tree = ast.parse(
+    tree = _source.parse(
         'import re\nRUN = r"\\d+"\n'
         'a = re.compile(f"x{RUN}")\n'
         "b = re.compile(RUN, re.ASCII)\n"

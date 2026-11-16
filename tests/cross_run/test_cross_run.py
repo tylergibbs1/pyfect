@@ -11,6 +11,7 @@ import sys
 from collections.abc import Iterator
 from pathlib import Path
 
+import _source
 import pytest
 
 import pyfect as fx
@@ -41,8 +42,8 @@ def test_cases_wait_at_barriers_a_raise_breaks():
     deadline, reported as a hang; ``_hammer.barrier`` breaks so the raise is reported."""
     plain = [
         path.name
-        for path in Path(__file__).parent.glob("cases_*.py")
-        if "threading.Barrier(" in path.read_text()
+        for path in _source.files(Path(__file__).parent, "cases_*.py", recursive=False)
+        if "threading.Barrier(" in _source.text(path)
     ]
     assert not plain, f"use _hammer.barrier in {plain}"
 

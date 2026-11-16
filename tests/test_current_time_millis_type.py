@@ -11,20 +11,21 @@ each one's reading at run time."""
 from __future__ import annotations
 
 import ast
-from pathlib import Path
+
+import _source
 
 import pyfect as fx
 from pyfect.clock import ClockService, LiveClock
 from pyfect.testing import TestClock
 
-SRC = Path(__file__).resolve().parent.parent / "src" / "pyfect"
+SRC = _source.SRC
 
 
 def _clock_classes() -> set[str]:
     """Every class in ``src`` but a ``Protocol`` that defines ``current_time_millis_unsafe``."""
     found: set[str] = set()
-    for path in SRC.rglob("*.py"):
-        for node in ast.walk(ast.parse(path.read_text(), str(path))):
+    for path in _source.files(SRC):
+        for node in _source.walk(path):
             if not isinstance(node, ast.ClassDef):
                 continue
             protocol = any(isinstance(b, ast.Name) and b.id == "Protocol" for b in node.bases)

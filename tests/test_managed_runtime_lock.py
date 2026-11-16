@@ -12,9 +12,10 @@ docstring says it is "Called under ``_lock``", itself only called there.
 from __future__ import annotations
 
 import ast
-from pathlib import Path
 
-SOURCE = Path(__file__).resolve().parent.parent / "src" / "pyfect" / "managed_runtime.py"
+import _source
+
+SOURCE = _source.SRC / "managed_runtime.py"
 _GUARDED = {"_disposed", "_cached", "_context_effect", "_build_fiber"}
 _MARK = "Called under ``_lock``"
 
@@ -66,7 +67,7 @@ def _unlocked_uses(tree: ast.AST) -> list[str]:
 
 
 def test_the_runtime_state_is_only_used_under_the_lock() -> None:
-    assert _unlocked_uses(ast.parse(SOURCE.read_text())) == []
+    assert _unlocked_uses(_source.tree(SOURCE)) == []
 
 
 def test_the_check_finds_an_unlocked_use() -> None:
@@ -88,7 +89,7 @@ class R:
             self._fiber_scope._watch(f)
         return self._provided()
 '''
-    assert _unlocked_uses(ast.parse(code)) == [
+    assert _unlocked_uses(_source.parse(code)) == [
         "line 15: _disposed",
         "line 16: _watch",
         "line 17: _provided",

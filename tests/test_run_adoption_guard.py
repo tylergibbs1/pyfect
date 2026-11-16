@@ -16,15 +16,14 @@ from __future__ import annotations
 import ast
 import threading
 from collections.abc import Callable
-from pathlib import Path
 from typing import Any
 
+import _source
 import pytest
+from _source import SRC
 
 import pyfect as fx
 from pyfect import layer
-
-SRC = Path(__file__).parent.parent / "src" / "pyfect"
 
 # (module, function) allowed to drive a scheduler, and why it leaves none undriven.
 _ALLOWED = {
@@ -65,10 +64,10 @@ class _Scan(ast.NodeVisitor):
 
 def _drivers() -> set[tuple[str, str]]:
     found: set[tuple[str, str]] = set()
-    for path in SRC.rglob("*.py"):
+    for path in _source.files(SRC):
         module = path.relative_to(SRC).as_posix()
         scan = _Scan(module)
-        scan.visit(ast.parse(path.read_text()))
+        scan.visit(_source.tree(path))
         found |= scan.found
     return found
 

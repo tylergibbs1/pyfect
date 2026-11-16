@@ -7,9 +7,10 @@ Decode with ``schema.getter._binary``'s ``base64_decode`` /
 from __future__ import annotations
 
 import ast
-from pathlib import Path
 
-_SRC = Path(__file__).parent.parent / "src" / "pyfect"
+import _source
+
+_SRC = _source.SRC
 _LENIENT = {"urlsafe_b64decode", "standard_b64decode", "b32decode", "a85decode", "b85decode"}
 
 
@@ -22,8 +23,8 @@ def _validated(call: ast.Call) -> bool:
 
 def test_no_lenient_base64_decoding():
     offenders: list[str] = []
-    for path in sorted(_SRC.rglob("*.py")):
-        for node in ast.walk(ast.parse(path.read_text())):
+    for path in _source.files(_SRC):
+        for node in _source.walk(path):
             if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)):
                 continue
             name = node.func.attr

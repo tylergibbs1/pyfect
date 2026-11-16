@@ -8,6 +8,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+import _source
+
 import pyfect.cluster.cluster_workflow_engine as package
 
 
@@ -25,8 +27,8 @@ def _reset_calls() -> list[tuple[str, str]]:
     """(file, enclosing function) of every ``<...>.sharding.reset(...)`` call."""
     return [
         (path.name, function.name)
-        for path in sorted(Path(package.__file__).parent.glob("*.py"))
-        for function in ast.walk(ast.parse(path.read_text()))
+        for path in _source.files(Path(package.__file__).parent, recursive=False)
+        for function in _source.walk(path)
         if isinstance(function, ast.FunctionDef)
         for node in ast.walk(function)
         if _is_sharding_reset(node)

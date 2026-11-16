@@ -5,11 +5,10 @@ every segment. Empty ``IN`` lists still read the text before them as a whole."""
 import ast
 import random
 import re
-from pathlib import Path
 
+import _source
 from _growth import Work, assert_near_linear
 
-import pyfect
 import pyfect as fx
 from pyfect.sql import statement as st
 from pyfect.sql.statement import Fragment, Literal, Parameter, and_, make_compiler_sqlite
@@ -74,11 +73,11 @@ def test_empty_in_reads_the_parts_as_the_whole_text_would() -> None:
 
 def test_the_sql_compiler_never_grows_text_on_an_attribute() -> None:
     """``self.text += part`` copies the text each time; parts go in a list."""
-    root = Path(pyfect.__file__).parent / "sql"
+    root = _source.SRC / "sql"
     found = [
         f"{path.relative_to(root)}:{node.lineno}"
-        for path in sorted(root.rglob("*.py"))
-        for node in ast.walk(ast.parse(path.read_text()))
+        for path in _source.files(root)
+        for node in _source.walk(path)
         if isinstance(node, ast.AugAssign)
         and isinstance(node.op, ast.Add)
         and isinstance(node.target, ast.Attribute | ast.Subscript)

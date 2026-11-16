@@ -13,21 +13,20 @@ from __future__ import annotations
 
 import ast
 from collections.abc import Iterator
-from pathlib import Path
 
+import _source
 import pytest
+from _source import SRC
 
 from pyfect import _js_date as js_date
-
-SRC = Path(__file__).resolve().parent.parent / "src" / "pyfect"
 
 # Reads back ISO text that pyfect itself wrote with ``datetime.isoformat``.
 _READS_ITS_OWN_ISOFORMAT = {"schema/_arbitrary_constraint.py"}
 
 
 def _calls(attr: str) -> Iterator[tuple[str, int]]:
-    for path in sorted(SRC.rglob("*.py")):
-        for node in ast.walk(ast.parse(path.read_text(), str(path))):
+    for path in _source.files(SRC):
+        for node in _source.walk(path):
             if not isinstance(node, ast.Call):
                 continue
             func = node.func

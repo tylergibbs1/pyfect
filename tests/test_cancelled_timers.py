@@ -16,15 +16,15 @@ from __future__ import annotations
 import gc
 import re
 import weakref
-from pathlib import Path
 
+import _source
 from _gc_census import tracked_count
 
 import pyfect as fx
 from pyfect import testing
 from pyfect._timer_heap import TimerHeap
 
-_SRC = Path(__file__).resolve().parents[1] / "src" / "pyfect"
+_SRC = _source.SRC
 
 
 class Payload:
@@ -106,7 +106,7 @@ def test_only_the_timer_heap_keeps_a_heap_of_timers() -> None:
     allowed = {"_timer_heap.py", "graph/_shortest.py", "graph/_enumerate.py"}
     users = {
         path.relative_to(_SRC).as_posix()
-        for path in _SRC.rglob("*.py")
-        if re.search(r"^\s*(import heapq|from heapq import)", path.read_text(), re.MULTILINE)
+        for path in _source.files(_SRC)
+        if re.search(r"^\s*(import heapq|from heapq import)", _source.text(path), re.MULTILINE)
     }
     assert users <= allowed, f"use pyfect._timer_heap.TimerHeap in {sorted(users - allowed)}"

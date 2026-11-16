@@ -8,11 +8,11 @@ This walks the tests: a ``subprocess`` call, ``communicate`` or
 ``SUBPROCESS_TIMEOUT`` fails."""
 
 import ast
-from pathlib import Path
 
+import _source
 from _subprocess import SUBPROCESS_TIMEOUT
 
-_TESTS = Path(__file__).parent
+_TESTS = _source.TESTS
 _SUBPROCESS_CALLS = {"run", "Popen", "call", "check_call", "check_output"}
 _WAITS = {"communicate", "runpytest_subprocess"}
 
@@ -43,8 +43,8 @@ def _short_timeouts(tree: ast.AST) -> list[int]:
 def test_no_test_waits_less_than_subprocess_timeout_for_a_program():
     found = [
         f"{path.relative_to(_TESTS)}:{line}"
-        for path in sorted(_TESTS.rglob("*.py"))
-        for line in _short_timeouts(ast.parse(path.read_text(), str(path)))
+        for path in _source.files(_TESTS)
+        for line in _short_timeouts(_source.tree(path))
     ]
     assert found == []
 
@@ -56,4 +56,4 @@ def test_the_guard_sees_a_short_timeout():
         "subprocess.run(['pwsh'], timeout=SUBPROCESS_TIMEOUT)\n"
         "queue.get(timeout=1)\n"
     )
-    assert _short_timeouts(ast.parse(source)) == [1, 2]
+    assert _short_timeouts(_source.parse(source)) == [1, 2]

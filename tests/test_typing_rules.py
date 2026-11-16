@@ -8,9 +8,10 @@ to pass two error-free arguments. Defaulted TypeVars in separate slots
 meet in a union: a function is flagged when two of them do."""
 
 import ast
-from pathlib import Path
 
-SRC = Path(__file__).parent.parent / "src" / "pyfect"
+import _source
+
+SRC = _source.SRC
 
 type Generic = ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef
 
@@ -29,8 +30,8 @@ def _never_defaulted(node: Generic, prefix: str) -> list[str]:
 def _generics() -> list[tuple[str, Generic]]:
     return [
         (f"{path.relative_to(SRC)}:{node.lineno} {node.name}", node)
-        for path in sorted(SRC.rglob("*.py"))
-        for node in ast.walk(ast.parse(path.read_text()))
+        for path in _source.files(SRC)
+        for node in _source.walk(path)
         if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef)
     ]
 
@@ -69,10 +70,11 @@ def _unioned(node: Generic, names: list[str]) -> list[str]:
 
 def test_the_scan_flags_a_union_of_two_defaulted_type_vars():
     source = "def f[E2 = Never, E3 = Never](a: X[E2], b: X[E3]) -> X[E2 | E3]: ..."
-    node = ast.parse(source).body[0]
+    node = _source.parse(source).body[0]
     assert isinstance(node, ast.FunctionDef)
     assert _unioned(node, _never_defaulted(node, "E")) == ["E2", "E3"]
-    separate = ast.parse("def g[RD = Never, RE = Never](s: S[RD, RE]) -> S[RD, RE]: ...").body[0]
+    separate_source = "def g[RD = Never, RE = Never](s: S[RD, RE]) -> S[RD, RE]: ..."
+    separate = _source.parse(separate_source).body[0]
     assert isinstance(separate, ast.FunctionDef)
     assert _unioned(separate, _never_defaulted(separate, "R")) == []
 

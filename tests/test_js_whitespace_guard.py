@@ -9,9 +9,10 @@ doing so). These modules use ``_js.split_space`` / ``trim`` / ``SPACE``.
 import ast
 from pathlib import Path
 
+import _source
 import pytest
 
-SRC = Path(__file__).parents[1] / "src" / "pyfect"
+SRC = _source.SRC
 PORTED_PARSERS = [
     "big_decimal.py",
     "byte_size.py",
@@ -32,7 +33,7 @@ _PYTHON_SPACE_METHODS = {"split", "strip", "lstrip", "rstrip", "isspace", "split
 def _files() -> list[Path]:
     paths = [SRC / name for name in PORTED_PARSERS]
     assert all(path.exists() for path in paths), [p for p in paths if not p.exists()]
-    return sorted(f for p in paths for f in ([p] if p.is_file() else p.rglob("*.py")))
+    return sorted(f for p in paths for f in ([p] if p.is_file() else _source.files(p)))
 
 
 def _docstrings(tree: ast.AST) -> set[int]:
@@ -71,5 +72,5 @@ def _python_whitespace(tree: ast.AST) -> list[int]:
 
 @pytest.mark.parametrize("path", _files(), ids=lambda p: str(p.relative_to(SRC)))
 def test_no_python_whitespace(path: Path) -> None:
-    tree = ast.parse(path.read_text(encoding="utf-8"))
+    tree = _source.tree(path)
     assert _python_whitespace(tree) == [], f"{path}: Python whitespace at these lines"

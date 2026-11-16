@@ -23,12 +23,13 @@ import types
 import typing
 from pathlib import Path
 
+import _source
 import pytest
 
 from pyfect._extras import DISTRIBUTION, LIBRARIES, Extra, install_command, missing_extra
 
-_ROOT = Path(__file__).parent.parent
-_SOURCE = _ROOT / "src" / "pyfect"
+_ROOT = _source.ROOT
+_SOURCE = _source.SRC
 
 _LIBRARIES: dict[str, frozenset[Extra]] = {
     library: frozenset(extra for extra, names in LIBRARIES.items() if library in names)
@@ -47,7 +48,7 @@ def _module_name(path: Path) -> str:
 
 
 def _sources() -> list[Path]:
-    return sorted(path for path in _SOURCE.rglob("*.py") if "__pycache__" not in path.parts)
+    return [path for path in _source.files(_SOURCE) if "__pycache__" not in path.parts]
 
 
 def _gate_extra(handler: ast.ExceptHandler) -> Extra | None:
@@ -86,7 +87,7 @@ def _gated_modules() -> dict[str, Extra]:
     cover its submodules)."""
     gated: dict[str, Extra] = {}
     for path in _sources():
-        gates = _module_gates(ast.parse(path.read_text()))
+        gates = _module_gates(_source.tree(path))
         assert len(gates) <= 1, f"{path} checks for several extras: {gates}"
         if gates:
             gated[_module_name(path)] = gates.pop()
@@ -102,7 +103,7 @@ def _extra_of(module: str, gated: dict[str, Extra]) -> Extra | None:
 
 
 def _unguarded_imports(path: Path, gated: dict[str, Extra]) -> list[str]:
-    tree = ast.parse(path.read_text())
+    tree = _source.tree(path)
     covered = _extra_of(_module_name(path), gated)
     offenders: list[str] = []
 
@@ -181,14 +182,14 @@ _DOCUMENTS = [
         for pattern in ("*.ts", "*.tsx")
         for path in (_ROOT / "website" / folder).rglob(pattern)
     ),
-    *(_ROOT / "website" / "snippets").rglob("*.py"),
-    *(_ROOT / "examples").rglob("*.py"),
-    *(_ROOT / "tests").rglob("*.py"),
+    *_source.files(_ROOT / "website" / "snippets"),
+    *_source.files(_ROOT / "examples"),
+    *_source.files(_source.TESTS),
     *_sources(),
 ]
 # PARITY.md is the milestone log; it records what was done under the old name.
 # This file spells the banned patterns out.
-_HISTORY = {_ROOT / "docs" / "PARITY.md", Path(__file__)}
+_HISTORY = {_ROOT / "docs" / "PARITY.md", Path(__file__).resolve()}
 _BARE_NAME = re.compile(
     r"(?:pip install|uv add|uv pip install|poetry add)\s+['\"]?pyfect(?![\w-])"
     r"|(?<![\w./-])pyfect\["

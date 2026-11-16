@@ -12,13 +12,14 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-SRC = Path(__file__).resolve().parent.parent / "src" / "pyfect"
+import _source
+from _source import SRC
 
 
 def _union_checks(path: Path) -> list[str]:
     return [
         f"{path.name}:{node.lineno}"
-        for node in ast.walk(ast.parse(path.read_text(), str(path)))
+        for node in _source.walk(path)
         if isinstance(node, ast.Call)
         and isinstance(node.func, ast.Name)
         and node.func.id in ("isinstance", "issubclass")
@@ -30,7 +31,7 @@ def _union_checks(path: Path) -> list[str]:
 
 def test_no_isinstance_takes_a_union():
     """Every ``isinstance(x, A | B)`` in ``src`` is written ``isinstance(x, (A, B))``."""
-    found = [hit for path in sorted(SRC.rglob("*.py")) for hit in _union_checks(path)]
+    found = [hit for path in _source.files(SRC) for hit in _union_checks(path)]
     assert found == []
 
 

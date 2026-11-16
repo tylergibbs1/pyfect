@@ -8,9 +8,10 @@ once let an SPKI naming an unknown algorithm die instead of failing with
 """
 
 import re
-from pathlib import Path
 
-SRC = Path(__file__).resolve().parent.parent / "src" / "pyfect"
+import _source
+
+SRC = _source.SRC
 LIB = SRC / "crypto" / "_lib.py"
 DIRECT = re.compile(r"serialization\.load_\w+|from cryptography\S* import .*\bload_\w+")
 
@@ -18,9 +19,9 @@ DIRECT = re.compile(r"serialization\.load_\w+|from cryptography\S* import .*\blo
 def test_keys_are_loaded_only_through_the_lib_loaders():
     offenders = [
         str(path.relative_to(SRC))
-        for path in sorted(SRC.rglob("*.py"))
+        for path in _source.files(SRC)
         if path != LIB
-        for line in path.read_text(encoding="utf-8").splitlines()
+        for line in _source.text(path).splitlines()
         if DIRECT.search(line)
     ]
     assert not offenders, f"load keys with pyfect.crypto._lib's loaders: {offenders}"

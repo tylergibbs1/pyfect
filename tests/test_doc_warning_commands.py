@@ -10,15 +10,16 @@ import subprocess
 import sys
 from pathlib import Path
 
+import _source
 import pytest
 
-ROOT = Path(__file__).parent.parent
+ROOT = _source.ROOT
 PAGE = ROOT / "website" / "content" / "docs" / "schedules.mdx"
 DOCUMENTS = [
     ROOT / "README.md",
     *(ROOT / "docs").glob("*.md"),
     *(ROOT / "website" / "content").rglob("*.mdx"),
-    *(ROOT / "src" / "pyfect").rglob("*.py"),
+    *_source.files(_source.SRC),
 ]
 
 _FAIL_BLOCK = re.compile(r'```sh title="Fail on bare durations"\n(?P<body>.*?)```', re.DOTALL)
@@ -71,7 +72,7 @@ def test_no_document_names_a_pyfect_category_in_a_python_warning_option():
     offenders = [
         f"{path.relative_to(ROOT)}:{number}: {line.strip()}"
         for path in DOCUMENTS
-        for number, line in enumerate(path.read_text().splitlines(), 1)
+        for number, line in enumerate(_source.text(path).splitlines(), 1)
         if option.search(line)
     ]
     assert offenders == []

@@ -5,14 +5,14 @@ Well-formed text keeps its UTF-8, so keys persisted before stay the same."""
 from __future__ import annotations
 
 import ast
-from pathlib import Path
 
+import _source
 import pytest
 
 from pyfect._js import text_encode
 from pyfect._text_keys import is_well_formed, key_bytes
 
-SRC = Path(__file__).parent.parent / "src" / "pyfect"
+SRC = _source.SRC
 
 WELL_FORMED = ["", "key", "caf\u00e9", "\ufffd", "\U0001f600", "a/b:c"]
 ILL_FORMED = ["\ud800", "a\udc00b", "\ud83d\ude00", "\ud83d"]
@@ -86,13 +86,13 @@ def _text_encode_in_hashes(tree: ast.AST) -> list[int]:
 def test_no_hash_reads_text_encode() -> None:
     offenders = [
         f"{path.relative_to(SRC)}:{line}"
-        for path in sorted(SRC.rglob("*.py"))
+        for path in _source.files(SRC)
         if str(path.relative_to(SRC)) not in _ALLOWED
-        for line in _text_encode_in_hashes(ast.parse(path.read_text(), str(path)))
+        for line in _text_encode_in_hashes(_source.tree(path))
     ]
     assert offenders == [], "hash key_bytes(text), not text_encode(text)"
 
 
 @pytest.mark.parametrize("allowed", sorted(_ALLOWED))
 def test_allowed_hashes_still_read_text_encode(allowed: str) -> None:
-    assert _text_encode_in_hashes(ast.parse((SRC / allowed).read_text()))
+    assert _text_encode_in_hashes(_source.tree(SRC / allowed))

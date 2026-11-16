@@ -11,13 +11,12 @@ from __future__ import annotations
 import ast
 from dataclasses import replace
 from datetime import UTC, datetime
-from pathlib import Path
 
+import _source
+from _source import SRC
 from oracle.test_http_static_server import file_info
 
 from pyfect.http import etag
-
-SRC = Path(__file__).resolve().parent.parent / "src" / "pyfect"
 
 
 def _is_call_of(node: ast.AST, attr: str) -> bool:
@@ -40,8 +39,8 @@ def _float_epoch_math(node: ast.AST) -> bool:
 def test_no_float_epoch_millisecond_math():
     offenders = [
         f"{path.relative_to(SRC)}:{getattr(node, 'lineno', 0)}"
-        for path in sorted(SRC.rglob("*.py"))
-        for node in ast.walk(ast.parse(path.read_text(), str(path)))
+        for path in _source.files(SRC)
+        for node in _source.walk(path)
         if _float_epoch_math(node)
     ]
     assert offenders == [], "use pyfect.date_time._epoch"

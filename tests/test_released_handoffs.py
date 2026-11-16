@@ -10,9 +10,10 @@ source so no hand-off skips it.
 """
 
 import ast
-from pathlib import Path
 
-SRC = Path(__file__).parent.parent / "src" / "pyfect"
+import _source
+
+SRC = _source.SRC
 
 ALLOWED = {
     "_loop_thread.py": "LoopThread.submit, which its owners call through Lifetime.submit",
@@ -59,11 +60,11 @@ def _guarded(node: ast.AST, parents: dict[ast.AST, ast.AST]) -> bool:
 
 def _unguarded() -> list[str]:
     found: list[str] = []
-    for path in sorted(SRC.rglob("*.py")):
+    for path in _source.files(SRC):
         relative = path.relative_to(SRC).as_posix()
         if relative in ALLOWED:
             continue
-        tree = ast.parse(path.read_text())
+        tree = _source.tree(path)
         parents = {child: node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)}
         found.extend(
             f"{relative}:{node.lineno}"
@@ -82,12 +83,12 @@ def test_every_handoff_to_an_owned_thread_or_loop_checks_its_lifetime() -> None:
 
 def test_the_check_sees_an_unguarded_handoff() -> None:
     source = "class A:\n    def go(self, f):\n        return self._executor.submit(f)\n"
-    tree = ast.parse(source)
+    tree = _source.parse(source)
     parents = {child: node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)}
     calls = [n for n in ast.walk(tree) if isinstance(n, ast.Call) and _is_handoff(n)]
     assert len(calls) == 1
     assert not _guarded(calls[0], parents)
-    guarded = ast.parse("self._lifetime.submit(lambda: self._executor.submit(f))")
+    guarded = _source.parse("self._lifetime.submit(lambda: self._executor.submit(f))")
     parents = {child: node for node in ast.walk(guarded) for child in ast.iter_child_nodes(node)}
     calls = [n for n in ast.walk(guarded) if isinstance(n, ast.Call) and _is_handoff(n)]
     assert len(calls) == 1

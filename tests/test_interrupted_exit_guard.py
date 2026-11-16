@@ -10,9 +10,10 @@ stopped fiber runs pyfect's own code and Effect drops its exit too.
 from __future__ import annotations
 
 import ast
-from pathlib import Path
 
-_SRC = Path(__file__).parent.parent / "src" / "pyfect" / "ai"
+import _source
+
+_SRC = _source.SRC / "ai"
 
 
 def _discards_exit(node: ast.Call) -> bool:
@@ -30,14 +31,14 @@ def _discards_exit(node: ast.Call) -> bool:
 def test_no_finalizer_interrupts_a_fiber_without_reading_its_exit() -> None:
     found = [
         f"{path.relative_to(_SRC)}:{node.lineno}"
-        for path in sorted(_SRC.rglob("*.py"))
-        for node in ast.walk(ast.parse(path.read_text()))
+        for path in _source.files(_SRC)
+        for node in _source.walk(path)
         if isinstance(node, ast.Call) and _discards_exit(node)
     ]
     assert not found, found
 
 
 def test_the_guard_sees_the_pattern() -> None:
-    call = ast.parse("stream.ensuring(fiber.interrupt())").body[0]
+    call = _source.parse("stream.ensuring(fiber.interrupt())").body[0]
     assert isinstance(call, ast.Expr) and isinstance(call.value, ast.Call)
     assert _discards_exit(call.value)

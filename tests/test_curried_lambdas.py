@@ -16,8 +16,10 @@ import re
 from collections.abc import Iterator
 from pathlib import Path
 
-ROOT = Path(__file__).parent.parent
-SOURCE = ROOT / "src" / "pyfect"
+import _source
+
+ROOT = _source.ROOT
+SOURCE = _source.SRC
 SNIPPETS = ROOT / "website" / "snippets"
 
 
@@ -42,8 +44,8 @@ def _callable_inputs(annotation: ast.expr | None) -> ast.expr | None:
 def _free_callbacks() -> dict[str, set[str | int]]:
     """Each such combinator's name and its callback parameters (name and position)."""
     found: dict[str, set[str | int]] = {}
-    for path in SOURCE.rglob("*.py"):
-        for node in ast.parse(path.read_text()).body:
+    for path in _source.files(SOURCE):
+        for node in _source.tree(path).body:
             if not isinstance(node, ast.FunctionDef) or node.name.startswith("_"):
                 continue
             type_params = {tp.name for tp in node.type_params if isinstance(tp, ast.TypeVar)}
@@ -70,7 +72,7 @@ def _calls_after(text: str, opener: str) -> Iterator[ast.Call]:
             depth += {"(": 1, ")": -1}.get(text[end], 0)
             end += 1
         try:
-            argument = ast.parse(text[match.end() : end - 1].strip(), mode="eval").body
+            argument = _source.parse(text[match.end() : end - 1].strip(), mode="eval").body
         except SyntaxError:
             continue
         if isinstance(argument, ast.Call):
@@ -101,8 +103,8 @@ def _untyped_lambdas(text: str, free: dict[str, set[str | int]]) -> list[str]:
 
 
 def _docstrings() -> Iterator[tuple[Path, str]]:
-    for path in SOURCE.rglob("*.py"):
-        for node in ast.walk(ast.parse(path.read_text())):
+    for path in _source.files(SOURCE):
+        for node in _source.walk(path):
             if isinstance(node, ast.Module | ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef):
                 doc = ast.get_docstring(node)
                 if doc:
@@ -126,7 +128,7 @@ def test_the_check_sees_a_curried_lambda():
 
 def test_no_doc_passes_a_lambda_the_pipe_cannot_type():
     free = _free_callbacks()
-    sources = [(p, p.read_text()) for p in SNIPPETS.rglob("*.py")] + list(_docstrings())
+    sources = [(p, _source.text(p)) for p in _source.files(SNIPPETS)] + list(_docstrings())
     wrong = {
         f"{path.relative_to(ROOT)}: {call}"
         for path, text in sources

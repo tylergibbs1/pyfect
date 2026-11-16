@@ -18,7 +18,9 @@ and one passed to ``os_wait`` that does must say ``waits_for="work"``.
 import ast
 from pathlib import Path
 
-_SOURCE = Path(__file__).parent.parent / "src" / "pyfect"
+import _source
+from _source import SRC as _SOURCE
+
 _HANDOFFS = {
     "submit",
     "run_coroutine_threadsafe",
@@ -106,12 +108,12 @@ def _offenders(path: Path, root: Path = _SOURCE) -> list[str]:
         for child in ast.iter_child_nodes(node):
             visit(child, scopes, required)
 
-    visit(ast.parse(path.read_text()), [], set())
+    visit(_source.tree(path), [], set())
     return offenders
 
 
 def test_callbacks_that_wait_on_another_thread_use_os_wait():
-    offenders = [line for path in sorted(_SOURCE.rglob("*.py")) for line in _offenders(path)]
+    offenders = [line for path in _source.files(_SOURCE) for line in _offenders(path)]
     assert offenders == []
 
 

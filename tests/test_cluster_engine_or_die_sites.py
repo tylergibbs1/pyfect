@@ -9,11 +9,10 @@ site with the Effect ``orDie`` it mirrors."""
 
 import ast
 from collections import Counter
-from pathlib import Path
 
-import pyfect.cluster.cluster_workflow_engine as package
+import _source
 
-ENGINE = Path(package.__file__).parent
+ENGINE = _source.SRC / "cluster" / "cluster_workflow_engine"
 
 # enclosing function -> Effect's site, for each ``.or_die()`` in the package.
 EXPECTED: dict[str, str] = {
@@ -38,8 +37,8 @@ BOUNDED: dict[str, str] = {
 
 def _call_sites(name: str) -> Counter[str]:
     sites: Counter[str] = Counter()
-    for path in sorted(ENGINE.glob("*.py")):
-        tree = ast.parse(path.read_text(), str(path))
+    for path in _source.files(ENGINE, recursive=False):
+        tree = _source.tree(path)
 
         def visit(node: ast.AST, scope: tuple[str, ...]) -> None:
             for child in ast.iter_child_nodes(node):

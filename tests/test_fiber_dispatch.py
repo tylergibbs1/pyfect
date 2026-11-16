@@ -7,9 +7,10 @@ another thread, which Effect has no counterpart of, goes to the run directly.
 """
 
 import ast
-from pathlib import Path
 
-SRC = Path(__file__).parent.parent / "src" / "pyfect"
+import _source
+
+SRC = _source.SRC
 
 # (module, function): a resume, an interrupt or a deferred wake of a waiter from
 # another thread, and what no fiber queues: a root fiber's start and the runs a
@@ -49,9 +50,9 @@ class _Scan(ast.NodeVisitor):
 
 def _direct_schedules() -> set[tuple[str, str]]:
     found: set[tuple[str, str]] = set()
-    for path in SRC.rglob("*.py"):
+    for path in _source.files(SRC):
         scan = _Scan(str(path.relative_to(SRC)))
-        scan.visit(ast.parse(path.read_text(encoding="utf-8")))
+        scan.visit(_source.tree(path))
         found |= scan.found
     return found
 

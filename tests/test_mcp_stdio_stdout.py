@@ -5,8 +5,8 @@ and no code on the server's path writes to standard output itself."""
 from __future__ import annotations
 
 import ast
-from pathlib import Path
 
+import _source
 from oracle._mcp import stdio_harness
 
 import pyfect as fx
@@ -40,7 +40,7 @@ def test_a_tool_defect_is_logged_to_stderr_not_stdout():
     assert {method for method, _ in console.entries} == {"error"}
 
 
-_SERVER_PATH = Path(__file__).parent.parent / "src" / "pyfect" / "ai"
+_SERVER_PATH = _source.SRC / "ai"
 _STDOUT_NAMES = {"stdout", "__stdout__"}
 
 
@@ -48,8 +48,8 @@ def test_nothing_on_the_ai_server_path_writes_to_stdout():
     """``print`` and ``sys.stdout`` would write between protocol messages
     (a child process's ``stdout``, which the client reads, is fine)."""
     offenders: list[str] = []
-    for path in sorted(_SERVER_PATH.rglob("*.py")):
-        for node in ast.walk(ast.parse(path.read_text())):
+    for path in _source.files(_SERVER_PATH):
+        for node in _source.walk(path):
             if isinstance(node, ast.Call) and getattr(node.func, "id", None) == "print":
                 offenders.append(f"{path.name}:{node.lineno} print")
             if (

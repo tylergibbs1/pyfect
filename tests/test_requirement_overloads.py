@@ -11,7 +11,9 @@ import ast
 from collections.abc import Iterator
 from pathlib import Path
 
-SRC = Path(__file__).parent.parent / "src" / "pyfect"
+import _source
+
+SRC = _source.SRC
 CHECKED = ["workflow"]
 
 
@@ -41,8 +43,7 @@ def _is_overload(f: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
 
 
 def _missing_overloads(path: Path) -> Iterator[str]:
-    tree = ast.parse(path.read_text())
-    for parent in ast.walk(tree):
+    for parent in _source.walk(path):
         if not isinstance(parent, ast.Module | ast.ClassDef):
             continue
         functions = [
@@ -66,7 +67,7 @@ def test_functions_taking_a_unioned_requirement_have_a_first_overload():
     missing = [
         found
         for package in CHECKED
-        for path in sorted((SRC / package).rglob("*.py"))
+        for path in _source.files(SRC / package)
         for found in _missing_overloads(path)
     ]
     assert missing == []

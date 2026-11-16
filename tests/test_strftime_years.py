@@ -6,16 +6,17 @@ from ``pyfect._js.to_iso_string``.
 """
 
 import re
-from pathlib import Path
 
-SRC = Path(__file__).parent.parent / "src" / "pyfect"
+import _source
+
+SRC = _source.SRC
 
 
 def test_no_strftime_writes_a_year():
     found = [
         f"{path.relative_to(SRC)}:{number}"
-        for path in SRC.rglob("*.py")
-        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)
+        for path in _source.files(SRC)
+        for number, line in enumerate(_source.text(path).splitlines(), 1)
         if re.search(r"\.strftime\(.*%[YGCy]", line)
     ]
     assert found == []

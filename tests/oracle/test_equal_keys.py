@@ -22,9 +22,9 @@ from __future__ import annotations
 import ast as pyast
 import math
 from collections.abc import Callable
-from pathlib import Path
 from typing import Any
 
+import _source
 import pytest
 
 import pyfect as fx
@@ -194,7 +194,6 @@ def test_stream_changes_drops_a_repeated_nan_and_one_point_zero():
     assert math.isnan(out[1])
 
 
-_SRC = Path(__file__).resolve().parents[2] / "src" / "pyfect"
 _PYTHON_KEYED = frozenset({"set", "frozenset", "dict"})
 
 
@@ -223,11 +222,10 @@ def test_no_code_keys_or_compares_values_with_python_equality():
     merge ``1`` with ``True``; code builds those through ``pyfect._equal``
     (``equals`` / ``equal_key`` / ``dedupe``) instead."""
     offenders: list[str] = []
-    for path in sorted(_SRC.rglob("*.py")):
+    for path in _source.files(_source.SRC):
         if path.name == "_equal.py":
             continue
-        tree = pyast.parse(path.read_text(), str(path))
-        for node in pyast.walk(tree):
+        for node in _source.walk(path):
             if _is_bare_equality(node):
                 offenders.append(f"{path.name}:{node.lineno} a == b")  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
             if not isinstance(node, pyast.Call):

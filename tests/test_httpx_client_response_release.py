@@ -15,8 +15,8 @@ from __future__ import annotations
 import gc
 import re
 import weakref
-from pathlib import Path
 
+import _source
 import httpx
 
 import pyfect as fx
@@ -25,7 +25,7 @@ from pyfect.http import body, httpx_client
 from pyfect.http.client import HttpClient
 from pyfect.http.response import HttpClientResponse
 
-_HTTP = Path(__file__).resolve().parents[1] / "src" / "pyfect" / "http"
+_HTTP = _source.SRC / "http"
 
 
 async def _count_body(sent: httpx.Request) -> httpx.Response:
@@ -86,7 +86,7 @@ def test_responses_are_not_kept_in_weak_keyed_tables() -> None:
     per-response state belongs on the response."""
     users = sorted(
         path.relative_to(_HTTP).as_posix()
-        for path in _HTTP.rglob("*.py")
-        if re.search(r"WeakKeyDictionary|WeakValueDictionary", path.read_text())
+        for path in _source.files(_HTTP)
+        if re.search(r"WeakKeyDictionary|WeakValueDictionary", _source.text(path))
     )
     assert users == []

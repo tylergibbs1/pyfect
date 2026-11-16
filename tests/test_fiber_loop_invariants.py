@@ -5,13 +5,13 @@ how ordering bugs (an interrupt that skips a step, a resume that runs
 twice) get in."""
 
 import ast
-from pathlib import Path
 
+import _source
 from _subclasses import subclasses
 
 from pyfect._effect_base import Frame
 
-SRC = Path(__file__).parent.parent / "src" / "pyfect"
+SRC = _source.SRC
 LOOP_METHODS = {"_run", "_loop", "_continue", "_with_interrupt", "_deliver_interrupt"}
 
 
@@ -27,7 +27,7 @@ def test_the_frame_scan_sees_primitives_in_every_module():
 
 def test_the_fiber_loop_names_no_primitive():
     primitives = _frame_class_names() - {"Effect", "Frame"}
-    tree = ast.parse((SRC / "_fiber.py").read_text())
+    tree = _source.tree(SRC / "_fiber.py")
     fiber = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "Fiber")
     methods = [n for n in fiber.body if isinstance(n, ast.FunctionDef) and n.name in LOOP_METHODS]
     assert {m.name for m in methods} == LOOP_METHODS
@@ -47,7 +47,7 @@ def test_a_fiber_run_is_entered_only_from_the_drain():
     only be called from ``_drain``, which bounds the nesting
     (``_MAX_NESTED_RUNS``); everything else (scheduled tasks included) goes
     through ``_evaluate`` or ``_drive``."""
-    tree = ast.parse((SRC / "_fiber.py").read_text())
+    tree = _source.tree(SRC / "_fiber.py")
     offenders: list[str] = []
 
     def visit(node: ast.AST, owner: str) -> None:

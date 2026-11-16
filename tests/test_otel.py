@@ -5,6 +5,7 @@ imports OpenTelemetry."""
 import ast
 from pathlib import Path
 
+import _source
 import pytest
 
 pytest.importorskip("opentelemetry.sdk")
@@ -30,12 +31,12 @@ from pyfect.otel.metrics import MetricProducer
 from pyfect.otel.tracer import OtelSpan, OtelTraceFlags, OtelTraceState
 from pyfect.tracer import DisablePropagation, Ended, NativeSpan, SpanLink
 
-_SOURCE = Path(__file__).parent.parent / "src" / "pyfect"
+_SOURCE = _source.SRC
 
 
 def _imported_modules(path: Path) -> set[str]:
     modules: set[str] = set()
-    for node in ast.walk(ast.parse(path.read_text())):
+    for node in _source.walk(path):
         if isinstance(node, ast.Import):
             modules.update(alias.name for alias in node.names)
         elif isinstance(node, ast.ImportFrom) and node.module is not None:
@@ -46,7 +47,7 @@ def _imported_modules(path: Path) -> set[str]:
 def test_only_pyfect_otel_imports_opentelemetry():
     offenders = [
         str(path.relative_to(_SOURCE))
-        for path in _SOURCE.rglob("*.py")
+        for path in _source.files(_SOURCE)
         if "otel" not in path.relative_to(_SOURCE).parts
         and any(m.split(".")[0] == "opentelemetry" for m in _imported_modules(path))
     ]

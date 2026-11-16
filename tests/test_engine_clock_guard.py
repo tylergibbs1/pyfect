@@ -12,9 +12,10 @@ no time: state shared by runs on other threads holds one.
 from __future__ import annotations
 
 import ast
-from pathlib import Path
 
-SRC = Path(__file__).resolve().parent.parent / "src" / "pyfect"
+import _source
+
+SRC = _source.SRC
 _ENGINES = ("workflow", "cluster")
 _WALL_MODULES = {"time", "asyncio", "threading", "sched", "selectors", "concurrent"}
 _WALL_READS = {"now", "utcnow", "today", "fromtimestamp"}
@@ -42,9 +43,9 @@ def _receiver(node: ast.expr) -> str | None:
 def _offenders() -> list[str]:
     found: list[str] = []
     for package in _ENGINES:
-        for path in sorted((SRC / package).rglob("*.py")):
+        for path in _source.files(SRC / package):
             where = path.relative_to(SRC)
-            tree = ast.parse(path.read_text(), str(path))
+            tree = _source.tree(path)
             locks_only = _only_locks(tree)
             for node in ast.walk(tree):
                 if isinstance(node, ast.Import):

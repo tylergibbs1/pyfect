@@ -7,10 +7,12 @@ live, as a JavaScript ``Set`` is, only through ``_live.live_keys``."""
 import ast
 from pathlib import Path
 
+import _source
+
 import pyfect as fx
 from pyfect.reactivity import make as make_reactivity
 
-_PACKAGE = Path(__file__).parent.parent / "src" / "pyfect" / "reactivity"
+_PACKAGE = _source.SRC / "reactivity"
 
 
 def test_batched_invalidations_run_handlers_in_invalidation_order() -> None:
@@ -28,7 +30,7 @@ def test_batched_invalidations_run_handlers_in_invalidation_order() -> None:
 
 def _set_uses(path: Path) -> list[str]:
     found: list[str] = []
-    for node in ast.walk(ast.parse(path.read_text())):
+    for node in _source.walk(path):
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "set":
             found.append(f"{path.name}:{node.lineno} set()")
         if (
@@ -43,7 +45,7 @@ def _set_uses(path: Path) -> list[str]:
 
 
 def test_the_reactivity_package_uses_no_sets() -> None:
-    uses = [use for path in sorted(_PACKAGE.rglob("*.py")) for use in _set_uses(path)]
+    uses = [use for path in _source.files(_PACKAGE) for use in _set_uses(path)]
     assert uses == []
 
 
@@ -54,7 +56,7 @@ def _snapshot_iterations(path: Path) -> list[str]:
     """``for`` loops and calls iterating a listener or handler collection
     other than through ``live_keys``."""
     found: list[str] = []
-    for node in ast.walk(ast.parse(path.read_text())):
+    for node in _source.walk(path):
         if isinstance(node, ast.For | ast.comprehension):
             iterated = node.iter
         elif (
@@ -73,5 +75,5 @@ def _snapshot_iterations(path: Path) -> list[str]:
 
 
 def test_listeners_and_handlers_are_iterated_live() -> None:
-    uses = [use for path in sorted(_PACKAGE.rglob("*.py")) for use in _snapshot_iterations(path)]
+    uses = [use for path in _source.files(_PACKAGE) for use in _snapshot_iterations(path)]
     assert uses == []

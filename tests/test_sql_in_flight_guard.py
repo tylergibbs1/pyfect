@@ -12,9 +12,10 @@ fiber forked with ``start_immediately=True`` must sit inside
 """
 
 import ast
-from pathlib import Path
 
-_TESTS = Path(__file__).parent
+import _source
+
+_TESTS = _source.TESTS
 
 
 def _forked_immediately(function: ast.AST) -> set[str]:
@@ -65,10 +66,9 @@ def _holds_loop(node: ast.With) -> bool:
     )
 
 
-def unheld_in_flight_checks(source: str) -> list[int]:
+def unheld_in_flight_checks(tree: ast.Module) -> list[int]:
     """Lines asserting a ``start_immediately`` fork is still running outside
     a held SQL loop."""
-    tree = ast.parse(source)
     found: list[int] = []
     for function in ast.walk(tree):
         if not isinstance(function, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -90,12 +90,12 @@ def unheld_in_flight_checks(source: str) -> list[int]:
 
 def test_sql_tests_hold_the_loop_to_assert_work_in_flight() -> None:
     offenders: list[str] = []
-    for path in sorted(_TESTS.rglob("*.py")):
-        source = path.read_text()
-        if "pyfect.sql" not in source:
+    for path in _source.files(_TESTS):
+        if "pyfect.sql" not in _source.text(path):
             continue
         offenders += [
-            f"{path.relative_to(_TESTS)}:{line}" for line in unheld_in_flight_checks(source)
+            f"{path.relative_to(_TESTS)}:{line}"
+            for line in unheld_in_flight_checks(_source.tree(path))
         ]
     assert offenders == [], "start the work inside `with _sql_loop.held():`"
 
@@ -109,4 +109,4 @@ def test_the_guard_finds_an_unheld_check() -> None:
         "        g = yield from work.fork(start_immediately=True)\n"
         "        assert g.poll_unsafe() is None\n"
     )
-    assert unheld_in_flight_checks(source) == [3]
+    assert unheld_in_flight_checks(_source.parse(source)) == [3]

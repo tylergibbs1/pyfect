@@ -5,16 +5,16 @@ origin check of WebSocket upgrades and RPC calls once died on ``Origin: http://[
 (found by tests/fuzz). ``split_url`` returns ``None`` there instead.
 """
 
-from pathlib import Path
+import _source
 
-HTTP = Path(__file__).resolve().parent.parent / "src" / "pyfect" / "http"
+HTTP = _source.SRC / "http"
 HELPER = HTTP / "_url_text.py"
 
 
 def test_http_code_splits_urls_only_through_split_url():
     offenders = [
         str(path.relative_to(HTTP))
-        for path in sorted(HTTP.rglob("*.py"))
-        if path != HELPER and "urlsplit" in path.read_text(encoding="utf-8")
+        for path in _source.files(HTTP)
+        if path != HELPER and "urlsplit" in _source.text(path)
     ]
     assert not offenders, f"use pyfect.http._url_text.split_url instead of urlsplit: {offenders}"

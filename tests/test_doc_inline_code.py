@@ -18,6 +18,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import _source
+
 ROOT = Path(__file__).parent.parent
 GUIDES = ROOT / "website" / "content" / "docs"
 CHECKED = Path(__file__).parent / "_doc_inline_code.py"
@@ -41,7 +43,7 @@ SPAN = re.compile(r"`([^`\n]+)`")
 def self_contained(text: str) -> ast.expr | None:
     """The span's expression if it is a call using only module names and literals."""
     try:
-        expr = ast.parse(text, mode="eval").body
+        expr = _source.parse(text, mode="eval").body
     except SyntaxError:
         return None
     nodes = list(ast.walk(expr))
@@ -88,7 +90,7 @@ def render(expressions: list[tuple[str, str]]) -> str:
     used = {
         n.id
         for _, span in expressions
-        for n in ast.walk(ast.parse(span, mode="eval"))
+        for n in ast.walk(_source.parse(span, mode="eval"))
         if isinstance(n, ast.Name) and n.id in MODULES
     }
     lines = [
@@ -105,7 +107,9 @@ def render(expressions: list[tuple[str, str]]) -> str:
 
 
 def checked_expressions() -> list[str]:
-    tree = ast.parse(CHECKED.read_text())
+    # Not through the cache: the update path above rewrites this file in the same process.
+    text = CHECKED.read_text()
+    tree = _source.parse(text, str(CHECKED))
     return [
         ast.dump(s.value)
         for s in tree.body
@@ -120,7 +124,7 @@ def test_the_checked_file_holds_every_self_contained_inline_span() -> None:
         ruff = [sys.executable, "-m", "ruff"]
         subprocess.run([*ruff, "check", "-q", "--fix", "--select", "I", str(CHECKED)], check=True)
         subprocess.run([*ruff, "format", "-q", str(CHECKED)], check=True)
-    wanted = [ast.dump(ast.parse(span, mode="eval").body) for _, span in expressions]
+    wanted = [ast.dump(_source.parse(span, mode="eval").body) for _, span in expressions]
     assert checked_expressions() == wanted, "regenerate with UPDATE_DOC_INLINE_CODE=1"
 
 

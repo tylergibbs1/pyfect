@@ -160,13 +160,14 @@ def test_ai_parses_json_only_through_json_text():
     """Every JSON parse in ``pyfect.ai`` reads peer or model output, so it
     goes through ``_json_text.parse``, whose only failure is ``ValueError``."""
     import ast
-    from pathlib import Path
 
-    root = Path(__file__).resolve().parent.parent / "src" / "pyfect" / "ai"
+    import _source
+
+    root = _source.SRC / "ai"
     offenders = [
         f"{path.relative_to(root)}:{node.lineno}"
-        for path in sorted(root.rglob("*.py"))
-        for node in ast.walk(ast.parse(path.read_text()))
+        for path in _source.files(root)
+        for node in _source.walk(path)
         if isinstance(node, ast.Attribute)
         and node.attr in ("loads", "load")
         and isinstance(node.value, ast.Name)

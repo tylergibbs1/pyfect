@@ -15,7 +15,8 @@ Effect, ``node``::
 from __future__ import annotations
 
 import ast as pyast
-from pathlib import Path
+
+import _source
 
 from pyfect import schema as S
 
@@ -59,7 +60,7 @@ def test_a_record_keyed_by_an_int32_reads_its_json_keys_as_integers():
     assert all(type(key) is int for key in decoded)
 
 
-SRC = Path(__file__).resolve().parents[2] / "src" / "pyfect"
+SRC = _source.SRC
 
 
 def _iterates_checks(target: pyast.expr) -> bool:
@@ -104,12 +105,11 @@ def test_every_walk_over_checks_looks_inside_filter_groups():
     """The guard: a loop over a node's checks either handles ``FilterGroup``
     in the same function or goes through ``ast.has_check``."""
     offenders: list[str] = []
-    for path in sorted(SRC.rglob("*.py")):
+    for path in _source.files(SRC):
         relative = str(path.relative_to(SRC))
         if relative in _BY_IDENTITY:
             continue
-        tree = pyast.parse(path.read_text(), relative)
-        for function in pyast.walk(tree):
+        for function in _source.walk(path):
             if not isinstance(function, pyast.FunctionDef):
                 continue
             source = pyast.unparse(function)

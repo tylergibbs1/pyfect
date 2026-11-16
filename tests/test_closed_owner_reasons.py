@@ -11,9 +11,10 @@ interrupt without a reason.
 """
 
 import ast
-from pathlib import Path
 
-SRC = Path(__file__).resolve().parent.parent / "src" / "pyfect"
+import _source
+
+SRC = _source.SRC
 
 _CLOSED_STATE = {"_closed"}
 _COLLECTION_STATE = {"_state", "_fibers", "state", "fibers"}
@@ -62,10 +63,9 @@ def _calls(body: list[ast.stmt]) -> set[str]:
 
 def test_closed_owner_interrupts_name_the_owner() -> None:
     unnamed: list[str] = []
-    for path in sorted(SRC.rglob("*.py")):
-        tree = ast.parse(path.read_text(), str(path))
+    for path in _source.files(SRC):
         collection = path.name in _COLLECTIONS
-        for node in ast.walk(tree):
+        for node in _source.walk(path):
             if not (isinstance(node, ast.If) and _tests_closed(node.test, collection)):
                 continue
             calls = _calls(node.body)

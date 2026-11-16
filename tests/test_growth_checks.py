@@ -18,10 +18,11 @@ import threading
 import time
 from pathlib import Path
 
+import _source
 import pytest
 from _growth import MIN_SECONDS, RUNS, Make, Work, assert_near_linear, cpu, cpu_pair
 
-_TESTS = Path(__file__).parent
+_TESTS = _source.TESTS
 _GROWTH_NAME = re.compile(r"linear|quadratic|backtrack|exponential|cheap")
 _WALL_CLOCKS = frozenset({"perf_counter", "perf_counter_ns", "monotonic", "monotonic_ns", "time"})
 _CPU_CLOCKS = frozenset({"thread_time", "thread_time_ns", "process_time", "process_time_ns"})
@@ -65,12 +66,11 @@ def _growth_tests(tree: ast.Module) -> list[str]:
 @functools.cache
 def _modules() -> tuple[tuple[str, ast.Module], ...]:
     """The test modules that mention ``time`` at all, parsed."""
-    texts = {
-        path.relative_to(_TESTS).as_posix(): path.read_text()
-        for path in sorted(_TESTS.rglob("*.py"))
-        if path.name not in _OWNED_ELSEWHERE
-    }
-    return tuple((name, ast.parse(text)) for name, text in texts.items() if "time" in text)
+    return tuple(
+        (path.relative_to(_TESTS).as_posix(), _source.tree(path))
+        for path in _source.files(_TESTS)
+        if path.name not in _OWNED_ELSEWHERE and "time" in _source.text(path)
+    )
 
 
 def test_growth_checks_read_no_wall_clock() -> None:
@@ -92,7 +92,7 @@ def test_tests_read_cpu_time_only_through_the_growth_helper() -> None:
 
 
 def test_the_guard_sees_a_wall_clock_growth_check() -> None:
-    tree = ast.parse(
+    tree = _source.parse(
         "import time\n"
         "def test_parse_is_linear():\n"
         "    start = time.perf_counter()\n"
@@ -103,13 +103,15 @@ def test_the_guard_sees_a_wall_clock_growth_check() -> None:
 
 
 def test_the_guard_lets_a_growth_check_hand_the_helper_process_time() -> None:
-    tree = ast.parse(
+    tree = _source.parse(
         "import time\n"
         "def test_parse_is_linear():\n"
         "    assert_near_linear(make, 8, clock=time.process_time)\n"
     )
     assert _time_calls(tree) == set()
-    assert _time_calls(ast.parse("import time\nstart = time.process_time()\n")) == {"process_time"}
+    assert _time_calls(_source.parse("import time\nstart = time.process_time()\n")) == {
+        "process_time"
+    }
 
 
 def _units_for(seconds: float) -> int:

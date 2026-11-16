@@ -10,9 +10,9 @@ import logging
 import threading
 import time
 from collections.abc import Callable
-from pathlib import Path
 from typing import Any
 
+import _source
 import httpx
 import pytest
 
@@ -62,11 +62,11 @@ def test_a_request_before_the_app_is_served_waits_for_it(name: str) -> None:
 
 
 def test_every_server_on_the_shared_asgi_listener_is_checked_here() -> None:
-    http = Path(server.__file__).parent
+    http = _source.SRC / "http"
     listeners = {
         path.stem.removesuffix("_server")
-        for path in http.glob("*_server.py")
-        if "make_listener" in path.read_text()
+        for path in _source.files(http, "*_server.py", recursive=False)
+        if "make_listener" in _source.text(path)
     }
     assert listeners == set(SERVERS)
 

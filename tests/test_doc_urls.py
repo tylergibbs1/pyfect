@@ -5,16 +5,17 @@ site redirects: a renamed guide must leave a redirect behind."""
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
+import _source
+
+ROOT = _source.ROOT
 DOCS = ROOT / "website" / "content" / "docs"
 _URL = re.compile(r"https://pyfect\.dev(/docs[A-Za-z0-9_/-]*)")
 _REDIRECT = re.compile(r"source: '(/docs[^']*)'")
 
 
 def _given() -> set[str]:
-    texts = [p.read_text() for p in (ROOT / "src").rglob("*.py")]
+    texts = [_source.text(p) for p in _source.files(ROOT / "src")]
     texts += [(ROOT / name).read_text() for name in ("CHANGELOG.md", "README.md")]
     return {url.rstrip("/") for text in texts for url in _URL.findall(text)}
 

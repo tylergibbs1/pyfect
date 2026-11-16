@@ -14,7 +14,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-SRC = Path(__file__).resolve().parent.parent / "src" / "pyfect"
+import _source
+from _source import SRC
 
 _JSON_HOME = {"_json_text.py"}
 # Where Effect's text is the contract: issue messages, formatters, codecs.
@@ -32,11 +33,8 @@ _REPR_HOME = {
 }
 
 
-def _modules() -> list[tuple[str, ast.Module]]:
-    return [
-        (str(path.relative_to(SRC)), ast.parse(path.read_text(), str(path)))
-        for path in sorted(SRC.rglob("*.py"))
-    ]
+def _modules() -> list[tuple[str, Path]]:
+    return [(str(path.relative_to(SRC)), path) for path in _source.files(SRC)]
 
 
 # Python's ``json`` and the libraries modelled on it raise on (or write) ``NaN``
@@ -65,6 +63,10 @@ def _imported_modules(node: ast.AST) -> list[str]:
             return []
 
 
+# Every node ``_imported_modules`` can name a module for.
+_IMPORTING = (ast.Attribute, ast.Import, ast.ImportFrom, ast.Call)
+
+
 def _is_json_library(module: str) -> bool:
     return module.partition(".")[0] in _JSON_LIBRARIES or module.startswith("msgspec.json")
 
@@ -72,10 +74,11 @@ def _is_json_library(module: str) -> bool:
 def test_only_json_text_imports_json():
     offenders = [
         f"{name}:{getattr(node, 'lineno', 0)}"
-        for name, tree in _modules()
+        for name, path in _modules()
         if name not in _JSON_HOME
-        for node in ast.walk(tree)
-        if any(_is_json_library(str(m)) for m in _imported_modules(node))
+        for node in _source.walk(path)
+        if isinstance(node, _IMPORTING)
+        and any(_is_json_library(str(m)) for m in _imported_modules(node))
     ]
     assert offenders == [], "use pyfect._json_text (parse / stringify / quote)"
 
@@ -90,16 +93,16 @@ __import__("json")
 importlib.import_module("ujson")
 msgspec.json.encode(x)
 """
-    found = [m for node in ast.walk(ast.parse(source)) for m in _imported_modules(node)]
+    found = [m for node in ast.walk(_source.parse(source)) for m in _imported_modules(node)]
     assert all(_is_json_library(m) for m in found)
     assert len(found) == 7
 
 
-def _exempt_nodes(tree: ast.Module) -> set[int]:
+def _exempt_nodes(path: Path) -> set[int]:
     """Nodes inside ``__repr__`` methods, ``raise`` statements and
     ``Decimal(repr(x))`` (exact decimal arithmetic, not text)."""
     exempt: set[int] = set()
-    for node in ast.walk(tree):
+    for node in _source.walk(path):
         inside = (
             (isinstance(node, ast.FunctionDef) and node.name == "__repr__")
             or isinstance(node, ast.Raise)
@@ -116,11 +119,11 @@ def _exempt_nodes(tree: ast.Module) -> set[int]:
 
 def test_formatting_code_never_writes_with_repr():
     offenders: list[str] = []
-    for name, tree in _modules():
+    for name, path in _modules():
         if name in _REPR_HOME or not name.startswith(_FORMATTING):
             continue
-        exempt = _exempt_nodes(tree)
-        for node in ast.walk(tree):
+        exempt = _exempt_nodes(path)
+        for node in _source.walk(path):
             if id(node) in exempt:
                 continue
             is_repr = (

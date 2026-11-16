@@ -4,13 +4,14 @@ Ports of Effect code that sorts strings use ``_js.js_sort_key``; expected
 values printed by Effect under Node."""
 
 import ast
-from pathlib import Path
+
+import _source
 
 from pyfect import json_patch
 from pyfect import json_schema as JS
 from pyfect._js import js_sort_key
 
-SRC = Path(__file__).parent.parent / "src" / "pyfect"
+SRC = _source.SRC
 _ASTRAL = "\U00010000"
 _HIGH_BMP = "￿"
 
@@ -38,8 +39,8 @@ def test_open_api_sanitized_keys_collide_in_javascript_order():
 _JSON_PORTS = [
     SRC / "json_patch.py",
     SRC / "json_pointer.py",
-    *sorted((SRC / "json_schema").rglob("*.py")),
-    *sorted((SRC / "schema" / "_jsonschema").rglob("*.py")),
+    *_source.files(SRC / "json_schema"),
+    *_source.files(SRC / "schema" / "_jsonschema"),
 ]
 
 
@@ -49,7 +50,7 @@ def test_json_ports_sort_strings_with_the_javascript_key():
     bare = [
         f"{path.relative_to(SRC)}:{node.lineno}"
         for path in _JSON_PORTS
-        for node in ast.walk(ast.parse(path.read_text()))
+        for node in _source.walk(path)
         if isinstance(node, ast.Call)
         and (
             (isinstance(node.func, ast.Name) and node.func.id == "sorted")

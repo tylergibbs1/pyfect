@@ -26,6 +26,7 @@ from collections.abc import Iterator
 from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 
+import _source
 import pytest
 from _count_sleeps import MARKER
 from _inventory import parse
@@ -41,7 +42,7 @@ PYTHON_FENCE = re.compile(r"^\s*(```|~~~)\s*(py|python|python3|pycon)\b", re.MUL
 
 
 def snippet_files() -> list[Path]:
-    return sorted(SNIPPETS.rglob("*.py"))
+    return list(_source.files(SNIPPETS))
 
 
 def output_files() -> list[Path]:

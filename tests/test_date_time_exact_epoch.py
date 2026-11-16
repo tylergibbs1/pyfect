@@ -7,9 +7,10 @@ exact conversions are in ``pyfect/date_time/_epoch.py``.
 """
 
 import ast
-from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent / "src" / "pyfect" / "date_time"
+import _source
+
+ROOT = _source.SRC / "date_time"
 
 
 def _name(node: ast.expr) -> str | None:
@@ -20,9 +21,9 @@ def _name(node: ast.expr) -> str | None:
             return None
 
 
-def _violations(source: str) -> list[str]:
+def _violations(tree: ast.Module) -> list[str]:
     found: list[str] = []
-    for node in ast.walk(ast.parse(source)):
+    for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
             continue
         if _name(node.func) == "timestamp" and not node.args:
@@ -40,12 +41,12 @@ def _violations(source: str) -> list[str]:
 def test_no_float_between_an_instant_and_a_timedelta():
     problems = {
         path.name: found
-        for path in sorted(ROOT.glob("*.py"))
-        if (found := _violations(path.read_text(encoding="utf-8")))
+        for path in _source.files(ROOT, recursive=False)
+        if (found := _violations(_source.tree(path)))
     }
     assert not problems, problems
 
 
 def test_the_guard_catches_the_old_conversion():
-    assert _violations("x = timedelta(milliseconds=float(epoch_millis))")
-    assert _violations("x = dt.timestamp()")
+    assert _violations(_source.parse("x = timedelta(milliseconds=float(epoch_millis))"))
+    assert _violations(_source.parse("x = dt.timestamp()"))

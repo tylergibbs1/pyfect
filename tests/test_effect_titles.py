@@ -13,6 +13,7 @@ from collections import defaultdict
 from fnmatch import fnmatch
 from pathlib import Path
 
+import _source
 import pytest
 from _effect_title_omissions import OMISSIONS, reason_for
 from _effect_titles import (
@@ -25,10 +26,10 @@ from _effect_titles import (
     read_ports,
     titles_in_source,
 )
+from _source import TESTS
 
-_TESTS = Path(__file__).parent
 _CHECKOUT = Path(
-    os.environ.get("PYFECT_EFFECT_REF") or _TESTS.parent.parent / "pyfect-ref" / "effect"
+    os.environ.get("PYFECT_EFFECT_REF") or TESTS.parent.parent / "pyfect-ref" / "effect"
 )
 _PACKAGES = _CHECKOUT / "packages"
 
@@ -45,7 +46,7 @@ def effect_files() -> dict[str, Path]:
 
 def _test_modules() -> list[Path]:
     # The omission list's own patterns are strings too; they must not count as ports of a title.
-    return [path for path in _TESTS.rglob("*.py") if path.stem != "_effect_title_omissions"]
+    return [path for path in _source.files(TESTS) if path.stem != "_effect_title_omissions"]
 
 
 @pytest.fixture(scope="module")
@@ -95,7 +96,7 @@ def test_every_omission_still_omits_something(unported: dict[str, list[str]]) ->
 def test_every_named_effect_file_is_one_file(effect_files: dict[str, Path]) -> None:
     """A test names the Effect file it ports by enough of its path to pick one file."""
     ambiguous = sorted(
-        f"{path.relative_to(_TESTS)}: {mention}"
+        f"{path.relative_to(TESTS)}: {mention}"
         for path in _test_modules()
         for doc in docstrings(path)
         for mention in ambiguous_mentions(doc, effect_files)
@@ -119,5 +120,5 @@ def test_the_recorded_count_of_open_titles_is_the_lists(
         for path, titles in unported.items()
         for title in titles
     )
-    parity = (_TESTS.parent / "docs" / "PARITY.md").read_text()
+    parity = (TESTS.parent / "docs" / "PARITY.md").read_text()
     assert f"{open_titles} titles NOT_PORTED, all open" in parity

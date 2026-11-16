@@ -13,9 +13,10 @@ one; ``tests/type_checks.py`` pins the result for each.
 from __future__ import annotations
 
 import ast
-from pathlib import Path
 
-SRC = Path(__file__).resolve().parent.parent / "src" / "pyfect"
+import _source
+
+SRC = _source.SRC
 
 
 def _is_overload(function: ast.FunctionDef) -> bool:
@@ -75,8 +76,8 @@ def _missing_list_overloads(tree: ast.Module) -> list[str]:
 def test_every_iterable_of_pairs_has_a_list_overload() -> None:
     found = {
         str(path.relative_to(SRC)): missing
-        for path in sorted(SRC.rglob("*.py"))
-        if (missing := _missing_list_overloads(ast.parse(path.read_text(), str(path))))
+        for path in _source.files(SRC)
+        if (missing := _missing_list_overloads(_source.tree(path)))
     }
     assert found == {}, f"add a list[tuple[K, V]] overload first: {found}"
 
@@ -91,4 +92,4 @@ class Box[K, V]:
     @classmethod
     def from_iterable(cls, entries: Iterable[tuple[K, V]]) -> Box[K, V]: ...
 """
-    assert _missing_list_overloads(ast.parse(source)) == ["from_iterable:5"]
+    assert _missing_list_overloads(_source.parse(source)) == ["from_iterable:5"]

@@ -8,11 +8,14 @@ without ``test_``, or as a clause of a string in a parametrized table of titles.
 from __future__ import annotations
 
 import ast
+import functools
 import re
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
 from fnmatch import fnmatch
 from pathlib import Path
+
+import _source
 
 _OPENING = re.compile(r"(?<![\w.$])(?:it|test)((?:\.\w+)*)\s*\(")
 _PLACEHOLDER = "\0"
@@ -141,6 +144,7 @@ def effect_test_files(packages: Path) -> Iterator[Path]:
             yield path
 
 
+@functools.cache
 def words(text: str) -> str:
     """``text`` as lowercase words, so ``toSeconds``, ``to_seconds`` and ``to seconds`` agree."""
     spaced = _SPRINTF.sub(_PLACEHOLDER, text)
@@ -177,8 +181,13 @@ _NPM_SCOPE = re.compile(r"^(ai|atom|platform|sql)-")
 
 
 def _resolve(mention: str, effect_files: Iterable[str]) -> list[str]:
+    return list(_resolved(mention, tuple(effect_files)))
+
+
+@functools.cache
+def _resolved(mention: str, effect_files: tuple[str, ...]) -> tuple[str, ...]:
     tail = _NPM_SCOPE.sub(r"\1/", mention.removeprefix("./").removeprefix("packages/"))
-    return [path for path in effect_files if fnmatch(path, tail) or fnmatch(path, "*/" + tail)]
+    return tuple(path for path in effect_files if fnmatch(path, tail) or fnmatch(path, "*/" + tail))
 
 
 def named_files(text: str, effect_files: Iterable[str]) -> frozenset[str]:
@@ -216,6 +225,9 @@ class Ports:
     module_prose: list[str] = field(default_factory=list[str])
 
 
+_HOLDS_DEFINITIONS = (ast.stmt, ast.excepthandler, ast.match_case)
+
+
 def read_ports(files: Iterable[Path], effect_files: Iterable[str]) -> dict[str, Ports]:
     """Each Effect file's ports: what the tests carry whose own, class or module docstring
     names that file. A test that names no Effect file ports nothing."""
@@ -224,7 +236,10 @@ def read_ports(files: Iterable[Path], effect_files: Iterable[str]) -> dict[str, 
 
     def of(keys: frozenset[str]) -> Iterator[Ports]:
         for key in keys:
-            yield ports.setdefault(key, Ports())
+            port = ports.get(key)
+            if port is None:
+                port = ports[key] = Ports()
+            yield port
 
     def visit(node: ast.AST, keys: frozenset[str], docstring: ast.AST | None) -> None:
         for child in ast.iter_child_nodes(node):
@@ -252,11 +267,12 @@ def read_ports(files: Iterable[Path], effect_files: Iterable[str]) -> dict[str, 
                     port.strings.update(
                         (words(child.value), words(child.value.rpartition(" / ")[2]))
                     )
-            else:
+            elif keys or isinstance(child, _HOLDS_DEFINITIONS):
+                # Without keys only a definition can add any; definitions are statements.
                 visit(child, keys, docstring)
 
     for path in files:
-        tree = ast.parse(path.read_text())
+        tree = _source.tree(path)
         module_doc = ast.get_docstring(tree) or ""
         keys = named_files(module_doc, effect_files)
         omitted = _OMITTED_FROM.search(module_doc)
@@ -299,7 +315,7 @@ def is_noted_as_omitted(title: str, ports: Ports) -> bool:
 
 def docstrings(path: Path) -> Iterator[str]:
     """The module, class and function docstrings of one Python file."""
-    for node in ast.walk(ast.parse(path.read_text())):
+    for node in _source.walk(path):
         if isinstance(node, ast.Module | ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
             doc = ast.get_docstring(node)
             if doc:

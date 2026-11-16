@@ -22,9 +22,9 @@ import threading
 import time
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
-from pathlib import Path
 from typing import Any, Never
 
+import _source
 import pytest
 
 import pyfect as fx
@@ -433,7 +433,7 @@ def test_a_raising_exit_observer_stops_the_ones_after_it():
 
 # --- guard --------------------------------------------------------------------
 
-_SRC = Path(__file__).parent.parent / "src" / "pyfect"
+_SRC = _source.SRC
 # How the fiber runtime calls into user code: a primitive's step, a
 # continuation frame, the tracer hook around them, a callback's register
 # function, an exit observer.
@@ -453,7 +453,7 @@ def test_the_fiber_runtime_calls_user_code_only_where_base_exceptions_are_caught
     Every call into user code in ``_fiber.py`` sits in a ``try`` that
     catches ``BaseException`` (directly, or in a helper referenced only from
     such a ``try``), and the loop's handlers go through ``Fiber._raised``."""
-    tree = ast.parse((_SRC / "_fiber.py").read_text())
+    tree = _source.tree(_SRC / "_fiber.py")
     parents: dict[ast.AST, ast.AST] = {}
     for node in ast.walk(tree):
         for child in ast.iter_child_nodes(node):
@@ -540,7 +540,7 @@ def test_no_bare_exception_handler_in_the_runtime_core():
             "_concurrency.py",
             "scope.py",
         )
-        for h in ast.walk(ast.parse((_SRC / name).read_text()))
+        for h in _source.walk(_SRC / name)
         if isinstance(h, ast.ExceptHandler)
         and isinstance(h.type, ast.Name)
         and h.type.id == "Exception"
@@ -574,11 +574,11 @@ def test_no_handler_turns_ctrl_c_into_a_defect():
     first (``except KeyboardInterrupt: raise``), so the loop's
     ``Fiber._raised`` interrupts the fiber."""
     offenders: list[str] = []
-    for path in sorted(_SRC.rglob("*.py")):
+    for path in _source.files(_SRC):
         name = path.relative_to(_SRC).as_posix()
         if name in _OFF_FIBER:
             continue
-        for node in ast.walk(ast.parse(path.read_text())):
+        for node in _source.walk(path):
             if not isinstance(node, ast.Try):
                 continue
             ctrl_c_first = False

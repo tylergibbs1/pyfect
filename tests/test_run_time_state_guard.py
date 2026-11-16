@@ -12,9 +12,10 @@ the cell inside the body instead (Effect's ``fnUntraced`` locals).
 from __future__ import annotations
 
 import ast
-from pathlib import Path
 
-SRC = Path(__file__).resolve().parent.parent / "src" / "pyfect"
+import _source
+
+SRC = _source.SRC
 
 # Called at run time (inside a ``_WithFiber`` body), so each run makes its own.
 _ALLOWED = {"rpc/client/_core.py:_clear"}
@@ -73,8 +74,8 @@ def _offenders(name: str, tree: ast.Module) -> list[str]:
 def test_effect_bodies_make_their_own_mutable_state():
     offenders = [
         offender
-        for path in sorted(SRC.rglob("*.py"))
-        for offender in _offenders(str(path.relative_to(SRC)), ast.parse(path.read_text()))
+        for path in _source.files(SRC)
+        for offender in _offenders(str(path.relative_to(SRC)), _source.tree(path))
     ]
     assert offenders == [], "make the cell inside the @gen body, so each run has its own"
 
@@ -89,4 +90,4 @@ def test_the_guard_finds_a_cell_shared_by_runs():
         "        yield from x\n"
         "    return run\n"
     )
-    assert _offenders("m.py", ast.parse(source)) == ["m.py:2 (make: flag)"]
+    assert _offenders("m.py", _source.parse(source)) == ["m.py:2 (make: flag)"]

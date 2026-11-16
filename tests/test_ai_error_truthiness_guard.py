@@ -6,9 +6,10 @@ with ``is not None``, never by truthiness (QA ai-workflow AI-2)."""
 from __future__ import annotations
 
 import ast
-from pathlib import Path
 
-_AI = Path(__file__).parent.parent / "src" / "pyfect" / "ai"
+import _source
+
+_AI = _source.SRC / "ai"
 _OBJECT_TYPES = ("timedelta", "datetime")
 
 
@@ -36,8 +37,8 @@ def _truthiness_tests(tree: ast.Module) -> list[ast.expr]:
 
 def test_duration_and_date_time_fields_are_not_tested_by_truthiness():
     offenders: list[str] = []
-    for path in sorted(_AI.rglob("*.py")):
-        tree = ast.parse(path.read_text())
+    for path in _source.files(_AI):
+        tree = _source.tree(path)
         fields = _object_fields(tree)
         offenders.extend(
             f"{path.name}:{test.lineno} {ast.unparse(test)}"

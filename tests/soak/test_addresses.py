@@ -14,6 +14,8 @@ import ast
 from ipaddress import IPv4Address
 from pathlib import Path
 
+import _source
+
 from pyfect.net.net_address import InetAddressV4
 
 from ._http import base_url
@@ -29,9 +31,9 @@ def test_no_soak_client_connects_by_host_name() -> None:
     """``localhost`` only names the certificate (``_tls.py``)."""
     found = [
         f"{path.name}:{node.lineno}"
-        for path in sorted(_SOAK.glob("*.py"))
+        for path in _source.files(_SOAK, recursive=False)
         if path.name != "_tls.py" and not path.name.startswith("test_")
-        for node in ast.walk(ast.parse(path.read_text()))
+        for node in _source.walk(path)
         if (
             isinstance(node, ast.Constant)
             and isinstance(node.value, str)

@@ -11,6 +11,7 @@ from ipaddress import IPv4Network, IPv6Network
 from pathlib import Path
 from typing import NotRequired, TypedDict
 
+import _source
 import pytest
 
 from pyfect import schema as S
@@ -74,8 +75,8 @@ def test_only_typed_dict_hints_reads_a_typed_dicts_annotations() -> None:
     type arguments; ``get_type_hints`` of the alias is silently empty."""
     found = [
         f"{path.relative_to(SCHEMA)}:{node.lineno}"
-        for path in sorted(SCHEMA.rglob("*.py"))
-        for node in ast.walk(ast.parse(path.read_text()))
+        for path in _source.files(SCHEMA)
+        for node in _source.walk(path)
         if isinstance(node, ast.Call)
         and isinstance(node.func, ast.Name)
         and node.func.id == "get_type_hints"

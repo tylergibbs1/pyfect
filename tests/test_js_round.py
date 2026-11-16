@@ -6,12 +6,13 @@ import ast
 import math
 from pathlib import Path
 
+import _source
 import pytest
 
 from pyfect import _js
 from pyfect.cli.prompt._number import _js_round
 
-SRC = Path(__file__).parent.parent / "src" / "pyfect"
+SRC = _source.SRC
 
 
 @pytest.mark.parametrize(
@@ -56,7 +57,7 @@ def _floor_plus_half(path: Path) -> list[int]:
 
     return [
         node.lineno
-        for node in ast.walk(ast.parse(path.read_text()))
+        for node in _source.walk(path)
         if isinstance(node, ast.Call)
         and isinstance(node.func, ast.Attribute | ast.Name)
         and (node.func.attr if isinstance(node.func, ast.Attribute) else node.func.id)
@@ -71,5 +72,5 @@ def test_no_floor_of_x_plus_a_half():
     2**52 to even; ports of ``Math.round`` use ``_js.round``. ``abs(x) + 0.5``
     (ties away from zero, ``persistence._seconds``) is a different rounding
     and has its own name."""
-    found = {str(p.relative_to(SRC)): _floor_plus_half(p) for p in sorted(SRC.rglob("*.py"))}
+    found = {str(p.relative_to(SRC)): _floor_plus_half(p) for p in _source.files(SRC)}
     assert {p: lines for p, lines in found.items() if lines} == {}

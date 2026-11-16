@@ -27,9 +27,9 @@ import contextvars
 import inspect
 import threading
 from collections.abc import Callable, Coroutine
-from pathlib import Path
 from typing import Any, Never
 
+import _source
 import pytest
 
 import pyfect as fx
@@ -39,7 +39,7 @@ from pyfect.http.asgi import Message, Scope
 from pyfect.http.server_request import HttpServerRequest
 from pyfect.scheduler import SyncScheduler
 
-SRC = Path(__file__).parent.parent / "src" / "pyfect"
+SRC = _source.SRC
 request_id: contextvars.ContextVar[str] = contextvars.ContextVar("request_id", default="-")
 
 
@@ -406,16 +406,16 @@ def _calls(attribute: str) -> list[str]:
     """Where ``src/pyfect`` calls ``Fiber``'s method ``attribute`` (modules
     with a method of their own by that name aside)."""
     found: list[str] = []
-    for path in sorted(SRC.rglob("*.py")):
-        tree = ast.parse(path.read_text())
+    for path in _source.files(SRC):
+        nodes = _source.walk(path)
         defines = any(
-            isinstance(node, ast.FunctionDef) and node.name == attribute for node in ast.walk(tree)
+            isinstance(node, ast.FunctionDef) and node.name == attribute for node in nodes
         )
         if defines and path.name != "_fiber.py":
             continue
         found.extend(
             f"{path.relative_to(SRC)}:{node.lineno}"
-            for node in ast.walk(tree)
+            for node in nodes
             if isinstance(node, ast.Call)
             and isinstance(node.func, ast.Attribute)
             and node.func.attr == attribute
@@ -431,8 +431,8 @@ def test_a_fibers_first_run_is_scheduled_only_through_start() -> None:
     assert {c.split(":")[0] for c in _calls("_drive") + _calls("_drain")} == {"_fiber.py"}
     skipping = [
         f"{path.relative_to(SRC)}:{node.lineno}"
-        for path in sorted(SRC.rglob("*.py"))
-        for node in ast.walk(ast.parse(path.read_text()))
+        for path in _source.files(SRC)
+        for node in _source.walk(path)
         if isinstance(node, ast.keyword) and node.arg == "caller_drives"
     ]
     assert len(skipping) == 2

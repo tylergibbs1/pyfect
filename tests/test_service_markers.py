@@ -17,11 +17,11 @@ import ast
 import collections
 import functools
 from collections.abc import Iterator
-from pathlib import Path
 
+import _source
 import pytest
 
-SRC = Path(__file__).resolve().parent.parent / "src" / "pyfect"
+SRC = _source.SRC
 ROUTER_MARKERS = SRC / "http" / "router" / "_markers.py"
 
 # Where the requirement sits among each type's parameters.
@@ -41,12 +41,12 @@ class _Index:
     name."""
 
     def __init__(self) -> None:
-        self.trees = {path: ast.parse(path.read_text()) for path in sorted(SRC.rglob("*.py"))}
+        self.trees = {path: _source.tree(path) for path in _source.files(SRC)}
         self.classes: dict[str, list[ast.ClassDef]] = collections.defaultdict(list)
         self.aliases: dict[str, ast.expr] = {}
         self.typevars: set[str] = set()
-        for tree in self.trees.values():
-            for node in ast.walk(tree):
+        for path in self.trees:
+            for node in _source.walk(path):
                 if isinstance(node, ast.ClassDef):
                     self.classes[node.name].append(node)
                 elif isinstance(node, ast.TypeAlias):
@@ -87,7 +87,7 @@ class _Scope:
                 yield from self.classes_in(expr.left, params, enclosing, depth)
                 yield from self.classes_in(expr.right, params, enclosing, depth)
             case ast.Constant(value=str() as text):
-                yield from self.classes_in(ast.parse(text, mode="eval").body, params, enclosing)
+                yield from self.classes_in(_source.parse(text, mode="eval").body, params, enclosing)
             case ast.Subscript() | ast.Name() | ast.Attribute():
                 name = _head(expr)
                 if name in params or name in self.index.typevars or name in NOT_SERVICES:
@@ -128,7 +128,7 @@ def _required_classes() -> dict[str, list[str]]:
             if isinstance(child, ast.FunctionDef | ast.AsyncFunctionDef) and child.returns:
                 returns = child.returns
                 if isinstance(returns, ast.Constant) and isinstance(returns.value, str):
-                    returns = ast.parse(returns.value, mode="eval").body
+                    returns = _source.parse(returns.value, mode="eval").body
                 for sub in ast.walk(returns):
                     if not isinstance(sub, ast.Subscript) or _head(sub) not in R_INDEX:
                         continue
@@ -144,7 +144,7 @@ def _required_classes() -> dict[str, list[str]]:
         rel = path.relative_to(SRC)
         renames = {
             alias.asname: alias.name
-            for node in ast.walk(tree)
+            for node in _source.walk(path)
             if isinstance(node, ast.ImportFrom)
             for alias in node.names
             if alias.asname
@@ -154,7 +154,7 @@ def _required_classes() -> dict[str, list[str]]:
 
 
 def _router_markers() -> set[str]:
-    tree = ast.parse(ROUTER_MARKERS.read_text())
+    tree = _source.tree(ROUTER_MARKERS)
     return {node.name for node in tree.body if isinstance(node, ast.ClassDef)}
 
 

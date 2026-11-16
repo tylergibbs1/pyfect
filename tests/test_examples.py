@@ -2,12 +2,12 @@
 
 import subprocess
 import sys
-from pathlib import Path
 
+import _source
 import pytest
 from _subprocess import SUBPROCESS_TIMEOUT
 
-EXAMPLES = Path(__file__).parent.parent / "examples"
+EXAMPLES = _source.ROOT / "examples"
 
 
 def run_example(name: str) -> str:
@@ -23,7 +23,7 @@ def run_example(name: str) -> str:
     return done.stdout
 
 
-@pytest.mark.parametrize("name", sorted(p.name for p in EXAMPLES.glob("*.py")))
+@pytest.mark.parametrize("name", [p.name for p in _source.files(EXAMPLES, recursive=False)])
 def test_example_runs(name: str):
     run_example(name)
 

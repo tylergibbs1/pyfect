@@ -7,16 +7,17 @@ body through ``scope_transfer_to_stream`` (or its private form), which waits for
 
 from __future__ import annotations
 
-from pathlib import Path
+import _source
 
-_SRC = Path(__file__).parent.parent / "src" / "pyfect"
+_SRC = _source.SRC
 _OWNERS = {"http/http_effect.py", "http/_request_state.py"}
 
 
 def test_only_http_effect_ejects_the_request_scope() -> None:
     offenders = sorted(
         path.relative_to(_SRC).as_posix()
-        for path in _SRC.rglob("*.py")
-        if "scope_ejected" in path.read_text() and path.relative_to(_SRC).as_posix() not in _OWNERS
+        for path in _source.files(_SRC)
+        if "scope_ejected" in _source.text(path)
+        and path.relative_to(_SRC).as_posix() not in _OWNERS
     )
     assert offenders == []

@@ -100,12 +100,14 @@ def test_every_decompress_call_in_pyfect_is_bounded() -> None:
     import ast
     from pathlib import Path
 
+    import _source
+
     import pyfect
 
     unbounded = [
         f"{path.name}:{node.lineno}"
-        for path in Path(pyfect.__path__[0]).rglob("*.py")
-        for node in ast.walk(ast.parse(path.read_text()))
+        for path in _source.files(Path(pyfect.__path__[0]))
+        for node in _source.walk(path)
         if isinstance(node, ast.Call)
         and isinstance(node.func, ast.Attribute)
         and node.func.attr == "decompress"

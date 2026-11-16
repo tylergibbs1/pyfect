@@ -10,16 +10,17 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-EVENTLOG = Path(__file__).resolve().parent.parent / "src" / "pyfect" / "eventlog"
-MODULES = [*sorted((EVENTLOG / "_sql_server_encrypted").glob("*.py"))]
+import _source
+
+EVENTLOG = _source.SRC / "eventlog"
+MODULES = [*_source.files(EVENTLOG / "_sql_server_encrypted", recursive=False)]
 MODULES.append(EVENTLOG / "sql_event_log_server_encrypted.py")
 
 
 def _separate_index_ddl(path: Path) -> list[str]:
-    tree = ast.parse(path.read_text(), str(path))
     return [
         f"{path.name}:{node.lineno}"
-        for node in ast.walk(tree)
+        for node in _source.walk(path)
         if isinstance(node, ast.Constant) and isinstance(node.value, str)
         if "sys.indexes" in node.value
         or ("CREATE INDEX" in node.value and "CREATE INDEX IF NOT EXISTS" not in node.value)

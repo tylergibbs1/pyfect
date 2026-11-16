@@ -14,6 +14,7 @@ import inspect
 import textwrap
 from typing import cast
 
+import _source
 from _pyfect_modules import modules
 
 _MUTATORS = frozenset(
@@ -76,7 +77,7 @@ def _shape(cls: type) -> tuple[bool, bool]:
     """Whether ``cls``'s own methods change ``self``'s fields, and whether one returns an
     ``Effect``."""
     try:
-        node = ast.parse(textwrap.dedent(inspect.getsource(cls))).body[0]
+        node = _source.parse(textwrap.dedent(inspect.getsource(cls))).body[0]
     except (OSError, TypeError):
         return False, False
     assert isinstance(node, ast.ClassDef)

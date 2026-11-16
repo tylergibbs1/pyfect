@@ -11,9 +11,10 @@ future, or call ``set_result`` after checking ``done()``.
 from __future__ import annotations
 
 import ast
-from pathlib import Path
 
-SRC = Path(__file__).resolve().parent.parent / "src" / "pyfect"
+import _source
+
+SRC = _source.SRC
 _COMPLETERS = {"set_result", "set_exception"}
 
 
@@ -33,15 +34,15 @@ def _passed_completers(tree: ast.AST) -> list[int]:
 def test_no_future_completer_is_passed_as_a_callback() -> None:
     found = [
         f"{path.relative_to(SRC)}:{line}"
-        for path in sorted(SRC.rglob("*.py"))
-        for line in _passed_completers(ast.parse(path.read_text(), str(path)))
+        for path in _source.files(SRC)
+        for line in _passed_completers(_source.tree(path))
     ]
     assert found == [], "pass pyfect._futures.settle instead: " + ", ".join(found)
 
 
 def test_the_check_finds_a_passed_completer() -> None:
-    tree = ast.parse(
+    tree = _source.parse(
         "fiber.add_observer_unsafe(done.set_result)\nloop.call_soon(f.set_exception, e)"
     )
     assert _passed_completers(tree) == [1, 2]
-    assert _passed_completers(ast.parse("done.set_result(1)")) == []
+    assert _passed_completers(_source.parse("done.set_result(1)")) == []

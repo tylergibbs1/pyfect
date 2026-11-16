@@ -9,15 +9,16 @@ that redacts anything must give those renderers its redacted form."""
 from __future__ import annotations
 
 import ast
-from pathlib import Path
 
-SRC = Path(__file__).parent.parent / "src" / "pyfect"
+import _source
+from _source import SRC
+
 SINKS = [
-    *(SRC / "logger").rglob("*.py"),
-    *(SRC / "otel").rglob("*.py"),
-    *(SRC / "observability").rglob("*.py"),
-    *(SRC / "devtools").rglob("*.py"),
-    *(SRC / "tracer").rglob("*.py"),
+    *_source.files(SRC / "logger"),
+    *_source.files(SRC / "otel"),
+    *_source.files(SRC / "observability"),
+    *_source.files(SRC / "devtools"),
+    *_source.files(SRC / "tracer"),
     SRC / "cause.py",
 ]
 RENDERERS = {SRC / "logger" / "_text.py"}
@@ -40,7 +41,7 @@ def test_sinks_render_values_only_through_the_redacting_renderers() -> None:
     for path in SINKS:
         if path in RENDERERS:
             continue
-        for node in ast.walk(ast.parse(path.read_text())):
+        for node in _source.walk(path):
             if isinstance(node, ast.Call) and _name(node.func) in WALKS:
                 found.append(f"{path.relative_to(SRC)}:{node.lineno} calls {_name(node.func)}")
             if isinstance(node, ast.Attribute) and node.attr == "__dict__":
@@ -50,8 +51,8 @@ def test_sinks_render_values_only_through_the_redacting_renderers() -> None:
 
 def test_a_type_that_redacts_gives_its_redacted_form_to_the_renderers() -> None:
     found: list[str] = []
-    for path in SRC.rglob("*.py"):
-        for node in ast.walk(ast.parse(path.read_text())):
+    for path in _source.files(SRC):
+        for node in _source.walk(path):
             if not isinstance(node, ast.ClassDef):
                 continue
             used = {_name(n) for n in ast.walk(node) if isinstance(n, ast.Name | ast.Attribute)}

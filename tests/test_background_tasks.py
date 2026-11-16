@@ -11,19 +11,15 @@ and async generator before the loop closes.
 from __future__ import annotations
 
 import ast
-from pathlib import Path
 
-import pyfect
+import _source
 
-_SOURCE = Path(pyfect.__file__).parent
+_SOURCE = _source.SRC
 _SPAWNERS = {"create_task", "ensure_future"}
 
 
 def _sources() -> list[tuple[str, ast.Module]]:
-    return [
-        (str(path.relative_to(_SOURCE)), ast.parse(path.read_text(), str(path)))
-        for path in sorted(_SOURCE.rglob("*.py"))
-    ]
+    return [(str(path.relative_to(_SOURCE)), _source.tree(path)) for path in _source.files(_SOURCE)]
 
 
 def _name(call: ast.Call) -> str | None:
@@ -78,4 +74,4 @@ def test_the_checks_see_a_dropped_task() -> None:
         "task = loop.create_task(f())\n"
         "tasks.add(asyncio.ensure_future(f()))\n"
     )
-    assert _dropped(ast.parse(source)) == [1, 2, 3]
+    assert _dropped(_source.parse(source)) == [1, 2, 3]

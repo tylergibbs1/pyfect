@@ -8,9 +8,10 @@ opt out with ``strict=False``.
 """
 
 import ast
-from pathlib import Path
 
-TESTS = Path(__file__).parent
+import _source
+
+TESTS = _source.TESTS
 
 
 def _called(node: ast.AST, name: str) -> bool:
@@ -19,8 +20,7 @@ def _called(node: ast.AST, name: str) -> bool:
     return isinstance(target, ast.Attribute) and target.attr == name
 
 
-def _problems(source: str, where: str) -> list[str]:
-    tree = ast.parse(source)
+def _problems(tree: ast.Module, where: str) -> list[str]:
     problems: list[tuple[int, str]] = []
     xfail_names = {
         target.id
@@ -56,8 +56,8 @@ def _problems(source: str, where: str) -> list[str]:
 def test_xfails_name_a_reason_stay_strict_and_skip_live_tests():
     problems = [
         problem
-        for path in sorted(TESTS.rglob("*.py"))
-        for problem in _problems(path.read_text(encoding="utf-8"), str(path.relative_to(TESTS)))
+        for path in _source.files(TESTS)
+        for problem in _problems(_source.tree(path), str(path.relative_to(TESTS)))
     ]
     assert problems == []
 
@@ -88,7 +88,7 @@ def test_fine():
 
 
 def test_the_guard_flags_each_kind_of_problem():
-    assert _problems(_FLAGGED, "t.py") == [
+    assert _problems(_source.parse(_FLAGGED), "t.py") == [
         "t.py:7 xfail with strict=False",
         "t.py:10 xfail without a reason",
         "t.py:15 xfail on the live test test_named_marker",

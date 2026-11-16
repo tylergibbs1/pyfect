@@ -13,10 +13,10 @@ import sys
 import threading
 import time
 from collections.abc import Callable, Iterator
-from pathlib import Path
 from types import FrameType
 from typing import Literal, TypedDict
 
+import _source
 import pytest
 from _growth import Work, assert_near_linear
 
@@ -134,10 +134,10 @@ def test_a_probe_costs_the_same_far_down_a_stack_as_near_its_top(
 def test_only_the_probe_measures_the_stack() -> None:
     """Whatever a walk asks of the stack's depth goes through ``stack_nearly_full``, whose
     cost is bounded: no other module looks ``getrecursionlimit()`` frames back."""
-    src = Path(__file__).parents[2] / "src" / "pyfect"
+    src = _source.SRC
     readers: set[str] = set()
-    for path in src.rglob("*.py"):
-        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+    for path in _source.files(src):
+        for node in _source.walk(path):
             if (
                 isinstance(node, ast.Call)
                 and isinstance(node.func, ast.Attribute)

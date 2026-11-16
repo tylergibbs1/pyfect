@@ -10,11 +10,12 @@ driver. The real server's reading of them is checked by
 from __future__ import annotations
 
 import ast
-from pathlib import Path
+
+import _source
 
 from pyfect.sql.clickhouse import params
 
-_CLICKHOUSE = Path(params.__file__).parent
+_CLICKHOUSE = _source.SRC / "sql" / "clickhouse"
 
 
 def test_map_setting_keys_and_values_are_escaped():
@@ -59,8 +60,8 @@ def _quote_literals_outside_quote(tree: ast.AST) -> list[int]:
 def test_clickhouse_literals_are_quoted_only_by_quote():
     """(pyfect) the ClickHouse driver quotes values only through ``params._quote``"""
     found: dict[str, list[int]] = {}
-    for path in sorted(_CLICKHOUSE.glob("*.py")):
-        tree = ast.parse(path.read_text(), filename=str(path))
+    for path in _source.files(_CLICKHOUSE, recursive=False):
+        tree = _source.tree(path)
         lines = _quoted_interpolations(tree) + _quote_literals_outside_quote(tree)
         if lines:
             found[path.name] = lines

@@ -9,11 +9,11 @@ import importlib
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from pathlib import Path
 from types import MappingProxyType
 from typing import Any, NotRequired, TypedDict, TypeIs, cast
 from zoneinfo import ZoneInfo
 
+import _source
 import pytest
 
 from pyfect import cause, duration, exit
@@ -179,8 +179,8 @@ def test_a_bytes_annotation_is_the_bytes_schema():
 def _instance_of_schemas() -> list[tuple[str, str, str]]:
     """Every ``Name = instance_of(cls, ...)`` in ``pyfect.schema``: (module, Name, cls)."""
     found: list[tuple[str, str, str]] = []
-    for path in sorted(Path(S.__file__).parent.glob("*.py")):
-        for node in ast.parse(path.read_text()).body:
+    for path in _source.files(_source.SRC / "schema", recursive=False):
+        for node in _source.tree(path).body:
             if not isinstance(node, ast.AnnAssign | ast.Assign):
                 continue
             call = node.value

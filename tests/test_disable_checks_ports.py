@@ -19,10 +19,11 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import _source
 import pytest
 from _effect_titles import effect_test_files, named_files, skip_balanced, skip_string
 
-_TESTS = Path(__file__).parent
+_TESTS = _source.TESTS
 _CHECKOUT = Path(
     os.environ.get("PYFECT_EFFECT_REF") or _TESTS.parent.parent / "pyfect-ref" / "effect"
 )
@@ -157,7 +158,7 @@ def test_constructions_reads_the_options_argument() -> None:
 
 
 def test_port_calls_finds_plain_and_unchecked_constructions() -> None:
-    tree = ast.parse(
+    tree = _source.parse(
         "J.Entry(id=1)\nS.new(J.RemoteEntry, disable_checks=True)(entry=x)\nnew(Other)(a=1)"
     )
     calls = port_calls(tree)
@@ -176,8 +177,8 @@ def test_ports_keep_effects_disable_checks_constructions() -> None:
     problems: list[str] = []
     ported: set[str] = set()
     excused: set[tuple[str, str]] = set()
-    for module in sorted(_TESTS.rglob("*.py")):
-        tree = ast.parse(module.read_text())
+    for module in _source.files(_TESTS):
+        tree = _source.tree(module)
         named = [by_file[f] for f in named_files(_docstrings(tree), all_files) if f in by_file]
         unchecked = set[str]().union(*(c.unchecked for c in named))
         if not unchecked:

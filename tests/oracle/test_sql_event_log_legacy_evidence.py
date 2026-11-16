@@ -15,6 +15,7 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+import _source
 import pytest
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
@@ -184,9 +185,8 @@ def _calls(name: str) -> dict[str, set[str]]:
     (as a function or a method), with the functions enclosing them."""
     package = Path(legacy.__file__).parent
     found: dict[str, set[str]] = {}
-    for path in package.glob("*.py"):
-        tree = ast.parse(path.read_text())
-        for function in ast.walk(tree):
+    for path in _source.files(package, recursive=False):
+        for function in _source.walk(path):
             if not isinstance(function, ast.FunctionDef | ast.AsyncFunctionDef):
                 continue
             for node in ast.walk(function):
@@ -213,8 +213,8 @@ def test_every_alias_records_who_made_it_and_where_its_batches_end() -> None:
     package = Path(legacy.__file__).parent
     alias_tables = {"aliases", "alias_origins", "alias_bounds"}
     writers: set[str] = set()
-    for path in package.glob("*.py"):
-        for function in ast.walk(ast.parse(path.read_text())):
+    for path in _source.files(package, recursive=False):
+        for function in _source.walk(path):
             if not isinstance(function, ast.FunctionDef):
                 continue
             for node in ast.walk(function):

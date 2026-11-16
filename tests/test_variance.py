@@ -42,6 +42,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, ParamSpec, TypeAliasType, TypeVar, TypeVarTuple
 
+import _source
 from _pyfect_modules import modules
 from _variance_expected import EXPECTED, Variance
 
@@ -188,9 +189,14 @@ def _variance_checks(
             )
 
 
+def _module_file(module: types.ModuleType) -> Path:
+    assert module.__file__ is not None, module
+    return Path(module.__file__)
+
+
 def _import_map(module: types.ModuleType) -> dict[str, str]:
     """Each name ``module``'s imports bind (``TYPE_CHECKING`` ones too), to its dotted path."""
-    tree = ast.parse(inspect.getsource(module))
+    tree = _source.tree(_module_file(module))
     package = module.__name__ if hasattr(module, "__path__") else module.__name__.rpartition(".")[0]
     bound: dict[str, str] = {}
     for node in ast.walk(tree):
@@ -296,7 +302,7 @@ def _defining_module(cls: type) -> types.ModuleType:
 def _class_node(cls: type) -> tuple[ast.ClassDef, types.ModuleType]:
     """``cls``'s definition (``inspect.getsource`` misses slots classes), and its module."""
     module = _defining_module(cls)
-    node: ast.AST = ast.parse(inspect.getsource(module))
+    node: ast.AST = _source.tree(_module_file(module))
     for part in cls.__qualname__.split("."):
         node = next(n for n in ast.walk(node) if isinstance(n, ast.ClassDef) and n.name == part)
     return typing.cast("ast.ClassDef", node), module
@@ -322,7 +328,7 @@ def _qualifier(module: types.ModuleType, names: dict[str, str]) -> ast.NodeTrans
                 spelled = f"{module.__name__}.{node.id}"
             else:
                 return node
-            return ast.parse(spelled, mode="eval").body
+            return _source.parse(spelled, mode="eval").body
 
         def visit_Subscript(self, node: ast.Subscript) -> ast.expr:
             if isinstance(node.value, ast.Name) and node.value.id == "Literal":
@@ -334,7 +340,7 @@ def _qualifier(module: types.ModuleType, names: dict[str, str]) -> ast.NodeTrans
             if not isinstance(node.value, str):
                 return node
             try:  # a quoted annotation
-                quoted = ast.parse(node.value, mode="eval").body
+                quoted = _source.parse(node.value, mode="eval").body
             except SyntaxError:
                 return node
             return typing.cast("ast.expr", self.visit(quoted))
@@ -344,7 +350,7 @@ def _qualifier(module: types.ModuleType, names: dict[str, str]) -> ast.NodeTrans
 
 def _qualify(source: str, module: types.ModuleType, names: dict[str, str]) -> str:
     """``source``'s names spelled through dotted paths, the class's TypeVars through ``names``."""
-    return ast.unparse(_qualifier(module, names).visit(ast.parse(source, mode="eval")))
+    return ast.unparse(_qualifier(module, names).visit(_source.parse(source, mode="eval")))
 
 
 def _fields_protocol(i: int, generic: GenericClass) -> str | None:

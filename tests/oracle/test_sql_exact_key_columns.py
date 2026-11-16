@@ -26,9 +26,9 @@ from __future__ import annotations
 import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
+import _source
 import pytest
 
 import pyfect as fx
@@ -44,7 +44,7 @@ from pyfect.persistence.persistence import (
 )
 from pyfect.sql import SqlClient, migrator
 
-SRC = Path(__file__).resolve().parents[2] / "src" / "pyfect"
+SRC = _source.SRC
 
 type Build = Callable[[], fx.Effect[Any, Any, Any]]
 
@@ -254,8 +254,8 @@ def test_every_key_column_compares_exactly(request: pytest.FixtureRequest, diale
 def test_every_module_with_ddl_is_checked() -> None:
     with_ddl = {
         path.relative_to(SRC).as_posix()
-        for path in SRC.rglob("*.py")
-        if re.search(r"CREATE\s+TABLE", path.read_text(), re.IGNORECASE)
+        for path in _source.files(SRC)
+        if re.search(r"CREATE\s+TABLE", _source.text(path), re.IGNORECASE)
     }
     checked = {schema.module for schema in SCHEMAS.values()} | set(NEITHER_SERVER)
     assert with_ddl == checked

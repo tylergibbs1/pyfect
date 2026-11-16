@@ -11,7 +11,9 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-SRC = Path(__file__).resolve().parent.parent / "src" / "pyfect"
+import _source
+from _source import SRC
+
 LOOKUPS = {"lookup", "getdecoder", "getincrementaldecoder", "iterdecode", "decode"}
 APP_CHOSEN = {
     "_js.py": "text_decoder(encoding): decode_text / socket encodings the app passes",
@@ -21,7 +23,7 @@ APP_CHOSEN = {
 
 
 def _computed_codec_lookups(path: Path) -> list[int]:
-    tree = ast.parse(path.read_text(encoding="utf-8"))
+    tree = _source.tree(path)
     imports_codecs = any(
         isinstance(node, ast.Import) and any(alias.name == "codecs" for alias in node.names)
         for node in ast.walk(tree)
@@ -43,7 +45,7 @@ def _computed_codec_lookups(path: Path) -> list[int]:
 def test_codecs_are_looked_up_only_by_app_chosen_names():
     offenders = {
         str(path.relative_to(SRC)): lines
-        for path in sorted(SRC.rglob("*.py"))
+        for path in _source.files(SRC)
         if (lines := _computed_codec_lookups(path)) and str(path.relative_to(SRC)) not in APP_CHOSEN
     }
     assert not offenders, offenders

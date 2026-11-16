@@ -228,14 +228,13 @@ def test_the_live_server_never_trims_unicode_whitespace() -> None:
     """A no-argument ``strip``/``split`` takes NBSP, NEL and the like as
     whitespace, which no HTTP parser in front of the server does."""
     import ast
-    from pathlib import Path
 
-    import pyfect.http.live_server as live
+    import _source
 
     offenders = [
         f"{path.name}:{node.lineno}"
-        for path in sorted(Path(live.__file__).parent.glob("*.py"))
-        for node in ast.walk(ast.parse(path.read_text()))
+        for path in _source.files(_source.SRC / "http" / "live_server", recursive=False)
+        for node in _source.walk(path)
         if isinstance(node, ast.Call)
         and isinstance(node.func, ast.Attribute)
         and node.func.attr in ("strip", "lstrip", "rstrip", "split", "isspace")

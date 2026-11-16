@@ -120,12 +120,13 @@ _EFFECT_PREFIX_NAMES = {
 
 def test_unsafe_names_use_effects_suffix():
     import ast
-    from pathlib import Path
 
-    source = Path(fx.__file__).parent
+    import _source
+
+    source = _source.SRC
     found: set[str] = set()
-    for path in source.rglob("*.py"):
-        for node in ast.walk(ast.parse(path.read_text())):
+    for path in _source.files(source):
+        for node in _source.walk(path):
             match node:
                 case ast.FunctionDef(name=name) | ast.ClassDef(name=name) | ast.arg(arg=name):
                     pass

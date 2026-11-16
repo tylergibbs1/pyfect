@@ -24,9 +24,10 @@ from __future__ import annotations
 import ast
 import symtable
 from collections.abc import Iterator
-from pathlib import Path
 
-SRC = Path(__file__).resolve().parent.parent / "src" / "pyfect"
+import _source
+
+SRC = _source.SRC
 
 # Each entry: "path:enclosing function:names in the cycle" -> why the cycle
 # cannot hold a user value or is broken another way.
@@ -163,8 +164,7 @@ def _holders(target: ast.expr) -> set[str]:
             return set()
 
 
-def _cycles(source: str, relative: str) -> list[str]:
-    tree = ast.parse(source, relative)
+def _cycles(source: str, tree: ast.Module, relative: str) -> list[str]:
     lambdas = _lambda_names(tree)
     functions = {
         (node.name, node.lineno): node
@@ -211,8 +211,10 @@ def _cycles(source: str, relative: str) -> list[str]:
 def _all_cycles() -> list[str]:
     return [
         cycle
-        for path in sorted(SRC.rglob("*.py"))
-        for cycle in _cycles(path.read_text(), path.relative_to(SRC).as_posix())
+        for path in _source.files(SRC)
+        for cycle in _cycles(
+            _source.text(path), _source.tree(path), path.relative_to(SRC).as_posix()
+        )
     ]
 
 
@@ -252,7 +254,7 @@ def test_the_check_sees_each_way_a_closure_reaches_itself() -> None:
         "        current = catch(pull, recover)\n"
         "    return loop, ping, again, start\n"
     )
-    assert sorted(_cycles(source, "probe.py")) == [
+    assert sorted(_cycles(source, _source.parse(source, "probe.py"), "probe.py")) == [
         "probe.py:outer:again",
         "probe.py:outer:current,recover,start",
         "probe.py:outer:finalizer,state",
@@ -276,4 +278,4 @@ def test_the_check_lets_acyclic_closures_be() -> None:
         "        return result\n"
         "    return calls_fine, reads_result\n"
     )
-    assert _cycles(source, "probe.py") == []
+    assert _cycles(source, _source.parse(source, "probe.py"), "probe.py") == []

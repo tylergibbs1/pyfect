@@ -8,7 +8,9 @@ import ast
 import asyncio
 import inspect
 import threading
+from pathlib import Path
 
+import _source
 import pytest
 
 import pyfect as fx
@@ -63,7 +65,7 @@ def test_interrupting_a_fiber_whose_loop_closed_is_a_defect_of_the_interrupter()
 def test_the_scheduler_hands_tasks_to_a_loop_only_through_the_closed_loop_guard() -> None:
     # Every cross-thread hand-off onto the loop goes through _call_soon_threadsafe,
     # which turns a closed loop into a LoopClosedError.
-    tree = ast.parse(inspect.getsource(scheduler))
+    tree = _source.tree(Path(inspect.getfile(scheduler)))
     callers = {
         node.name
         for node in ast.walk(tree)

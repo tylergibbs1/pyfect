@@ -3,13 +3,13 @@ with a probe socket that is closed before the port is used."""
 
 import ast
 import socket
-from pathlib import Path
 from typing import cast
 
 import _ports
+import _source
 import pytest
 
-_TESTS = Path(__file__).parent
+_TESTS = _source.TESTS
 
 
 def test_tcp_and_udp_move_on_when_the_tcp_port_number_is_taken(
@@ -180,8 +180,8 @@ def _closed_then_used(body: list[ast.stmt], ports: dict[str, str]) -> list[int]:
     return found
 
 
-def _violations(source: str) -> list[int]:
-    return sorted(set(_closed_then_used(ast.parse(source).body, {})))
+def _violations(tree: ast.Module) -> list[int]:
+    return sorted(set(_closed_then_used(tree.body, {})))
 
 
 def test_the_ban_catches_each_shape_of_the_race() -> None:
@@ -213,7 +213,7 @@ def f():
     tcp.bind(("127.0.0.1", port))
 """
     for source in (probe_returned, used_after_with, used_after_close, bound_twice):
-        assert _violations(source), source
+        assert _violations(_source.parse(source)), source
 
 
 def test_the_ban_allows_a_port_used_while_its_socket_is_open() -> None:
@@ -231,15 +231,15 @@ def g():
     with socket.create_server(("127.0.0.1", 0)) as listener:
         yield listener.getsockname()[1]
 """
-    assert _violations(held) == []
+    assert _violations(_source.parse(held)) == []
 
 
 def test_no_test_picks_a_port_and_frees_it_before_use() -> None:
     """Use ``tests/_ports.py``: its sockets hold each port while it is used."""
     offenders = [
         f"{path.relative_to(_TESTS)}:{line}"
-        for path in sorted(_TESTS.rglob("*.py"))
+        for path in _source.files(_TESTS)
         if path.name != "_ports.py"
-        for line in _violations(path.read_text())
+        for line in _violations(_source.tree(path))
     ]
     assert offenders == []

@@ -8,7 +8,8 @@ does."""
 from __future__ import annotations
 
 import ast
-from pathlib import Path
+
+import _source
 
 import pyfect as fx
 from pyfect import config
@@ -18,7 +19,7 @@ from pyfect.http import request as http_request
 from pyfect.http import url as http_url
 from pyfect.net import net_address
 
-SRC = Path(__file__).resolve().parent.parent / "src" / "pyfect"
+SRC = _source.SRC
 
 
 def _ok[A](result: fx.Result[A, object]) -> A:
@@ -75,7 +76,7 @@ def _given_back(annotation: ast.expr) -> set[str]:
     if isinstance(annotation, ast.Subscript) and ast.unparse(annotation.value).endswith("Callable"):
         return set()
     if isinstance(annotation, ast.Constant) and isinstance(annotation.value, str):
-        return _given_back(ast.parse(annotation.value, mode="eval").body)
+        return _given_back(_source.parse(annotation.value, mode="eval").body)
     if isinstance(annotation, ast.Name | ast.Attribute):
         return {ast.unparse(annotation)}
     found = set[str]()
@@ -89,12 +90,11 @@ def test_no_api_gives_back_a_value_whose_str_is_its_repr():
     """Return types and fields (and module constants) are ``Url``, not a
     ``urllib.parse`` result; parameters (and input type aliases) may take one."""
     offenders: list[str] = []
-    for path in sorted(SRC.rglob("*.py")):
-        tree = ast.parse(path.read_text(), str(path))
-        banned = _repr_as_str_names(tree)
+    for path in _source.files(SRC):
+        banned = _repr_as_str_names(_source.tree(path))
         if not banned:
             continue
-        for node in ast.walk(tree):
+        for node in _source.walk(path):
             if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef) and node.returns:
                 annotation = node.returns
             elif isinstance(node, ast.AnnAssign):
@@ -107,7 +107,7 @@ def test_no_api_gives_back_a_value_whose_str_is_its_repr():
 
 
 def test_the_guard_sees_a_split_result_given_back():
-    tree = ast.parse(
+    tree = _source.parse(
         "from urllib.parse import SplitResult as S\n"
         "def f() -> S | None: ...\n"
         "x: Callable[[S], None]\n"
@@ -120,7 +120,7 @@ def test_the_guard_sees_a_split_result_given_back():
 
 
 def test_the_guard_sees_a_dotted_or_quoted_split_result():
-    tree = ast.parse(
+    tree = _source.parse(
         "import urllib.parse\n"
         "def f() -> urllib.parse.SplitResult: ...\n"
         "def g() -> 'list[urllib.parse.ParseResult]': ...\n"

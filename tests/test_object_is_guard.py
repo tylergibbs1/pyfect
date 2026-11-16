@@ -10,9 +10,10 @@ That comparison lives only in ``pyfect._js`` (``same_value``,
 from __future__ import annotations
 
 import ast
-from pathlib import Path
 
-SRC = Path(__file__).resolve().parent.parent / "src" / "pyfect"
+import _source
+
+SRC = _source.SRC
 
 
 def _is_copysign(node: ast.expr) -> bool:
@@ -35,13 +36,13 @@ def _sign_comparisons(tree: ast.Module) -> list[int]:
 def test_only_js_compares_number_signs() -> None:
     found = {
         str(path.relative_to(SRC)): lines
-        for path in sorted(SRC.rglob("*.py"))
+        for path in _source.files(SRC)
         if path.name != "_js.py" or path.parent != SRC
-        if (lines := _sign_comparisons(ast.parse(path.read_text(), str(path))))
+        if (lines := _sign_comparisons(_source.tree(path)))
     }
     assert found == {}, f"use pyfect._js.same_value / same_json_value: {found}"
 
 
 def test_the_guard_finds_a_hand_written_object_is() -> None:
-    tree = ast.parse("ok = a == b and math.copysign(1, a) == math.copysign(1, b)")
+    tree = _source.parse("ok = a == b and math.copysign(1, a) == math.copysign(1, b)")
     assert _sign_comparisons(tree) == [1]

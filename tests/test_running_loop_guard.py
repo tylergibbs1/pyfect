@@ -9,9 +9,9 @@ it is listed below, with why it never runs on a fiber of a ``run_blocking``
 run."""
 
 import ast
-from pathlib import Path
 
-_SOURCE = Path(__file__).parent.parent / "src" / "pyfect"
+import _source
+from _source import SRC as _SOURCE
 
 _ALLOWED: dict[tuple[str, str], str] = {
     ("_root.py", "ambient_run"): "asks only when no fiber is running on this thread",
@@ -31,7 +31,9 @@ _ALLOWED: dict[tuple[str, str], str] = {
 
 def _plain_function_calls() -> set[tuple[str, str]]:
     found: set[tuple[str, str]] = set()
-    for path in _SOURCE.rglob("*.py"):
+    for path in _source.files(_SOURCE):
+        if not _source.mentions(path, "get_running_loop"):
+            continue
         name = path.relative_to(_SOURCE).as_posix()
 
         def visit(node: ast.AST, function: ast.AST | None, name: str = name) -> None:
@@ -47,7 +49,7 @@ def _plain_function_calls() -> set[tuple[str, str]]:
             for child in ast.iter_child_nodes(node):
                 visit(child, function)
 
-        visit(ast.parse(path.read_text()), None)
+        visit(_source.tree(path), None)
     return found
 
 

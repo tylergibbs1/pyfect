@@ -104,11 +104,10 @@ def test_group_endpoints_are_only_assigned_through_the_middleware_funnel() -> No
     (or keeps ``cls.endpoints``, already wrapped), so a new class method
     cannot bring in endpoints that skip the declared middleware."""
     import ast
-    import inspect
 
-    from pyfect.http_api import group as group_module
+    import _source
 
-    tree = ast.parse(inspect.getsource(group_module))
+    tree = _source.tree(_source.SRC / "http_api" / "group.py")
 
     def funnelled(value: ast.expr) -> bool:
         if isinstance(value, ast.IfExp):

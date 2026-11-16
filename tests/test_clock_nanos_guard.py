@@ -15,9 +15,12 @@ clock's fraction of a millisecond (``snowflake`` wants whole ones). Read
 from __future__ import annotations
 
 import ast
+from collections.abc import Iterator
 from pathlib import Path
 
-SRC = Path(__file__).resolve().parent.parent / "src" / "pyfect"
+import _source
+from _source import SRC
+
 _FLOAT_READS = {"current_time_millis_unsafe", "monotonic_unsafe"}
 
 
@@ -29,9 +32,9 @@ def _float_clock_read(node: ast.AST) -> bool:
     )
 
 
-def _nodes(root: Path):
-    for path in sorted(root.rglob("*.py")):
-        for node in ast.walk(ast.parse(path.read_text(), str(path))):
+def _nodes(root: Path) -> Iterator[tuple[Path, ast.AST]]:
+    for path in _source.files(root):
+        for node in _source.walk(path):
             yield path, node
 
 

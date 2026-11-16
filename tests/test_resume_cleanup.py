@@ -9,9 +9,10 @@ race version of this bug (tests/interleave/test_regressions.py); this keeps the
 whole class out of ``src``."""
 
 import ast
-from pathlib import Path
 
-SRC = Path(__file__).parent.parent / "src" / "pyfect"
+import _source
+
+SRC = _source.SRC
 
 # Combinators that chain more work after (or around) a result, and runtime
 # calls that are work in themselves.
@@ -27,10 +28,10 @@ def _called_name(call: ast.Call) -> str | None:
     return None
 
 
-def chained_work_in_resumes(source: str) -> list[tuple[int, str]]:
+def chained_work_in_resumes(tree: ast.Module) -> list[tuple[int, str]]:
     """``(line, call)`` for each ``resume(...)`` whose argument chains work."""
     found: list[tuple[int, str]] = []
-    for node in ast.walk(ast.parse(source)):
+    for node in ast.walk(tree):
         if not (isinstance(node, ast.Call) and _called_name(node) == "resume" and node.args):
             continue
         for inner in ast.walk(node.args[0]):
@@ -43,8 +44,8 @@ def chained_work_in_resumes(source: str) -> list[tuple[int, str]]:
 def test_no_resume_in_src_chains_work_after_its_result():
     found = [
         f"{path.relative_to(SRC)}:{line}: {call}"
-        for path in sorted(SRC.rglob("*.py"))
-        for line, call in chained_work_in_resumes(path.read_text())
+        for path in _source.files(SRC)
+        for line, call in chained_work_in_resumes(_source.tree(path))
     ]
     assert found == [], "work handed to resume (put it in an on_exit):\n" + "\n".join(found)
 
@@ -55,4 +56,4 @@ def test_it_flags_the_race_losers_stopped_inside_resume():
         "resume(_SetInterruptible(_Suspend(stop_losers), False).and_then(_FromExit(ex)))\n"
         "resume(_FromExit(ex))\n"
     )
-    assert [line for line, _ in chained_work_in_resumes(before)] == [1]
+    assert [line for line, _ in chained_work_in_resumes(_source.parse(before))] == [1]

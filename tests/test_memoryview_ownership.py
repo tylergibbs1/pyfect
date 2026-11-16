@@ -11,38 +11,40 @@ thread owns it and releases it, and it never lives on an object another
 thread can reach."""
 
 import ast
-from pathlib import Path
 
-_SOURCE = Path(__file__).parent.parent / "src" / "pyfect"
+import _source
+
+_SOURCE = _source.SRC
 
 
-def _offenders(root: Path) -> list[str]:
-    found: list[str] = []
-    for path in sorted(root.rglob("*.py")):
-        tree = ast.parse(path.read_text(), str(path))
-        owned = {
-            id(item.context_expr)
-            for node in ast.walk(tree)
-            if isinstance(node, ast.With | ast.AsyncWith)
-            for item in node.items
-        }
-        found.extend(
-            f"{path.relative_to(root)}:{node.lineno}"
-            for node in ast.walk(tree)
-            if isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Name)
-            and node.func.id == "memoryview"
-            and id(node) not in owned
-        )
-    return found
+def _unowned_views(tree: ast.Module) -> list[int]:
+    owned = {
+        id(item.context_expr)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.With | ast.AsyncWith)
+        for item in node.items
+    }
+    return [
+        node.lineno
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "memoryview"
+        and id(node) not in owned
+    ]
 
 
 def test_every_memoryview_is_made_in_a_with_statement():
-    assert _offenders(_SOURCE) == []
+    offenders = [
+        f"{path.relative_to(_SOURCE)}:{line}"
+        for path in _source.files(_SOURCE)
+        for line in _unowned_views(_source.tree(path))
+    ]
+    assert offenders == []
 
 
-def test_the_check_sees_a_view_kept_on_an_object(tmp_path: Path):
-    (tmp_path / "kept.py").write_text(
+def test_the_check_sees_a_view_kept_on_an_object():
+    kept = _source.parse(
         "class Write:\n"
         "    def __init__(self, data):\n"
         "        self.view = memoryview(data)\n"
@@ -50,4 +52,4 @@ def test_the_check_sees_a_view_kept_on_an_object(tmp_path: Path):
         "    with memoryview(data) as view:\n"
         "        return bytes(view[1:])\n"
     )
-    assert _offenders(tmp_path) == ["kept.py:3"]
+    assert _unowned_views(kept) == [3]

@@ -6,9 +6,10 @@ exit whenever they idle out: a fresh-stack test failed with ``assert 6 == 7``
 when a blocking-pool worker ended during it."""
 
 import ast
-from pathlib import Path
 
-TESTS = Path(__file__).resolve().parent
+import _source
+from _source import TESTS
+
 _BANNED = frozenset({"active_count", "activeCount", "enumerate"})
 
 
@@ -27,9 +28,9 @@ def _counts_all_threads(node: ast.AST) -> bool:
 def test_tests_find_threads_only_through_live_threads():
     offenders = [
         f"{path.relative_to(TESTS)}:{getattr(node, 'lineno', 0)}"
-        for path in sorted(TESTS.rglob("*.py"))
+        for path in _source.files(TESTS)
         if path.name != "_threads.py"
-        for node in ast.walk(ast.parse(path.read_text(), str(path)))
+        for node in _source.walk(path)
         if _counts_all_threads(node)
     ]
     assert offenders == [], "use _threads.live_threads(name_prefix)"
