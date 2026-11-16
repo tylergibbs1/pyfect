@@ -201,6 +201,15 @@ def holder(db: Db, legacy_scope: str) -> Effect[str | None, SqlError]:
     )
 
 
+def given_by_operator(db: Db, legacy_scope: str) -> Effect[bool, SqlError]:
+    """Whether ``migrate_legacy_store`` gave the legacy tables to the pair
+    that has them: the operator confirmed it wrote them, and every batch
+    another pair wrote went to that pair's own tables."""
+    return db.sql(
+        "SELECT origin FROM {} WHERE legacy_scope = {}", db.alias_origins, legacy_scope
+    ).map(lambda rows: bool(rows) and column_text(rows[0]["origin"]) == "operator")
+
+
 def split_keys(legacy: str) -> list[str]:
     """The public key of every pair whose legacy key is ``legacy``."""
     return [legacy[:i] for i, c in enumerate(legacy) if c == "/"]
@@ -275,7 +284,7 @@ class Resolved:
     legacy tables. ``split``: its legacy tables hold batches too, which a
     0.6.5 node wrote after the store opened under its new key. ``beside``:
     it opens tables of its own while its legacy tables hold batches another
-    pair has or may get."""
+    pair has or may get, unless the operator gave them to that pair."""
 
     scope: str
     event: Literal["migrated", "split", "beside"] | None = None
@@ -365,7 +374,10 @@ def resolve_scope(
         legacy_scope = yield from scope_of(digest, legacy)
         given = yield from holder(db, legacy_scope)
         if given is not None:
-            return Resolved(legacy_scope) if given == scope else Resolved(scope, "beside")
+            if given == scope:
+                return Resolved(legacy_scope)
+            confirmed = yield from given_by_operator(db, legacy_scope)
+            return Resolved(scope) if confirmed else Resolved(scope, "beside")
         if not (yield from has_batches(db, legacy_scope)):
             return Resolved(scope)
         return (
@@ -451,6 +463,7 @@ __all__ = [
     "Standing",
     "aliases_table",
     "evidence_of",
+    "given_by_operator",
     "has_batches",
     "head",
     "holder",

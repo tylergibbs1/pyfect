@@ -6,6 +6,7 @@ opening stores, writes, acks and changes. Compaction is in
 from __future__ import annotations
 
 import itertools
+import threading
 from collections.abc import Sequence
 from typing import Any
 
@@ -53,28 +54,38 @@ type _Pair = tuple[str, str]
 
 
 class _Once:
-    """Logs each (pair, event) once, remembering the latest 4096."""
+    """Logs each (tables, pair, event) once per process, however many
+    storages open it, remembering the latest 4096."""
 
     def __init__(self) -> None:
-        self._seen: dict[tuple[_Pair, str], None] = {}
+        self._seen: dict[tuple[str, _Pair, str], None] = {}
+        self._lock = threading.Lock()
 
-    def log(self, pair: _Pair, event: str, log: Effect[None]) -> Effect[None]:
-        def body():
-            if (pair, event) in self._seen:
-                return
+    def _first(self, key: tuple[str, _Pair, str]) -> bool:
+        with self._lock:
+            if key in self._seen:
+                return False
             if len(self._seen) >= 4096:
                 del self._seen[next(iter(self._seen))]
-            self._seen[(pair, event)] = None
-            yield from log.annotate_logs({"service": "SqlEventLogServerEncrypted"})
+            self._seen[key] = None
+            return True
+
+    def log(self, db: Db, pair: _Pair, event: str, log: Effect[None]) -> Effect[None]:
+        def body():
+            if self._first((db.prefix, pair, event)):
+                yield from log.annotate_logs({"service": "SqlEventLogServerEncrypted"})
 
         return gen(body)
 
 
+_once = _Once()
+
+
 def _resolve(
-    db: Db, digest: DigestService, once: _Once, migration: LegacyMigration, pair: _Pair
+    db: Db, digest: DigestService, migration: LegacyMigration, pair: _Pair
 ) -> Effect[str, SqlError | LegacyStoreNeedsMigration]:
     """The pair's scope, logging a migration, a split, new tables beside
-    legacy ones, or a refusal once."""
+    legacy ones, or a refusal once per process."""
     public_key, store_id = pair
     legacy = legacy_key(public_key, store_id)
 
@@ -87,7 +98,7 @@ def _resolve(
                     "authenticated before the upgrade, and migrate_legacy_stores is "
                     "'when_server_written'"
                 )
-                return once.log(pair, "migrated", log_info(message)).as_(resolved.scope)
+                return _once.log(db, pair, "migrated", log_info(message)).as_(resolved.scope)
             case "split":
                 message = (
                     f"Store {store_id!r} of {public_key!r} holds batches under its own tables "
@@ -95,7 +106,7 @@ def _resolve(
                     "after it opened on a newer version. Only its own tables are served; stop "
                     f"every 0.6.5 node (see {UPGRADE_NOTES})"
                 )
-                return once.log(pair, "split", log_warning(message)).as_(resolved.scope)
+                return _once.log(db, pair, "split", log_warning(message)).as_(resolved.scope)
             case "beside":
                 message = (
                     f"Store {store_id!r} of {public_key!r} opens tables of its own while the "
@@ -103,13 +114,13 @@ def _resolve(
                     "or may get. If this store wrote them, they were given to the wrong store: "
                     f"check {legacy!r} with legacy_stores (see {UPGRADE_NOTES})"
                 )
-                return once.log(pair, "beside", log_warning(message)).as_(resolved.scope)
+                return _once.log(db, pair, "beside", log_warning(message)).as_(resolved.scope)
             case None:
                 return succeed(resolved.scope)
 
     def refused(error: SqlError | LegacyStoreNeedsMigration) -> Effect[None]:
         if isinstance(error, LegacyStoreNeedsMigration):
-            return once.log(pair, "refused", log_warning(error.message))
+            return _once.log(db, pair, "refused", log_warning(error.message))
         return succeed(None)
 
     return (
@@ -123,11 +134,10 @@ def _make_lookup(db: Db, digest: DigestService, migration: LegacyMigration):
     # Stores whose tables and row this instance has ensured, so a store
     # reopened after idling skips the DDL.
     ensured: set[str] = set()
-    once = _Once()
 
     def lookup(pair: _Pair) -> Effect[StoreResources, SqlError | LegacyStoreNeedsMigration, Scope]:
         def body():
-            scope = yield from _resolve(db, digest, once, migration, pair)
+            scope = yield from _resolve(db, digest, migration, pair)
             tables = db.scope_tables(scope)
             if scope not in ensured:
                 yield from create_scope_tables(db.sql, f"{db.prefix}_{scope}")

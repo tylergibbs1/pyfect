@@ -76,7 +76,8 @@ def test_a_store_written_straight_through_the_storage_goes_to_no_other_pair(
     assert db.read(OWNER) == ["owner"]
     logs: list[str] = []
     assert db.read(OTHER, logs) == []
-    assert _beside(logs, "Kq9/xT2+bQ==/main")
+    # The operator gave the tables to their writer: nothing is left to warn about.
+    assert not _beside(logs, "Kq9/xT2+bQ==/main")
 
 
 def test_a_pending_store_waits_and_opens_once_migrated_on_the_same_server(
@@ -278,3 +279,37 @@ def test_a_store_opening_beside_tables_another_pair_was_given_is_logged(
     assert db.read(OWNER, logs) == []
     assert _beside(logs, "Kq9/xT2+bQ==/main")
 
+
+def test_a_store_beside_tables_taken_back_for_their_writer_is_not_logged(
+    db: LegacyDb, earlier: Callable[[str], Earlier]
+) -> None:
+    with earlier("0.6.5"):
+        db.write(OWNER, "owner")
+    with earlier("0.6.7"):
+        db.bind(OTHER[0])
+        db.alias_as_067(OTHER)
+        db.write(OTHER, "taker")
+    db.start()
+    assert db.migrate(
+        OWNER, [OTHER[0]], without_binding=True, taken_from=OTHER, through_sequence=1
+    ) == fx.Success(True)
+    logs: list[str] = []
+    assert db.read(OTHER, logs) == ["taker"]
+    assert db.read(OTHER, logs) == ["taker"]
+    assert not _beside(logs, "Kq9/xT2+bQ==/main")
+
+
+def test_a_store_beside_tables_nobody_confirmed_is_logged_once_per_process(
+    db: LegacyDb, earlier: Callable[[str], Earlier]
+) -> None:
+    """Each ``read`` starts a server: one warning in all of them."""
+    with earlier("0.6.5"):
+        db.write(OWNER, "owner")
+    with earlier("0.6.7"):
+        db.bind(OTHER[0])
+        db.alias_as_067(OTHER)
+    logs: list[str] = []
+    assert db.read(OWNER, logs) == []
+    assert db.read(OWNER, logs) == []
+    assert db.read(OWNER, logs) == []
+    assert sum("opens tables of its own" in m for m in logs) == 1

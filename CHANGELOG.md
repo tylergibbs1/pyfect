@@ -8,6 +8,11 @@
   moved every batch, the first ones of the store taking the tables back included, to `pair`'s
   tables. `through_sequence` is now parsed where the call takes it and refused unless it is 1
   or more; a value inside a batch is still refused, so it ends a batch at or after the first.
+- A pair opening tables of its own beside the 0.6.5 tables of its name logged its warning
+  on every server start, and kept logging it after `migrate_legacy_store` had given those
+  tables to a pair (0.6.9). It is now logged once per process, and not at all once the
+  operator has given the tables away, with or without `taken_from`. The server's other
+  once-only messages about legacy stores are also logged once per process.
 
 ## 0.6.9 (2026-11-16)
 

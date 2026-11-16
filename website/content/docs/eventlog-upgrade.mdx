@@ -150,9 +150,11 @@ any it builds at run time).
 ## Stores beside their old tables
 
 When a pair opens tables of its own while the old tables of its name hold batches another
-pair has, or may get, the server logs a warning naming the name, once. If that pair wrote
-the old tables, they went to the wrong pair: check the name with `legacy_stores`, and
-[take them back](#check-what-earlier-versions-migrated).
+pair has, or may get, the server logs a warning naming the name, once per process. If that
+pair wrote the old tables, they went to the wrong pair: check the name with `legacy_stores`,
+and [take them back](#check-what-earlier-versions-migrated). Once `migrate_legacy_store` has
+given the old tables to a pair, taking them back or not, the other pairs of the name open
+their own tables without a warning.
 
 ## Check what earlier versions migrated
 
