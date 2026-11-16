@@ -92,6 +92,14 @@ a deferred: expose `succeed` on a deferred's token through an endpoint of your o
 `import pyfect` leaves them out, so import them as
 `from pyfect.workflow import workflow_proxy`.
 
+## Upgrading
+
+Executions are stored in the cluster's message tables, so a rolling upgrade or a downgrade
+follows [the cluster's rules](/docs/cluster#upgrading): runners on different versions share
+the tables, and each suspended execution resumes once, on whichever runner holds its shard.
+`durable_queue` stores its jobs in a [`PersistedQueue`](/docs/persistence#upgrading); check
+its store's notes too.
+
 Reference: [`pyfect.workflow`](/docs/reference/workflow),
 [`workflow`](/docs/reference/workflow/workflow),
 [`activity`](/docs/reference/workflow/activity),
