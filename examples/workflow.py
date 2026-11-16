@@ -27,7 +27,11 @@ attempts = [0]
 
 
 def reserve(order: OrderPayload) -> fx.Effect[str]:
-    return fx.sync(lambda: print(f"reserved {order['id']}") or f"reservation-{order['id']}")
+    def run() -> str:
+        print(f"reserved {order['id']}")
+        return f"reservation-{order['id']}"
+
+    return fx.sync(run)
 
 
 def charge(order: OrderPayload) -> fx.Effect[str]:
