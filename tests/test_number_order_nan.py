@@ -57,13 +57,23 @@ def test_tx_priority_queue_keys_and_tuple_keys_put_nan_first():
 
 
 # --- Metric -------------------------------------------------------------------------------
+# Each test keeps its series in a registry of its own: a NaN quantile left in the process-wide
+# one is a snapshot the DevTools schema (finite quantiles) cannot encode.
+
+
+def _own_registry[A](body: fx.Effect[A]) -> fx.Effect[A]:
+    return body.pipe(fx.provide_service(metric.MetricRegistry, {}))
 
 
 @testing.effect
 def test_histogram_sorts_a_nan_boundary_first():
-    histogram = metric.histogram("nan-bounds", boundaries=[2.0, nan, 1.0])
-    yield from histogram.update(1.5)
-    state = yield from histogram.value()
+    @fx.gen
+    def body():
+        histogram = metric.histogram("nan-bounds", boundaries=[2.0, nan, 1.0])
+        yield from histogram.update(1.5)
+        return (yield from histogram.value())
+
+    state = yield from _own_registry(body)
     assert _same([b for b, _ in state.buckets], [nan, 1.0, 2.0])
     assert [n for _, n in state.buckets] == [0, 0, 1]
 
@@ -71,19 +81,31 @@ def test_histogram_sorts_a_nan_boundary_first():
 @pytest.mark.parametrize("observed", [[2.0, nan, 1.0], [nan, 2.0, 1.0], [1.0, 2.0, nan]])
 @testing.effect
 def test_summary_sorts_nan_samples_first(observed: list[float]):
-    summary = metric.summary("nan-samples", max_age="1 minute", max_size=10, quantiles=[0, 0.5, 1])
-    for value in observed:
-        yield from summary.update(value)
-    quantiles = (yield from summary.value()).quantiles
+    @fx.gen
+    def body():
+        summary = metric.summary(
+            "nan-samples", max_age="1 minute", max_size=10, quantiles=[0, 0.5, 1]
+        )
+        for value in observed:
+            yield from summary.update(value)
+        return (yield from summary.value()).quantiles
+
+    quantiles = yield from _own_registry(body)
     assert [q for q, _ in quantiles] == [0, 0.5, 1]
     assert _same([v for _, v in quantiles if v is not None], [nan, 1.0, 2.0])
 
 
 @testing.effect
 def test_summary_sorts_a_nan_quantile_first():
-    summary = metric.summary("nan-quantile", max_age="1 minute", max_size=10, quantiles=[1, nan])
-    yield from summary.update(4.0)
-    quantiles = (yield from summary.value()).quantiles
+    @fx.gen
+    def body():
+        summary = metric.summary(
+            "nan-quantile", max_age="1 minute", max_size=10, quantiles=[1, nan]
+        )
+        yield from summary.update(4.0)
+        return (yield from summary.value()).quantiles
+
+    quantiles = yield from _own_registry(body)
     # Effect reads ``samples[Math.ceil(NaN * n) - 1]``: undefined.
     assert math.isnan(quantiles[0][0])
     assert quantiles[0][1] is None
