@@ -156,11 +156,33 @@ def snippet_args(path: Path) -> tuple[str, ...]:
     return (str(path),)
 
 
-Runs = dict[Path, Future[subprocess.CompletedProcess[str]]]
+# A run of a snippet, by the name of the test that checks it and the snippet.
+Runs = dict[tuple[str, Path], Future[subprocess.CompletedProcess[str]]]
+
+
+def assert_ran(done: subprocess.CompletedProcess[str]) -> None:
+    """Fails unless a run exited 0. `run_main` reports a failure on stdout, so the message
+    is both streams in full: pytest truncates the CompletedProcess repr."""
+    assert done.returncode == 0, f"stdout:\n{done.stdout}\nstderr:\n{done.stderr}"
 
 
 def run_with_server(path: Path) -> subprocess.CompletedProcess[str]:
     return run(*snippet_args(path), env=snippet_env(path))
+
+
+CLUSTER = SNIPPETS / "cluster"
+CLUSTER_SCRIPTS = [p for p in SCRIPTS if p.is_relative_to(CLUSTER)]
+
+# Runs a snippet with each entity's drain starting 600 ms late, as a loaded machine can make
+# it: whether a job finishes before its runner stops must not decide a snippet's outcome.
+SLOW_DRAIN = """
+import runpy, sys
+import pyfect as fx
+from pyfect.cluster._entity_manager._activation import _Activation
+drain = _Activation.drain
+_Activation.drain = lambda self: fx.sleep("600 millis").and_then(fx.suspend(lambda: drain(self)))
+runpy.run_path(sys.argv[1], run_name="__main__")
+"""
 
 
 @pytest.fixture(scope="module")
@@ -174,21 +196,28 @@ def runs(request: pytest.FixtureRequest) -> Iterator[Runs]:
     database server share it, so they run one at a time, alongside the others; one that
     finds no server skips its test.
     """
-    paths = [
-        path
+    keys = [
+        (item.originalname, path)
         for item in request.session.items
         if isinstance(item, pytest.Function)
-        and item.originalname in ("test_snippet_runs", "test_snippet_tests_pass")
+        and item.originalname
+        in (
+            "test_snippet_runs",
+            "test_snippet_tests_pass",
+            "test_cluster_snippet_with_a_slow_drain",
+        )
         and isinstance(path := item.callspec.params["path"], Path)
     ]
     pool = ThreadPoolExecutor(max_workers=max(1, (os.process_cpu_count() or 1) - 1))
     servers = ThreadPoolExecutor(max_workers=1)
     try:
         yield {
-            path: servers.submit(run_with_server, path)
+            (test, path): pool.submit(run, "-c", SLOW_DRAIN, str(path))
+            if test == "test_cluster_snippet_with_a_slow_drain"
+            else servers.submit(run_with_server, path)
             if any(path.is_relative_to(server) for server in SERVERS)
             else pool.submit(run, *snippet_args(path))
-            for path in paths
+            for test, path in keys
         }
     finally:
         pool.shutdown(cancel_futures=True)
@@ -197,8 +226,8 @@ def runs(request: pytest.FixtureRequest) -> Iterator[Runs]:
 
 @pytest.mark.parametrize("path", SCRIPTS, ids=name)
 def test_snippet_runs(path: Path, runs: Runs):
-    done = runs[path].result()
-    assert done.returncode == 0, done.stderr
+    done = runs["test_snippet_runs", path].result()
+    assert_ran(done)
     expected = path.with_suffix(".out")
     if os.environ.get("UPDATE_SNIPPET_OUTPUT") and done.stdout:
         expected.write_text(done.stdout)
@@ -229,8 +258,32 @@ def test_outputs_belong_to_snippets(path: Path):
 
 @pytest.mark.parametrize("path", TESTS, ids=name)
 def test_snippet_tests_pass(path: Path, runs: Runs):
-    done = runs[path].result()
-    assert done.returncode == 0, done.stdout + done.stderr
+    done = runs["test_snippet_tests_pass", path].result()
+    assert_ran(done)
+
+
+@pytest.mark.parametrize("path", CLUSTER_SCRIPTS, ids=name)
+def test_cluster_snippet_with_a_slow_drain(path: Path, runs: Runs):
+    """CI's load once had cluster/drain.py's runner reach its entity's drain after the
+    half-second job had finished, which is right (Effect does the same), and the snippet's
+    handover assertion failed. A runner that is slow to stop must not change any output."""
+    done = runs["test_cluster_snippet_with_a_slow_drain", path].result()
+    assert_ran(done)
+    expected = path.with_suffix(".out")
+    assert done.stdout == (expected.read_text() if expected.exists() else "")
+
+
+def test_a_failed_run_reports_all_its_output():
+    """A snippet's error is on stdout (cluster/drain.py failed in CI with only a truncated
+    repr to show for it), and a long one must not be cut."""
+    error = "\n".join(f"line {i}" for i in range(500))
+    done = run(
+        "-c", f"import sys; print({error!r}); print('to stderr', file=sys.stderr); sys.exit(1)"
+    )
+    with pytest.raises(AssertionError) as failed:
+        assert_ran(done)
+    shown = [line.strip() for line in str(failed.value).splitlines()]
+    assert all(line in shown for line in [*error.splitlines(), "to stderr"])
 
 
 def test_there_are_guides_and_snippets():

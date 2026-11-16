@@ -27,12 +27,16 @@ def free_port() -> int:
         return probe.getsockname()[1]
 
 
-def runner(database: Path, termination_timeout: fx.duration.Input, started: Latch, log: list[str]):
+def runner(
+    database: Path,
+    termination_timeout: fx.duration.Input,
+    work: fx.Effect[None],
+    started: Latch,
+    log: list[str],
+):
     def run(_: object) -> fx.Effect[str]:
-        work = fx.sync(started.open_unsafe).and_then(
-            fx.sleep("500 millis")
-        )  # half a second of work
-        return work.and_then(fx.sync(lambda: log.append("job finished"))).as_("done")
+        job = fx.sync(started.open_unsafe).and_then(work)
+        return job.and_then(fx.sync(lambda: log.append("job finished"))).as_("done")
 
     port = free_port()
 
@@ -55,11 +59,15 @@ def runner(database: Path, termination_timeout: fx.duration.Input, started: Latc
 
 
 @fx.fn
-def stop_during_a_job(database: Path, termination_timeout: fx.duration.Input):
+def stop_during_a_job(
+    database: Path, termination_timeout: fx.duration.Input, work: fx.Effect[None]
+):
     log: list[str] = []
     started = Latch()
     scope = yield from fx.scope.make()
-    context = yield from runner(database, termination_timeout, started, log).build_with_scope(scope)
+    context = yield from runner(database, termination_timeout, work, started, log).build_with_scope(
+        scope
+    )
     make_client = yield from Job.client().pipe(fx.provide(context))
     yield from make_client("report").run().fork()
     yield from started.wait()
@@ -72,12 +80,13 @@ def stop_during_a_job(database: Path, termination_timeout: fx.duration.Input):
 
 @fx.fn
 def program(directory: Path):
-    # The runner drains: the job finishes here before the shard is handed over.
-    drained = yield from stop_during_a_job(directory / "drain.db", "5 seconds")
+    # The runner drains: half a second of work finishes here before the shard is handed over.
+    half_a_second = fx.sleep("500 millis")
+    drained = yield from stop_during_a_job(directory / "drain.db", "5 seconds", half_a_second)
     assert drained == ["job finished", "runner stopped"]
-    # With 0 it hands over at once: the job stops here, and its persisted
+    # With 0 it hands over at once: a job still running stops here, and its persisted
     # request runs again on the runner that takes the shard.
-    handed_over = yield from stop_during_a_job(directory / "handover.db", 0)
+    handed_over = yield from stop_during_a_job(directory / "handover.db", 0, fx.never)
     assert handed_over == ["runner stopped"]
 
 
