@@ -16,6 +16,7 @@ pytest_plugins = [
     "_shards",
     "_skips",
     "_git_config_guard",
+    "_metric_registry",
 ]
 
 # pytest imports readline before this file loads, and GNU readline (Linux) exports COLUMNS and
