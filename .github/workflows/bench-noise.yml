@@ -1,0 +1,23 @@
+name: bench-noise
+on:
+  push:
+    branches: [bench-noise-gate]
+permissions:
+  contents: read
+jobs:
+  noise:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78
+      - run: lscpu | grep -E 'Model name|^CPU\(s\)'
+      - working-directory: benchmarks
+        run: |
+          for i in 1 2 3; do
+            echo "gate run $i"
+            uv run --python 3.13 python gate.py || true
+          done
