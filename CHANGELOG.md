@@ -32,6 +32,14 @@
   as done. Opening together could also lose a key whose 0.6.5 file was newer than its
   current one: one process removed the current file just after another had moved the
   0.6.5 file there. The 0.6.5 file now replaces the current one in a single rename.
+- On MySQL, processes starting together on a new database could use a store's tables before
+  their migrations finished: the first `persisted_queue` offer failed with `Unknown column
+  'state'` (and the cluster's message and runner tables could be met half-migrated the same
+  way). MySQL commits each DDL statement as it runs, so the rows the migrator records up front
+  were visible after its first `CREATE TABLE`, and a second migrator returned at once. The
+  migrator now holds a `GET_LOCK` on its transaction's session while it runs on MySQL, as
+  `LOCK TABLE` already held a second migrator back on PostgreSQL. Effect's migrator has the
+  same race on MySQL.
 
 ### Performance
 

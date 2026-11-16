@@ -10,9 +10,11 @@ one transaction (except on ClickHouse), recording each::
     yield from run(loader=migrator.from_record({"1_create_users": create_users}))
 
 Two runners at once: the second finds the rows already recorded and
-returns ``[]``. On SQL Server, as in Effect, the migrations table is made
-by a check then a create, so two runners that both find no table both
-create it and one fails.
+returns ``[]``, once the first has finished (PostgreSQL locks the
+migrations table; MySQL, whose DDL commits as it runs, takes a
+``GET_LOCK`` on the transaction's session). On SQL Server, as in Effect,
+the migrations table is made by a check then a create, so two runners
+that both find no table both create it and one fails.
 """
 # pyright: reportPrivateUsage=false
 
@@ -173,6 +175,46 @@ def _ensure_table_pg(
     )
 
 
+def _mysql_lock_name(sql: SqlClientService, table: str) -> Fragment:
+    """The server-wide name of the lock of ``table`` in the current
+    database, hashed to stay within MySQL's 64 characters (MySQL 9.7 has no
+    ``SHA1``)."""
+    return sql(
+        "CONCAT('pyfect_migrator.', "
+        "LEFT(SHA2(CONCAT(COALESCE(DATABASE(), ''), '.', {}), 256), 48))",
+        table,
+    )
+
+
+def _mysql_lock(sql: SqlClientService, table: str) -> Effect[None, MigrationError | SqlError]:
+    """Waits for the migrators of ``table`` running elsewhere. MySQL commits
+    each DDL statement as it runs, so the rows recorded up front are visible
+    (and the second migrator would return) before the migrations finish;
+    ``LOCK TABLE`` does this on PostgreSQL. The lock belongs to the
+    transaction's session, so a lost connection releases it."""
+    locked = sql(
+        "SELECT GET_LOCK({}, {}) AS locked", _mysql_lock_name(sql, table), _MYSQL_LOCK_SECONDS
+    ).without_transform
+
+    def check(rows: Sequence[Mapping[str, object]]) -> Effect[None, MigrationError]:
+        if rows[0]["locked"] == 1:
+            return void
+        return fail(
+            MigrationError(kind="Failed", message=f'Could not lock the migrations of "{table}"')
+        )
+
+    return locked.flat_map(check)
+
+
+def _mysql_unlock(sql: SqlClientService, table: str) -> Effect[None]:
+    # A failed release means the session is gone, and its locks with it.
+    return sql("SELECT RELEASE_LOCK({})", _mysql_lock_name(sql, table)).ignore()
+
+
+_MYSQL_LOCK_SECONDS = 365 * 24 * 60 * 60
+"""How long to wait for another migrator: longer than any migration."""
+
+
 def _is_constraint_conflict(error: SqlError) -> bool:
     return isinstance(error.reason, (ConstraintError, UniqueViolation))
 
@@ -278,8 +320,10 @@ def _run(  # noqa: PLR0917 (the runner's options, passed on once)
     transactional = sql.on_dialect_or_else(clickhouse=lambda: False, or_else=lambda: True)
 
     def body() -> Effect[list[tuple[int, str]], Any, Any]:
-        lock: Effect[object, SqlError] = sql.on_dialect_or_else(
-            pg=lambda: sql("LOCK TABLE {} IN ACCESS EXCLUSIVE MODE", name), or_else=lambda: void
+        lock: Effect[object, Any] = sql.on_dialect_or_else(
+            pg=lambda: sql("LOCK TABLE {} IN ACCESS EXCLUSIVE MODE", name),
+            mysql=lambda: _mysql_lock(sql, table),
+            or_else=lambda: void,
         )
 
         def with_current(
@@ -354,7 +398,10 @@ def _run(  # noqa: PLR0917 (the runner's options, passed on once)
             )
         )
 
-    running = _Suspend(body)
+    running = sql.on_dialect_or_else(
+        mysql=lambda: _Suspend(body).ensuring(_mysql_unlock(sql, table)),
+        or_else=lambda: _Suspend(body),
+    )
     migrations = sql.with_transaction(running) if transactional else running
 
     def unlocked(error: object) -> Effect[list[tuple[int, str]], Any]:
