@@ -19,10 +19,18 @@ number (`UNIT_FREE_TESTS`) may pass bare numbers.
 from __future__ import annotations
 
 import ast
+import functools
+import inspect
 import re
+import sys
+import weakref
 from collections import defaultdict
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any, cast
+
+import pytest
 
 ROOT = Path(__file__).parent.parent
 SRC = ROOT / "src" / "pyfect"
@@ -79,8 +87,126 @@ def _is_bare_number(node: ast.expr) -> bool:
     )
 
 
-def _parse(path: Path) -> ast.Module:
-    return ast.parse(path.read_text(), filename=str(path))
+class _Nodes:
+    """Every node of a tree by type, from one walk; each type in ``ast.walk``'s order."""
+
+    def __init__(self, by_type: dict[type[ast.AST], list[ast.AST]]) -> None:
+        self._by_type = by_type
+
+    def of[T: ast.AST](self, *types: type[T]) -> list[T]:
+        return [node for kind in types for node in cast("list[T]", self._by_type.get(kind, []))]
+
+
+@functools.cache
+def _child_fields(kind: type[ast.AST]) -> tuple[str, ...]:
+    """The fields of ``kind`` that hold nodes, other than ``ctx`` (``Load``, ``Store``),
+    which no check reads."""
+    return tuple(
+        name
+        for name, annotation in kind._field_types.items()
+        if annotation is not ast.expr_context and "ast." in repr(annotation)
+    )
+
+
+def _walk(tree: ast.AST) -> _Nodes:
+    by_type: dict[type[ast.AST], list[ast.AST]] = defaultdict(list)
+    queue: list[ast.AST] = [tree]
+    index = 0
+    while index < len(queue):
+        node = queue[index]
+        index += 1
+        by_type[type(node)].append(node)
+        for name in _child_fields(type(node)):
+            value: object = getattr(node, name, None)
+            if isinstance(value, ast.AST):
+                queue.append(value)
+            elif isinstance(value, list):
+                queue += [item for item in value if isinstance(item, ast.AST)]  # pyright: ignore[reportUnknownVariableType]
+    return _Nodes(by_type)
+
+
+@dataclass(frozen=True, slots=True)
+class _Definition:
+    """A function or class in `src/`, and where it takes a `Duration`."""
+
+    name: str
+    slots: _Slots
+    is_class: bool
+    owner: str | None  # the class a method is defined in
+    returns: str | None  # the class a function returns
+
+
+@dataclass(frozen=True, slots=True)
+class _Arg:
+    """An argument given at a call that is a bare number, or a name that is one when its
+    module binds it to one."""
+
+    line: int
+    what: str
+    position: int | None
+    keyword: str | None
+    name: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class _Call:
+    name: str
+    foreign: bool
+    receivers: frozenset[str]
+    args: tuple[_Arg, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class _Facts:
+    """What the checks read from one module. A file is parsed and walked once, into this;
+    holding every tree instead would make the collector rescan millions of nodes."""
+
+    calls: tuple[_Call, ...]
+    defaults: tuple[tuple[int, str], ...]
+    epoch_seconds: tuple[tuple[int, str], ...]
+    numeric: frozenset[str]
+    bound: frozenset[str]
+    # ``from <module> import <name> as <local>``: (module, level, ((name, local), ...))
+    imports: tuple[tuple[str | None, int, tuple[tuple[str, str], ...]], ...]
+    definitions: tuple[_Definition, ...] = ()
+    docstrings: tuple[tuple[int, str], ...] = ()
+
+
+def _facts_of(tree: ast.Module, src: re.Pattern[str] | None = None) -> _Facts:
+    """``src``: for a module in `src/`, what its `Duration` annotations match; its
+    definitions and docstrings are read too."""
+    nodes = _walk(tree)
+    imports = tuple(
+        (s.module, s.level, tuple((a.name, a.asname or a.name) for a in s.names))
+        for s in tree.body
+        if isinstance(s, ast.ImportFrom)
+    )
+    return _Facts(
+        calls=_calls(nodes),
+        defaults=tuple(_default_violations(nodes)),
+        epoch_seconds=tuple(_epoch_seconds_violations(nodes)),
+        numeric=frozenset(_numeric_constants(tree)),
+        bound=frozenset(_bound_names(tree)),
+        imports=imports,
+        definitions=() if src is None else _definitions(tree, src),
+        docstrings=() if src is None else _docstrings(nodes),
+    )
+
+
+@functools.cache
+def _facts(path: Path) -> _Facts:
+    tree = ast.parse(path.read_bytes(), filename=str(path))
+    if not path.is_relative_to(SRC):
+        return _facts_of(tree)
+    return _facts_of(tree, _OWN_INPUT if path == _DURATION_MODULE else _DURATION)
+
+
+@pytest.fixture(autouse=True, scope="module")
+def _release_facts() -> Iterator[None]:
+    """Drop what was read after this module, so the rest of the session does not carry it."""
+    yield
+    for cached in (_facts, _duration_slots, _module_path):
+        cached.cache_clear()
 
 
 def _sources(*roots: Path) -> list[Path]:
@@ -118,40 +244,53 @@ def _class_slots(cls: ast.ClassDef, pattern: re.Pattern[str]) -> _Slots:
     return slots
 
 
+def _definitions(tree: ast.Module, pattern: re.Pattern[str]) -> tuple[_Definition, ...]:
+    found: list[_Definition] = []
+
+    def visit(node: ast.AST, owner: str | None) -> None:
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, ast.FunctionDef | ast.AsyncFunctionDef):
+                slots = _function_slots(child, owner is not None, pattern)
+                returns = child.returns.id if isinstance(child.returns, ast.Name) else None
+                found.append(_Definition(child.name, slots, False, owner, returns))
+                visit(child, None)
+            elif isinstance(child, ast.ClassDef):
+                slots = _class_slots(child, pattern)
+                found.append(_Definition(child.name, slots, True, None, None))
+                visit(child, child.name)
+            elif isinstance(child, ast.stmt | ast.excepthandler | ast.match_case):
+                # Definitions are statements: expressions never hold one.
+                visit(child, owner)
+
+    visit(tree, None)
+    return tuple(found)
+
+
+@functools.cache
 def _duration_slots() -> dict[str, _Slots]:
     found: dict[str, _Slots] = defaultdict(_Slots)
     free: set[str] = set()  # functions and classes taking a Duration
     owners: dict[str, set[str]] = defaultdict(set)  # method -> classes where it takes one
     plain: set[str] = set()  # callables taking none
     makers: dict[str, set[str]] = defaultdict(set)  # class -> functions returning it
-
-    def visit(node: ast.AST, owner: str | None, pattern: re.Pattern[str]) -> None:
-        for child in ast.iter_child_nodes(node):
-            if isinstance(child, ast.FunctionDef | ast.AsyncFunctionDef):
-                slots = _function_slots(child, owner is not None, pattern)
-                found[child.name].positions |= slots.positions
-                found[child.name].keywords |= slots.keywords
-                if not (slots.positions or slots.keywords):
-                    plain.add(child.name)
-                elif owner is None:
-                    free.add(child.name)
-                else:
-                    owners[child.name].add(owner)
-                if owner is None and isinstance(child.returns, ast.Name):
-                    makers[child.returns.id].add(child.name)
-                visit(child, None, pattern)
-            elif isinstance(child, ast.ClassDef):
-                slots = _class_slots(child, pattern)
-                found[child.name].positions |= slots.positions
-                found[child.name].keywords |= slots.keywords
-                if slots.positions or slots.keywords:
-                    free.add(child.name)
-                visit(child, child.name, pattern)
-            else:
-                visit(child, owner, pattern)
-
     for path in _sources(SRC):
-        visit(_parse(path), None, _OWN_INPUT if path == _DURATION_MODULE else _DURATION)
+        for definition in _facts(path).definitions:
+            name, slots, owner = definition.name, definition.slots, definition.owner
+            found[name].positions |= slots.positions
+            found[name].keywords |= slots.keywords
+            takes = bool(slots.positions or slots.keywords)
+            if definition.is_class:
+                if takes:
+                    free.add(name)
+                continue
+            if not takes:
+                plain.add(name)
+            elif owner is None:
+                free.add(name)
+            else:
+                owners[name].add(owner)
+            if owner is None and definition.returns is not None:
+                makers[definition.returns].add(name)
     for name, classes in owners.items():
         receivers = frozenset(m for c in classes for m in makers[c])
         if name in plain and name not in free and receivers:
@@ -183,9 +322,9 @@ def _callee_name(call: ast.Call) -> str | None:
             return None
 
 
-def _default_violations(tree: ast.Module) -> list[tuple[int, str]]:
+def _default_violations(nodes: _Nodes) -> list[tuple[int, str]]:
     found: list[tuple[int, str]] = []
-    for node in ast.walk(tree):
+    for node in nodes.of(ast.FunctionDef, ast.AsyncFunctionDef, ast.AnnAssign):
         if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
             args = node.args
             positional = [*args.posonlyargs, *args.args]
@@ -201,10 +340,7 @@ def _default_violations(tree: ast.Module) -> list[tuple[int, str]]:
                 if _is_duration(arg.annotation) and _is_bare_number(default)
             ]
         elif (
-            isinstance(node, ast.AnnAssign)
-            and node.value is not None
-            and _is_duration(node.annotation)
-            and _is_bare_number(node.value)
+            node.value is not None and _is_duration(node.annotation) and _is_bare_number(node.value)
         ):
             found.append((node.lineno, f"value of `{ast.unparse(node.target)}`"))
     return found
@@ -226,22 +362,18 @@ def _numeric_constants(tree: ast.Module) -> set[str]:
     return names
 
 
-def _foreign_names(tree: ast.Module) -> set[str]:
+def _foreign_names(nodes: _Nodes) -> set[str]:
     """Names imported from outside pyfect (`asyncio`, `from itertools import
     batched`): their `sleep` or `timeout` take seconds, not a `Duration`."""
     names: set[str] = set()
-    for node in ast.walk(tree):
+    for node in nodes.of(ast.Import, ast.ImportFrom):
         if isinstance(node, ast.Import):
             names |= {
                 (alias.asname or alias.name).split(".")[0]
                 for alias in node.names
                 if not alias.name.startswith("pyfect")
             }
-        elif (
-            isinstance(node, ast.ImportFrom)
-            and node.level == 0
-            and not (node.module or "").startswith("pyfect")
-        ):
+        elif node.level == 0 and not (node.module or "").startswith("pyfect"):
             names |= {alias.asname or alias.name for alias in node.names}
     return names
 
@@ -254,44 +386,71 @@ def _is_foreign(call: ast.Call, foreign: set[str]) -> bool:
             return False
 
 
-def _call_violations(
-    tree: ast.Module, slots: dict[str, _Slots], constants: frozenset[str] = frozenset()
-) -> list[tuple[int, str]]:
-    def bare(node: ast.expr) -> bool:
-        return _is_bare_number(node) or (isinstance(node, ast.Name) and node.id in constants)
+def _candidate(value: ast.expr) -> tuple[str, str | None] | None:
+    """``(source, name)`` of an argument that may be a bare number: ``name`` when it reads
+    a name, which counts if its module binds it to a bare number."""
+    if isinstance(value, ast.Name):
+        return value.id, value.id
+    if _is_bare_number(value):
+        return ast.unparse(value), None
+    return None
 
-    foreign = _foreign_names(tree)
-    found: list[tuple[int, str]] = []
-    for node in ast.walk(tree):
-        name = _callee_name(node) if isinstance(node, ast.Call) else None
-        if name is None or name not in slots:
+
+def _calls(nodes: _Nodes) -> tuple[_Call, ...]:
+    """Every named call given an argument that may be a bare number."""
+    foreign = _foreign_names(nodes)
+    found: list[_Call] = []
+    for node in nodes.of(ast.Call):
+        if (name := _callee_name(node)) is None:
             continue
-        assert isinstance(node, ast.Call)
-        if _is_foreign(node, foreign):
-            continue
-        where = slots[name]
-        if where.receivers is not None and not (where.receivers & _receiver_calls(node)):
-            continue
-        given = [
-            *((arg, f"`{ast.unparse(arg)}` passed to `{name}`") for arg in node.args),
-            *((kw.value, f"`{kw.arg}={ast.unparse(kw.value)}`") for kw in node.keywords),
+        args = [
+            _Arg(value.lineno, f"`{text}` passed to `{name}`", index, None, read)
+            for index, value in enumerate(node.args)
+            if (candidate := _candidate(value)) is not None
+            for text, read in (candidate,)
+        ] + [
+            _Arg(kw.value.lineno, f"`{kw.arg}={text}`", None, kw.arg, read)
+            for kw in node.keywords
+            if (candidate := _candidate(kw.value)) is not None
+            for text, read in (candidate,)
         ]
-        positions = [index in where.positions for index in range(len(node.args))]
-        keywords = [kw.arg in where.keywords for kw in node.keywords]
+        if args:
+            receivers = frozenset(_receiver_calls(node))
+            found.append(_Call(name, _is_foreign(node, foreign), receivers, tuple(args)))
+    return tuple(found)
+
+
+def _call_violations(
+    calls: Sequence[_Call], slots: dict[str, _Slots], constants: frozenset[str] = frozenset()
+) -> list[tuple[int, str]]:
+    found: list[tuple[int, str]] = []
+    for call in calls:
+        where = slots.get(call.name)
+        if where is None or call.foreign:
+            continue
+        if where.receivers is not None and not (where.receivers & call.receivers):
+            continue
         found += [
-            (value.lineno, what)
-            for (value, what), takes in zip(given, positions + keywords, strict=True)
-            if takes and bare(value)
+            (arg.line, arg.what)
+            for arg in call.args
+            if (
+                arg.position in where.positions
+                if arg.position is not None
+                else arg.keyword in where.keywords
+            )
+            and (arg.name is None or arg.name in constants)
         ]
     return found
 
 
+@functools.cache
 def _module_path(
-    path: Path, module: str | None, level: int, roots: tuple[Path, ...]
+    directory: Path, module: str | None, level: int, roots: tuple[Path, ...]
 ) -> Path | None:
-    """The file ``from <module> import ...`` in ``path`` reads, among the checked ones."""
+    """The file ``from <module> import ...`` in a module in ``directory`` reads, among the
+    checked ones."""
     parts = (module or "").split(".") if module else []
-    bases = [path.parents[level - 1]] if level else [*roots, path.parent]
+    bases = [(directory, *directory.parents)[level - 1]] if level else [*roots, directory]
     for base in bases:
         target = base.joinpath(*parts)
         for candidate in (target.with_suffix(".py"), target / "__init__.py"):
@@ -326,21 +485,16 @@ def _constants_by_path(
     """Each module's names for a bare number: its own (``_TIMEOUT = 5.0``) and those it
     imports from another checked module that binds one. A name means what its own module
     binds it to, so ``_HOUR = 3_600_000`` in one file says nothing about ``_HOUR`` in another."""
-    trees = {path: _parse(path) for path in paths}
-    own = {path: _numeric_constants(tree) for path, tree in trees.items()}
+    facts = {path: _facts(path) for path in paths}
+    own = {path: read.numeric for path, read in facts.items()}
     found: dict[Path, frozenset[str]] = {}
-    for path, tree in trees.items():
-        bound = _bound_names(tree)
+    for path, read in facts.items():
         imported: set[str] = set()
-        for statement in tree.body:
-            if not isinstance(statement, ast.ImportFrom):
-                continue
-            source = _module_path(path, statement.module, statement.level, roots)
-            exported: set[str] = own.get(source, set()) if source is not None else set()
-            imported |= {
-                alias.asname or alias.name for alias in statement.names if alias.name in exported
-            }
-        found[path] = frozenset(own[path] | (imported - bound))
+        for module, level, names in read.imports:
+            source = _module_path(path.parent, module, level, roots)
+            exported = own.get(source, frozenset[str]()) if source is not None else frozenset[str]()
+            imported |= {local for name, local in names if name in exported}
+        found[path] = own[path] | (imported - read.bound)
     return found
 
 
@@ -351,9 +505,9 @@ def test_no_bare_number_is_given_where_a_duration_is_taken() -> None:
     problems = [
         f"{path.relative_to(ROOT)}:{line}: {what}"
         for path in paths
-        for tree in (_parse(path),)
+        for read in (_facts(path),)
         for line, what in sorted(
-            _default_violations(tree) + _call_violations(tree, slots, constants[path])
+            [*read.defaults, *_call_violations(read.calls, slots, constants[path])]
         )
     ]
     assert not problems, (
@@ -378,7 +532,7 @@ def test_a_constant_means_what_its_own_module_binds(tmp_path: Path) -> None:
     paths = sorted(tmp_path.glob("*.py"))
     constants = _constants_by_path(paths, roots=(tmp_path,))
     flagged = {
-        path.name for path in paths if _call_violations(_parse(path), slots, constants[path])
+        path.name for path in paths if _call_violations(_facts(path).calls, slots, constants[path])
     }
     assert flagged == {"reader.py", "renamed.py"}
 
@@ -398,11 +552,11 @@ def _is_epoch_seconds(node: ast.expr) -> bool:
             return False
 
 
-def _epoch_seconds_violations(tree: ast.Module) -> list[tuple[int, str]]:
+def _epoch_seconds_violations(nodes: _Nodes) -> list[tuple[int, str]]:
     return [
         (arg.lineno, f"`{ast.unparse(arg)}` (epoch seconds) passed to `{name}`")
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Call) and (name := _callee_name(node)) in _EPOCH_MILLIS_TAKERS
+        for node in nodes.of(ast.Call)
+        if (name := _callee_name(node)) in _EPOCH_MILLIS_TAKERS
         for arg in [*node.args, *(kw.value for kw in node.keywords)]
         if _is_epoch_seconds(arg)
     ]
@@ -415,7 +569,7 @@ def test_no_epoch_seconds_are_given_where_epoch_millis_are_taken() -> None:
     problems = [
         f"{path.relative_to(ROOT)}:{line}: {what}"
         for path in paths
-        for line, what in _epoch_seconds_violations(_parse(path))
+        for line, what in _facts(path).epoch_seconds
     ]
     assert not problems, "multiply by 1000:\n" + "\n".join(problems)
 
@@ -425,7 +579,7 @@ def test_the_guard_finds_epoch_seconds() -> None:
         "testing.set_time(dt.timestamp())\nclock.set_time(time.time())\n"
         "testing.set_time(dt.timestamp() * 1000)\nTestClock(start=time.time())\n"
     )
-    assert [line for line, _ in _epoch_seconds_violations(tree)] == [1, 2, 4]
+    assert [line for line, _ in _facts_of(tree).epoch_seconds] == [1, 2, 4]
 
 
 def test_the_guard_finds_duration_slots_and_bare_numbers() -> None:
@@ -439,7 +593,8 @@ def test_the_guard_finds_duration_slots_and_bare_numbers() -> None:
         "fx.sleep(0)\nfx.sleep(0.0)\n@testing.live(timeout=10)\ndef test(): ...\n"
     )
     constants = frozenset(_numeric_constants(tree))
-    found = _call_violations(tree, slots, constants) + _default_violations(tree)
+    read = _facts_of(tree)
+    found = _call_violations(read.calls, slots, constants) + list(read.defaults)
     assert sorted(line for line, _ in found) == [1, 2, 4, 5, 7, 15]
 
 
@@ -453,7 +608,7 @@ def test_a_shared_method_name_counts_only_on_its_own_receiver() -> None:
         "config.all(config.duration('T')).with_default(5)\n"
         "config.duration('T').with_default('5 seconds')\n"
     )
-    assert sorted(line for line, _ in _call_violations(tree, slots)) == [1, 3]
+    assert sorted(line for line, _ in _call_violations(_facts_of(tree).calls, slots)) == [1, 3]
 
 
 def test_only_parameters_that_parse_an_input_are_duration_slots() -> None:
@@ -482,14 +637,12 @@ _ON_PURPOSE = frozenset(
 )
 
 
-def _docstrings(path: Path) -> list[tuple[int, str]]:
-    return [
+def _docstrings(nodes: _Nodes) -> tuple[tuple[int, str], ...]:
+    return tuple(
         (node.lineno, node.value.value)
-        for node in ast.walk(_parse(path))
-        if isinstance(node, ast.Expr)
-        and isinstance(node.value, ast.Constant)
-        and isinstance(node.value.value, str)
-    ]
+        for node in nodes.of(ast.Expr)
+        if isinstance(node.value, ast.Constant) and isinstance(node.value.value, str)
+    )
 
 
 def _prose() -> list[tuple[str, int, str]]:
@@ -499,7 +652,9 @@ def _prose() -> list[tuple[str, int, str]]:
         paths = [root] if root.is_file() else sorted(root.rglob("*.mdx"))
         found += [(str(path.relative_to(ROOT)), 1, path.read_text()) for path in paths]
     for path in _sources(SRC):
-        found += [(str(path.relative_to(ROOT)), line, text) for line, text in _docstrings(path)]
+        found += [
+            (str(path.relative_to(ROOT)), line, text) for line, text in _facts(path).docstrings
+        ]
     return found
 
 
@@ -520,7 +675,7 @@ def _prose_violations(text: str, slots: dict[str, _Slots]) -> list[str]:
     found = [
         f"`{ast.unparse(node)}`: {what}"
         for tree in _code_in(text)
-        for node, what in ((tree, w) for _, w in _call_violations(tree, slots))
+        for node, what in ((tree, w) for _, w in _call_violations(_facts_of(tree).calls, slots))
     ]
     found += [
         f"`{m[0]}` calls a duration seconds"
@@ -559,3 +714,48 @@ def test_the_prose_guard_finds_durations_called_seconds() -> None:
         'Fine: `set_idle_ttl("30 seconds")`, `fx.sleep(0)`, ``ESCAPE`` milliseconds.\n'
     )
     assert len(_prose_violations(text, slots)) == 4
+
+
+def test_each_file_is_parsed_and_walked_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The checks share what one parse and one walk of each file read. Parsing and walking
+    every file again in each check made this module take over a minute under load. Running
+    every check twice must parse no file and walk no file's tree a second time."""
+    parsed: set[str] = set()
+    walked: weakref.WeakKeyDictionary[ast.AST, str] = weakref.WeakKeyDictionary()
+    unwalked: weakref.WeakKeyDictionary[ast.AST, str] = weakref.WeakKeyDictionary()
+    parse, walk, flat_walk = ast.parse, ast.walk, _walk
+
+    def counting_parse(*args: Any, **kwargs: Any) -> Any:
+        tree = parse(*args, **kwargs)
+        filename = str(kwargs.get("filename", args[1] if len(args) > 1 else "<unknown>"))
+        if filename != "<unknown>":
+            assert filename not in parsed, f"{filename} parsed again"
+            parsed.add(filename)
+            unwalked[tree] = filename
+        return tree
+
+    def count_walk(tree: ast.AST) -> None:
+        assert tree not in walked, f"{walked[tree]} walked again"
+        if tree in unwalked:
+            walked[tree] = unwalked.pop(tree)
+
+    def counting_walk(tree: ast.AST) -> Iterator[ast.AST]:
+        count_walk(tree)
+        return walk(tree)
+
+    def counting_flat_walk(tree: ast.AST) -> _Nodes:
+        count_walk(tree)
+        return flat_walk(tree)
+
+    monkeypatch.setattr(ast, "parse", counting_parse)
+    monkeypatch.setattr(ast, "walk", counting_walk)
+    monkeypatch.setattr(sys.modules[__name__], "_walk", counting_flat_walk)
+    checks: list[Callable[[], None]] = [
+        check
+        for name, check in globals().items()
+        if name.startswith("test_") and not inspect.signature(check).parameters
+    ]
+    assert len(checks) >= 8
+    for _ in range(2):
+        for check in checks:
+            check()
