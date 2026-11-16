@@ -1,0 +1,7 @@
+lookup ['10.0.0.7', '10.0.0.8']
+mx (Mx(exchange='mail.example.com', priority=10),)
+reverse ('api.internal',)
+api.internal:8080 -> ['10.0.0.7:8080', '10.0.0.8:8080', '[fd00::7]:8080']
+[fd00::1]:443 -> ['[fd00::1]:443']
+127.0.0.1:5432 -> ['127.0.0.1:5432']
+NotFound NotFound: Dns.lookup (nowhere.internal)

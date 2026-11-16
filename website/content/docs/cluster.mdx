@@ -166,6 +166,24 @@ pings it. Messages are [SchemaBinary](/docs/streams#schemabinary) frames, as in 
 Lower level pieces are there too: `socket_runner` and `http_runner` (the protocols and servers), `runner_server`,
 `runners` and `runner_health`.
 
+`cluster_socket.layer` is `socket_runner.layer` with every service it needs. Build on
+`socket_runner.layer` (Effect's `SocketRunner.layer`) yourself to serve on a `SocketServer`
+you already have, one bound to port 0 in a test say, or to swap a piece. It serves the runner
+protocol on the `SocketServer` in the context, logs `Listening on: <address>`, and provides
+`Sharding` and `Runners`. It needs an `RpcClientProtocol` to reach the other runners
+(`cluster_socket.layer_client_protocol` dials them over TCP, with one second to connect), a
+`ShardingConfig`, an `RpcSerialization`, `MessageStorage`, `RunnerStorage` and a
+`RunnerHealth`. `socket_runner.layer_client_only` is a sender: it serves nothing, owns no
+shards and needs neither the server nor the health check.
+
+<CodeOutput>
+
+<include meta='title="socket_runner.py"'>../../snippets/cluster/socket_runner.py</include>
+
+<include lang="text">../../snippets/cluster/socket_runner.out</include>
+
+</CodeOutput>
+
 Every runner of a cluster must use the same serialization. A runner can't read the other
 format, so health pings between the two fail: the runner that holds the cluster's health
 check marks the runners on the other format `healthy = false` in `cluster_runners`, and the
@@ -308,6 +326,11 @@ at `/var/run/secrets/kubernetes.io/serviceaccount/ca.crt`, as Effect's
 SIGTERM, and the runner drains for up to `entity_termination_timeout` (15 seconds), so keep
 the grace period above it.
 
+**Database URL.** Name the user in `DATABASE_URL` (`postgres://runner:...@db:5432/jobs`).
+Container images rarely set `USER`, the client's only other source of a user name, and like
+Effect's client it ignores `PGUSER`, so a URL without a user fails with `No username
+configured`; see [PostgreSQL](/docs/postgres#connecting).
+
 ```yaml title="runner.yaml"
 apiVersion: v1
 kind: ServiceAccount
@@ -377,4 +400,5 @@ Reference: [`pyfect.cluster`](/docs/reference/cluster),
 [`sharding_config`](/docs/reference/cluster/sharding_config),
 [`message_storage`](/docs/reference/cluster/message_storage),
 [`entity_resource`](/docs/reference/cluster/entity_resource),
-[`k8s_http_client`](/docs/reference/cluster/k8s_http_client).
+[`k8s_http_client`](/docs/reference/cluster/k8s_http_client),
+[`socket_runner`](/docs/reference/cluster/socket_runner).

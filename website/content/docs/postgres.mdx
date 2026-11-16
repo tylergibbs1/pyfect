@@ -24,6 +24,11 @@ environment instead, use `pg.layer_config({"url": fx.config.redacted("DATABASE_U
 `sql.pool_stats` gives a `PoolStats` snapshot of the sessions (idle, used, pending, `min`,
 `max`); a `make_client` client always reports its one session as used.
 
+Put the user name in the URL (`postgres://app@db:5432/app`) or in `PgPoolConfig(username=...)`.
+Without one, the client falls back to the `USER` (or `USERNAME`) environment variable, and
+`PGUSER` is not read, as in Effect's PostgreSQL client. Most Docker images set no `USER`, so
+there a URL like `postgresql:///app` fails every connection with `No username configured`.
+
 Statements use the same `{}` placeholders as every `SqlClient`. Three things are specific to
 PostgreSQL or easy to miss:
 

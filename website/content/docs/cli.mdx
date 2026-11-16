@@ -59,6 +59,30 @@ flags always lists them.
 
 </CodeOutput>
 
+## Shell completions
+
+`--completions <shell>` prints a completion script for bash, zsh, fish or PowerShell (`sh`
+means bash and `pwsh` PowerShell). The script is static: it holds the command tree, its
+subcommands, flags, choices and descriptions, so print it again after the commands change.
+It completes the command by its name (`ship` below), so install the program under that name,
+with a `[project.scripts]` entry for example. `completions.generate(name, shell,
+completions.from_command(app))` (from `pyfect.cli`) gives the same script as a string, to
+write it at build time.
+
+<CodeOutput>
+
+<include meta='title="completions.py"'>../../snippets/cli/completions.py</include>
+
+<include lang="text">../../snippets/cli/completions.out</include>
+
+</CodeOutput>
+
+Each script starts with how to install it. For fish, write it where fish looks for
+completions: `ship --completions fish > ~/.config/fish/completions/ship.fish`. For
+PowerShell, write it to a file and dot-source that file from your `$PROFILE`:
+`ship --completions powershell > ship-completion.ps1`, then add `. <full path>\ship-completion.ps1`
+to the profile. The PowerShell script registers a native argument completer for `ship`.
+
 ## Prompts
 
 `prompt.string`, `integer`, `confirm`, `select`, `multi_select`, `date`, `file`, `password`

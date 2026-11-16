@@ -42,7 +42,10 @@ def program():
     print("server", client.server_info)
     tools = yield from client.list_tools()
     print("tools", [(t["name"], t.get("description")) for t in tools])
-    total = yield from client.call_tool(tools[0], {"a": 2, "b": 3}, schema=S.Struct(Sum))
+    # A call has no deadline of its own: give it one.
+    total = yield from client.call_tool(
+        tools[0], {"a": 2, "b": 3}, schema=S.Struct(Sum), timeout="10 seconds"
+    )
     print("add", total)
 
 

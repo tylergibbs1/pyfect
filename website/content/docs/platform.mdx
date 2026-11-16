@@ -167,6 +167,59 @@ rules on a plain tuple, for seeding a jar or reading one.
 
 </CodeOutput>
 
+## A client backend of your own
+
+`httpx_client.layer` is one backend; `client.make(send)` builds an `HttpClient` on any other.
+`send(request, url, signal, fiber)` sends one request and returns its response as an effect.
+The client around it builds `url` from the request (failing with an `InvalidUrlError` first),
+runs the client span and adds the trace headers, so `send` only moves bytes.
+
+`signal` is the request's `AbortSignal` (`pyfect.http.abort`, the `AbortController` and
+`AbortSignal` pair Effect's clients use). It fires when the request is interrupted, and later
+when the response is done with: its body stream ends, it is dropped unread, or the scope of a
+`with_scope` client closes. `signal.add_listener(f)` runs `f` when it fires, at once if it has
+fired already, and returns a function that removes `f`; `signal.aborted` says whether it has.
+A listener runs once, on the thread that aborts, so keep it short: cancel the work, close the
+connection.
+
+<CodeOutput>
+
+<include meta='title="backend.py"'>../../snippets/platform/backend.py</include>
+
+<include lang="text">../../snippets/platform/backend.out</include>
+
+</CodeOutput>
+
+## DNS and addresses
+
+`pyfect.net.dns` is Effect's `Dns` service. `lookup(host, family=...)` gives a host's IP
+addresses, `resolve(name, dns.Mx)` its records of one type (`A`, `Aaaa`, `Cname`, `Mx`, `Ns`,
+`Ptr`, `Soa`, `Srv`, `Txt`, `Caa`, `Naptr`, `Tlsa`), and `reverse(address)` the names of an
+address. An answer is a tuple, never empty and without duplicates; a failure is a `DnsError`
+whose `reason` says why (`NotFound`, `BadName`, `Temporary`, `Unsupported`, ...) and whose
+`is_temporary` says whether a retry may help.
+
+`dns.layer_system()` asks the operating system: lookups go through `getaddrinfo`, so the hosts
+file counts, and reverse lookups query PTR records of the system's name servers (or of
+`name_servers=`). It queries no other record type: `resolve` of anything but `Ptr` fails with
+`Unsupported`. `dns.layer_static(hosts=..., records=...)` answers from a fixed zone, for tests,
+and `dns.make(lookup, resolve, reverse)` builds the service on a resolver library of your own.
+
+`pyfect.net.address_resolver` turns an endpoint (`"host:port"`, `"[::1]:443"` or a `HostPort`)
+into the socket addresses to connect to, in the order found: an IP literal as it is, a name
+through `Dns`. `family="IPv4"` or `"IPv6"` keeps one family. Link-local IPv6 answers are
+dropped, since a lookup does not say which interface they belong to. A literal with a named
+zone (`[fe80::1%eth0]:80`) needs `address_resolver.layer_system()`, which looks the interface
+up; a numeric zone (`%2`) works with `address_resolver.layer()` too.
+
+<CodeOutput>
+
+<include meta='title="dns.py"'>../../snippets/platform/dns.py</include>
+
+<include lang="text">../../snippets/platform/dns.out</include>
+
+</CodeOutput>
+
 ## URLs
 
 `fx.Url` is JavaScript's `URL` as an immutable Python value: `fx.Url(text, base)` parses
@@ -216,4 +269,4 @@ is virtual, so a test of a five-second timeout finishes at once.
 Reference: [`pyfect.file_system`](/docs/reference/file_system),
 [`pyfect.glob`](/docs/reference/glob),
 [`pyfect.process`](/docs/reference/process), [`pyfect.http`](/docs/reference/http),
-[`pyfect.platform`](/docs/reference/platform).
+[`pyfect.platform`](/docs/reference/platform), [`pyfect.net`](/docs/reference/net).

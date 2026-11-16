@@ -55,6 +55,31 @@ A pool can also grow and shrink: `min_size`, `max_size` and `time_to_live` in pl
 any request, such as its settings, which the worker reads with
 `rpc.worker.initial_message(schema)`.
 
+## Transferables
+
+In JavaScript a worker message is copied unless its buffers are in the message's transfer
+list, which moves them instead. `pyfect.workers.transferable` is Effect's `Transferable`,
+which builds that list while a message is encoded. `transferable.schema(schema, f)` is
+`schema`, but when it encodes a value with a `Collector` in the context it adds `f(encoded)`
+to the collector; without one it encodes as `schema` does. `transferable.make_collector` makes
+a collector, and `collector.clear()` gives what it gathered and empties it.
+`transferable.add_all(values)` adds values from an effect of your own, and
+`getter_add_all(f)` from a schema getter.
+
+pyfect's worker platforms have nothing to move: a process worker pickles every message and a
+thread worker shares it, so they ignore the list. The module is there for schemas shared with
+Effect code and for a platform of your own that can move values. Over workers, Effect's RPC
+client and server collect the transferables of every request and reply; pyfect's collect only
+those of the initial message (`layer_initial_message`).
+
+<CodeOutput>
+
+<include meta='title="transferable.py"'>../../snippets/workers/transferable.py</include>
+
+<include lang="text">../../snippets/workers/transferable.out</include>
+
+</CodeOutput>
+
 Reference: [`pyfect.workers`](/docs/reference/workers),
 [`python_worker`](/docs/reference/workers/python_worker),
 [`pyfect.rpc.worker`](/docs/reference/rpc/worker).

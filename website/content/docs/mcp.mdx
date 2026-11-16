@@ -49,10 +49,14 @@ over HTTP, and `layer_stdio(command=process.make(...), ...)` starts one as a chi
 The `McpClient` then has the server's `server_info` and `instructions`, `list_tools`,
 `list_prompts` and `list_resources`, `call_tool(tool, arguments, schema=...)` decoding the
 result's structured content, `get_prompt` and `read_resource`. Failures are an
-`McpClientError` whose `reason` says which: a tool error, a timeout (60 seconds by
-default), a transport or protocol error. A tool error is a failure only with `schema=`:
-without one, `call_tool` succeeds with the whole `CallToolResult`, so check its `isError`,
-as with Effect's `callTool`.
+`McpClientError` whose `reason` says which: a tool error, a timeout, a transport or protocol
+error. A tool error is a failure only with `schema=`: without one, `call_tool` succeeds with
+the whole `CallToolResult`, so check its `isError`, as with Effect's `callTool`.
+
+The `timeout=` of `layer_http`, `layer_stdio` or `make` (60 seconds by default) bounds
+connecting and each `list_tools`, `list_prompts` or `list_resources` scan. `call_tool`,
+`get_prompt` and `read_resource` wait as long as the server takes, as in Effect, unless you
+pass them a `timeout=` of their own, as the `call_tool` below does.
 
 <CodeOutput>
 

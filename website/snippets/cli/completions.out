@@ -1,0 +1,15 @@
+###-begin-ship-completions-###
+#
+# Static completion script for Fish
+#
+# Installation:
+#   ship --completions fish > ~/.config/fish/completions/ship.fish
+#
+
+complete -c ship -n '__fish_use_subcommand' -f
+complete -c ship -n '__fish_use_subcommand' -f -a 'deploy' -d 'Deploy a service'
+complete -c ship -n '__fish_seen_subcommand_from deploy' -f
+complete -c ship -n '__fish_seen_subcommand_from deploy; and begin; not __fish_contains_opt env; or contains -- (commandline -poc)[-1] --env; end' -l env -d 'Where to deploy' -r -f -a 'staging prod'
+complete -c ship -n '__fish_seen_subcommand_from deploy; and not string match -q -- "-*" (commandline -ct); and not __fish_contains_opt env' -f -a '--env' -d 'Where to deploy'
+
+###-end-ship-completions-###
