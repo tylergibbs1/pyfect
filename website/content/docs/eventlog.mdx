@@ -87,7 +87,7 @@ read: only clients holding the identity's key can. The unencrypted one,
 stores, checks an `EventLogServerAuthorization` and can compact the backlog. Both have
 memory storage for tests and SQL storage (`sql_event_log_server_encrypted`,
 `sql_event_log_server_unencrypted`); to upgrade a SQL encrypted server from 0.6.5 or
-earlier, read [Upgrading event log stores from 0.6.5](/docs/eventlog-upgrade-0-6-7) first.
+earlier, read [Upgrading event log stores from 0.6.5](/docs/eventlog-upgrade) first.
 Clients authenticate by signing a challenge with an
 Ed25519 key derived from their identity. A challenge lives on its connection for 30 seconds
 and is used once. The server binds the first verified signing key of an identity and rejects

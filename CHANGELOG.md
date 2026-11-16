@@ -1,5 +1,44 @@
 # Changelog
 
+## 0.6.8 (unreleased)
+
+### Added
+
+- `sql_event_log_server_encrypted.migrate_legacy_store` takes `without_binding=True`, for a
+  store whose key had no session auth binding before the upgrade (one written straight
+  through the storage), with `not_written_by` naming every other key that shares its 0.6.5
+  name; and `taken_from=(public_key, store_id)`, to give the tables back to the pair that
+  wrote them when an earlier version gave them to another.
+- `legacy_stores(store_ids, public_keys=...)` also checks the names of keys that wrote
+  straight through the storage. Each `LegacyStore` has `legacy_name`, `binding` (when its
+  key authenticated: `"before_upgrade"`, `"after_upgrade"` or `"none"`) and `migrated_by`
+  (`"server"`, `"operator"` or `"earlier_version"`). `LegacyStoreNeedsMigration` has
+  `automatic`.
+
+### Fixed
+
+- The SQL encrypted event log server moves a store written by 0.6.5 or earlier, under a name
+  another pair shares, by itself only on the session auth bindings that existed before the
+  upgrade. The first start of 0.6.8 or later copies them into
+  `<entry_table_prefix>_legacy_bindings`. A binding made after the upgrade neither gives a
+  store to its key nor holds it back from the pair whose key had one, and the name's other
+  pairs open tables of their own. On a database 0.6.6 or 0.6.7 opened first, the server
+  migrates no store by itself: `legacy_stores` lists each as `"unconfirmed"`, and the
+  operator runs `migrate_legacy_store`. A store no key had a binding for before the upgrade
+  waits for `migrate_legacy_store(..., without_binding=True)`, however its keys authenticate
+  later.
+- `legacy_stores` lists every pair sharing each name that holds 0.6.5 batches, those with no
+  binding included (`"unbound"`), and the migrations 0.6.6 and 0.6.7 made, as
+  `migrated_by="earlier_version"`, for the operator to check.
+
+### Docs
+
+- The upgrade guide moved to
+  [/docs/eventlog-upgrade](https://pyfect.dev/docs/eventlog-upgrade); the old URL redirects
+  there. It now covers stores with no binding, upgrades and rolling upgrades from 0.6.6 and
+  0.6.7, downgrades, and stores two identities wrote. `tests/test_doc_urls.py` checks that
+  every docs URL the code and the changelog give is still served.
+
 ## 0.6.7 (2026-11-15)
 
 ### Added
