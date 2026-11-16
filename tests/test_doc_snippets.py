@@ -180,9 +180,31 @@ import runpy, sys
 import pyfect as fx
 from pyfect.cluster._entity_manager._activation import _Activation
 drain = _Activation.drain
-_Activation.drain = lambda self: fx.sleep("600 millis").and_then(fx.suspend(lambda: drain(self)))
-runpy.run_path(sys.argv[1], run_name="__main__")
+delay = sys.argv[1]
+_Activation.drain = lambda self: fx.sleep(delay).and_then(fx.suspend(lambda: drain(self)))
+runpy.run_path(sys.argv[2], run_name="__main__")
 """
+
+
+def run_with_a_slow_drain(
+    path: Path, delay: str = "600 millis"
+) -> subprocess.CompletedProcess[str]:
+    return run("-c", SLOW_DRAIN, delay, str(path))
+
+
+# A log record a runner writes, as Effect's Sharding does, when it stops while its
+# `RunnerStorage sync` runs: it has unregistered, so the sync finds no healthy runners.
+# Whether a stop overlaps a sync is timing, so it is not part of a snippet's output.
+STOPPING_RUNNER_LOG = re.compile(
+    r"^\[[\d:.]+\] WARN \(#\d+\): No healthy runners available "
+    r"\{'module': 'effect/cluster/Sharding', 'fiber': 'RunnerStorage sync', .*\}\n",
+    re.MULTILINE,
+)
+
+
+def snippet_output(stdout: str) -> str:
+    """What a snippet prints, without the log records a stopping runner may write."""
+    return STOPPING_RUNNER_LOG.sub("", stdout)
 
 
 @pytest.fixture(scope="module")
@@ -212,7 +234,7 @@ def runs(request: pytest.FixtureRequest) -> Iterator[Runs]:
     servers = ThreadPoolExecutor(max_workers=1)
     try:
         yield {
-            (test, path): pool.submit(run, "-c", SLOW_DRAIN, str(path))
+            (test, path): pool.submit(run_with_a_slow_drain, path)
             if test == "test_cluster_snippet_with_a_slow_drain"
             else servers.submit(run_with_server, path)
             if any(path.is_relative_to(server) for server in SERVERS)
@@ -228,15 +250,16 @@ def runs(request: pytest.FixtureRequest) -> Iterator[Runs]:
 def test_snippet_runs(path: Path, runs: Runs):
     done = runs["test_snippet_runs", path].result()
     assert_ran(done)
+    output = snippet_output(done.stdout)
     expected = path.with_suffix(".out")
-    if os.environ.get("UPDATE_SNIPPET_OUTPUT") and done.stdout:
-        expected.write_text(done.stdout)
+    if os.environ.get("UPDATE_SNIPPET_OUTPUT") and output:
+        expected.write_text(output)
     if expected.exists():
-        assert done.stdout == expected.read_text(), (
+        assert output == expected.read_text(), (
             f"{name(expected)} is stale: rerun with UPDATE_SNIPPET_OUTPUT=1"
         )
     else:
-        assert not done.stdout, (
+        assert not output, (
             f"{name(path)} prints; write {name(expected)} with UPDATE_SNIPPET_OUTPUT=1"
         )
 
@@ -270,7 +293,20 @@ def test_cluster_snippet_with_a_slow_drain(path: Path, runs: Runs):
     done = runs["test_cluster_snippet_with_a_slow_drain", path].result()
     assert_ran(done)
     expected = path.with_suffix(".out")
-    assert done.stdout == (expected.read_text() if expected.exists() else "")
+    assert snippet_output(done.stdout) == (expected.read_text() if expected.exists() else "")
+
+
+def test_a_shutdown_that_outlasts_a_runner_sync():
+    """A runner unregisters when it starts to stop. If the drain outlasts the next
+    `RunnerStorage sync` (every `refresh_assignments_interval`, 3 s), the sync finds no
+    healthy runners and warns, as Effect's Sharding does. That warning showed up in CI in a
+    slow-drain run of cluster/cron.py. It is real, so it is printed, but it is not part of
+    a snippet's output."""
+    cron = SNIPPETS / "cluster" / "cron.py"
+    done = run_with_a_slow_drain(cron, "3500 millis")
+    assert_ran(done)
+    assert "WARN" in done.stdout and "No healthy runners available" in done.stdout
+    assert snippet_output(done.stdout) == cron.with_suffix(".out").read_text()
 
 
 def test_a_failed_run_reports_all_its_output():
