@@ -153,7 +153,8 @@ def base64_url_decode(text: str) -> Result[bytes, EncodingError]:
 
 # --- Hex ------------------------------------------------------------------------------
 
-_HEX = re.compile(rb"(?:[0-9a-fA-F]{2})*")
+_HEX = re.compile(rb"[0-9a-fA-F]*")
+"""Hex digits only: ``hex_decode`` refuses an odd length before matching."""
 
 
 def hex_encode(value: Binary) -> str:
