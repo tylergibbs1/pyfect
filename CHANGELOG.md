@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.6.9 (unreleased)
+## 0.6.9 (2026-11-16)
 
 ### Deprecated
 
