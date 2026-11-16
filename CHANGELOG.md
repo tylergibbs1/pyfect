@@ -2,6 +2,11 @@
 
 ## 0.6.9 (unreleased)
 
+### Deprecated
+
+- `LegacyStoreNeedsMigration.automatic` (0.6.8): read the new `state` field
+  (`"pending"`, `"unconfirmed"`, `"ambiguous"` or `"unbound"`) instead.
+
 ### Fixed
 
 - SQL `PersistedQueue` on MySQL: an offer no longer deadlocks an `"untilExecuted"` re-offer
@@ -18,8 +23,7 @@
   name could have written. The server now migrates no store by itself: each one waits, logged
   once and listed by `legacy_stores`, until the operator runs `migrate_legacy_store`.
   `layer_storage(migrate_legacy_stores="when_server_written")` restores 0.6.8's rule, for
-  databases where every 0.6.5 write went through a server. `LegacyStoreNeedsMigration` has a
-  `state` field in place of `automatic`.
+  databases where every 0.6.5 write went through a server.
 - `legacy_stores` only reads and works before the upgrade (`LegacyStore.upgrade_recorded`),
   and `migrate_legacy_store` is refused until an upgraded server has started: only the
   server's first start records which keys had authenticated before the upgrade. In 0.6.8
