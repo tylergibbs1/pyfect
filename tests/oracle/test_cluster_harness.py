@@ -170,6 +170,24 @@ _SLOW_SQLITE = (
 _SLOW_PG = "SELECT pg_sleep(1.5)"
 
 
+@testing.live(timeout="30 seconds")
+def test_commits_on_the_cluster_database_skip_the_disk_flush(cluster_db: ClusterDatabase):
+    """A commit on the cluster database does not wait for the disk (SQLite
+    ``synchronous = OFF``, PostgreSQL ``fsync = off``): on CI a slow flush
+    held both runners' lock refreshes past their 500 ms, so a reply was
+    fenced and its request ran twice (the flake of "persists a non-JSON
+    Error as a serializable defect")."""
+
+    def body() -> Body:
+        sql = yield from cluster_db.make()
+        if cluster_db.backend == "sqlite":
+            assert (yield from sql("PRAGMA synchronous")) == [{"synchronous": 0}]
+        else:
+            assert (yield from sql("SHOW fsync")) == [{"fsync": "off"}]
+
+    yield from fx.scoped(fx.gen(body))
+
+
 @testing.live(timeout="1 minute")
 def test_a_slow_statement_on_the_cluster_database_costs_no_runner_its_shards(
     cluster_db: ClusterDatabase,

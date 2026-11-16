@@ -8,13 +8,15 @@ import pyfect as fx
 from pyfect import reactivity
 from pyfect.sql import sqlite
 
+SQLITE_FILE = "test.db"
+
 
 def make_client(
     directory: Path, **config: Any
 ) -> fx.Effect[sqlite.SqliteClientService, Any, fx.Scope]:
-    """A client on ``directory/test.db``, closed with the test's scope."""
+    """A client on ``directory/SQLITE_FILE``, closed with the test's scope."""
     return sqlite.make(
-        sqlite.SqliteClientConfig(filename=str(directory / "test.db"), **config)
+        sqlite.SqliteClientConfig(filename=str(directory / SQLITE_FILE), **config)
     ).pipe(fx.provide(reactivity.layer))
 
 

@@ -33,6 +33,8 @@ import copy
 import itertools
 import json
 import os
+import sqlite3
+import threading
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -92,7 +94,7 @@ from pyfect.sql.error import ConnectionError as SqlConnectionError
 from pyfect.sql.error import SqlError
 from pyfect.workflow import WorkflowEngine
 
-from ._sqlite import make_client
+from ._sqlite import SQLITE_FILE, make_client
 
 type Backend = Literal["sqlite", "pg"]
 type LockMode = Literal["advisory", "row"]
@@ -1164,6 +1166,35 @@ class Cluster:
 class ClusterDatabase:
     backend: Backend
     make: DatabaseMaker
+    sqlite_file: Path | None = None
+
+    def hold_write_lock(self, seconds: float) -> fx.Effect[None]:
+        """SQLite only (pyfect-only): takes the database's write lock on a
+        connection of its own and releases it ``seconds`` later, as a stalled
+        disk would. Every member's writes, lock refreshes included, wait."""
+        path = self.sqlite_file
+        assert path is not None, "hold_write_lock needs the SQLite backend"
+
+        def take() -> None:
+            conn = sqlite3.connect(path, timeout=10, isolation_level=None, check_same_thread=False)
+            conn.execute("BEGIN IMMEDIATE")
+
+            def release() -> None:
+                conn.execute("COMMIT")
+                conn.close()
+
+            timer = threading.Timer(seconds, release)
+            timer.daemon = True
+            timer.start()
+
+        return fx.blocking(take)
+
+
+def _sqlite(directory: Path) -> fx.Effect[SqlClientService, Any, Scope]:
+    """A client on the cluster's SQLite file. Commits skip fsync, as the
+    throwaway PostgreSQL server's do (``fsync=off``): a slow disk flush would
+    otherwise hold every member's lock refresh past its 500 ms."""
+    return make_client(directory).tap(lambda client: client("PRAGMA synchronous = OFF"))
 
 
 def _pg(server: Any) -> fx.Effect[SqlClientService, Any, Scope]:
@@ -1178,7 +1209,7 @@ def cluster_db(request: pytest.FixtureRequest, tmp_path: Path) -> ClusterDatabas
     """A database for a cluster: a SQLite file, or the throwaway PostgreSQL
     server (skipped without one)."""
     if request.param == "sqlite":
-        return ClusterDatabase("sqlite", lambda: make_client(tmp_path))
+        return ClusterDatabase("sqlite", lambda: _sqlite(tmp_path), tmp_path / SQLITE_FILE)
     pytest.importorskip("psycopg")
     server = request.getfixturevalue("pg_server")
     return ClusterDatabase("pg", lambda: _pg(server))
