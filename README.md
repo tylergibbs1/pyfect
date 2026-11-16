@@ -219,6 +219,9 @@ uv add pyfect-dev
 uv add --dev pyright
 ```
 
+`3.14+gil` needs uv 0.9.8 or later; older uv says "No interpreter found for executable name
+'3.14+gil'". Update it with `uv self update` (`brew upgrade uv` for Homebrew's).
+
 With pip, in a virtual environment of Python 3.13 or later (`python3.13 -m venv .venv`): `pip install
 pyfect-dev pyright`. On an older Python, pip says only "No matching distribution found".
 

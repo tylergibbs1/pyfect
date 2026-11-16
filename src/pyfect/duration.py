@@ -791,9 +791,10 @@ class BareNumberDurationWarning(UserWarning):
 
 def _warn_bare_number(value: float, *, raise_it: bool) -> None:
     text = js_number(_js_float(value))
+    plural = "" if text == "1" else "s"
     warning = BareNumberDurationWarning(
-        f"the duration {text} was read as {text} milliseconds; write "
-        f'"{text} seconds" if you meant seconds, or "{text} millis" to keep milliseconds'
+        f"the duration {text} was read as {text} millisecond{plural}; write "
+        f'"{text} second{plural}" if you meant seconds, or "{text} millis" to keep milliseconds'
     )
     if raise_it:
         raise warning
