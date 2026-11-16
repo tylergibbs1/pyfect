@@ -59,3 +59,36 @@ def test_fork_heavy_has_its_own_tolerance():
     tolerance = _module().TOLERANCE
     assert tolerance["fork-heavy"] < 1.37
     assert tolerance["queue offer/take"] < 1.37
+
+
+# queue offer/take, (head, base) per round, from CI run 43820738478 (a test-only change):
+# the base's round 2 ran 11% faster than its other four rounds.
+_ONE_FAST_BASE_ROUND = [
+    (12.582, 12.263),
+    (12.601, 10.936),
+    (12.653, 12.708),
+    (13.214, 12.387),
+    (12.704, 12.671),
+]
+
+
+def _best_of_each_side(rounds: list[tuple[float, float]]) -> float:
+    """How compare.py used to judge: each side's best round, divided."""
+    return min(head for head, _ in rounds) / min(base for _, base in rounds)
+
+
+def test_one_fast_round_on_one_side_does_not_decide_the_verdict():
+    """The best of each side read x1.151 for a change that touched no source, over the
+    limit of x1.10; each round against the base run next to it reads x1.026."""
+    limit = _module().TOLERANCE["queue offer/take"]
+    assert _best_of_each_side(_ONE_FAST_BASE_ROUND) > limit
+    assert _module().slowdown(_ONE_FAST_BASE_ROUND) < 1.03
+
+
+def test_a_regression_in_most_rounds_fails_despite_one_fast_round():
+    """x1.2 slower in four rounds of five; one fast head round hid it from the best of each
+    side."""
+    rounds = [(12.0, 10.0), (12.1, 10.0), (9.0, 10.0), (12.2, 10.1), (12.0, 9.9)]
+    limit = _module().TOLERANCE["queue offer/take"]
+    assert _best_of_each_side(rounds) < limit
+    assert _module().slowdown(rounds) > limit

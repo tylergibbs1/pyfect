@@ -5,8 +5,10 @@ The base is the commit this branch grew from: the merge base with ``origin/main`
 branch's) can hide a regression or invent one, so it is the default, and naming another
 commit takes ``--base``. Both sides run the same benchmarks (this checkout's
 ``streams.py``) against their own ``src/``, alternating in fresh processes, each case's time
-over the gate's calibration; a case is compared by the best of its rounds. A case slower
-than its base by more than its tolerance fails.
+over the gate's calibration. Each round compares a case with the base run next to it, and the
+median of those ratios is the case's slowdown, so one round that ran fast or slow on either
+side (a busy neighbour, a slowed calibration) does not decide it. A case slower than its base
+by more than its tolerance fails.
 
 Tolerances come from CI's spread comparing a commit with itself (``--base HEAD``), with
 room (see ``TOLERANCE``). ``gate.py`` still catches slow drift against ``baseline.json``,
@@ -19,6 +21,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import statistics
 import subprocess
 import sys
 import tempfile
@@ -70,9 +73,14 @@ def _measure(src: Path, cases: list[str]) -> dict[str, float]:
     return found
 
 
-def compare(base: str, rounds: int, cases: list[str]) -> dict[str, tuple[float, float]]:
-    """Each case's best ratio over the calibration: (this checkout, ``base``)."""
-    best: dict[str, list[float]] = {case: [float("inf"), float("inf")] for case in cases}
+def slowdown(rounds: list[tuple[float, float]]) -> float:
+    """The median over rounds of this checkout's time against the base run next to it."""
+    return statistics.median(head / base for head, base in rounds)
+
+
+def compare(base: str, rounds: int, cases: list[str]) -> dict[str, list[tuple[float, float]]]:
+    """Each case's ratio over the calibration per round: (this checkout, ``base``)."""
+    found: dict[str, list[list[float]]] = {case: [] for case in cases}
     with tempfile.TemporaryDirectory() as tmp:
         tree = Path(tmp) / "base"
         _git("worktree", "add", "--detach", "-q", str(tree), base)
@@ -82,13 +90,15 @@ def compare(base: str, rounds: int, cases: list[str]) -> dict[str, tuple[float, 
                 # Alternate which side goes first, so a machine warming up or slowing down
                 # costs both alike.
                 order = (0, 1) if i % 2 == 0 else (1, 0)
+                for case in cases:
+                    found[case].append([0.0, 0.0])
                 for side in order:
                     for case, ratio in _measure(sides[side], cases).items():
-                        best[case][side] = min(best[case][side], ratio)
+                        found[case][-1][side] = ratio
                         print(f"round {i + 1} {('head', 'base')[side]} {case}: {ratio:.3f}")
         finally:
             _git("worktree", "remove", "--force", str(tree))
-    return {case: (now, was) for case, (now, was) in best.items()}
+    return {case: [(now, was) for now, was in pairs] for case, pairs in found.items()}
 
 
 def main() -> int:
@@ -103,10 +113,13 @@ def main() -> int:
     cases: list[str] = args.case or [name for name, _, _ in CASES]
     print(f"comparing HEAD {_git('rev-parse', '--short', 'HEAD')} with base {base[:12]}")
     slower: list[str] = []
-    for case, (now, was) in compare(base, args.rounds, cases).items():
+    for case, pairs in compare(base, args.rounds, cases).items():
         limit = TOLERANCE.get(case, DEFAULT_TOLERANCE)
-        verdict = "slower" if now > was * limit else "ok"
-        print(f"  {case}: {now:.3f} vs {was:.3f}, x{now / was:.3f} (limit x{limit}) {verdict}")
+        ratio = slowdown(pairs)
+        verdict = "slower" if ratio > limit else "ok"
+        print(
+            f"  {case}: x{ratio:.3f}, the median of {len(pairs)} rounds (limit x{limit}) {verdict}"
+        )
         if verdict == "slower":
             slower.append(case)
     if slower:
