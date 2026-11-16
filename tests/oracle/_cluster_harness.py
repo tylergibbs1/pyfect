@@ -98,6 +98,7 @@ type Backend = Literal["sqlite", "pg"]
 type LockMode = Literal["advisory", "row"]
 type LockFaultMode = Literal["blackhole", "stuck", "fail", "hangRelease", "clear"]
 type RunnerState = Literal["frozen", "killed", "running", "stopped"]
+type StorageFault = Literal["none", "locks", "storage"]
 type RunnerEntities = Layer[Never, Never, Any]
 type DatabaseMaker = Callable[[], fx.Effect[SqlClientService, Any, Scope]]
 
@@ -405,6 +406,56 @@ class _RunnerStorageController:
             release=release,
             release_all=release_all,
             unregister=unregister,
+        )
+        self.fault: StorageFault = "none"
+        self.controlled = self._faultable(self.controlled)
+
+    def _faultable(self, storage: RunnerStorageService) -> RunnerStorageService:
+        """``storage`` failing while ``fault`` covers the operation: under
+        ``"locks"`` the lock operations (the empty ``refresh``, the
+        liveness probe, is a heartbeat and passes), under ``"storage"``
+        every operation (pyfect-only)."""
+
+        def guarded[A](lock_operation: bool, effect: fx.Effect[A, Any]) -> fx.Effect[A, Any]:
+            def start() -> fx.Effect[A, Any]:
+                if self.fault == "storage" or (self.fault == "locks" and lock_operation):
+                    return fx.fail(PersistenceError(cause=RuntimeError("injected storage fault")))
+                return effect
+
+            return fx.suspend(start)
+
+        def refresh(address: RunnerAddress, shard_ids: Any) -> fx.Effect[list[ShardId], Any]:
+            shards = list(shard_ids)
+            return guarded(bool(shards), storage.refresh(address, shards))
+
+        def register(runner: Any, healthy: bool) -> fx.Effect[Any, Any]:
+            return guarded(False, storage.register(runner, healthy))
+
+        def unregister(address: RunnerAddress) -> fx.Effect[None, Any]:
+            return guarded(False, storage.unregister(address))
+
+        def set_runner_health(address: RunnerAddress, healthy: bool) -> fx.Effect[None, Any]:
+            return guarded(False, storage.set_runner_health(address, healthy))
+
+        def acquire(address: RunnerAddress, shard_ids: Any) -> fx.Effect[list[ShardId], Any]:
+            return guarded(True, storage.acquire(address, list(shard_ids)))
+
+        def release(address: RunnerAddress, shard: ShardId) -> fx.Effect[None, Any]:
+            return guarded(True, storage.release(address, shard))
+
+        def release_all(address: RunnerAddress) -> fx.Effect[None, Any]:
+            return guarded(True, storage.release_all(address))
+
+        return copy.replace(
+            storage,
+            register=register,
+            unregister=unregister,
+            get_runners=guarded(False, storage.get_runners),
+            set_runner_health=set_runner_health,
+            acquire=acquire,
+            refresh=refresh,
+            release=release,
+            release_all=release_all,
         )
 
     def _while_frozen[A](
@@ -905,6 +956,16 @@ class Cluster:
 
     def fault_lock(self, runner: ClusterRunner, mode: LockFaultMode) -> fx.Effect[None]:
         return runner.lock_fault.set(mode)
+
+    def fault_storage(self, runner: ClusterRunner, fault: StorageFault) -> fx.Effect[None]:
+        """Makes ``runner``'s runner storage fail: its lock operations
+        (``"locks"``: its heartbeats still pass) or every operation
+        (``"storage"``), on any backend (pyfect-only)."""
+
+        def apply() -> None:
+            runner.controller.fault = fault
+
+        return fx.sync(apply)
 
     def cut_socket(
         self,
