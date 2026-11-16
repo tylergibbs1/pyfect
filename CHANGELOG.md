@@ -20,6 +20,12 @@
   reaches MySQL, as an over-long id or queue name already did, since `INSERT IGNORE` would cut
   it.
 
+### Docs
+
+- The installation page and the README say that `uv init --python 3.14+gil` needs uv 0.9.8 or
+  later (older uv says "No interpreter found for executable name '3.14+gil'"), and how to
+  update it.
+
 ## 0.6.8 (2026-11-16)
 
 ### Added

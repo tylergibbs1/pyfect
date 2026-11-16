@@ -481,3 +481,18 @@ def test_a_property_escape_shows_why_an_installed_regex_failed(monkeypatch: pyte
     with pytest.raises(ImportError, match="a shared library is missing"):
         compile_ecma(r"\p{Lu}")
     compile_ecma.cache_clear()
+
+
+# uv 0.9.7 and earlier say only "No interpreter found for executable name '3.14+gil'".
+_GIL_REQUEST = re.compile(r"\buv\s[^`\n]*?--python[ =]['\"]?[^\s'\"`]+\+gil")
+
+
+def test_every_document_with_a_gil_request_names_the_uv_it_needs():
+    offenders = [
+        str(path.relative_to(_ROOT))
+        for path in _DOCUMENTS
+        if path not in _HISTORY
+        and _GIL_REQUEST.search(text := path.read_text())
+        and "uv 0.9.8 or later" not in text
+    ]
+    assert offenders == []
