@@ -78,6 +78,7 @@ from pyfect._stack_frame import CurrentStackFrame, InterruptorStackTrace, StackF
 from pyfect._tracer_ref import CurrentTracer
 from pyfect._wake_tracking import Tracking, WakeTracker
 from pyfect.cause import Cause
+from pyfect.cause import die as die_cause
 from pyfect.cause import interrupt as interrupt_cause
 from pyfect.context import Context, Reference, Tag
 from pyfect.duration import Duration
@@ -275,6 +276,7 @@ class Fiber(Generic[A_co, E_co]):
         "_batch_first",
         "_batch_others",
         "_batch_run",
+        "_blocking_errors",
         "_children",
         "_ctx",
         "_decided_on_resume",
@@ -326,6 +328,9 @@ class Fiber(Generic[A_co, E_co]):
         self._children: dict[Fiber[Any, Any], None] = {}
         self._observers: list[Callable[[Exit[Any, Any]], None]] = []
         self._exit: Exit[Any, Any] | None = None
+        # BlockingStepWarnings a filter made errors, which the watchdog thread (see
+        # ``_blocking_watchdog``) adds for the fiber to fail with as it ends.
+        self._blocking_errors: list[Exception] | None = None
         self._waiting: _Wait | None = None
         self._yielded: _Yielded | None = None
         self._ops_on_resume = 0
@@ -927,6 +932,8 @@ class Fiber(Generic[A_co, E_co]):
         if self._children:
             self._interruptible = False  # pragma: no mutate, falsy either way
             return _end_children(list(self._children), ex, self._interruptor_annotations())
+        if self._blocking_errors is not None:
+            ex = _with_defects(ex, self._blocking_errors)
         self._exit = ex
         if self._runtime_metrics is not None:
             self._runtime_metrics.record_fiber_end(self._ctx, ex)
@@ -1196,6 +1203,19 @@ class _AsyncFinalizer(Frame):
         if not cause.has_interrupts:
             return _failing(cause)
         return _run_finalizer(self.canceler, Failure(cause))
+
+
+def _with_defects(ex: Exit[Any, Any], errors: list[Exception]) -> Exit[Any, Any]:
+    """``ex`` failed with each of ``errors`` as a defect too, taking them out of the list
+    one at a time, as the thread adding them may take one back."""
+    cause = ex.cause if isinstance(ex, Failure) else None
+    while True:
+        try:
+            defect = die_cause(errors.pop(0))
+        except IndexError:
+            break
+        cause = defect if cause is None else cause + defect
+    return ex if cause is None else Failure(cause)
 
 
 def _no_op() -> None:

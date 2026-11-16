@@ -7,8 +7,12 @@ Unset, nothing starts: the fiber loop has no code for it, so it costs nothing.""
 import subprocess
 import sys
 import textwrap
+from pathlib import Path
 
 import pytest
+
+import pyfect as fx
+from pyfect._blocking_watchdog import _deliver  # pyright: ignore[reportPrivateUsage]
 
 _BLOCKING = """
 import time
@@ -48,8 +52,7 @@ def test_a_blocking_step_warns_at_its_line():
 
 
 def test_a_warning_filter_silences_it():
-    # The warning is emitted on the watchdog's thread, so `-W error` cannot stop the step;
-    # filters can still hide it.
+    # The warning is emitted on the watchdog's thread; filters there hide it.
     result = _run(
         _BLOCKING, env={"PYFECT_WARN_BLOCKING": "100", "PYTHONWARNINGS": "ignore::RuntimeWarning"}
     )
@@ -75,3 +78,81 @@ def test_a_value_that_is_not_a_positive_number_of_milliseconds_fails_import(valu
     result = _run("import pyfect", env={"PYFECT_WARN_BLOCKING": value})
     assert result.returncode != 0
     assert "PYFECT_WARN_BLOCKING" in result.stderr
+
+
+_BLOCKING_THREE_TIMES = """
+import time
+import pyfect as fx
+
+@fx.fn
+def slow(n: int):
+    yield from fx.void
+    time.sleep(0.4)
+    return n
+
+for n in range(3):
+    ex = fx.run_blocking_exit(slow(n))
+    print(n, type(ex.cause.squash()).__name__ if isinstance(ex, fx.Failure) else ex.value)
+"""
+
+
+def test_made_an_error_it_fails_each_blocking_fiber_and_the_watchdog_goes_on():
+    # 0.6.8: the raise killed the watchdog thread ("Exception in thread
+    # pyfect-blocking-watchdog"), the later steps never warned and the run exited 0.
+    result = _run(
+        _BLOCKING_THREE_TIMES,
+        env={"PYFECT_WARN_BLOCKING": "100", "PYTHONWARNINGS": "error:a fiber step"},
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.split("\n")[:3] == [
+        "0 BlockingStepWarning",
+        "1 BlockingStepWarning",
+        "2 BlockingStepWarning",
+    ]
+    assert "Exception in thread" not in result.stderr
+
+
+def test_made_an_error_by_pytest_s_filterwarnings_it_fails_the_test(tmp_path: Path):
+    (tmp_path / "pyproject.toml").write_text(
+        "[tool.pytest.ini_options]\n"
+        'filterwarnings = ["error::pyfect.scheduler.BlockingStepWarning"]\n'
+    )
+    (tmp_path / "test_block.py").write_text(
+        textwrap.dedent(
+            """
+            import time
+            import pyfect as fx
+
+            @fx.fn
+            def slow():
+                yield from fx.void
+                time.sleep(0.4)
+                return 1
+
+            def test_slow():
+                assert fx.run_blocking(slow()) == 1
+            """
+        )
+    )
+    result = subprocess.run(
+        [sys.executable, "-m", "pytest", "-p", "no:cacheprovider", "-q", str(tmp_path)],
+        cwd=tmp_path,
+        env={"PATH": "", "PYFECT_WARN_BLOCKING": "100"},
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "1 failed" in result.stdout
+    assert "BlockingStepWarning: a fiber step has run for" in result.stdout
+    assert "PytestUnhandledThreadExceptionWarning" not in result.stdout
+
+
+def test_an_error_for_a_fiber_that_ended_first_is_taken_back():
+    # The step can return between the watchdog's sample and the raise; if the fiber then
+    # ends before the error is added, the watchdog shows the warning instead.
+    fiber = fx.run_blocking(fx.succeed(1).fork().flat_map(lambda f: f.await_exit().as_(f)))
+    assert _deliver(fiber, RuntimeError("late"), still_running=False) is False
+    assert fiber.poll_unsafe() == fx.Success(1)
+    assert fiber._blocking_errors == []  # pyright: ignore[reportPrivateUsage]

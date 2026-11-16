@@ -7,6 +7,10 @@ has no code for this: the watchdog reads ``sys._current_frames()``, finds the in
 ``Fiber._loop`` frame on each thread, and remembers the frame it called. A step in progress
 keeps that frame; the next step is a new frame. So the loop pays nothing, whether the
 variable is set or not, and unset, no thread starts.
+
+A warning filter that makes the warning an error (``-W error``, pytest's ``filterwarnings``)
+raises it on the watchdog's thread. The watchdog then hands it to the blocked fiber, which
+fails with it as a defect when it ends, and goes on watching.
 """
 
 from __future__ import annotations
@@ -19,7 +23,7 @@ import time
 import traceback
 import warnings
 from types import CodeType, FrameType
-from typing import Final
+from typing import Any, Final
 
 from pyfect._fiber import Fiber
 from pyfect.scheduler import WARN_BLOCKING_ENV, BlockingStepWarning
@@ -56,15 +60,23 @@ def start_from_environment() -> None:
         ).start()
 
 
-def _step_frame(innermost: FrameType) -> FrameType | None:
-    """The frame the innermost ``Fiber._loop`` on this stack called, if a step is running."""
+def _step(innermost: FrameType) -> tuple[Fiber[Any, Any], FrameType] | None:
+    """The fiber of the innermost ``Fiber._loop`` on this stack and the frame that loop
+    called, if a step is running."""
     child: FrameType | None = None
     frame: FrameType | None = innermost
     while frame is not None:
         if frame.f_code is _LOOP:
-            return child
+            return None if child is None else (frame.f_locals["self"], child)
         child, frame = frame, frame.f_back
     return None
+
+
+def _running(ident: int, step: FrameType) -> bool:
+    """Whether ``step`` is still the running step of thread ``ident``."""
+    innermost = sys._current_frames().get(ident)  # pyright: ignore[reportPrivateUsage]
+    found = None if innermost is None else _step(innermost)
+    return found is not None and found[1] is step
 
 
 def _watch(threshold: float) -> None:
@@ -78,23 +90,60 @@ def _watch(threshold: float) -> None:
         stacks = sys._current_frames()  # pyright: ignore[reportPrivateUsage]
         running: dict[int, tuple[FrameType, float, bool]] = {}
         for ident, innermost in stacks.items():
-            step = None if ident == me else _step_frame(innermost)
-            if step is None:
+            found = None if ident == me else _step(innermost)
+            if found is None:
                 continue
+            fiber, step = found
             previous = seen.get(ident)
             if previous is None or previous[0] is not step:
                 running[ident] = (step, now, False)
                 continue
             _, since, reported = previous
             if not reported and now - since >= threshold:
-                _report(innermost, step, now - since)
+                _report(fiber, ident, innermost, step, now - since)
                 reported = True
             running[ident] = (step, since, reported)
         seen = running
         del stacks
 
 
-def _report(innermost: FrameType, step: FrameType, elapsed: float) -> None:
+def _report(
+    fiber: Fiber[Any, Any], ident: int, innermost: FrameType, step: FrameType, elapsed: float
+) -> None:
+    warning, filename, lineno = _warning(innermost, step, elapsed)
+    try:
+        warnings.warn_explicit(warning, BlockingStepWarning, filename, lineno, registry={})
+    except Exception as raised:  # a filter made it an error: the fiber fails with it
+        # Its traceback is the watchdog's; the fiber's run raises it where it is read.
+        raised = raised.with_traceback(None)
+        if not _deliver(fiber, raised, still_running=_running(ident, step)):
+            sys.stderr.write(warnings.formatwarning(warning, BlockingStepWarning, filename, lineno))
+
+
+def _deliver(fiber: Fiber[Any, Any], raised: Exception, *, still_running: bool) -> bool:
+    """Make ``fiber`` fail with ``raised`` when it ends; ``False`` if it ended first.
+
+    The fiber takes the errors it was given as it ends. ``still_running`` is whether the
+    blocking step was still running after ``raised`` was added: then the fiber ends later
+    and takes it. If not, it may have ended already, and ``raised`` is still there only if
+    it has; taking it back then means it never will."""
+    errors = fiber._blocking_errors  # pyright: ignore[reportPrivateUsage]
+    if errors is None:
+        errors = fiber._blocking_errors = []  # pyright: ignore[reportPrivateUsage]
+    errors.append(raised)
+    if still_running:
+        return True
+    try:
+        errors.remove(raised)
+    except ValueError:
+        return True  # the fiber took it
+    return False
+
+
+def _warning(
+    innermost: FrameType, step: FrameType, elapsed: float
+) -> tuple[BlockingStepWarning, str, int]:
+    """The warning about ``step``, and the file and line it is about."""
     frames: list[FrameType] = []
     frame: FrameType | None = innermost
     while frame is not None:
@@ -106,15 +155,10 @@ def _report(innermost: FrameType, step: FrameType, elapsed: float) -> None:
     users = [f for f in frames if not f.f_code.co_filename.startswith(_PACKAGE)] or frames
     summary = traceback.StackSummary.extract((f, f.f_lineno) for f in reversed(users))
     blocked_at = summary[-1]
-    warnings.warn_explicit(
-        BlockingStepWarning(
-            f"a fiber step has run for {elapsed * 1000:.0f} ms without returning, blocking "
-            "every fiber on its thread; .timeout and interrupts wait for it. Wait with "
-            "fx.sleep, and run a blocking call you can't avoid with fx.blocking(f). The "
-            "step:\n" + "".join(summary.format()).rstrip()
-        ),
-        BlockingStepWarning,
-        blocked_at.filename,
-        blocked_at.lineno or 0,
-        registry={},
+    warning = BlockingStepWarning(
+        f"a fiber step has run for {elapsed * 1000:.0f} ms without returning, blocking "
+        "every fiber on its thread; .timeout and interrupts wait for it. Wait with "
+        "fx.sleep, and run a blocking call you can't avoid with fx.blocking(f). The "
+        "step:\n" + "".join(summary.format()).rstrip()
     )
+    return warning, blocked_at.filename, blocked_at.lineno or 0

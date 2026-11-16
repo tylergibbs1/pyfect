@@ -76,7 +76,11 @@ These run, or fail far from the line that caused them. Most are what a coroutine
   Nothing fails, so to find one, run with `PYFECT_WARN_BLOCKING=100`: a watchdog thread then
   warns with `BlockingStepWarning` (in `pyfect.scheduler`), at the blocking line, about any step
   that runs 100 ms or longer. It is a development tool: off, it starts no thread and the run
-  does no extra work. Under `fx.run_async`, asyncio's debug mode (`python -X dev`) also logs
+  does no extra work. To fail on one, make the warning an error
+  (`python -W "error:a fiber step"`, or pytest's
+  `filterwarnings = ["error::pyfect.scheduler.BlockingStepWarning"]`): the fiber that ran the
+  step goes on until it ends, then fails with the warning as a defect, so `run_blocking` raises
+  it. Under `fx.run_async`, asyncio's debug mode (`python -X dev`) also logs
   `Executing <Handle AsyncioScheduler._drain() ...> took 0.302 seconds`, without the line.
 - **`run_blocking` in a coroutine or a notebook cell** blocks the running event loop until the
   effect is done, and warns with `RunBlockingInEventLoopWarning`; `run_main` there raises a

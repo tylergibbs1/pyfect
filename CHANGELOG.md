@@ -4,6 +4,13 @@
 
 ### Fixed
 
+- `BlockingStepWarning` made an error (`-W "error:a fiber step"`, pytest's
+  `filterwarnings = ["error::pyfect.scheduler.BlockingStepWarning"]`) killed the
+  `PYFECT_WARN_BLOCKING` watchdog thread with "Exception in thread pyfect-blocking-watchdog"
+  (0.6.8): later blocking steps never warned, and the run and the test still passed. The
+  watchdog now hands the error to the fiber that ran the step, which fails with it as a
+  defect when it ends (so `run_blocking` raises it and the test fails), and goes on watching.
+
 - SQL `PersistedQueue` on MySQL: an offer no longer deadlocks an `"untilExecuted"` re-offer
   of the same id (0.6.6 to 0.6.8). The offer skips a duplicate with `INSERT IGNORE` again, as in Effect, which
   only locks the duplicate's `(id, queue_name)` entry. `ON DUPLICATE KEY UPDATE` also locked

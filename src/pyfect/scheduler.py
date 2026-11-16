@@ -691,7 +691,8 @@ class BlockingStepWarning(RuntimeWarning):
     """A fiber step ran for ``PYFECT_WARN_BLOCKING`` milliseconds or longer without returning
     (``time.sleep`` in an effect, a blocking read), so every fiber on its thread waited, and
     ``.timeout`` and interrupts with them. Emitted only when the variable is set, from a
-    watchdog thread, at the line the step was running."""
+    watchdog thread, at the line the step was running. Made an error by a warning filter,
+    it fails the fiber that ran the step, as a defect, when that fiber ends."""
 
 
 __all__ = [
