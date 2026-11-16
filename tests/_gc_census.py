@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import gc
 from collections import _count_elements  # pyright: ignore[reportAttributeAccessIssue, reportUnknownVariableType]
-from itertools import chain
+from itertools import chain, compress, tee
 from typing import cast
 
 
@@ -38,12 +38,15 @@ def tracked_count() -> int:
 
 
 def tracked_of[T](kind: type[T]) -> list[T]:
-    """The tracked instances of ``kind``, whose metaclass must be ``type``: another
-    metaclass's ``__instancecheck__`` would run Python code while the list is held."""
+    """The tracked objects whose type is ``kind`` or a subclass. ``kind``'s metaclass must be
+    ``type``: another metaclass's ``__subclasscheck__`` would run Python code while the list
+    is held. The test reads each object's real type, not ``__class__``, which a weak proxy
+    forwards to its referent (a ReferenceError once that has died)."""
     if type(kind) is not type:
         raise TypeError(f"{kind.__name__} has metaclass {type(kind).__name__}, not type")
     gc.disable()
     try:
-        return cast("list[T]", list(filter(kind.__instancecheck__, _tracked())))
+        objects, of = tee(_tracked())
+        return cast("list[T]", list(compress(objects, map(kind.__subclasscheck__, map(type, of)))))
     finally:
         gc.enable()

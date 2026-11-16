@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import ast
 import threading
+import weakref
 from pathlib import Path
 
 import _source
@@ -57,6 +58,20 @@ def test_the_census_finds_what_is_tracked() -> None:
     assert tracked_of(Tracked) == kept
     assert counts_by_type()[Tracked] == 2
     assert tracked_count() >= sum(counts_by_type().values()) - 100
+
+
+def test_the_census_reads_past_a_proxy_whose_referent_has_died() -> None:
+    # A proxy forwards __class__ to its referent, so isinstance() on one whose referent is gone
+    # raises ReferenceError. Another test can leave such a proxy behind for the collector.
+    class Referent:
+        pass
+
+    referent = Referent()
+    dead = weakref.proxy(referent, lambda _: None)  # a callback makes the proxy tracked
+    del referent
+    kept = [Referent()]
+    assert tracked_of(Referent) == kept
+    assert type(dead) in counts_by_type()
 
 
 def test_a_class_whose_metaclass_checks_instances_in_python_is_refused() -> None:
