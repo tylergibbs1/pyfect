@@ -2,9 +2,14 @@
 that compared with a later commit once hid a 30% fork-heavy regression."""
 
 import importlib.util
+import json
 import subprocess
+import sys
+from collections.abc import Callable
 from pathlib import Path
 from types import ModuleType
+
+import pytest
 
 _COMPARE = Path(__file__).resolve().parent.parent / "benchmarks" / "compare.py"
 
@@ -92,3 +97,53 @@ def test_a_regression_in_most_rounds_fails_despite_one_fast_round():
     limit = _module().TOLERANCE["queue offer/take"]
     assert _best_of_each_side(rounds) < limit
     assert _module().slowdown(rounds) > limit
+
+
+# queue offer/take on one runner comparing a commit with itself, 5 rounds of
+# (head time, head calibration, base time, base calibration) in ms, from the noise run
+# 43854358958 (runner 6). The calibration swung 25% between processes; the case did not.
+_SWINGING_CALIBRATION = [
+    (657.55, 43.98, 662.34, 39.52),
+    (653.08, 40.83, 643.58, 41.42),
+    (648.38, 41.11, 722.89, 41.45),
+    (663.14, 49.42, 652.98, 40.21),
+    (643.36, 39.65, 660.58, 41.77),
+]
+
+
+def test_a_commit_compared_with_itself_reads_even_from_raw_times():
+    """Both sides run back to back on one runner, so there is nothing for a calibration to
+    cancel: dividing by each process's calibration read x0.904 here (and x1.111 in release
+    run 43850829053, failing 0.6.9), while the raw times read x0.993."""
+    calibrated = [(h / hc, b / bc) for h, hc, b, bc in _SWINGING_CALIBRATION]
+    raw = [(h, b) for h, _, b, _ in _SWINGING_CALIBRATION]
+    assert abs(_module().slowdown(calibrated) - 1) > 0.09
+    assert abs(_module().slowdown(raw) - 1) < 0.01
+
+
+def test_each_side_reports_raw_times(monkeypatch: pytest.MonkeyPatch):
+    """compare.py's measuring process must not divide by the gate's calibration."""
+    benchmarks = _COMPARE.parent
+    monkeypatch.setattr(sys, "path", [str(benchmarks), *sys.path])
+    spec = importlib.util.spec_from_file_location("benchmark_measure", benchmarks / "_measure.py")
+    assert spec is not None and spec.loader is not None
+    measure = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(measure)
+
+    def no_calibration() -> int:
+        raise AssertionError("compare.py measured the calibration")
+
+    monkeypatch.setattr(measure, "calibrate", no_calibration, raising=False)
+
+    def once(run: Callable[[], float]) -> float:
+        return run()
+
+    monkeypatch.setattr(measure, "best_of", once)
+    monkeypatch.setattr(measure, "CASES", [("a case", None, lambda: 7.5)])
+    monkeypatch.setattr(
+        "sys.argv", ["_measure.py", str(Path(measure.pyfect.__file__).parent.parent), "a case"]
+    )
+    printed: list[str] = []
+    monkeypatch.setattr("builtins.print", printed.append)
+    measure.main()
+    assert json.loads(printed[0]) == {"a case": 7.5}
