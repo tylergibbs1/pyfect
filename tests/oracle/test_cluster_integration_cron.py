@@ -8,8 +8,7 @@ from __future__ import annotations
 
 import builtins
 from collections.abc import Callable, Generator
-from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any, cast
 
 import pyfect as fx
@@ -20,23 +19,16 @@ from pyfect.cluster.cluster_schema import ShardGroup
 from pyfect.cluster.entity import CurrentRunnerAddress, Entity
 from pyfect.context import Context
 from pyfect.cron import Cron, parse_unsafe
-from pyfect.cron import next as cron_next
 from pyfect.date_time import format_iso
 from pyfect.latch import Latch
 
 from ._cluster_harness import ClusterDatabase, make
+from ._cron_schedule import Tick, check_schedule, next_scheduled, tick
 
 type Body = Generator[fx.Effect[Any, Any, Any], Any]
 
 every_second = parse_unsafe("* * * * * *", "UTC")
 test_config = {"shards_per_group": 12}
-
-
-@dataclass(frozen=True)
-class Tick:
-    at: float
-    runner: str
-    scheduled: str
 
 
 def now_millis() -> fx.Effect[float]:
@@ -57,7 +49,7 @@ def record_tick(ticks: list[Tick]) -> fx.Effect[bool, Any, Any]:
         scheduled = yield from CurrentScheduledTime()
         at = yield from now_millis()
         is_first = not ticks
-        ticks.append(Tick(at, f"{runner.host}:{runner.port}", format_iso(scheduled)))
+        ticks.append(tick(at, f"{runner.host}:{runner.port}", format_iso(scheduled)))
         return is_first
 
     return record
@@ -82,23 +74,9 @@ def cron_probe(name: str, shard_group: str = "default") -> builtins.type[Entity]
     )
 
 
-def next_scheduled(cron: Cron, after: str | float) -> str:
-    start = (
-        datetime.fromisoformat(after)
-        if isinstance(after, str)
-        else datetime.fromtimestamp(after / 1000, UTC)
-    )
-    return format_iso(cron_next(cron, start).astimezone(UTC))
-
-
 def assert_scheduled_from_execution_time(cron: Cron, ticks: list[Tick], start: int = 1) -> None:
     for index in range(start, len(ticks)):
         assert ticks[index].scheduled == next_scheduled(cron, ticks[index - 1].at)
-
-
-def assert_scheduled_from_previous(cron: Cron, ticks: list[Tick]) -> None:
-    for index in range(1, len(ticks)):
-        assert ticks[index].scheduled == next_scheduled(cron, ticks[index - 1].scheduled)
 
 
 def run(body: Callable[[], Body]) -> fx.Effect[None, Any]:
@@ -210,16 +188,35 @@ def test_calculates_the_next_run_from_the_previous_instant_or_the_current_time(
         gate.open_unsafe()
         yield from cluster.wait_until(
             "The cron jobs did not resume after their first execution",
-            fx.sync(lambda: len(previous_ticks) >= 4 and len(current_ticks) >= 4),
+            fx.sync(
+                lambda: (
+                    len({t.scheduled for t in previous_ticks}) >= 4
+                    and len({t.scheduled for t in current_ticks}) >= 4
+                )
+            ),
             12,
         )
 
-        previous_second = millis_of(previous_ticks[1].scheduled)
-        current_second = millis_of(current_ticks[1].scheduled)
-        assert_scheduled_from_previous(every_second, previous_ticks)
-        assert_scheduled_from_execution_time(every_second, current_ticks, 2)
-        assert previous_ticks[1].at - previous_second >= 2000
-        assert current_ticks[1].at - current_second <= 1000
+        previous_runs, _ = check_schedule(
+            every_second,
+            previous_ticks,
+            cluster.events,
+            name=f"previous-{backend}",
+            label="calculates/previous",
+        )
+        current_runs, _ = check_schedule(
+            every_second,
+            current_ticks,
+            cluster.events,
+            name=f"current-{backend}",
+            label="calculates/current",
+            in_order=False,
+        )
+        previous_second = millis_of(previous_runs[1].scheduled)
+        current_second = millis_of(current_runs[1].scheduled)
+        assert_scheduled_from_execution_time(every_second, current_runs, 2)
+        assert previous_runs[1].at - previous_second >= 2000
+        assert current_runs[1].at - current_second <= 1000
 
     yield from run(body)
 
@@ -295,7 +292,13 @@ def test_catches_up_or_skips_stale_runs_and_preserves_the_schedule_across_restar
         )
         assert first_catch_up.at - millis_of(first_catch_up.scheduled) >= 2000
         assert first_after_skip.at - millis_of(first_after_skip.scheduled) <= 750
-        assert_scheduled_from_previous(every_second, catch_up_ticks)
+        check_schedule(
+            every_second,
+            catch_up_ticks,
+            cluster.events,
+            name=f"catch-up-{backend}",
+            label="catches-up",
+        )
 
     yield from run(body)
 
@@ -333,12 +336,131 @@ def test_resumes_without_duplicate_or_missing_ticks_after_the_singleton_owner_di
         )
         yield from cluster.wait_for_stable_assignments()
 
-        assert_scheduled_from_previous(every_second, ticks)
-        assert len({tick.scheduled for tick in ticks}) == len(ticks)
+        check_schedule(every_second, ticks, cluster.events, name=name, label="owner-dies")
         owner_address = f"{owner.address.host}:{owner.address.port}"
         assert all(tick.runner != owner_address for tick in ticks[after_kill:])
 
     yield from run(body)
+
+
+type Disrupt = Callable[[Any, Any], fx.Effect[None]]
+
+
+def run_one_instant_again(
+    cluster_db: ClusterDatabase,
+    name: str,
+    disrupt: Disrupt,
+    label: str,
+    recover: Disrupt | None = None,
+) -> fx.Effect[str, Any]:
+    """Run a cron and, after its first armed run, ``disrupt(cluster,
+    owner)`` before the run's reply is stored; once a lock event freed the
+    run, ``recover(cluster, owner)``; wait until that instant ran again;
+    give the checked path."""
+
+    def body() -> Generator[fx.Effect[Any, Any, Any], Any, str]:
+        ticks: list[Tick] = []
+        stalled: list[Tick] = []
+        clusters: list[Any] = []
+        armed = [False]
+
+        owners: list[Any] = []
+
+        @fx.gen
+        def execute():
+            yield from record_tick(ticks)
+            if not armed[0] or stalled:
+                return
+            cluster = clusters[0]
+            address = yield from CurrentRunnerAddress()
+            [owner] = [runner for runner in cluster.runners if runner.address == address]
+            owners.append(owner)
+            stalled.append(ticks[-1])
+            yield from disrupt(cluster, owner)
+
+        cron = cluster_cron.make(
+            name=name,
+            cron=every_second,
+            calculate_next_run_from_previous=True,
+            execute=execute,
+        )
+        cluster = yield from make(cluster_db, config=test_config, entities=cron)
+        clusters.append(cluster)
+        yield from cluster.start(3)
+        yield from cluster.wait_for_stable_assignments()
+        armed[0] = True
+
+        if recover is not None:
+            yield from cluster.wait_until(
+                "No lock event freed the disrupted run",
+                fx.sync(
+                    lambda: (
+                        bool(stalled)
+                        and any(event.seq > stalled[0].seq for event in cluster.events.lock_events)
+                    )
+                ),
+                20,
+            )
+            yield from recover(cluster, owners[0])
+
+        def since_stalled() -> list[Tick]:
+            return ticks[ticks.index(stalled[0]) :] if stalled else []
+
+        def replayed() -> bool:
+            later = since_stalled()[1:]
+            return any(t.scheduled == stalled[0].scheduled for t in later) and (
+                later[-1].scheduled != stalled[0].scheduled
+            )
+
+        yield from cluster.wait_until("The disrupted run did not run again", fx.sync(replayed), 20)
+        _, path = check_schedule(
+            every_second, since_stalled(), cluster.events, name=name, label=label
+        )
+        return path
+
+    return fx.scoped(fx.gen(body))
+
+
+@testing.live(timeout="90 seconds")
+def test_runs_an_instant_again_when_its_owner_cannot_confirm_its_lock(
+    cluster_db: ClusterDatabase,
+):
+    """pyfect-only, Effect's at-least-once delivery: a run's reply is stored
+    once a lock refresh confirms its owner still holds the shard. A frozen
+    owner never confirms it, so the next owner acquires the shard and runs
+    the instant again; the schedule continues from it. On CI, slow lock
+    refreshes did this while the cluster started."""
+
+    def freeze(cluster: Any, owner: Any) -> fx.Effect[None]:
+        return cluster.freeze(owner)
+
+    path = yield from run_one_instant_again(
+        cluster_db, f"unconfirmed-{cluster_db.backend}", freeze, "forced/acquired"
+    )
+    assert path.startswith("relaxed: repeat ") and " after acquired on " in path, path
+
+
+@testing.live(timeout="90 seconds")
+def test_runs_an_instant_again_when_its_reply_is_fenced(cluster_db: ClusterDatabase):
+    """pyfect-only, Effect's at-least-once delivery: an owner whose lock
+    refreshes fail cannot confirm its lock, so the fence rejects the run's
+    reply and the runner abandons the request; once its lock storage is
+    back, the instant runs again."""
+
+    def fail_refreshes(cluster: Any, owner: Any) -> fx.Effect[None]:
+        return cluster.fail_lock_refreshes(owner)
+
+    def restore_refreshes(cluster: Any, owner: Any) -> fx.Effect[None]:
+        return cluster.fail_lock_refreshes(owner, failing=False)
+
+    path = yield from run_one_instant_again(
+        cluster_db,
+        f"fenced-{cluster_db.backend}",
+        fail_refreshes,
+        "forced/abandoned",
+        restore_refreshes,
+    )
+    assert path.startswith("relaxed: repeat ") and " after abandoned on " in path, path
 
 
 @testing.live(timeout="1 minute")

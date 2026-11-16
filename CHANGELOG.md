@@ -57,6 +57,10 @@
   failed with a `SocketCloseError` 1006 (or lost the messages) instead of a `SocketOpenError`,
   the messages and the close's code. `WsWebSocket` and the ASGI WebSocket keep such events
   until listeners are added and add several at once (`add_event_listeners`).
+- `process`: an input stream (`stdin` or an input descriptor) that fails now wins over the
+  child's exit status even when the child exits before the spawning fiber yields. The stream
+  starts at once, up to its first wait, so no exit is seen before it has run, as under Node.
+  Before, a fast child (`true`) could give exit code 0 on a loaded machine.
 
 ### Docs
 
