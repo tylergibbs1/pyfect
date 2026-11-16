@@ -1,4 +1,4 @@
-"""The threads ``fx.blocking`` runs on.
+"""The threads ``fx.blocking`` and system lookups run on.
 
 Effect has no thread pool (Node runs such work on libuv's), so this follows
 Python's norms for work a program may abandon: daemon threads, started as work
@@ -6,6 +6,10 @@ arrives beyond the idle ones (up to ``ThreadPoolExecutor``'s default count), eac
 exiting after ``idle`` with nothing to do. Interrupting ``blocking`` abandons its
 thread, and a daemon thread does not hold the process open at exit, where a
 ``ThreadPoolExecutor`` worker would be joined for ever.
+
+System lookups (``getaddrinfo``) have a pool of their own of four threads, as
+Node runs ``dns.lookup`` on libuv's pool of four. Lookups beyond four queue, and
+one withdrawn before a thread took it leaves the queue.
 """
 
 from __future__ import annotations
@@ -51,6 +55,16 @@ class BlockingPool:
             threading.Thread(target=self._worker, name=name, daemon=True).start()
         return future
 
+    def withdraw(self, future: Future[Any]) -> None:
+        """Take ``future``'s work off the queue and cancel it, if no thread
+        has taken it yet."""
+        with self._lock:
+            index = next((i for i, (_, queued) in enumerate(self._work) if queued is future), None)
+            if index is None:
+                return
+            del self._work[index]
+        future.cancel()
+
     def _next(self) -> tuple[Callable[[], Any], Future[Any]] | None:
         with self._lock:
             while not self._work:
@@ -84,13 +98,19 @@ def _make() -> BlockingPool:
     )
 
 
+def _make_lookup() -> BlockingPool:
+    return BlockingPool(max_workers=4, idle="10 seconds", name="pyfect-lookup")
+
+
 class _Shared:
     pool = _make()
+    lookup = _make_lookup()
 
 
 def _reset_after_fork() -> None:
     # A forked child has none of the parent's threads.
     _Shared.pool = _make()
+    _Shared.lookup = _make_lookup()
 
 
 if hasattr(os, "register_at_fork"):
@@ -100,3 +120,8 @@ if hasattr(os, "register_at_fork"):
 def pool() -> BlockingPool:
     """The process's pool."""
     return _Shared.pool
+
+
+def lookup_pool() -> BlockingPool:
+    """The process's pool of four threads for system lookups."""
+    return _Shared.lookup

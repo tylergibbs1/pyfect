@@ -2,11 +2,11 @@
 ``socket`` module.
 
 ``make_udp`` opens and binds a new socket for each reader acquisition (names
-resolved, bound and configured on a thread of its own, so no fiber
-blocks); ``from_socket`` adopts a bound socket the caller makes. Packets
-are read on the socket loop's thread. Sends go out from the writing fiber
-without blocking; one the kernel cannot take yet waits for the socket to
-become writable on the loop.
+resolved, bound and configured on one of the four lookup threads, as Node
+resolves on libuv's pool, so no fiber blocks); ``from_socket`` adopts a
+bound socket the caller makes. Packets are read on the socket loop's thread.
+Sends go out from the writing fiber without blocking; one the kernel cannot
+take yet waits for the socket to become writable on the loop.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ from typing import Literal, Never, overload
 
 from pyfect._core import Effect
 from pyfect._effect_args import require_effect
-from pyfect._os_wait import Resume, os_wait
+from pyfect._lookup import on_lookup_thread
 from pyfect.effect import fail, succeed, suspend, sync
 from pyfect.layer import Layer
 from pyfect.layer import effect as layer_effect
@@ -330,26 +330,21 @@ def _plan(options: Options) -> _Plan:
     return _Plan(family, scope_ids, bind_host, remote_address, None)
 
 
-def _in_thread(
-    name: str, work: Callable[[], BackingSocket]
-) -> Effect[BackingSocket, DatagramSocketError]:
-    """Run ``work`` on a thread of its own; the core closes what an
-    abandoned open gives."""
+def _in_thread(work: Callable[[], BackingSocket]) -> Effect[BackingSocket, DatagramSocketError]:
+    """Run ``work`` on a lookup thread; the core closes what an abandoned
+    open gives."""
 
-    def register(resume: Resume[BackingSocket, DatagramSocketError]) -> None:
-        def run() -> None:
-            try:
-                resume(succeed(work()))
-            except _OpenFailed as failed:
-                resume(fail(failed.error))
+    def run() -> Effect[BackingSocket, DatagramSocketError]:
+        try:
+            return succeed(work())
+        except _OpenFailed as failed:
+            return fail(failed.error)
 
-        threading.Thread(target=run, name=name, daemon=True).start()
-
-    return os_wait(register, waits_for="work")
+    return on_lookup_thread(run)
 
 
 def _open(options: Options, events: BackingEvents) -> Effect[BackingSocket, DatagramSocketError]:
-    return _in_thread("pyfect-udp-open", lambda: _bind(options, events, _plan(options)))
+    return _in_thread(lambda: _bind(options, events, _plan(options)))
 
 
 def _configure_before_bind(sock: socket.socket, options: Options, family: Family) -> None:
@@ -441,7 +436,7 @@ def _adopt(
             default = BackingAddress(host, peer.port)
         return _NativeSocket(sock, events, scope_ids, default, connected=False)
 
-    return _in_thread("pyfect-udp-adopt", work)
+    return _in_thread(work)
 
 
 # --- the open socket ------------------------------------------------------

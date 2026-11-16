@@ -5,20 +5,19 @@ Lookups go through ``getaddrinfo`` (the hosts file and the system's DNS
 configuration, as Node's ``dns.lookup``). PTR queries go to the name servers
 in ``/etc/resolv.conf`` (or the ones given), and reverse lookups are PTR
 queries, as in Effect: the names are the records' targets, and the hosts file
-is not read. Other record types fail with ``Unsupported``. Each call runs on a
-thread of its own and resumes the fiber through its scheduler; an interrupted
-call's answer is dropped.
+is not read. Other record types fail with ``Unsupported``. Calls share the
+four lookup threads, as Node's ``dns.lookup`` shares libuv's pool (see
+``pyfect._lookup``).
 """
 
 from __future__ import annotations
 
 import socket
-import threading
 from collections.abc import Callable, Sequence
 from ipaddress import ip_address
 
 from pyfect._core import Effect
-from pyfect._os_wait import Resume, os_wait
+from pyfect._lookup import on_lookup_thread
 from pyfect.effect import fail, succeed
 from pyfect.layer import Layer
 from pyfect.layer import succeed as layer_succeed
@@ -56,16 +55,13 @@ def dns_error_from_cause(cause: OSError, method: DnsMethod, hostname: str) -> Dn
 
 
 def _on_thread[A](method: DnsMethod, hostname: str, call: Callable[[], A]) -> Effect[A, DnsError]:
-    def register(resume: Resume[A, DnsError]) -> None:
-        def run() -> None:
-            try:
-                resume(succeed(call()))
-            except OSError as cause:
-                resume(fail(dns_error_from_cause(cause, method, hostname)))
+    def run() -> Effect[A, DnsError]:
+        try:
+            return succeed(call())
+        except OSError as cause:
+            return fail(dns_error_from_cause(cause, method, hostname))
 
-        threading.Thread(target=run, name=f"pyfect-dns-{method}", daemon=True).start()
-
-    return os_wait(register, waits_for="work")
+    return on_lookup_thread(run)
 
 
 def _lookup(host: DomainName, family: IpFamily | None) -> Effect[Sequence[IpAddress], DnsError]:
