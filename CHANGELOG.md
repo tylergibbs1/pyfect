@@ -47,6 +47,9 @@
   `--python 3.14` let uv pick a free-threaded 3.14t whenever one was installed, so the page's
   claim that it pinned the standard build was wrong. `tests/test_install.py` fails on any
   documented uv command that requests 3.14 or later without `+gil`.
+- The Services page links to the HTTP server's "Routes that need services" section, for a
+  route that reads a service per request. The Effects page says a plain `@fx.fn` shows in a
+  failure's trace as `at Effect.fn`, and that `@fx.fn("name")` names it and adds a span.
 
 ## 0.6.7 (2026-11-15)
 

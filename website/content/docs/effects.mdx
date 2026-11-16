@@ -15,7 +15,9 @@ An `Effect[A, E, R]` describes a computation. Building one runs nothing; a **run
 
 Chains of `flat_map` get hard to read. Write the effect as a generator instead: `yield from`
 an effect to get its value. `@fx.gen` makes an effect from a generator; `@fx.fn` makes a
-function that returns one.
+function that returns one. A failure's trace names a plain `@fx.fn` function `at Effect.fn`, as
+Effect does; `@fx.fn("check_urls")` names it `at check_urls` and runs each call in a span of
+that name (see [Tracing](/docs/observability#tracing)).
 
 <include meta='title="generators.py"'>../../snippets/effects/generators.py</include>
 
