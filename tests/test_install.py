@@ -233,6 +233,42 @@ def test_no_document_installs_from_git():
     assert offenders == []
 
 
+# uv may pick a free-threaded 3.14t for a plain `--python 3.14` (it does whenever one is installed
+# and found first); `+gil` asks for the standard build, which every extra's library has wheels for.
+# A uv command's request, not prose that names one (backticks end an inline command).
+_PYTHON_REQUEST = re.compile(r"\buv\s[^`\n]*?--python[ =]['\"]?(?P<request>[^\s'\"`]+)")
+_FREE_THREADING_POSSIBLE = re.compile(r"3\.(?:1[4-9]|[2-9]\d)")
+
+
+def _requests_without_gil(line: str) -> list[str]:
+    return [
+        match["request"]
+        for match in _PYTHON_REQUEST.finditer(line)
+        if _FREE_THREADING_POSSIBLE.match(match["request"])
+        and not match["request"].endswith(("+gil", "t", "+freethreaded"))
+    ]
+
+
+def test_the_free_threading_check_finds_a_plain_request():
+    assert _requests_without_gil("uv init --python 3.14 app") == ["3.14"]
+    assert _requests_without_gil("uv venv --python=3.15.1") == ["3.15.1"]
+    assert _requests_without_gil("uv init --python 3.14+gil app") == []
+    assert _requests_without_gil("uv init --python 3.13 app") == []
+    assert _requests_without_gil("`uv init --python 3.14+gil` asks for the GIL") == []
+    assert _requests_without_gil("a plain `--python 3.14` can pick 3.14t") == []
+
+
+def test_every_documented_python_request_from_3_14_asks_for_the_gil_build():
+    offenders = [
+        f"{path.relative_to(_ROOT)}:{number}: {line.strip()}"
+        for path in _DOCUMENTS
+        if path not in _HISTORY
+        for number, line in enumerate(path.read_text().splitlines(), 1)
+        if _requests_without_gil(line)
+    ]
+    assert offenders == []
+
+
 # pytest is not a dependency: only the plugin (loaded by pytest itself) may
 # import it at import time, so the run below hides it.
 _NEEDS_PYTEST = {"pyfect.testing.plugin"}

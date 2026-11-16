@@ -23,6 +23,9 @@ A `Layer[ROut, E, RIn]` builds the services `ROut`, may fail with `E`, and needs
 - `fx.provide(layer)` on an effect, and `layer.provide(other)` on a layer, remove exactly what
   the layer builds and leave the rest of the requirements.
 - `layer.merge(a, b)` builds several layers concurrently.
+- An HTTP route that reads a service gets it per request, not from `layer.provide` on the routes
+  layer: use `router.provide_request(layer)` (see
+  [Routes that need services](/docs/http-server#routes-that-need-services)).
 - Layers are memoized by identity within one `fx.provide`: keep them in module-level constants,
   and each is built once however many layers in that provide need it. Two separate
   `fx.provide(layer)` calls build it twice, as in Effect; provide it once around the whole

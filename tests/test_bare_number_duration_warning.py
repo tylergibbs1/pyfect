@@ -1,8 +1,8 @@
 """A bare number given as a duration is milliseconds, as in Effect, so ``fx.sleep(2)`` sleeps
 2 ms. That stays (a stricter type is 0.7.0 material), but ``PYFECT_WARN_BARE_DURATIONS=1``
 makes every bare number warn with ``BareNumberDurationWarning``, pointing at the caller's
-line and suggesting the unit, so a project can find them or fail on them
-(``-W error::pyfect.duration.BareNumberDurationWarning``). Off by default: a default-ignored
+line and suggesting the unit, so a project can find them, or fail on them with
+``PYFECT_WARN_BARE_DURATIONS=error``. Off by default: a default-ignored
 category would still raise for every project running with ``filterwarnings = error``."""
 
 import warnings
@@ -72,3 +72,17 @@ def test_an_empty_variable_is_off(monkeypatch: pytest.MonkeyPatch):
     with warnings.catch_warnings():
         warnings.simplefilter("error")
         fx.sleep(2)
+
+
+def test_error_in_the_variable_raises_it_as_an_error(monkeypatch: pytest.MonkeyPatch):
+    # Python resolves `-W` / PYTHONWARNINGS categories before pyfect is imported, so they
+    # cannot name BareNumberDurationWarning; the variable can.
+    monkeypatch.setenv("PYFECT_WARN_BARE_DURATIONS", "error")
+    with pytest.raises(BareNumberDurationWarning, match=r'"2 seconds"'):
+        fx.sleep(2)
+
+
+def test_error_in_the_variable_leaves_unambiguous_inputs_alone(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("PYFECT_WARN_BARE_DURATIONS", "error")
+    fx.sleep(0)
+    fx.sleep("2 seconds")

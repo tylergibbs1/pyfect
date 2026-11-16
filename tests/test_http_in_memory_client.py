@@ -3,6 +3,7 @@ bodies streamed to the client as the handler writes them."""
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Never, TypedDict
 
 import pyfect as fx
@@ -10,12 +11,15 @@ from pyfect import layer, stream, testing
 from pyfect import schema as S
 from pyfect.deferred import Deferred
 from pyfect.errors import Done
+from pyfect.exit import Failure
 from pyfect.http import body, router, server_response
 from pyfect.http.client import HttpClient
+from pyfect.http.error import HttpClientError, InvalidUrlError
 from pyfect.http.server_error import HttpServerError, RouteNotFound
 from pyfect.http_api import HttpApi, HttpApiGroup, HttpApiRequest, builder, endpoint
 from pyfect.http_api.error import HttpApiSchemaError
 from pyfect.queue import Queue
+from pyfect.result import Ok
 from pyfect.scope import add_finalizer
 
 
@@ -195,3 +199,37 @@ def test_layer_in_memory_client_gives_routes_the_services_of_its_layer():
     # A service the request itself provides comes first, as before.
     overridden = get.pipe(fx.provide_service(Greeting, "from the request"))
     assert (yield from overridden.pipe(fx.provide(client))) == "from the request"
+
+
+_ROOT_ROUTE = router.add("GET", "/check", fx.succeed(server_response.text("ok")))
+
+
+def _invalid_url_error(url: str) -> HttpClientError:
+    @fx.gen
+    def get():
+        client = yield from router.in_memory_client(_ROOT_ROUTE)
+        return (yield from client.get(url))
+
+    exit = fx.run_blocking_exit(fx.scoped(get))
+    assert isinstance(exit, Failure)
+    found = exit.cause.find_error()
+    assert isinstance(found, Ok)
+    assert isinstance(found.value.reason, InvalidUrlError)
+    return found.value
+
+
+def test_a_relative_url_fails_with_effect_s_message_and_a_note_naming_prepend_url():
+    # As Effect's HttpClient.make, the in-memory client resolves nothing; a newcomer passing
+    # "/check" saw only "InvalidUrl error (GET /check)".
+    error = _invalid_url_error("/check")
+    assert str(error).startswith("InvalidUrl error (GET /check)")
+    [note] = error.__notes__
+    # The note shows the Testing page's own fix.
+    fix = 'map_request(lambda request: request.prepend_url("http://localhost"))'
+    assert fix in note
+    assert fix in (Path(__file__).parent.parent / "website/content/docs/testing.mdx").read_text()
+
+
+def test_an_absolute_invalid_url_gets_no_relative_url_note():
+    error = _invalid_url_error("http://[::1")
+    assert getattr(error, "__notes__", []) == []

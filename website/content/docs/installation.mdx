@@ -8,13 +8,13 @@ PyPI: the distribution is named `pyfect-dev` and you import `pyfect`.
 The PyPI package called `pyfect` is an unrelated project.
 
 <InstallCommand
-  uv={"uv init --python 3.14 app && cd app\nuv add pyfect-dev\nuv add --dev pyright"}
+  uv={"uv init --python 3.14+gil app && cd app\nuv add pyfect-dev\nuv add --dev pyright"}
   pip={"mkdir app && cd app\npython3.13 -m venv .venv && . .venv/bin/activate\npip install pyfect-dev pyright"}
 />
 
-These start a new project in `app/`. `--python 3.14` pins the standard build of CPython: left to
-choose, uv can pick the free-threaded 3.14t, where some libraries publish no wheels yet
-(`psycopg[binary]` is one). The pip commands name `python3.13` because a plain `python3` is often
+These start a new project in `app/`. `--python 3.14+gil` asks for the standard build of CPython
+3.14. A plain `--python 3.14` lets uv pick the free-threaded 3.14t, and it does whenever it finds
+one installed first, where some libraries publish no wheels yet (`psycopg[binary]` is one). The pip commands name `python3.13` because a plain `python3` is often
 older: on macOS, `/usr/bin/python3` is Python 3.9. With a Python older than 3.13, pip finds no
 release it can install and says only:
 

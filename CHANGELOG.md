@@ -1,5 +1,56 @@
 # Changelog
 
+## 0.6.8 (unreleased)
+
+### Added
+
+- `PYFECT_WARN_BARE_DURATIONS=error` raises `BareNumberDurationWarning` at the first duration
+  given as a bare number (other than 0 or an infinity), so a run fails on one without a warning
+  filter. `=1` still only warns.
+- The `HttpClientError` of a relative URL sent to `router.in_memory_client` /
+  `layer_in_memory_client` carries a note naming the fix the Testing page gives:
+  `client.map_request(lambda request: request.prepend_url("http://localhost"))`, or an absolute
+  URL. Its message is still Effect's `InvalidUrl error (GET /check)`.
+- `PYFECT_WARN_BLOCKING=<ms>` starts a watchdog thread at `import pyfect` that warns with
+  `pyfect.scheduler.BlockingStepWarning`, at the blocking line, about a fiber step that runs
+  that long without returning (`time.sleep` in an effect, which silently stalls every fiber on
+  the thread and the `.timeout` around it). It samples `sys._current_frames()` and finds the
+  frame the innermost `Fiber._loop` called, so the fiber loop has no code for it: unset (or
+  `0`), no thread starts and a run does no extra work. A value that is not a positive number of
+  milliseconds fails the import with a `ValueError` naming the variable.
+
+### Fixed
+
+- The `TypeError` for a body under `@fx.fn` that returns neither an effect nor a generator
+  (an `async def`, say) began `fn('Effect.fn'): `, the internal frame name of an unnamed
+  `fx.fn`. It now begins `fn: ` (`fn('name'): ` under `fx.fn("name")`), as the other `fx.fn`
+  messages do; a generic body without a return annotation under `fx.fn("name")` names it too.
+
+### Docs
+
+- `eff()` and `await eff` still fail with Python's own `TypeError` naming the effect's internal
+  class (`'_Succeed' object is not callable`, `'_Locally' object can't be awaited`): a
+  `__call__` or `__await__` would change what `callable()` and `inspect.isawaitable()` say, and
+  CPython builds these messages from the class name with no hook to add to them. The Effects
+  page's Common mistakes now has a table of every such message for the common constructors and
+  combinators (Python 3.13's await wording too), in a table so the site search indexes it.
+  `tests/test_effect_misuse_messages.py` calls and awaits each of those effects and fails if
+  the page lacks the exact message.
+- The Durations section gave `-W error::pyfect.duration.BareNumberDurationWarning`, which
+  Python rejects at startup ("Invalid -W option ignored", before pyfect is imported) and then
+  runs on with exit 0, as it does for `PYTHONWARNINGS`. It now gives
+  `PYFECT_WARN_BARE_DURATIONS=error`, `-W "error:the duration"` and pytest's `filterwarnings`.
+  `tests/test_doc_warning_commands.py` runs each documented command on a program that passes a
+  bare number and requires it to fail, and fails on any document that names a pyfect category
+  in `-W` or `PYTHONWARNINGS`.
+- The install commands (Installation page, README) run `uv init --python 3.14+gil`: a plain
+  `--python 3.14` let uv pick a free-threaded 3.14t whenever one was installed, so the page's
+  claim that it pinned the standard build was wrong. `tests/test_install.py` fails on any
+  documented uv command that requests 3.14 or later without `+gil`.
+- The Services page links to the HTTP server's "Routes that need services" section, for a
+  route that reads a service per request. The Effects page says a plain `@fx.fn` shows in a
+  failure's trace as `at Effect.fn`, and that `@fx.fn("name")` names it and adds a span.
+
 ## 0.6.7 (2026-11-15)
 
 ### Added

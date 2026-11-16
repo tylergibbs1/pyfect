@@ -9,9 +9,11 @@ instead, in public names.
   attribute as unknown (`tests/type_checks.py`).
 """
 
+import asyncio
 import inspect
 import re
 import traceback
+from pathlib import Path
 
 import pytest
 
@@ -103,3 +105,59 @@ def test_yield_from_an_uncalled_yield_now_says_to_call_it():
 
     with pytest.raises(TypeError, match=r"yield from fx\.yield_now\(\)"):
         fx.run_blocking(body)  # pyright: ignore[reportUnknownArgumentType]
+
+
+_EFFECTS_PAGE = Path(__file__).parent.parent / "website" / "content" / "docs" / "effects.mdx"
+
+
+def _body() -> fx.Gen[int]:
+    return (yield from fx.succeed(1))
+
+
+_traced_call = fx.fn(_body)
+
+
+# What a newcomer calls or awaits: the effects that the common constructors and combinators
+# return. Python names the internal class in its TypeError, which no `__call__` or `__await__`
+# may replace (above), so the Effects page lists each exact message for a search to find.
+_EFFECTS: dict[str, fx.Effect[object, object]] = {
+    "succeed": fx.succeed(1),
+    "fail": fx.fail("boom"),
+    "sync": fx.sync(lambda: 1),
+    "suspend": fx.suspend(lambda: fx.succeed(1)),
+    "gen": fx.gen(_body),
+    "fn": _traced_call(),
+    "map": fx.succeed(1).map(str),
+    "flat_map": fx.succeed(1).as_(2),
+    "catch_all": fx.succeed(1).catch_all(fx.succeed),
+    "ensuring": fx.succeed(1).ensuring(fx.void),
+    "sleep": fx.sleep("1 second"),
+}
+
+
+def _messages(name: str) -> list[str]:
+    return [
+        f"'{name}' object is not callable",
+        f"'{name}' object can't be awaited",  # Python 3.14
+        f"object {name} can't be used in 'await' expression",  # Python 3.13
+    ]
+
+
+@pytest.mark.parametrize("effect", list(_EFFECTS.values()), ids=list(_EFFECTS))
+def test_the_effects_page_quotes_python_s_message_for_calling_or_awaiting_it(
+    effect: fx.Effect[object, object],
+):
+    name = type(effect).__name__
+    page = _EFFECTS_PAGE.read_text()
+    missing = [message for message in _messages(name) if message not in page]
+    assert missing == []
+    with pytest.raises(TypeError) as called:
+        effect()  # pyright: ignore[reportCallIssue]
+    assert str(called.value) in _messages(name)
+
+    async def wait() -> None:
+        await effect  # pyright: ignore[reportGeneralTypeIssues]
+
+    with pytest.raises(TypeError) as awaited:
+        asyncio.run(wait())
+    assert str(awaited.value) in _messages(name)

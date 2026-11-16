@@ -10,7 +10,8 @@ for a body never read).
 
 from __future__ import annotations
 
-from typing import Any, Never
+import re
+from typing import Any, Final, Never
 
 from pyfect._core import Effect
 from pyfect.effect import gen, provide_service, succeed
@@ -18,7 +19,7 @@ from pyfect.exit import Exit, Success
 from pyfect.http._request_state import CurrentRequestState, RequestState
 from pyfect.http.client import HttpClientService
 from pyfect.http.client import make as make_http_client
-from pyfect.http.error import HttpClientError
+from pyfect.http.error import HttpClientError, InvalidUrlError
 from pyfect.http.http_effect import scope_transfer_to_stream
 from pyfect.http.request import HttpClientRequest
 from pyfect.http.server_request import HttpServerRequest, from_client_request
@@ -31,7 +32,28 @@ def client(
 ) -> HttpClientService[HttpClientError, Any]:
     """A client whose requests ``app`` answers; ``app`` 's failures are
     defects of the request. Bodies left open close with ``scope``."""
-    return make_http_client(lambda request, _url, _signal, _fiber: _handle(app, scope, request))
+    return make_http_client(
+        lambda request, _url, _signal, _fiber: _handle(app, scope, request)
+    ).tap_error(_note_relative_url)
+
+
+RELATIVE_URL_NOTE: Final = (
+    "The in-memory client resolves no relative URL, as Effect's HttpClient.make: give it an "
+    'absolute one such as "http://localhost/path" (the path picks the route; the host is not '
+    "used), or prepend the host to every request with "
+    '`client.map_request(lambda request: request.prepend_url("http://localhost"))`.'
+)
+
+
+_SCHEME: Final = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*:")
+
+
+def _note_relative_url(error: HttpClientError) -> Effect[None]:
+    """Effect's message for a relative URL, plus a note on what to write instead."""
+    reason = error.reason
+    if isinstance(reason, InvalidUrlError) and not _SCHEME.match(reason.request.url):
+        error.add_note(RELATIVE_URL_NOTE)
+    return succeed(None)
 
 
 def _handle(

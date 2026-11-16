@@ -141,3 +141,19 @@ def test_an_async_def_body_dies_saying_to_use_def_and_from_async(
     assert "fx.from_async" in str(defect)
     # The coroutine is closed, so Python does not warn that it was never awaited.
     assert [str(w.message) for w in caught] == []
+
+
+@pytest.mark.parametrize(
+    ("decorate", "prefix"),
+    [(fx.fn, "fn: "), (fx.fn("named"), "fn('named'): ")],
+    ids=["fn", "fn_named"],
+)
+def test_a_wrong_body_s_message_names_the_api_the_user_wrote(
+    decorate: Callable[[Any], Callable[[], Any]], prefix: str
+):
+    # Unnamed, the frame is Effect's "Effect.fn"; the message names the call the user wrote.
+    exit = fx.run_blocking_exit(decorate(_coroutine_body)())
+    assert isinstance(exit, fx.Failure)
+    message = str(exit.cause.defects[0])
+    assert message.startswith(prefix + "_coroutine_body returned coroutine"), message
+    assert "Effect.fn" not in message

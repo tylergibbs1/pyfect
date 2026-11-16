@@ -15,7 +15,9 @@ An `Effect[A, E, R]` describes a computation. Building one runs nothing; a **run
 
 Chains of `flat_map` get hard to read. Write the effect as a generator instead: `yield from`
 an effect to get its value. `@fx.gen` makes an effect from a generator; `@fx.fn` makes a
-function that returns one.
+function that returns one. A failure's trace names a plain `@fx.fn` function `at Effect.fn`, as
+Effect does; `@fx.fn("check_urls")` names it `at check_urls` and runs each call in a span of
+that name (see [Tracing](/docs/observability#tracing)).
 
 <include meta='title="generators.py"'>../../snippets/effects/generators.py</include>
 
@@ -71,6 +73,11 @@ These run, or fail far from the line that caused them. Most are what a coroutine
 - **`time.sleep` in an effect** blocks the thread, so every fiber of the run waits with it and
   `.timeout` can't interrupt it. Use `fx.sleep("1 second")`, and `fx.blocking(f)` for a blocking
   call you can't avoid: it runs on a thread, and the fiber waits without blocking the others.
+  Nothing fails, so to find one, run with `PYFECT_WARN_BLOCKING=100`: a watchdog thread then
+  warns with `BlockingStepWarning` (in `pyfect.scheduler`), at the blocking line, about any step
+  that runs 100 ms or longer. It is a development tool: off, it starts no thread and the run
+  does no extra work. Under `fx.run_async`, asyncio's debug mode (`python -X dev`) also logs
+  `Executing <Handle AsyncioScheduler._drain() ...> took 0.302 seconds`, without the line.
 - **`run_blocking` in a coroutine or a notebook cell** blocks the running event loop until the
   effect is done, and warns with `RunBlockingInEventLoopWarning`; `run_main` there raises a
   `RuntimeError`, since it starts a loop of its own. There, use `await fx.run_async(eff)`;
@@ -83,14 +90,16 @@ These run, or fail far from the line that caused them. Most are what a coroutine
   `greet("ada") + "!"` raises `TypeError`. Run it with `fx.run_blocking(greet("ada"))`, or
   inside a generator, `yield from greet("ada")`.
 - **`eff()`** raises `TypeError: '_Succeed' object is not callable` (pyright reports it first):
-  an effect is a value, not a function. Run it as above.
+  an effect is a value, not a function. Run it as above. Python names the effect's internal
+  class, so the name varies; [the table below](#calling-or-awaiting-an-effect) lists them.
 - **`fx.yield_now` without `()`**: `fx.void` and `fx.never` are effects, but `yield_now` is a
   function that makes one. Write `fx.yield_now().fork()` and `yield from fx.yield_now()`; the
   bare form raises an error that says so.
 - **`await eff`** raises `TypeError: '_Succeed' object can't be awaited` (pyright reports it
   first): an effect is a description, not a coroutine. In a coroutine, run it with
   `await fx.run_async(eff)`; inside a generator, `yield from eff`. Effects are deliberately not
-  awaitable, so libraries that await whatever is awaitable pass them through untouched.
+  awaitable, so libraries that await whatever is awaitable pass them through untouched. Python
+  3.13 words it `object _Succeed can't be used in 'await' expression`.
 - **`@fx.fn async def`** is not an effect body: pyright reports that no overload of `fn` matches,
   and running it dies with a `TypeError`. Write a `def` and run the coroutine inside it with
   `yield from fx.from_async(f)`.
@@ -100,6 +109,26 @@ These run, or fail far from the line that caused them. Most are what a coroutine
 - **`raise NotFound(...)`** in a generator is a defect, not a typed failure, so `catch_tag` never
   sees it. Fail with `return (yield from NotFound(...))` (see
   [Typed errors](/docs/errors#defining-and-failing)).
+
+### Calling or awaiting an effect
+
+`eff()` and `await eff` fail with Python's own `TypeError`, which names the effect's internal
+class. Each message below means the same mistake: the effect was called or awaited instead of
+run with `fx.run_blocking(eff)`, `await fx.run_async(eff)`, or `yield from eff` in a generator.
+
+| Made by | `eff()` | `await eff` (Python 3.14) | `await eff` (Python 3.13) |
+| --- | --- | --- | --- |
+| `fx.succeed`, `fx.void` | `'_Succeed' object is not callable` | `'_Succeed' object can't be awaited` | `object _Succeed can't be used in 'await' expression` |
+| `fx.fail` | `'_FailCause' object is not callable` | `'_FailCause' object can't be awaited` | `object _FailCause can't be used in 'await' expression` |
+| `fx.sync` | `'_Sync' object is not callable` | `'_Sync' object can't be awaited` | `object _Sync can't be used in 'await' expression` |
+| `fx.suspend`, `fx.from_async`, `fx.try_async`, `fx.all` | `'_Suspend' object is not callable` | `'_Suspend' object can't be awaited` | `object _Suspend can't be used in 'await' expression` |
+| `fx.gen` | `'_Gen' object is not callable` | `'_Gen' object can't be awaited` | `object _Gen can't be used in 'await' expression` |
+| a call of an `@fx.fn` function | `'_Locally' object is not callable` | `'_Locally' object can't be awaited` | `object _Locally can't be used in 'await' expression` |
+| `.map` | `'_Map' object is not callable` | `'_Map' object can't be awaited` | `object _Map can't be used in 'await' expression` |
+| `.flat_map`, `.as_`, `.tap`, `.timeout`, `.retry`, `fx.blocking` | `'_FlatMap' object is not callable` | `'_FlatMap' object can't be awaited` | `object _FlatMap can't be used in 'await' expression` |
+| `.catch_all`, `.catch_cause`, `.catch_if` | `'_MatchCause' object is not callable` | `'_MatchCause' object can't be awaited` | `object _MatchCause can't be used in 'await' expression` |
+| `.ensuring`, `.on_exit` | `'_OnExit' object is not callable` | `'_OnExit' object can't be awaited` | `object _OnExit can't be used in 'await' expression` |
+| `fx.sleep`, `fx.scoped` | `'_WithFiber' object is not callable` | `'_WithFiber' object can't be awaited` | `object _WithFiber can't be used in 'await' expression` |
 
 ## Reading pyright errors
 

@@ -106,7 +106,7 @@ def _untraced(f: _Body, pipeables: tuple[Callable[..., Any], ...]) -> Callable[.
     return wrapper
 
 
-def _run_body(f: _AnyBody, name: str, result: object) -> Effect[Any, Any, Any]:
+def _run_body(f: _AnyBody, api: str, result: object) -> Effect[Any, Any, Any]:
     # Effect.fn's ``isEffect(iter) ? iter : fromIteratorUnsafe(iter)``.
     if isinstance(result, Effect):
         return cast("Effect[Any, Any, Any]", result)
@@ -116,7 +116,7 @@ def _run_body(f: _AnyBody, name: str, result: object) -> Effect[Any, Any, Any]:
     return _FailCause(
         die_cause(
             not_a_generator(
-                f"fn({name!r}): {f.__qualname__} returned {type(result).__name__}, "
+                f"{api}: {f.__qualname__} returned {type(result).__name__}, "
                 "not an effect or a generator; an effect inside it runs only with "
                 "`yield from effect`",
                 result,
@@ -131,13 +131,16 @@ def _traced(
     definition: Callable[[], str | None],
     span: SpanOptions | None,
     pipeables: tuple[Callable[..., Any], ...],
+    *,
+    api: str,
 ) -> Callable[..., Any]:
     """``f`` as a function returning an effect that runs inside a span
     ``name``, unless ``span`` is ``None``, and a stack frame for the call
-    (``name`` at the call site) under one for the definition."""
+    (``name`` at the call site) under one for the definition. ``api`` is the call the
+    user wrote, for messages."""
     from pyfect.tracer._spans import in_parent_span, span_using
 
-    typed_generic_body(f, "fn")
+    typed_generic_body(f, api)
     definition_name = f"{name} (definition)"
     appliers = _appliers(pipeables)
 
@@ -153,7 +156,7 @@ def _traced(
 
     @functools.wraps(f)
     def wrapper(*args: Any, **kwargs: Any) -> Any:
-        result: object = _Suspend(lambda: _run_body(f, name, f(*args, **kwargs)))
+        result: object = _Suspend(lambda: _run_body(f, api, f(*args, **kwargs)))
         for apply in appliers:
             result = apply(result, args, kwargs)
         if not isinstance(result, Effect):
@@ -394,7 +397,9 @@ class _Traced:
     # --- end generated _Traced.__call__ overloads ---
     def __call__(self, f: _AnyBody, /, *pipeables: Callable[..., Any]) -> Callable[..., Any]:
         # Effect.fn's body may return an effect, so it is checked when it runs.
-        return _traced(f, self.name, self.definition, self.options, pipeables)
+        return _traced(
+            f, self.name, self.definition, self.options, pipeables, api=f"fn({self.name!r})"
+        )
 
 
 # --- generated fn overloads (tests/test_fn_overloads.py) ---
@@ -530,7 +535,7 @@ def fn(
         return _Traced(f, options, call_site(1))
     if options:
         raise TypeError("fn: span options go with a name, as fn(name, **span_options)(body)")
-    return _traced(f, "Effect.fn", call_site(1), None, pipeables)
+    return _traced(f, "Effect.fn", call_site(1), None, pipeables, api="fn")
 
 
 # --- generated fn_untraced overloads (tests/test_fn_overloads.py) ---
