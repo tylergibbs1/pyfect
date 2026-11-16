@@ -10,7 +10,6 @@
   (0.6.8): later blocking steps never warned, and the run and the test still passed. The
   watchdog now hands the error to the fiber that ran the step, which fails with it as a
   defect when it ends (so `run_blocking` raises it and the test fails), and goes on watching.
-
 - SQL `PersistedQueue` on MySQL: an offer no longer deadlocks an `"untilExecuted"` re-offer
   of the same id (0.6.6 to 0.6.8). The offer skips a duplicate with `INSERT IGNORE` again, as in Effect, which
   only locks the duplicate's `(id, queue_name)` entry. `ON DUPLICATE KEY UPDATE` also locked
@@ -19,12 +18,30 @@
   element longer than its `MEDIUMTEXT` column (16 MiB of UTF-8) now fails the offer before it
   reaches MySQL, as an over-long id or queue name already did, since `INSERT IGNORE` would cut
   it.
+- The `BlockingStepWarning` display showed the blocking line twice: once in the message and
+  once below it, where Python shows a warning's line. The message now names the blocking frame's
+  file, line and function, and the display shows its source once.
+- `BareNumberDurationWarning` for a bare `1` said "read as 1 milliseconds" and suggested
+  `"1 seconds"`; it now says "1 millisecond" and `"1 second"`.
+- `PYFECT_WARN_BLOCKING=1` set a 1 ms threshold, while `PYFECT_WARN_BARE_DURATIONS=1` means
+  "on", so copying one setting to the other warned about nearly every step. A bare `1` now fails
+  the import with a `ValueError` that asks for the threshold with its unit.
+
+### Added
+
+- `PYFECT_WARN_BLOCKING` takes a duration, as pyfect parses one: `"100 millis"`,
+  `"0.5 seconds"`. A bare number is still milliseconds (other than `1`).
 
 ### Docs
 
 - The installation page and the README say that `uv init --python 3.14+gil` needs uv 0.9.8 or
   later (older uv says "No interpreter found for executable name '3.14+gil'"), and how to
   update it.
+- The "A blocking call defeats timeout" callout on the Concurrency page no longer says nothing
+  warns: it points at `PYFECT_WARN_BLOCKING`. A misplaced clause on the installation page is
+  moved to the sentence it belongs to.
+- The Effects page's table of the `TypeError`s for calling or awaiting an effect lists
+  `_Callback` (`fx.never`, `fx.callback`) and `_Fork` (`.fork()`, `.fork_daemon()`).
 
 ## 0.6.8 (2026-11-16)
 

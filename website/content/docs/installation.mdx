@@ -15,10 +15,11 @@ The PyPI package called `pyfect` is an unrelated project.
 These start a new project in `app/`. `--python 3.14+gil` asks for the standard build of CPython
 3.14; it needs uv 0.9.8 or later, and an older uv says
 `No interpreter found for executable name '3.14+gil'` (update it with `uv self update`, or
-`brew upgrade uv` for Homebrew's). A plain `--python 3.14` lets uv pick the free-threaded 3.14t, and it does whenever it finds
-one installed first, where some libraries publish no wheels yet (`psycopg[binary]` is one). The pip commands name `python3.13` because a plain `python3` is often
-older: on macOS, `/usr/bin/python3` is Python 3.9. With a Python older than 3.13, pip finds no
-release it can install and says only:
+`brew upgrade uv` for Homebrew's). A plain `--python 3.14` lets uv pick the free-threaded
+3.14t, where some libraries publish no wheels yet (`psycopg[binary]` is one), and it does
+whenever it finds one installed first. The pip commands name `python3.13` because a plain
+`python3` is often older: on macOS, `/usr/bin/python3` is Python 3.9. With a Python older than
+3.13, pip finds no release it can install and says only:
 
 ```text
 ERROR: Could not find a version that satisfies the requirement pyfect-dev (from versions: none)

@@ -132,6 +132,8 @@ _EFFECTS: dict[str, fx.Effect[object, object]] = {
     "catch_all": fx.succeed(1).catch_all(fx.succeed),
     "ensuring": fx.succeed(1).ensuring(fx.void),
     "sleep": fx.sleep("1 second"),
+    "never": fx.never,
+    "fork": fx.succeed(1).fork(),
 }
 
 

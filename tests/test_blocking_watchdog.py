@@ -1,8 +1,9 @@
-"""``PYFECT_WARN_BLOCKING=<ms>``: a step that blocks its thread (``time.sleep`` in an effect)
-stalls every fiber the thread runs and stops ``.timeout`` and interrupts from acting, with no
-error. Set, the variable starts a watchdog thread that samples the running threads' stacks and
-warns with ``BlockingStepWarning``, at the blocking line, about a step running that long.
-Unset, nothing starts: the fiber loop has no code for it, so it costs nothing."""
+"""``PYFECT_WARN_BLOCKING="100 millis"``: a step that blocks its thread (``time.sleep`` in
+an effect) stalls every fiber the thread runs and stops ``.timeout`` and interrupts from
+acting, with no error. Set, the variable starts a watchdog thread that samples the running
+threads' stacks and warns with ``BlockingStepWarning``, at the blocking line, about a step
+running that long. Unset, nothing starts: the fiber loop has no code for it, so it costs
+nothing."""
 
 import subprocess
 import sys
@@ -12,7 +13,10 @@ from pathlib import Path
 import pytest
 
 import pyfect as fx
-from pyfect._blocking_watchdog import _deliver  # pyright: ignore[reportPrivateUsage]
+from pyfect._blocking_watchdog import (
+    _deliver,  # pyright: ignore[reportPrivateUsage]
+    threshold_from_environment,
+)
 
 _BLOCKING = """
 import time
@@ -42,11 +46,17 @@ def _run(source: str, *, env: dict[str, str]) -> subprocess.CompletedProcess[str
     )
 
 
-def test_a_blocking_step_warns_at_its_line():
-    result = _run(_BLOCKING, env={"PYFECT_WARN_BLOCKING": "100"})
+def test_a_blocking_step_warns_at_its_line(tmp_path: Path):
+    # From a file, so the warning's display can show its line, as it does for an app.
+    script = tmp_path / "app.py"
+    script.write_text(textwrap.dedent(_BLOCKING))
+    result = _run(
+        f"import runpy; runpy.run_path({str(script)!r})", env={"PYFECT_WARN_BLOCKING": "100 millis"}
+    )
     assert result.returncode == 0, result.stderr
     assert "BlockingStepWarning" in result.stderr
-    assert "time.sleep(0.4)  # the blocking line" in result.stderr
+    # Once: the warning's own display shows the line, so the message only names it.
+    assert result.stderr.count("time.sleep(0.4)  # the blocking line") == 1
     assert "fx.blocking" in result.stderr
     assert result.stderr.count("BlockingStepWarning") == 1
 
@@ -73,11 +83,31 @@ def test_unset_it_starts_no_thread():
     assert _run(source, env={"PYFECT_WARN_BLOCKING": "100"}).stdout.strip() == "2"
 
 
-@pytest.mark.parametrize("value", ["soon", "-5", "nan"])
-def test_a_value_that_is_not_a_positive_number_of_milliseconds_fails_import(value: str):
+@pytest.mark.parametrize("value", ["soon", "-5", "nan", "-1 second", "Infinity", "100ms"])
+def test_a_value_that_is_not_a_positive_duration_fails_import(value: str):
     result = _run("import pyfect", env={"PYFECT_WARN_BLOCKING": value})
     assert result.returncode != 0
     assert "PYFECT_WARN_BLOCKING" in result.stderr
+    assert '"100 millis"' in result.stderr
+
+
+@pytest.mark.parametrize(
+    ("value", "seconds"),
+    [("100 millis", 0.1), ("0.5 seconds", 0.5), ("250", 0.25), ("0", None), ("0 millis", None)],
+)
+def test_the_threshold_is_a_duration_or_a_number_of_milliseconds(
+    monkeypatch: pytest.MonkeyPatch, value: str, seconds: float | None
+):
+    monkeypatch.setenv("PYFECT_WARN_BLOCKING", value)
+    assert threshold_from_environment() == seconds
+
+
+@pytest.mark.parametrize("value", ["1", "1.0", " 1 "])
+def test_a_bare_1_is_refused_since_it_reads_as_on(monkeypatch: pytest.MonkeyPatch, value: str):
+    # PYFECT_WARN_BARE_DURATIONS=1 means "on"; copied here it would be a 1 ms threshold.
+    monkeypatch.setenv("PYFECT_WARN_BLOCKING", value)
+    with pytest.raises(ValueError, match=r'PYFECT_WARN_BLOCKING=1 .*"100 millis"'):
+        threshold_from_environment()
 
 
 _BLOCKING_THREE_TIMES = """

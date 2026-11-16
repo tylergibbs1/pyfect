@@ -32,6 +32,17 @@ def test_a_bare_number_warns_at_the_caller_s_line_and_suggests_seconds():
 
 
 @pytest.mark.usefixtures("opted_in")
+def test_one_is_one_millisecond_and_suggests_one_second():
+    with pytest.warns(BareNumberDurationWarning) as caught:
+        fx.sleep(1)
+    message = str(caught.list[0].message)
+    assert "read as 1 millisecond;" in message
+    assert '"1 second"' in message
+    assert "1 milliseconds" not in message
+    assert '"1 seconds"' not in message
+
+
+@pytest.mark.usefixtures("opted_in")
 def test_a_float_suggests_its_own_text():
     with pytest.warns(BareNumberDurationWarning, match=r'"1\.5 seconds"'):
         fx.succeed(1).timeout(1.5)

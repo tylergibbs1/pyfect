@@ -36,9 +36,11 @@ returning.
 A timeout interrupts a fiber between steps, and fibers share one thread. A step that blocks
 that thread, such as a `time.sleep` of two seconds or a synchronous HTTP call inside `fx.sync`,
 holds every fiber of the run, the timer included, until it returns: `.timeout("100 millis")`
-around it ends after the full two seconds, with the effect's own result, and nothing warns. Use
-`fx.sleep` to wait, and run a blocking call you can't avoid with `fx.blocking(f)`, on a thread
-of its own, so the timer can fire. A thread can't be stopped, though: on a timeout,
+around it ends after the full two seconds, with the effect's own result. Nothing warns unless
+you run with `PYFECT_WARN_BLOCKING="100 millis"`, which warns about any step that runs that long
+(see [Common mistakes](/docs/effects#common-mistakes)). Use `fx.sleep` to wait, and run a
+blocking call you can't avoid with `fx.blocking(f)`, on a thread of its own, so the timer can
+fire. A thread can't be stopped, though: on a timeout,
 `fx.blocking` abandons the call, which still runs to its end on its thread.
 </Callout>
 

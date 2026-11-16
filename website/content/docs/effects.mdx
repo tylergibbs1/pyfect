@@ -73,10 +73,12 @@ These run, or fail far from the line that caused them. Most are what a coroutine
 - **`time.sleep` in an effect** blocks the thread, so every fiber of the run waits with it and
   `.timeout` can't interrupt it. Use `fx.sleep("1 second")`, and `fx.blocking(f)` for a blocking
   call you can't avoid: it runs on a thread, and the fiber waits without blocking the others.
-  Nothing fails, so to find one, run with `PYFECT_WARN_BLOCKING=100`: a watchdog thread then
-  warns with `BlockingStepWarning` (in `pyfect.scheduler`), at the blocking line, about any step
-  that runs 100 ms or longer. It is a development tool: off, it starts no thread and the run
-  does no extra work. To fail on one, make the warning an error
+  Nothing fails, so to find one, run with `PYFECT_WARN_BLOCKING="100 millis"`: a watchdog
+  thread then warns with `BlockingStepWarning` (in `pyfect.scheduler`), at the blocking line,
+  about any step that runs 100 ms or longer. The value is a duration, such as `"0.5 seconds"`;
+  a bare number is milliseconds, except `1`, which is refused, since it reads as "on" (as
+  `PYFECT_WARN_BARE_DURATIONS=1` does). It is a development tool: off, it starts no thread and
+  the run does no extra work. To fail on one, make the warning an error
   (`python -W "error:a fiber step"`, or pytest's
   `filterwarnings = ["error::pyfect.scheduler.BlockingStepWarning"]`): the fiber that ran the
   step goes on until it ends, then fails with the warning as a defect, so `run_blocking` raises
@@ -133,6 +135,8 @@ run with `fx.run_blocking(eff)`, `await fx.run_async(eff)`, or `yield from eff` 
 | `.catch_all`, `.catch_cause`, `.catch_if` | `'_MatchCause' object is not callable` | `'_MatchCause' object can't be awaited` | `object _MatchCause can't be used in 'await' expression` |
 | `.ensuring`, `.on_exit` | `'_OnExit' object is not callable` | `'_OnExit' object can't be awaited` | `object _OnExit can't be used in 'await' expression` |
 | `fx.sleep`, `fx.scoped` | `'_WithFiber' object is not callable` | `'_WithFiber' object can't be awaited` | `object _WithFiber can't be used in 'await' expression` |
+| `fx.never`, `fx.callback` | `'_Callback' object is not callable` | `'_Callback' object can't be awaited` | `object _Callback can't be used in 'await' expression` |
+| `.fork()`, `.fork_daemon()` | `'_Fork' object is not callable` | `'_Fork' object can't be awaited` | `object _Fork can't be used in 'await' expression` |
 
 ## Reading pyright errors
 

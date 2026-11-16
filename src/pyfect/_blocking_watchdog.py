@@ -1,4 +1,4 @@
-"""The ``PYFECT_WARN_BLOCKING=<ms>`` watchdog: a daemon thread that samples every thread's
+"""The ``PYFECT_WARN_BLOCKING="100 millis"`` watchdog: a daemon thread that samples every thread's
 stack and warns about a fiber step that has run for at least that long.
 
 A fiber step that blocks its thread (``time.sleep``, a blocking socket read) holds up every
@@ -25,6 +25,7 @@ import warnings
 from types import CodeType, FrameType
 from typing import Any, Final
 
+from pyfect import duration
 from pyfect._fiber import Fiber
 from pyfect.scheduler import WARN_BLOCKING_ENV, BlockingStepWarning
 
@@ -34,19 +35,31 @@ _PACKAGE: Final = os.path.dirname(os.path.abspath(__file__)) + os.sep
 
 def threshold_from_environment() -> float | None:
     """The threshold in seconds that ``PYFECT_WARN_BLOCKING`` sets, or ``None`` when it is
-    unset, empty or ``0``. Raises ``ValueError`` for anything but a positive number of
-    milliseconds, so a typo does not silently turn the watchdog off."""
+    unset, empty or zero. It is a duration (``"100 millis"``, ``"0.5 seconds"``) or a bare
+    number of milliseconds, other than ``1``: ``PYFECT_WARN_BARE_DURATIONS=1`` means "on",
+    and copied here would warn about every step of a millisecond. Raises ``ValueError`` for
+    anything else, so a typo does not silently turn the watchdog off."""
     text = os.environ.get(WARN_BLOCKING_ENV, "").strip()
-    if text in ("", "0"):
+    if not text:
         return None
     try:
         millis = float(text)
     except ValueError:
-        millis = math.nan
+        parsed = duration.from_input(text)
+        millis = math.nan if parsed is None else duration.to_millis(parsed)
+    else:
+        if millis == 1:
+            raise ValueError(
+                f"{WARN_BLOCKING_ENV}=1 would warn about every fiber step that runs 1 ms; it is "
+                'a threshold, not an on switch. Give it with its unit: "100 millis" or '
+                '"0.5 seconds" (a bare number is milliseconds)'
+            )
+    if millis == 0:
+        return None
     if not (millis > 0 and math.isfinite(millis)):
         raise ValueError(
-            f"{WARN_BLOCKING_ENV} must be a positive number of milliseconds (or 0 for off), "
-            f"got {text!r}"
+            f'{WARN_BLOCKING_ENV} must be a positive duration, such as "100 millis" or '
+            f'"0.5 seconds", or 0 for off; got {text!r}'
         )
     return millis / 1000
 
@@ -155,10 +168,13 @@ def _warning(
     users = [f for f in frames if not f.f_code.co_filename.startswith(_PACKAGE)] or frames
     summary = traceback.StackSummary.extract((f, f.f_lineno) for f in reversed(users))
     blocked_at = summary[-1]
+    # The blocking frame without its source line: the warning's display shows that line.
+    callers = "".join(traceback.StackSummary.from_list(summary[:-1]).format())
     warning = BlockingStepWarning(
         f"a fiber step has run for {elapsed * 1000:.0f} ms without returning, blocking "
         "every fiber on its thread; .timeout and interrupts wait for it. Wait with "
         "fx.sleep, and run a blocking call you can't avoid with fx.blocking(f). The "
-        "step:\n" + "".join(summary.format()).rstrip()
+        f"step:\n{callers}"
+        f'  File "{blocked_at.filename}", line {blocked_at.lineno}, in {blocked_at.name}'
     )
     return warning, blocked_at.filename, blocked_at.lineno or 0
