@@ -24,6 +24,11 @@
 - A `@testing.effect` test whose deadline passed while it could not be interrupted (in a
   finalizer, say), and which then finished, fails with a `TestTimeoutError` saying it finished
   after its timeout, not that it was interrupted.
+- `ChildProcessSpawner.spawn`: a child that exited before its spawn returned (`sh -c '...
+  & exit 0'`, say) could have its exit handled first, so `stdin` was already destroyed and
+  the first write failed with `Premature close`. The exit is now seen only after the spawn
+  has handed the child over, as in Effect, which resumes on Node's `spawn` event before the
+  `exit` event: a write made right after the spawn goes in first.
 
 ## 0.6.9 (2026-11-16)
 

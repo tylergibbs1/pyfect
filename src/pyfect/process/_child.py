@@ -13,6 +13,9 @@ unrelated group could be signalled.
 As in Node, where the exit handler destroys ``stdin`` before anything hears of the exit, a
 child's ``on_exit`` runs once, before any of its methods reports the exit: in a task of the
 scheduler it was spawned on, or in the first call that sees the exit before that task runs.
+The exit is seen only once the spawn has handed the child over (``handed_over``), as Node's
+``exit`` event comes after the ``spawn`` event Effect resumes on: a child gone before its
+spawn returned still takes a write made right after the spawn.
 """
 
 from __future__ import annotations
@@ -49,6 +52,7 @@ class Child:
 
     __slots__ = (
         "_exit",
+        "_handed_over",
         "_on_exit",
         "_on_exit_lock",
         "command",
@@ -75,6 +79,7 @@ class Child:
         self._on_exit: Callable[[], None] | None = on_exit
         self._on_exit_lock = threading.Lock()
         self._exit: Latch[int] = Latch(waits_for="event")
+        self._handed_over = threading.Event()
         threading.Thread(
             target=self._watch, args=(scheduler,), name="pyfect-process-exit", daemon=True
         ).start()
@@ -134,6 +139,10 @@ class Child:
             return False
         return True
 
+    def handed_over(self) -> None:
+        """The spawn has handed the child to its fiber: from now on its exit is seen."""
+        self._handed_over.set()
+
     def _watch(self, scheduler: Scheduler) -> None:
         code = self.popen.wait()
         if code > 0 and self.command.options.detached is not False and os.name != "nt":
@@ -141,6 +150,7 @@ class Child:
             # group with it.
             with contextlib.suppress(OSError):
                 os.killpg(self.pid, self.command.options.kill_signal or signal.SIGTERM)
+        self._handed_over.wait()
         self._exit.set(code)
         # A run that has ended leaves ``on_exit`` to the first call that sees the exit.
         with contextlib.suppress(LoopClosedError):

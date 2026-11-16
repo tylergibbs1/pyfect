@@ -8,7 +8,7 @@ import errno
 import os
 import signal
 import time
-from typing import Literal
+from typing import Any, Literal
 
 import pytest
 
@@ -28,6 +28,7 @@ from pyfect.process import (
     StderrConfig,
     StdinConfig,
     StdoutConfig,
+    _live,
     _pipes,
     command_line,
     make,
@@ -155,6 +156,28 @@ def test_a_writer_thread_that_raises_fails_the_write(
     written = yield from stream.make(b"x" * 5_000_000).run(handle.stdin).exit()
     assert isinstance(written, fx.Failure)
     assert [type(defect) for defect in written.cause.defects] == [ValueError]
+
+
+@testing.live
+def test_a_child_gone_before_its_spawn_returns_takes_a_write_made_right_after(
+    process_services: Services[Platform], monkeypatch: pytest.MonkeyPatch
+):
+    # Effect resumes the spawn on Node's "spawn" event, which comes before the "exit" that
+    # destroys stdin: a write made right after the spawn is in before the exit is handled,
+    # even when the child has already gone. Here the spawn's thread returns only once the
+    # child has been reaped.
+    started = _live.Child
+
+    def reaped_before_returning(*args: Any, **kwargs: Any) -> _live.Child:
+        child = started(*args, **kwargs)
+        while child.popen.returncode is None:
+            time.sleep(0.005)
+        time.sleep(0.05)
+        return child
+
+    monkeypatch.setattr(_live, "Child", reaped_before_returning)
+    handle = yield from _exits_while_a_grandchild_holds_stdin("3")
+    yield from stream.make(b"x").run(handle.stdin)
 
 
 def _wait_until_gone(pid: int) -> None:

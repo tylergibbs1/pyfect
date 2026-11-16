@@ -469,7 +469,7 @@ class _Spawner:
                 lambda error: from_exception(
                     error, module="ChildProcess", method="spawn", path_or_descriptor=line
                 ),
-            ),
+            ).tap(lambda c: sync(c.handed_over)),
             lambda c, _: c.release(),
         )
         pipes.child = child
