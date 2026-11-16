@@ -54,9 +54,19 @@ every version. Timestamps are epoch milliseconds too: `testing.set_time`,
 To find the bare numbers in a project, set `PYFECT_WARN_BARE_DURATIONS=1`. Every duration given
 as a number other than 0 or an infinity then warns with `BareNumberDurationWarning`, at the
 line that passed it: `the duration 2 was read as 2 milliseconds; write "2 seconds" if you meant
-seconds, or "2 millis" to keep milliseconds`. It is off by default. To fail on them, also make
-the warning an error, with `-W error::pyfect.duration.BareNumberDurationWarning` or, under
-pytest:
+seconds, or "2 millis" to keep milliseconds`. It is off by default. To fail on them, set
+`PYFECT_WARN_BARE_DURATIONS=error`, which raises the warning instead. Python's `-W` option and
+`PYTHONWARNINGS` can't name the category: Python reads them before pyfect is imported, prints
+`Invalid -W option ignored` and runs on. Match the message with them instead:
+
+```sh title="Fail on bare durations"
+PYFECT_WARN_BARE_DURATIONS=error python app.py
+PYFECT_WARN_BARE_DURATIONS=1 python -W "error:the duration" app.py
+PYFECT_WARN_BARE_DURATIONS=1 PYTHONWARNINGS="error:the duration" python app.py
+PYFECT_WARN_BARE_DURATIONS=1 pytest
+```
+
+pytest imports the category its `filterwarnings` setting names, so there the category works:
 
 ```toml title="pyproject.toml"
 [tool.pytest.ini_options]

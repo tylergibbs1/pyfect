@@ -786,26 +786,25 @@ _PACKAGE_DIR: Final = os.path.dirname(os.path.abspath(__file__)) + os.sep
 class BareNumberDurationWarning(UserWarning):
     """A bare number was given as a duration and read as milliseconds (``fx.sleep(2)`` sleeps
     2 ms, as in Effect). Emitted only when the ``PYFECT_WARN_BARE_DURATIONS`` environment
-    variable is set (and not ``0``); make it an error with
-    ``-W error::pyfect.duration.BareNumberDurationWarning``."""
+    variable is set (and not ``0``); ``PYFECT_WARN_BARE_DURATIONS=error`` raises it instead."""
 
 
-def _warn_bare_number(value: float) -> None:
+def _warn_bare_number(value: float, *, raise_it: bool) -> None:
     text = js_number(_js_float(value))
-    warnings.warn(
-        BareNumberDurationWarning(
-            f"the duration {text} was read as {text} milliseconds; write "
-            f'"{text} seconds" if you meant seconds, or "{text} millis" to keep milliseconds'
-        ),
-        skip_file_prefixes=(_PACKAGE_DIR,),
+    warning = BareNumberDurationWarning(
+        f"the duration {text} was read as {text} milliseconds; write "
+        f'"{text} seconds" if you meant seconds, or "{text} millis" to keep milliseconds'
     )
+    if raise_it:
+        raise warning
+    warnings.warn(warning, skip_file_prefixes=(_PACKAGE_DIR,))
 
 
 def from_input_unsafe(input: Input) -> Duration:
     """Parse an ``Input``; raises ``ValueError`` for one that is not a duration (Effect's
     ``Duration.fromInputUnsafe``). A bare number is milliseconds; with
     ``PYFECT_WARN_BARE_DURATIONS=1`` one other than 0 or infinity warns with
-    ``BareNumberDurationWarning``."""
+    ``BareNumberDurationWarning`` (raises it with ``=error``)."""
     match input:
         case Duration():
             return input
@@ -815,9 +814,9 @@ def from_input_unsafe(input: Input) -> Duration:
             if (
                 input
                 and not (isinstance(input, float) and not math.isfinite(input))
-                and os.environ.get(WARN_BARE_DURATIONS_ENV, "") not in ("", "0")
+                and (setting := os.environ.get(WARN_BARE_DURATIONS_ENV, "")) not in ("", "0")
             ):
-                _warn_bare_number(input)
+                _warn_bare_number(input, raise_it=setting == "error")
             return _make_number(_js_float(input))
         case str():
             return _from_text(input)

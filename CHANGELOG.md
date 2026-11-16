@@ -2,8 +2,21 @@
 
 ## 0.6.8 (unreleased)
 
+### Added
+
+- `PYFECT_WARN_BARE_DURATIONS=error` raises `BareNumberDurationWarning` at the first duration
+  given as a bare number (other than 0 or an infinity), so a run fails on one without a warning
+  filter. `=1` still only warns.
+
 ### Docs
 
+- The Durations section gave `-W error::pyfect.duration.BareNumberDurationWarning`, which
+  Python rejects at startup ("Invalid -W option ignored", before pyfect is imported) and then
+  runs on with exit 0, as it does for `PYTHONWARNINGS`. It now gives
+  `PYFECT_WARN_BARE_DURATIONS=error`, `-W "error:the duration"` and pytest's `filterwarnings`.
+  `tests/test_doc_warning_commands.py` runs each documented command on a program that passes a
+  bare number and requires it to fail, and fails on any document that names a pyfect category
+  in `-W` or `PYTHONWARNINGS`.
 - The install commands (Installation page, README) run `uv init --python 3.14+gil`: a plain
   `--python 3.14` let uv pick a free-threaded 3.14t whenever one was installed, so the page's
   claim that it pinned the standard build was wrong. `tests/test_install.py` fails on any
