@@ -174,9 +174,8 @@ SINKS: dict[str, Callable[[object], str]] = {
 @pytest.mark.parametrize("kind", sorted(_values()))
 def test_no_secret_reaches_a_sink(sink: str, kind: str) -> None:
     output = SINKS[sink](_values()[kind])
-    # The DevTools messages are JSON (``stringify``), which has no form for
-    # an exception without ``to_json``: that batch is not sent at all.
-    assert output or (sink, kind) == ("devtools", "exception_attribute")
+    # The records reached the sink, so the secrets are looked for in what it wrote.
+    assert "annotated" in output and "failed" in output, output
     assert [secret for secret in SECRETS if secret in output] == []
 
 
