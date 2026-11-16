@@ -214,7 +214,7 @@ pyfect needs Python 3.13 or later; its one dependency is `typing-extensions`. In
 project).
 
 ```sh
-uv init --python 3.14 app && cd app   # a new project; skip in one that has a [project] table
+uv init --python 3.14+gil app && cd app   # a new project; skip in one that has a [project] table
 uv add pyfect-dev
 uv add --dev pyright
 ```

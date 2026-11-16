@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.8 (unreleased)
+
+### Docs
+
+- The install commands (Installation page, README) run `uv init --python 3.14+gil`: a plain
+  `--python 3.14` let uv pick a free-threaded 3.14t whenever one was installed, so the page's
+  claim that it pinned the standard build was wrong. `tests/test_install.py` fails on any
+  documented uv command that requests 3.14 or later without `+gil`.
+
 ## 0.6.7 (2026-11-15)
 
 ### Added
