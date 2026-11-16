@@ -122,7 +122,12 @@ def _start() -> PgServer:
         check=True,
     )
     port = _ports.reserved_port()
-    options = f"-p {port} -k {root} -c listen_addresses=127.0.0.1 -c fsync=off"
+    # No commit waits for the disk: fsync=off drops the flush, and
+    # synchronous_commit=off the WAL write a commit still makes without it,
+    # which under disk pressure held a cluster lock refresh past its 500 ms.
+    options = (
+        f"-p {port} -k {root} -c listen_addresses=127.0.0.1 -c fsync=off -c synchronous_commit=off"
+    )
     subprocess.run(
         [pg_ctl, "-D", data_dir, "-l", os.path.join(root, "log"), "-o", options, "-w", "start"],
         capture_output=True,

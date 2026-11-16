@@ -175,17 +175,28 @@ _SLOW_PG = "SELECT pg_sleep(1.5)"
 @testing.live
 def test_commits_on_the_cluster_database_skip_the_disk_flush(cluster_db: ClusterDatabase):
     """A commit on the cluster database does not wait for the disk (SQLite
-    ``synchronous = OFF``, PostgreSQL ``fsync = off``): on CI a slow flush
-    held both runners' lock refreshes past their 500 ms, so a reply was
-    fenced and its request ran twice (the flake of "persists a non-JSON
-    Error as a serializable defect")."""
+    ``synchronous = OFF``; PostgreSQL ``fsync = off`` and
+    ``synchronous_commit = off``): on CI a slow flush held both runners'
+    lock refreshes past their 500 ms, so a reply was fenced and its request
+    ran twice (the flake of "persists a non-JSON Error as a serializable
+    defect"). With ``fsync = off`` alone a PostgreSQL commit still writes
+    its WAL before it returns, and under disk pressure that write stalled a
+    lock refresh past 500 ms (the generation-3 flake of "rebuilds an entity
+    after a fatal defect and replays in-flight requests")."""
 
     def body() -> Body:
         sql = yield from cluster_db.make()
         if cluster_db.backend == "sqlite":
             assert (yield from sql("PRAGMA synchronous")) == [{"synchronous": 0}]
         else:
-            assert (yield from sql("SHOW fsync")) == [{"fsync": "off"}]
+            settings = yield from sql(
+                "SELECT name, setting FROM pg_settings "
+                "WHERE name IN ('fsync', 'synchronous_commit') ORDER BY name"
+            )
+            assert settings == [
+                {"name": "fsync", "setting": "off"},
+                {"name": "synchronous_commit", "setting": "off"},
+            ]
 
     yield from fx.scoped(fx.gen(body))
 
