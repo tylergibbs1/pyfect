@@ -109,3 +109,19 @@ def test_a_quiet_random_parallel_run_prints_the_seed_that_repeats_it(pytester: p
     )
     assert result.ret == pytest.ExitCode.OK
     result.stdout.fnmatch_lines(["random order: repeat it with -p randomly --randomly-seed=1234"])
+
+
+def test_the_snippet_runs_are_scheduled_together() -> None:
+    # They share one module fixture that starts every snippet the session holds. Snippets under
+    # website/snippets/mysql/ and libsql/ were scheduled apart from the rest, so a second and a
+    # third worker each started every snippet again, and the one test each ran waited behind
+    # them past the hang timeout.
+    file = Path(__file__).with_name("test_doc_snippets.py")
+    text = file.read_text(encoding="utf-8")
+    snippets = file.parent.parent / "website" / "snippets"
+    scopes = {
+        _parallel.scope_of(f"tests/{file.name}::{test}[{path.relative_to(snippets)}]", text)
+        for path in snippets.rglob("*.py")
+        for test in ("test_snippet_runs", "test_snippet_tests_pass")
+    }
+    assert len(scopes) == 1, scopes

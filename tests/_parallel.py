@@ -35,9 +35,10 @@ IN_ORDER = "in_order"
 CONTAINERS = ("mysql", "mssql", "clickhouse", "libsql")
 """Databases the tests run in Docker, one container per process that asks."""
 
-# A test id names its database as a word of its own (``[mysql]``, ``[pyfect.sql.mssql.layer]``);
-# a file that starts one uses its fixture module (``_mysql``) or fixture (``mysql_server``).
-_NAMES = {name: re.compile(rf"(?<![A-Za-z0-9]){name}(?![A-Za-z])") for name in CONTAINERS}
+# A test id names its database as a word of its own (``[mysql]``, ``[pyfect.sql.mssql.layer]``),
+# not as a directory (``[mysql/connect.py]`` is a file path); a file that starts one uses its
+# fixture module (``_mysql``) or fixture (``mysql_server``).
+_NAMES = {name: re.compile(rf"(?<![A-Za-z0-9/]){name}(?![A-Za-z/])") for name in CONTAINERS}
 _STARTS = {name: re.compile(rf"\b_{name}\b|\b{name}_server\b") for name in CONTAINERS}
 _MARKED_IN_ORDER = re.compile(rf"\bmark\.{IN_ORDER}\b")
 _SIGNALS = tuple(
