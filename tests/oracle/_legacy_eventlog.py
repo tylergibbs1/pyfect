@@ -17,6 +17,7 @@ from typing import Any
 import pytest
 
 import pyfect as fx
+from pyfect import logger
 from pyfect.crypto import digest
 from pyfect.eventlog import event_journal as J
 from pyfect.eventlog import event_log_server_encrypted as Server
@@ -55,11 +56,15 @@ class LegacyDb:
         namespace = f"legacy_{os.getpid()}_{next(_namespaces)}"
         self.prefix = f"{namespace}_events"
         self.remote_id_table = f"{namespace}_remote_id"
+        self.migration: SqlServer.LegacyMigration = "never"
+        """The servers' ``migrate_legacy_stores``."""
 
     def storage(self) -> fx.Layer[Server.Storage, Any]:
         return (
             SqlServer.layer_storage(
-                entry_table_prefix=self.prefix, remote_id_table=self.remote_id_table
+                entry_table_prefix=self.prefix,
+                remote_id_table=self.remote_id_table,
+                migrate_legacy_stores=self.migration,
             )
             .pipe(fx.layer.provide(self.client()))
             .pipe(fx.layer.provide(digest.layer_web_crypto))
@@ -78,6 +83,7 @@ class LegacyDb:
         *,
         without_binding: bool = False,
         taken_from: Pair | None = None,
+        through_sequence: int | None = None,
     ) -> fx.Exit[bool, Any]:
         return self.tool(
             SqlServer.migrate_legacy_store(
@@ -85,6 +91,7 @@ class LegacyDb:
                 not_written_by=not_written_by,
                 without_binding=without_binding,
                 taken_from=taken_from,
+                through_sequence=through_sequence,
                 entry_table_prefix=self.prefix,
                 remote_id_table=self.remote_id_table,
             )
@@ -104,9 +111,42 @@ class LegacyDb:
         assert isinstance(found, fx.Success)
         return found.value
 
-    def run[A](self, body: Callable[[], Generator[Any, Any, A]]) -> fx.Exit[A, Any]:
-        """``body`` with one storage, as one server process."""
-        return fx.run_blocking(fx.scoped(fx.gen(body)).pipe(fx.provide(self.storage())).exit())
+    def run[A](
+        self, body: Callable[[], Generator[Any, Any, A]], logs: list[str] | None = None
+    ) -> fx.Exit[A, Any]:
+        """``body`` with one storage, as one server process, adding the
+        messages of its warnings to ``logs``."""
+        effect = fx.scoped(fx.gen(body)).pipe(fx.provide(self.storage()))
+        if logs is not None:
+            found = logs
+
+            def keep(entry: logger.Options) -> None:
+                if entry.log_level == fx.LogLevel.WARN:
+                    found.append(str(entry.message[0]))
+
+            effect = effect.pipe(fx.provide(logger.layer([fx.Logger.make(keep)])))
+        return fx.run_blocking(effect.exit())
+
+    def tables(self) -> set[str]:
+        """The names of the tables under this database's prefixes."""
+
+        def body():
+            sql = (yield from SqlClient()).without_transforms()
+            rows = yield from sql.on_dialect_or_else(
+                pg=lambda: sql("SELECT tablename AS name FROM pg_tables"),
+                mysql=lambda: sql(
+                    "SELECT table_name AS name FROM information_schema.tables "
+                    "WHERE table_schema = DATABASE()"
+                ),
+                mssql=lambda: sql("SELECT name FROM sys.tables"),
+                or_else=lambda: sql("SELECT name FROM sqlite_master WHERE type = 'table'"),
+            )
+            names = {str(row["name"]) for row in rows}
+            return {n for n in names if n.lower().startswith(self.prefix.split("_events")[0])}
+
+        found = self.tool(fx.gen(body))
+        assert isinstance(found, fx.Success)
+        return found.value
 
     def start(self) -> None:
         """Starts a server once, as the first start after an upgrade does."""
@@ -132,9 +172,9 @@ class LegacyDb:
 
         assert isinstance(self.run(body), fx.Success)
 
-    def read(self, pair: Pair) -> list[str]:
+    def read(self, pair: Pair, logs: list[str] | None = None) -> list[str]:
         """The tags of the pair's batches; raises the store's refusal."""
-        found = self.run(lambda: read_tags(pair))
+        found = self.run(lambda: read_tags(pair), logs)
         if isinstance(found, fx.Failure):
             raise found.cause.squash()  # pyright: ignore[reportGeneralTypeIssues]
         return found.value
@@ -165,7 +205,12 @@ def read_tags(pair: Pair) -> Generator[Any, Any, list[str]]:
     latest = yield from storage.latest_sequence(pair[0], StoreId(pair[1]))
     if latest is None:
         return []
-    batches = yield from storage.changes(pair[0], StoreId(pair[1]), 1).take(latest).run_collect()
+    # Sequences can start past 1, as in tables taken back from a pair.
+    batches = yield from (
+        storage.changes(pair[0], StoreId(pair[1]), 1)
+        .take_until(lambda b: b.sequence + len(b.entry_ids) > latest)
+        .run_collect()
+    )
     return [b.encrypted_batch.decode() for b in batches]
 
 

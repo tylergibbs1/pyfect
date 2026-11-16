@@ -12,6 +12,34 @@
   element longer than its `MEDIUMTEXT` column (16 MiB of UTF-8) now fails the offer before it
   reaches MySQL, as an over-long id or queue name already did, since `INSERT IGNORE` would cut
   it.
+- `sql_event_log_server_encrypted`: automatic migration of 0.6.5 stores could give a store
+  to the wrong pair (0.6.7 and 0.6.8). A store written straight through the storage leaves no
+  session auth binding, so the server cannot tell it apart from one only another pair of its
+  name could have written. The server now migrates no store by itself: each one waits, logged
+  once and listed by `legacy_stores`, until the operator runs `migrate_legacy_store`.
+  `layer_storage(migrate_legacy_stores="when_server_written")` restores 0.6.8's rule, for
+  databases where every 0.6.5 write went through a server. `LegacyStoreNeedsMigration` has a
+  `state` field in place of `automatic`.
+- `legacy_stores` only reads and works before the upgrade (`LegacyStore.upgrade_recorded`),
+  and `migrate_legacy_store` is refused until an upgraded server has started: only the
+  server's first start records which keys had authenticated before the upgrade. In 0.6.8
+  either call, run while 0.6.5 still served, counted as the upgrade.
+- `migrate_legacy_store(..., taken_from=pair)` no longer hands the batches that pair wrote
+  after it got the tables to the store taking them back, whose clients could not decrypt
+  them. They move to that pair's own tables at the same sequences. Each alias now records
+  where the legacy tables ended when it was made; for one 0.6.6 to 0.6.8 made, pass
+  `through_sequence=`. A running server follows the change at once, instead of serving the
+  old tables until it restarted.
+- A store split by a 0.6.5 node writing after the upgrade is reported as `"split"` and logged
+  when its key never authenticated too, where the compaction buckets show it.
+- A pair opening tables of its own while the 0.6.5 tables of its name hold batches another
+  pair has, or may get, logs a warning naming the name.
+
+### Docs
+
+- The event log upgrade guide covers the opt-in migration, never running 0.6.7 or 0.6.8 beside
+  a newer version or downgrading to them, taking tables back with `through_sequence`, and
+  what the server's warnings mean.
 
 ## 0.6.8 (2026-11-16)
 

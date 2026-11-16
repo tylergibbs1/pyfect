@@ -14,6 +14,11 @@ exists) the copied bindings may postdate that upgrade: ``automatic`` is
 then false, and every legacy store waits for the operator. This version
 creates the aliases table only after its record is written, so the check
 cannot see a table it made itself.
+
+Only the server's storage layer writes the record (``prepare``). The
+operator's tools read the database as it stands before then
+(``listing_evidence``) and refuse to migrate (``recorded``), so a preview
+run while 0.6.5 still serves does not count as the upgrade.
 """
 
 from __future__ import annotations
@@ -40,11 +45,14 @@ from pyfect.sql.statement import Identifier
 class Evidence:
     """The bindings of some keys: ``before`` the upgrade (in the record) and
     ``now``; ``automatic``: the record predates every other upgrade, so the
-    server may act on it by itself."""
+    server may act on it by itself; ``recorded``: false before the first
+    start of 0.6.8 or later, when ``before`` holds the bindings as they
+    stand."""
 
     before: frozenset[str]
     now: frozenset[str]
     automatic: bool
+    recorded: bool = True
 
 
 def _table_exists(sql: SqlClientService, name: str) -> Effect[bool, SqlError]:
@@ -115,6 +123,22 @@ def prepare(db: Db, remote_id_table: str) -> Effect[None, SqlError]:
     return gen(body)
 
 
+def recorded(db: Db) -> Effect[bool, SqlError]:
+    """Whether a server of 0.6.8 or later has started on the database."""
+
+    def body():
+        if not (yield from _table_exists(db.sql, f"{db.prefix}_legacy_upgrade")):
+            return False
+        return bool((yield from db.sql("SELECT id FROM {}", _upgrade(db))))
+
+    return gen(body)
+
+
+def table_exists(db: Db, name: str) -> Effect[bool, SqlError]:
+    """Whether ``<prefix>_<name>`` exists."""
+    return _table_exists(db.sql, f"{db.prefix}_{name}")
+
+
 def automatic(db: Db) -> Effect[bool, SqlError]:
     return db.sql("SELECT automatic FROM {}", _upgrade(db)).map(
         lambda rows: bool(rows) and column_int(rows[0]["automatic"]) == 1
@@ -153,8 +177,11 @@ def evidence(db: Db, keys: Iterable[str]) -> Effect[Evidence, SqlError]:
     return gen(body)
 
 
-def all_evidence(db: Db) -> Effect[Evidence, SqlError]:
-    """The bindings of every key, for listing many stores."""
+def listing_evidence(db: Db) -> Effect[Evidence, SqlError]:
+    """The bindings of every key, for listing many stores, creating
+    nothing. Before the record exists, the bindings as they stand count as
+    before the upgrade (``recorded`` false), and 0.6.6 or 0.6.7 ran when
+    their aliases table exists."""
     sql = db.sql
 
     def keys(table: Identifier) -> Effect[frozenset[str], SqlError]:
@@ -163,11 +190,27 @@ def all_evidence(db: Db) -> Effect[Evidence, SqlError]:
         )
 
     def body():
-        before = yield from keys(_snapshot(db))
-        now = yield from keys(db.bindings)
-        return Evidence(before, now, (yield from automatic(db)))
+        if (yield from recorded(db)):
+            before = yield from keys(_snapshot(db))
+            now = yield from keys(db.bindings)
+            return Evidence(before, now, (yield from automatic(db)))
+        now = (
+            (yield from keys(db.bindings))
+            if (yield from table_exists(db, "session_auth_bindings"))
+            else frozenset[str]()
+        )
+        ran_066 = yield from table_exists(db, "scope_aliases")
+        return Evidence(now, now, not ran_066, recorded=False)
 
     return gen(body)
 
 
-__all__ = ["Evidence", "all_evidence", "automatic", "evidence", "prepare"]
+__all__ = [
+    "Evidence",
+    "automatic",
+    "evidence",
+    "listing_evidence",
+    "prepare",
+    "recorded",
+    "table_exists",
+]

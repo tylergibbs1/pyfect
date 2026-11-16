@@ -68,6 +68,7 @@ def as_065(monkeypatch: pytest.MonkeyPatch) -> Callable[[], Earlier]:
 def test_the_one_authenticated_identity_gets_its_store_with_no_operator_step(
     db: LegacyDb, as_065: Callable[[], Earlier]
 ) -> None:
+    db.migration = "when_server_written"
     with as_065():
         db.bind(OWNER[0])
         db.write(OWNER, "owner")
@@ -83,6 +84,7 @@ def test_the_one_authenticated_identity_gets_its_store_with_no_operator_step(
 def test_a_key_that_never_authenticated_cannot_take_another_identitys_store(
     db: LegacyDb, as_065: Callable[[], Earlier]
 ) -> None:
+    db.migration = "when_server_written"
     with as_065():
         db.bind(OWNER[0])
         db.write(OWNER, "owner")
@@ -211,6 +213,7 @@ def test_the_report_lists_stores_waiting_for_their_next_request(
         for pair in [OWNER, (uuid, "notes/2024"), (uuid, "notes"), ("pk", "main")]:
             db.bind(pair[0])
             db.write(pair, "x")
+    db.start()
     assert db.report(["main", "notes/2024", "notes", "absent"]) == [
         LegacyStore(uuid, "notes/2024", "pending"),
         LegacyStore(f"{uuid}/notes", "2024", "unbound", (uuid,), "none"),
@@ -290,6 +293,7 @@ def _changes_over_rpc(db: LegacyDb, pair: tuple[str, str]) -> fx.Exit[Any, Any]:
 def test_a_store_written_through_a_0_6_5_server_syncs_after_the_upgrade(
     db: LegacyDb, as_065: Callable[[], Earlier]
 ) -> None:
+    db.migration = "when_server_written"
     pairs = [OWNER, ("0b0d2f6e-5d1e-4c4f-9d43-3b0b7b0c9a10", "notes/2024")]
     with as_065():
         _write_over_rpc(db, pairs)

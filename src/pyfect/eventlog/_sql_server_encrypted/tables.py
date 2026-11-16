@@ -3,7 +3,8 @@
 Global: the remote id, session auth bindings, and the compaction stores,
 buckets, activations and stages, as 0.6.5 made them
 (``create_065_tables``); the scope aliases 0.6.6 added
-(``create_alias_tables``, with their origins from 0.6.8); and the record
+(``create_alias_tables``, with their origins from 0.6.8 and their bounds
+from 0.6.9); and the record
 of the upgrade (``create_upgrade_tables``, see ``upgrade.py``). Per store
 (named by a hash of its scope under the prefix): ``T`` (batches), ``T_ids``
 (entry ids with the sequence each was first stored at) and ``T_snapshot``
@@ -166,12 +167,13 @@ def create_upgrade_tables(sql: SqlClientService, prefix: str) -> Effect[None, Sq
 
 
 def create_alias_tables(sql: SqlClientService, prefix: str) -> Effect[None, SqlError]:
-    """The aliases 0.6.6 added, and who made each one since 0.6.8."""
+    """The aliases 0.6.6 added, who made each one since 0.6.8, and the
+    sequence each was made at since 0.6.9."""
     types = types_for(sql)
 
     def body():
         # A legacy scope (named as 0.6.5 did) given to the pair whose new
-        # scope is ``scope`` (``legacy.migrate_legacy_store``).
+        # scope is ``scope`` (``migrate.migrate_legacy_store``).
         yield from create_table(
             sql,
             f"{prefix}_scope_aliases",
@@ -184,6 +186,17 @@ def create_alias_tables(sql: SqlClientService, prefix: str) -> Effect[None, SqlE
             sql,
             f"{prefix}_scope_alias_origins",
             sql("legacy_scope {id} PRIMARY KEY, origin {id} NOT NULL", id=types.id),
+        )
+        # ``through_sequence``: the legacy store's head when the alias was
+        # made, so batches after it are the holder's. No row: made before 0.6.9.
+        yield from create_table(
+            sql,
+            f"{prefix}_scope_alias_bounds",
+            sql(
+                "legacy_scope {id} PRIMARY KEY, through_sequence {int} NOT NULL",
+                id=types.id,
+                int=types.int,
+            ),
         )
 
     return gen(body)

@@ -7,14 +7,15 @@ with exactly one ``/`` splits back to one pair, so such a pair keeps that
 key and its tables. Every other pair has a key that holds no ``/``.
 
 The tables a legacy key named may hold either pair's batches, and the
-server cannot read them. What shows who wrote them is a session auth
-binding made before the upgrade (``upgrade.py``): a key that wrote through
-a server had authenticated. When exactly one key splitting the legacy text
-had one, its pair gets the tables (by a row of ``<prefix>_scope_aliases``,
-one pair at most) and every other pair opens its own. Otherwise every pair
-with a binding from before, or every pair when none had one, does not open
-(``LegacyStoreNeedsMigration``) until the operator decides with
-``migrate_legacy_store``.
+server cannot read them. A pair gets them by a row of
+``<prefix>_scope_aliases`` (one pair at most), which the operator makes
+(``migrate.py``). The server makes one by itself only when the storage
+says every 0.6.5 write went through a server (``LegacyMigration``): then a
+key that wrote had authenticated, and when exactly one key splitting the
+legacy text had a session auth binding before the upgrade (``upgrade.py``),
+its pair gets them. A store written straight through the storage has no
+binding, so without that promise every pair of the name waits for the
+operator (``LegacyStoreNeedsMigration``).
 """
 
 from __future__ import annotations
@@ -28,10 +29,11 @@ from pyfect._core import Effect
 from pyfect._json_text import quote
 from pyfect._text_keys import key_bytes
 from pyfect.crypto.digest import Digest, DigestService, sha256
-from pyfect.effect import fail, gen
+from pyfect.effect import fail, gen, succeed
 from pyfect.eventlog._server_encrypted.models import make_compaction_config
 from pyfect.eventlog._sql_server_encrypted import upgrade
 from pyfect.eventlog._sql_server_encrypted.db import Db
+from pyfect.eventlog._sql_server_encrypted.tables import create_alias_tables
 from pyfect.eventlog._sql_server_encrypted.upgrade import Evidence
 from pyfect.eventlog._store_unavailable import StoreUnavailable
 from pyfect.persistence._columns import column_int, column_text
@@ -40,48 +42,76 @@ from pyfect.sql.error import SqlError
 
 UPGRADE_NOTES = "https://pyfect.dev/docs/eventlog-upgrade"
 
+type LegacyMigration = Literal["never", "when_server_written"]
+"""Whether the server gives a store its 0.6.5 tables by itself:
+``"never"`` (every such store waits for ``migrate_legacy_store``), or
+``"when_server_written"``, which promises that every write to the database
+under 0.6.5 or earlier went through a server, none straight through the
+storage."""
+
+type Standing = Literal["pending", "unconfirmed", "ambiguous", "unbound"]
+"""Where a pair stands on legacy tables no pair has, by the bindings from
+before the upgrade: ``pending``, its key alone had one; ``unconfirmed``,
+likewise, but the record may postdate an earlier upgrade
+(``Evidence.automatic``); ``ambiguous``, other keys had one too;
+``unbound``, its key had none."""
+
 
 class LegacyStoreNeedsMigration(S.TaggedError, StoreUnavailable, tag="LegacyStoreNeedsMigration"):
-    """The store's tables from 0.6.5 or earlier hold batches, and the
-    bindings from before the upgrade do not show that this store alone
-    wrote them. ``authenticated``: its key had a binding before the upgrade;
-    ``other_keys``: the other keys splitting the same legacy name that had
-    one; ``automatic``: false when 0.6.6 or 0.6.7 opened the database first,
-    so the server migrates nothing by itself."""
+    """The store's tables from 0.6.5 or earlier hold batches that no pair
+    has, and the server does not give them away by itself. ``state`` is
+    where the pair stands (``Standing``); ``other_keys``: the other keys
+    splitting the same legacy name that had a binding before the upgrade."""
 
     public_key: str = S.field(S.String, key="publicKey")
     store_id: str = S.field(S.String, key="storeId")
-    authenticated: bool = S.field(S.Boolean, default=False)
+    state: Standing = S.field(S.Literals("pending", "unconfirmed", "ambiguous", "unbound"))
     other_keys: tuple[str, ...] = S.field(S.Array(S.String), default=(), key="otherKeys")
-    automatic: bool = S.field(S.Boolean, default=True)
+
+    @property
+    def authenticated(self) -> bool:
+        """Whether its key had a binding before the upgrade."""
+        return self.state != "unbound"
 
     @property
     def message(self) -> str:
         legacy = legacy_key(self.public_key, self.store_id)
         others = ", ".join(repr(key) for key in self.other_keys)
-        if self.authenticated and others:
-            why = (
-                f"that this store or the store of {others} may have written: each key had "
-                "authenticated before the upgrade. Find out which wrote them before migrating them"
-            )
-        elif self.authenticated:
-            why = (
-                "that only this store's key, among those sharing that name, had authenticated "
-                "when pyfect 0.6.8 first started. pyfect 0.6.6 or 0.6.7 ran on this database "
-                "before, so that binding may be newer than the upgrade, and the server moves "
-                "nothing by itself. Migrate them once you know this store wrote them"
-            )
-        elif others:
-            why = (
-                f"that the store of {others} may have written, and this store's key had not "
-                "authenticated before the upgrade. Do not migrate them to it unless you know it "
-                "wrote them"
-            )
-        else:
-            why = (
-                "and no key sharing that name had authenticated before the upgrade, so nothing "
-                "shows who wrote them. Do not migrate them to this store unless you know it did"
-            )
+        match self.state:
+            case "ambiguous":
+                why = (
+                    f"that this store or the store of {others} may have written: each key had "
+                    "authenticated before the upgrade. Find out which wrote them before migrating "
+                    "them"
+                )
+            case "pending":
+                why = (
+                    "and only this store's key, among those sharing that name, had authenticated "
+                    "before the upgrade. A store written straight through the storage leaves no "
+                    "binding, so the server moves nothing by itself unless layer_storage has "
+                    "migrate_legacy_stores='when_server_written'. Migrate them once you know this "
+                    "store wrote them"
+                )
+            case "unconfirmed":
+                why = (
+                    "that only this store's key, among those sharing that name, had authenticated "
+                    "when pyfect 0.6.8 or later first started. pyfect 0.6.6 or 0.6.7 ran on this "
+                    "database before, so that binding may be newer than the upgrade, and the "
+                    "server moves nothing by itself. Migrate them once you know this store wrote "
+                    "them"
+                )
+            case "unbound" if others:
+                why = (
+                    f"that the store of {others} may have written, as its key had authenticated "
+                    "before the upgrade; this store's key had not, so it wrote them only if it "
+                    "wrote straight through the storage. Find out which wrote them before "
+                    "migrating them"
+                )
+            case "unbound":
+                why = (
+                    "and no key sharing that name had authenticated before the upgrade, so nothing "
+                    "shows who wrote them. Do not migrate them to this store unless you know it did"
+                )
         return (
             f"Store {self.store_id!r} of {self.public_key!r} does not open: the tables pyfect "
             f"0.6.5 named {legacy!r} hold batches {why} (see {UPGRADE_NOTES})"
@@ -96,10 +126,11 @@ class LegacyStoreNeedsMigration(S.TaggedError, StoreUnavailable, tag="LegacyStor
 
 
 class LegacyStoreMigrationError(S.TaggedError, tag="LegacyStoreMigrationError"):
-    """``migrate_legacy_store`` refused: nothing from before the upgrade
-    shows the pair wrote the legacy tables and the call did not override
-    that, other identities may have, the tables went to another pair, or
-    the store already holds batches under its new key."""
+    """``migrate_legacy_store`` refused: no server of 0.6.8 or later has
+    started on the database yet, nothing from before the upgrade shows the
+    pair wrote the legacy tables and the call did not override that, other
+    identities may have, the tables went to another pair, or the store
+    already holds batches under its new key."""
 
     message: str = S.field(S.String)
 
@@ -122,13 +153,9 @@ def aliases_table(prefix: str) -> str:
     return f"{prefix}_scope_aliases"
 
 
-def _scope(digest: DigestService, key: str) -> Effect[str]:
-    return digest.digest_hex(sha256, key_bytes(key)).map(lambda hex: hex[:16])
-
-
 def scope_of(digest: DigestService, key: str) -> Effect[str]:
     """The scope (table name hash) of a scope key or legacy key."""
-    return _scope(digest, key)
+    return digest.digest_hex(sha256, key_bytes(key)).map(lambda hex: hex[:16])
 
 
 def has_batches(db: Db, scope: str) -> Effect[bool, SqlError]:
@@ -143,6 +170,17 @@ def has_batches(db: Db, scope: str) -> Effect[bool, SqlError]:
         if column_int(rows[0]["next_sequence"]) > 1:
             return True
         return (yield from db.max_last_sequence(db.scope_tables(scope).table)) > 0
+
+    return gen(body)
+
+
+def head(db: Db, scope: str) -> Effect[int, SqlError]:
+    """The last sequence the opened store ``scope`` has given out."""
+
+    def body():
+        row = yield from db.select_store(scope)
+        last = yield from db.max_last_sequence(db.scope_tables(scope).table)
+        return max(row.next_sequence - 1, last)
 
     return gen(body)
 
@@ -164,14 +202,6 @@ def store_of(legacy: str, public_key: str) -> str:
     return legacy[len(public_key) + 1 :]
 
 
-type Standing = Literal["pending", "unconfirmed", "ambiguous", "unbound"]
-"""Where a pair stands on legacy tables no pair has, by the bindings from
-before the upgrade: ``pending``, its key alone had one and the server gives
-it the tables; ``unconfirmed``, likewise, but the record may postdate an
-earlier upgrade (``Evidence.automatic``), so the operator does; ``ambiguous``,
-other keys had one too; ``unbound``, its key had none."""
-
-
 def others_before(public_key: str, store_id: str, evidence: Evidence) -> tuple[str, ...]:
     """The other keys splitting the pair's legacy key bound before the upgrade."""
     keys = split_keys(legacy_key(public_key, store_id))
@@ -186,7 +216,7 @@ def standing(public_key: str, store_id: str, evidence: Evidence) -> Standing:
     return "pending" if evidence.automatic else "unconfirmed"
 
 
-def _evidence(db: Db, legacy: str) -> Effect[Evidence, SqlError]:
+def evidence_of(db: Db, legacy: str) -> Effect[Evidence, SqlError]:
     return upgrade.evidence(db, split_keys(legacy))
 
 
@@ -196,16 +226,18 @@ def holder_pair(digest: DigestService, legacy: str, given: str) -> Effect[tuple[
     def body():
         for key in split_keys(legacy):
             store_id = store_of(legacy, key)
-            if (yield from _scope(digest, scope_key(key, store_id))) == given:
+            if (yield from scope_of(digest, scope_key(key, store_id))) == given:
                 return (key, store_id)
         return None
 
     return gen(body)
 
 
-def _give(db: Db, legacy_scope: str, scope: str, origin: str) -> Effect[bool, SqlError]:
-    """Gives ``scope`` the legacy tables unless another pair has them;
-    whether ``scope`` has them now."""
+def record_alias(db: Db, legacy_scope: str, scope: str, origin: str) -> Effect[bool, SqlError]:
+    """Gives ``scope`` the legacy tables unless another pair has them,
+    recording who did and the legacy store's head, after which every batch
+    is the holder's; whether ``scope`` has them now. Runs in the caller's
+    transaction."""
 
     def body():
         inserted = yield from db.insert_new(
@@ -217,46 +249,90 @@ def _give(db: Db, legacy_scope: str, scope: str, origin: str) -> Effect[bool, Sq
                 [{"legacy_scope": legacy_scope, "origin": origin}],
                 ["legacy_scope"],
             )
+            through = yield from head(db, legacy_scope)
+            yield from db.insert_new(
+                db.alias_bounds,
+                [{"legacy_scope": legacy_scope, "through_sequence": through}],
+                ["legacy_scope"],
+            )
         return (yield from holder(db, legacy_scope)) == scope
 
-    return db.sql.with_transaction(gen(body))
+    return gen(body)
 
 
 @dataclass(frozen=True, slots=True)
 class Resolved:
     """The scope holding a pair's store. ``migrated``: it was just given its
     legacy tables. ``split``: its legacy tables hold batches too, which a
-    0.6.5 node wrote after the store opened under its new key."""
+    0.6.5 node wrote after the store opened under its new key. ``beside``:
+    it opens tables of its own while its legacy tables hold batches another
+    pair has or may get."""
 
     scope: str
-    event: Literal["migrated", "split"] | None = None
+    event: Literal["migrated", "split", "beside"] | None = None
+
+
+def written_since(db: Db, legacy_scope: str, scope: str) -> Effect[bool, SqlError]:
+    """Whether the legacy tables stored a batch in or after the hour the
+    store's own tables first did (by the compaction buckets, whose newest
+    hour per store survives the sweep)."""
+
+    def hour(aggregate: Literal["MIN", "MAX"], of: str) -> Effect[int | None, SqlError]:
+        return db.sql(
+            "SELECT {}(bucket_hour) AS h FROM {} WHERE scope = {}",
+            db.sql.literal(aggregate),
+            db.buckets,
+            of,
+        ).map(lambda rows: None if not rows or rows[0]["h"] is None else column_int(rows[0]["h"]))
+
+    def body():
+        newest_legacy = yield from hour("MAX", legacy_scope)
+        oldest_own = yield from hour("MIN", scope)
+        return newest_legacy is not None and oldest_own is not None and newest_legacy >= oldest_own
+
+    return gen(body)
 
 
 def _unclaimed(
-    db: Db, public_key: str, store_id: str, scope: str, legacy_scope: str
+    db: Db,
+    public_key: str,
+    store_id: str,
+    scope: str,
+    legacy_scope: str,
+    *,
+    migration: LegacyMigration,
 ) -> Effect[Resolved, SqlError | LegacyStoreNeedsMigration]:
     """The scope of a pair whose legacy tables hold batches no pair has."""
 
     def body():
-        evidence = yield from _evidence(db, legacy_key(public_key, store_id))
+        evidence = yield from evidence_of(db, legacy_key(public_key, store_id))
         stand = standing(public_key, store_id, evidence)
         others = others_before(public_key, store_id, evidence)
         if (yield from has_batches(db, scope)):
-            return Resolved(scope, "split" if stand in ("pending", "unconfirmed") else None)
-        if stand == "pending":
-            given = yield from _give(db, legacy_scope, scope, "server")
-            return Resolved(legacy_scope, "migrated") if given else Resolved(scope)
-        if stand == "unbound" and others and evidence.automatic:
+            # Its own tables were written first: a 0.6.5 node wrote the legacy
+            # ones after, when nothing else could have (its key alone was
+            # bound) or the buckets show it.
+            alone = stand in ("pending", "unconfirmed")
+            if alone or (
+                stand == "unbound"
+                and not others
+                and (yield from written_since(db, legacy_scope, scope))
+            ):
+                return Resolved(scope, "split")
+            return Resolved(scope, "beside")
+        automatic = migration == "when_server_written"
+        if automatic and stand == "pending":
+            given = yield from db.sql.with_transaction(
+                record_alias(db, legacy_scope, scope, "server")
+            )
+            return Resolved(legacy_scope, "migrated") if given else Resolved(scope, "beside")
+        if automatic and stand == "unbound" and others and evidence.automatic:
             # Only keys bound before the upgrade can have written them.
-            return Resolved(scope)
+            return Resolved(scope, "beside")
         return (
             yield from fail(
                 LegacyStoreNeedsMigration(
-                    public_key=public_key,
-                    store_id=store_id,
-                    authenticated=stand != "unbound",
-                    other_keys=others,
-                    automatic=evidence.automatic,
+                    public_key=public_key, store_id=store_id, state=stand, other_keys=others
                 )
             )
         )
@@ -265,167 +341,93 @@ def _unclaimed(
 
 
 def resolve_scope(
-    db: Db, digest: DigestService, public_key: str, store_id: str
+    db: Db, digest: DigestService, public_key: str, store_id: str, migration: LegacyMigration
 ) -> Effect[Resolved, SqlError | LegacyStoreNeedsMigration]:
     """The scope whose tables hold the pair's store, giving it its legacy
-    tables when the bindings from before the upgrade show it alone wrote
-    them."""
+    tables when ``migration`` allows and the bindings from before the
+    upgrade show it alone wrote them."""
 
     def body():
         key = scope_key(public_key, store_id)
-        scope = yield from _scope(digest, key)
+        scope = yield from scope_of(digest, key)
         legacy = legacy_key(public_key, store_id)
         if key == legacy:
             return Resolved(scope)
-        legacy_scope = yield from _scope(digest, legacy)
+        legacy_scope = yield from scope_of(digest, legacy)
         given = yield from holder(db, legacy_scope)
         if given is not None:
-            return Resolved(legacy_scope if given == scope else scope)
+            return Resolved(legacy_scope) if given == scope else Resolved(scope, "beside")
         if not (yield from has_batches(db, legacy_scope)):
             return Resolved(scope)
-        return (yield from _unclaimed(db, public_key, store_id, scope, legacy_scope))
+        return (
+            yield from _unclaimed(
+                db, public_key, store_id, scope, legacy_scope, migration=migration
+            )
+        )
 
     return gen(body)
 
 
-@dataclass(frozen=True, slots=True)
-class Confirmation:
-    """What the operator confirmed in ``migrate_legacy_store``."""
-
-    not_written_by: tuple[str, ...]
-    without_binding: bool
-    taken_from: tuple[str, str] | None
-
-
-def _bound_refusal(
-    public_key: str, store_id: str, evidence: Evidence, confirmation: Confirmation
-) -> str | None:
-    """Why a pair whose key was bound before the upgrade may not have them."""
+def still_resolves(
+    db: Db, digest: DigestService, public_key: str, store_id: str, scope: str
+) -> Effect[bool, SqlError]:
+    """Whether the pair's store is still in ``scope``: the operator may have
+    given its legacy tables to it, or taken them from it, since it opened."""
+    key = scope_key(public_key, store_id)
     legacy = legacy_key(public_key, store_id)
-    if confirmation.without_binding:
-        return f"{public_key!r} had authenticated before the upgrade: drop without_binding"
-    others = list(others_before(public_key, store_id, evidence))
-    if sorted(set(confirmation.not_written_by)) == others:
-        return None
-    if not others:
-        return (
-            "No other identity that had authenticated before the upgrade shares the name "
-            f"{legacy!r}: call it without not_written_by"
-        )
-    return (
-        f"Other identities that had authenticated before the upgrade share the name {legacy!r} "
-        f"and may have written its tables: {others!r}. If you have confirmed that none of them "
-        f"did, pass not_written_by={others!r}"
-    )
-
-
-def _unbound_refusal(
-    public_key: str, store_id: str, evidence: Evidence, confirmation: Confirmation
-) -> str | None:
-    """Why a pair whose key was not bound before the upgrade may not have
-    them: only the operator's override, naming every other pair, gives them."""
-    legacy = legacy_key(public_key, store_id)
-    every_other = sorted(k for k in split_keys(legacy) if k != public_key)
-    if not confirmation.without_binding:
-        since = " (it authenticated only since)" if public_key in evidence.now else ""
-        return (
-            f"{public_key!r} had no session auth binding before the upgrade{since}, so nothing "
-            f"shows that its store {store_id!r} wrote the tables named {legacy!r}. If you know it "
-            f"did, pass without_binding=True and not_written_by={every_other!r}"
-        )
-    if sorted(set(confirmation.not_written_by)) != every_other:
-        return (
-            f"With without_binding, name every other identity sharing {legacy!r}, having "
-            f"confirmed that none of them wrote its tables: not_written_by={every_other!r}"
-        )
-    return None
-
-
-def _taken_refusal(
-    legacy: str, taken: tuple[str, str] | None, confirmation: Confirmation
-) -> str | None:
-    """Why the call may not take the tables from the pair that has them."""
-    if taken == confirmation.taken_from:
-        return None
-    if taken is None:
-        return f"The tables of {legacy!r} were not given to another store: drop taken_from"
-    return (
-        f"The tables of {legacy!r} were given to store {taken[1]!r} of {taken[0]!r}. If you have "
-        f"confirmed that it did not write them, pass taken_from={taken!r}; that store then opens "
-        "tables of its own, and the batches it wrote since go with these"
-    )
-
-
-def migrate_legacy_store(
-    db: Db,
-    digest: DigestService,
-    public_key: str,
-    store_id: str,
-    confirmation: Confirmation,
-) -> Effect[bool, SqlError | LegacyStoreMigrationError]:
-    """Gives the pair its tables from 0.6.5 or earlier; whether it has them
-    now (``False``: it has none, or never needed a new key)."""
-    sql = db.sql
-
-    def refuse(message: str) -> Effect[Never, LegacyStoreMigrationError]:
-        return fail(LegacyStoreMigrationError(message=f"{message} (see {UPGRADE_NOTES})"))
+    if key == legacy:
+        return succeed(True)
 
     def body():
-        key = scope_key(public_key, store_id)
-        legacy = legacy_key(public_key, store_id)
-        if key == legacy:
-            return False
-        scope = yield from _scope(digest, key)
-        legacy_scope = yield from _scope(digest, legacy)
+        own = yield from scope_of(digest, key)
+        legacy_scope = yield from scope_of(digest, legacy)
         given = yield from holder(db, legacy_scope)
-        if given == scope:
-            return True
-        taken = None if given is None else (yield from holder_pair(digest, legacy, given))
-        refusal = _taken_refusal(legacy, taken, confirmation)
-        if refusal is None and not (yield from has_batches(db, legacy_scope)):
-            return False
-        if refusal is None:
-            evidence = yield from _evidence(db, legacy)
-            check = _bound_refusal if public_key in evidence.before else _unbound_refusal
-            refusal = check(public_key, store_id, evidence, confirmation)
-        if refusal is None and (yield from has_batches(db, scope)):
-            refusal = (
-                f"Store {store_id!r} of {public_key!r} already holds batches of its own, so a "
-                f"pyfect 0.6.5 node wrote the tables named {legacy!r} after the store opened on a "
-                "newer version; the two cannot be merged"
-            )
-        if refusal is not None:
-            return (yield from refuse(refusal))
-        for table in (db.aliases, db.alias_origins):
-            yield from sql("DELETE FROM {} WHERE legacy_scope = {}", table, legacy_scope)
-        yield from sql(
-            "INSERT INTO {} (legacy_scope, scope) VALUES ({}, {})",
-            db.aliases,
-            legacy_scope,
-            scope,
-        )
-        yield from sql(
-            "INSERT INTO {} (legacy_scope, origin) VALUES ({}, {})",
-            db.alias_origins,
-            legacy_scope,
-            "operator",
-        )
-        return True
+        return given == own if scope == legacy_scope else given != own
 
-    return sql.with_transaction(gen(body))
+    return gen(body)
 
 
-def with_db[A, E](
-    entry_table_prefix: str, remote_id_table: str, f: Callable[[Db, DigestService], Effect[A, E]]
-) -> Effect[A, E | SqlError, SqlClient | Digest]:
-    """Runs ``f`` on the storage's tables, outside a server."""
-
+def _db(entry_table_prefix: str) -> Effect[tuple[Db, DigestService], Never, SqlClient | Digest]:
     def body():
         digest = yield from Digest()
         sql: SqlClientService = (yield from SqlClient()).without_transforms()
         config = yield from make_compaction_config()
-        db = Db(sql, entry_table_prefix, config)
-        yield from upgrade.prepare(db, remote_id_table)
+        return Db(sql, entry_table_prefix, config), digest
+
+    return gen(body)
+
+
+def with_listing_db[A, E](
+    entry_table_prefix: str, f: Callable[[Db, DigestService], Effect[A, E]]
+) -> Effect[A, E, SqlClient | Digest]:
+    """Runs ``f`` on the storage's tables, outside a server, creating and
+    recording nothing."""
+    return _db(entry_table_prefix).flat_map(lambda found: f(*found))
+
+
+def with_operator_db[A, E](
+    entry_table_prefix: str, f: Callable[[Db, DigestService], Effect[A, E]]
+) -> Effect[A, E | SqlError | LegacyStoreMigrationError, SqlClient | Digest]:
+    """Runs ``f`` on the storage's tables, outside a server, once a server
+    of 0.6.8 or later has recorded the upgrade: only the server's first
+    start may, so a call made while 0.6.5 serves does not count as one."""
+
+    def body():
+        db, digest = yield from _db(entry_table_prefix)
+        if not (yield from upgrade.recorded(db)):
+            return (
+                yield from fail(
+                    LegacyStoreMigrationError(
+                        message=(
+                            "No server of pyfect 0.6.8 or later has started on this database yet, "
+                            "so nothing records which keys had authenticated before the upgrade. "
+                            "Stop every node of an earlier version, start the upgraded server "
+                            f"once, then migrate (see {UPGRADE_NOTES})"
+                        )
+                    )
+                )
+            )
+        yield from create_alias_tables(db.sql, db.prefix)
         return (yield from f(db, digest))
 
     return gen(body)
@@ -433,23 +435,28 @@ def with_db[A, E](
 
 __all__ = [
     "UPGRADE_NOTES",
-    "Confirmation",
+    "LegacyMigration",
     "LegacyStoreMigrationError",
     "LegacyStoreNeedsMigration",
     "Resolved",
     "Standing",
     "aliases_table",
+    "evidence_of",
     "has_batches",
+    "head",
     "holder",
     "holder_pair",
     "legacy_key",
-    "migrate_legacy_store",
     "others_before",
+    "record_alias",
     "resolve_scope",
     "scope_key",
     "scope_of",
     "split_keys",
     "standing",
+    "still_resolves",
     "store_of",
-    "with_db",
+    "with_listing_db",
+    "with_operator_db",
+    "written_since",
 ]
