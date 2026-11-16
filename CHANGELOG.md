@@ -17,6 +17,14 @@
 
 ### Docs
 
+- `eff()` and `await eff` still fail with Python's own `TypeError` naming the effect's internal
+  class (`'_Succeed' object is not callable`, `'_Locally' object can't be awaited`): a
+  `__call__` or `__await__` would change what `callable()` and `inspect.isawaitable()` say, and
+  CPython builds these messages from the class name with no hook to add to them. The Effects
+  page's Common mistakes now has a table of every such message for the common constructors and
+  combinators (Python 3.13's await wording too), in a table so the site search indexes it.
+  `tests/test_effect_misuse_messages.py` calls and awaits each of those effects and fails if
+  the page lacks the exact message.
 - The Durations section gave `-W error::pyfect.duration.BareNumberDurationWarning`, which
   Python rejects at startup ("Invalid -W option ignored", before pyfect is imported) and then
   runs on with exit 0, as it does for `PYTHONWARNINGS`. It now gives
