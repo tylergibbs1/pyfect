@@ -1034,11 +1034,14 @@ def test_preserves_a_safe_interrupt_during_a_persisted_activity_handoff(
         )
 
         handoff.fault_armed = True
-        yield from with_workflow(cluster, ShutdownActivityWorkflow.interrupt(execution_id))
         handoff.start.open_unsafe()
         yield from cluster.wait_until(
             "The shutdown activity request was not persisted", handoff.persisted.wait().as_(True)
         )
+        # Interrupt only once the activity is in flight. Sent before ``start``
+        # (as Effect's test does), the interrupt could reach the workflow
+        # first, and the run then suspended before calling the activity.
+        yield from with_workflow(cluster, ShutdownActivityWorkflow.interrupt(execution_id))
         yield from cluster.wait_until(
             "The shutdown activity request was not processed",
             fx.sync(lambda: handoff.runs.get(id) == 1),
