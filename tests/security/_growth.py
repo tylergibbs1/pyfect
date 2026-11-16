@@ -6,9 +6,10 @@ only applies to a local variable; JavaScript's ropes, which Effect relies on, ma
 code linear there). ``growth`` measures a piece of work at a size and at ``FACTOR`` times it:
 linear work grows ``FACTOR`` times, ``n log n`` a little more, quadratic work ``FACTOR**2``
 times. ``BOUND`` sits between. Times are the thread's CPU time, the least of a few runs with
-the collector off, so a loaded machine does not decide the outcome (``clock=time.process_time``
-for work that moves to other threads, such as a walk on fresh stacks); the size first doubles
-until the small run takes ``MIN_SECONDS``, so fixed costs do not hide the growth.
+the collector off, the two sizes run in turn, so a loaded machine does not decide the outcome
+(``clock=time.process_time`` for work that moves to other threads, such as a walk on fresh
+stacks); the size first doubles until the small run takes ``MIN_SECONDS``, so fixed costs do
+not hide the growth.
 
 An input that outgrows a CPU cache between the two sizes costs more per unit once, which can
 look superlinear over one step; a ratio over ``BOUND`` is checked again over the next doubling
@@ -106,13 +107,11 @@ def growth(
     make: Make, size: int, max_size: int = MAX_SIZE, clock: Clock = time.thread_time
 ) -> Growth:
     """``make``'s work at ``size`` (doubled until it takes ``MIN_SECONDS``) and at ``FACTOR``
-    times that size."""
-    while True:
-        small = cpu(make(size), clock=clock)
-        if small >= MIN_SECONDS or size * 2 * FACTOR > max_size:
-            break
+    times that size, measured in turn."""
+    while cpu(make(size), clock=clock) < MIN_SECONDS and size * 2 * FACTOR <= max_size:
         size *= 2
-    return Growth(size, small, cpu(make(size * FACTOR), clock=clock))
+    small, large = cpu_pair(make(size), make(size * FACTOR), clock=clock)
+    return Growth(size, small, large)
 
 
 def assert_near_linear(
@@ -123,8 +122,6 @@ def assert_near_linear(
     if found.cheap or not found.superlinear:
         return found
     large = found.size * FACTOR
-    beyond = Growth(
-        large, cpu(make(large), clock=clock), cpu(make(large * 2), clock=clock), factor=2
-    )
+    beyond = Growth(large, *cpu_pair(make(large), make(large * 2), clock=clock), factor=2)
     assert not beyond.superlinear, f"superlinear: {found}; then {beyond}"
     return found

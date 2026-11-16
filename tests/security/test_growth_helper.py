@@ -79,9 +79,8 @@ class _SlowingClock:
 def test_a_slow_stretch_falls_on_both_sides_of_a_comparison(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Measured one after the other, a slow stretch during the first inflates the ratio (a CI
-    run once read 3.3 ms against 1.6 ms for work that is 1.2 times as costly); run in turn,
-    each side keeps a run outside the stretch."""
+    """Measured one after the other, a slow stretch during the first inflates the ratio; run in
+    turn, each side keeps a run outside the stretch."""
     slow = _growth.RUNS * 2  # the clock reads of one side's runs
     clock = _SlowingClock(reads=slow, factor=3)
     costly, plain = clock.work(0.0012), clock.work(0.001)
@@ -89,3 +88,44 @@ def test_a_slow_stretch_falls_on_both_sides_of_a_comparison(
     clock.reads_left = slow
     first, second = cpu_pair(costly, plain, clock=clock)
     assert first / second == pytest.approx(1.2)
+
+
+class _StretchClock:
+    """A thread clock under which work runs ``factor`` times slower when it starts within
+    ``length`` reads from read ``start``: a stretch in which the machine runs slower."""
+
+    def __init__(self, start: int, length: int, factor: float) -> None:
+        self.now, self.reads, self.start, self.length = 0.0, 0, start, length
+        self.factor = factor
+
+    def __call__(self) -> float:
+        self.reads += 1
+        return self.now
+
+    def work(self, seconds: float):
+        def run() -> None:
+            slow = self.start <= self.reads - 1 < self.start + self.length
+            self.now += seconds * (self.factor if slow else 1)
+
+        return run
+
+
+_STRETCH = _growth.RUNS * 2  # as many clock reads as one side's runs take
+_READS = 40  # more than one assert_near_linear call makes here
+
+
+@pytest.mark.parametrize("start", range(_READS))
+def test_a_slow_stretch_anywhere_does_not_hide_quadratic_work(start: int) -> None:
+    clock = _StretchClock(start, _STRETCH, factor=3)
+    base = 1000
+    make: Make = lambda n: clock.work(0.003 * (n / base) ** 2)  # noqa: E731
+    with pytest.raises(AssertionError, match="superlinear"):
+        assert_near_linear(make, base, _no_doubling(base), clock=clock)
+
+
+@pytest.mark.parametrize("start", range(_READS))
+def test_a_slow_stretch_anywhere_does_not_fail_linear_work(start: int) -> None:
+    clock = _StretchClock(start, _STRETCH, factor=3)
+    base = 1000
+    make: Make = lambda n: clock.work(0.003 * n / base)  # noqa: E731
+    assert_near_linear(make, base, _no_doubling(base), clock=clock)
