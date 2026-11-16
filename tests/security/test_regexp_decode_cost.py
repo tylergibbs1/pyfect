@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import re
 
-from _growth import cpu
+from _growth import cpu_pair
 
 from pyfect import schema as S
 from pyfect.exit import Failure, Success
@@ -23,8 +23,10 @@ _CLASSES = f"[ -{chr(0xFFFF)}]" * 1000
 
 def test_wide_classes_cost_about_what_a_plain_source_does() -> None:
     plain = "a" * len(_CLASSES)
-    wide = cpu(lambda: _decode({"source": _CLASSES, "flags": ""}))
-    narrow = cpu(lambda: _decode({"source": plain, "flags": ""}))
+    wide, narrow = cpu_pair(
+        lambda: _decode({"source": _CLASSES, "flags": ""}),
+        lambda: _decode({"source": plain, "flags": ""}),
+    )
     assert wide < 20 * max(narrow, 1e-4), (wide, narrow)
 
 

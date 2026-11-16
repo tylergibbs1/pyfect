@@ -10,19 +10,22 @@ from __future__ import annotations
 
 import ast
 import sys
+import threading
 import time
 from collections.abc import Callable, Iterator
 from pathlib import Path
+from types import FrameType
 from typing import Literal, TypedDict
 
 import pytest
-from _growth import Work, assert_near_linear, cpu
+from _growth import Work, assert_near_linear
 
 import pyfect as fx
 from pyfect import schema as S
-from pyfect._stack import stack_nearly_full
+from pyfect._stack import _STACK_FRAMES, stack_nearly_full  # pyright: ignore[reportPrivateUsage]
 
 _RAISED_LIMIT = 100_000
+_PROBES = 10
 
 
 @pytest.fixture(autouse=True)
@@ -87,11 +90,45 @@ def test_a_probe_at_every_level_costs_time_linear_in_the_depth() -> None:
     assert_near_linear(sized, 64, max_size=1 << 15)
 
 
-def test_a_probe_costs_the_same_far_down_a_stack_as_near_its_top() -> None:
-    near = cpu(lambda: _at_depth(1_000, lambda: _probes(2_000)))
-    far = cpu(lambda: _at_depth(50_000, lambda: _probes(2_000)))
-    walk = cpu(lambda: _at_depth(50_000, lambda: None))
-    assert far - walk < 3 * near, (near, far, walk)
+def _frames_walked_by_probes(depth: int, monkeypatch: pytest.MonkeyPatch) -> list[int]:
+    """The frames each of a few probes walks, ``depth`` frames down: ``sys._getframe(n)``
+    walks ``n`` frames, or the whole stack when it is shallower than ``n``."""
+    getframe = sys._getframe  # pyright: ignore[reportPrivateUsage]
+    thread = threading.get_ident()
+    walked: list[int] = []
+
+    def counting(n: int = 0) -> FrameType:
+        if threading.get_ident() != thread:
+            return getframe(n + 1)
+        try:
+            frame = getframe(n + 1)
+        except ValueError:
+            walked.append(_stack_depth(getframe(1)))
+            raise
+        walked.append(n)
+        return frame
+
+    with monkeypatch.context() as patch:
+        patch.setattr(sys, "_getframe", counting)
+        _at_depth(depth, lambda: _probes(_PROBES))
+    return walked
+
+
+def _stack_depth(frame: FrameType | None) -> int:
+    depth = 0
+    while frame is not None:
+        depth, frame = depth + 1, frame.f_back
+    return depth
+
+
+def test_a_probe_costs_the_same_far_down_a_stack_as_near_its_top(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    near = _frames_walked_by_probes(1_000, monkeypatch)
+    far = _frames_walked_by_probes(50_000, monkeypatch)
+    assert len(near) == _PROBES, near
+    assert far == near, (near, far)
+    assert max(near) < _STACK_FRAMES, near
 
 
 def test_only_the_probe_measures_the_stack() -> None:
