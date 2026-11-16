@@ -27,6 +27,10 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
+from _count_sleeps import MARKER
+from _inventory import parse
+
+from pyfect.duration import from_input_unsafe
 
 ROOT = Path(__file__).parent.parent
 SNIPPETS = ROOT / "website" / "snippets"
@@ -149,11 +153,55 @@ TESTS = [p for p in snippet_files() if p.name.startswith("test_")]
 SERVERS = (POSTGRES, MYSQL, MSSQL, CLICKHOUSE)
 
 
+COUNT_SLEEPS = Path(__file__).parent / "_count_sleeps.py"
+
+
 def snippet_args(path: Path) -> tuple[str, ...]:
-    """A snippet runs as `python file.py`; a `test_*.py` snippet under pytest."""
+    """A snippet runs as `python file.py`; a `test_*.py` snippet under pytest. Either way
+    `_count_sleeps.py` runs it, to report the live-clock sleeps it completed."""
     if path.name.startswith("test_"):
-        return ("-m", "pytest", "-q", "-p", "no:cacheprovider", str(path))
-    return (str(path),)
+        return (str(COUNT_SLEEPS), "-m", "pytest", "-q", "-p", "no:cacheprovider", str(path))
+    return (str(COUNT_SLEEPS), str(path))
+
+
+SLEEP_LIMIT = 5.0
+FIXED_BELOW = SLEEP_LIMIT / 2
+LONGER_SLEEPS = Path(__file__).parent / "_snippet_sleeps.txt"
+"""``snippet limit  # reason`` per line (``tests/_inventory.py``): a snippet allowed more
+than 5 s of completed live-clock sleep, with its measured totals and the waits behind them."""
+
+
+def sleep_limits() -> dict[str, float]:
+    return {
+        snippet: from_input_unsafe(entry.value).to_seconds()
+        for snippet, entry in parse(LONGER_SLEEPS.read_text()).items()
+    }
+
+
+def slept(done: subprocess.CompletedProcess[str]) -> float:
+    """The live-clock sleep a run completed, from `_count_sleeps.py`'s line on stderr."""
+    totals = [line[len(MARKER) :] for line in done.stderr.splitlines() if line.startswith(MARKER)]
+    assert len(totals) == 1, f"no {MARKER!r} line: the run did not exit through atexit"
+    return float(totals[0])
+
+
+def assert_sleeps_in_limit(snippet: str, done: subprocess.CompletedProcess[str]) -> None:
+    """A snippet may complete 5 s of live-clock sleep: timing beyond that belongs on the
+    TestClock, or must get faster. A listed snippet gets its own limit, and once it is
+    under half the default it is fixed and its line goes."""
+    total = slept(done)
+    listed = sleep_limits().get(snippet)
+    if listed is None:
+        assert total <= SLEEP_LIMIT, (
+            f"{snippet} completed {total:.2f} s of live-clock sleep, over {SLEEP_LIMIT:g} s: "
+            "move its timing to the TestClock or make it faster"
+        )
+    else:
+        assert FIXED_BELOW <= total <= listed, (
+            f"{snippet} completed {total:.2f} s of live-clock sleep; its limit in "
+            f"{LONGER_SLEEPS.name} is {listed:g} s"
+            + (": it is fixed, delete its line" if total < FIXED_BELOW else "")
+        )
 
 
 # A run of a snippet, by the name of the test that checks it and the snippet.
@@ -251,6 +299,7 @@ def runs(request: pytest.FixtureRequest) -> Iterator[Runs]:
 def test_snippet_runs(path: Path, runs: Runs):
     done = runs["test_snippet_runs", path].result()
     assert_ran(done)
+    assert_sleeps_in_limit(name(path), done)
     expected = path.with_suffix(".out")
     if os.environ.get("UPDATE_SNIPPET_OUTPUT") and done.stdout:
         expected.write_text(done.stdout)
@@ -283,6 +332,7 @@ def test_outputs_belong_to_snippets(path: Path):
 def test_snippet_tests_pass(path: Path, runs: Runs):
     done = runs["test_snippet_tests_pass", path].result()
     assert_ran(done)
+    assert_sleeps_in_limit(name(path), done)
 
 
 @pytest.mark.parametrize("path", CLUSTER_SCRIPTS, ids=name)
@@ -326,6 +376,19 @@ def test_a_failed_run_reports_all_its_output():
         assert_ran(done)
     shown = [line.strip() for line in str(failed.value).splitlines()]
     assert all(line in shown for line in [*error.splitlines(), "to stderr"])
+
+
+def test_a_snippet_sleeping_over_the_limit_fails():
+    """60 sleeps of 100 ms at once complete 6 s of live-clock sleep in a tenth of a second."""
+    done = run(*snippet_args(Path(__file__).parent / "_sleeps_six_seconds.py"))
+    assert_ran(done)
+    assert slept(done) == pytest.approx(6.0)
+    with pytest.raises(AssertionError, match="over 5 s"):
+        assert_sleeps_in_limit("_sleeps_six_seconds.py", done)
+
+
+def test_listed_sleeps_are_snippets():
+    assert set(sleep_limits()) <= {name(p) for p in snippet_files()}
 
 
 def test_there_are_guides_and_snippets():

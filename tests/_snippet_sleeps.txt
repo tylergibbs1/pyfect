@@ -1,0 +1,11 @@
+# Docs snippets allowed more than 5 s of live-clock sleep (tests/test_doc_snippets.py).
+# The count is the live-clock sleeps a run completed (tests/_count_sleeps.py): each finished
+# LiveClock.sleep adds its duration, an interrupted one adds nothing, and sleeps that run at
+# the same time add up. In these entries background poll loops dominate the total, so it grows
+# with how long the run takes. The limit is about twice the worst total measured; a snippet
+# whose total falls under 2.5 s is fixed, and its line goes. Waits outside the clock (network,
+# blocking calls, a database's own timers) are not counted: the 60 s hang alarm covers them.
+# A line is `snippet limit  # reason` (tests/_inventory.py).
+cluster/cron.py 18 seconds  # measured 5.7-8.7 s (10 idle, 10 loaded): the storage poll loop's 100 ms entity_message_poll_interval sleeps over the ~2 s the snippet waits for two cron runs on whole seconds, plus its 500 ms sleep
+cluster/runners.py 18 seconds  # measured 5.7-8.9 s (10 idle, 10 loaded): two runners' 200 ms refresh_assignments_interval sync loops while they balance, the shard acquisition loop's fixed 1 s retry (as Effect's Sharding), and the snippet's 100 ms balance poll
+persistence/lock_expiration.py 16 seconds  # measured 5.9-7.8 s (10 idle, 10 loaded): the store's 50 ms poll_interval loop and 500 ms lock refresh while the dead worker's 2 s lock_expiration runs out
