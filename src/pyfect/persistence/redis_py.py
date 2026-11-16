@@ -21,6 +21,7 @@ Interrupting ``subscribe`` or ``reserve`` while its connection is opening
 from __future__ import annotations
 
 import asyncio
+import threading
 from collections.abc import Awaitable, Callable, Coroutine, Generator, Mapping
 from concurrent.futures import Future
 from dataclasses import dataclass
@@ -88,6 +89,42 @@ def _command_waits_for(command: str, args: tuple[str, ...]) -> WaitsFor:
     return "work"
 
 
+class _Handoff[A]:
+    """Hands ``make()``'s result to one fiber, or releases it once the fiber
+    has given up (its wait was cancelled): whichever comes second, the
+    result reaching the loop or the fiber giving up, releases it."""
+
+    __slots__ = ("_abandoned", "_lock", "_make", "_release", "_result")
+
+    def __init__(
+        self,
+        make: Callable[[], Coroutine[Any, Any, A]],
+        release: Callable[[A], Coroutine[Any, Any, object]],
+    ) -> None:
+        self._make = make
+        self._release = release
+        self._lock = threading.Lock()
+        self._abandoned = False
+        self._result: list[A] = []
+
+    async def make(self) -> A:
+        result = await self._make()
+        with self._lock:
+            if not self._abandoned:
+                self._result.append(result)
+                return result
+        await self._release(result)
+        return result
+
+    def abandon(self, lifetime: Lifetime, thread: LoopThread) -> None:
+        with self._lock:
+            self._abandoned = True
+            left, self._result = self._result, []
+        if left:
+            release, result = self._release, left[0]
+            lifetime.submit(lambda: thread.submit(lambda: release(result)))
+
+
 class _Loop:
     """An asyncio loop on a thread of its own; a call once it stopped
     fails with a ``RedisError`` saying the client is closed."""
@@ -99,14 +136,23 @@ class _Loop:
         self._lifetime = Lifetime("Redis client")
 
     def run[A](
-        self, make: Callable[[], Coroutine[Any, Any, A]], *, waits_for: WaitsFor
+        self,
+        make: Callable[[], Coroutine[Any, Any, A]],
+        *,
+        waits_for: WaitsFor,
+        release: Callable[[A], Coroutine[Any, Any, object]] | None,
     ) -> Effect[A, RedisError]:
         """Run ``make()`` on the loop; interrupting cancels it. ``waits_for``
         says whether ``make()`` is work or waits for an event that may never
-        come (``pyfect._os_wait``)."""
+        come (``pyfect._os_wait``). ``release`` closes a result that owns
+        something (``None``: it owns nothing, or something else owns it): an
+        interrupt can land once the loop decided the result, before the fiber
+        took it, and that result is released on the loop."""
 
-        def register(resume: Callable[[Effect[A, RedisError]], None]) -> Callable[[], bool]:
-            future: Future[A] = self._lifetime.submit(lambda: self._thread.submit(make))
+        def register(resume: Callable[[Effect[A, RedisError]], None]) -> Callable[[], object]:
+            handoff = None if release is None else _Handoff(make, release)
+            start = make if handoff is None else handoff.make
+            future: Future[A] = self._lifetime.submit(lambda: self._thread.submit(start))
 
             def done(finished: Future[A]) -> None:
                 if finished.cancelled():
@@ -119,7 +165,15 @@ class _Loop:
                     resume(fail(RedisError(cause=_with_code(error))))
 
             future.add_done_callback(done)
-            return future.cancel
+            if handoff is None:
+                return future.cancel
+
+            def cancel() -> None:
+                # The fiber gave up the wait, so it never takes the result.
+                future.cancel()
+                handoff.abandon(self._lifetime, self._thread)
+
+            return cancel
 
         return os_wait(register, waits_for=waits_for)
 
@@ -146,7 +200,7 @@ class RedisPyService:
         async def run() -> A:
             return await f(self.client)
 
-        return self._loop.run(run, waits_for="work")
+        return self._loop.run(run, waits_for="work", release=None)
 
 
 class RedisPy(Tag[RedisPyService], key="pyfect/persistence/RedisPy"):
@@ -182,11 +236,11 @@ class _Reserved:
                 await self._connection.send_command(command, *args)
                 return cast("RedisReply", await self._connection.read_response())
 
-        return self._loop.run(run, waits_for=_command_waits_for(command, args))
+        return self._loop.run(run, waits_for=_command_waits_for(command, args), release=None)
 
     @property
     def close(self) -> Effect[None]:
-        return self._loop.run(self._connection.disconnect, waits_for="work").ignore()
+        return self._loop.run(self._connection.disconnect, waits_for="work", release=None).ignore()
 
 
 def _client(url: str | None, options: dict[str, Any]) -> AsyncRedis:
@@ -212,15 +266,17 @@ def make(
     def build() -> Generator[Effect[Any, RedisError, Any], Any, Context[Redis | RedisPy]]:
         loop = yield from acquire_release(sync(_Loop), lambda loop, _: loop.stop())
         client = yield from acquire_release(
-            loop.run(lambda: _make_client(url, dict(options)), waits_for="work"),
-            lambda client, _: loop.run(client.aclose, waits_for="work").ignore(),
+            loop.run(
+                lambda: _make_client(url, dict(options)), waits_for="work", release=_close_client
+            ),
+            lambda client, _: loop.run(client.aclose, waits_for="work", release=None).ignore(),
         )
 
         async def probe() -> None:
             connection = await _open_connection(client)
             await connection.disconnect()
 
-        yield from loop.run(probe, waits_for="work")
+        yield from loop.run(probe, waits_for="work", release=None)
         # redis-py leaves some of these signatures untyped.
         untyped: Any = client
 
@@ -228,11 +284,18 @@ def make(
             async def run() -> RedisReply:
                 return cast("RedisReply", await untyped.execute_command(command, *args))
 
-            return loop.run(run, waits_for=_command_waits_for(command, args))
+            return loop.run(run, waits_for=_command_waits_for(command, args), release=None)
 
-        async def connect() -> OpenConnection:
-            reserved = _Reserved(loop, await _open_connection(client))
+        def opened(connection: AbstractConnection) -> OpenConnection:
+            reserved = _Reserved(loop, connection)
             return OpenConnection(reserved.send, reserved.close)
+
+        async def disconnect(connection: AbstractConnection) -> None:
+            await connection.disconnect()
+
+        connect = loop.run(
+            lambda: _open_connection(client), waits_for="work", release=disconnect
+        ).map(opened)
 
         def subscribe(
             channel: str, on_message: Callable[[RedisMessage], bool]
@@ -249,7 +312,8 @@ def make(
                     await subscription.subscribe(channel)
                     return subscription
 
-                return loop.run(open_subscription, waits_for="work")
+                # The scope owns the subscription already.
+                return loop.run(open_subscription, waits_for="work", release=None)
 
             def deliver(subscription: PubSub) -> Effect[None, RedisError]:
                 async def next_message() -> Mapping[str, Any] | None:
@@ -261,7 +325,7 @@ def make(
 
                 def body() -> Generator[Effect[Any, RedisError], Any]:
                     while True:
-                        message = yield from loop.run(next_message, waits_for="event")
+                        message = yield from loop.run(next_message, waits_for="event", release=None)
                         if message is None or message["type"] != "message":
                             continue
                         if not on_message(RedisMessage(message["channel"], message["data"])):
@@ -271,9 +335,9 @@ def make(
 
             return (
                 acquire_release(
-                    loop.run(make_subscription, waits_for="work"),
+                    loop.run(make_subscription, waits_for="work", release=_close_subscription),
                     lambda subscription, _: loop.run(
-                        subscription.aclose, waits_for="work"
+                        subscription.aclose, waits_for="work", release=None
                     ).ignore(),
                 )
                 .flat_map(connected)
@@ -285,12 +349,20 @@ def make(
         redis = yield from make_redis(
             send=send,
             subscribe=subscribe,
-            connect=loop.run(connect, waits_for="work").interruptible(),
+            connect=connect.interruptible(),
             pool=pool,
         )
         return Context.empty().add(Redis, redis).add(RedisPy, RedisPyService(client, loop))
 
     return gen(build)
+
+
+async def _close_client(client: AsyncRedis) -> None:
+    await client.aclose()
+
+
+async def _close_subscription(subscription: PubSub) -> None:
+    await subscription.aclose()
 
 
 async def _make_client(url: str | None, options: dict[str, Any]) -> AsyncRedis:

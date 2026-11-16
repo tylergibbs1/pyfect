@@ -73,6 +73,7 @@ from pyfect.sql.pg import migrator as pg_migrator
 from pyfect.sql.sqlite import migrator as sqlite_migrator
 
 type AnyLayer = fx.Layer[Any, Any, Any]
+type AnyEffect = fx.Effect[Any, Any, Any]
 type Body = Callable[[], Generator[Any, Any, Any]]
 
 
@@ -211,6 +212,51 @@ def _migrated_table():
     assert count >= 1
 
 
+def _from_no_tables(client: AnyLayer, then: AnyEffect = fx.void) -> None:
+    """Drops the tables a migrator case makes, left by earlier tests on this
+    worker's server, then runs ``then``: every test of a case starts from the
+    same database, whatever ran before it."""
+
+    def body():
+        sql = yield from SqlClient()
+        for table in ("layer_reuse_items", "layer_reuse_migrations"):
+            yield from sql("DROP TABLE IF EXISTS {}", sql.identifier(table))
+        yield from then
+
+    fx.run_blocking(fx.scoped(fx.gen(body)).pipe(fx.provide(client)).or_die())
+
+
+def _pg_migrator() -> AnyLayer:
+    _from_no_tables(_pg())
+    return pg_migrator.layer(
+        loader=pg_migrator.from_record({"1_create_items": fx.gen(_create_items)}),
+        table="layer_reuse_migrations",
+    )
+
+
+def _mysql_migrator() -> AnyLayer:
+    _from_no_tables(_mysql_client())
+    return mysql_migrator.layer(
+        loader=mysql_migrator.from_record({"1_create_items": fx.gen(_create_items_mysql)}),
+        table="layer_reuse_migrations",
+    )
+
+
+def _mssql_migrator() -> AnyLayer:
+    """The migrations table is made before the runs: Effect's SQL Server DDL
+    for it checks then creates (``IF OBJECT_ID(...) IS NULL CREATE TABLE``),
+    so two migrators that both find no table both create it and one fails
+    (``oracle/test_mssql_migrator.py``)."""
+    made_first = mssql_migrator.run(
+        loader=mssql_migrator.from_record({}), table="layer_reuse_migrations"
+    )
+    _from_no_tables(_mssql_client(), made_first)
+    return mssql_migrator.layer(
+        loader=mssql_migrator.from_record({"1_create_items": fx.gen(_create_items_mssql)}),
+        table="layer_reuse_migrations",
+    )
+
+
 _SQL: dict[str, Case] = {
     "pyfect.sql.sqlite.client.layer": Case(layer=_sqlite, use=_gen(_fresh_database)),
     "pyfect.sql.sqlite.client.layer_config": Case(
@@ -306,10 +352,7 @@ _SQL: dict[str, Case] = {
         layer=lambda: pg.layer_from(pg.make(_pg_config())), use=_gen(_select_one)
     ),
     "pyfect.sql.pg.migrator.layer": Case(
-        layer=lambda: pg_migrator.layer(
-            loader=pg_migrator.from_record({"1_create_items": fx.gen(_create_items)}),
-            table="layer_reuse_migrations",
-        ),
+        layer=_pg_migrator,
         needs=_pg,
         use=_gen(_migrated_table),
     ),
@@ -323,10 +366,7 @@ _SQL: dict[str, Case] = {
         layer=lambda: mysql.layer_from(mysql.make(_mysql_config())), use=_gen(_select_one)
     ),
     "pyfect.sql.mysql.migrator.layer": Case(
-        layer=lambda: mysql_migrator.layer(
-            loader=mysql_migrator.from_record({"1_create_items": fx.gen(_create_items_mysql)}),
-            table="layer_reuse_migrations",
-        ),
+        layer=_mysql_migrator,
         needs=_mysql_client,
         use=_gen(_migrated_table),
     ),
@@ -354,10 +394,7 @@ _SQL: dict[str, Case] = {
         layer=lambda: mssql.layer_from(mssql.make(_mssql_config())), use=_gen(_select_one)
     ),
     "pyfect.sql.mssql.migrator.layer": Case(
-        layer=lambda: mssql_migrator.layer(
-            loader=mssql_migrator.from_record({"1_create_items": fx.gen(_create_items_mssql)}),
-            table="layer_reuse_migrations",
-        ),
+        layer=_mssql_migrator,
         needs=_mssql_client,
         use=_gen(_migrated_table),
     ),

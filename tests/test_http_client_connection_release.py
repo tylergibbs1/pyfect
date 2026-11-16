@@ -7,6 +7,7 @@ kept one socket per call)."""
 from __future__ import annotations
 
 import inspect
+import os
 from typing import Any
 
 import pytest
@@ -179,6 +180,27 @@ def test_beacon_probe_does_not_run_out_of_connections() -> None:
         )
         == 0
     )
+
+
+def test_a_descriptor_another_thread_closes_does_not_count() -> None:
+    """Under xdist, another test's thread may close its socket during this run
+    (CI run 43743608270 counted -1): only the client's own sockets count."""
+    pipes = [os.pipe() for _ in range(5)]
+
+    def close_one() -> None:
+        for fd in pipes.pop():
+            os.close(fd)
+
+    assert open_after(lambda client, url: fx.sync(close_one).and_then(client.get(f"{url}/"))) == 0
+
+
+def test_a_response_the_program_keeps_keeps_its_connection() -> None:
+    kept: list[HttpClientResponse] = []
+
+    def keep(response: HttpClientResponse) -> None:
+        kept.append(response)
+
+    assert open_after(lambda client, url: client.get(f"{url}/").map(keep), times=2) == 2
 
 
 _NOT_CLIENT_COMBINATORS = frozenset(

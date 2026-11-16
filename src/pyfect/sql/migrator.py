@@ -10,7 +10,9 @@ one transaction (except on ClickHouse), recording each::
     yield from run(loader=migrator.from_record({"1_create_users": create_users}))
 
 Two runners at once: the second finds the rows already recorded and
-returns ``[]``.
+returns ``[]``. On SQL Server, as in Effect, the migrations table is made
+by a check then a create, so two runners that both find no table both
+create it and one fails.
 """
 # pyright: reportPrivateUsage=false
 

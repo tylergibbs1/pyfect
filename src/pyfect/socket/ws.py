@@ -15,8 +15,7 @@ provides ``WebSocketConstructor`` with it, and ``layer_web_socket`` a client
 from __future__ import annotations
 
 import asyncio
-import threading
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 from warnings import deprecated
@@ -39,6 +38,7 @@ from pyfect.layer import effect as layer_effect
 from pyfect.layer import provide as layer_provide
 from pyfect.layer import succeed as layer_succeed
 from pyfect.scope import Scope
+from pyfect.socket._event_target import EventTarget, ListenerEntry
 from pyfect.socket._loop import call_soon, get_loop
 from pyfect.socket._socket import Socket
 from pyfect.socket._web_socket import (
@@ -74,7 +74,8 @@ class _Close:
 
 class WsWebSocket:
     """A browser-style WebSocket over a ``websockets`` connection. Methods
-    may be called from any thread; listeners run on the socket loop.
+    may be called from any thread. Events dispatched before the first
+    listeners are added wait for them (``EventTarget``).
     ``pause`` stops reading messages until ``resume``; ``buffered_amount``
     counts what was sent but has not reached the transport."""
 
@@ -82,8 +83,7 @@ class WsWebSocket:
         self, *, paused: bool = False, max_message_size: int | None = DEFAULT_MAX_MESSAGE_SIZE
     ) -> None:
         self._max_message_size = max_message_size
-        self._lock = threading.Lock()
-        self._listeners: dict[WebSocketEventType, list[tuple[Listener, bool]]] = {}
+        self._events = EventTarget(_report_listener_error)
         self._state = CONNECTING
         self._paused = paused
         self._outgoing: asyncio.Queue[tuple[bytes | str, int] | _Close] = asyncio.Queue()
@@ -137,15 +137,13 @@ class WsWebSocket:
     def add_event_listener(
         self, type: WebSocketEventType, listener: Listener, *, once: bool = False
     ) -> None:
-        with self._lock:
-            entries = self._listeners.setdefault(type, [])
-            if all(entry is not listener for entry, _ in entries):
-                entries.append((listener, once))
+        self._events.add_event_listener(type, listener, once=once)
+
+    def add_event_listeners(self, entries: Iterable[ListenerEntry]) -> None:
+        self._events.add_event_listeners(entries)
 
     def remove_event_listener(self, type: WebSocketEventType, listener: Listener) -> None:
-        with self._lock:
-            entries = self._listeners.get(type, [])
-            entries[:] = [(entry, once) for entry, once in entries if entry is not listener]
+        self._events.remove_event_listener(type, listener)
 
     def send(self, data: bytes | str) -> None:
         state = self._state
@@ -191,17 +189,7 @@ class WsWebSocket:
     # --- loop side -----------------------------------------------------------
 
     def _dispatch(self, type: WebSocketEventType, event: WebSocketEvent) -> None:
-        with self._lock:
-            entries = self._listeners.get(type, [])
-            called = list(entries)
-            entries[:] = [(listener, once) for listener, once in entries if not once]
-        for listener, _ in called:
-            try:
-                listener(event)
-            except Exception as error:
-                get_loop().call_exception_handler(
-                    {"message": "WebSocket listener failed", "exception": error}
-                )
+        self._events.dispatch(type, event)
 
     def _close(self, code: int, reason: str) -> None:
         self._abandoned.set()
@@ -318,6 +306,10 @@ class WsWebSocket:
                 {"message": "WebSocket send failed", "exception": error}
             )
             connection.transport.abort()
+
+
+def _report_listener_error(error: Exception) -> None:
+    get_loop().call_exception_handler({"message": "WebSocket listener failed", "exception": error})
 
 
 def _closed_while_connecting() -> Exception:

@@ -2,8 +2,10 @@
 server and the httpx client.
 
 ``open_after(send)`` runs ``send(client, url)`` several times with Python's
-cycle collector off and returns how many file descriptors are still open
-once the client has had time to close what it released. A response must
+cycle collector off and returns how many of the client's sockets to the test
+server are still open once the client has had time to close what it
+released. Only sockets connected to that server count: other tests' threads
+open and close descriptors of their own meanwhile (pytest-xdist). A response must
 let go of its connection when the program drops it (Effect releases it
 when the response is garbage collected), so a response kept alive by a
 reference cycle shows up here as an open socket rather than as a leak that
@@ -14,6 +16,7 @@ from __future__ import annotations
 
 import gc
 import os
+import socket
 import threading
 import time
 from collections.abc import Callable, Generator
@@ -59,13 +62,16 @@ class _Server(ThreadingHTTPServer):
         """A client closing an unread response hangs up mid-write."""
 
 
+type _Address = tuple[str, int]
+
+
 @contextmanager
-def _server() -> Generator[str]:
+def _server() -> Generator[_Address]:
     server = _Server(("127.0.0.1", 0), _Handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
-        yield f"http://127.0.0.1:{server.server_address[1]}"
+        yield ("127.0.0.1", server.server_address[1])
     finally:
         server.shutdown()
         server.server_close()
@@ -83,14 +89,29 @@ def _without_cycle_collection() -> Generator[None]:
             gc.enable()
 
 
-def open_fds() -> int:
-    return len(os.listdir("/dev/fd"))
+def _peer(fd: int) -> object:
+    """The peer of the socket ``fd`` (``None`` for any other descriptor)."""
+    try:
+        sock = socket.socket(fileno=fd)
+    except OSError:
+        return None
+    try:
+        return sock.getpeername()
+    except OSError:
+        return None
+    finally:
+        sock.detach()
 
 
-def _settled(baseline: int, timeout: float = 2.0) -> int:
-    """Open descriptors over ``baseline``, once closing has settled."""
+def connected_to(server: _Address) -> int:
+    """This process's open sockets connected to ``server``."""
+    return sum(_peer(int(fd)) == server for fd in os.listdir("/dev/fd"))
+
+
+def _settled(server: _Address, timeout: float = 2.0) -> int:
+    """Sockets still connected to ``server``, once closing has settled."""
     deadline = time.monotonic() + timeout
-    while (left := open_fds() - baseline) > 0 and time.monotonic() < deadline:
+    while (left := connected_to(server)) and time.monotonic() < deadline:
         time.sleep(0.01)
     return left
 
@@ -106,13 +127,13 @@ def open_after(send: Send, *, times: int = 5) -> int:
     @fx.gen
     def program():
         client = yield from HttpClient()
-        baseline = open_fds()
         for _ in range(times):
             yield from send(client, url).ignore()
         # Leave the run the last send's fibers resumed this one in.
         yield from fx.yield_now()
-        return _settled(baseline)
+        return _settled(server)
 
-    with _server() as url, _without_cycle_collection():
+    with _server() as server, _without_cycle_collection():
+        url = f"http://{server[0]}:{server[1]}"
         run = fx.scoped(program).pipe(fx.provide(httpx_client.layer)).pipe(fx.provide(_SERVICES))
         return fx.run_blocking(run)

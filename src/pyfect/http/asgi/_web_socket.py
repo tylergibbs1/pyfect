@@ -15,8 +15,7 @@ closing handshake interrupts the app (a client abort).
 from __future__ import annotations
 
 import asyncio
-import threading
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from typing import Any, Never
 
 from pyfect._core import Effect, _WithFiber
@@ -37,6 +36,7 @@ from pyfect.http.web import WebResponse
 from pyfect.http.web_handler import Fork, response_to_web
 from pyfect.scope import acquire_release
 from pyfect.socket._errors import SocketError, open_error
+from pyfect.socket._event_target import EventTarget, ListenerEntry
 from pyfect.socket._socket import SocketService
 from pyfect.socket._web_socket import (
     CLOSED,
@@ -68,16 +68,16 @@ _MOVES: dict[int, frozenset[int]] = {
 
 class AsgiWebSocket:
     """A browser-style WebSocket over an ASGI ``websocket`` connection.
-    Methods may be called from any thread; listeners run on the server's
-    loop. Messages wait (one at a time) while paused; ``buffered_amount``
-    counts what was sent but the server has not taken."""
+    Methods may be called from any thread. Events dispatched before the
+    first listeners are added wait for them (``EventTarget``). Messages
+    wait (one at a time) while paused; ``buffered_amount`` counts what was
+    sent but the server has not taken."""
 
     def __init__(self, receive: Receive, send: Send) -> None:
         self._loop = asyncio.get_running_loop()
         self._receive = receive
         self._send = send
-        self._lock = threading.Lock()
-        self._listeners: dict[WebSocketEventType, list[tuple[Listener, bool]]] = {}
+        self._events = EventTarget(self._report_listener_error)
         self._state = CONNECTING
         self._paused = True
         self._flowing = asyncio.Event()
@@ -109,15 +109,13 @@ class AsgiWebSocket:
     def add_event_listener(
         self, type: WebSocketEventType, listener: Listener, *, once: bool = False
     ) -> None:
-        with self._lock:
-            entries = self._listeners.setdefault(type, [])
-            if all(entry is not listener for entry, _ in entries):
-                entries.append((listener, once))
+        self._events.add_event_listener(type, listener, once=once)
+
+    def add_event_listeners(self, entries: Iterable[ListenerEntry]) -> None:
+        self._events.add_event_listeners(entries)
 
     def remove_event_listener(self, type: WebSocketEventType, listener: Listener) -> None:
-        with self._lock:
-            entries = self._listeners.get(type, [])
-            entries[:] = [(entry, once) for entry, once in entries if entry is not listener]
+        self._events.remove_event_listener(type, listener)
 
     def send(self, data: bytes | str) -> None:
         if self._state == CONNECTING:
@@ -166,17 +164,12 @@ class AsgiWebSocket:
         return True
 
     def _dispatch(self, type: WebSocketEventType, event: WebSocketEvent) -> None:
-        with self._lock:
-            entries = self._listeners.get(type, [])
-            called = list(entries)
-            entries[:] = [(listener, once) for listener, once in entries if not once]
-        for listener, _ in called:
-            try:
-                listener(event)
-            except Exception as error:
-                self._loop.call_exception_handler(
-                    {"message": "WebSocket listener failed", "exception": error}
-                )
+        self._events.dispatch(type, event)
+
+    def _report_listener_error(self, error: Exception) -> None:
+        self._loop.call_exception_handler(
+            {"message": "WebSocket listener failed", "exception": error}
+        )
 
     def _close(self, code: int, reason: str) -> None:
         if self._move(CLOSING):

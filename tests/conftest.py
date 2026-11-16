@@ -9,7 +9,14 @@ import pytest
 
 from pyfect.schema.compiler import _registry
 
-pytest_plugins = ["pytester", "_timeout", "_asyncio_reports", "_shards", "_skips"]
+pytest_plugins = [
+    "pytester",
+    "_timeout",
+    "_asyncio_reports",
+    "_shards",
+    "_skips",
+    "_git_config_guard",
+]
 
 # pytest imports readline before this file loads, and GNU readline (Linux) exports COLUMNS and
 # LINES into the C environment behind os.environ's back; children would inherit an 80-column
