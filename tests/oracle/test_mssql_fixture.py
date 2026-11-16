@@ -1,10 +1,11 @@
 """The SQL Server container fixture (``_mssql``): it skips without Docker,
-picks the image for the machine, and removes the containers a crashed run
-left."""
+picks the image for the machine, waits until the server has finished starting, and removes the
+containers a crashed run left."""
 
 import platform
 import shutil
 import subprocess
+from typing import Any
 
 import pytest
 
@@ -46,6 +47,47 @@ def _dead_pid() -> int:
     probe = subprocess.Popen(["true"])
     probe.wait()
     return probe.pid
+
+
+class _Starting:
+    """A server that takes logins while it is still starting: each login's ``STARTING``
+    query reads the next of ``states`` (databases not online, requests waiting)."""
+
+    def __init__(self, *states: tuple[int, int]) -> None:
+        self.states = list(states)
+        self.logins = 0
+        self.closed = 0
+
+    def login(self, *_args: object, **_kwargs: object) -> Any:
+        self.logins += 1
+        return self
+
+    def cursor(self) -> Any:
+        return self
+
+    def execute(self, sql: str) -> None:
+        assert sql == _mssql.STARTING
+
+    def fetchall(self) -> list[tuple[int, int]]:
+        return [self.states.pop(0)]
+
+    def close(self) -> None:
+        self.closed += 1
+
+
+def _no_wait(_seconds: float) -> None:
+    return None
+
+
+def test_is_ready_only_once_the_server_has_finished_starting(monkeypatch: pytest.MonkeyPatch):
+    # Seen on a fresh container: the first login came while msdb was still recovering, then
+    # system tasks and logins waited on each other's locks for about 3 s more; a test's first
+    # statements waited behind them.
+    server = _Starting((1, 4), (0, 2), (0, 0))
+    monkeypatch.setattr(_mssql, "_login", server.login)
+    monkeypatch.setattr(_mssql.time, "sleep", _no_wait)
+    _mssql._wait_ready(_mssql.MssqlServer("127.0.0.1", 1433, "container"))  # pyright: ignore[reportPrivateUsage]
+    assert (server.logins, server.closed, server.states) == (3, 3, [])
 
 
 def test_reaps_containers_of_processes_that_are_gone():

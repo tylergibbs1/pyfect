@@ -92,11 +92,36 @@ def _login(host: str, port: int, database: str = DATABASE, timeout: float = 5) -
     )
 
 
+STARTING = """
+SELECT
+    (SELECT COUNT(*) FROM sys.databases WHERE state_desc <> 'ONLINE'),
+    (SELECT COUNT(*) FROM sys.dm_exec_requests
+        WHERE session_id <> @@SPID
+        AND (wait_type = 'STARTUP_DEPENDENCY_MANAGER' OR wait_type LIKE 'LCK[_]%'))
+"""
+"""Databases not yet online, and requests still waiting on startup or on a lock. A first login
+can succeed while ``msdb`` is still recovering, and for seconds after recovery system tasks and
+logins wait on each other's metadata locks; a test's first statements then waited behind them
+(1.9 s on a ``tempdb`` database lock, against a 5 s test timeout)."""
+
+
+def _starting(connection: Any) -> str | None:
+    """What the server is still doing after startup, or ``None`` once it has settled."""
+    cursor = connection.cursor()
+    cursor.execute(STARTING)
+    offline, waiting = cursor.fetchall()[0]
+    if offline or waiting:
+        return f"{offline} databases not online, {waiting} requests waiting on startup or a lock"
+    return None
+
+
 def _wait_ready(server: MssqlServer) -> None:
+    """Until ``sa`` logs in and the server has finished starting (``STARTING``)."""
     deadline = time.monotonic() + _STARTUP_TIMEOUT
     while True:
+        failure: Exception | None = None
         try:
-            _login(server.host, server.port).close()
+            connection = _login(server.host, server.port)
         except Exception as error:
             running = _containers.docker(
                 "inspect", "-f", "{{.State.Running}}", server.container
@@ -104,11 +129,17 @@ def _wait_ready(server: MssqlServer) -> None:
             if running != "true":
                 logs = _containers.docker("logs", "--tail", "20", server.container)
                 raise RuntimeError(f"the SQL Server container stopped: {logs.stdout}") from error
-            if time.monotonic() > deadline:
-                raise RuntimeError("SQL Server did not start in time") from error
-            time.sleep(1)
+            failure, starting = error, "sa cannot log in yet"
         else:
-            return
+            try:
+                starting = _starting(connection)
+            finally:
+                connection.close()
+            if starting is None:
+                return
+        if time.monotonic() > deadline:
+            raise RuntimeError(f"SQL Server did not start in time: {starting}") from failure
+        time.sleep(1)
 
 
 def _start() -> MssqlServer:
