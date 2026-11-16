@@ -128,7 +128,7 @@ def _future[A](
 
     def register(resume: Callable[[Effect[A, BaseException]], None]) -> Callable[[], bool]:
         future = start()
-        remove = (lambda: None) if signal is None else signal.add_listener(future.cancel)
+        remove = (lambda: None) if signal is None else signal.on_abort(future.cancel)
 
         def done(finished: Future[A]) -> None:
             remove()
@@ -252,9 +252,7 @@ class _Backend:
             # which reaches the response, so it would keep an unread response (and the
             # finalizer that aborts it) alive.
             done.append(
-                signal.add_listener(
-                    lambda: self._call_soon(lambda: self._close_reader(body_reader))
-                )
+                signal.on_abort(lambda: self._call_soon(lambda: self._close_reader(body_reader)))
             )
         headers = request.headers
         if isinstance(request.body, _body.FormData):
@@ -274,7 +272,7 @@ class _Backend:
             response = await self.client.send(built, stream=True)
             # Tied to the signal as soon as it exists: an interrupt that wins
             # against its arrival (a lost race) drops it unseen, and aborts.
-            signal.add_listener(lambda: self._call_soon(lambda: self._close_response(response)))
+            signal.on_abort(lambda: self._call_soon(lambda: self._close_response(response)))
             return response
 
         def on_error(error: BaseException) -> Effect[Never, HttpClientError]:

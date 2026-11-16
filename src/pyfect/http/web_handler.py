@@ -178,7 +178,7 @@ class _StreamBody:
         self._started: AsyncIterator[bytes] | None = None
         self._closing: list[asyncio.Task[None]] = []
         if signal is not None:
-            signal.add_listener(self._abort)
+            signal.on_abort(self._abort)
 
     def _abort(self) -> None:
         started = self._started
@@ -317,7 +317,7 @@ def _handle(
         def abort() -> None:
             fiber.interrupt_as_unsafe(None, CLIENT_ABORT_ANNOTATION)
 
-        remove = signal.add_listener(abort)
+        remove = signal.on_abort(abort)
 
         def stop_listening(_exit: Exit[Any, Any]) -> None:
             remove()

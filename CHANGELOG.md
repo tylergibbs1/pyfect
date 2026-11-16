@@ -11,6 +11,15 @@
   The driver now watches what the connection writes instead and changes none of asyncmy's
   state. CI also runs each driver's tests at its newest release and its lowest allowed one,
   whatever `uv.lock` pins, on every change to the drivers and daily.
+- `pyfect.http.abort`: an `AbortSignal` listener that raised stopped `AbortController.abort()`,
+  so the listeners after it (a backend closing its connection) never ran (0.6.9 and before).
+  With `with_scope` the raise also turned a finished request into a Die when the scope closed.
+  Listeners now run as a WHATWG `AbortSignal` runs them, as in Effect: one that raises is
+  logged on the `pyfect.http.abort` logger and the rest still run, one removed during the
+  abort does not run, and the same listener added twice runs once. `add_listener` on a signal
+  that already fired no longer runs the listener; the new `on_abort` does (Effect's
+  `if (signal.aborted) f() else signal.addEventListener("abort", f)`, without a race between
+  the two), and pyfect's own backends use it.
 - `migrate_legacy_store(..., taken_from=pair, through_sequence=0)` was accepted (0.6.9) and
   moved every batch, the first ones of the store taking the tables back included, to `pair`'s
   tables. `through_sequence` is now parsed where the call takes it and refused unless it is 1
