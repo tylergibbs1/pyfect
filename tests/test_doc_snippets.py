@@ -219,6 +219,11 @@ def run_with_server(path: Path) -> subprocess.CompletedProcess[str]:
     return run(*snippet_args(path), env=snippet_env(path))
 
 
+def snippet_threads(cpus: int, workers: int) -> int:
+    """Snippet runs at once: this process's share of the CPUs, one left free."""
+    return max(1, cpus // workers - 1)
+
+
 CLUSTER = SNIPPETS / "cluster"
 CLUSTER_SCRIPTS = [p for p in SCRIPTS if p.is_relative_to(CLUSTER)]
 
@@ -263,8 +268,9 @@ def runs(request: pytest.FixtureRequest) -> Iterator[Runs]:
     so a test waits only for the few runs ahead of it.
 
     A run is mostly an interpreter importing pyfect, so one after another they took minutes.
-    They run side by side with one CPU free: some snippets time their own wake-ups
-    (threads/lag.py), and a CPU taken by another run would make them late. Snippets of a
+    They run side by side on this process's share of the CPUs (the other xdist workers have
+    the rest), one left free: some snippets time their own wake-ups (threads/lag.py), and a
+    CPU taken by another run would make them late, as it would other workers' tests. Snippets of a
     database server share it, so they run one at a time, alongside the others; one that
     finds no server skips its test.
     """
@@ -281,7 +287,8 @@ def runs(request: pytest.FixtureRequest) -> Iterator[Runs]:
         )
         and isinstance(path := item.callspec.params["path"], Path)
     ]
-    pool = ThreadPoolExecutor(max_workers=max(1, (os.process_cpu_count() or 1) - 1))
+    workers = int(os.environ.get("PYTEST_XDIST_WORKER_COUNT", "1"))
+    pool = ThreadPoolExecutor(max_workers=snippet_threads(os.process_cpu_count() or 1, workers))
     servers = ThreadPoolExecutor(max_workers=1)
     try:
         yield {
@@ -469,3 +476,12 @@ def test_diagrams_exist_and_are_used():
     files = {path.stem for path in DIAGRAMS.glob("*.mmd")}
     assert used <= files, f"missing diagram files: {sorted(used - files)}"
     assert files <= used, f"diagrams no guide uses: {sorted(files - used)}"
+
+
+def test_the_snippet_runs_leave_the_other_xdist_workers_their_cpus():
+    # Four workers on a four-CPU runner: three more snippet threads would make seven busy
+    # processes, and tests on the other workers that time themselves ran late.
+    assert snippet_threads(cpus=4, workers=4) == 1
+    assert snippet_threads(cpus=18, workers=4) == 3
+    assert snippet_threads(cpus=4, workers=1) == 3
+    assert snippet_threads(cpus=1, workers=1) == 1
