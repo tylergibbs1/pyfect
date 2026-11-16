@@ -27,6 +27,7 @@ from pathlib import Path
 import pytest
 
 from . import _docker as _containers
+from ._shared_server import SharedServer
 
 IMAGE = "clickhouse/clickhouse-server:latest"
 LABEL = "pyfect.test=clickhouse"
@@ -133,24 +134,14 @@ def _start() -> ClickhouseServer:
     return server
 
 
-class _Shared:
-    server: ClickhouseServer | None = None
-    reason: str | None = None
+SERVER = SharedServer[ClickhouseServer](
+    "ClickHouse server", "httpx", (RuntimeError, OSError, subprocess.SubprocessError)
+)
 
 
 def server() -> ClickhouseServer:
-    """The shared server, started on first use; skips the test when it
-    cannot start."""
-    if _Shared.server is None and _Shared.reason is None:
-        try:
-            import httpx  # noqa: F401  # pyright: ignore[reportUnusedImport]
-
-            _Shared.server = _start()
-        except (ImportError, RuntimeError, OSError, subprocess.SubprocessError) as error:
-            _Shared.reason = f"no ClickHouse server: {error}"
-    if _Shared.server is None:
-        pytest.skip(_Shared.reason or "no ClickHouse server")
-    return _Shared.server
+    """The shared server, started on first use (``_shared_server``)."""
+    return SERVER.get(_start)
 
 
 def query_now(sql: str) -> str:

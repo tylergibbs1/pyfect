@@ -33,6 +33,7 @@ import pyfect as fx
 from pyfect import redacted
 
 from . import _pg_owner
+from ._shared_server import SharedServer
 
 if TYPE_CHECKING:
     from pyfect.sql.pg.connection import PgConnection
@@ -79,9 +80,12 @@ def _binary(name: str) -> str | None:
     return None
 
 
+SERVER = SharedServer[PgServer](
+    "local PostgreSQL", "psycopg", (RuntimeError, subprocess.CalledProcessError, OSError)
+)
+
+
 class _Shared:
-    server: PgServer | None = None
-    reason: str | None = None
     watchdog: subprocess.Popen[bytes] | None = None
 
 
@@ -137,18 +141,8 @@ def _start() -> PgServer:
 
 
 def server() -> PgServer:
-    """The shared server, started on first use; skips the test when it
-    cannot start."""
-    if _Shared.server is None and _Shared.reason is None:
-        try:
-            import psycopg  # noqa: F401  # pyright: ignore[reportUnusedImport]
-
-            _Shared.server = _start()
-        except (ImportError, RuntimeError, subprocess.CalledProcessError, OSError) as error:
-            _Shared.reason = f"no local PostgreSQL: {error}"
-    if _Shared.server is None:
-        pytest.skip(_Shared.reason or "no local PostgreSQL")
-    return _Shared.server
+    """The shared server, started on first use (``_shared_server``)."""
+    return SERVER.get(_start)
 
 
 @pytest.fixture(scope="session")

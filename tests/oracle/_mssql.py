@@ -30,6 +30,7 @@ import pytest
 from pyfect import redacted
 
 from . import _docker as _containers
+from ._shared_server import SharedServer
 
 SQL_SERVER_IMAGE = "mcr.microsoft.com/mssql/server:2022-latest"
 EDGE_IMAGE = "mcr.microsoft.com/azure-sql-edge:latest"
@@ -143,24 +144,14 @@ def _start() -> MssqlServer:
     return server
 
 
-class _Shared:
-    server: MssqlServer | None = None
-    reason: str | None = None
+SERVER = SharedServer[MssqlServer](
+    "SQL Server", "pytds", (RuntimeError, OSError, subprocess.SubprocessError)
+)
 
 
 def server() -> MssqlServer:
-    """The shared server, started on first use; skips the test when it
-    cannot start."""
-    if _Shared.server is None and _Shared.reason is None:
-        try:
-            import pytds  # noqa: F401  # pyright: ignore[reportUnusedImport, reportMissingTypeStubs]
-
-            _Shared.server = _start()
-        except (ImportError, RuntimeError, OSError, subprocess.SubprocessError) as error:
-            _Shared.reason = f"no SQL Server: {error}"
-    if _Shared.server is None:
-        pytest.skip(_Shared.reason or "no SQL Server")
-    return _Shared.server
+    """The shared server, started on first use (``_shared_server``)."""
+    return SERVER.get(_start)
 
 
 @pytest.fixture(scope="session")

@@ -22,9 +22,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import _ports
-import pytest
 
 from . import _docker as _containers
+from ._shared_server import SharedServer
 
 _SEARCH = ("/opt/homebrew/bin", "/usr/local/bin", "/usr/bin")
 
@@ -142,24 +142,14 @@ def _start() -> RedisServer:
     return RedisServer("127.0.0.1", port)
 
 
-class _Shared:
-    server: RedisServer | None = None
-    reason: str | None = None
+SERVER = SharedServer[RedisServer](
+    "local Redis", "redis", (RuntimeError, OSError, subprocess.SubprocessError)
+)
 
 
 def server() -> RedisServer:
-    """The shared server, started on first use; skips the test when it
-    cannot start."""
-    if _Shared.server is None and _Shared.reason is None:
-        try:
-            import redis  # noqa: F401  # pyright: ignore[reportUnusedImport]
-
-            _Shared.server = _start()
-        except (ImportError, RuntimeError, OSError, subprocess.SubprocessError) as error:
-            _Shared.reason = f"no local Redis: {error}"
-    if _Shared.server is None:
-        pytest.skip(_Shared.reason or "no local Redis")
-    return _Shared.server
+    """The shared server, started on first use (``_shared_server``)."""
+    return SERVER.get(_start)
 
 
 def flush() -> None:

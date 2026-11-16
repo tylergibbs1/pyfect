@@ -14,8 +14,7 @@ def _not_found(_name: str) -> None:
 
 
 def test_skips_without_docker(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr(_mysql._Shared, "server", None)  # pyright: ignore[reportPrivateUsage]
-    monkeypatch.setattr(_mysql._Shared, "reason", None)  # pyright: ignore[reportPrivateUsage]
+    _mysql.SERVER.forget(monkeypatch)
     monkeypatch.setattr(shutil, "which", _not_found)
     with pytest.raises(pytest.skip.Exception, match="docker not found"):
         _mysql.server()

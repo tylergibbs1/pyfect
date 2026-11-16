@@ -26,6 +26,7 @@ import pytest
 from pyfect import redacted
 
 from . import _docker as _containers
+from ._shared_server import SharedServer
 
 IMAGE = "mysql:lts"
 LABEL = "pyfect.test=mysql"
@@ -131,24 +132,14 @@ def _start() -> MysqlServer:
     return server
 
 
-class _Shared:
-    server: MysqlServer | None = None
-    reason: str | None = None
+SERVER = SharedServer[MysqlServer](
+    "MySQL server", "asyncmy", (RuntimeError, OSError, subprocess.SubprocessError)
+)
 
 
 def server() -> MysqlServer:
-    """The shared server, started on first use; skips the test when it
-    cannot start."""
-    if _Shared.server is None and _Shared.reason is None:
-        try:
-            import asyncmy  # noqa: F401  # pyright: ignore[reportUnusedImport]
-
-            _Shared.server = _start()
-        except (ImportError, RuntimeError, OSError, subprocess.SubprocessError) as error:
-            _Shared.reason = f"no MySQL server: {error}"
-    if _Shared.server is None:
-        pytest.skip(_Shared.reason or "no MySQL server")
-    return _Shared.server
+    """The shared server, started on first use (``_shared_server``)."""
+    return SERVER.get(_start)
 
 
 @pytest.fixture(scope="session")

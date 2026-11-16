@@ -22,6 +22,7 @@ from dataclasses import dataclass
 import pytest
 
 from . import _docker as _containers
+from ._shared_server import SharedServer
 
 IMAGE = "ghcr.io/tursodatabase/libsql-server:main"
 LABEL = "pyfect.test=libsql"
@@ -94,24 +95,14 @@ def _start() -> LibsqlServer:
     return server
 
 
-class _Shared:
-    server: LibsqlServer | None = None
-    reason: str | None = None
+SERVER = SharedServer[LibsqlServer](
+    "libSQL server", "httpx", (RuntimeError, OSError, subprocess.SubprocessError)
+)
 
 
 def server() -> LibsqlServer:
-    """The shared server, started on first use; skips the test when it
-    cannot start."""
-    if _Shared.server is None and _Shared.reason is None:
-        try:
-            import httpx  # noqa: F401  # pyright: ignore[reportUnusedImport]
-
-            _Shared.server = _start()
-        except (ImportError, RuntimeError, OSError, subprocess.SubprocessError) as error:
-            _Shared.reason = f"no libSQL server: {error}"
-    if _Shared.server is None:
-        pytest.skip(_Shared.reason or "no libSQL server")
-    return _Shared.server
+    """The shared server, started on first use (``_shared_server``)."""
+    return SERVER.get(_start)
 
 
 @pytest.fixture(scope="session")
