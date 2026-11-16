@@ -9,6 +9,12 @@ PostgreSQL's own ``$1`` placeholders (psycopg's raw cursors).
 While anyone listens, a pump task reads notifications with
 ``notifies()``; a statement stops the pump first (psycopg keeps the
 notifications that arrive meanwhile) and starts it again when done.
+
+Each connection is touched only on the SQL loop thread. Every operation
+takes it from ``Session._using``; ``close`` shuts the socket down, waits
+for the statements still in flight to end, and only then closes the
+connection. What fibers read (``closed``, ``idle``, ``aborted``) is a
+snapshot taken on the loop after each operation.
 """
 # pyright: reportPrivateUsage=false
 
@@ -16,8 +22,10 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import os
 import re
-from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
+import socket
+from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, LiteralString, cast
 
@@ -128,18 +136,22 @@ class Session:
     __slots__ = (
         "_busy",
         "_cancel_pending",
+        "_closed",
+        "_closing",
+        "_conn",
         "_failure",
         "_fatal",
+        "_operations",
         "_pump",
         "_retire",
         "_subscribers",
-        "conn",
+        "_transaction",
         "prepare",
         "process_id",
     )
 
     def __init__(self, conn: psycopg.AsyncConnection[Any], prepare: bool) -> None:
-        self.conn = conn
+        self._conn = conn
         self.prepare = prepare
         self.process_id: int = conn.info.backend_pid
         """The backend's process id, fixed at connect."""
@@ -150,7 +162,43 @@ class Session:
         self._pump: asyncio.Task[None] | None = None
         self._subscribers: dict[str, set[Mailbox]] = {}
         self._fatal: tuple[str, str] | None = None
+        self._operations: set[asyncio.Task[Any]] = set()
+        """The tasks inside ``_using``."""
+        self._closing = False
+        self._closed = False
+        self._transaction = pq.TransactionStatus.UNKNOWN
         conn.add_notice_handler(self._on_notice)
+        self._observe()
+
+    def _observe(self) -> None:
+        """Snapshot the connection's state for readers on other threads."""
+        self._closed = self._conn.closed
+        self._transaction = self._conn.pgconn.transaction_status
+
+    @contextlib.asynccontextmanager
+    async def _using(self) -> AsyncGenerator[psycopg.AsyncConnection[Any]]:
+        """The connection, for one operation of the current task; ``close``
+        waits for the operation to end before closing it. Not nested."""
+        if self._closing:
+            raise psycopg.OperationalError("the connection is closed")
+        task = asyncio.current_task()
+        assert task is not None and task not in self._operations
+        self._operations.add(task)
+        try:
+            yield self._conn
+        finally:
+            self._operations.discard(task)
+            self._observe()
+
+    def _statement_active(self) -> bool:
+        """Whether a statement runs now (read live, on the loop)."""
+        return self._conn.pgconn.transaction_status == _ACTIVE
+
+    async def _send_cancel(self) -> None:
+        """Ask PostgreSQL to cancel what runs now, on a connection of its
+        own (libpq's cancel connection copies what it needs)."""
+        with contextlib.suppress(Exception):
+            await self._conn.cancel_safe(timeout=_CANCEL_TIMEOUT)
 
     @staticmethod
     async def connect(
@@ -201,28 +249,31 @@ class Session:
 
     @property
     def closed(self) -> bool:
-        return self.conn.closed
+        """Closed, or closing: from ``close``'s first step on, while it
+        waits for the operations still using the connection."""
+        return self._closing or self._closed
 
     @property
     def idle(self) -> bool:
         """No transaction is open (the latest ``ReadyForQuery`` said so)."""
-        return self.conn.pgconn.transaction_status == pq.TransactionStatus.IDLE
+        return self._transaction == pq.TransactionStatus.IDLE
 
     @property
     def aborted(self) -> bool:
         """A failed transaction is open: every statement but ``ROLLBACK``
         fails."""
-        return self.conn.pgconn.transaction_status == pq.TransactionStatus.INERROR
+        return self._transaction == pq.TransactionStatus.INERROR
 
     # --- statements -----------------------------------------------------------
 
-    async def _exclusive[A](self, run: Callable[[], Awaitable[A]]) -> A:
+    async def _exclusive[A](self, run: Callable[[psycopg.AsyncConnection[Any]], Awaitable[A]]) -> A:
         """Run a statement with the pump stopped."""
         self._busy += 1
         self._failure = None
         try:
             await self._stop_pump()
-            return await run()
+            async with self._using() as conn:
+                return await self._reparsing_stale(conn, run)
         except BaseException as failure:
             explained = self.explain(failure)
             self._failure = explained
@@ -236,39 +287,43 @@ class Session:
             self._start_pump()
 
     async def query(self, sql: str, params: Sequence[object], prepare: bool) -> Result:
-        async def run() -> Result:
-            async with self.conn.cursor(row_factory=dict_row) as cursor:
+        async def run(conn: psycopg.AsyncConnection[Any]) -> Result:
+            async with conn.cursor(row_factory=dict_row) as cursor:
                 await cursor.execute(_text(sql), params, prepare=prepare and self.prepare)
                 rows = await cursor.fetchall() if cursor.description is not None else []
                 command, count, oid = parse_command_tag(cursor.statusmessage or "")
                 fields = tuple(Field(c.name, c.type_code) for c in cursor.description or ())
                 return Result(command, count, oid, rows, fields)
 
-        return await self._exclusive(lambda: self._reparsing_stale(run))
+        return await self._exclusive(run)
 
     async def query_values(
         self, sql: str, params: Sequence[object], prepare: bool
     ) -> list[tuple[Any, ...]]:
-        async def run() -> list[tuple[Any, ...]]:
-            async with self.conn.cursor(row_factory=tuple_row) as cursor:
+        async def run(conn: psycopg.AsyncConnection[Any]) -> list[tuple[Any, ...]]:
+            async with conn.cursor(row_factory=tuple_row) as cursor:
                 await cursor.execute(_text(sql), params, prepare=prepare and self.prepare)
                 return await cursor.fetchall() if cursor.description is not None else []
 
-        return await self._exclusive(lambda: self._reparsing_stale(run))
+        return await self._exclusive(run)
 
-    async def _reparsing_stale[A](self, run: Callable[[], Awaitable[A]]) -> A:
+    async def _reparsing_stale[A](
+        self,
+        conn: psycopg.AsyncConnection[Any],
+        run: Callable[[psycopg.AsyncConnection[Any]], Awaitable[A]],
+    ) -> A:
         """``run()``; a prepared statement the backend no longer holds (a pooler
         moved the session, ``26000``) or whose plan no longer fits (``0A000``) is
         forgotten, and run again unless that would be in an aborted transaction,
         where it would only hide the error behind ``25P02``."""
         try:
-            return await run()
+            return await run(conn)
         except psycopg.Error as error:
-            if error.sqlstate not in _STALE_PREPARED or not _forget_prepared(self.conn, error):
+            if error.sqlstate not in _STALE_PREPARED or not _forget_prepared(conn, error):
                 raise
-            if self.aborted:
+            if conn.pgconn.transaction_status == pq.TransactionStatus.INERROR:
                 raise
-        return await run()
+        return await run(conn)
 
     async def cancel_query(self, task: asyncio.Task[Any]) -> None:
         """Stop a running statement: send PostgreSQL a cancel request and
@@ -276,11 +331,10 @@ class Session:
         ``57014``, the cancel was not confirmed and ``retire`` is set; a
         statement still running after the drain timeout closes the
         session."""
-        if self.conn.pgconn.transaction_status != _ACTIVE:
+        if not self._statement_active():
             await _cancel(task)
             return
-        with contextlib.suppress(Exception):
-            await self.conn.cancel_safe(timeout=_CANCEL_TIMEOUT)
+        await self._send_cancel()
         done, _ = await asyncio.wait([task], timeout=_DRAIN_TIMEOUT)
         if not done:
             self._retire = True
@@ -295,25 +349,26 @@ class Session:
         """Ask PostgreSQL to cancel whatever runs now. Until a statement
         ends cancelled, the cancel may still hit the next one."""
         self._cancel_pending = True
-        with contextlib.suppress(Exception):
-            await self.conn.cancel_safe(timeout=_CANCEL_TIMEOUT)
+        await self._send_cancel()
 
     # --- streams --------------------------------------------------------------
 
     async def open_stream(self, sql: str, params: Sequence[object]) -> AsyncIterator[Any]:
         await self._stop_pump()
-        self._busy += 1
-        cursor = self.conn.cursor(row_factory=dict_row)
-        size = _STREAM_CHUNK if pq.version() >= 170000 else 1
-        return cursor.stream(_text(sql), params, size=size)
+        async with self._using() as conn:
+            self._busy += 1
+            cursor = conn.cursor(row_factory=dict_row)
+            size = _STREAM_CHUNK if pq.version() >= 170000 else 1
+            return cursor.stream(_text(sql), params, size=size)
 
     async def next_rows(self, rows: AsyncIterator[Any]) -> list[dict[str, Any]]:
         """Up to a chunk of rows; ``[]`` at the end."""
         chunk: list[dict[str, Any]] = []
-        async for row in rows:
-            chunk.append(row)
-            if len(chunk) >= _STREAM_CHUNK:
-                break
+        async with self._using():
+            async for row in rows:
+                chunk.append(row)
+                if len(chunk) >= _STREAM_CHUNK:
+                    break
         return chunk
 
     async def close_stream(self, rows: AsyncIterator[Any]) -> None:
@@ -321,12 +376,16 @@ class Session:
         drains it, without saying whether PostgreSQL confirmed the cancel,
         so the session is retired."""
         try:
-            if self.conn.pgconn.transaction_status == _ACTIVE:
-                self._retire = True
-            aclose = getattr(rows, "aclose", None)
-            if aclose is not None:
-                with contextlib.suppress(Exception):
-                    await aclose()
+            async with self._using():
+                if self._statement_active():
+                    self._retire = True
+                aclose = getattr(rows, "aclose", None)
+                if aclose is not None:
+                    with contextlib.suppress(Exception):
+                        await aclose()
+        except psycopg.OperationalError:
+            # Closing: the stream ends with the connection.
+            pass
         finally:
             self._busy -= 1
             self._start_pump()
@@ -364,10 +423,11 @@ class Session:
 
     async def _run_pump(self) -> None:
         try:
-            async for notify in self.conn.notifies():
-                note = Notification(notify.pid, notify.channel, notify.payload)
-                for mailbox in self._subscribers.get(notify.channel, ()):
-                    mailbox.deliver(note)
+            async with self._using() as conn:
+                async for notify in conn.notifies():
+                    note = Notification(notify.pid, notify.channel, notify.payload)
+                    for mailbox in self._subscribers.get(notify.channel, ()):
+                        mailbox.deliver(note)
         except psycopg.Error as error:
             self.fail_subscribers(self.explain(error))
 
@@ -377,8 +437,23 @@ class Session:
                 mailbox.items.put_nowait(error)
 
     async def close(self) -> None:
+        """Close the connection once no operation uses it. Shutting the
+        socket down first ends the waiting ones with a connection error."""
+        self._closing = True
         await self._stop_pump()
-        await self.conn.close()
+        others = self._operations - {asyncio.current_task()}
+        if others:
+            self._shut_down_socket()
+            await asyncio.wait(others)
+        await self._conn.close()
+        self._observe()
+
+    def _shut_down_socket(self) -> None:
+        with (
+            contextlib.suppress(OSError, psycopg.Error),
+            socket.socket(fileno=os.dup(self._conn.fileno())) as sock,
+        ):
+            sock.shutdown(socket.SHUT_RDWR)
 
 
 async def _cancel(task: asyncio.Task[Any]) -> None:

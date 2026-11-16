@@ -50,6 +50,8 @@
   `LOCK TABLE` already held a second migrator back on PostgreSQL. Effect's migrator has the
   same race on MySQL.
 - Hex decoding and several text parsers use constant memory.
+- PostgreSQL: closing a session while a statement on it is still running now waits for that
+  statement to end (it fails with a connection error) before releasing the connection.
 
 ### Performance
 
