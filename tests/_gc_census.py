@@ -13,8 +13,10 @@ from __future__ import annotations
 
 import gc
 from collections import _count_elements  # pyright: ignore[reportAttributeAccessIssue, reportUnknownVariableType]
-from itertools import chain, compress, tee
+from itertools import chain, starmap
 from typing import cast
+
+from _subclasses import subclasses
 
 
 def _tracked() -> chain[object]:
@@ -38,15 +40,19 @@ def tracked_count() -> int:
 
 
 def tracked_of[T](kind: type[T]) -> list[T]:
-    """The tracked objects whose type is ``kind`` or a subclass. ``kind``'s metaclass must be
-    ``type``: another metaclass's ``__subclasscheck__`` would run Python code while the list
-    is held. The test reads each object's real type, not ``__class__``, which a weak proxy
-    forwards to its referent (a ReferenceError once that has died)."""
+    """The tracked instances of ``kind`` and its subclasses, whose metaclass must be ``type``:
+    another metaclass's ``__instancecheck__`` would run Python code while the list is held.
+
+    They are read as the objects that refer to one of those classes (an instance refers to
+    its class), so a weak proxy, which refers to nothing, is never asked for its
+    ``__class__``: it forwards that to its referent, a ReferenceError once that has died.
+    Every object stays inside the one C call, as ``_tracked`` keeps them."""
     if type(kind) is not type:
         raise TypeError(f"{kind.__name__} has metaclass {type(kind).__name__}, not type")
+    classes = (kind, *subclasses(kind))
     gc.disable()
     try:
-        objects, of = tee(_tracked())
-        return cast("list[T]", list(compress(objects, map(kind.__subclasscheck__, map(type, of)))))
+        referrers = starmap(gc.get_referrers, (classes,))
+        return cast("list[T]", list(filter(kind.__instancecheck__, chain.from_iterable(referrers))))
     finally:
         gc.enable()
