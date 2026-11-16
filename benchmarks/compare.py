@@ -4,10 +4,10 @@ The base is the commit this branch grew from: the merge base with ``origin/main`
 ``main`` itself the first parent. Comparing with any other commit (a later one, another
 branch's) can hide a regression or invent one, so it is the default, and naming another
 commit takes ``--base``. Both sides run the same benchmarks (this checkout's
-``streams.py``) against their own ``src/``, alternating in fresh processes, each case's time
-over the gate's calibration. Each round compares a case with the base run next to it, and the
+``streams.py``) against their own ``src/``, alternating in fresh processes on one runner, each
+case's raw time. Each round compares a case with the base run next to it, and the
 median of those ratios is the case's slowdown, so one round that ran fast or slow on either
-side (a busy neighbour, a slowed calibration) does not decide it. A case slower than its base
+side (a busy neighbour) does not decide it. A case slower than its base
 by more than its tolerance fails.
 
 Tolerances come from CI's spread comparing a commit with itself (``--base HEAD``), with
@@ -30,10 +30,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 MEASURE = Path(__file__).with_name("_measure.py")
 
-# A case slower than its base by more than this fails. Twelve CI runners comparing a commit
-# with itself (bench-noise runs 43357391286 and 43358456044, 5 rounds each, Python 3.13) put
-# every case within x0.93 to x1.04 of itself: fork-heavy x0.96-1.03, queue x0.94-1.03, map +
-# filter x0.93-1.04. x1.10 is more than twice the largest of those; the per-fiber dispatchers'
+# A case slower than its base by more than this fails. Eight CI runners comparing a commit
+# with itself on raw times (noise run 43854358958, Python 3.13) put every case's median of 5
+# rounds within x0.96 to x1.02 of itself: fork-heavy x0.96-1.02, queue x0.98-1.00, map +
+# filter x0.99-1.01. x1.10 is more than four times the largest of those; the per-fiber dispatchers'
 # x1.37 fork-heavy regression, which the gate's 1.6 let through, fails it by far. map +
 # filter keeps the default: run 43363222313 put it at x1.098 of a base whose code path it
 # shares, so its spread is wider than those twelve runs showed.
@@ -79,7 +79,7 @@ def slowdown(rounds: list[tuple[float, float]]) -> float:
 
 
 def compare(base: str, rounds: int, cases: list[str]) -> dict[str, list[tuple[float, float]]]:
-    """Each case's ratio over the calibration per round: (this checkout, ``base``)."""
+    """Each case's time per round: (this checkout, ``base``)."""
     found: dict[str, list[list[float]]] = {case: [] for case in cases}
     with tempfile.TemporaryDirectory() as tmp:
         tree = Path(tmp) / "base"
