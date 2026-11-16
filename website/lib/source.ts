@@ -7,6 +7,7 @@ import { metaSchema, pageSchema } from 'fumadocs-core/source/schema';
 import { createPython } from 'fumadocs-python';
 import { codeThemes } from './code-theme';
 import { remarkReferenceHeadings } from './reference-headings';
+import { navSections, type NavSection } from './page-tree';
 
 const docs = defineDocs({
   dir: 'content/docs',
@@ -43,6 +44,13 @@ export const source = loader(
 );
 
 export type Page = NonNullable<ReturnType<typeof source.getPage>>;
+
+/**
+ * The sidebar's, mobile menu's and command menu's links. Client components get these, never
+ * the page tree: the tree holds every API reference page, and as a prop it was serialized
+ * into every page (1.3 MB each, and most of the build's time).
+ */
+export const docsNav: NavSection[] = navSections(source.getPageTree());
 
 export const docsLlms = llms(source, {
   renderPage: async (page) => {

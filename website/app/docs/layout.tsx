@@ -1,4 +1,4 @@
-import { source } from '@/lib/source';
+import { docsNav } from '@/lib/source';
 import { DocsSidebar } from '@/components/docs-sidebar';
 import { SiteFooter } from '@/components/site-footer';
 import { SiteHeader } from '@/components/site-header';
@@ -11,7 +11,7 @@ export default function Layout({ children }: LayoutProps<'/docs'>) {
       <main className="flex min-h-0 flex-1 flex-col">
         <div className="container-wrapper flex flex-1 flex-col px-2">
           <div className="flex min-h-min w-full flex-1 items-start px-0 lg:grid lg:grid-cols-[var(--sidebar-width)_minmax(0,1fr)]">
-            <DocsSidebar tree={source.getPageTree()} />
+            <DocsSidebar sections={docsNav} />
             <div className="h-full w-full">{children}</div>
           </div>
         </div>

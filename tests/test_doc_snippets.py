@@ -22,6 +22,8 @@ import os
 import re
 import subprocess
 import sys
+from collections.abc import Iterator
+from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -54,6 +56,9 @@ def included_files(guide: Path) -> list[Path]:
 
 
 def run(*args: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+    """Runs on a worker thread (see `runs`), so the child gets a copy of the environment:
+    inheriting it would have the child exec with the process's own environment array, which
+    pytest rewrites on the main thread (PYTEST_CURRENT_TEST), and exec failed with EFAULT."""
     # -P: don't put the snippet's directory on sys.path, as `python file.py` would.
     return subprocess.run(
         [sys.executable, "-P", *args],
@@ -62,7 +67,7 @@ def run(*args: str, env: dict[str, str] | None = None) -> subprocess.CompletedPr
         text=True,
         timeout=60,
         cwd=ROOT,
-        env=None if env is None else os.environ | env,
+        env=os.environ | (env or {}),
     )
 
 
@@ -141,11 +146,58 @@ def name(path: Path) -> str:
 
 SCRIPTS = [p for p in snippet_files() if not p.name.startswith("test_")]
 TESTS = [p for p in snippet_files() if p.name.startswith("test_")]
+SERVERS = (POSTGRES, MYSQL, MSSQL, CLICKHOUSE)
+
+
+def snippet_args(path: Path) -> tuple[str, ...]:
+    """A snippet runs as `python file.py`; a `test_*.py` snippet under pytest."""
+    if path.name.startswith("test_"):
+        return ("-m", "pytest", "-q", "-p", "no:cacheprovider", str(path))
+    return (str(path),)
+
+
+Runs = dict[Path, Future[subprocess.CompletedProcess[str]]]
+
+
+def run_with_server(path: Path) -> subprocess.CompletedProcess[str]:
+    return run(*snippet_args(path), env=snippet_env(path))
+
+
+@pytest.fixture(scope="module")
+def runs(request: pytest.FixtureRequest) -> Iterator[Runs]:
+    """The runs of this session's snippets, all started at once in the order their tests run,
+    so a test waits only for the few runs ahead of it.
+
+    A run is mostly an interpreter importing pyfect, so one after another they took minutes.
+    They run side by side with one CPU free: some snippets time their own wake-ups
+    (threads/lag.py), and a CPU taken by another run would make them late. Snippets of a
+    database server share it, so they run one at a time, alongside the others; one that
+    finds no server skips its test.
+    """
+    paths = [
+        path
+        for item in request.session.items
+        if isinstance(item, pytest.Function)
+        and item.originalname in ("test_snippet_runs", "test_snippet_tests_pass")
+        and isinstance(path := item.callspec.params["path"], Path)
+    ]
+    pool = ThreadPoolExecutor(max_workers=max(1, (os.process_cpu_count() or 1) - 1))
+    servers = ThreadPoolExecutor(max_workers=1)
+    try:
+        yield {
+            path: servers.submit(run_with_server, path)
+            if any(path.is_relative_to(server) for server in SERVERS)
+            else pool.submit(run, *snippet_args(path))
+            for path in paths
+        }
+    finally:
+        pool.shutdown(cancel_futures=True)
+        servers.shutdown(cancel_futures=True)
 
 
 @pytest.mark.parametrize("path", SCRIPTS, ids=name)
-def test_snippet_runs(path: Path):
-    done = run(str(path), env=snippet_env(path))
+def test_snippet_runs(path: Path, runs: Runs):
+    done = runs[path].result()
     assert done.returncode == 0, done.stderr
     expected = path.with_suffix(".out")
     if os.environ.get("UPDATE_SNIPPET_OUTPUT") and done.stdout:
@@ -176,8 +228,8 @@ def test_outputs_belong_to_snippets(path: Path):
 
 
 @pytest.mark.parametrize("path", TESTS, ids=name)
-def test_snippet_tests_pass(path: Path):
-    done = run("-m", "pytest", "-q", "-p", "no:cacheprovider", str(path), env=snippet_env(path))
+def test_snippet_tests_pass(path: Path, runs: Runs):
+    done = runs[path].result()
     assert done.returncode == 0, done.stdout + done.stderr
 
 

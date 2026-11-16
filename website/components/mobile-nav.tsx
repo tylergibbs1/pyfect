@@ -1,8 +1,7 @@
 'use client';
 import Link from 'next/link';
 import { useState } from 'react';
-import type * as PageTree from 'fumadocs-core/page-tree';
-import { navSections } from '@/lib/page-tree';
+import type { NavSection } from '@/lib/page-tree';
 import { cn } from '@/lib/cn';
 import { Button } from './ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
@@ -33,11 +32,11 @@ function MobileLink({
 
 
 export function MobileNav({
-  tree,
+  sections,
   items,
   className,
 }: {
-  tree: PageTree.Root;
+  sections: NavSection[];
   items: { href: string; label: string }[];
   className?: string;
 }) {
@@ -92,7 +91,7 @@ export function MobileNav({
             </div>
           </div>
           <div className="flex flex-col gap-8">
-            {navSections(tree).map((section) => (
+            {sections.map((section) => (
               <div key={section.key} className="flex flex-col gap-4">
                 <div className="text-sm font-medium text-muted-foreground">{section.name}</div>
                 <div className="flex flex-col gap-3">

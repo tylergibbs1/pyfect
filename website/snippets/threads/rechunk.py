@@ -1,5 +1,5 @@
 import pyfect as fx
-from pyfect import stream
+from pyfect import stream, testing
 from pyfect.stream import Stream
 
 
@@ -24,6 +24,13 @@ print(
     fx.run_blocking(per_key(arriving.rechunk(64))),
 )
 # On a live source, rechunk holds items until it has 64; grouped_within also lets a
-# partial batch go after 10 ms.
-live = arriving.grouped_within(64, "10 millis").flatten_iterable()
-print("grouped_within(64, ...):", chunks(live))
+# partial batch go after 10 ms. Here 100 items arrive at once, then nothing for a second,
+# then 30 more. The quiet second is the test clock's (pyfect.testing), so the batches are
+# the same on every run however busy the machine is.
+trickling = (
+    stream.range(1, 100, chunk_size=1)
+    .concat(stream.from_effect(testing.adjust("1 second")).drain())
+    .concat(stream.range(1, 30, chunk_size=1))
+)
+live = trickling.grouped_within(64, "10 millis").flatten_iterable()
+print("grouped_within(64, ...):", testing.run_test(live.chunks().map(len).run_collect()))
