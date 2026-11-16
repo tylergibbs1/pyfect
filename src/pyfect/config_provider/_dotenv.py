@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import os
 import re
+from collections.abc import Iterator
 
 from pyfect import _js
 from pyfect._core import Effect
@@ -78,10 +79,37 @@ def from_dot_env(
     )
 
 
+_SPACES = re.compile(f"{_S}*")
+_LINE_STARTS = re.compile(f"(?<=[{_js.LINE_END}])")
+
+
+def _lines(text: str) -> Iterator[re.Match[str]]:
+    """``_LINE.finditer(text)``, without trying each line start of a whitespace run.
+
+    ``_LINE`` begins by skipping whitespace, line ends included, so a line start inside a
+    run fails wherever an earlier one in the run failed: what follows the skipped spaces is
+    the same. ``finditer`` read the rest of the run from each one."""
+    at = 0
+    while True:
+        match = _LINE.match(text, at)
+        if match is not None:
+            yield match
+            at = match.end()
+            continue
+        if at == 0 or text[at - 1] in _js.LINE_END:
+            at = next(_SPACES.finditer(text, at)).end()  # the run's end: it matches here
+        if at >= len(text):
+            return
+        start = _LINE_STARTS.search(text, at + 1)
+        if start is None:
+            return
+        at = start.start()
+
+
 def _parse(contents: str) -> dict[str, str]:
     env: dict[str, str] = {}
     text = re.sub(r"\r\n?", "\n", contents)
-    for match in _LINE.finditer(text):
+    for match in _lines(text):
         value = _js.trim(match.group(2) or "")
         quote = value[:1]
         value = _QUOTED.sub(r"\2", value)

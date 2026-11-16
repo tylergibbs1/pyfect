@@ -124,7 +124,6 @@ _SCANNING = frozenset({"search", "sub", "subn", "findall", "finditer", "split"})
 _TRUSTED_SCANS = frozenset(
     {
         "pyfect/_stack_frame.py:_LOCATION",  # a traceback's frame lines
-        "pyfect/config_provider/_dotenv.py:_LINE",  # the app's .env file
         "pyfect/persistence/user_directories.py:[\\\\/]+$",  # an environment path
         "pyfect/persistence/user_directories.py:/+$",
     }
