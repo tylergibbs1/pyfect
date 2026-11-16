@@ -47,7 +47,7 @@ def to_codec_string_tree[T, E, RD, RE](
 
 
 def to_codec_string_tree_ast(node: ast.AST) -> ast.AST:
-    return _Derivation()(node)
+    return _Derivation.of(node)
 
 
 class _Derivation(CodecDerivation):

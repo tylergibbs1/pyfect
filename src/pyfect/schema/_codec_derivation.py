@@ -103,6 +103,18 @@ class CodecDerivation(ABC):
     opaque: ast.Link
     """The link an instance-encoding class side is written through."""
 
+    @classmethod
+    def of(cls, node: ast.AST) -> ast.AST:
+        """``node``'s codec in this derivation, derived once per node and kept on it, as
+        Effect's ``memoizeIdempotent`` derivations are: the codec is its own codec."""
+        memo = node.derived_codecs
+        out = memo.get(cls)
+        if out is None:
+            out = cls()(node)
+            memo[cls] = out
+            out.derived_codecs.setdefault(cls, out)
+        return out
+
     def __init__(self) -> None:
         self._done: dict[int, tuple[ast.AST, ast.AST]] = {}
         self._shapes: dict[int, tuple[ast.Objects, _DerivedShape]] = {}

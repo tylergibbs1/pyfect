@@ -27,6 +27,14 @@
   As in Effect, a declaration wrapped by `transferable.schema` now passes through the JSON
   codec as itself, so the message carries the value the transfer list names.
 
+### Performance
+
+- `S.to_codec_json`, `S.to_codec_string_tree` and `S.to_codec_iso` derive a schema's codec
+  once and return the same codec after that, as Effect memoizes its codec derivations by
+  schema node. Code that derives per call no longer pays for it each time, such as
+  `ClusterWorkflowEngine.poll`, which derived its workflow's exit codec (about 1 ms) on every
+  poll. The memo is held by the schema node, so it does not keep a schema alive.
+
 ## 0.6.10 (2026-11-16)
 
 ### Fixed

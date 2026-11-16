@@ -31,7 +31,7 @@ from pyfect.schema._schema import Bottom, Codec
 
 def to_codec_json[T, E, RD, RE](schema: Codec[T, E, RD, RE], /) -> Bottom[T, JsonValue, RD, RE]:
     """``schema`` decoding its values from JSON (Effect's ``toCodecJson``)."""
-    return Bottom(_Derivation()(schema.__codec__().ast))
+    return Bottom(_Derivation.of(schema.__codec__().ast))
 
 
 def to_codec_json_asts(nodes: Sequence[ast.AST]) -> list[ast.AST]:

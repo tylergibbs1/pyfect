@@ -17,7 +17,7 @@ from pyfect.schema.transformation import Transformation
 
 
 def to_codec_iso[T](schema: Codec[T, object, object, object], /) -> Bottom[T, Any]:
-    return Bottom(_Derivation()(schema.__codec__().ast.to_type()))
+    return Bottom(_Derivation.of(schema.__codec__().ast.to_type()))
 
 
 def to_iso[T](schema: Codec[T, object, object, object], /) -> optic.Iso[T, Any]:

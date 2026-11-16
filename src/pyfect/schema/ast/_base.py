@@ -92,6 +92,11 @@ class AST(ABC):
     )
     """``to_encoded``, made once; the result is its own encoded side
     (Effect's ``memoizeIdempotent``)."""
+    derived_codecs: dict[type, AST] = field(
+        default_factory=dict["type", "AST"], init=False, repr=False, compare=False
+    )
+    """The canonical codecs derived from this exact node, by derivation (``CodecDerivation.of``):
+    Effect memoizes ``toCodecJson`` and the other codec derivations by node."""
     tag: ClassVar[str]
 
     def owner(self) -> AST:
