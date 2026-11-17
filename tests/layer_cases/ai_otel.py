@@ -26,9 +26,9 @@ from layer_cases._case import AnyEffect, AnyLayer, Case
 from pyfect import config, config_provider, metric, otel, sink, stdio, stream
 from pyfect import layer as L
 from pyfect import schema as S
+from pyfect.ai import ag_ui_server, id_generator
 from pyfect.ai import chat as Chat
 from pyfect.ai import embedding_model as em
-from pyfect.ai import id_generator
 from pyfect.ai import language_model as lm
 from pyfect.ai import mcp_client as C
 from pyfect.ai import mcp_protocol as P
@@ -46,6 +46,7 @@ from pyfect.ai.openai_compat import embedding_model as openai_em
 from pyfect.ai.openai_compat import language_model as openai_lm
 from pyfect.deferred import Deferred
 from pyfect.errors import Done
+from pyfect.http import body as http_body
 from pyfect.http.client import HttpClient
 from pyfect.http.client import layer_test as http_layer_test
 from pyfect.http.request import HttpClientRequest
@@ -859,7 +860,57 @@ _OTEL_CASES: dict[str, Case] = {
     ),
 }
 
-CASES: dict[str, Case] = {**_PROVIDER_CASES, **_AI_CASES, **_MCP_CASES, **_OTEL_CASES}
+# --- AG-UI -------------------------------------------------------------------------------
+
+
+def _ag_ui_server() -> AnyLayer:
+    def run(input: Any) -> Any:
+        message = input["runId"]
+        return stream.from_iterable(
+            [
+                {"type": "TEXT_MESSAGE_START", "messageId": message, "role": "assistant"},
+                {"type": "TEXT_MESSAGE_CONTENT", "messageId": message, "delta": "hi"},
+            ]
+        )
+
+    return ag_ui_server.layer_http(path="/agent", run=run)
+
+
+def _ag_ui_run(server: AnyLayer) -> AnyEffect:
+    """One AG-UI run over in-memory HTTP, checked frame by frame."""
+
+    @fx.gen
+    def run():
+        http = yield from HttpClient()
+        input = {"threadId": "t", "runId": "r", "messages": []}
+        response = yield from http.post("http://test/agent", body=http_body.json_unsafe(input))
+        text = yield from response.text
+        types = [frame.split('"type":"')[1].split('"')[0] for frame in text.split("\n\n")[:-1]]
+        # The run leaves its message open; the lifecycle closes it before finishing.
+        expected = [
+            "RUN_STARTED",
+            "TEXT_MESSAGE_START",
+            "TEXT_MESSAGE_CONTENT",
+            "TEXT_MESSAGE_END",
+            "RUN_FINISHED",
+        ]
+        yield from _check(types == expected, f"events {types}")
+
+    return run.pipe(fx.provide(_in_memory_http(server)))
+
+
+_AG_UI_CASES: dict[str, Case] = {
+    "pyfect.ai.ag_ui_server.layer_http": Case(layer=_ag_ui_server, run=_ag_ui_run),
+}
+
+
+CASES: dict[str, Case] = {
+    **_PROVIDER_CASES,
+    **_AI_CASES,
+    **_MCP_CASES,
+    **_AG_UI_CASES,
+    **_OTEL_CASES,
+}
 SKIPPED: dict[str, str] = {
     "pyfect.ai.openai.client.layer_web_socket_mode": (
         "needs a WebSocket server; its connection reuse is tested against one in "

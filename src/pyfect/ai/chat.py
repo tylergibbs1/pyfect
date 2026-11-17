@@ -404,50 +404,28 @@ class Service:
         records each round in order."""
 
         def start() -> Stream[Any, Any, Any]:
-            # The prompt including every completed round, and the parts of the round in
-            # progress, so an interrupted round keeps its partial output.
-            completed: list[P.Prompt] = [P.empty]
-            parts: list[Any] = []
-
-            def collect(chunk: tuple[Any, ...]) -> tuple[Any, ...]:
-                parts.extend(chunk)
-                return chunk
-
-            def complete_round() -> list[R.AnyPart]:
-                round = list(parts)
-                completed[0] = completed[0].concat(P.from_response_parts(round))
-                parts.clear()
-                return round
-
-            def run_round(step: int) -> Stream[Any, Any, Any]:
-                streamed = StreamC.unwrap(
-                    _model().map(
-                        lambda model: model.stream_text(
-                            completed[0],
-                            toolkit=toolkit,
-                            tool_choice=tool_choice,
-                            concurrency=concurrency,
-                            disable_tool_call_resolution=disable_tool_call_resolution,
-                            tool_call_validation=tool_call_validation,
-                        )
+            loop = _StepLoop(
+                lambda prompt: _model().map(
+                    lambda model: model.stream_text(
+                        prompt,
+                        toolkit=toolkit,
+                        tool_choice=tool_choice,
+                        concurrency=concurrency,
+                        disable_tool_call_resolution=disable_tool_call_resolution,
+                        tool_call_validation=tool_call_validation,
                     )
-                )
-                return streamed.map_array(collect).concat(StreamC.suspend(lambda: next_round(step)))
-
-            def next_round(step: int) -> Stream[Any, Any, Any]:
-                round = complete_round()
-                if step < max_steps and _should_continue(round):
-                    return run_round(step + 1)
-                return StreamC.empty
+                ),
+                max_steps,
+            )
 
             def begin(history: P.Prompt) -> None:
-                completed[0] = history.concat(prompt)
+                loop.completed = history.concat(prompt)
 
             def use(_: None) -> Any:
-                return to_channel(run_round(1))
+                return to_channel(loop.run_round(1))
 
             def release(_: None, __: Exit[Any, Any]) -> Effect[object]:
-                done = completed[0].concat(P.from_response_parts(parts))
+                done = loop.completed.concat(P.from_response_parts(loop.parts))
                 return self.history.set(done).and_then(self._lock.release(1))
 
             acquire = self._lock.take(1).and_then(self.history.get()).map(begin)
@@ -462,6 +440,41 @@ class Service:
         return StreamC.unwrap(self.history.get().map(lambda before: stream.ensuring(after(before))))
 
 
+class _StepLoop:
+    """The rounds of one ``stream_text`` call: the prompt including every completed
+    round, and the parts of the round in progress, so an interrupted round keeps its
+    partial output. A state object, so the rounds do not reach each other through
+    closure cells."""
+
+    def __init__(
+        self,
+        stream_round: Callable[[P.Prompt], Effect[Stream[Any, Any, Any], Never, Any]],
+        max_steps: int,
+    ) -> None:
+        self.stream_round = stream_round
+        self.max_steps = max_steps
+        self.completed: P.Prompt = P.empty
+        self.parts: list[Any] = []
+
+    def collect(self, chunk: tuple[Any, ...]) -> tuple[Any, ...]:
+        self.parts.extend(chunk)
+        return chunk
+
+    def run_round(self, step: int) -> Stream[Any, Any, Any]:
+        streamed = StreamC.unwrap(self.stream_round(self.completed))
+        return streamed.map_array(self.collect).concat(
+            StreamC.suspend(lambda: self.next_round(step))
+        )
+
+    def next_round(self, step: int) -> Stream[Any, Any, Any]:
+        round = list(self.parts)
+        self.completed = self.completed.concat(P.from_response_parts(round))
+        self.parts = []
+        if step < self.max_steps and _should_continue(round):
+            return self.run_round(step + 1)
+        return StreamC.empty
+
+
 def _should_continue(round: list[R.AnyPart]) -> bool:
     """Whether a round continues the step loop: it ended in tool calls that all have a
     final result. A client-executed tool call or an approval request has none, and an
@@ -473,7 +486,7 @@ def _should_continue(round: list[R.AnyPart]) -> bool:
     for part in round:
         if isinstance(part, R.ToolCallPart):
             unanswered.add(part.id)
-        elif isinstance(part, R.ToolResultSuccess | R.ToolResultFailure) and not part.preliminary:
+        elif isinstance(part, (R.ToolResultSuccess, R.ToolResultFailure)) and not part.preliminary:
             unanswered.discard(part.id)
     return not unanswered and any(isinstance(part, R.ToolCallPart) for part in round)
 

@@ -17,7 +17,6 @@ It performs no I/O; ``ag_ui_server`` serves runs over HTTP::
 
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping, Sequence
 from typing import Any, Never, TypedDict, cast
 
@@ -355,7 +354,7 @@ def _attributed(event: Event, subagent_run_id: str | None) -> Event:
 
 def _step_key(subagent_run_id: str | None, step_name: str) -> str:
     """Steps are named rather than identified, so they are keyed by owner too."""
-    return "step:" + json.dumps([subagent_run_id, step_name])
+    return "step:" + stringify([subagent_run_id, step_name])
 
 
 class _Lifecycle:
