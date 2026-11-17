@@ -24,6 +24,7 @@ from pyfect.ai._mcp.client_wire import (
     reply_to_server,
     routing_headers,
 )
+from pyfect.ai._mcp.ndjson import ndjson_lines
 from pyfect.ai.mcp_client_error import (
     ClosedError,
     ConfigurationError,
@@ -35,7 +36,7 @@ from pyfect.ai.mcp_client_error import (
 from pyfect.ai.mcp_protocol import ProtocolAdapter
 from pyfect.ai.mcp_schema import JsonObject, RequestId, Tool, parse_request_id
 from pyfect.byte_size import ByteSize
-from pyfect.channel import LineTooLongError, split_lines_within
+from pyfect.channel import LineTooLongError
 from pyfect.deferred import Deferred
 from pyfect.duration import millis
 from pyfect.effect import fail, gen, succeed, suspend, sync
@@ -200,8 +201,7 @@ def stdio(
         yield from process.stderr.run_drain().ignore().fork_scoped()
         drained = Deferred[None]()
         yield from (
-            process.stdout.decode_text()
-            .pipe_through_channel(split_lines_within(max_bytes))
+            ndjson_lines(process.stdout.decode_text(), max_bytes)
             .run_for_each(line)
             .map_error(as_client_error)
             .and_then(fail(failure(TransportError("MCP server closed stdout"))))

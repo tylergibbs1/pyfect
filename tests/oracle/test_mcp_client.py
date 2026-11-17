@@ -812,6 +812,35 @@ def test_fails_pending_calls_when_the_process_exits():
     assert isinstance((yield from call.join()).reason, CE.TransportError)
 
 
+@testing.effect
+def test_drops_an_unterminated_last_line_when_stdout_closes():
+    """McpClient.ts ``stdio`` reads newline-terminated lines only: a reply the server ends
+    without a newline before closing stdout is not read, so the call fails as closed."""
+    server = yield from connect_stdio(P.v2025_11_25)
+    call = yield from server.client.call_tool(SLOW_TOOL).flip().fork()
+    request = yield from server.receive
+    content = [{"type": "text", "text": "tail"}]
+    reply = {"jsonrpc": "2.0", "id": request["id"], "result": {"content": content}}
+    yield from server.output.offer(json.dumps(reply).encode())
+    yield from server.output.end()
+    reason = (yield from call.join()).reason
+    assert isinstance(reason, CE.TransportError)
+    assert reason.description == "MCP server closed stdout"
+
+
+@testing.effect
+def test_reads_lines_ended_by_crlf_and_split_across_chunks():
+    """McpClient.ts ``stdio`` ends a line at ``\\n`` only; JSON ignores the ``\\r`` before it."""
+    server = yield from connect_stdio(P.v2025_11_25)
+    call = yield from server.client.call_tool(SLOW_TOOL).fork()
+    request = yield from server.receive
+    content = [{"type": "text", "text": "both"}]
+    reply = json.dumps({"jsonrpc": "2.0", "id": request["id"], "result": {"content": content}})
+    yield from server.output.offer(reply[:10].encode())
+    yield from server.output.offer((reply[10:] + "\r\n").encode())
+    assert (yield from call.join())["content"] == content
+
+
 # --- server capabilities and toolkit options -----------------------------------------------
 
 
