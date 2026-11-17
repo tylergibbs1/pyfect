@@ -26,11 +26,12 @@ from functools import cache
 from pathlib import Path
 from typing import Any
 
+import _source
 import pytest
 
 sre: Any = importlib.import_module("re._constants")
 _parser: Any = importlib.import_module("re._parser")
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = _source.ROOT
 SRC = ROOT / "src"
 _CALLS = frozenset(
     {"compile", "match", "fullmatch", "search", "sub", "subn", "split", "findall", "finditer"}
@@ -181,11 +182,10 @@ def patterns() -> tuple[tuple[Found, ...], frozenset[tuple[str, str]]]:
     built at run time (path, source of the pattern argument)."""
     found: list[Found] = []
     built: set[tuple[str, str]] = set()
-    for path in sorted((SRC / "pyfect").rglob("*.py")):
-        source = path.read_text()
-        if _RE_CALL.search(source) is None:
+    for path in _source.files(_source.SRC):
+        if _RE_CALL.search(_source.text(path)) is None:
             continue
-        tree = ast.parse(source)
+        tree = _source.tree(path)
         name = path.relative_to(ROOT).as_posix()
         globals_ = _module_globals(tree)
         for node in ast.walk(tree):

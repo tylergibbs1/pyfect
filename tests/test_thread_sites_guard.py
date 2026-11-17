@@ -10,9 +10,10 @@ This walks the sources for calls that start threads and fails on one that
 is not listed below with the reason it is bounded."""
 
 import ast
-from pathlib import Path
 
-_SOURCE = Path(__file__).resolve().parent.parent / "src" / "pyfect"
+import _source
+
+_SOURCE = _source.SRC
 _STARTS_THREADS = frozenset(
     {
         "Thread",
@@ -72,9 +73,11 @@ def _runs_on_the_default_executor(call: ast.Call) -> bool:
 
 def _thread_sites() -> set[tuple[str, str]]:
     sites: set[tuple[str, str]] = set()
-    for path in sorted(_SOURCE.rglob("*.py")):
+    for path in _source.files(_SOURCE):
+        if not _source.mentions(path, *_STARTS_THREADS, "run_in_executor"):
+            continue
         relative = path.relative_to(_SOURCE).as_posix()
-        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"), str(path))):
+        for node in _source.walk(path):
             if not isinstance(node, ast.Call):
                 continue
             if _runs_on_the_default_executor(node):

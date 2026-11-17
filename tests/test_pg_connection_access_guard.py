@@ -13,9 +13,10 @@ a snapshot taken on the loop.
 """
 
 import ast
-from pathlib import Path
 
-_PG = Path(__file__).resolve().parents[1] / "src" / "pyfect" / "sql" / "pg"
+import _source
+
+_PG = _source.SRC / "sql" / "pg"
 _SESSION = _PG / "_session.py"
 
 _CONNECTION_ATTRIBUTES = frozenset({"conn", "_conn", "pgconn"})
@@ -56,19 +57,19 @@ def _self_conn_uses(function: ast.AST) -> list[int]:
 
 def test_only_the_session_module_reaches_a_psycopg_connection():
     found: list[str] = []
-    for path in sorted(_PG.glob("*.py")):
+    for path in _source.files(_PG, recursive=False):
         if path == _SESSION:
             continue
         found.extend(
             f"{path.name}:{node.lineno} .{node.attr}"
-            for node in ast.walk(ast.parse(path.read_text(), str(path)))
+            for node in _source.walk(path)
             if isinstance(node, ast.Attribute) and node.attr in _CONNECTION_ATTRIBUTES
         )
     assert found == []
 
 
 def test_the_session_reaches_its_connection_only_through_its_helpers():
-    session = _session_class(ast.parse(_SESSION.read_text(), str(_SESSION)))
+    session = _session_class(_source.tree(_SESSION))
     found: list[str] = []
     for node in session.body:
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -90,6 +91,6 @@ def test_the_session_reaches_its_connection_only_through_its_helpers():
 
 def test_the_guard_sees_a_direct_use():
     source = "class Session:\n    async def query(self):\n        await self._conn.execute('')\n"
-    session = _session_class(ast.parse(source))
+    session = _session_class(_source.parse(source))
     query = session.body[0]
     assert _self_conn_uses(query) == [3]

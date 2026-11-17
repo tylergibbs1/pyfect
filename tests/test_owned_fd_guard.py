@@ -24,7 +24,9 @@ import re
 from collections.abc import Iterator
 from pathlib import Path
 
-_SOURCE = Path(__file__).parent.parent / "src" / "pyfect"
+import _source
+
+_SOURCE = _source.SRC
 _HANDOFFS = frozenset(
     {
         "blocking",
@@ -184,7 +186,7 @@ def _owned_use(node: ast.AST, parents: dict[ast.AST, ast.AST]) -> bool:
 
 
 def _offenders(path: Path, root: Path) -> Iterator[str]:
-    tree = ast.parse(path.read_text(), str(path))
+    tree = _source.tree(path)
     parents = _parents(tree)
 
     def walk(
@@ -206,7 +208,7 @@ def _offenders(path: Path, root: Path) -> Iterator[str]:
 
 
 def offenders(root: Path) -> list[str]:
-    return sorted({o for path in sorted(root.rglob("*.py")) for o in _offenders(path, root)})
+    return sorted({o for path in _source.files(root) for o in _offenders(path, root)})
 
 
 def test_threads_reach_descriptors_only_through_owned_fd():
