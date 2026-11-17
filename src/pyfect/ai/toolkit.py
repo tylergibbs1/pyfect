@@ -39,6 +39,8 @@ from pyfect.ai.tool import (
     HandlerContext,
     Tool,
     failure_result_schema,
+    is_client_executed,
+    requires_handler,
 )
 from pyfect.cause import Cause, Die, Fail, from_reasons
 from pyfect.context import Context, MissingServiceError, Reference, ServiceMarker, Tag
@@ -183,6 +185,11 @@ def _handle(
             name, AiErr.ToolNotFoundError(tool_name=name, available_tools=tuple(kit.tools))
         )
         return annotate.and_then(fx.fail(error))
+    if is_client_executed(tool):
+        executed_by_client = RuntimeError(
+            f'Tool "{name}" is executed by the client and has no handler'
+        )
+        return annotate.and_then(fx.die(executed_by_client))
     found, registered_value = kit.services.lookup(_handler_tag(tool.id))
     if not found:
         missing = MissingServiceError(tool.id)
@@ -377,8 +384,8 @@ class Toolkit(Effect[WithHandler[N_co, RP_co, HE_co, R_co], Never, Handlers[N_co
     ) -> Effect[Context[Handlers[N_co]], EE, RR]: ...
     def to_handlers(self, *handlers: Any) -> Effect[Context[Any], Any, Any]:
         """The context holding ``handlers`` (or the ones an effect makes).
-        Every tool needs one, except provider-defined tools that do not
-        require a handler (a missing one raises ``ValueError``)."""
+        Every tool needs one, except client-executed tools and provider-defined
+        tools that do not require a handler (a missing one raises ``ValueError``)."""
         build: Effect[Iterable[Handler[Any]], Any, Any] = (
             cast("Effect[Iterable[Handler[Any]], Any, Any]", handlers[0])
             if len(handlers) == 1 and isinstance(handlers[0], Effect)
@@ -396,9 +403,11 @@ class Toolkit(Effect[WithHandler[N_co, RP_co, HE_co, R_co], Never, Handlers[N_co
         by_name: dict[str, Handler[Any]] = {handler.name: handler for handler in handlers}
         registered: dict[type[Tag[Any]], object] = {}
         for name, tool in self.tools.items():
+            if is_client_executed(tool):
+                continue
             handler = by_name.get(name)
             if handler is None:
-                if getattr(tool, "requires_handler", True):
+                if requires_handler(tool):
                     raise ValueError(f"Toolkit: no handler for the tool {name!r}")
                 handler = Handler[Any](name, tool.id, _no_handler(name))
             registered[_handler_tag(tool.id)] = _Registered(handler, services)

@@ -287,6 +287,42 @@ calling tools.
 
 </CodeOutput>
 
+A chat's `stream_text` runs this loop for you with `max_steps`:
+`session.stream_text(question, toolkit=Tools, max_steps=5)` streams up to five rounds,
+sending the tool results back until a round needs no tools. It stops early when a call is
+left for the application, to a tool made with `execution="client"`: such a tool has no
+handler, and its calls are returned unresolved for the application (a browser, say) to
+run and answer in the next message.
+
+## AG-UI
+
+[AG-UI](https://docs.ag-ui.com) is the protocol agent front ends such as CopilotKit speak:
+the client POSTs a `RunAgentInput` (the conversation, the tools it runs itself, context)
+and reads the run back as server-sent events. `ag_ui_server.agent(toolkit=..., system=...,
+max_steps=...)` answers each run with the current `LanguageModel`: the server's tools run
+on the server, the client's tools are offered to the model as client-executed tools, and
+the run finishes with the calls left for the client listed as `pendingToolCallIds`.
+`ag_ui_server.layer_http(path=..., agent=...)` serves it on an `HttpRouter`, and handlers
+read the run from `ag_ui_server.RunInput`.
+
+<CodeOutput>
+
+<include meta='title="ag_ui.py"'>../../snippets/ai/ag_ui.py</include>
+
+<include lang="text">../../snippets/ai/ag_ui.out</include>
+
+</CodeOutput>
+
+Client system and developer messages and the run's `context` are dropped unless
+`ag_ui.to_prompt(input, trust_client_instructions=True)` keeps them. For your own run
+logic, `layer_http(path=..., run=...)` takes a function from the run input to a stream of
+events; `ag_ui.from_stream_parts` turns a model's stream into AG-UI events and
+`ag_ui.with_run_lifecycle` opens the run, closes whatever was left open and reports a
+failure as `RUN_ERROR`. `ag_ui_server.endpoint(name, path)` and
+`ag_ui_server.agent_handler(agent)` add the endpoint to an `HttpApi` of your own.
+`pyfect.ai.ag_ui_schema` has the protocol's schemas; decoding drops messages, parts and
+other union members from newer protocol versions instead of rejecting the run.
+
 An `EmbeddingModel`'s `embed(text)` and `embed_many(texts)` give vectors, and
 concurrent `embed` calls are sent as one batch;
 `openai.embedding_model.model(name, dimensions=n).layer` (or `openai_compat`'s) provides one. Each call
@@ -354,6 +390,9 @@ as a test does. Its answers are plain dicts tagged by `_tag` (`"Classify"`, `"Ra
 Reference: [`pyfect.ai`](/docs/reference/ai),
 [`language_model`](/docs/reference/ai/language_model),
 [`tool`](/docs/reference/ai/tool), [`toolkit`](/docs/reference/ai/toolkit),
+[`chat`](/docs/reference/ai/chat), [`ag_ui`](/docs/reference/ai/ag_ui),
+[`ag_ui_server`](/docs/reference/ai/ag_ui_server),
+[`ag_ui_schema`](/docs/reference/ai/ag_ui_schema),
 [`tokenizer`](/docs/reference/ai/tokenizer),
 [`pyfect.ai.anthropic`](/docs/reference/ai/anthropic),
 [`pyfect.ai.openai`](/docs/reference/ai/openai),

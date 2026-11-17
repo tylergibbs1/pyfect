@@ -42,6 +42,9 @@ from pyfect import cause as pyfect_cause
 from pyfect import schema as S
 from pyfect import socket as socket_module
 from pyfect._json_value import JsonValue
+from pyfect.ai import ag_ui as ai_ag_ui
+from pyfect.ai import ag_ui_schema as ai_ag_ui_schema
+from pyfect.ai import ag_ui_server as ai_ag_ui_server
 from pyfect.ai import ai_error as ai_error_module
 from pyfect.ai import chat as ai_chat
 from pyfect.ai import decision as ai_decision
@@ -7662,6 +7665,65 @@ def check_ai_chat(chat: ai_chat.Service, persisted: ai_chat.PersistenceService) 
         fx.Layer[ai_chat.Persistence, Never, BackingPersistence],
     )
     chat.generate_text(1)  # pyright: ignore[reportArgumentType]
+
+
+def check_ai_ag_ui(
+    input: ai_ag_ui_schema.RunAgentInput,
+    parts: Stream[ai_response.AnyPart, str, AiDb],
+    events: Stream[ai_ag_ui_schema.Event, str, AiDb],
+) -> None:
+    from pyfect.ai.id_generator import IdGenerator
+    from pyfect.http.router import HttpRouter
+
+    assert_type(ai_ag_ui.to_prompt(input), ai_prompt.Prompt)
+    # from_stream_parts keeps the input's failures and needs an IdGenerator.
+    assert_type(
+        parts.pipe(ai_ag_ui.from_stream_parts),
+        Stream[ai_ag_ui_schema.Event, str, AiDb | IdGenerator],
+    )
+    # with_run_lifecycle reports failures as RUN_ERROR, so it removes them.
+    assert_type(
+        events.pipe(ai_ag_ui.with_run_lifecycle(input)),
+        Stream[ai_ag_ui_schema.Event, Never, AiDb],
+    )
+    events.pipe(ai_ag_ui.with_run_lifecycle({"threadId": "t"}))  # pyright: ignore[reportArgumentType]
+    assert_type(
+        ai_ag_ui_server.layer_http(path="/agent", run=lambda _: events),
+        fx.Layer[Never, Never, HttpRouter | AiDb],
+    )
+    ai_ag_ui_server.layer_http(path="/agent")  # pyright: ignore[reportCallIssue]
+
+    # The agent provides RunInput, so a tool reading it adds no requirement.
+    lookup = ai_tool.make("Lookup", success=S.String, dependencies=[ai_ag_ui_server.RunInput, AiDb])
+    agent = ai_ag_ui_server.agent(toolkit=ai_toolkit.make(lookup), max_steps=5)
+    assert_type(
+        agent,
+        ai_ag_ui_server.Agent[lm.LanguageModel | ai_toolkit.Handlers[Literal["Lookup"]] | AiDb],
+    )
+    assert_type(
+        ai_ag_ui_server.layer_http(path="/agent", agent=agent),
+        fx.Layer[
+            Never,
+            Never,
+            HttpRouter | lm.LanguageModel | ai_toolkit.Handlers[Literal["Lookup"]] | AiDb,
+        ],
+    )
+    # A toolkit needing nothing, or only RunInput, adds nothing either.
+    plain = ai_toolkit.make(ai_tool.make("Plain", success=S.String))
+    assert_type(
+        ai_ag_ui_server.agent(toolkit=plain),
+        ai_ag_ui_server.Agent[lm.LanguageModel | ai_toolkit.Handlers[Literal["Plain"]]],
+    )
+    reads = ai_toolkit.make(
+        ai_tool.make("Reads", success=S.String, dependencies=[ai_ag_ui_server.RunInput])
+    )
+    assert_type(
+        ai_ag_ui_server.agent(toolkit=reads),
+        ai_ag_ui_server.Agent[lm.LanguageModel | ai_toolkit.Handlers[Literal["Reads"]]],
+    )
+    ask = ai_tool.make("Ask", success=S.Boolean, execution="client")
+    ai_tool.make("Ask", execution="browser")  # pyright: ignore[reportArgumentType]
+    assert_type(ask.execution, ai_tool.Execution | None)
 
 
 def check_ai_result_narrowing(

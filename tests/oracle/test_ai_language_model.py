@@ -1850,3 +1850,46 @@ def test_carries_model_output_into_follow_up():
         P.TextPart(text="Screenshot of /home"),
         P.FilePart(media_type="image/png", data=_PNG),
     )
+
+
+class Question(TypedDict):
+    question: str
+
+
+# Executed by the application, which answers in a later request
+ClientTool = T.make(
+    "ClientTool", parameters=S.Struct(Question), success=S.Boolean, execution="client"
+)
+
+
+@pytest.mark.parametrize("method", ["generateText", "streamText"])
+@pytest.mark.parametrize("reason", ["tool-calls", "length"])
+@testing.effect
+def test_leaves_client_executed_tool_calls_unresolved(method: str, reason: str):
+    """<method> leaves client-executed tool calls unresolved: a complete finish runs the
+    server tool, an incomplete one gives it a synthesized failure, and neither may answer
+    the client tool."""
+    toolkit = K.make(MyTool, ClientTool)
+    parts: list[lm.EncodedPart] = [
+        {"type": "tool-call", "id": "server-call", "name": "MyTool", "params": _CALL["params"]},
+        {
+            "type": "tool-call",
+            "id": "client-call",
+            "name": "ClientTool",
+            "params": {"question": "Proceed?"},
+        },
+        {**FINISH, "reason": reason},
+    ]
+    handlers = toolkit.to_layer(
+        MyTool.handler(lambda _, __: fx.succeed(MySuccess(testSuccess="test-success")))
+    )
+    run: fx.Effect[Any, Any, Any] = (
+        lm.generate_text("hi", toolkit=toolkit).map(lambda response: list(response.content))
+        if method == "generateText"
+        else lm.stream_text("hi", toolkit=toolkit).run_collect()
+    )
+    got: list[R.AnyPart] = yield from _provided(
+        run.pipe(fx.provide(handlers)), generate_text=parts, stream_text=parts
+    )
+    assert any(isinstance(p, R.ToolCallPart) and p.id == "client-call" for p in got)
+    assert [p.id for p in got if _is_result(p)] == ["server-call"]  # type: ignore[union-attr]

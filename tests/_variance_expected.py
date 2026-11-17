@@ -71,6 +71,7 @@ EXPECTED: dict[str, tuple[Variance, ...]] = {
     "pyfect.TxQueue": ("inv", "inv"),
     "pyfect.TxRef": ("inv",),
     "pyfect.TxSubscriptionRef": ("inv",),
+    "pyfect.ai.ag_ui_server.Agent": ("out",),
     "pyfect.ai.decision.Classify": ("inv",),
     "pyfect.ai.decision.ClassifyAnswer": ("inv",),
     "pyfect.ai.decision.Definition": ("inv", "out"),

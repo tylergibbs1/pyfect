@@ -1,7 +1,8 @@
 """AI services (Effect's ``effect/ai``): prompts, responses, tools and
 toolkits, the provider-neutral ``LanguageModel`` and ``EmbeddingModel``
 services, ``decision`` and the ``DecisionModel`` service (``decision_model``),
-the Model Context Protocol (``mcp_server``, ``mcp_client``, ``mcp_test``),
+the Model Context Protocol (``mcp_server``, ``mcp_client``, ``mcp_test``), the
+Agent User Interaction protocol (``ag_ui_schema``, ``ag_ui``, ``ag_ui_server``),
 each provider's structured-output codec (``anthropic_structured_output``,
 ``openai_structured_output``), and ``workload_identity`` (an ``HttpClient``
 authenticated with access tokens exchanged for a workload's identity token).
@@ -12,6 +13,9 @@ Each module is Effect's of the same name::
 """
 
 from pyfect.ai import (
+    ag_ui,
+    ag_ui_schema,
+    ag_ui_server,
     ai_error,
     anthropic_structured_output,
     chat,
@@ -52,6 +56,9 @@ __all__ = [
     "McpClient",
     "McpClientError",
     "McpServer",
+    "ag_ui",
+    "ag_ui_schema",
+    "ag_ui_server",
     "ai_error",
     "anthropic_structured_output",
     "chat",

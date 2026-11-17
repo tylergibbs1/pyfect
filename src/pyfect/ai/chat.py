@@ -342,6 +342,7 @@ class Service:
         concurrency: Concurrency = "unbounded",
         disable_tool_call_resolution: Literal[True],
         tool_call_validation: Literal["deferred"],
+        max_steps: int = 1,
     ) -> Stream[R.StreamPart[str, Never], AiError, lm.LanguageModel]: ...
     @overload
     def stream_text(
@@ -353,6 +354,7 @@ class Service:
         concurrency: Concurrency = "unbounded",
         disable_tool_call_resolution: bool = False,
         tool_call_validation: Literal["strict"] = "strict",
+        max_steps: int = 1,
     ) -> Stream[R.StreamPart[Never, Never], AiError, lm.LanguageModel]: ...
     @overload
     def stream_text[NN: LiteralString, RP, EE, RR](
@@ -364,6 +366,7 @@ class Service:
         concurrency: Concurrency = "unbounded",
         disable_tool_call_resolution: Literal[True],
         tool_call_validation: Literal["deferred"],
+        max_steps: int = 1,
     ) -> Stream[R.StreamPart[str, RP], AiError | EE, lm.LanguageModel | RR]: ...
     @overload
     def stream_text[NN: LiteralString, RP, EE, RR](
@@ -375,6 +378,7 @@ class Service:
         concurrency: Concurrency = "unbounded",
         disable_tool_call_resolution: bool = False,
         tool_call_validation: Literal["strict"] = "strict",
+        max_steps: int = 1,
     ) -> Stream[R.StreamPart[NN, RP], AiError | EE, lm.LanguageModel | RR]: ...
     def stream_text(
         self,
@@ -385,23 +389,41 @@ class Service:
         concurrency: Concurrency = "unbounded",
         disable_tool_call_resolution: bool = False,
         tool_call_validation: lm.ToolCallValidation = "strict",
+        max_steps: int = 1,
     ) -> Stream[Any, Any, Any]:
         """``language_model.stream_text`` on the history plus ``prompt``.
         The history gains the parts streamed, also when the stream is cut
-        short."""
+        short.
+
+        The model is called once by default. With ``max_steps``, the chat calls it again
+        with the updated history while each round ends in tool calls that were all
+        resolved, for at most ``max_steps`` rounds. The loop stops at a round that needs
+        no tools, an incomplete finish, or a tool call left unanswered, such as a
+        client-executed tool call or an approval request. The stream carries every
+        round's parts, each round ending with its own ``finish`` part, and the history
+        records each round in order."""
 
         def start() -> Stream[Any, Any, Any]:
+            # The prompt including every completed round, and the parts of the round in
+            # progress, so an interrupted round keeps its partial output.
+            completed: list[P.Prompt] = [P.empty]
             parts: list[Any] = []
 
             def collect(chunk: tuple[Any, ...]) -> tuple[Any, ...]:
                 parts.extend(chunk)
                 return chunk
 
-            def use(full: P.Prompt) -> Any:
+            def complete_round() -> list[R.AnyPart]:
+                round = list(parts)
+                completed[0] = completed[0].concat(P.from_response_parts(round))
+                parts.clear()
+                return round
+
+            def run_round(step: int) -> Stream[Any, Any, Any]:
                 streamed = StreamC.unwrap(
                     _model().map(
                         lambda model: model.stream_text(
-                            full,
+                            completed[0],
                             toolkit=toolkit,
                             tool_choice=tool_choice,
                             concurrency=concurrency,
@@ -410,15 +432,25 @@ class Service:
                         )
                     )
                 )
-                return to_channel(streamed.map_array(collect))
+                return streamed.map_array(collect).concat(StreamC.suspend(lambda: next_round(step)))
 
-            def release(full: P.Prompt, _: Exit[Any, Any]) -> Effect[object]:
-                done = full.concat(P.from_response_parts(parts))
+            def next_round(step: int) -> Stream[Any, Any, Any]:
+                round = complete_round()
+                if step < max_steps and _should_continue(round):
+                    return run_round(step + 1)
+                return StreamC.empty
+
+            def begin(history: P.Prompt) -> None:
+                completed[0] = history.concat(prompt)
+
+            def use(_: None) -> Any:
+                return to_channel(run_round(1))
+
+            def release(_: None, __: Exit[Any, Any]) -> Effect[object]:
+                done = completed[0].concat(P.from_response_parts(parts))
                 return self.history.set(done).and_then(self._lock.release(1))
 
-            acquire = (
-                self._lock.take(1).and_then(self.history.get()).map(lambda h: h.concat(prompt))
-            )
+            acquire = self._lock.take(1).and_then(self.history.get()).map(begin)
             # Effect's Channel.acquireUseRelease: the history is set when the
             # model's stream ends, before any finalizer added outside (the save).
             return from_channel(acquire_use_release(acquire, use, release))
@@ -428,6 +460,22 @@ class Service:
         if after is None:
             return stream
         return StreamC.unwrap(self.history.get().map(lambda before: stream.ensuring(after(before))))
+
+
+def _should_continue(round: list[R.AnyPart]) -> bool:
+    """Whether a round continues the step loop: it ended in tool calls that all have a
+    final result. A client-executed tool call or an approval request has none, and an
+    incomplete finish ends the loop."""
+    finish = next((part for part in round if isinstance(part, R.FinishPart)), None)
+    if finish is None or finish.reason != "tool-calls":
+        return False
+    unanswered: set[str] = set()
+    for part in round:
+        if isinstance(part, R.ToolCallPart):
+            unanswered.add(part.id)
+        elif isinstance(part, R.ToolResultSuccess | R.ToolResultFailure) and not part.preliminary:
+            unanswered.discard(part.id)
+    return not unanswered and any(isinstance(part, R.ToolCallPart) for part in round)
 
 
 def _model() -> Effect[lm.Service, Never, lm.LanguageModel]:

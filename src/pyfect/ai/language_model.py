@@ -50,6 +50,7 @@ from pyfect.ai import toolkit as K
 from pyfect.ai._stream_resolution import (
     incomplete_reason,
     interrupted_result,
+    resolvable_tool,
     resolve_stream,
     result_part,
 )
@@ -291,7 +292,7 @@ def _resolve(
 
     def run(call: EncodedPart) -> Stream[Any, Any, Any]:
         id, name = cast("str", call["id"]), cast("str", call["name"])
-        tool = kit.tools.get(name)
+        tool = resolvable_tool(kit, name)
         if tool is None:
             return StreamC.empty
         if id in denied:
@@ -587,7 +588,11 @@ class Service:
                 def results(content: list[Any]) -> Effect[list[Any], Any, Any]:
                     if disable_tool_call_resolution:
                         return fx.succeed([*pre, *content])
-                    calls = [c for c in _tool_calls(raw) if c.get("name") in kit.tools]
+                    calls = [
+                        c
+                        for c in _tool_calls(raw)
+                        if resolvable_tool(kit, c.get("name")) is not None
+                    ]
                     incomplete = _incomplete_reason(raw)
                     if incomplete is not None:
                         interrupted = [

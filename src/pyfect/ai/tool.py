@@ -63,6 +63,9 @@ R_co = TypeVar("R_co", covariant=True)
 
 type FailureMode = Literal["error", "return"]
 type FailureOrigin = Literal["parameters", "handler", "result"]
+type Execution = Literal["server", "client"]
+"""Where calls to a tool are executed: by its handler on the ``"server"``, or by the
+application that sent the request on the ``"client"`` (Effect's ``Tool.Execution``)."""
 
 
 @dataclass(frozen=True)
@@ -116,6 +119,10 @@ class Tool(Generic[N_co, P_co, S_co, F_co, HE_co, R_co]):
     """Maps a successful result to what the model sees in place of the
     encoded result (images, files); the application still gets the typed
     result."""
+    execution: Execution | None = None
+    """``"client"``: the application that sent the request executes the tool and answers
+    in a later request, so a language model emits its calls but never resolves them and
+    the tool needs no handler. ``None`` or ``"server"``: its handler resolves them."""
 
     @property
     def id(self) -> str:
@@ -204,6 +211,22 @@ def is_dynamic(u: object) -> bool:
     return isinstance(u, Dynamic)
 
 
+def is_client_executed(tool: AnyTool) -> bool:
+    """Whether calls to ``tool`` are executed by the application that sent the request
+    rather than by a handler (Effect's ``isClientExecuted``)."""
+    return tool.execution == "client"
+
+
+def requires_handler(tool: AnyTool) -> bool:
+    """Whether a toolkit needs a handler for ``tool`` (Effect's ``RequiresHandler``): a
+    client-executed tool never does, a provider-defined one only when it says so."""
+    if is_client_executed(tool):
+        return False
+    if isinstance(tool, ProviderDefined):
+        return tool.requires_handler
+    return True
+
+
 EMPTY_PARAMS = S.Record(S.String, S.Never)
 """The parameters of a tool that takes none (Effect's ``EmptyParams``)."""
 
@@ -241,6 +264,7 @@ def make[NN: LiteralString, PP = dict[str, Never], SS = None, FF = Never, RR = N
     dependencies: Sequence[type[RR]] = (),
     needs_approval: NeedsApproval | None = None,
     to_model_output: Callable[[SS], Sequence[ToolModelOutputPart]] | None = None,
+    execution: Execution | None = None,
 ) -> Tool[NN, PP, SS, FF, FF, RR]: ...
 @overload
 def make[NN: LiteralString, PP = dict[str, Never], SS = None, FF = Never, RR = Never](
@@ -254,6 +278,7 @@ def make[NN: LiteralString, PP = dict[str, Never], SS = None, FF = Never, RR = N
     dependencies: Sequence[type[RR]] = (),
     needs_approval: NeedsApproval | None = None,
     to_model_output: Callable[[SS], Sequence[ToolModelOutputPart]] | None = None,
+    execution: Execution | None = None,
 ) -> Tool[NN, PP, SS, FF, Never, RR]: ...
 def make(
     name: str,
@@ -266,10 +291,14 @@ def make(
     dependencies: Sequence[type] = (),
     needs_approval: NeedsApproval | None = None,
     to_model_output: ToModelOutput | None = None,
+    execution: Execution | None = None,
 ) -> Tool[Any, Any, Any, Any, Any, Any]:
     """A tool the toolkit handles. Its parameters default to none, its
     success to ``None`` and its failure to ``Never``. ``to_model_output``
-    maps a successful result to the parts the model sees in its place."""
+    maps a successful result to the parts the model sees in its place.
+    ``execution="client"`` makes a tool the application that sent the request executes,
+    such as a frontend tool: its calls are emitted but never resolved, and it needs no
+    handler."""
     del dependencies
     return Tool[Any, Any, Any, Any, Any, Any](
         name=name,
@@ -280,6 +309,7 @@ def make(
         description=description,
         needs_approval=needs_approval,
         to_model_output=to_model_output,
+        execution=execution,
     )
 
 
@@ -294,6 +324,7 @@ def dynamic[NN: LiteralString, PP = object, SS = object, FF = Never](
     failure_mode: Literal["error"] = "error",
     needs_approval: NeedsApproval | None = None,
     to_model_output: Callable[[SS], Sequence[ToolModelOutputPart]] | None = None,
+    execution: Execution | None = None,
 ) -> Dynamic[NN, PP, SS, FF, FF, Never]: ...
 @overload
 def dynamic[NN: LiteralString, SS = object, FF = Never](
@@ -306,6 +337,7 @@ def dynamic[NN: LiteralString, SS = object, FF = Never](
     failure_mode: Literal["error"] = "error",
     needs_approval: NeedsApproval | None = None,
     to_model_output: Callable[[SS], Sequence[ToolModelOutputPart]] | None = None,
+    execution: Execution | None = None,
 ) -> Dynamic[NN, object, SS, FF, FF, Never]: ...
 @overload
 def dynamic[NN: LiteralString, PP = object, SS = object, FF = Never](
@@ -318,6 +350,7 @@ def dynamic[NN: LiteralString, PP = object, SS = object, FF = Never](
     failure_mode: Literal["return"],
     needs_approval: NeedsApproval | None = None,
     to_model_output: Callable[[SS], Sequence[ToolModelOutputPart]] | None = None,
+    execution: Execution | None = None,
 ) -> Dynamic[NN, PP, SS, FF, Never, Never]: ...
 def dynamic(
     name: str,
@@ -329,9 +362,10 @@ def dynamic(
     failure_mode: FailureMode = "error",
     needs_approval: NeedsApproval | None = None,
     to_model_output: ToModelOutput | None = None,
+    execution: Execution | None = None,
 ) -> Dynamic[Any, Any, Any, Any, Any, Any]:
     """A tool whose parameters are a schema or a raw JSON Schema; its
-    success defaults to any value."""
+    success defaults to any value. ``execution`` is ``make``'s."""
     is_schema = parameters is not None and hasattr(parameters, "__codec__")
     return Dynamic[Any, Any, Any, Any, Any, Any](
         name=name,
@@ -342,6 +376,7 @@ def dynamic(
         description=description,
         needs_approval=needs_approval,
         to_model_output=to_model_output,
+        execution=execution,
         json_schema=None if is_schema or parameters is None else cast("JsonSchema", parameters),
     )
 
@@ -529,6 +564,7 @@ __all__ = [
     "CodecTransformer",
     "Destructive",
     "Dynamic",
+    "Execution",
     "ExecutionFailureDict",
     "FailureMode",
     "FailureOrigin",
@@ -552,10 +588,12 @@ __all__ = [
     "get_json_schema",
     "get_json_schema_from_schema",
     "get_strict_mode",
+    "is_client_executed",
     "is_dynamic",
     "is_provider_defined",
     "is_user_defined",
     "make",
     "provider_defined",
+    "requires_handler",
     "unsafe_secure_json_parse",
 ]

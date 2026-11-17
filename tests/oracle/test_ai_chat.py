@@ -19,6 +19,7 @@ from pyfect import schema as S
 from pyfect.ai import chat as C
 from pyfect.ai import id_generator
 from pyfect.ai import prompt as P
+from pyfect.ai import response as R
 from pyfect.ai import tool as T
 from pyfect.ai import toolkit as K
 from pyfect.duration import millis
@@ -26,7 +27,7 @@ from pyfect.http.url import Url
 from pyfect.persistence import key_value_store, persistence
 from pyfect.persistence.persistence import BackingPersistence
 
-from ._ai import with_language_model
+from ._ai import ProvideModel, with_language_model
 
 
 def _constant_ids(id: str) -> Any:
@@ -425,3 +426,146 @@ def test_invalid_history_fails():
         assert isinstance(error, persistence.PersistenceError)
 
     yield from fx.gen(body).pipe(fx.provide(PERSISTENCE_LAYER))
+
+
+class LookupParams(TypedDict):
+    key: str
+
+
+Lookup = T.make("Lookup", parameters=S.Struct(LookupParams), success=S.String)
+
+# Executed by the application, which answers in a later request
+Ask = T.dynamic(
+    "Ask",
+    parameters={
+        "type": "object",
+        "properties": {"question": {"type": "string"}},
+        "required": ["question"],
+    },
+    execution="client",
+)
+
+LoopToolkit = K.make(Lookup, Ask)
+
+LoopToolkitLayer = LoopToolkit.to_layer(
+    Lookup.handler(lambda params, _: fx.succeed(f"value of {params['key']}"))
+)
+
+
+def _finish(reason: str) -> dict[str, Any]:
+    return {"type": "finish", "reason": reason, "usage": {"inputTokens": {}, "outputTokens": {}}}
+
+
+def _lookup_round(id: str) -> list[dict[str, Any]]:
+    return [
+        {"type": "tool-call", "id": id, "name": "Lookup", "params": {"key": id}},
+        _finish("tool-calls"),
+    ]
+
+
+def _with_rounds(rounds: list[list[dict[str, Any]]]) -> tuple[list[P.Prompt], ProvideModel]:
+    """Answers each model request with the next round and records its prompt."""
+    prompts: list[P.Prompt] = []
+
+    def stream_text(options: Any) -> list[dict[str, Any]]:
+        prompts.append(options.prompt)
+        index = len(prompts) - 1
+        return list(rounds[index]) if index < len(rounds) else [_finish("stop")]
+
+    return prompts, with_language_model(stream_text=stream_text)
+
+
+@testing.effect
+def test_continues_with_tool_results_until_a_round_needs_no_tools():
+    """Chat / streamText step loop / continues with tool results until a round needs no tools"""
+    prompts, provide = _with_rounds(
+        [
+            _lookup_round("call-1"),
+            [
+                {"type": "text-start", "id": "t1"},
+                {"type": "text-delta", "id": "t1", "delta": "Done"},
+                {"type": "text-end", "id": "t1"},
+                _finish("stop"),
+            ],
+        ]
+    )
+    chat = yield from C.empty
+    parts = yield from provide(
+        chat.stream_text("Look it up", toolkit=LoopToolkit, max_steps=5)
+        .run_collect()
+        .pipe(fx.provide(LoopToolkitLayer))
+    )
+    assert len(prompts) == 2
+    assert [part.reason for part in parts if isinstance(part, R.FinishPart)] == [
+        "tool-calls",
+        "stop",
+    ]
+    # The second round sees the first round's tool result
+    assert any(
+        isinstance(message, P.ToolMessage)
+        and any(
+            isinstance(part, P.ToolResultPart) and part.id == "call-1" for part in message.content
+        )
+        for message in prompts[1].content
+    )
+    # History keeps each round as its own assistant and tool messages
+    history = yield from chat.history.get()
+    assert [message.role for message in history.content] == [
+        "user",
+        "assistant",
+        "tool",
+        "assistant",
+    ]
+
+
+@testing.effect
+def test_runs_one_round_by_default_and_at_most_max_steps_rounds():
+    """Chat / streamText step loop / runs one round by default and at most maxSteps rounds"""
+    rounds = [_lookup_round("call-1"), _lookup_round("call-2"), _lookup_round("call-3")]
+
+    single, provide_single = _with_rounds(rounds)
+    chat = yield from C.empty
+    yield from provide_single(
+        chat.stream_text("Look it up", toolkit=LoopToolkit)
+        .run_drain()
+        .pipe(fx.provide(LoopToolkitLayer))
+    )
+    assert len(single) == 1
+
+    limited, provide_limited = _with_rounds(rounds)
+    chat = yield from C.empty
+    yield from provide_limited(
+        chat.stream_text("Look it up", toolkit=LoopToolkit, max_steps=2)
+        .run_drain()
+        .pipe(fx.provide(LoopToolkitLayer))
+    )
+    assert len(limited) == 2
+
+
+@testing.effect
+def test_stops_when_a_client_executed_tool_call_is_left_for_the_application():
+    """Chat / streamText step loop / stops when a client-executed tool call is left for the application"""  # noqa: E501
+    prompts, provide = _with_rounds(
+        [
+            [
+                {"type": "tool-call", "id": "call-1", "name": "Lookup", "params": {"key": "a"}},
+                {
+                    "type": "tool-call",
+                    "id": "call-2",
+                    "name": "Ask",
+                    "params": {"question": "Proceed?"},
+                },
+                _finish("tool-calls"),
+            ]
+        ]
+    )
+    chat = yield from C.empty
+    parts = yield from provide(
+        chat.stream_text("Look it up", toolkit=LoopToolkit, max_steps=5)
+        .run_collect()
+        .pipe(fx.provide(LoopToolkitLayer))
+    )
+    assert len(prompts) == 1
+    assert [
+        part.id for part in parts if isinstance(part, R.ToolResultSuccess | R.ToolResultFailure)
+    ] == ["call-1"]

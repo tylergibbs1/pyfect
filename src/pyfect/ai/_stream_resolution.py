@@ -21,6 +21,7 @@ from pyfect.ai import prompt as P
 from pyfect.ai import response as R
 from pyfect.ai import toolkit as K
 from pyfect.ai.id_generator import IdGenerator
+from pyfect.ai.tool import AnyTool, is_client_executed
 from pyfect.fiber_set import FiberSet
 from pyfect.queue import Queue
 from pyfect.semaphore import Semaphore
@@ -35,6 +36,14 @@ type EncodedPart = Any
 type Chunk = Sequence[EncodedPart]
 
 _COMPLETE: tuple[str, ...] = ("stop", "tool-calls", "pause")
+
+
+def resolvable_tool(kit: K.WithHandler[Any, Any, Any, Any], name: object) -> AnyTool | None:
+    """The tool whose handler resolves calls to ``name``. Calls to unknown and
+    client-executed tools are left for the caller to answer. Every lookup that decides
+    whether to run, interrupt or wait for a tool call goes through here."""
+    tool = kit.tools.get(name) if isinstance(name, str) else None
+    return None if tool is None or is_client_executed(tool) else tool
 
 
 def incomplete_reason(reasons: Sequence[object]) -> str | None:
@@ -131,7 +140,7 @@ class _Resolution:
 
     def _handle(self, call: EncodedPart) -> Effect[None, Any, Any]:
         id, name = cast("str", call["id"]), cast("str", call["name"])
-        tool = self.kit.tools.get(name)
+        tool = resolvable_tool(self.kit, name)
         if tool is None:
             return fx.void
 
@@ -189,7 +198,7 @@ class _Resolution:
             def buffer() -> None:
                 for part in chunk:
                     if part.get("type") == "tool-call" and part.get("providerExecuted") is not True:
-                        if part.get("name") in self.kit.tools:
+                        if resolvable_tool(self.kit, part.get("name")) is not None:
                             self.pending[cast("str", part["id"])] = cast("str", part["name"])
                         self.buffered.append(part)
 

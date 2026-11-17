@@ -33,6 +33,26 @@
   `encode_to_with_headers` schema, also on schemas read through `reflect`.
   `get_response_encoding_schema` is documented as public, as in Effect.
 
+- AG-UI, Effect 4.1.4's `AgUiSchema`, `AgUi` and `AgUiServer` (#9842), as
+  `pyfect.ai.ag_ui_schema`, `pyfect.ai.ag_ui` and `pyfect.ai.ag_ui_server`.
+  `ag_ui_schema` holds the protocol's run input, messages and events; decoding drops union
+  members from newer protocol versions instead of rejecting the run. `ag_ui.to_prompt`
+  turns a run's conversation into a `Prompt` (client instructions dropped unless
+  `trust_client_instructions=True`), `ag_ui.from_stream_parts` turns response parts into
+  events, and `ag_ui.with_run_lifecycle` opens a run, closes what was left open and ends a
+  failed run with one `RUN_ERROR`. `ag_ui_server.layer_http(path=, agent=)` (or `run=`)
+  serves a run as server-sent events with a 15 second keep-alive, rejecting an invalid
+  input with 400 before the stream opens; `ag_ui_server.agent(toolkit=, system=,
+  max_steps=)` answers with the current `LanguageModel`, offers the client's tools as
+  client-executed tools, lists their calls as `pendingToolCallIds` and gives handlers the
+  run through `RunInput`. `endpoint` and `agent_handler` add it to an existing `HttpApi`.
+- `chat.Service.stream_text(max_steps=)`, as in Effect 4.1.4 (#9842): up to `max_steps`
+  rounds, sending tool results back to the model until a round needs no tools or a call is
+  left for the application. The default of 1 keeps one round.
+- `tool.make(execution="client")` and `tool.dynamic(execution="client")`, Effect 4.1.4's
+  client-executed tools (#9842): a tool the application runs. It needs no handler in
+  `to_layer`, `generate_text` and `stream_text` return its calls unresolved, and handling
+  one is a defect. `tool.is_client_executed` and `tool.requires_handler` tell them apart.
 - `http_api.schema.StreamSse(keep_alive=)`, as in Effect 4.1.4 (#9842): the server writes a
   `: keepalive` comment each time the interval elapses while the event stream is open, so
   proxies keep an idle response open.
