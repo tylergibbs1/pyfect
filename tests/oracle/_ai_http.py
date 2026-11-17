@@ -156,3 +156,39 @@ def refuse_transport(failures: list[HttpClientError], cause: object) -> Handler:
         return fx.fail(error)
 
     return refuse
+
+
+def reaches(value: object, text: str) -> bool:
+    """Whether ``text`` is in a string or bytes reachable from ``value``: its fields, items,
+    exception arguments and causes (Effect's ``contains`` in its workload identity tests),
+    to check that no secret is kept. Functions and effects are not followed."""
+    seen: set[int] = set()
+
+    def walk(value: object) -> bool:
+        if isinstance(value, str):
+            return text in value
+        if isinstance(value, bytes | bytearray):
+            return text in bytes(value).decode("utf-8", "replace")
+        if value is None or isinstance(value, int | float | type) or callable(value):
+            return False
+        if isinstance(value, fx.Effect) or id(value) in seen:
+            return False
+        seen.add(id(value))
+        children: list[object] = []
+        if isinstance(value, BaseException):
+            children += [str(value), *value.args, value.__cause__, value.__context__]
+        if isinstance(value, Mapping):
+            mapping = cast("Mapping[object, object]", value)
+            children += [*mapping.keys(), *mapping.values()]
+        elif isinstance(value, list | tuple | set | frozenset):
+            children += list(cast("Sequence[object]", value))
+        subject = cast("object", value)
+        children += list(cast("dict[str, object]", getattr(subject, "__dict__", {})).values())
+        for cls in type(subject).__mro__:
+            slots: str | tuple[str, ...] = cls.__dict__.get("__slots__", ())
+            for slot in (slots,) if isinstance(slots, str) else slots:
+                if hasattr(subject, slot):
+                    children.append(getattr(subject, slot))
+        return any(walk(child) for child in children)
+
+    return walk(value)

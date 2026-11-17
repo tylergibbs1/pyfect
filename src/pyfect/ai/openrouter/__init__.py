@@ -20,6 +20,7 @@ from pyfect.ai.openrouter import (
     error,
     language_model,
     schema,
+    workload_identity,
 )
 from pyfect.ai.openrouter.client import OpenRouterClient
 from pyfect.ai.openrouter.config import OpenRouterConfig
@@ -33,4 +34,5 @@ __all__ = [
     "error",
     "language_model",
     "schema",
+    "workload_identity",
 ]

@@ -12,7 +12,15 @@ JSON wire format; streams are read as Server-Sent Events::
     )
 """
 
-from pyfect.ai.anthropic import client, config, error, language_model, telemetry, tool
+from pyfect.ai.anthropic import (
+    client,
+    config,
+    error,
+    language_model,
+    telemetry,
+    tool,
+    workload_identity,
+)
 from pyfect.ai.anthropic.client import AnthropicClient
 from pyfect.ai.anthropic.config import AnthropicConfig
 
@@ -25,4 +33,5 @@ __all__ = [
     "language_model",
     "telemetry",
     "tool",
+    "workload_identity",
 ]

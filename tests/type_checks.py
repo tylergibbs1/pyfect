@@ -58,6 +58,7 @@ from pyfect.ai import toolkit as ai_toolkit
 from pyfect.ai.ai_error import AiError
 from pyfect.ai.anthropic import client as anthropic_client
 from pyfect.ai.anthropic import language_model as anthropic_lm
+from pyfect.ai.anthropic import workload_identity as anthropic_wi
 from pyfect.ai.anthropic_structured_output import StructuredOutputCodec, to_codec_anthropic
 from pyfect.ai.cloudflare import client as cloudflare_client
 from pyfect.ai.cloudflare import decision_model as cloudflare_dm
@@ -76,6 +77,7 @@ from pyfect.ai.openai_structured_output import to_codec_openai
 from pyfect.ai.openrouter import client as openrouter_client
 from pyfect.ai.openrouter import decision_model as openrouter_dm
 from pyfect.ai.openrouter import language_model as openrouter_lm
+from pyfect.ai.openrouter import workload_identity as openrouter_wi
 from pyfect.ai.openrouter.generated import client as openrouter_generated
 from pyfect.ai.response_id_tracker import ResponseIdTracker
 from pyfect.ai.typesafe import client as typesafe_client
@@ -11161,3 +11163,36 @@ def check_fn_still_takes_a_name():
 
 
 assert_type(check_fn_still_takes_a_name(), fx.Effect[Literal[1], Never, Never])
+
+
+def check_ai_workload_identity(token: fx.Effect[fx.Redacted[str], OSError, fx.FileSystem]) -> None:
+    from pyfect.ai import workload_identity
+    from pyfect.ai.openai import workload_identity as openai_wi
+
+    # The identity token's requirements stay; its failure becomes the exchange's EncodeError.
+    assert_type(
+        workload_identity.make(
+            token_url="https://auth.example.com/token",
+            identity_token=token,
+            exchange_request=lambda request, subject: request.body_json_unsafe(subject),
+        ),
+        fx.Effect[workload_identity.ClientTransform, Never, HttpClient | fx.FileSystem],
+    )
+    assert_type(
+        anthropic_wi.layer(identity_token=token, federation_rule_id="r", organization_id="o"),
+        fx.Layer[HttpClient, Never, HttpClient | fx.FileSystem],
+    )
+    assert_type(
+        openai_wi.layer(identity_token=token, identity_provider_id="i", service_account_id="s"),
+        fx.Layer[HttpClient, Never, HttpClient | fx.FileSystem],
+    )
+    assert_type(
+        openrouter_wi.make(identity_token=token, federation_policy_id="p"),
+        fx.Effect[workload_identity.ClientTransform, Never, HttpClient | fx.FileSystem],
+    )
+    openai_wi.make(
+        identity_token=token,
+        identity_provider_id="i",
+        service_account_id="s",
+        identity_token_type="saml",  # pyright: ignore[reportArgumentType]
+    )

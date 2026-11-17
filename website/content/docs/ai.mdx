@@ -104,6 +104,30 @@ generated client of every other OpenRouter operation.
 
 </CodeOutput>
 
+### Workload identity
+
+A workload that has an identity token (a Kubernetes service account token, a cloud OIDC
+token) can call Anthropic, OpenAI or OpenRouter without an API key. Each provider's
+`workload_identity.layer` wraps the `HttpClient` service: requests carry an access token
+exchanged for the identity token. The token is cached until shortly before it expires, and
+a 401 discards it, so the next request makes a new exchange. `identity_token` runs again for
+every exchange, so a rotated token file is read fresh.
+
+<CodeOutput>
+
+<include meta='title="workload_identity.py"'>../../snippets/ai/workload_identity.py</include>
+
+<include lang="text">../../snippets/ai/workload_identity.out</include>
+
+</CodeOutput>
+
+OpenAI's takes `identity_provider_id` and `service_account_id`, and OpenRouter's a
+`federation_policy_id`. A rejected exchange fails the call with an `AiError` whose message
+has the identity token replaced with `<redacted>`. `pyfect.ai.workload_identity.make` is the
+general form for any token endpoint that answers an `access_token` and `expires_in`. It
+never follows a redirect, and it refuses a token URL that is not `https`, except on
+localhost.
+
 `language_model.make(generate_text=..., stream_text=...)` builds a `LanguageModel` from two
 functions of a request's `ProviderOptions` (its prompt, tools and response format). The
 examples below use it to script the model's answers, as a test does.

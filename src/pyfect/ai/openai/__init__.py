@@ -27,6 +27,7 @@ from pyfect.ai.openai import (
     language_model,
     telemetry,
     tool,
+    workload_identity,
 )
 from pyfect.ai.openai.client import OpenAiClient, OpenAiSocket
 from pyfect.ai.openai.client_generated import OpenAiClientGenerated
@@ -46,4 +47,5 @@ __all__ = [
     "language_model",
     "telemetry",
     "tool",
+    "workload_identity",
 ]

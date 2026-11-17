@@ -1,9 +1,10 @@
 """AI services (Effect's ``effect/ai``): prompts, responses, tools and
 toolkits, the provider-neutral ``LanguageModel`` and ``EmbeddingModel``
 services, ``decision`` and the ``DecisionModel`` service (``decision_model``),
-the Model Context Protocol (``mcp_server``, ``mcp_client``, ``mcp_test``), and
+the Model Context Protocol (``mcp_server``, ``mcp_client``, ``mcp_test``),
 each provider's structured-output codec (``anthropic_structured_output``,
-``openai_structured_output``).
+``openai_structured_output``), and ``workload_identity`` (an ``HttpClient``
+authenticated with access tokens exchanged for a workload's identity token).
 
 Each module is Effect's of the same name::
 
@@ -33,6 +34,7 @@ from pyfect.ai import (
     tokenizer,
     tool,
     toolkit,
+    workload_identity,
 )
 from pyfect.ai.ai_error import AiError
 from pyfect.ai.chat import Chat
@@ -72,4 +74,5 @@ __all__ = [
     "tokenizer",
     "tool",
     "toolkit",
+    "workload_identity",
 ]

@@ -30,6 +30,7 @@ from pyfect._js import text_encode
 from pyfect._loop_thread import LoopThread
 from pyfect._os_wait import WaitsFor, os_wait
 from pyfect._released import Lifetime
+from pyfect.context import Reference
 from pyfect.effect import Effect, fail, succeed, suspend, sync
 from pyfect.errors import Done
 from pyfect.http import _form_data
@@ -70,6 +71,19 @@ _BODY_DONE = "pyfect_body_done"
 """The keys ``_content`` returns a streamed form's content type, a streamed body's
 reader, and what to call once that body is done, under (taken out before the rest
 goes to httpx)."""
+
+
+class FollowRedirects(Reference[bool | None]):
+    """Whether httpx follows redirects for the requests sent under it; ``None`` (the default)
+    keeps the ``follow_redirects`` the client was made with. Effect's
+    ``FetchHttpClient.RequestInit`` with its ``redirect`` option::
+
+        effect.pipe(fx.provide_service(httpx_client.FollowRedirects, False))
+    """
+
+    @classmethod
+    def default(cls) -> bool | None:
+        return None
 
 
 def _stream_content(
@@ -265,11 +279,17 @@ class _Backend:
                 content_type = f"multipart/form-data; boundary={_EMPTY_FORM_BOUNDARY}"
                 headers = headers.set("content-type", content_type)
 
+        follow_redirects = fiber.get_ref(FollowRedirects)
+
         async def send() -> httpx.Response:
             built = self.client.build_request(
                 request.method, _url.href(url), headers=list(headers.items()), **content
             )
-            response = await self.client.send(built, stream=True)
+            response = (
+                await self.client.send(built, stream=True)
+                if follow_redirects is None
+                else await self.client.send(built, stream=True, follow_redirects=follow_redirects)
+            )
             # Tied to the signal as soon as it exists: an interrupt that wins
             # against its arrival (a lost race) drops it unseen, and aborts.
             signal.on_abort(lambda: self._call_soon(lambda: self._close_response(response)))
@@ -437,4 +457,4 @@ layer: Layer[HttpClient] = layer_with()
 """An ``HttpClient`` on httpx with its default options (and no timeout)."""
 
 
-__all__ = ["layer", "layer_with", "make"]
+__all__ = ["FollowRedirects", "layer", "layer_with", "make"]
