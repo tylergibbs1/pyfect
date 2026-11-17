@@ -16,9 +16,10 @@ from pyfect.clock import Clock
 from pyfect.context import Reference
 from pyfect.effect import sync
 from pyfect.exit import Exit, Failure, Success
+from pyfect.http import _request_state, trace_context
 from pyfect.http import headers as _headers
-from pyfect.http import trace_context
 from pyfect.http import url_params as _url_params
+from pyfect.http._request_state import RequestState
 from pyfect.http.client._make import _add_header_attributes, _add_url_attributes
 from pyfect.http.server_error import (
     HttpServerError,
@@ -90,14 +91,29 @@ def _response_span_exit(
     return Failure(fail(HttpServerError(ResponseError(request, response))))
 
 
-def _end(fiber: Fiber[Any, Any], span: Span, request: ServerRequest, exit: Exit[Any, Any]) -> None:
+def _with_state_names(
+    names: tuple[_headers.Pattern, ...], state_names: tuple[_headers.Pattern, ...]
+) -> tuple[_headers.Pattern, ...]:
+    return names if not state_names else (*names, *state_names)
+
+
+def _end(
+    fiber: Fiber[Any, Any],
+    span: Span,
+    request: ServerRequest,
+    state: RequestState | None,
+    exit: Exit[Any, Any],
+) -> None:
     end_time = fiber.get_ref(Clock).now_nanos_unsafe()
     if isinstance(exit, Success) and (
         not span.sampled or fiber.get_ref(CurrentTracer) is native_tracer
     ):
         span.end(end_time, _response_span_exit(fiber, request, exit.value))
         return
-    redacted_headers = fiber.get_ref(_headers.CurrentRedactedNames)
+    redacted_headers = _with_state_names(
+        fiber.get_ref(_headers.CurrentRedactedNames),
+        () if state is None else state.redacted_header_names,
+    )
     accept = fiber.get_ref(TracerHeaderFilter)
     span_exit: Exit[Any, Any]
     if isinstance(exit, Failure):
@@ -114,7 +130,11 @@ def _end(fiber: Fiber[Any, Any], span: Span, request: ServerRequest, exit: Exit[
         span.attribute("http.request.method", request.method)
         url = to_url(request)
         if url is not None:
-            _add_url_attributes(span, url, fiber.get_ref(_url_params.CurrentRedactedNames))
+            redacted_params = _with_state_names(
+                fiber.get_ref(_url_params.CurrentRedactedNames),
+                () if state is None else state.redacted_url_param_names,
+            )
+            _add_url_attributes(span, url, redacted_params)
         user_agent = request.headers.get("user-agent")
         if user_agent is not None:
             span.attribute("user_agent.original", user_agent)
@@ -145,9 +165,10 @@ def tracer[E, R](
         if parent is not None:
             options["parent"] = parent
         span = make_span_unsafe(fiber, fiber.get_ref(SpanNameGenerator)(request), options)
+        state = _request_state.get(fiber._context)
 
         def finish(exit: Exit[HttpServerResponse, E]) -> Effect[None]:
-            return sync(lambda: _end(fiber, span, request, exit))
+            return sync(lambda: _end(fiber, span, request, state, exit))
 
         inner: Effect[HttpServerResponse, E, R | HttpServerRequest] = _Locally(
             app, lambda ctx: ctx.add(ParentSpan, span)

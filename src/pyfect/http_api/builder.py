@@ -34,6 +34,7 @@ from pyfect.effect import (
     suspend,
     sync,
 )
+from pyfect.http._request_state import add_redacted_names_unsafe
 from pyfect.http.router import HttpRouter, HttpRouterService, Route, RouteContext, route, use
 from pyfect.http.server_request import HttpServerRequest, ParsedSearchParams, ServerRequest
 from pyfect.http.server_respondable import is_respondable, to_response
@@ -63,7 +64,14 @@ from pyfect.http_api._security import (
     security_middleware,
     security_set_cookie,
 )
-from pyfect.http_api.api import AnyApi, ApiWith, HttpApi, api_of, get_slot_parse_options
+from pyfect.http_api.api import (
+    AnyApi,
+    ApiWith,
+    HttpApi,
+    api_of,
+    endpoint_redacted_names,
+    get_slot_parse_options,
+)
 from pyfect.http_api.endpoint import AnyEndpoint, HttpApiEndpoint
 from pyfect.http_api.error import HttpApiPayloadTooLarge, HttpApiSchemaError
 from pyfect.http_api.group import AnyGroup, GroupService, HttpApiGroup
@@ -391,7 +399,19 @@ def handler_to_http_effect(
         return encoded.catch_all(unencodable)
 
     wrapped = _apply_middleware(group, endpoint, services, gen(respond))
-    return wrapped.with_error_reporting().catch_all(on_error).pipe(provide_context(services))
+    effect = wrapped.with_error_reporting().catch_all(on_error).pipe(provide_context(services))
+    redacted = endpoint_redacted_names(api, group, endpoint)
+    if redacted is None:
+        return effect
+
+    # Added before middleware and decoding run, so their failures are redacted too.
+    def with_redacted_names(
+        request_context: Context[Any],
+    ) -> Effect[HttpServerResponse, Never, Any]:
+        add_redacted_names_unsafe(request_context, redacted.query, redacted.headers)
+        return effect
+
+    return context().flat_map(with_redacted_names)
 
 
 @dataclasses.dataclass(frozen=True)

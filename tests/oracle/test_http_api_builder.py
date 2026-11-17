@@ -22,10 +22,12 @@ import pytest
 import pyfect as fx
 from pyfect import effect, layer, redacted, stream
 from pyfect import schema as S
+from pyfect.context import Context
 from pyfect.exit import Failure, Success
 from pyfect.http import http_effect, router, server
 from pyfect.http import response as client_response
 from pyfect.http.client import TracerDisabledWhen
+from pyfect.http.middleware import TracerHeaderFilter
 from pyfect.http.server_request import HttpServerRequest
 from pyfect.http.web import WebRequest
 from pyfect.http.web_handler import request_from_web
@@ -41,12 +43,15 @@ from pyfect.http_api.api import (
     ParseOptions,
     PayloadParseOptions,
     QueryParseOptions,
+    RedactedNames,
     SuccessParseOptions,
 )
 from pyfect.http_api.error import HttpApiSchemaError
 from pyfect.http_api.group import HttpApiGroup
 from pyfect.http_api.middleware import HttpApiMiddleware
 from pyfect.scope import scoped
+from pyfect.testing import TestClock, adjust
+from pyfect.tracer import CurrentTracer, NativeSpan, SpanRequest, Tracer
 
 from ._http_api import api_layer, call_group, respond, struct
 
@@ -208,6 +213,74 @@ def _post(path: str, content_type: str, body: Any, **headers: str) -> WebRequest
         headers={"content-type": content_type, **headers},
         body=body,
     )
+
+
+def test_redacted_names_redacts_declared_query_and_header_names_in_server_spans() -> None:
+    """HttpApiBuilder RedactedNames / redacts declared query and header names in server spans"""
+    build = ep.post(
+        "build",
+        "/build",
+        query=struct({"remote": S.String, "t": S.String}),
+        headers=struct({"x-registry-config": S.String}),
+        success=S.String,
+    ).annotate(RedactedNames, {"query": ["remote"], "headers": ["x-registry-config"]})
+    group = HttpApiGroup.make("images").add(build)
+    api = HttpApi.make("Api").add(group)
+    received: list[dict[str, str]] = []
+
+    def handle(ctx: Any) -> Any:
+        def run() -> str:
+            received.append(
+                {
+                    "remote": ctx.query["remote"],
+                    "t": ctx.query["t"],
+                    "config": ctx.headers["x-registry-config"],
+                }
+            )
+            return "ok"
+
+        return effect.sync(run)
+
+    live = builder.group(api, group, lambda h: h.handle(group.endpoints["build"])(handle))
+    spans: list[NativeSpan] = []
+
+    def make_span(request: SpanRequest) -> NativeSpan:
+        span = NativeSpan(request)
+        spans.append(span)
+        return span
+
+    context = Context.make(CurrentTracer, Tracer(make_span)).add(
+        TracerHeaderFilter, lambda _name, _phase: True
+    )
+    statuses: list[int] = []
+
+    async def use(handler: Any) -> None:
+        remote = "https%3A%2F%2Fuser%3Apass%40host%2Frepo.git"
+        # The second fails query decoding, as `t` is missing: names apply before decoding.
+        for url in [f"/build?remote={remote}&t=app", f"/build?remote={remote}"]:
+            response = await handler(
+                WebRequest(
+                    f"http://localhost{url}",
+                    method="POST",
+                    headers={"x-registry-config": "cfg-s3cret", "x-page": "1"},
+                ),
+                context,
+            )
+            statuses.append(response.status)
+
+    _with_handler(api_layer(api, live), use)
+    assert statuses == [200, 400]
+    success, invalid = spans
+    assert success.attributes["url.full"] == "http://localhost/build?remote=REDACTED&t=app"
+    assert success.attributes["url.query"] == "remote=REDACTED&t=app"
+    assert success.attributes["http.request.header.x-registry-config"] == "<redacted>"
+    assert success.attributes["http.request.header.x-page"] == "1"
+    # The handler sees the values unchanged.
+    assert received == [
+        {"remote": "https://user:pass@host/repo.git", "t": "app", "config": "cfg-s3cret"}
+    ]
+    assert invalid.attributes["url.full"] == "http://localhost/build?remote=REDACTED"
+    assert invalid.attributes["http.request.header.x-registry-config"] == "<redacted>"
 
 
 def test_responds_413_from_content_length_before_the_handler_runs() -> None:
@@ -941,6 +1014,39 @@ def test_returns_the_callback_unchanged_and_supports_registration_in_a_group() -
     )
     assert result == {"id": 42, "name": "Ada"}
     assert len(calls) == 1
+
+
+def test_writes_stream_sse_keep_alive_comments_while_the_event_stream_is_idle() -> None:
+    """HttpApiBuilder streaming success responses / writes StreamSse keepAlive comments while the event stream is idle"""  # noqa: E501
+    g = HttpApiGroup.make("test").add(
+        ep.get(
+            "events",
+            "/test",
+            success=api_schema.StreamSse(data=S.String, keep_alive="15 seconds"),
+        )
+    )
+    api = HttpApi.make("Api").add(g)
+
+    def use(c: Any) -> Any:
+        def run() -> Any:
+            response = yield from c.method("events").response_only()
+            fiber = yield from response.stream.take(3).run_collect().fork()
+            yield from adjust("30 seconds")
+            chunks = yield from fiber.join()
+            return [bytes(chunk).decode() for chunk in chunks]
+
+        return effect.gen(run)
+
+    chunks = call_group(
+        api,
+        g,
+        lambda h: h.handle(g.endpoints["events"])(
+            lambda _: effect.succeed(stream.make("hello").concat(stream.never))
+        ),
+        use,
+        TestClock.layer(),
+    )
+    assert chunks == ['data: "hello"\n\n', ": keepalive\n\n", ": keepalive\n\n"]
 
 
 def test_sends_the_first_listed_stream_content_type_unless_a_declared_header_selects_another() -> (

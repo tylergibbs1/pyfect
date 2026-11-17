@@ -26,8 +26,9 @@ from typing import (
     overload,
 )
 
-from pyfect import byte_size
+from pyfect import byte_size, duration
 from pyfect.byte_size import ByteSize
+from pyfect.duration import Duration
 from pyfect.http import status as http_status
 from pyfect.http.method import HttpMethod, has_body
 from pyfect.http.multipart import Limits
@@ -310,6 +311,11 @@ def get_status_error_schema(schema: Top) -> int:
 
 
 def get_response_encoding_schema(schema: Top) -> ResponseEncoding:
+    """The buffered response encoding of ``schema`` (default JSON), read without encoding a
+    value (Effect's ``getResponseEncodingSchema``): a ``WithHeaders`` wrapper's own encoding
+    first, an ``encode_to_with_headers`` schema's body's. No-content schemas get the JSON
+    default too (check ``is_no_content`` on the body first), and it does not describe stream
+    or upgrade schemas."""
     if is_with_headers(schema) and encoding_of(schema.ast) is None:
         return get_response_encoding(body_of(schema).__codec__().ast)
     return get_response_encoding(schema.__codec__().ast)
@@ -414,6 +420,8 @@ class StreamSseSchema[A, E = Never](Bottom[Stream[A, E], Stream[A, E], Never, Ne
     """Every media type it is sent under; the first is ``content_type``."""
     events: Codec[Any, Mapping[str, object], Any, Any] = field(kw_only=True)
     error: Top = field(kw_only=True)
+    keep_alive: Duration | None = field(kw_only=True, default=None)
+    """How often the server writes a ``: keepalive`` comment while the response is open."""
 
     if TYPE_CHECKING:
 
@@ -483,6 +491,7 @@ def StreamSse[A, E = Never](
     events: Codec[A, Mapping[str, object], Any, Any],
     error: Codec[E, Any, Any, Any] | None = None,
     content_type: str | Sequence[str] = "text/event-stream",
+    keep_alive: duration.Input | None = None,
 ) -> StreamSseSchema[A, E]: ...
 @overload
 def StreamSse[A, E = Never](
@@ -490,6 +499,7 @@ def StreamSse[A, E = Never](
     data: Codec[A, Any, Any, Any],
     error: Codec[E, Any, Any, Any] | None = None,
     content_type: str | Sequence[str] = "text/event-stream",
+    keep_alive: duration.Input | None = None,
 ) -> StreamSseSchema[A, E]: ...
 def StreamSse(
     *,
@@ -497,12 +507,15 @@ def StreamSse(
     data: Codec[Any, Any, Any, Any] | None = None,
     error: Codec[Any, Any, Any, Any] | None = None,
     content_type: str | Sequence[str] = "text/event-stream",
+    keep_alive: duration.Input | None = None,
 ) -> StreamSseSchema[Any, Any]:
     """Server-sent events: each decoded by ``events`` from its fields
     (``event``, ``data``, ``id``), or ``message`` events whose JSON data
     ``data`` decodes (the stream is of the data values). ``error`` encodes
     the stream's failure, sent as a reserved event. ``data`` is written
-    with its JSON codec (``to_codec_json``)."""
+    with its JSON codec (``to_codec_json``). With ``keep_alive`` the server
+    writes a ``: keepalive`` comment each time it elapses until the events
+    end, which SSE clients ignore, so proxies keep an idle response open."""
     if data is not None:
         events = Struct(_SseDataFields, data=from_json_string(to_codec_json(data)))
     elif events is None:
@@ -513,6 +526,7 @@ def StreamSse(
         **_content_types(content_type),
         events=events,
         error=error if error is not None else _NEVER,
+        keep_alive=None if keep_alive is None else duration.from_input_unsafe(keep_alive),
     )
 
 
@@ -691,6 +705,25 @@ def get_with_headers_annotation(node: ast.AST) -> WithHeadersAnnotation | None:
     return cast("WithHeadersAnnotation | None", _annotation(node, "http_api_with_headers"))
 
 
+@dataclass(frozen=True, slots=True)
+class EncodeToWithHeadersParts:
+    """The declared body and headers schemas of an ``encode_to_with_headers`` schema."""
+
+    body: Top
+    headers: Top
+
+
+def get_encode_to_with_headers_parts(schema: Top) -> EncodeToWithHeadersParts | None:
+    """The body and headers schemas ``schema`` was declared with by ``encode_to_with_headers``
+    (Effect's ``getEncodeToWithHeadersParts``), also through endpoints and ``reflect``; for
+    any other schema (a plain one, ``WithHeaders``, a transformation from a ``{body,
+    headers}`` struct) ``None``. These are the declared schemas, not the endpoint's codecs."""
+    annotation = get_with_headers_annotation(schema.__codec__().ast)
+    if annotation is None:
+        return None
+    return EncodeToWithHeadersParts(annotation.body, annotation.headers)
+
+
 class _WithHeadersPair[B, H](TypedDict):
     body: B
     headers: H
@@ -746,6 +779,7 @@ __all__ = [
     "Accepted",
     "Created",
     "Empty",
+    "EncodeToWithHeadersParts",
     "MultipartEncoding",
     "MultipartSchema",
     "MultipartStreamSchema",
@@ -781,6 +815,7 @@ __all__ = [
     "documented_node",
     "encode_to_with_headers",
     "encoding_of",
+    "get_encode_to_with_headers_parts",
     "get_payload_encoding",
     "get_response_encoding",
     "get_response_encoding_schema",

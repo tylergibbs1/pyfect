@@ -15,9 +15,13 @@ from typing import Any
 import pytest
 
 from pyfect import schema as S
+from pyfect.http_api import endpoint as ep
 from pyfect.http_api import schema as api_schema
+from pyfect.http_api.api import HttpApi, ReflectedEndpoint, reflect
+from pyfect.http_api.group import HttpApiGroup
 from pyfect.http_api.schema import StreamSseSchema, StreamUint8ArraySchema
 from pyfect.schema import Bottom
+from pyfect.schema import transformation as T
 
 from ._http_api import struct
 
@@ -277,6 +281,45 @@ def test_uses_the_body_defaults_instead_of_source_response_metadata() -> None:
     assert api_schema.get_status_error(schema.ast) == 500
     encoding = api_schema.get_response_encoding(schema.ast)
     assert (encoding.tag, encoding.content_type) == ("Json", "application/json")
+
+
+def test_distinguishes_reflected_declared_parts_from_an_ordinary_pair_transformation() -> None:
+    """HttpApiSchema / encodeToWithHeaders / distinguishes reflected declared parts from an ordinary pair transformation"""  # noqa: E501
+    body = S.Array(S.String)
+    total = S.String
+    headers = struct({"x-total": total})
+    page = struct({"rows": body, "total": S.String})
+
+    def decode(pair: Any) -> Any:
+        return {"rows": pair["body"], "total": pair["headers"]["x-total"]}
+
+    def encode(value: Any) -> Any:
+        return {"body": value["rows"], "headers": {"x-total": value["total"]}}
+
+    page_with_headers = api_schema.encode_to_with_headers(
+        page, body=body, headers=headers, decode=decode, encode=encode
+    )
+    page_from_pair = struct({"body": body, "headers": headers}).pipe(
+        S.decode_to(page, T.transform(decode=decode, encode=encode))
+    )
+    api = HttpApi.make("Api").add(
+        HttpApiGroup.make("pages").add(
+            ep.get("split", "/split", success=page_with_headers),
+            ep.get("pair", "/pair", success=page_from_pair),
+        )
+    )
+    found: dict[str, api_schema.EncodeToWithHeadersParts | None] = {}
+
+    def on_endpoint(reflected: ReflectedEndpoint) -> None:
+        schema = reflected.successes[200][0]
+        found[reflected.endpoint.identifier] = api_schema.get_encode_to_with_headers_parts(schema)
+
+    reflect(api, on_group=lambda _g, _a: None, on_endpoint=on_endpoint)
+    split = found["split"]
+    assert split is not None
+    assert split.body is body
+    assert split.headers is headers
+    assert found["pair"] is None
 
 
 def test_does_not_identify_buffered_schemas_as_stream_schemas() -> None:

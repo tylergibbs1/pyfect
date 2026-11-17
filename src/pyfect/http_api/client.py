@@ -25,6 +25,7 @@ from pyfect._core import Effect
 from pyfect.context import Context
 from pyfect.effect import context, fail, gen, succeed
 from pyfect.http import body as http_body
+from pyfect.http import headers as _headers
 from pyfect.http import request as client_request
 from pyfect.http import url_params
 from pyfect.http.client import HttpClient, HttpClientService
@@ -46,6 +47,7 @@ from pyfect.http_api._client_response import (
 from pyfect.http_api.api import (
     AnyApi,
     ApiWith,
+    EndpointRedactedNames,
     HttpApi,
     ReflectedEndpoint,
     api_of,
@@ -270,6 +272,7 @@ def _endpoint_call(
     encode_query = _encoder(endpoint.query, options.query)
     set_payload = _payload_setter(endpoint, options.payload)
     execute = _execute(http, services, reflected)
+    redacted = reflected.redacted_names
 
     def call(request: Mapping[str, Any], mode: ResponseMode) -> Effect[Any, Any, Any]:
         def run() -> Any:
@@ -287,7 +290,10 @@ def _endpoint_call(
                     http_request = http_request.append_url_params(query)
             if upgrade is not None:
                 http_request = http_request.upgrade(upgrade.protocol)
-            response: HttpClientResponse = yield from execute(http_request)
+            sent = execute(http_request)
+            response: HttpClientResponse = yield from (
+                sent if redacted is None else _with_redacted_names(sent, redacted)
+            )
             if mode == "response-only":
                 return response
             decoded = decode_response(
@@ -301,6 +307,14 @@ def _endpoint_call(
         return gen(run)
 
     return call
+
+
+def _with_redacted_names[A, E, R](
+    effect: Effect[A, E, R], redacted: EndpointRedactedNames
+) -> Effect[A, E, R]:
+    return effect.update_service(
+        url_params.CurrentRedactedNames, lambda names: (*names, *redacted.query)
+    ).update_service(_headers.CurrentRedactedNames, lambda names: (*names, *redacted.headers))
 
 
 def _response_decoder(reflected: ReflectedEndpoint) -> ResponseDecoder:

@@ -4,7 +4,7 @@ whether its scope closes with the handler or with the response stream."""
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING, Any
 
 from pyfect._core import Effect
@@ -13,6 +13,7 @@ from pyfect.effect import void
 
 if TYPE_CHECKING:
     from pyfect.exit import Exit
+    from pyfect.http.headers import Pattern
     from pyfect.http.server_error import HttpServerError
     from pyfect.http.server_request import ServerRequest
     from pyfect.http.server_response import HttpServerResponse
@@ -29,6 +30,8 @@ class RequestState:
         "handled",
         "logger_disabled",
         "pre_response_handler",
+        "redacted_header_names",
+        "redacted_url_param_names",
         "request_scope",
         "scope_ejected",
     )
@@ -38,6 +41,8 @@ class RequestState:
         self.logger_disabled = False
         self.handled = False
         self.scope_ejected = False
+        self.redacted_url_param_names: tuple[Pattern, ...] = ()
+        self.redacted_header_names: tuple[Pattern, ...] = ()
         self.request_scope = request_scope
         """The scope ``to_handled`` made for the request, which a transferred body and the
         request both have to finish before it closes."""
@@ -98,3 +103,16 @@ def append_pre_response_handler_unsafe(context: Context[Any], handler: PreRespon
         return previous(request, response).flat_map(lambda changed: handler(request, changed))
 
     state.pre_response_handler = both
+
+
+def add_redacted_names_unsafe(
+    context: Context[Any], url_param_names: Sequence[Pattern], header_names: Sequence[Pattern]
+) -> None:
+    """Redact these names too in the server span of the request being handled (outside one,
+    nothing). The span is recorded after the handler restores its context, so a scoped
+    ``CurrentRedactedNames`` does not reach it."""
+    state = get(context)
+    if state is None:
+        return
+    state.redacted_url_param_names = (*state.redacted_url_param_names, *url_param_names)
+    state.redacted_header_names = (*state.redacted_header_names, *header_names)

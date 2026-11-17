@@ -36,6 +36,7 @@ from pyfect.stream import Stream
 from pyfect.stream import die as stream_die
 from pyfect.stream import from_effect as stream_from_effect
 from pyfect.stream import provide_context as stream_provide_context
+from pyfect.stream import tick as stream_tick
 
 _RESPONSE: S.Bottom[HttpServerResponse] = S.declare(
     cast("Any", is_http_server_response), expected="HttpServerResponse"
@@ -345,7 +346,14 @@ def _sse_body_encoder(
             .encode_text()
         )
 
-    return encode
+    keep_alive = schema.keep_alive
+    if keep_alive is None:
+        return encode
+    comments = stream_tick(keep_alive).drop(1).map(lambda _: _KEEP_ALIVE_COMMENT)
+    return lambda stream: encode(stream).merge(comments, halt_strategy="left")
+
+
+_KEEP_ALIVE_COMMENT = b": keepalive\n\n"
 
 
 def _render_event(event: Mapping[str, Any]) -> str:

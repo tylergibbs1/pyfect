@@ -7,11 +7,23 @@ documented by ``OpenApi``::
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+import re
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
-from typing import TYPE_CHECKING, Any, Generic, Never, Protocol, Self, TypeVar, overload
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Generic,
+    Never,
+    Protocol,
+    Self,
+    TypedDict,
+    TypeVar,
+    overload,
+)
 
 from pyfect.context import Context, Tag, TagLike
+from pyfect.http.headers import Pattern
 from pyfect.http_api import schema as api_schema
 from pyfect.http_api.endpoint import AnyEndpoint, error_schemas, success_schemas
 from pyfect.http_api.group import AnyGroup, HttpApiGroup
@@ -128,6 +140,8 @@ class ReflectedEndpoint:
     middleware: tuple[AnyMiddleware, ...]
     successes: Mapping[int, tuple[Top, ...]]
     errors: Mapping[int, tuple[Top, ...]]
+    redacted_names: EndpointRedactedNames | None = None
+    """The ``RedactedNames`` of the API, group and endpoint combined."""
 
 
 def reflect(
@@ -154,6 +168,7 @@ def reflect(
                         success_schemas(endpoint), api_schema.get_status_success_schema
                     ),
                     _response_content(error_schemas(endpoint), api_schema.get_status_error_schema),
+                    endpoint_redacted_names(api, group, endpoint),
                 )
             )
 
@@ -213,6 +228,60 @@ class ErrorParseOptions(Tag[SchemaParseOptions], key="effect/http-api/HttpApi/Er
     pass
 
 
+class RedactedNamesOptions(TypedDict, total=False):
+    """The value of ``RedactedNames``."""
+
+    query: Sequence[Pattern]
+    headers: Sequence[Pattern]
+
+
+class RedactedNames(Tag[RedactedNamesOptions], key="effect/http-api/HttpApi/RedactedNames"):
+    """Query parameters and headers whose values are only sometimes secret, redacted in the
+    client and server spans of an endpoint without being modelled as ``Redacted``.
+
+    Names are wire names after encoding, matched as ``headers.is_redacted_name`` does: a
+    string ignoring case, a ``re.Pattern`` by ``search``. A string query name also matches
+    the bracketed keys of a nested parameter (``buildargs[NPM_TOKEN]`` for ``buildargs``).
+    They extend ``url_params.CurrentRedactedNames`` and ``headers.CurrentRedactedNames``, and
+    the names of the API, its groups and its endpoints are combined. ``add_http_api`` copies
+    the added API's annotations onto its groups, so a group's own ``RedactedNames`` replaces
+    them. Only URL and header attributes use these names: the values sent and decoded, and
+    ``user_agent.original``, are unchanged::
+
+        build = HttpApiEndpoint.post("build", "/build", query=...).annotate(
+            RedactedNames, {"query": ["buildargs"], "headers": ["x-registry-config"]}
+        )
+    """
+
+
+@dataclass(frozen=True, slots=True)
+class EndpointRedactedNames:
+    """The ``RedactedNames`` of an API, group and endpoint combined."""
+
+    query: tuple[Pattern, ...]
+    headers: tuple[Pattern, ...]
+
+
+def endpoint_redacted_names(
+    api: AnyApi, group: AnyGroup, endpoint: AnyEndpoint
+) -> EndpointRedactedNames | None:
+    """The names ``RedactedNames`` declares on ``api``, ``group`` and ``endpoint``."""
+    query: list[Pattern] = []
+    headers: list[Pattern] = []
+    for annotated in (api.annotations, group.annotations, endpoint.annotations):
+        found = annotated.get_option(RedactedNames)
+        if found is None:
+            continue
+        for name in found.value.get("query", ()):
+            query.append(name)
+            if isinstance(name, str):
+                query.append(re.compile(f"^{re.escape(name)}\\[", re.IGNORECASE))
+        headers.extend(found.value.get("headers", ()))
+    if not query and not headers:
+        return None
+    return EndpointRedactedNames(tuple(query), tuple(headers))
+
+
 @dataclass(frozen=True, slots=True)
 class SlotParseOptions:
     """The parse options of each part of a request and response."""
@@ -249,6 +318,7 @@ __all__ = [
     "AnyApi",
     "ApiServing",
     "ApiWith",
+    "EndpointRedactedNames",
     "ErrorParseOptions",
     "HeadersParseOptions",
     "HttpApi",
@@ -256,10 +326,13 @@ __all__ = [
     "ParseOptions",
     "PayloadParseOptions",
     "QueryParseOptions",
+    "RedactedNames",
+    "RedactedNamesOptions",
     "ReflectedEndpoint",
     "SlotParseOptions",
     "SuccessParseOptions",
     "api_of",
+    "endpoint_redacted_names",
     "get_slot_parse_options",
     "reflect",
 ]

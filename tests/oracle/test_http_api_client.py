@@ -13,6 +13,7 @@ identifiers are plain names here.
 # pyright: reportUnknownLambdaType=false, reportUnknownMemberType=false
 # pyright: reportUnknownVariableType=false, reportUnknownArgumentType=false
 
+import re
 from collections.abc import Callable, Mapping
 from typing import Any
 
@@ -25,7 +26,7 @@ from pyfect._core import Effect
 from pyfect.encoding import sse
 from pyfect.exit import Exit, Failure, Success
 from pyfect.http import response
-from pyfect.http.client import HttpClientService
+from pyfect.http.client import HttpClientService, TracerHeaderFilter
 from pyfect.http.client import make as make_http_client
 from pyfect.http.error import DecodeError, HttpClientError, StatusCodeError
 from pyfect.http.request import HttpClientRequest
@@ -41,12 +42,14 @@ from pyfect.http_api.api import (
     ParseOptions,
     PayloadParseOptions,
     QueryParseOptions,
+    RedactedNames,
     SuccessParseOptions,
 )
 from pyfect.http_api.group import HttpApiGroup
 from pyfect.schema import SchemaError
 from pyfect.scope import scoped
 from pyfect.stream import Stream
+from pyfect.tracer import NativeSpan, SpanRequest, Tracer
 
 from ._http_api import struct
 
@@ -786,6 +789,100 @@ def test_response_headers_fail_response_decoding_when_a_declared_header_is_inval
 
     assert isinstance(failure('{"id":"invalid"}', "1"), SchemaError)
     assert isinstance(failure('{"id":1}', "invalid"), SchemaError)
+
+
+def _traced(program: Callable[[], Any]) -> NativeSpan:
+    """The client span of ``program``, recorded with every header kept."""
+    spans: list[NativeSpan] = []
+
+    def make(request: SpanRequest) -> NativeSpan:
+        span = NativeSpan(request)
+        spans.append(span)
+        return span
+
+    _run(
+        effect.gen(program)
+        .with_tracer(Tracer(make))
+        .pipe(fx.provide_service(TracerHeaderFilter, lambda _name, _phase: True))
+    )
+    (span,) = spans
+    return span
+
+
+def test_redacted_names_redacts_declared_query_and_header_names_in_client_spans() -> None:
+    """HttpApiClient / RedactedNames / redacts declared query and header names in client spans,
+    including nested keys"""
+    build = ep.post(
+        "build",
+        "/build",
+        query=struct(
+            {"buildargs": S.Record(S.String, S.String), "remote": S.String, "t": S.String}
+        ),
+        headers=struct(
+            {"x-registry-config": S.String, "x-registry-mirror": S.String, "x-page": S.String}
+        ),
+    ).annotate(
+        RedactedNames, {"query": ["buildargs", "remote"], "headers": [re.compile("^x-registry-")]}
+    )
+    api = HttpApi.make("Api").add(HttpApiGroup.make("images").add(build))
+    sent: list[tuple[HttpClientRequest, str]] = []
+
+    def program() -> Any:
+        c = yield from client.make_with(
+            api, http_client=_responding(status=204, sent=sent), base_url="http://test"
+        )
+        yield from get_group(c, api.groups["images"]).method("build")(
+            query={
+                "buildargs": {"NPM_TOKEN": "s3cret"},
+                "remote": "https://user:pass@host/repo.git",
+                "t": "app",
+            },
+            headers={
+                "x-registry-config": "cfg-s3cret",
+                "x-registry-mirror": "mirror",
+                "x-page": "1",
+            },
+        )
+
+    attributes = _traced(program).attributes
+    assert attributes["url.full"] == (
+        "http://test/build?buildargs%5BNPM_TOKEN%5D=REDACTED&remote=REDACTED&t=app"
+    )
+    assert attributes["url.query"] == "buildargs%5BNPM_TOKEN%5D=REDACTED&remote=REDACTED&t=app"
+    assert attributes["http.request.header.x-registry-config"] == "<redacted>"
+    assert attributes["http.request.header.x-registry-mirror"] == "<redacted>"
+    assert attributes["http.request.header.x-page"] == "1"
+    # The wire is unchanged.
+    ((request, url),) = sent
+    assert url == (
+        "http://test/build?buildargs%5BNPM_TOKEN%5D=s3cret"
+        "&remote=https%3A%2F%2Fuser%3Apass%40host%2Frepo.git&t=app"
+    )
+    assert request.headers["x-registry-config"] == "cfg-s3cret"
+
+
+def test_redacted_names_combines_names_declared_on_the_api_group_and_endpoint() -> None:
+    """HttpApiClient / RedactedNames / combines names declared on the API, group and endpoint
+    with the current defaults"""
+    names = ("a", "b", "c", "sig", "page")
+    get = ep.get("get", "/get", query=struct(dict.fromkeys(names, S.String))).annotate(
+        RedactedNames, {"query": ["c"]}
+    )
+    group = HttpApiGroup.make("test").add(get).annotate(RedactedNames, {"query": ["b"]})
+    api = HttpApi.make("Api").add(group).annotate(RedactedNames, {"query": ["a"]})
+    sent: list[tuple[HttpClientRequest, str]] = []
+
+    def program() -> Any:
+        c = yield from client.make_with(
+            api, http_client=_responding(status=204, sent=sent), base_url="http://test"
+        )
+        yield from get_group(c, api.groups["test"]).method("get")(
+            query={"a": "1", "b": "2", "c": "3", "sig": "4", "page": "5"}
+        )
+
+    attributes = _traced(program).attributes
+    assert attributes["url.query"] == "a=REDACTED&b=REDACTED&c=REDACTED&sig=REDACTED&page=5"
+    assert [url for _, url in sent] == ["http://test/get?a=1&b=2&c=3&sig=4&page=5"]
 
 
 def test_applies_transform_client_to_endpoint_clients_exactly_once() -> None:
