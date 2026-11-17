@@ -100,6 +100,26 @@ def test_writes_after_the_peer_ends_its_stream():
     assert peer.recv(1) == b"y"
 
 
+@testing.live(timeout="5 seconds")
+def test_an_empty_chunk_does_not_keep_the_stream_from_ending():
+    # On Linux asyncio's sendmsg path never drops an empty buffered chunk, so the end
+    # of the stream (and a graceful close) waited on it forever.
+    pair = yield from acquire_release(sync(socket.socketpair), lambda p, _: sync(p[1].close))
+    ours, peer = pair
+    sock = from_socket(acquire_release(sync(lambda: ours), lambda _s, _e: sync(lambda: None)))
+    yield from sock.reader
+    yield from scoped(sock.writer.flat_map(lambda writer: writer.write_all([b"x", b""])))
+
+    def until_end_of_stream() -> bytes:
+        peer.settimeout(4)
+        received = b""
+        while chunk := peer.recv(65536):
+            received += chunk
+        return received
+
+    assert (yield from fx.blocking(until_end_of_stream)) == b"x"
+
+
 @testing.live(timeout="20 seconds")
 def test_a_paused_write_waits_for_drain_not_for_received_data():
     # Effect's awaitDrain resumes on drain, error or close only: data the

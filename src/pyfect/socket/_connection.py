@@ -356,8 +356,11 @@ class Connection(asyncio.Protocol):
                     resume(fail(write_error(ConnectionError("socket closed"))))
                     return
                 try:
-                    chunks = make()
-                    (self._tls[-1] if self._tls else transport).writelines(chunks)
+                    # asyncio's sendmsg path (Linux) never drops an empty chunk from its
+                    # buffer: the transport would never finish writing, ending or closing.
+                    chunks = [chunk for chunk in make() if chunk]
+                    if chunks:
+                        (self._tls[-1] if self._tls else transport).writelines(chunks)
                 except Exception as cause:
                     resume(fail(write_error(cause)))
                     return

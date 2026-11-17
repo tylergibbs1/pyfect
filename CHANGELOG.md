@@ -9,6 +9,10 @@
   is interrupted only when the connection is lost while the server's side is still open (a
   client that ends its side without a close is answered as `ws` does, and gets a 1006). A
   graceful shutdown no longer waits for such a handler once its connection has closed.
+- On Linux, a socket or live server connection that was written an empty chunk (a response
+  with an empty body, `write_all` with an empty chunk) never ended its stream or finished a
+  graceful close, and the socket loop woke for it on every turn. Empty chunks are no longer
+  handed to asyncio.
 - `pyfect.http.abort`: an `AbortSignal` listener that raised stopped `AbortController.abort()`,
   so the listeners after it (a backend closing its connection) never ran (0.6.9 and before).
   With `with_scope` the raise also turned a finished request into a Die when the scope closed.
