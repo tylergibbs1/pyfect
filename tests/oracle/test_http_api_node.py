@@ -19,12 +19,13 @@ added with ``add``; ``Layer.succeed(M, fn)`` for a middleware is
 """
 
 import asyncio
-import contextlib
 import socket
 import threading
 from collections.abc import Generator
 from contextlib import contextmanager
 from typing import Any, Never
+
+from _threaded_server import serving
 
 import pyfect as fx
 from pyfect import effect, layer, redacted, scope, stream
@@ -1024,32 +1025,24 @@ def _upgrade_server() -> Generator[tuple[str, threading.Event]]:
     """Effect's ``makeUpgradeServer``: answers an upgrade request with a 101
     whose content-type does not match ``_UPGRADE_API``, and sets the event
     once the client closes the connection."""
-    listener = socket.create_server(("127.0.0.1", 0))
     closed = threading.Event()
 
-    def serve() -> None:
-        with contextlib.suppress(OSError):
-            conn, _ = listener.accept()
-            with conn:
-                head = b""
-                while b"\r\n\r\n" not in head:
-                    head += conn.recv(4096)
-                conn.sendall(
-                    b"HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\n"
-                    b"Upgrade: tcp\r\nContent-Type: text/plain\r\n\r\n"
-                )
-                # the server side must read for the client's close to arrive
-                while conn.recv(4096):
-                    pass
-                closed.set()
+    def serve(conn: socket.socket, stopping: threading.Event) -> None:
+        head = b""
+        while b"\r\n\r\n" not in head:
+            head += conn.recv(4096)
+        conn.sendall(
+            b"HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\n"
+            b"Upgrade: tcp\r\nContent-Type: text/plain\r\n\r\n"
+        )
+        # the server side must read for the client's close to arrive
+        while conn.recv(4096):
+            pass
+        if not stopping.is_set():
+            closed.set()
 
-    thread = threading.Thread(target=serve, daemon=True)
-    thread.start()
-    try:
-        yield f"http://127.0.0.1:{listener.getsockname()[1]}", closed
-    finally:
-        listener.close()
-        thread.join(2)
+    with serving(serve) as server:
+        yield f"http://127.0.0.1:{server.port}", closed
 
 
 def _with_upgrade_server(use: Any) -> threading.Event:

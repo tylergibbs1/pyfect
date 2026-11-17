@@ -11,6 +11,7 @@ Omitted: the Blob half of "messages" (Python has no ``Blob``; the bytes
 half is kept).
 """
 
+import contextlib
 import gc
 import queue
 import socket
@@ -19,6 +20,7 @@ from collections.abc import Iterator
 from typing import Any
 
 import pytest
+from _threaded_server import serving
 
 pytest.importorskip("websockets")
 
@@ -124,27 +126,18 @@ with_constructor = provide(ws_platform.layer_web_socket_constructor)
 
 def pending_handshake_server():
     """A TCP server that accepts and never answers the WebSocket upgrade."""
-    listener = socket.create_server(("127.0.0.1", 0))
     accepted = threading.Event()
-    connections: list[socket.socket] = []
 
-    def accept() -> None:
-        try:
-            conn, _ = listener.accept()
-        except OSError:
-            return
-        connections.append(conn)
+    def handle(conn: socket.socket, stopping: threading.Event) -> None:
         accepted.set()
+        stopping.wait()
 
-    threading.Thread(target=accept, daemon=True).start()
+    def open_server() -> tuple[contextlib.ExitStack, int]:
+        stack = contextlib.ExitStack()
+        return stack, stack.enter_context(serving(handle)).port
 
-    def close() -> None:
-        for conn in connections:
-            conn.close()
-        listener.close()
-
-    port = listener.getsockname()[1]
-    return acquire_release(sync(lambda: (port, accepted)), lambda _p, _e: sync(close))
+    opened = acquire_release(sync(open_server), lambda s, _: sync(s[0].close))
+    return opened.map(lambda s: (s[1], accepted))
 
 
 @testing.effect

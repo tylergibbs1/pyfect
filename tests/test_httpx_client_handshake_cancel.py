@@ -11,53 +11,47 @@ fails loudly if a new httpx or httpcore moves the pools it is installed on).
 
 from __future__ import annotations
 
+import queue
 import socket
 import ssl
 import threading
 from collections.abc import Iterator
 
 import pytest
+from _threaded_server import serving
 
 import pyfect as fx
 from pyfect.http import httpx_client
 from pyfect.http.client import HttpClient
 
 
-@pytest.fixture
-def silent_server() -> Iterator[tuple[int, list[socket.socket]]]:
-    """A TCP server that accepts connections and never answers the handshake."""
-    listener = socket.create_server(("127.0.0.1", 0))
-    accepted: list[socket.socket] = []
+class _Silent:
+    """What a server that never answers the handshake saw: each connection, then whether
+    the client closed it (before the server did)."""
 
-    def accept() -> None:
-        while True:
-            try:
-                connection, _ = listener.accept()
-            except OSError:
-                return
-            accepted.append(connection)
+    def __init__(self) -> None:
+        self.accepted = 0
+        self.closed_by_the_client: queue.Queue[bool] = queue.Queue()
 
-    threading.Thread(target=accept, daemon=True).start()
-    yield listener.getsockname()[1], accepted
-    listener.close()
-    for connection in accepted:
-        connection.close()
-
-
-def _closed_by_the_client(connection: socket.socket) -> bool:
-    connection.settimeout(2)
-    try:
+    def handle(self, connection: socket.socket, stopping: threading.Event) -> None:
+        self.accepted += 1
         while connection.recv(65536):
             pass  # the ClientHello
-    except TimeoutError:
-        return False
-    return True
+        self.closed_by_the_client.put(not stopping.is_set())
+
+
+@pytest.fixture
+def silent_server() -> Iterator[tuple[int, _Silent]]:
+    """A TCP server that accepts connections and never answers the handshake."""
+    silent = _Silent()
+    with serving(silent.handle) as server:
+        yield server.port, silent
 
 
 def test_a_request_interrupted_in_the_handshake_closes_its_connection(
-    silent_server: tuple[int, list[socket.socket]],
+    silent_server: tuple[int, _Silent],
 ) -> None:
-    port, accepted = silent_server
+    port, silent = silent_server
 
     @fx.fn
     def program():
@@ -69,5 +63,5 @@ def test_a_request_interrupted_in_the_handshake_closes_its_connection(
 
     verify = ssl.create_default_context()
     fx.run_blocking(program().pipe(fx.provide(httpx_client.layer_with(verify=verify))))
-    assert len(accepted) == 5
-    assert [_closed_by_the_client(c) for c in accepted] == [True] * 5
+    assert [silent.closed_by_the_client.get(timeout=2) for _ in range(5)] == [True] * 5
+    assert silent.accepted == 5

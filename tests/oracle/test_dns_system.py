@@ -14,6 +14,7 @@ from collections.abc import Iterator
 
 import _ports
 import pytest
+from _threaded_server import serving
 
 from pyfect import duration as fx_duration
 from pyfect import testing
@@ -71,16 +72,10 @@ def _serve_udp(sock: socket.socket) -> None:
         sock.sendto(_answer(query, truncate=True), client)
 
 
-def _serve_tcp(sock: socket.socket) -> None:
-    while True:
-        try:
-            connection, _ = sock.accept()
-        except OSError:
-            return
-        with connection:
-            (length,) = struct.unpack("!H", connection.recv(2))
-            reply = _answer(connection.recv(length), truncate=False)
-            connection.sendall(struct.pack("!H", len(reply)) + reply)
+def _serve_tcp(connection: socket.socket, stopping: threading.Event) -> None:
+    (length,) = struct.unpack("!H", connection.recv(2))
+    reply = _answer(connection.recv(length), truncate=False)
+    connection.sendall(struct.pack("!H", len(reply)) + reply)
 
 
 @pytest.fixture(scope="module")
@@ -88,11 +83,10 @@ def name_server() -> Iterator[na.InetAddress]:
     tcp, udp = _ports.tcp_and_udp()
     port = tcp.getsockname()[1]
     tcp.listen()
-    for target, sock in ((_serve_udp, udp), (_serve_tcp, tcp)):
-        threading.Thread(target=target, args=(sock,), daemon=True).start()
-    yield dns.name_server_from_string(f"127.0.0.1:{port}").get_or_raise()
+    threading.Thread(target=_serve_udp, args=(udp,), daemon=True).start()
+    with serving(_serve_tcp, listener=tcp):
+        yield dns.name_server_from_string(f"127.0.0.1:{port}").get_or_raise()
     udp.close()
-    tcp.close()
 
 
 @testing.live(timeout="10 seconds")

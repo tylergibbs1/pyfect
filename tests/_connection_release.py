@@ -89,23 +89,33 @@ def _without_cycle_collection() -> Generator[None]:
             gc.enable()
 
 
-def _peer(fd: int) -> object:
-    """The peer of the socket ``fd`` (``None`` for any other descriptor)."""
+def _ends(fd: int) -> tuple[object, object]:
+    """The local and peer addresses of the socket ``fd`` (``None`` for any other
+    descriptor)."""
     try:
         sock = socket.socket(fileno=fd)
     except OSError:
-        return None
+        return None, None
     try:
-        return sock.getpeername()
+        return sock.getsockname(), sock.getpeername()
     except OSError:
-        return None
+        return None, None
     finally:
         sock.detach()
 
 
+def _connections() -> list[tuple[object, object]]:
+    return [_ends(int(fd)) for fd in os.listdir("/dev/fd")]
+
+
 def connected_to(server: _Address) -> int:
     """This process's open sockets connected to ``server``."""
-    return sum(_peer(int(fd)) == server for fd in os.listdir("/dev/fd"))
+    return sum(peer == server for _, peer in _connections())
+
+
+def local_ends_connected_to(server: object) -> set[object]:
+    """The local addresses of this process's open sockets connected to ``server``."""
+    return {local for local, peer in _connections() if peer == server}
 
 
 def _settled(server: _Address, timeout: float = 2.0) -> int:

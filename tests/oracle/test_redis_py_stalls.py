@@ -14,6 +14,7 @@ peer's "connection 0" is that probe.
 
 from __future__ import annotations
 
+import contextlib
 import re
 import socket
 import threading
@@ -21,6 +22,7 @@ from collections.abc import Callable, Generator
 from typing import Any
 
 import pytest
+from _threaded_server import serving
 
 pytest.importorskip("redis")
 
@@ -45,27 +47,15 @@ class _Peer:
         self.stalled = threading.Event()
         self.order: dict[socket.socket, int] = {}
         self._watched: set[socket.socket] = set()
-        self._sockets: list[socket.socket] = []
         self._lock = threading.Lock()
-        self._server = socket.create_server(("127.0.0.1", 0))
-        self.port: int = self._server.getsockname()[1]
-        threading.Thread(target=self._accept, daemon=True).start()
+        self._stack = contextlib.ExitStack()
+        self.port: int = self._stack.enter_context(serving(self._serve)).port
 
     def watch(self, connection: socket.socket) -> None:
         with self._lock:
             self._watched.add(connection)
 
-    def _accept(self) -> None:
-        while True:
-            try:
-                connection, _ = self._server.accept()
-            except OSError:
-                return
-            with self._lock:
-                self._sockets.append(connection)
-            threading.Thread(target=self._serve, args=(connection,), daemon=True).start()
-
-    def _serve(self, connection: socket.socket) -> None:
+    def _serve(self, connection: socket.socket, stopping: threading.Event) -> None:
         while True:
             try:
                 data = connection.recv(65536)
@@ -84,11 +74,7 @@ class _Peer:
             self.closed.set()
 
     def close(self) -> None:
-        self._server.close()
-        with self._lock:
-            sockets = list(self._sockets)
-        for connection in sockets:
-            connection.close()
+        self._stack.close()
 
 
 def _stalling(stall: Callable[[int, str], bool]) -> _Peer:

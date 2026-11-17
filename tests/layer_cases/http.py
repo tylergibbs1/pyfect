@@ -19,6 +19,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Never
 
+from _threaded_server import serving
 from oracle._graphql import ViewerGroup, graphql_response, http_client_layer
 from oracle._http_api import struct
 from websockets.exceptions import ConnectionClosed
@@ -363,37 +364,25 @@ _CERT = (_TLS / "cert.pem").read_text()
 _KEY = (_TLS / "key.pem").read_text()
 
 
-def _accepting(listener: socket.socket, serve: Callable[[socket.socket], None]) -> int:
-    def accept() -> None:
-        while True:
-            conn, _ = listener.accept()
-            threading.Thread(target=serve, args=(conn,), daemon=True).start()
-
-    threading.Thread(target=accept, daemon=True).start()
-    return listener.getsockname()[1]
+_PEERS = contextlib.ExitStack()
+"""The peers, open until the process ends."""
 
 
-def _echo(conn: socket.socket) -> None:
-    with contextlib.suppress(OSError), conn:
-        while data := conn.recv(65536):
-            conn.sendall(data)
+def _echo(conn: socket.socket, stopping: threading.Event) -> None:
+    while data := conn.recv(65536):
+        conn.sendall(data)
 
 
 @functools.cache
 def _tcp_echo_port() -> int:
-    return _accepting(socket.create_server(("127.0.0.1", 0)), _echo)
+    return _PEERS.enter_context(serving(_echo)).port
 
 
 @functools.cache
 def _tls_echo_port() -> int:
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.load_cert_chain(_TLS / "cert.pem", _TLS / "key.pem")
-
-    def serve(conn: socket.socket) -> None:
-        with contextlib.suppress(OSError):
-            _echo(context.wrap_socket(conn, server_side=True))
-
-    return _accepting(socket.create_server(("127.0.0.1", 0)), serve)
+    return _PEERS.enter_context(serving(_echo, tls=context)).port
 
 
 class _WsPeer:

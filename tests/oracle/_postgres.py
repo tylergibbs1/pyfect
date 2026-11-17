@@ -21,6 +21,7 @@ import shutil
 import socket
 import subprocess
 import tempfile
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -28,6 +29,7 @@ from typing import TYPE_CHECKING, Any
 
 import _ports
 import pytest
+from _threaded_server import serving
 
 import pyfect as fx
 from pyfect import redacted
@@ -165,26 +167,15 @@ class ClosingListener:
     factories."""
 
     def __init__(self) -> None:
-        import threading
-
-        self._socket = socket.socket()
-        self._socket.bind(("127.0.0.1", 0))
-        self._socket.listen()
-        self.port: int = self._socket.getsockname()[1]
         self.connections = 0
-        threading.Thread(target=self._serve, daemon=True).start()
+        self._stack = contextlib.ExitStack()
+        self.port: int = self._stack.enter_context(serving(self._count)).port
 
-    def _serve(self) -> None:
-        while True:
-            try:
-                conn, _ = self._socket.accept()
-            except OSError:
-                return
-            self.connections += 1
-            conn.close()
+    def _count(self, conn: socket.socket, stopping: threading.Event) -> None:
+        self.connections += 1
 
     def close(self) -> None:
-        self._socket.close()
+        self._stack.close()
 
 
 @pytest.fixture
@@ -212,23 +203,15 @@ class CancelGate:
     took (cancel requests aside)."""
 
     def __init__(self, server: PgServer) -> None:
-        import threading
-
         self._server = server
-        self._socket = socket.socket()
-        self._socket.bind(("127.0.0.1", 0))
-        self._socket.listen()
-        self.port: int = self._socket.getsockname()[1]
         self.intercepted = threading.Event()
         self.delivered = threading.Event()
         self._released = threading.Event()
         self._flowing = threading.Event()
         self._flowing.set()
         self.accepted = 0
-        self._ends: list[socket.socket] = []
-        self._pumps: list[threading.Thread] = []
-        self._thread = threading.Thread
-        self._thread(target=self._serve, daemon=True).start()
+        self._stack = contextlib.ExitStack()
+        self.port: int = self._stack.enter_context(serving(self._handle)).port
 
     @property
     def url(self) -> redacted.Redacted[str]:
@@ -243,19 +226,11 @@ class CancelGate:
     def resume(self) -> None:
         self._flowing.set()
 
-    def _serve(self) -> None:
-        while True:
-            try:
-                client, _ = self._socket.accept()
-            except OSError:
-                return
-            self._thread(target=self._handle, args=(client,), daemon=True).start()
-
-    def _handle(self, client: socket.socket) -> None:
+    def _handle(self, client: socket.socket, stopping: threading.Event) -> None:
         head = _read_exactly(client, 8)
         if head == _CANCEL_REQUEST:
             request = head + _read_exactly(client, 8)
-            client.close()
+            client.shutdown(socket.SHUT_RDWR)
             self.intercepted.set()
             self._released.wait()
             with socket.create_connection((self._server.host, self._server.port)) as backend:
@@ -264,14 +239,13 @@ class CancelGate:
                     pass
             self.delivered.set()
             return
-        backend = socket.create_connection((self._server.host, self._server.port))
-        self._ends += [client, backend]
-        self.accepted += 1
-        backend.sendall(head)
-        pump = self._thread(target=self._pump, args=(backend, client), daemon=True)
-        self._pumps.append(pump)
-        pump.start()
-        self._pump(client, backend)
+        with socket.create_connection((self._server.host, self._server.port)) as backend:
+            self.accepted += 1
+            backend.sendall(head)
+            pump = threading.Thread(target=self._pump, args=(backend, client), daemon=True)
+            pump.start()
+            self._pump(client, backend)
+            pump.join()
 
     def _pump(self, source: socket.socket, target: socket.socket) -> None:
         try:
@@ -293,14 +267,7 @@ class CancelGate:
         self._closed = True
         self._released.set()
         self._flowing.set()
-        self._socket.close()
-        for end in self._ends:
-            with contextlib.suppress(OSError):
-                end.shutdown(socket.SHUT_RDWR)
-        for pump in self._pumps:
-            pump.join(5)
-        for end in self._ends:
-            end.close()
+        self._stack.close()
 
 
 def _read_exactly(conn: socket.socket, size: int) -> bytes:

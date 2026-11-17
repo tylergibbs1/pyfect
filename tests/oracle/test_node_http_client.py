@@ -42,6 +42,7 @@ from typing import Any, TypedDict
 
 import _ports
 import pytest
+from _threaded_server import drain, serving
 
 pytest.importorskip("httpx")
 
@@ -232,33 +233,26 @@ def _upgrade_server() -> Generator[tuple[str, threading.Event]]:
     the path and the authorization), sends ``hello|``, echoes each chunk and
     answers the client's half-close with ``bye``; the event is set once the
     client closes the connection."""
-    listener = socket.create_server(("127.0.0.1", 0))
     closed = threading.Event()
 
-    def serve() -> None:
-        with contextlib.suppress(OSError):
-            conn, _ = listener.accept()
-            with conn:
-                head = b""
-                while b"\r\n\r\n" not in head:
-                    head += conn.recv(4096)
-                lines = head.decode().split("\r\n")
-                fields = {k.lower(): v for k, _, v in (h.partition(": ") for h in lines[1:] if h)}
-                conn.sendall(
-                    "HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\n"
-                    f"Upgrade: {fields['upgrade']}\r\nX-Url: {lines[0].split()[1]}\r\n"
-                    f"X-Authorization: {fields['authorization']}\r\n\r\nhello|".encode()
-                )
-                while chunk := conn.recv(4096):
-                    conn.sendall(b"echo:" + chunk + b"|")
-                conn.sendall(b"bye")
-            closed.set()
+    def serve(conn: socket.socket, stopping: threading.Event) -> None:
+        head = b""
+        while b"\r\n\r\n" not in head:
+            head += conn.recv(4096)
+        lines = head.decode().split("\r\n")
+        fields = {k.lower(): v for k, _, v in (h.partition(": ") for h in lines[1:] if h)}
+        conn.sendall(
+            "HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\n"
+            f"Upgrade: {fields['upgrade']}\r\nX-Url: {lines[0].split()[1]}\r\n"
+            f"X-Authorization: {fields['authorization']}\r\n\r\nhello|".encode()
+        )
+        while chunk := conn.recv(4096):
+            conn.sendall(b"echo:" + chunk + b"|")
+        conn.sendall(b"bye")
+        closed.set()
 
-    threading.Thread(target=serve, daemon=True).start()
-    try:
-        yield f"http://127.0.0.1:{listener.getsockname()[1]}", closed
-    finally:
-        listener.close()
+    with serving(serve) as server:
+        yield f"http://127.0.0.1:{server.port}", closed
 
 
 def _upgrade_client(
@@ -432,26 +426,13 @@ def _paused_server() -> tuple[str, Callable[[], None]]:
     import socket
     import threading
 
-    listener = socket.create_server(("127.0.0.1", 0))
-    accepted: list[socket.socket] = []
+    def pause(conn: socket.socket, stopping: threading.Event) -> None:
+        conn.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 64 * 1024)
+        stopping.wait()
 
-    def accept() -> None:
-        while True:
-            try:
-                conn, _ = listener.accept()
-            except OSError:
-                return
-            conn.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 64 * 1024)
-            accepted.append(conn)
-
-    threading.Thread(target=accept, daemon=True).start()
-
-    def close() -> None:
-        listener.close()
-        for conn in accepted:
-            conn.close()
-
-    return f"http://127.0.0.1:{listener.getsockname()[1]}", close
+    stack = contextlib.ExitStack()
+    server = stack.enter_context(serving(pause))
+    return f"http://127.0.0.1:{server.port}", stack.close
 
 
 @testing.live(timeout="10 seconds")
@@ -525,27 +506,14 @@ def test_redacts_a_transport_error_url_with_the_redacted_names_of_the_request():
 def _partial_body_server() -> Generator[tuple[str, Callable[[], None]]]:
     """Answers with part of a 100-byte body and keeps the connection open; the function drops
     it."""
-    listener = socket.create_server(("127.0.0.1", 0))
-    accepted: list[socket.socket] = []
 
-    def serve() -> None:
-        with contextlib.suppress(OSError):
-            conn, _ = listener.accept()
-            accepted.append(conn)
-            conn.recv(65536)
-            conn.sendall(b"HTTP/1.1 200 OK\r\ncontent-length: 100\r\n\r\npartial")
+    def serve(conn: socket.socket, stopping: threading.Event) -> None:
+        conn.recv(65536)
+        conn.sendall(b"HTTP/1.1 200 OK\r\ncontent-length: 100\r\n\r\npartial")
+        drain(conn, stopping)
 
-    threading.Thread(target=serve, daemon=True).start()
-
-    def drop() -> None:
-        for conn in accepted:
-            conn.close()
-
-    try:
-        yield f"http://127.0.0.1:{listener.getsockname()[1]}/?token=", drop
-    finally:
-        listener.close()
-        drop()
+    with serving(serve) as server:
+        yield f"http://127.0.0.1:{server.port}/?token=", server.drop
 
 
 @testing.live

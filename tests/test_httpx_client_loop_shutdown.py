@@ -21,6 +21,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 import pytest
+from _threaded_server import serving
 from _threads import live_threads
 
 import pyfect as fx
@@ -32,28 +33,16 @@ _ROUNDS = 100
 _CHUNK = b"HTTP/1.1 200 OK\r\ntransfer-encoding: chunked\r\n\r\n5\r\nhello\r\n"
 
 
-def _answer(connection: socket.socket) -> None:
+def _answer(connection: socket.socket, stopping: threading.Event) -> None:
     """Each request gets a chunked body that never ends."""
-    with connection:
-        while connection.recv(65536):
-            connection.sendall(_CHUNK)
+    while connection.recv(65536):
+        connection.sendall(_CHUNK)
 
 
 @pytest.fixture
 def url() -> Iterator[str]:
-    server = socket.create_server(("127.0.0.1", 0))
-
-    def accept() -> None:
-        while True:
-            try:
-                connection, _ = server.accept()
-            except OSError:
-                return
-            threading.Thread(target=_answer, args=(connection,), daemon=True).start()
-
-    threading.Thread(target=accept, daemon=True).start()
-    yield f"http://127.0.0.1:{server.getsockname()[1]}/"
-    server.close()
+    with serving(_answer) as server:
+        yield f"http://127.0.0.1:{server.port}/"
 
 
 def _read_part(url: str) -> Exit[Any, Any]:

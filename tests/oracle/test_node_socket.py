@@ -26,16 +26,22 @@ Omitted:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import gc
 import math
+import re
+import select
 import socket
 import ssl
 import threading
-from collections.abc import Iterator
+from collections.abc import Generator, Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Never
 
 import pytest
+from _connection_release import local_ends_connected_to
+from _threaded_server import serving
 
 from pyfect import stream, testing
 from pyfect._core import Effect
@@ -155,36 +161,52 @@ def parked_pull():
     return pair[1], reader.pull, parked
 
 
-@pytest.fixture
-def tls_echo_port() -> Iterator[int]:
-    """A stdlib TLS echo server (Node's ``tls.createServer`` + ``pipe``)."""
+def _echo(tls: socket.socket, stopping: threading.Event) -> None:
+    while data := tls.recv(65536):
+        tls.sendall(data)
+
+
+@contextmanager
+def tls_echo_server() -> Generator[int]:
+    """A stdlib TLS echo server (Node's ``tls.createServer`` + ``pipe``); its port."""
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.load_cert_chain(FIXTURES / "cert.pem", FIXTURES / "key.pem")
-    listener = socket.create_server(("127.0.0.1", 0))
-    conns: list[socket.socket] = []
+    with serving(_echo, tls=context) as server:
+        yield server.port
 
-    def serve(conn: socket.socket) -> None:
-        try:
-            with context.wrap_socket(conn, server_side=True) as tls:
-                conns.append(tls)
-                while data := tls.recv(65536):
-                    tls.sendall(data)
-        except OSError:
-            pass
 
-    def accept() -> None:
-        while True:
-            try:
-                conn, _ = listener.accept()
-            except OSError:
-                return
-            threading.Thread(target=serve, args=(conn,), daemon=True).start()
+@pytest.fixture
+def tls_echo_port() -> Iterator[int]:
+    with tls_echo_server() as port:
+        yield port
 
-    threading.Thread(target=accept, daemon=True).start()
-    yield listener.getsockname()[1]
-    listener.close()
-    for conn in conns:
-        conn.close()
+
+def test_closing_the_tls_echo_server_sends_nothing_into_later_sockets():
+    """Not an Effect test. A client that hangs up after the server closed (a live socket
+    closes on its loop, after its test returns) must not make the server write into sockets
+    opened since: closing a socket that a server thread is still reading frees its
+    descriptor for the next socket, and OpenSSL, which keeps the number, writes its alert
+    into that one (seen as a stray ``0x17`` record in ``test_graceful_close``)."""
+    client_context = ssl.create_default_context(cadata=CERT)
+    with tls_echo_server() as port:
+        client = client_context.wrap_socket(
+            socket.create_connection(("127.0.0.1", port)), server_hostname="localhost"
+        )
+        client.sendall(b"hello")
+        assert client.recv(5) == b"hello"
+    with contextlib.ExitStack() as stack:
+        listener = stack.enter_context(socket.create_server(("127.0.0.1", 0)))
+        # Later sockets, taking the descriptors the server freed.
+        for _ in range(4):
+            later = stack.enter_context(socket.socket())
+            later.setblocking(False)
+            with contextlib.suppress(BlockingIOError):
+                later.connect(listener.getsockname())
+        client.close()
+        peers = [stack.enter_context(listener.accept()[0]) for _ in range(4)]
+        readable, _, _ = select.select(peers, [], [], 1.0)
+        stray = {peer.getpeername(): peer.recv(64) for peer in readable}
+        assert stray == {}, f"bytes sent into later sockets: {stray}"
 
 
 @live
@@ -328,19 +350,43 @@ def test_zero_open_timeout():
     assert error.reason.kind == "Timeout"
 
 
+def accept_from(listener: socket.socket, own: set[object]) -> socket.socket:
+    """The connection ``listener`` accepts, which must come from one of the ``own``
+    addresses: a stray connection fails, naming its peer, instead of being read."""
+    conn, peer = listener.accept()
+    if peer not in own:
+        conn.close()
+        raise AssertionError(f"accepted a stray connection from {peer}, not from {own}")
+    return conn
+
+
+def test_accept_from_fails_on_a_stray_connection_naming_its_peer():
+    """Not an Effect test: the check ``test_graceful_close`` makes of what it accepts."""
+    with (
+        socket.create_server(("127.0.0.1", 0)) as listener,
+        socket.create_connection(listener.getsockname()) as stray,
+    ):
+        peer = re.escape(str(stray.getsockname()))
+        with pytest.raises(AssertionError, match=f"stray connection from {peer}"):
+            accept_from(listener, {("127.0.0.1", 1)})
+
+
 @live
 def test_graceful_close():
     """gracefully closes an established TCP connection"""
-    listener = socket.create_server(("127.0.0.1", 0))
-    sock = make_net(listener.getsockname()[1], "127.0.0.1")
+    with socket.create_server(("127.0.0.1", 0)) as listener:
+        address = listener.getsockname()
+        sock = make_net(address[1], "127.0.0.1")
 
-    yield from scoped(sock.reader.as_void())
-    conn, _ = listener.accept()
-    conn.settimeout(5)
-    # A graceful close ends the stream (FIN); an abort would reset it.
-    assert conn.recv(1) == b""
-    conn.close()
-    listener.close()
+        def opened():
+            yield from sock.reader
+            return local_ends_connected_to(address)
+
+        own = yield from scoped(gen(opened))
+        with accept_from(listener, own) as conn:
+            conn.settimeout(5)
+            # A graceful close ends the stream (FIN); an abort would reset it.
+            assert conn.recv(1) == b""
 
 
 @live
