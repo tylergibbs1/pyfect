@@ -79,7 +79,10 @@ def make_config(**changes: Any) -> fx.Layer[ShardingConfig]:
         "entity_termination_timeout": millis(0),
         "entity_message_poll_interval": millis(5000),
         "send_retry_interval": millis(100),
-        "refresh_assignments_interval": millis(0),
+        # Effect's tests use 0 ms, and its TestClock returns at once from a zero sleep, so
+        # the runner sync loop never parks and spins for as long as a test runs; in Python
+        # that ate seconds of CPU (tests/test_sharding_fixture_config.py).
+        "refresh_assignments_interval": millis(50),
     }
     return sharding_config.layer(replace(sharding_config.DEFAULTS, **(defaults | changes)))
 
