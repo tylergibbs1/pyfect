@@ -47,6 +47,9 @@ def runner(database: Path, port: int):
             runner_address=runner_address.make("127.0.0.1", port),
             refresh_assignments_interval=fx.duration.millis(200),
             entity_termination_timeout=fx.duration.zero,
+            # A stopping runner releases each shard's lock in its own write, so fewer shards
+            # stop faster on a slow disk. Every runner of a cluster needs the same count.
+            shards_per_group=30,
         )
 
     sql = fx.layer.effect(

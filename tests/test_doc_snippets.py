@@ -360,13 +360,12 @@ def test_cluster_snippet_with_a_slow_drain(path: Path, runs: Runs):
 SLOW_STORAGE = Path(__file__).parent / "_slow_storage.py"
 
 
-@pytest.mark.parametrize(
-    "path", [p for p in CLUSTER_SCRIPTS if name(p) not in sleep_limits()], ids=name
-)
+@pytest.mark.parametrize("path", CLUSTER_SCRIPTS, ids=name)
 def test_cluster_snippet_with_slow_storage(path: Path, runs: Runs):
     """CI's disk once made cluster/drain.py's runners take seconds to stop, and their poll
     loops slept on for 7.3 s in all. A snippet's sleep must not depend on how fast the
-    disk is. Listed snippets already grow with how long they run, and are not checked."""
+    disk is; a listed snippet is held to its own limit here too (cluster/runners.py, left
+    out, later overran its 18 s by up to 878 s on CI's disks)."""
     done = runs["test_cluster_snippet_with_slow_storage", path].result()
     assert_ran(done)
     assert_sleeps_in_limit(name(path), done)

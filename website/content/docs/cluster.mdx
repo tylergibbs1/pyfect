@@ -137,7 +137,8 @@ and only then releases their shards. So a job that is running when its runner st
 finishes on that runner and is not run again elsewhere. A request still running at the
 timeout is interrupted, and a persisted one then runs again on the runner that takes its
 shard. With a timeout of 0 the runner hands over at once, as `runners.py` above does so its
-example stops quickly. An RPC annotated `cluster_schema.InterruptOnTermination` is interrupted
+example stops quickly. Handing over releases each shard's lock in its own write, so
+`runners.py` also uses 30 shards instead of 300, and stopping stays quick on a slow disk. An RPC annotated `cluster_schema.InterruptOnTermination` is interrupted
 when the drain starts instead of waited for. A runner that dies (`kill -9`) does not drain:
 the others take its shards once they see it is gone, and run its unfinished persisted
 requests. They see it is gone when its heartbeat and shard locks are older than
