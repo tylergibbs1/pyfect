@@ -37,6 +37,7 @@ from pyfect.rpc.message import (
 )
 from pyfect.rpc.schema import get_stream_schemas
 from pyfect.scope import Scope, fork_scoped
+from pyfect.workers.transferable import Collector, make_collector_unsafe
 
 _VOID: Effect[None] = succeed(None)
 _client_ids = itertools.count()
@@ -162,6 +163,10 @@ class _Serialized:
         rpc = self._group.rpcs[message.tag]
         fiber = Fiber.get_current()
         context = Context.empty() if fiber is None else fiber._context  # pyright: ignore[reportPrivateUsage]
+        # Each request collects its own transferables, as Effect's does.
+        collector = make_collector_unsafe() if self._protocol.supports_transferables else None
+        if collector is not None:
+            context = context.add(Collector, collector)
         entry = _Entry(rpc, context, self._schemas_of(rpc), message.discard)
         self._entries[message.id] = entry
 
@@ -182,7 +187,8 @@ class _Serialized:
                 encoded["traceId"] = message.trace_id
                 encoded["spanId"] = message.span_id
                 encoded["sampled"] = message.sampled
-            return self._protocol.send(self._id, encoded)
+            transfers = () if collector is None else tuple(collector.read_unsafe())
+            return self._protocol.send(self._id, encoded, transfers)
 
         def forget(cause: Cause[Any]) -> Effect[None]:
             if not cause.has_interrupts_only:

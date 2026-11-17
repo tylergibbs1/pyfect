@@ -18,7 +18,7 @@ from pyfect import schema as S
 from pyfect._core import Effect
 from pyfect.context import Tag
 from pyfect.effect import service_option, sync
-from pyfect.schema import ParseOptions
+from pyfect.schema import ParseOptions, ast
 from pyfect.schema import getter as G
 from pyfect.schema import transformation as T
 
@@ -88,16 +88,25 @@ def getter_add_all[A](f: Callable[[A], Iterable[object]]) -> G.Getter[A, A, Any]
     return G.transform_effect(collect)
 
 
+_PASSTHROUGH: T.Transformation[object, object] = T.passthrough()
+_PASSTHROUGH_LINK = ast.Link(ast.any_, _PASSTHROUGH)
+
+
+def _passthrough_link(_: tuple[ast.AST, ...]) -> ast.Link:
+    return _PASSTHROUGH_LINK
+
+
 def schema[T_, E, RD, RE](
     self: S.Codec[T_, E, RD, RE], f: Callable[[E], Iterable[object]]
 ) -> S.DecodeToSchema[T_, E, Any, Any]:
     """``self``, reporting ``f`` of each encoded value to the ``Collector``
-    when encoding. Unlike Effect's, its JSON codec is ``self``'s: Python
-    messages are values, not structured clones."""
+    when encoding. As in Effect, a declaration (``S.Bytes``, ...) is written
+    as itself by ``S.to_codec_json``, so a worker message carries the value
+    its transfer list names."""
     transformation: T.Transformation[E, E, Any, Any] = T.Transformation(
         G.passthrough(), getter_add_all(f)
     )
-    return S.encode(transformation)(self)
+    return S.encode(transformation)(self.__codec__().annotate(to_codec_json=_passthrough_link))
 
 
 __all__ = [

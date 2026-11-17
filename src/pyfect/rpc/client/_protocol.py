@@ -15,19 +15,27 @@ from pyfect.effect import context, fail, gen, never, provide_context, succeed, s
 from pyfect.rpc.client_error import RpcClientDefect, RpcClientError
 from pyfect.rpc.serialization import CodecFor
 from pyfect.scope import Scope
+from pyfect.workers.worker import Transfers
 
 _VOID: Effect[None] = succeed(None)
 
 type Message = Mapping[str, Any]
 type WriteResponse = Callable[[Message], Effect[None]]
+type Send = Callable[[int, Message], Effect[None, RpcClientError]]
+type SendTransferring = Callable[[int, Message, Transfers], Effect[None, RpcClientError]]
+"""A send that also takes the values to move with the message (a worker's
+transfer list)."""
 
 
 class ClientProtocolService:
     """A client transport (Effect's ``RpcClient.Protocol``): ``run``
     delivers the responses for a client, ``send`` writes its messages.
-    ``with_run_client`` builds one from its parts."""
+    ``with_run_client`` builds one from its parts. A transport given
+    ``send_transferring`` supports transferables (Effect's
+    ``supportsTransferables``): each request is encoded with a ``Collector``
+    of its own, and sent with what it collected."""
 
-    __slots__ = ("_codec_for", "_run", "_send", "supports_ack")
+    __slots__ = ("_codec_for", "_run", "_send", "_send_transferring", "supports_ack")
 
     supports_ack: bool
     """Whether the server expects an ``Ack`` after each stream chunk."""
@@ -39,24 +47,38 @@ class ClientProtocolService:
     def __init__(
         self,
         run: Callable[[int, WriteResponse], Effect[Never]],
-        send: Callable[[int, Message], Effect[None, RpcClientError]],
+        send: Send,
         supports_ack: bool,
         codec_for: CodecFor,
+        *,
+        send_transferring: SendTransferring | None = None,
     ) -> None:
         self._run = run
         self._send = send
         self.supports_ack = supports_ack
         self._codec_for = codec_for
+        self._send_transferring = send_transferring
+
+    @property
+    def supports_transferables(self) -> bool:
+        """Whether ``send`` passes on the values to move with a message."""
+        return self._send_transferring is not None
 
     def run(self, client_id: int, f: WriteResponse) -> Effect[Never]:
         """Hands each encoded response for ``client_id`` to ``f``, until
         interrupted (it never returns and never fails)."""
         return self._run(client_id, f)
 
-    def send(self, client_id: int, message: Message) -> Effect[None, RpcClientError]:
-        """Writes the encoded ``message`` of ``client_id``; fails with
-        ``RpcClientError`` when the transport cannot write it (and, for a
-        protocol from ``with_run_client``, once its scope has closed)."""
+    def send(
+        self, client_id: int, message: Message, transfers: Transfers = ()
+    ) -> Effect[None, RpcClientError]:
+        """Writes the encoded ``message`` of ``client_id``, moving
+        ``transfers`` with it when the transport supports transferables (the
+        others ignore them); fails with ``RpcClientError`` when the
+        transport cannot write it (and, for a protocol from
+        ``with_run_client``, once its scope has closed)."""
+        if self._send_transferring is not None:
+            return self._send_transferring(client_id, message, transfers)
         return self._send(client_id, message)
 
     @property
@@ -76,9 +98,10 @@ class ClientProtocol(Tag[ClientProtocolService], key="effect/rpc/RpcClient/Proto
 class ClientProtocolParts:
     """A client protocol without its ``run`` (see ``with_run_client``)."""
 
-    send: Callable[[int, Message], Effect[None, RpcClientError]]
+    send: Send
     supports_ack: bool
     codec_for: CodecFor
+    send_transferring: SendTransferring | None = None
 
 
 type WriteTo = Callable[[int, Message], Effect[None]]
@@ -126,15 +149,24 @@ def with_run_client[EX, RX](
             return suspend(body)
 
         def build(parts: ClientProtocolParts) -> ClientProtocolService:
-            def send(client_id: int, message: Message) -> Effect[None, RpcClientError]:
+            transferring = parts.send_transferring
+
+            def send_with(
+                client_id: int, message: Message, transfers: Transfers
+            ) -> Effect[None, RpcClientError]:
                 def body() -> Effect[None, RpcClientError]:
                     if released:
                         return fail(released[0])
                     if message.get("_tag") == "Request":
                         awaited.add(client_id)
+                    if transferring is not None:
+                        return transferring(client_id, message, transfers)
                     return parts.send(client_id, message)
 
                 return suspend(body)
+
+            def send(client_id: int, message: Message) -> Effect[None, RpcClientError]:
+                return send_with(client_id, message, ())
 
             def run(client_id: int, f: WriteResponse) -> Effect[Never]:
                 @gen
@@ -155,7 +187,13 @@ def with_run_client[EX, RX](
 
                 return running
 
-            return ClientProtocolService(run, send, parts.supports_ack, parts.codec_for)
+            return ClientProtocolService(
+                run,
+                send,
+                parts.supports_ack,
+                parts.codec_for,
+                send_transferring=None if transferring is None else send_with,
+            )
 
         def release(_: object) -> Effect[None]:
             error = protocol_closed()
@@ -200,6 +238,8 @@ __all__ = [
     "ClientProtocolParts",
     "ClientProtocolService",
     "Message",
+    "Send",
+    "SendTransferring",
     "WriteResponse",
     "WriteTo",
     "protocol_closed",

@@ -24,6 +24,7 @@ from pyfect.rpc.client._protocol import (
     ClientProtocolParts,
     ClientProtocolService,
     Message,
+    SendTransferring,
     WriteTo,
     with_run_client,
 )
@@ -33,7 +34,13 @@ from pyfect.rpc.message import MalformedMessage, ServerMessage, decode_from_serv
 from pyfect.rpc.serialization import CodecFor
 from pyfect.rpc.worker import InitialMessage
 from pyfect.scope import Scope, add_finalizer, fork_scoped, scoped
-from pyfect.workers.worker import Spawner, Worker, WorkerPlatform, WorkerPlatformService
+from pyfect.workers.worker import (
+    Spawner,
+    Transfers,
+    Worker,
+    WorkerPlatform,
+    WorkerPlatformService,
+)
 from pyfect.workers.worker_error import WorkerError
 
 _VOID: Effect[None] = succeed(None)
@@ -166,8 +173,10 @@ class _WorkerClient:
             entry.latch.open_unsafe()
         self._entries.clear()
 
-    def send_with(self, pool: Pool[_Backing, WorkerError]) -> Any:
-        def send(client_id: int, request: Message) -> Effect[None, RpcClientError]:
+    def send_with(self, pool: Pool[_Backing, WorkerError]) -> SendTransferring:
+        def send(
+            client_id: int, request: Message, transfers: Transfers
+        ) -> Effect[None, RpcClientError]:
             def body() -> Effect[None, RpcClientError]:
                 tag = request.get("_tag")
                 if tag == "Request":
@@ -183,7 +192,7 @@ class _WorkerClient:
                     def lent(worker: _Backing) -> Effect[None, WorkerError]:
                         latch = Latch(False)
                         self._entries[request["id"]] = _Entry(client_id, worker, latch)
-                        return worker.send(message).flat_map(lambda _: latch.wait())
+                        return worker.send(message, transfers).flat_map(lambda _: latch.wait())
 
                     return scoped(pool.get().flat_map(lent)).or_die()
                 if tag == "Interrupt":
@@ -276,7 +285,13 @@ def make_protocol_worker(
             yield from scoped(pool.get())
             if hooks is not None:
                 yield from hooks.on_connect
-            return ClientProtocolParts(client.send_with(pool), True, cast("CodecFor", _codec_for))
+            send = client.send_with(pool)
+            return ClientProtocolParts(
+                lambda client_id, message: send(client_id, message, ()),
+                True,
+                cast("CodecFor", _codec_for),
+                send_transferring=send,
+            )
 
         return make
 

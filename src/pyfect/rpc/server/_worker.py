@@ -26,6 +26,7 @@ from pyfect.rpc.server._protocol import (
 )
 from pyfect.scheduler import CurrentScheduler
 from pyfect.scope import Scope, fork_scoped
+from pyfect.workers.worker import Transfers
 from pyfect.workers.worker_error import WorkerError
 from pyfect.workers.worker_runner import WorkerRunnerPlatform
 
@@ -79,8 +80,8 @@ def make_protocol_worker_runner() -> Effect[
 
                 yield from fork_scoped(dequeue.take().flat_map(left).forever())
 
-            def send(client_id: int, response: Message) -> Effect[None]:
-                return backing.send(client_id, response)
+            def send(client_id: int, response: Message, transfers: Transfers = ()) -> Effect[None]:
+                return backing.send(client_id, response, transfers)
 
             return ProtocolParts(
                 disconnects=disconnects,
@@ -91,6 +92,7 @@ def make_protocol_worker_runner() -> Effect[
                 codec_for=cast("CodecFor", _codec_for),
                 initial_message=initial.wait().map(_some),
                 client_ids=sync(lambda: frozenset(client_ids)),
+                send_transferring=send,
             )
 
         return make

@@ -4,7 +4,7 @@ the requests a ``ServerProtocol`` hands it and encodes the responses."""
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Never, cast
 
 from pyfect import exit as Exit
@@ -13,7 +13,15 @@ from pyfect._core import Effect
 from pyfect._peer_keys import PeerKeyDict
 from pyfect.cause import Cause
 from pyfect.context import Context
-from pyfect.effect import context, fail_cause, gen, provide_context, succeed, suspend
+from pyfect.effect import (
+    context,
+    fail_cause,
+    gen,
+    provide_context,
+    provide_service,
+    succeed,
+    suspend,
+)
 from pyfect.error_reporter import report
 from pyfect.http.headers import Headers
 from pyfect.layer import Layer, effect_discard
@@ -40,6 +48,7 @@ from pyfect.rpc.serialization import CodecFor
 from pyfect.rpc.server._core import RpcServer, ServerOptions, make_no_serialization, unknown_tag
 from pyfect.rpc.server._protocol import Message, ServerProtocol, ServerProtocolService
 from pyfect.scope import Scope, fork_scoped, scoped
+from pyfect.workers.transferable import Collector, CollectorService, make_collector_unsafe
 
 _VOID: Effect[None] = succeed(None)
 
@@ -54,6 +63,9 @@ class _Codecs:
     encode_chunk: Callable[[object], Effect[Any, S.SchemaError, Any]]
     encode_exit: Callable[[object], Effect[Any, S.SchemaError, Any]]
     context: Context[Any]
+    collector: CollectorService | None = None
+    """Where a request's replies collect their transferables, when the
+    protocol supports them (one per request)."""
 
 
 def _discard_codecs(codec_for: CodecFor, rpc: AnyRpc, codecs: _Codecs) -> _Codecs:
@@ -235,10 +247,16 @@ class _Serialized:
             cause: Cause[Never] = Exit.die(defect).cause
             return report(cause).flat_map(lambda _: fail_cause(cause))
 
+        collector = codecs.collector
+        if collector is not None:
+            encoded = encoded.pipe(provide_service(Collector, collector))
+
+        def send(value: object) -> Effect[None]:
+            transfers = () if collector is None else tuple(collector.clear_unsafe())
+            return self._protocol.send(client.id, envelope(value), transfers)
+
         write: Effect[None, Any, Any] = (
-            encoded.pipe(provide_context(codecs.context))
-            .catch_all(encode_failed)
-            .flat_map(lambda value: self._protocol.send(client.id, envelope(value)))
+            encoded.pipe(provide_context(codecs.context)).catch_all(encode_failed).flat_map(send)
         )
 
         def recover(cause: Cause[Any]) -> Effect[None]:
@@ -332,7 +350,11 @@ class _Serialized:
             # Nothing is encoded for a notification, and only a reply would
             # remove its codecs.
             if not is_notification:
-                client.codecs[rid] = reply
+                client.codecs[rid] = (
+                    replace(reply, collector=make_collector_unsafe())
+                    if self._protocol.supports_transferables
+                    else reply
+                )
             request = Request(
                 rid,
                 rpc.tag,

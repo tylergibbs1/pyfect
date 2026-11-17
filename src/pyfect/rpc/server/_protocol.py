@@ -16,11 +16,16 @@ from pyfect.option import Option
 from pyfect.queue import Queue
 from pyfect.rpc.serialization import CodecFor
 from pyfect.semaphore import Semaphore
+from pyfect.workers.worker import Transfers
 
 type Message = Mapping[str, Any]
 """An encoded message (``FromClientEncoded`` / ``FromServerEncoded``)."""
 
 type WriteRequest = Callable[[int, Message], Effect[None]]
+type Send = Callable[[int, Message], Effect[None]]
+type SendTransferring = Callable[[int, Message, Transfers], Effect[None]]
+"""A send that also takes the values to move with the message (a worker's
+transfer list)."""
 
 
 def _no_initial_message() -> Effect[Option[object]]:
@@ -33,7 +38,10 @@ _NO_INITIAL_MESSAGE: Effect[Option[object]] = succeed(None)
 class ServerProtocolService:
     """A server transport (Effect's ``RpcServer.Protocol``): ``run``
     hands each message of a client to the server, ``send`` and ``end``
-    answer a client. ``with_run`` builds one from its parts."""
+    answer a client. ``with_run`` builds one from its parts. A transport
+    given ``send_transferring`` supports transferables (Effect's
+    ``supportsTransferables``): each request's replies are encoded with a
+    ``Collector`` of its own, and each is sent with what it collected."""
 
     __slots__ = (
         "_client_ids",
@@ -42,6 +50,7 @@ class ServerProtocolService:
         "_initial_message",
         "_run",
         "_send",
+        "_send_transferring",
         "disconnects",
         "supports_ack",
         "supports_notifications",
@@ -66,7 +75,7 @@ class ServerProtocolService:
         self,
         run: Callable[[WriteRequest], Effect[Never]],
         disconnects: Queue[int],
-        send: Callable[[int, Message], Effect[None]],
+        send: Send,
         end: Callable[[int], Effect[None]],
         supports_ack: bool,
         supports_span_propagation: bool,
@@ -74,7 +83,10 @@ class ServerProtocolService:
         initial_message: Effect[Option[object]] = _NO_INITIAL_MESSAGE,
         supports_notifications: bool = True,
         client_ids: Effect[AbstractSet[int]] | None = None,
+        *,
+        send_transferring: SendTransferring | None = None,
     ) -> None:
+        self._send_transferring = send_transferring
         self._run = run
         self.disconnects = disconnects
         self._send = send
@@ -92,9 +104,18 @@ class ServerProtocolService:
         arrived before the server ran are handed over first."""
         return self._run(f)
 
-    def send(self, client_id: int, response: Message) -> Effect[None]:
-        """Writes the encoded ``response`` to ``client_id``; never fails
-        (the built-in transports drop it for a client that has left)."""
+    @property
+    def supports_transferables(self) -> bool:
+        """Whether ``send`` passes on the values to move with a message."""
+        return self._send_transferring is not None
+
+    def send(self, client_id: int, response: Message, transfers: Transfers = ()) -> Effect[None]:
+        """Writes the encoded ``response`` to ``client_id``, moving
+        ``transfers`` with it when the transport supports transferables (the
+        others ignore them); never fails (the built-in transports drop it
+        for a client that has left)."""
+        if self._send_transferring is not None:
+            return self._send_transferring(client_id, response, transfers)
         return self._send(client_id, response)
 
     def end(self, client_id: int) -> Effect[None]:
@@ -134,7 +155,7 @@ class ProtocolParts:
     """A protocol without its ``run`` (see ``with_run``)."""
 
     disconnects: Queue[int]
-    send: Callable[[int, Message], Effect[None]]
+    send: Send
     end: Callable[[int], Effect[None]]
     supports_ack: bool
     supports_span_propagation: bool
@@ -142,6 +163,7 @@ class ProtocolParts:
     initial_message: Effect[Option[object]] = field(default_factory=_no_initial_message)
     supports_notifications: bool = True
     client_ids: Effect[AbstractSet[int]] | None = None
+    send_transferring: SendTransferring | None = None
 
 
 _REPLAY_FAILED = "RpcServer: a message written before the server ran failed"
@@ -200,6 +222,7 @@ def with_run[EX, RX](
                 parts.initial_message,
                 parts.supports_notifications,
                 parts.client_ids,
+                send_transferring=parts.send_transferring,
             )
 
         return make(write).map(build)
@@ -210,6 +233,8 @@ def with_run[EX, RX](
 __all__ = [
     "Message",
     "ProtocolParts",
+    "Send",
+    "SendTransferring",
     "ServerProtocol",
     "ServerProtocolService",
     "WriteRequest",

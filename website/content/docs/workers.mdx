@@ -68,9 +68,8 @@ a collector, and `collector.clear()` gives what it gathered and empties it.
 
 pyfect's worker platforms have nothing to move: a process worker pickles every message and a
 thread worker shares it, so they ignore the list. The module is there for schemas shared with
-Effect code and for a platform of your own that can move values. Over workers, Effect's RPC
-client and server collect the transferables of every request and reply; pyfect's collect only
-those of the initial message (`layer_initial_message`).
+Effect code and for a platform of your own that can move values. Over workers, the RPC client
+and server collect the transferables of every request and reply, as Effect's do.
 
 <CodeOutput>
 

@@ -17,6 +17,15 @@
   object has no attribute 'group'`. It now takes the subcommands as one list or one per
   argument, as do `group(name, ...)` and `command.with_global_flags(...)`; any other entry
   raises a `TypeError` naming what the call takes.
+- Over workers, the RPC client and server collected transferables only for the initial
+  message. As in Effect, each request is now sent with the transferables its payload
+  reported, and each reply (stream chunk or exit) with its own. A client or server protocol
+  given `send_transferring=` supports them (`supports_transferables`), and its `send` takes the
+  values to move as an optional third argument; the other protocols ignore it.
+- `S.to_codec_json(transferable.schema(s, f))` wrote `s` in its own JSON form, so an RPC
+  worker message carried `S.Bytes` as base64 text while its transfer list held the raw bytes.
+  As in Effect, a declaration wrapped by `transferable.schema` now passes through the JSON
+  codec as itself, so the message carries the value the transfer list names.
 
 ## 0.6.10 (2026-11-16)
 
