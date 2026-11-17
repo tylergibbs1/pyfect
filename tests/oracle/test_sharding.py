@@ -780,7 +780,7 @@ def test_holds_durable_messages_while_entity_layers_are_still_building():
     # TestClock wake, 62k in all, 1.3 s of CPU here). A 100 ms refresh, the poll
     # interval, still refreshes within each adjust.
     config = make_config(
-        entity_registration_timeout=millis(6000),
+        entity_registration_timeout=millis(600),
         entity_message_poll_interval=millis(100),
         refresh_assignments_interval=millis(100),
     )
@@ -795,13 +795,13 @@ def test_holds_durable_messages_while_entity_layers_are_still_building():
         assert len(driver.encoded.journal) == 1
         assert len(driver.encoded.reply_ids) == 0
         assert len(driver.encoded.unprocessed) == 1
-        fiber = yield from scoped(fx.never.pipe(fx.provide(_late_env(config, delay=10)))).fork(
+        fiber = yield from scoped(fx.never.pipe(fx.provide(_late_env(config, delay=1)))).fork(
             start_immediately=True
         )
-        yield from testing.adjust("7500 millis")
+        yield from testing.adjust("750 millis")
         assert len(driver.encoded.reply_ids) == 0
         assert len(driver.encoded.unprocessed) == 1
-        yield from testing.adjust("2500 millis")
+        yield from testing.adjust("250 millis")
         yield from state.messages.offer(None)
         yield from testing.adjust("100 millis")
         assert len(driver.encoded.reply_ids) == 1
@@ -815,7 +815,7 @@ def test_holds_durable_messages_while_entity_layers_are_still_building():
 def test_reads_durable_messages_from_storage_when_a_late_entity_registers():
     """reads durable messages from storage when a late entity registers"""
     config = make_config(
-        entity_registration_timeout=millis(6000), entity_message_poll_interval=millis(3_600_000)
+        entity_registration_timeout=millis(600), entity_message_poll_interval=millis(3_600_000)
     )
     reset_started = Deferred[None, Never]()
     release_reset = Deferred[None, Never]()
@@ -888,7 +888,7 @@ def test_defects_durable_messages_when_no_entity_ever_registers():
             .with_logger(fx.Logger.make(log))
             .fork(start_immediately=True)
         )
-        yield from testing.adjust("8 seconds")
+        yield from testing.adjust("2500 millis")
         assert any(
             "Could not find entity manager for address, retrying" in _messages(message)
             for message in warnings
