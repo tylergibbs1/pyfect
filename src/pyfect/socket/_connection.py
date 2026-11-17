@@ -115,6 +115,8 @@ class Connection(asyncio.Protocol):
         self._close_requested: bool | None = None
         self.lost = False
         self.open = False
+        # Node's ``writableEnded``: set by ``end_writing`` as it is called.
+        self.writing_ended = False
 
     # --- loop side ----------------------------------------------------------
 
@@ -379,6 +381,7 @@ class Connection(asyncio.Protocol):
     def end_writing(self) -> None:
         """Half-close once buffered writes are flushed: close_notify from
         each TLS layer, innermost first, then end-of-stream."""
+        self.writing_ended = True
 
         def run() -> None:
             transport = self.transport

@@ -118,17 +118,19 @@ def _request(
 
 def _run_request(exchange: Exchange, handled: Effect[None]) -> Effect[None]:
     """Run the request on a fiber interrupted as a client abort if the
-    client goes first: once it stops sending (Node's servers do not allow
-    half-open connections), or for an upgrade once the connection is
-    lost."""
+    client goes first: before the response is finished, once the client stops
+    sending (Node's servers do not allow half-open connections); for an upgrade,
+    once the connection is lost before the server ended its side (Effect's
+    ``writableEnded`` checks)."""
     conn = exchange.conn
-    gone = conn.closed() if exchange.head.upgrade is not None else conn.read_ended()
+    upgrade = exchange.head.upgrade is not None
+    gone = conn.closed() if upgrade else conn.read_ended()
 
     def body():
         fiber: Fiber[None, Any] = yield from handled.fork()
 
         def abort(_: None) -> Effect[None]:
-            if exchange.finished:
+            if exchange.finished or (upgrade and conn.writing_ended):
                 return void
             exchange.close_after = True
             exchange.aborted = True

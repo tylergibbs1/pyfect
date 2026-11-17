@@ -196,7 +196,10 @@ class Listener:
             # Each on its own fiber: a client that stops reading cannot hold up the others.
             return for_each(go_away, lambda ask: ask.fork_daemon(start_immediately=True)).as_void()
 
-        drained = timeout_option(self.signal.wait(lambda: not self._serving), timeout)
+        # As Node's ``server.close``: done once every connection has closed. A request
+        # still running on a lost connection is interrupted with the rest afterwards.
+        closed = suspend(lambda: for_each(self.serving(), Connection.closed, discard=True))
+        drained = timeout_option(closed, timeout)
         return (
             sync(start)
             .flat_map(asked)

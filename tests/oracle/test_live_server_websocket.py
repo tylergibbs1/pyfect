@@ -21,6 +21,7 @@ import os
 import socket
 import struct
 import threading
+from collections.abc import Callable
 from typing import Any
 
 import pytest
@@ -31,12 +32,13 @@ from websockets.typing import Subprotocol
 import pyfect as fx
 from pyfect import effect
 from pyfect.deferred import Deferred
-from pyfect.exit import Failure
+from pyfect.exit import Exit, Failure, Success
 from pyfect.http import router, server_response
 from pyfect.http.live_server import PerMessageDeflate
+from pyfect.http.live_server._exchange import Exchange
 from pyfect.http.server_request import HttpServerRequest
 from pyfect.scope import scoped
-from pyfect.socket import SocketError, to_stream
+from pyfect.socket import SocketCloseError, SocketError, to_stream
 from pyfect.socket._connection import Connection
 
 from . import test_uvicorn_http_server as uv
@@ -383,6 +385,95 @@ def test_messages_sent_while_nothing_pulls_all_arrive_in_order() -> None:
         return (yield from received.wait())
 
     assert _routed(handler(), program()) == messages
+
+
+def _pulled_after_the_connection_is_lost(
+    client_ends: Callable[[socket.socket], None],
+) -> Exit[tuple[list[str], SocketError | None], object]:
+    """The handler's exit when it pulls only once the connection is lost: the client
+    sends "hi", then ends with ``client_ends``."""
+    outcome: Deferred[Exit[tuple[list[str], SocketError | None], object]] = Deferred()
+
+    @fx.fn
+    def handler():
+        request = yield from HttpServerRequest()
+        exchange = request.source
+        assert isinstance(exchange, Exchange)
+        sock = yield from request.upgrade
+
+        @fx.fn
+        def run():
+            reader = yield from sock.reader
+            yield from exchange.conn.closed()
+            # A step after the loss, where an interrupt it caused would land.
+            yield from effect.yield_now()
+            got = yield from reader.pull
+            error = yield from reader.pull.match(on_failure=lambda e: e, on_success=lambda _: None)
+            return [str(chunk) for chunk in got], error
+
+        yield from scoped(run()).on_exit(outcome.succeed)
+        return server_response.empty()
+
+    @fx.fn
+    def program():
+        at = yield from port
+
+        def talk() -> None:
+            conn, _ = _handshake(at)
+            with conn:
+                conn.sendall(_masked(0x1, b"hi"))
+                client_ends(conn)
+
+        yield from effect.blocking(talk).fork()
+        return (yield from outcome.wait())
+
+    return _routed(handler(), program())
+
+
+def _assert_pulled(exit: Exit[tuple[list[str], SocketError | None], object], code: int) -> None:
+    assert isinstance(exit, Success), exit
+    got, error = exit.value
+    assert got == ["hi"]
+    assert isinstance(error, SocketError)
+    assert isinstance(error.reason, SocketCloseError)
+    assert error.reason.code == code
+
+
+def test_the_connection_closing_after_the_close_is_answered_does_not_interrupt_the_handler() -> (
+    None
+):
+    """Effect interrupts an upgrade's handler when the connection closes only while the
+    server's side is open (``writableEnded``). Once the client's close is answered and
+    the server's side ended, the handler still pulls the message sent before the close,
+    then the close."""
+
+    def close(conn: socket.socket) -> None:
+        conn.sendall(_masked(0x8, struct.pack("!H", 1000)))
+        _frames(conn)
+
+    _assert_pulled(_pulled_after_the_connection_is_lost(close), 1000)
+
+
+def test_a_client_ending_without_a_close_does_not_interrupt_the_handler() -> None:
+    """``ws`` ends the server's side when the client ends its own (``socketOnEnd``), so
+    the handler still pulls what came first, then a 1006."""
+
+    def end(conn: socket.socket) -> None:
+        conn.shutdown(socket.SHUT_WR)
+        _frames(conn)
+
+    _assert_pulled(_pulled_after_the_connection_is_lost(end), 1006)
+
+
+def test_a_connection_reset_interrupts_the_handler_as_a_client_abort() -> None:
+    """A reset loses the connection with the server's side still open: a client abort."""
+
+    def reset(conn: socket.socket) -> None:
+        # SO_LINGER 0: close with a reset.
+        conn.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
+
+    exit = _pulled_after_the_connection_is_lost(reset)
+    assert isinstance(exit, Failure) and exit.cause.has_interrupts, exit
 
 
 def test_closes_with_1009_a_message_over_the_max_message_size() -> None:

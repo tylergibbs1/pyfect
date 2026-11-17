@@ -53,6 +53,7 @@ from pyfect.scope import Scope, acquire_release, fork_scoped
 from pyfect.socket._connection import HIGH_WATER_MARK, Signal
 from pyfect.socket._errors import (
     CloseEvent,
+    SocketCloseError,
     SocketError,
     close_error,
     open_error,
@@ -237,10 +238,13 @@ class _Session:
                     self._end_writing = True
         return True
 
-    def _lost(self, _: SocketError) -> Effect[None]:
+    def _lost(self, error: SocketError) -> Effect[None]:
         with self._lock:
             if self._error is None:
                 self._error = close_error(1006)
+            if isinstance(error.reason, SocketCloseError):
+                # The client ended its side: ``ws`` ends the server's (``socketOnEnd``).
+                self._end_writing = True
         return void
 
     def _take_replies(self) -> tuple[bytes, ...]:
