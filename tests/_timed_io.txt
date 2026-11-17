@@ -14,6 +14,7 @@ oracle/_libsql.py 2  # deadline for a libSQL (sqld) Docker container to answer H
 oracle/_live_http.py 2  # deadline reading a live-server response on a blocking client socket in a plain thread; that socket is outside the TestClock
 oracle/_mssql.py 2  # deadline for a SQL Server Docker container to accept logins; the server runs on real time in another process
 oracle/_mysql.py 2  # deadline for a MySQL Docker container to accept TCP logins; the server runs on real time in another process
+oracle/_pg_close_while_reading.py 2  # deadline polling pg_stat_activity until a backend waits on a lock, then goes idle, in a script run as its own process; the PostgreSQL server runs on real time in another process
 oracle/_pg_owner.py 2  # deadline for a PostgreSQL postmaster to exit after SIGQUIT before SIGKILL; the server is another process on real time
 oracle/_postgres.py 2  # deadline polling pg_stat_activity until a backend runs a statement; the PostgreSQL server runs on real time in another process
 oracle/_redis.py 4  # deadlines for a Redis container or redis-server process to accept connections; the server runs on real time in another process
