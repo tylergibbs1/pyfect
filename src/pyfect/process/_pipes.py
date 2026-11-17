@@ -23,12 +23,14 @@ import socket
 import threading
 from collections import deque
 from collections.abc import Callable
+from functools import partial
 from typing import Never
 
 from pyfect import sink as sink_
 from pyfect import stream as stream_
 from pyfect._core import Effect
 from pyfect._os_wait import Cancel, Resume, os_wait
+from pyfect._owned_fd import OwnedFd
 from pyfect.effect import die, fail, succeed, suspend, sync
 from pyfect.errors import Done
 from pyfect.platform_error import PREMATURE_CLOSE, WRITE_AFTER_END, PlatformError, StreamError
@@ -51,6 +53,39 @@ def _ready(fd: int, *, write: bool) -> bool:
     return bool(ready[0] or ready[1])
 
 
+def _read_ready(fd: int) -> bytes | None:
+    """A chunk of ``fd``, or ``None`` when it has nothing yet."""
+    return os.read(fd, CHUNK_SIZE) if _ready(fd, write=False) else None
+
+
+def _write_ready(chunk: memoryview, fd: int) -> int:
+    """What ``fd`` takes of ``chunk`` once writable (0 when not yet)."""
+    return os.write(fd, chunk) if _ready(fd, write=True) else 0
+
+
+def _drain(fd: int) -> tuple[list[bytes], OSError | None]:
+    """What the pipe ``fd`` holds now, without waiting for more."""
+    chunks: list[bytes] = []
+    if os.name == "nt":
+        return chunks, None
+    try:
+        while select.select([fd], [], [], 0)[0]:
+            data = os.read(fd, CHUNK_SIZE)
+            if not data:
+                break
+            chunks.append(data)
+    except OSError as error:
+        return chunks, error
+    return chunks, None
+
+
+def _shut_down_and_close(fd: int) -> None:
+    sock = socket.socket(fileno=fd)
+    with contextlib.suppress(OSError):
+        sock.shutdown(socket.SHUT_WR)
+    sock.close()
+
+
 class Reader:
     """Reads the pipe ``fd`` on demand; ``stream`` is its bytes."""
 
@@ -66,7 +101,7 @@ class Reader:
     )
 
     def __init__(self, fd: int, on_error: OnError) -> None:
-        self._fd = fd
+        self._fd = OwnedFd(fd, os.close)
         self._on_error = on_error
         self._cond = threading.Condition()
         self._chunks: deque[bytes] = deque()
@@ -144,7 +179,7 @@ class Reader:
             while self._read_once():
                 pass
         finally:
-            os.close(self._fd)
+            self._fd.close_when_unused()
 
     def _read_once(self) -> bool:  # noqa: PLR0911
         with self._cond:
@@ -154,14 +189,14 @@ class Reader:
                 return False
             closing = self._closing
         if closing:
-            self._end(*self._drain())
+            self._end(*self._fd.use(_drain))
             return False
-        data = b""
+        data: bytes | None = b""
         error: OSError | None = None
         try:
-            if not _ready(self._fd, write=False):
+            data = self._fd.use(_read_ready)
+            if data is None:
                 return True
-            data = os.read(self._fd, CHUNK_SIZE)
         except BlockingIOError:
             # A duplex descriptor shares its non-blocking flag with its writer.
             return True
@@ -177,21 +212,6 @@ class Reader:
             waiters, self._waiters = self._waiters, []
         self._wake(waiters)
         return True
-
-    def _drain(self) -> tuple[list[bytes], OSError | None]:
-        """What the pipe holds now, without waiting for more."""
-        chunks: list[bytes] = []
-        if os.name == "nt":
-            return chunks, None
-        try:
-            while select.select([self._fd], [], [], 0)[0]:
-                data = os.read(self._fd, CHUNK_SIZE)
-                if not data:
-                    break
-                chunks.append(data)
-        except OSError as error:
-            return chunks, error
-        return chunks, None
 
     def _end(self, chunks: list[bytes], error: OSError | None) -> None:
         with self._cond:
@@ -232,7 +252,6 @@ class Writer:
         "_closed",
         "_cond",
         "_fd",
-        "_half_close",
         "_on_error",
         "_on_failed",
         "_queue",
@@ -250,9 +269,8 @@ class Writer:
         """``half_close``: ``fd`` is a socket another descriptor also reads,
         so closing shuts down its write side first (the peer reads the end).
         ``on_failed`` hears of each write the system refused."""
-        self._fd = fd
+        self._fd = OwnedFd(fd, _shut_down_and_close if half_close else os.close)
         self._on_error = on_error
-        self._half_close = half_close
         self._on_failed = on_failed
         self._cond = threading.Condition()
         self._queue: deque[_Write] = deque()
@@ -312,7 +330,7 @@ class Writer:
         if os.name == "nt":
             return 0  # A blocking pipe: only the thread writes.
         try:
-            return os.write(self._fd, data)
+            return self._fd.use(lambda fd: os.write(fd, data))
         except BlockingIOError:
             return 0
         except OSError as error:
@@ -354,13 +372,7 @@ class Writer:
             self._release()
 
     def _release(self) -> None:
-        if self._half_close:
-            sock = socket.socket(fileno=self._fd)
-            with contextlib.suppress(OSError):
-                sock.shutdown(socket.SHUT_WR)
-            sock.close()
-        else:
-            os.close(self._fd)
+        self._fd.close_when_unused()
 
     def _failed(self, error: OSError) -> Effect[None, PlatformError]:
         if self._on_failed is not None:
@@ -402,8 +414,7 @@ class Writer:
                 if self._closed is not None:
                     return fail(self._on_error(_cancelled()))
                 try:
-                    if _ready(self._fd, write=True):
-                        written += os.write(self._fd, data[written:])
+                    written += self._fd.use(partial(_write_ready, data[written:]))
                 except BlockingIOError:
                     continue
                 except OSError as error:
