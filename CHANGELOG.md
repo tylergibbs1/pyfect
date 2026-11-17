@@ -52,6 +52,11 @@
 - Hex decoding and several text parsers use constant memory.
 - PostgreSQL: closing a session while a statement on it is still running now waits for that
   statement to end (it fails with a connection error) before releasing the connection.
+- Closing a file or socket no longer frees its descriptor while operations are still using
+  it: a `FileSystem.open` file's reads and writes, the `uvicorn_server` / `hypercorn_server`
+  listening socket, a worker process's channel and a UDP socket's sends. Nothing waits: the
+  descriptor closes when the last of those operations finishes, and operations started after
+  the close fail as closed (a UDP send with `DatagramSocketClosedError`).
 
 ### Performance
 
