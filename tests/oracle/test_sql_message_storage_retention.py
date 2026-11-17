@@ -142,7 +142,7 @@ def _ids(env: Env, table: str, request: OutgoingRequest) -> fx.Effect[Sequence[R
 # --- every backend ----------------------------------------------------------------------
 
 
-@testing.live
+@testing.live(timeout="30 seconds")
 def test_delete_processed_forgets_request_families_completed_before_the_cutoff(
     backend: Backend,
 ):
@@ -187,7 +187,7 @@ def test_delete_processed_forgets_request_families_completed_before_the_cutoff(
     yield from run(backend, body)
 
 
-@testing.live
+@testing.live(timeout="30 seconds")
 def test_does_not_store_an_ack_chunk_or_interrupt_for_a_request_delete_processed_removed(
     backend: Backend,
 ):
@@ -212,7 +212,7 @@ def test_does_not_store_an_ack_chunk_or_interrupt_for_a_request_delete_processed
     yield from run(backend, body)
 
 
-@testing.live
+@testing.live(timeout="30 seconds")
 def test_delete_processed_takes_an_unbounded_extreme_or_fractional_cutoff(backend: Backend):
     """deleteProcessed takes an unbounded, extreme or fractional cutoff"""
 
@@ -247,7 +247,7 @@ def test_delete_processed_takes_an_unbounded_extreme_or_fractional_cutoff(backen
     yield from run(backend, body)
 
 
-@testing.live
+@testing.live(timeout="30 seconds")
 def test_delete_processed_takes_nan_as_no_cutoff(backend: Backend):
     """pyfect: a NaN cutoff deletes nothing, as Effect's ``!(completedBefore > ...)``
     check reads it."""
@@ -265,7 +265,7 @@ def test_delete_processed_takes_nan_as_no_cutoff(backend: Backend):
 # --- PostgreSQL ---------------------------------------------------------------------------
 
 
-@testing.live
+@testing.live(timeout="30 seconds")
 def test_save_request_keeps_a_duplicate_whose_original_is_deleted_mid_save(
     request: pytest.FixtureRequest,
 ):
@@ -307,7 +307,7 @@ def test_save_request_keeps_a_duplicate_whose_original_is_deleted_mid_save(
     yield from run(backend, body)
 
 
-@testing.live
+@testing.live(timeout="30 seconds")
 def test_clear_replies_does_not_deadlock_with_a_concurrent_delete_processed(
     request: pytest.FixtureRequest,
 ):
@@ -356,7 +356,7 @@ def test_clear_replies_does_not_deadlock_with_a_concurrent_delete_processed(
 # --- MySQL --------------------------------------------------------------------------------
 
 
-@testing.live
+@testing.live(timeout="30 seconds")
 def test_a_late_ack_chunk_does_not_deadlock_with_a_concurrent_delete_processed(
     request: pytest.FixtureRequest,
 ):
@@ -409,7 +409,7 @@ def test_a_late_ack_chunk_does_not_deadlock_with_a_concurrent_delete_processed(
     yield from run(backend, body)
 
 
-@testing.live
+@testing.live(timeout="30 seconds")
 def test_a_stream_reply_does_not_deadlock_with_delete_processed_of_another_request(
     request: pytest.FixtureRequest,
 ):
@@ -459,7 +459,7 @@ def test_a_stream_reply_does_not_deadlock_with_delete_processed_of_another_reque
     yield from run(backend, body)
 
 
-@testing.live
+@testing.live(timeout="30 seconds")
 def test_fails_the_migrations_when_the_retention_index_cannot_be_created(
     request: pytest.FixtureRequest,
 ):
@@ -493,7 +493,7 @@ def test_fails_the_migrations_when_the_retention_index_cannot_be_created(
 # --- SQL Server ---------------------------------------------------------------------------
 
 
-@testing.live
+@testing.live(timeout="30 seconds")
 def test_a_stream_acknowledgement_does_not_deadlock_with_delete_processed_of_another_request(
     request: pytest.FixtureRequest,
 ):
@@ -545,7 +545,7 @@ def test_a_stream_acknowledgement_does_not_deadlock_with_delete_processed_of_ano
     yield from run(backend, body)
 
 
-@testing.live
+@testing.live(timeout="30 seconds")
 def test_rejects_duplicate_exit_replies_when_another_table_has_the_same_index_name(
     request: pytest.FixtureRequest,
 ):
@@ -578,7 +578,7 @@ def test_rejects_duplicate_exit_replies_when_another_table_has_the_same_index_na
     yield from run(backend, body)
 
 
-@testing.live
+@testing.live(timeout="30 seconds")
 def test_acknowledges_and_cleans_up_when_another_table_has_the_lookup_index_names(
     request: pytest.FixtureRequest,
 ):

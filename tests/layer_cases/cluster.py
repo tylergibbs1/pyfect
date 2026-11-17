@@ -32,6 +32,7 @@ from pyfect.cluster import (
     entity_proxy_server,
     http_runner,
     k8s_http_client,
+    message_retention,
     message_storage,
     runner_address,
     runner_health,
@@ -728,6 +729,10 @@ CASES: dict[str, Case] = {
         ),
         needs=lambda: L.merge(_stack(), _fired()),
         use=lambda: _wait_fired,
+    ),
+    "pyfect.cluster.message_retention.make": Case(
+        layer=lambda: message_retention.make(entity=Echo, retention="1 hour"),
+        needs=_stack,
     ),
     # Entity proxies.
     "pyfect.cluster.entity_proxy_server.layer_rpc_handlers": Case(
