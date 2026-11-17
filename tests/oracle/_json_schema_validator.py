@@ -1,6 +1,8 @@
 """A small Draft 2020-12 validator standing in for Ajv in ports of Effect's round-trip
 tests (no third-party dependency): the keywords those documents use, with JSON's
-number rules (a boolean is not a number) and code point string lengths."""
+number rules (a boolean is not a number) and code point string lengths. ``compile_in``
+reads a schema inside a whole document (such as an OpenRPC one), with Draft 7's
+tuple ``items`` and ``additionalItems``."""
 
 from collections.abc import Callable, Mapping
 from typing import Any, cast
@@ -43,16 +45,21 @@ def _equal(left: object, right: object) -> bool:
 
 
 class _Validator:
-    def __init__(self, root: Any, definitions: Mapping[str, Any]) -> None:
+    def __init__(
+        self, root: Any, definitions: Mapping[str, Any], document: Mapping[str, Any] | None = None
+    ) -> None:
         self.root = root
         self.definitions = definitions
+        self.document = document
 
     def resolve(self, ref: str) -> Any:
         path = parse_uri_fragment(ref)
         assert path is not None
-        assert path[0] in {"$defs", "definitions"}
-        node: Any = self.definitions
-        for token in path[1:]:
+        node: Any = self.document
+        if node is None:
+            assert path[0] in {"$defs", "definitions"}
+            node, path = self.definitions, path[1:]
+        for token in path:
             node = cast("Any", node[int(token)] if isinstance(node, list) else node[token])
         return node
 
@@ -96,7 +103,16 @@ def _prefix_items(v: _Validator, keyword: Any, value: Any, _: Any) -> bool:
 def _items(v: _Validator, keyword: Any, value: Any, schema: Any) -> bool:
     if not _is_type(value, "array"):
         return True
+    if isinstance(keyword, list):  # Draft 7's tuple form
+        return all(v.valid(s, x) for s, x in zip(cast("list[Any]", keyword), value, strict=False))
     return all(v.valid(keyword, x) for x in list(value)[len(schema.get("prefixItems", ())) :])
+
+
+def _additional_items(v: _Validator, keyword: Any, value: Any, schema: Any) -> bool:
+    items = schema.get("items")
+    if not _is_type(value, "array") or not isinstance(items, list):
+        return True
+    return all(v.valid(keyword, x) for x in list(value)[len(cast("list[Any]", items)) :])
 
 
 def _properties(v: _Validator, keyword: Any, value: Any, _: Any) -> bool:
@@ -150,6 +166,7 @@ _KEYWORDS: dict[str, _Check] = {
     "uniqueItems": _for_type("array", _unique),
     "prefixItems": _prefix_items,
     "items": _items,
+    "additionalItems": _additional_items,
     "required": _for_type("object", lambda names, x: all(k in x for k in names)),
     "minProperties": _for_type("object", lambda n, x: len(x) >= n),
     "maxProperties": _for_type("object", lambda n, x: len(x) <= n),
@@ -165,3 +182,9 @@ _KEYWORDS: dict[str, _Check] = {
 def compile(document: Document[Any]) -> Callable[[object], bool]:
     validator = _Validator(document.schema, document.definitions)
     return lambda value: validator.valid(document.schema, value)
+
+
+def compile_in(document: Mapping[str, Any], schema: Any) -> Callable[[object], bool]:
+    """``schema``'s validator, its references read from ``document``'s root."""
+    validator = _Validator(schema, {}, document)
+    return lambda value: validator.valid(schema, value)

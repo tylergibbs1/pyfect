@@ -37,7 +37,7 @@ from typing import (
 
 from pyfect._core import Effect
 from pyfect._effect_args import require_effect
-from pyfect.context import Context, ServiceMarker
+from pyfect.context import Context, ServiceMarker, TagLike
 from pyfect.deferred import Deferred
 from pyfect.effect import context, die, provide_context, succeed
 from pyfect.errors import Done
@@ -299,12 +299,35 @@ class RpcGroup(Generic[Tags_contra]):
     """The group's procedures, each wrapped by the group middleware: what is
     served, what a client calls, and what each RPC attribute of the class
     reads (the one source of all three)."""
+    annotations: ClassVar[Context[Any]] = Context.empty()
+    """The group's annotations (Effect's ``RpcGroup.annotations``): defaults its
+    RPCs' own annotations override, such as ``open_rpc.Summary``."""
     _rpc_methods: dict[str, Any]
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)
         cls.rpcs = _procedures(cls, _group_middlewares(cls))
         check_listed_tags(cls, RpcGroup, cls.rpcs)
+
+    @classmethod
+    def annotate[A, T](cls, tag: TagLike[A, T], value: A) -> type[Self]:
+        """This group with ``tag`` annotated as ``value`` (Effect's
+        ``RpcGroup.annotate``)."""
+        return cls._annotated(cls.annotations.add(tag, value))
+
+    @classmethod
+    def annotate_merge(cls, annotations: Context[Any]) -> type[Self]:
+        """This group with ``annotations`` added to its own (Effect's
+        ``RpcGroup.annotateMerge``)."""
+        return cls._annotated(cls.annotations.merge(annotations))
+
+    @classmethod
+    def _annotated(cls, annotations: Context[Any]) -> type[Self]:
+        derived = types.new_class(cls.__name__, (cls,))
+        derived.__qualname__ = cls.__qualname__
+        derived.__module__ = cls.__module__
+        derived.annotations = annotations
+        return derived
 
     @classmethod
     def handlers(cls) -> Handlers[Self, Never, Tags_contra]:
