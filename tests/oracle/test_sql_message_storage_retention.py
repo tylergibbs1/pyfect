@@ -307,7 +307,7 @@ def test_save_request_keeps_a_duplicate_whose_original_is_deleted_mid_save(
     yield from run(backend, body)
 
 
-@testing.live
+@testing.live(timeout="30 seconds")
 def test_clear_replies_does_not_deadlock_with_a_concurrent_delete_processed(
     request: pytest.FixtureRequest,
 ):
@@ -409,7 +409,7 @@ def test_a_late_ack_chunk_does_not_deadlock_with_a_concurrent_delete_processed(
     yield from run(backend, body)
 
 
-@testing.live
+@testing.live(timeout="30 seconds")
 def test_a_stream_reply_does_not_deadlock_with_delete_processed_of_another_request(
     request: pytest.FixtureRequest,
 ):
@@ -459,7 +459,7 @@ def test_a_stream_reply_does_not_deadlock_with_delete_processed_of_another_reque
     yield from run(backend, body)
 
 
-@testing.live
+@testing.live(timeout="30 seconds")
 def test_fails_the_migrations_when_the_retention_index_cannot_be_created(
     request: pytest.FixtureRequest,
 ):
@@ -493,7 +493,7 @@ def test_fails_the_migrations_when_the_retention_index_cannot_be_created(
 # --- SQL Server ---------------------------------------------------------------------------
 
 
-@testing.live
+@testing.live(timeout="30 seconds")
 def test_a_stream_acknowledgement_does_not_deadlock_with_delete_processed_of_another_request(
     request: pytest.FixtureRequest,
 ):
@@ -545,7 +545,7 @@ def test_a_stream_acknowledgement_does_not_deadlock_with_delete_processed_of_ano
     yield from run(backend, body)
 
 
-@testing.live
+@testing.live(timeout="30 seconds")
 def test_rejects_duplicate_exit_replies_when_another_table_has_the_same_index_name(
     request: pytest.FixtureRequest,
 ):
