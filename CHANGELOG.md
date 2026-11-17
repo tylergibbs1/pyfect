@@ -49,6 +49,7 @@
   migrator now holds a `GET_LOCK` on its transaction's session while it runs on MySQL, as
   `LOCK TABLE` already held a second migrator back on PostgreSQL. Effect's migrator has the
   same race on MySQL.
+- System DNS lookups share a bounded pool of four threads, as in Effect.
 - Hex decoding and several text parsers use constant memory.
 - PostgreSQL: closing a session while a statement on it is still running now waits for that
   statement to end (it fails with a connection error) before releasing the connection.
@@ -94,7 +95,6 @@
   finds the table never touches its indexes. Effect's `makeStorage` still creates the index
   separately, so it has the same stall. A table whose index an older version never finished
   creating keeps working without that index.
-- System DNS lookups share a bounded pool of four threads, as in Effect.
 - A `@testing.effect` test whose deadline passed while it could not be interrupted (in a
   finalizer, say), and which then finished, fails with a `TestTimeoutError` saying it finished
   after its timeout, not that it was interrupted.
