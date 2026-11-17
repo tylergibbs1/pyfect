@@ -734,6 +734,9 @@ _REASONS: dict[str, list[str]] = {
         "pyfect.schema._parse.decode_unknown_result",
         "pyfect.schema._parse.decode_unknown_sync",
     ],
+    "checks provider JSON already parsed by the measured JSON parser against a schema": [
+        "pyfect.ai._provider.wire_decoder.<locals>.decode",
+    ],
     "builds a transformation; parses nothing": [
         "pyfect.schema._transform.decode",
     ],

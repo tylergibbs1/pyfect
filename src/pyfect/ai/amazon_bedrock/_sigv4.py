@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from urllib.parse import quote
 
 import pyfect as fx
@@ -16,6 +15,7 @@ from pyfect._js import text_encode, to_iso_string, trim
 from pyfect._text_keys import key_bytes
 from pyfect.crypto import digest as D
 from pyfect.crypto import mac as M
+from pyfect.date_time._epoch import from_epoch_millis
 from pyfect.http import body as B
 from pyfect.http import url as U
 from pyfect.http.request import HttpClientRequest
@@ -23,7 +23,7 @@ from pyfect.result import Err
 
 _SERVICE = "bedrock"
 _WHITESPACE = re.compile(r"\s+")
-_AMZ_DATE_DROPPED = re.compile(r"[-:]|\.\d{3}")
+_AMZ_DATE_DROPPED = re.compile(r"[-:]|\.[0-9]{3}")
 
 
 @dataclass(frozen=True)
@@ -53,7 +53,7 @@ def _rfc3986(value: str) -> str:
 
 def _amz_date(millis: float) -> str:
     """``YYYYMMDD'T'HHMMSS'Z'``, the SigV4 timestamp."""
-    iso = to_iso_string(datetime.fromtimestamp(millis / 1000, UTC))
+    iso = to_iso_string(from_epoch_millis(millis))
     return _AMZ_DATE_DROPPED.sub("", iso)
 
 
