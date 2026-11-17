@@ -95,6 +95,7 @@ from pyfect.cli import (
     nested,
 )
 from pyfect.cli._environment import Environment as CliEnvironment
+from pyfect.cli.cli_error import ValidationError
 from pyfect.cli.global_flag import LogLevel
 from pyfect.context import Tag, TagEffect
 from pyfect.duration import (
@@ -5876,6 +5877,33 @@ group(name="Remote")
 
 cli_handled = command.make("plain", CliClone).with_handler(lambda c: fx.succeed(c.repository))
 assert_type(cli_handled, Command[CliClone, Config, Never, Never])
+
+
+class CliConflict(TaggedError):
+    pass
+
+
+def cli_check_conflict(_: CliClone) -> fx.Effect[None, CliConflict | ValidationError]:
+    return fx.void
+
+
+def cli_check_cli(_: CliClone) -> fx.Effect[None, ValidationError]:
+    return fx.void
+
+
+# Command.validate adds its own errors, not the CliErrors it shows with the help.
+assert_type(
+    cli_clone.validate(cli_check_conflict),
+    Command[CliClone, Config, CliNotFound | CliConflict, CommandContext[CliShared] | CliUsers],
+)
+assert_type(
+    cli_clone.validate(cli_check_cli),
+    Command[CliClone, Config, CliNotFound, CommandContext[CliShared] | CliUsers],
+)
+assert_type(
+    cli_clone.validate(lambda _: fx.void),
+    Command[CliClone, Config, CliNotFound, CommandContext[CliShared] | CliUsers],
+)
 
 
 class CliTool(CliShared):

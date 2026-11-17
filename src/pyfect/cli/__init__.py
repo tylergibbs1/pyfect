@@ -19,7 +19,7 @@ and ``--wizard`` come built in::
     app = command.make("greet", Greet, greet)
     program = command.run(app, version="1.0.0")
 
-Modules: ``command``, ``flag``, ``argument``, ``param``, ``primitive``,
+Modules: ``command``, ``command_spec``, ``flag``, ``argument``, ``param``, ``primitive``,
 ``cli_error``, ``cli_output``, ``help_doc``, ``global_flag``,
 ``cli_config``, ``completions``, ``prompt``, ``terminal_capabilities``.
 """
@@ -29,6 +29,7 @@ from pyfect.cli import (
     cli_error,
     cli_output,
     command,
+    command_spec,
     completions,
     global_flag,
     help_doc,
@@ -67,6 +68,7 @@ __all__ = [
     "cli_error",
     "cli_output",
     "command",
+    "command_spec",
     "completions",
     "global_flag",
     "group",

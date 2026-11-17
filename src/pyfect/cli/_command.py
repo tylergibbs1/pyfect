@@ -76,7 +76,7 @@ class Selected:
 
 
 type Example = ExampleDoc
-type _Parse = Callable[[Command[Any, Any, Any, Any], ParsedTokens], Effect[Any, CliError, Any]]
+type _Parse = Callable[[Command[Any, Any, Any, Any], ParsedTokens], Effect[Any, Any, Any]]
 type _Handle = Callable[[Any, tuple[str, ...]], Effect[None, Any, Any]]
 
 
@@ -265,16 +265,27 @@ class Command(Effect[C_co, Never, CommandContext[C_co]], Generic[In_contra, C_co
             return self._derive(handle=_dispatch(self.state, own))
         return self._derive(handle=own)
 
+    @overload
     def validate[I2, C2, E2, R2](
         self: Command[I2, C2, E2, R2], f: Callable[[I2], Effect[object, CliError, Environment]]
-    ) -> Command[I2, C2, E2, R2]:
-        """Checks the parsed config before the handler runs; a failure is
-        shown with the help, as a parse error is."""
+    ) -> Command[I2, C2, E2, R2]: ...
+    @overload
+    def validate[I2, C2, E2, R2, EV](
+        self: Command[I2, C2, E2, R2],
+        f: Callable[[I2], Effect[object, EV | CliError, Environment]],
+    ) -> Command[I2, C2, E2 | EV, R2]: ...
+    def validate(
+        self, f: Callable[[Any], Effect[object, Any, Environment]]
+    ) -> Command[Any, Any, Any, Any]:
+        """Checks the parsed config before the handler runs. A ``CliError``
+        failure is shown with the help, as a parse error is; any other
+        failure is reported as a handler failure is (rendered when it has a
+        user message, no help), and its type joins the command's errors."""
         before = self.state.parse
 
         def parse(command: Command[Any, Any, Any, Any], tokens: ParsedTokens):
-            def check(value: Any) -> Effect[object, CliError, Environment]:
-                return f(cast("I2", value.context if isinstance(value, Selected) else value))
+            def check(value: Any) -> Effect[object, Any, Environment]:
+                return f(value.context if isinstance(value, Selected) else value)
 
             return before(command, tokens).tap(check)
 

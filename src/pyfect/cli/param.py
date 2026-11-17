@@ -32,6 +32,7 @@ from pyfect.cli.cli_error import (
 )
 from pyfect.cli.primitive import FileFormat, PathType, Primitive
 from pyfect.cli.terminal_capabilities import TerminalCapabilities
+from pyfect.context import Context, TagLike
 from pyfect.effect import Effect, fail, gen, succeed
 from pyfect.option import Some
 from pyfect.redacted import Redacted
@@ -67,6 +68,38 @@ class ParamMetadata:
     is_variadic: bool = False
     variadic_min: int | None = None
     variadic_max: int | None = None
+
+    @property
+    def is_required(self) -> bool:
+        """Parsing fails when the param is absent: not optional, and not a variadic
+        without a positive minimum."""
+        return not self.is_optional and (not self.is_variadic or (self.variadic_min or 0) > 0)
+
+
+@dataclass(frozen=True, slots=True)
+class DefaultFallback:
+    """A value given by ``with_default``."""
+
+    value: object
+
+
+@dataclass(frozen=True, slots=True)
+class DefaultEffectFallback:
+    """An effect given by ``with_default``, which ``command_spec`` never runs."""
+
+
+@dataclass(frozen=True, slots=True)
+class ConfigFallback:
+    """A ``Config`` given by ``with_fallback_config``."""
+
+
+@dataclass(frozen=True, slots=True)
+class PromptFallback:
+    """A prompt given by ``with_fallback_prompt``."""
+
+
+type Fallback = DefaultFallback | DefaultEffectFallback | ConfigFallback | PromptFallback
+"""Where a missing param's value comes from (Effect's ``Param.Fallback``)."""
 
 
 class Param[A](ABC):
@@ -109,6 +142,8 @@ class Single(Param[A_co], Generic[A_co]):
     negation: str | Literal[False] | None = None
     """A boolean flag's negated name; ``None`` is ``no-<name>``, ``False``
     none."""
+    annotations: Context[Any] = field(default_factory=Context[Any])
+    """What ``annotate`` attached, for documentation tools (``command_spec``)."""
 
     def parse(self, args: ParsedArgs) -> Parsed[A_co]:
         if self.kind == ARGUMENT:
@@ -162,6 +197,8 @@ class Transformed(Param[A_co], Generic[X, A_co]):
     param: Param[X]
     f: Callable[[Parse[X], tuple[Callable[[], Parse[Any]], ...]], Parse[A_co]]
     alternatives: tuple[Alternative, ...] = ()
+    fallback: Fallback | None = None
+    """Where the value comes from when the param is missing, for ``command_spec``."""
 
     kind: Kind = field(init=False)
 
@@ -174,7 +211,7 @@ class Transformed(Param[A_co], Generic[X, A_co]):
 
     def map_singles(self, f: Callable[[Single[Any]], Single[Any]]) -> Param[A_co]:
         alternatives = tuple(_mapped_alternative(alt, f) for alt in self.alternatives)
-        return Transformed(self.param.map_singles(f), self.f, alternatives)
+        return Transformed(self.param.map_singles(f), self.f, alternatives, self.fallback)
 
     def singles(self) -> list[Single[Any]]:
         found = self.param.singles()
@@ -410,6 +447,12 @@ def with_negation[A](param: Param[A], name: str | Literal[False]) -> Param[A]:
     return param.map_singles(lambda s: replace(s, negation=name))
 
 
+def annotate[A, S, T](param: Param[A], tag: TagLike[S, T], value: S) -> Param[A]:
+    """``param`` with ``value`` under ``tag`` in its annotations, which documentation
+    tools read through ``command_spec``; parsing ignores them."""
+    return param.map_singles(lambda s: replace(s, annotations=s.annotations.add(tag, value)))
+
+
 def map_effect[X, A](
     param: Param[X], f: Callable[[X], Effect[A, CliError, Environment]]
 ) -> Param[A]:
@@ -463,9 +506,31 @@ def filter_map[X, A](
 def with_default[A](param: Param[A], default: object) -> Param[Any]:
     optional = Optional(param)
     if isinstance(default, Effect):
-        fallback = cast("Effect[Any, CliError, Environment]", default)
-        return map_effect(optional, lambda value: fallback if value is None else succeed(value))
-    return Mapped(optional, lambda value: default if value is None else value)
+        default_effect = cast("Effect[Any, CliError, Environment]", default)
+
+        def make_effect(parse: Parse[A | None], _: object) -> Parse[Any]:
+            def run(args: ParsedArgs) -> Parsed[Any]:
+                def fill(parsed: tuple[tuple[str, ...], A | None]) -> Parsed[Any]:
+                    leftover, value = parsed
+                    if value is None:
+                        return default_effect.map(lambda filled: (leftover, filled))
+                    return succeed((leftover, value))
+
+                return parse(args).flat_map(fill)
+
+            return run
+
+        return Transformed(optional, make_effect, (), DefaultEffectFallback())
+
+    def make(parse: Parse[A | None], _: object) -> Parse[Any]:
+        def run(args: ParsedArgs) -> Parsed[Any]:
+            return parse(args).map(
+                lambda parsed: (parsed[0], default if parsed[1] is None else parsed[1])
+            )
+
+        return run
+
+    return Transformed(optional, make, (), DefaultFallback(default))
 
 
 def _missing_name(error: MissingOption | MissingArgument) -> tuple[str, Kind]:
@@ -477,6 +542,7 @@ def _missing_name(error: MissingOption | MissingArgument) -> tuple[str, Kind]:
 def _on_missing[A](
     param: Param[A],
     recover: Callable[[MissingOption | MissingArgument, ParsedArgs], Parsed[Any]],
+    fallback: Fallback,
 ) -> Param[Any]:
     def make(parse: Parse[A], _: object) -> Parse[Any]:
         def run(args: ParsedArgs) -> Parsed[Any]:
@@ -487,7 +553,7 @@ def _on_missing[A](
 
         return run
 
-    return Transformed(param, make)
+    return Transformed(param, make, (), fallback)
 
 
 def with_fallback_config[A](param: Param[A], config: config_.Config[Any]) -> Param[Any]:
@@ -509,7 +575,7 @@ def with_fallback_config[A](param: Param[A], config: config_.Config[Any]) -> Par
             )
         )
 
-    return _on_missing(param, recover)
+    return _on_missing(param, recover, ConfigFallback())
 
 
 def require_prompt(value: object) -> None:
@@ -540,7 +606,7 @@ def with_fallback_prompt[A](
 
         return gen(body)
 
-    return _on_missing(param, recover)
+    return _on_missing(param, recover, PromptFallback())
 
 
 def variadic[A](
@@ -732,6 +798,10 @@ __all__ = [
     "ARGUMENT",
     "FLAG",
     "Alternative",
+    "ConfigFallback",
+    "DefaultEffectFallback",
+    "DefaultFallback",
+    "Fallback",
     "Kind",
     "Mapped",
     "Optional",
@@ -740,9 +810,11 @@ __all__ = [
     "Parse",
     "Parsed",
     "ParsedArgs",
+    "PromptFallback",
     "Single",
     "Transformed",
     "Variadic",
+    "annotate",
     "at_least",
     "at_most",
     "between",

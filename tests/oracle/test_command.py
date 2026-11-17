@@ -1177,6 +1177,80 @@ def test_sees_only_the_input_that_exists_where_it_is_applied_in_the_pipeline(
     assert seen == [("after subcommands", ["use_api"])]
 
 
+@testing.effect
+def test_passes_domain_errors_through_like_handler_failures_without_help(env: Services[Any]):
+    """passes domain errors through like handler failures, without help"""
+    from pyfect.errors import TaggedError
+
+    @dataclass(eq=False)
+    class Conflict(TaggedError):
+        flags: tuple[str, ...]
+
+        @property
+        def __cli_user_message__(self) -> str:
+            return f"{' and '.join(self.flags)} are mutually exclusive"
+
+    class Download(Config):
+        use_api = Flag.boolean("use-api").with_default(False)
+        use_docker = Flag.boolean("use-docker").with_default(False)
+
+    # A fresh instance per run, because rendering marks the error as reported
+    raised: list[Conflict] = []
+
+    def check(c: Download) -> fx.Effect[None, Conflict]:
+        def conflict() -> fx.Effect[None, Conflict]:
+            raised.append(Conflict(("--use-api", "--use-docker")))
+            return fx.fail(raised[-1])
+
+        return fx.suspend(conflict) if c.use_api and c.use_docker else fx.void
+
+    app = command.make("download", Download, lambda _: fx.void).validate(check)
+    rendered = yield from runner(app)(["--use-api", "--use-docker"]).flip()
+    assert rendered is raised[-1]
+    assert rendered.error_reported is False
+    assert [str(line) for line in (yield from testing.error_lines)] == [
+        "\nERROR\n  --use-api and --use-docker are mutually exclusive"
+    ]
+    assert (yield from testing.log_lines) == []
+
+    silent = yield from command.run_with(app, version="1.0.0", render_errors=False)(
+        ["--use-api", "--use-docker"]
+    ).flip()
+    assert silent is raised[-1]
+    assert silent.error_reported is True
+    assert len((yield from testing.error_lines)) == 1
+
+
+@testing.effect
+def test_fails_a_subcommand_run_with_a_parents_domain_error_rendering_nothing_without_user_message(
+    env: Services[Any],
+):
+    """fails a subcommand run with a parent's domain error, rendering nothing without userMessage"""
+    from pyfect.errors import TaggedError
+
+    class LinkedAndLocal(TaggedError):
+        pass
+
+    class Db(Config):
+        linked = Flag.boolean("linked").with_default(False)
+        local = Flag.boolean("local").with_default(False)
+
+    handled: list[str] = []
+    push = command.make("push", Config, lambda _: fx.sync(lambda: handled.append("push")))
+    db = (
+        command.make("db")
+        .with_shared_flags(Db)
+        .with_subcommands(push)
+        .validate(lambda c: fx.fail(LinkedAndLocal()) if c.linked and c.local else fx.void)
+    )
+    error = yield from runner(db)(["--linked", "--local", "push"]).flip()
+    assert isinstance(error, LinkedAndLocal)
+    assert error.error_reported is True
+    assert handled == []
+    assert (yield from testing.error_lines) == []
+    assert (yield from testing.log_lines) == []
+
+
 # --- withSubcommands -----------------------------------------------------------------
 
 

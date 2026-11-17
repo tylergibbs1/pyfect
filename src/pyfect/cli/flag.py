@@ -24,6 +24,7 @@ from pyfect.cli import param as p
 from pyfect.cli._environment import Environment
 from pyfect.cli.cli_error import CliError
 from pyfect.cli.primitive import FileFormat, PathType
+from pyfect.context import TagLike
 from pyfect.effect import Effect
 from pyfect.option import Some
 from pyfect.redacted import Redacted
@@ -164,6 +165,11 @@ class Flag[A]:
     def with_metavar(self, metavar: str) -> Flag[A]:
         """The value's name in help, in place of its type."""
         return Flag(p.with_metavar(self.param, metavar))
+
+    def annotate[S, T](self, tag: TagLike[S, T], value: S) -> Flag[A]:
+        """This flag with ``value`` under ``tag``, for documentation tools that read
+        it through ``command_spec``; parsing ignores it."""
+        return Flag(p.annotate(self.param, tag, value))
 
     def with_hidden(self) -> Flag[A]:
         """Parsed, but left out of help, completions and suggestions."""

@@ -369,7 +369,10 @@ class _Runner:
             return (yield from action.run(parsed_flag[1], context))
         if parsed.errors:
             return (yield from fail(ShowHelp(path, parsed.errors)))
-        value = yield from command.state.parse(command, parsed).map_error(to_show_help)
+        # A validation may fail with the command's own errors, reported as handler failures.
+        value = yield from command.state.parse(command, parsed).map_error(
+            lambda error: to_show_help(error) if isinstance(error, CliError) else error
+        )
         program = command.state.handle(value, (command.name,))
         level = None
         if LogLevel in active:

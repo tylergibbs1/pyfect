@@ -51,8 +51,7 @@ def build_help_doc(command: AnyCommand, path: Sequence[str]) -> HelpDoc:
             name=single.name,
             type=_type_name(single),
             description=single.description,
-            required=not metadata.is_optional
-            and (not metadata.is_variadic or (metadata.variadic_min or 0) > 0),
+            required=metadata.is_required,
             variadic=metadata.is_variadic,
         )
         for arg in state.config.arguments

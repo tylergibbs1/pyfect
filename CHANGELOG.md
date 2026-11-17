@@ -198,6 +198,20 @@
   descriptor closes when the last of those operations finishes, and operations started after
   the close fail as closed (a UDP send with `DatagramSocketClosedError`).
 
+### Added
+
+- `pyfect.cli.command_spec`, Effect 4.1.4's `CommandSpec` (#10377): `resolve(app, path)` gives
+  a command path as data for documentation tools, without running handlers, prompts, `Config`
+  or effectful defaults: its flags with their scope (local, inherited, global), type,
+  requiredness, fallbacks in the order the parser tries them, variadic bounds and annotations,
+  its arguments and its subcommands. `Flag.annotate` / `Argument.annotate` / `param.annotate`
+  attach custom metadata to a parameter for it, and `ParamMetadata.is_required` says whether
+  parsing fails without the parameter.
+- `Command.validate` takes a check that fails with your own errors, as in Effect 4.1.4
+  (#10376): such a failure is reported like a handler failure (rendered when it has a user
+  message, no help) and its type joins the command's errors. A `CliError` is still shown
+  with the help.
+
 ### Performance
 
 - `S.to_codec_json`, `S.to_codec_string_tree` and `S.to_codec_iso` derive a schema's codec

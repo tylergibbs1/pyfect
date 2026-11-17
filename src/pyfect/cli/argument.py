@@ -20,6 +20,7 @@ from pyfect.cli import param as p
 from pyfect.cli._environment import Environment
 from pyfect.cli.cli_error import CliError
 from pyfect.cli.primitive import FileFormat, PathType
+from pyfect.context import TagLike
 from pyfect.effect import Effect
 from pyfect.option import Some
 from pyfect.redacted import Redacted
@@ -138,6 +139,11 @@ class Argument[A]:
     def with_metavar(self, metavar: str) -> Argument[A]:
         """The value's name in help, in place of its type."""
         return Argument(p.with_metavar(self.param, metavar))
+
+    def annotate[S, T](self, tag: TagLike[S, T], value: S) -> Argument[A]:
+        """This argument with ``value`` under ``tag``, for documentation tools that read
+        it through ``command_spec``; parsing ignores it."""
+        return Argument(p.annotate(self.param, tag, value))
 
     # --- values ---------------------------------------------------------------
 
