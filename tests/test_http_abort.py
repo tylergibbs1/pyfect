@@ -1,7 +1,9 @@
-"""``AbortController`` / ``AbortSignal`` listeners as a WHATWG ``AbortSignal``
-runs them (Effect's clients use one): every listener runs once, a raising one
-is reported without stopping the rest, a removed one or one added late never
-runs. And the client's abort paths keep that when a backend's listener raises."""
+"""``AbortController`` / ``AbortSignal`` listeners. A raising one is reported
+without stopping the rest, and the client's abort paths keep that when a
+backend's listener raises. ``on_abort`` listens as Effect does, on a WHATWG
+``AbortSignal``: once per listener, not when removed or added during the abort,
+and at once on a signal that already fired. ``add_listener`` keeps 0.6.10's
+behaviour until 0.7.0: it runs at once on a fired signal, and each add runs."""
 
 import ast
 import gc
@@ -37,13 +39,33 @@ def test_a_raising_listener_is_logged_and_the_others_still_run(
     assert str(record.exc_info[1]) == "listener failed"
 
 
-def test_a_listener_added_after_the_abort_never_runs() -> None:
+def test_add_listener_runs_a_listener_added_after_the_abort_at_once_as_in_0_6_10() -> None:
     controller = AbortController()
     controller.abort()
     runs: list[str] = []
-    remove = controller.signal.add_listener(lambda: runs.append("late"))
-    remove()
-    assert runs == []
+    controller.signal.add_listener(lambda: runs.append("late"))()
+    assert runs == ["late"]
+
+
+def test_add_listener_runs_each_add_and_one_removed_during_the_abort_as_in_0_6_10() -> None:
+    controller = AbortController()
+    runs: list[str] = []
+    removers: list[Any] = []
+
+    def listener() -> None:
+        runs.append("ran")
+
+    def first() -> None:
+        runs.append("first")
+        removers[0]()
+        controller.signal.add_listener(lambda: runs.append("added during"))
+
+    controller.signal.add_listener(first)
+    removers.append(controller.signal.add_listener(lambda: runs.append("removed")))
+    controller.signal.add_listener(listener)
+    controller.signal.add_listener(listener)
+    controller.abort()
+    assert runs == ["first", "added during", "removed", "ran", "ran"]
 
 
 def test_on_abort_runs_a_listener_added_after_the_abort_at_once() -> None:
@@ -55,7 +77,7 @@ def test_on_abort_runs_a_listener_added_after_the_abort_at_once() -> None:
     assert runs == ["before", "late"]
 
 
-def test_a_listener_removed_or_added_during_the_abort_does_not_run() -> None:
+def test_on_abort_skips_a_listener_removed_during_the_abort() -> None:
     controller = AbortController()
     runs: list[str] = []
     removers: list[Any] = []
@@ -63,30 +85,29 @@ def test_a_listener_removed_or_added_during_the_abort_does_not_run() -> None:
     def first() -> None:
         runs.append("first")
         removers[0]()
-        controller.signal.add_listener(lambda: runs.append("added during"))
 
-    controller.signal.add_listener(first)
-    removers.append(controller.signal.add_listener(lambda: runs.append("removed")))
+    controller.signal.on_abort(first)
+    removers.append(controller.signal.on_abort(lambda: runs.append("removed")))
     controller.abort()
     controller.abort()
     assert runs == ["first"]
 
 
-def test_a_listener_added_twice_runs_once_and_removing_either_removes_it() -> None:
+def test_on_abort_runs_a_listener_added_twice_once_and_removing_either_removes_it() -> None:
     controller = AbortController()
     runs: list[str] = []
 
     def listener() -> None:
         runs.append("ran")
 
-    controller.signal.add_listener(listener)
-    controller.signal.add_listener(listener)
+    controller.signal.on_abort(listener)
+    controller.signal.on_abort(listener)
     controller.abort()
     assert runs == ["ran"]
 
     other = AbortController()
-    other.signal.add_listener(listener)
-    other.signal.add_listener(listener)()
+    other.signal.on_abort(listener)
+    other.signal.on_abort(listener)()
     other.abort()
     assert runs == ["ran"]
 
@@ -128,9 +149,10 @@ _SRC = Path(__file__).resolve().parents[1] / "src" / "pyfect"
 
 
 def test_pyfect_listens_on_signals_with_on_abort() -> None:
-    """``add_listener`` never runs for a signal that already fired, so a backend
-    handed an aborted signal (``with_scope`` after its scope closed, an interrupt
-    racing a response) would keep running: pyfect's own code uses ``on_abort``."""
+    """``on_abort`` is Effect's way to listen, and from 0.7.0 ``add_listener``
+    no longer runs for a signal that already fired, so a backend handed an
+    aborted signal (``with_scope`` after its scope closed, an interrupt racing a
+    response) would keep running: pyfect's own code uses ``on_abort``."""
     calls = [
         f"{path.relative_to(_SRC)}:{node.lineno}"
         for path in _SRC.rglob("*.py")

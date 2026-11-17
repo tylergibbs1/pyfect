@@ -6,12 +6,13 @@ signal fires when the request is interrupted, when an unread response is
 garbage collected, when its stream ends or when its ``with_scope`` scope
 closes.
 
-Listeners behave as a WHATWG ``AbortSignal``'s ``"abort"`` listeners: each
-runs once, on the thread that aborts, in the order added. One that raises is
-logged (on the ``pyfect.http.abort`` logger) and the rest still run; one
-removed before its turn, or added once the abort started, does not run. A
-backend that may get an aborted signal uses ``on_abort``, which also runs
-the listener when the signal has already fired.
+Listeners run on the thread that aborts, in the order added. One that raises
+is logged (on the ``pyfect.http.abort`` logger) and the rest still run.
+``on_abort`` listens as Effect does: as a WHATWG ``AbortSignal``'s
+``"abort"`` listener (once per listener, not when removed before its turn),
+and at once when the signal has already fired. ``add_listener`` keeps
+0.6.10's behaviour until 0.7.0: each add runs, even one removed during the
+abort, and it runs at once on a signal that already fired.
 """
 
 from __future__ import annotations
@@ -26,11 +27,13 @@ _log = logging.getLogger(__name__)
 
 @final
 class _Entry:
-    __slots__ = ("listener", "removed")
+    __slots__ = ("listener", "removed", "whatwg")
 
-    def __init__(self, listener: Callable[[], object]) -> None:
+    def __init__(self, listener: Callable[[], object], *, whatwg: bool) -> None:
         self.listener = listener
         self.removed = False
+        # An ``on_abort`` listener; an ``add_listener`` one keeps 0.6.10's behaviour.
+        self.whatwg = whatwg
 
 
 @final
@@ -43,10 +46,16 @@ class AbortSignal:
         self._lock = threading.Lock()
 
     def add_listener(self, listener: Callable[[], object]) -> Callable[[], None]:
-        """Run ``listener`` when the signal aborts (WHATWG ``addEventListener("abort",
-        listener, {once: true})``): never if it has aborted already, once if the same
-        listener is added again. Returns a function that removes it."""
-        return self._add(listener) or _noop
+        """Run ``listener`` when the signal aborts, or now if it has; each add runs
+        it. Returns a function that removes it (before the abort starts). From
+        0.7.0 this follows WHATWG instead; ``on_abort`` is Effect's way."""
+        with self._lock:
+            if not self.aborted:
+                entry = _Entry(listener, whatwg=False)
+                self._listeners.append(entry)
+                return lambda: self._remove(entry)
+        listener()
+        return _noop
 
     def on_abort(self, listener: Callable[[], object]) -> Callable[[], None]:
         """Run ``listener`` when the signal aborts, or now if it has: Effect's
@@ -63,9 +72,9 @@ class AbortSignal:
         with self._lock:
             if self.aborted:
                 return None
-            entry = next((e for e in self._listeners if e.listener == listener), None)
+            entry = next((e for e in self._listeners if e.whatwg and e.listener == listener), None)
             if entry is None:
-                entry = _Entry(listener)
+                entry = _Entry(listener, whatwg=True)
                 self._listeners.append(entry)
         return lambda: self._remove(entry)
 
@@ -83,7 +92,7 @@ class AbortSignal:
             entries, self._listeners = self._listeners, []
         for entry in entries:
             with self._lock:
-                if entry.removed:
+                if entry.removed and entry.whatwg:
                     continue
                 entry.removed = True
             try:

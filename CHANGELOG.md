@@ -7,12 +7,12 @@
 - `pyfect.http.abort`: an `AbortSignal` listener that raised stopped `AbortController.abort()`,
   so the listeners after it (a backend closing its connection) never ran (0.6.9 and before).
   With `with_scope` the raise also turned a finished request into a Die when the scope closed.
-  Listeners now run as a WHATWG `AbortSignal` runs them, as in Effect: one that raises is
-  logged on the `pyfect.http.abort` logger and the rest still run, one removed during the
-  abort does not run, and the same listener added twice runs once. `add_listener` on a signal
-  that already fired no longer runs the listener; the new `on_abort` does (Effect's
-  `if (signal.aborted) f() else signal.addEventListener("abort", f)`, without a race between
-  the two), and pyfect's own backends use it.
+  A listener that raises is now logged on the `pyfect.http.abort` logger and the rest still
+  run. The new `AbortSignal.on_abort` listens as Effect does: as a WHATWG `AbortSignal`
+  listener (once per listener, not when removed during the abort), and at once on a signal
+  that already fired (Effect's `if (signal.aborted) f() else signal.addEventListener("abort",
+  f)`, without a race between the two). pyfect's own backends use it. `add_listener` behaves
+  as in 0.6.10.
 
 ## 0.6.10 (2026-11-16)
 
