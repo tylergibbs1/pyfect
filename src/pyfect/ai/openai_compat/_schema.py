@@ -15,13 +15,13 @@ from pyfect.ai._provider import wire_decoder, wire_match
 
 class ToolFunction(TypedDict):
     name: NotRequired[str | None]
-    arguments: NotRequired[str]
+    arguments: NotRequired[str | None]
 
 
 class ToolCall(TypedDict):
     id: NotRequired[str | None]
     index: NotRequired[int]
-    type: NotRequired[str]
+    type: NotRequired[str | None]
     extra_content: NotRequired[dict[str, Any] | None]
     function: NotRequired[ToolFunction]
 
@@ -31,6 +31,7 @@ class Message(TypedDict):
     content: NotRequired[str | None]
     reasoning: NotRequired[str | None]
     reasoning_content: NotRequired[str | None]
+    refusal: NotRequired[str | None]
     tool_calls: NotRequired[list[ToolCall] | None]
 
 
@@ -55,13 +56,13 @@ class ChatCompletion(TypedDict):
     created: int
     choices: list[Choice]
     usage: NotRequired[Usage | None]
-    service_tier: NotRequired[str]
+    service_tier: NotRequired[str | None]
 
 
 class Embedding(TypedDict):
     embedding: list[float] | str
     index: int
-    object: NotRequired[str]
+    object: NotRequired[str | None]
 
 
 class EmbeddingUsage(TypedDict):
@@ -72,8 +73,8 @@ class EmbeddingUsage(TypedDict):
 class EmbeddingResponse(TypedDict):
     data: list[Embedding]
     model: str
-    object: NotRequired[Literal["list"]]
-    usage: NotRequired[EmbeddingUsage]
+    object: NotRequired[Literal["list"] | None]
+    usage: NotRequired[EmbeddingUsage | None]
 
 
 CHAT_COMPLETION = S.Struct(ChatCompletion)

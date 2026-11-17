@@ -220,6 +220,9 @@ def _make_response(
         # Gemini 3 answers `stop` after a tool call with a thought signature,
         # though it expects the call's result.
         finish_reason = "tool_calls"
+    refusal = message.get("refusal")
+    if refusal and finish_reason == "stop":
+        finish_reason = "content_filter"
     metadata: dict[str, Any] = {
         "systemFingerprint": raw.get("system_fingerprint"),
         "usage": raw.get("usage"),
@@ -227,6 +230,8 @@ def _make_response(
     if files:
         metadata["annotations"] = files
     metadata.update(provider_of(raw))
+    if refusal:
+        metadata["refusal"] = refusal
     parts.append(
         {
             "type": "finish",

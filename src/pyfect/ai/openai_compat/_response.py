@@ -36,7 +36,12 @@ _FINISH_REASONS: dict[str, FinishReason] = {
 _SERVICE_TIERS = frozenset({"default", "auto", "flex", "scale", "priority"})
 
 
-def resolve_finish_reason(reason: str | None, has_tool_calls: bool) -> FinishReason:
+def resolve_finish_reason(
+    reason: str | None, has_tool_calls: bool, has_refusal: bool
+) -> FinishReason:
+    """A refusal is reported by a ``stop`` finish carrying a refusal text."""
+    if has_refusal and reason == "stop":
+        return "content-filter"
     if reason is None:
         return "tool-calls" if has_tool_calls else "stop"
     resolved = _FINISH_REASONS.get(reason)
@@ -53,10 +58,13 @@ def _service_tier(tier: str | None) -> str | None:
     return tier if tier in _SERVICE_TIERS else None
 
 
-def _finish_metadata(tier: str | None) -> dict[str, Any]:
-    if tier is None:
-        return {}
-    return {"metadata": {KEY: {"serviceTier": _service_tier(tier)}}}
+def _finish_metadata(tier: str | None, refusal: str | None) -> dict[str, Any]:
+    metadata: dict[str, Any] = {}
+    if tier is not None:
+        metadata["serviceTier"] = _service_tier(tier)
+    if refusal:
+        metadata["refusal"] = refusal
+    return {"metadata": {KEY: metadata}} if metadata else {}
 
 
 def usage(raw: W.Usage | None) -> dict[str, Any]:
@@ -173,13 +181,14 @@ def _make_response(
             )
             has_tool_calls = True
     reason = None if choice is None else choice.get("finish_reason")
+    refusal = None if message is None else message.get("refusal")
     parts.append(
         {
             "type": "finish",
-            "reason": resolve_finish_reason(reason, has_tool_calls),
+            "reason": resolve_finish_reason(reason, has_tool_calls, bool(refusal)),
             "usage": usage(completion.get("usage")),
             "response": P.response_details(response),
-            **_finish_metadata(completion.get("service_tier")),
+            **_finish_metadata(completion.get("service_tier"), refusal),
         }
     )
     return parts
@@ -222,6 +231,7 @@ class _Stream:
     service_tier: str | None = None
     usage: W.Usage | None = None
     finish_reason: str | None = None
+    refusal: str = ""
     metadata_emitted: bool = False
     text_started: bool = False
     text_id: str = ""
@@ -266,10 +276,12 @@ class _Stream:
         parts.append(
             {
                 "type": "finish",
-                "reason": resolve_finish_reason(self.finish_reason, self.has_tool_calls),
+                "reason": resolve_finish_reason(
+                    self.finish_reason, self.has_tool_calls, bool(self.refusal)
+                ),
                 "usage": usage(self.usage),
                 "response": P.response_details(self.response),
-                **_finish_metadata(self.service_tier),
+                **_finish_metadata(self.service_tier, self.refusal),
             }
         )
         return parts
@@ -338,8 +350,8 @@ class _Stream:
 
     def chunk(self, chunk: W.ChatCompletion) -> list[Part]:
         parts: list[Part] = []
-        if "service_tier" in chunk:
-            self.service_tier = chunk["service_tier"]
+        if chunk.get("service_tier") is not None:
+            self.service_tier = chunk.get("service_tier")
         if chunk.get("usage") is not None:
             self.usage = chunk.get("usage")
         if not self.metadata_emitted:
@@ -366,6 +378,7 @@ class _Stream:
             content = delta.get("content")
             if content:
                 parts.extend(self._text(content))
+            self.refusal += delta.get("refusal") or ""
             calls = delta.get("tool_calls")
             if calls is not None:
                 parts.extend(self._tool_deltas(chunk["id"], calls))

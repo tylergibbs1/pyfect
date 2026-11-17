@@ -521,6 +521,50 @@ def _usage(usage: dict[str, Any]) -> fx.Effect[R.Usage, Any, Any]:
 
 
 @testing.effect
+def test_refusal_finish_part():
+    """OpenRouterLanguageModel / generateText / reports a refusal through the finish part"""
+    message = {"role": "assistant", "content": None, "refusal": "I cannot do that"}
+    http = mock(choices=[{"finish_reason": "stop", "index": 0, "message": message}])
+    result = yield from _provided(lm.generate_text("Do something bad"), http, "openai/gpt-4o")
+    finish = next(p for p in result.content if isinstance(p, R.FinishPart))
+    metadata: Any = finish.metadata["openrouter"]
+    assert (result.text, result.finish_reason, metadata["refusal"]) == (
+        "",
+        "content-filter",
+        "I cannot do that",
+    )
+
+
+@testing.effect
+def test_stream_refusal_finish_part():
+    """OpenRouterLanguageModel / streamText / streams a refusal through the finish part"""
+
+    def chunk(delta: dict[str, Any], **fields: Any) -> dict[str, Any]:
+        choice = {"index": 0, "delta": delta, **fields}
+        return {
+            "id": "response-1",
+            "object": "chat.completion.chunk",
+            "model": "openai/gpt-4o",
+            "created": 1,
+            "choices": [choice],
+        }
+
+    usage = {"prompt_tokens": 5, "completion_tokens": 4, "total_tokens": 9}
+    events = [
+        chunk({"content": "", "refusal": "I cannot", "role": "assistant"}),
+        chunk({"content": "", "refusal": " do that"}),
+        {**chunk({"content": ""}, finish_reason="stop"), "usage": usage},
+    ]
+    parts = yield from _provided(
+        lm.stream_text("Do something bad").run_collect(), stream_mock(events), "openai/gpt-4o"
+    )
+    finish = next(p for p in parts if isinstance(p, R.FinishPart))
+    metadata: Any = finish.metadata["openrouter"]
+    assert [p.type for p in parts if p.type.startswith("text-")] == []
+    assert (finish.reason, metadata["refusal"]) == ("content-filter", "I cannot do that")
+
+
+@testing.effect
 def test_usage_subsets():
     """OpenRouterLanguageModel / generateText / usage / derives text and uncached tokens when
     details are subsets of their totals"""

@@ -20,6 +20,8 @@ from pyfect.ai.tool import NameMapper
 MODULE = "OpenAiLanguageModel"
 KEY = "openai-compat"
 _URL_OR_DATA = re.compile(r"^(data:|https?://)", re.IGNORECASE)
+_HTTP_URL = re.compile(r"^https?://", re.IGNORECASE)
+_DATA_URL = re.compile(r"^data:", re.IGNORECASE)
 
 type Block = dict[str, Any]
 
@@ -62,21 +64,27 @@ def _image(part: Pr.FilePart, prefixes: Sequence[str] | None) -> Block:
     return {"type": "input_image", "image_url": url, "detail": detail}
 
 
-def _pdf(part: Pr.FilePart, index: int, prefixes: Sequence[str] | None) -> list[Block]:
+def _pdf(part: Pr.FilePart, index: int, prefixes: Sequence[str] | None) -> Block | None:
+    """A PDF as an uploaded file's id or inline data (bytes, base64 or a
+    data URL). A URL is sent as text, and a URL string is dropped."""
     data = part.data
     if _is_file_id(data, prefixes):
-        return [{"type": "input_file", "file_id": data}]
+        return {"type": "input_file", "file_id": data}
     if isinstance(data, Url):
-        return [{"type": "input_file", "file_url": data.href}]
+        return {"type": "input_file", "file_url": data.href}
     if isinstance(data, bytes):
-        return [
-            {
-                "type": "input_file",
-                "filename": P.or_default(part.file_name, f"part-{index}.pdf"),
-                "file_data": f"data:application/pdf;base64,{_b64(data)}",
-            }
-        ]
-    return []
+        file_data = f"data:application/pdf;base64,{_b64(data)}"
+    elif _HTTP_URL.match(data):
+        return None
+    elif _DATA_URL.match(data):
+        file_data = data
+    else:
+        file_data = f"data:application/pdf;base64,{data}"
+    return {
+        "type": "input_file",
+        "filename": P.or_default(part.file_name, f"part-{index}.pdf"),
+        "file_data": file_data,
+    }
 
 
 def _user_content(message: Pr.UserMessage, prefixes: Sequence[str] | None) -> list[Block]:
@@ -87,7 +95,9 @@ def _user_content(message: Pr.UserMessage, prefixes: Sequence[str] | None) -> li
         elif part.media_type.startswith("image/"):
             content.append(_image(part, prefixes))
         elif part.media_type == "application/pdf":
-            content.extend(_pdf(part, index, prefixes))
+            pdf = _pdf(part, index, prefixes)
+            if pdf is not None:
+                content.append(pdf)
         else:
             raise PT.unsupported(
                 MODULE,
@@ -114,12 +124,11 @@ def _chat_part(part: Block) -> Block | None:
                 image["detail"] = part["detail"]
             return {"type": "image_url", "image_url": image}
         case _:
-            for key in ("file_url", "file_data"):
-                if key in part:
-                    return {"type": "text", "text": part[key]}
-            if "file_id" in part:
-                return {"type": "text", "text": f"openai://file/{part['file_id']}"}
-            return None
+            if "file_url" in part:
+                return {"type": "text", "text": part["file_url"]}
+            keys = ("filename", "file_data", "file_id")
+            file = {key: part[key] for key in keys if part.get(key) is not None}
+            return {"type": "file", "file": file}
 
 
 def chat_content(content: Sequence[Block]) -> str | list[Block]:

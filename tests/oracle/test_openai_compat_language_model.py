@@ -30,7 +30,14 @@ from pyfect.http.url import Url
 from pyfect.layer import Layer
 from pyfect.redacted import make as redact
 
-from ._ai_http import MockHttp, body_json, json_response, mock_json, mock_sse, sse_response
+from ._ai_http import (
+    MockHttp,
+    body_json,
+    json_response,
+    mock_json,
+    mock_sse,
+    sse_response,
+)
 
 
 class Input(TypedDict):
@@ -311,6 +318,75 @@ def test_multimodal_order():
         image(f"data:image/png;base64,{data}"),
         {"type": "text", "text": "second text"},
     ]
+
+
+@testing.effect
+def test_pdf_file_parts():
+    """generateText / sends PDFs as chat completion file parts"""
+    data = "JVBERg=="
+    mock = mock_json(completion({"content": "done"}))
+    content = (
+        Pr.TextPart(text="Summarise"),
+        Pr.FilePart(media_type="application/pdf", file_name="bytes.pdf", data=b"%PDF"),
+        Pr.FilePart(media_type="application/pdf", data=data),
+        Pr.FilePart(media_type="application/pdf", data=f"data:application/pdf;base64,{data}"),
+        Pr.FilePart(media_type="application/pdf", data="file-abc123"),
+        Pr.FilePart(media_type="application/pdf", data="https://files.example.com/doc.pdf"),
+    )
+    config: olm.ModelConfig = {"file_id_prefixes": ["file-", "https://files.example.com/"]}
+    yield from _provided(
+        lm.generate_text([Pr.UserMessage(content=content)]), mock, "gpt-4o-mini", config
+    )
+
+    def file(filename: str) -> dict[str, Any]:
+        return {
+            "type": "file",
+            "file": {"filename": filename, "file_data": f"data:application/pdf;base64,{data}"},
+        }
+
+    assert mock.bodies[0]["messages"][0]["content"] == [
+        {"type": "text", "text": "Summarise"},
+        file("bytes.pdf"),
+        file("part-2.pdf"),
+        file("part-3.pdf"),
+        {"type": "file", "file": {"file_id": "file-abc123"}},
+        {"type": "file", "file": {"file_id": "https://files.example.com/doc.pdf"}},
+    ]
+
+
+@testing.effect
+def test_null_optional_fields():
+    """generateText / decodes null optional fields in non-streaming responses"""
+    toolkit = K.make(T.make("Ping"))
+    call = {"id": None, "type": None, "function": {"name": "Ping", "arguments": None}}
+    tool_calls = completion(
+        {"content": None, "tool_calls": [call]}, finish_reason="tool_calls", service_tier=None
+    )
+    text = completion({"content": "Hello", "tool_calls": None}, service_tier=None)
+    responses = [tool_calls, text]
+    mock = MockHttp(lambda request: fx.succeed(json_response(request, responses.pop(0))))
+    tool_result = yield from _provided(
+        lm.generate_text("ping", toolkit=toolkit, disable_tool_call_resolution=True), mock
+    )
+    text_result = yield from _provided(lm.generate_text("hello"), mock)
+    assert [(c.id, c.name, c.params) for c in tool_result.tool_calls] == [
+        ("chatcmpl_test_1_tool_0", "Ping", {})
+    ]
+    assert text_result.text == "Hello"
+
+
+@testing.effect
+def test_refusal_finish_part():
+    """generateText / reports a refusal through the finish part"""
+    refusal = "I'm sorry, I can't help with that."
+    mock = mock_json(completion({"content": None, "refusal": refusal}))
+    result = yield from _provided(lm.generate_text("test"), mock)
+    finish = _first(result.content, R.FinishPart)
+    assert (result.text, result.finish_reason, finish.metadata["openai-compat"]) == (
+        "",
+        "content-filter",
+        {"refusal": refusal},
+    )
 
 
 @testing.effect
@@ -761,6 +837,30 @@ def test_stream_chunks():
     parts = yield from _provided(lm.stream_text("test").run_collect(), mock)
     assert any(isinstance(p, R.ResponseMetadataPart) for p in parts)
     assert _first(parts, R.FinishPart).reason == "stop"
+
+
+@testing.effect
+def test_stream_refusal_finish_part():
+    """streamText / streams a refusal through the finish part"""
+    events = [
+        chunk("chatcmpl_refusal", d, f, service_tier="default")
+        for d, f in [
+            ({"role": "assistant", "content": None, "refusal": ""}, None),
+            ({"refusal": "I'm sorry,"}, None),
+            ({"refusal": " I can't help with that."}, None),
+            ({}, "stop"),
+        ]
+    ]
+    parts = yield from _provided(
+        lm.stream_text("test").run_collect(), mock_sse([*events, "[DONE]"])
+    )
+    finish = _first(parts, R.FinishPart)
+    text_parts = [p for p in parts if p.type.startswith("text-")]
+    assert (len(text_parts), finish.reason, finish.metadata["openai-compat"]) == (
+        0,
+        "content-filter",
+        {"serviceTier": "default", "refusal": "I'm sorry, I can't help with that."},
+    )
 
 
 def _text(parts: Sequence[object]) -> str:

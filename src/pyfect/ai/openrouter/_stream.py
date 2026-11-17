@@ -133,6 +133,7 @@ class _Stream:
     completed_indexes: set[int] = field(default_factory=set[int])
     details: list[Detail] = field(default_factory=list[Detail])
     file_annotations: list[Any] = field(default_factory=list[Any])
+    refusal: str = ""
     usage: dict[str, Any] = field(default_factory=lambda: {"inputTokens": {}, "outputTokens": {}})
 
     def _accumulated(self) -> list[Detail]:
@@ -294,6 +295,8 @@ class _Stream:
             # Gemini 3 answers `stop` after a tool call with a thought
             # signature, though it expects the call's result.
             self.finish_reason = "tool-calls"
+        if self.refusal and self.finish_reason == "stop":
+            self.finish_reason = "content-filter"
         for index in sorted(self.tool_calls):
             call = self.tool_calls[index]
             ok, params = _parsed(call.params.text())
@@ -323,6 +326,8 @@ class _Stream:
         metadata.update(Rs.provider_of(chunk))
         if self.file_annotations:
             metadata["annotations"] = list(self.file_annotations)
+        if self.refusal:
+            metadata["refusal"] = self.refusal
         parts.append(
             {
                 "type": "finish",
@@ -340,6 +345,7 @@ class _Stream:
             self.finish_reason = Rs.resolve_finish_reason(reason, False)
         delta = choice["delta"]
         parts = yield from self._reasoning_deltas(delta)
+        self.refusal += delta.get("refusal") or ""
         content = delta.get("content")
         if content:
             parts.extend((yield from self._text(content)))

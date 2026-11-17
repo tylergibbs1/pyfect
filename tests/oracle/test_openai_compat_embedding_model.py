@@ -66,6 +66,26 @@ def test_reorders_by_index():
 
 
 @testing.effect
+def test_null_object_and_usage():
+    """decodes responses with null object and usage"""
+    mock = mock_json(
+        {
+            "object": None,
+            "data": [{"object": None, "index": 0, "embedding": [1, 2]}],
+            "model": "text-embedding-3-small",
+            "usage": None,
+        }
+    )
+    response = yield from _provided(
+        em.EmbeddingModel().flat_map(lambda model: model.embed_many(["hello"])),
+        mock,
+        model="text-embedding-3-small",
+    )
+    assert [e.vector for e in response.embeddings] == [(1, 2)]
+    assert response.usage.input_tokens is None
+
+
+@testing.effect
 def test_config_precedence():
     """merges config and applies withConfigOverride precedence"""
     mock = mock_json({"data": [{"index": 0, "embedding": [1, 2, 3]}], "model": "override-model"})
