@@ -7,6 +7,7 @@ gives."""
 from __future__ import annotations
 
 import importlib.util
+import subprocess
 import sys
 import types
 from pathlib import Path
@@ -425,3 +426,31 @@ def test_a_key_required_in_types_must_name_an_optional_key():
     )
     with pytest.raises(gen.GenerateError, match="names no optional key"):
         gen.generate(_STRUCT, target)
+
+
+def test_a_target_pinned_to_a_release_reads_its_tag(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A package that follows an older release than the reference checkout reads that
+    release's Generated.ts from the checkout's history."""
+    path = "packages/ai/thing/src/Generated.ts"
+    (tmp_path / "packages" / "effect").mkdir(parents=True)
+    (tmp_path / "packages" / "effect" / "package.json").write_text('{"version": "9.0.1"}')
+    (tmp_path / path).parent.mkdir(parents=True)
+
+    def git(*args: str) -> None:
+        subprocess.run(["git", "-C", str(tmp_path), *args], check=True, capture_output=True)
+
+    identity = ("-c", "user.name=t", "-c", "user.email=t@example.com")
+    (tmp_path / path).write_text("old")
+    git("init", "-q")
+    git("add", ".")
+    git(*identity, "commit", "-qm", "old")
+    git(*identity, "tag", "effect@9.0.0")
+    (tmp_path / path).write_text("new")
+    monkeypatch.setenv("PYFECT_REF", str(tmp_path))
+    assert gen.Target("thing", "Thing", "Thing").read_source() == "new"
+    assert gen.Target("thing", "Thing", "Thing", release="9.0.0").read_source() == "old"
+    assert gen.Target("thing", "Thing", "Thing", release="9.0.1").read_source() == "new"
+    with pytest.raises(gen.GenerateError, match=r"effect@8\.0\.0"):
+        gen.Target("thing", "Thing", "Thing", release="8.0.0").read_source()

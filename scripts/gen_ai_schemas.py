@@ -34,6 +34,7 @@ import argparse
 import json
 import os
 import re
+import subprocess
 import sys
 from collections.abc import Iterator
 from dataclasses import dataclass, field
@@ -61,6 +62,11 @@ class Target:
     required_in_types: tuple[tuple[str, str], ...] = ()
     """``(type, key)`` pairs that decode when absent but stay required in ``types.py``: a
     patch release can't make an exported type stricter to read, so they wait for 0.7.0."""
+    release: str | None = None
+    """The Effect release whose Generated.ts the package follows, when it is not the
+    reference checkout's: read from that release's tag (``effect@<release>``) in the
+    checkout's git history, so a newer checkout doesn't regenerate an API a patch release
+    must keep."""
 
     @property
     def package(self) -> str:
@@ -78,8 +84,12 @@ class Target:
         return f"packages/ai/{self.name}/src/Generated.ts"
 
     def read_source(self) -> str:
-        """The reference checkout's Generated.ts, with ``patches`` applied."""
-        source = self.default_source().read_text()
+        """The reference checkout's Generated.ts (at ``release``), with ``patches`` applied."""
+        reference = _reference()
+        if self.release is None or _checkout_release(reference) == self.release:
+            source = self.default_source().read_text()
+        else:
+            source = _git_show(reference, f"effect@{self.release}", self.source_path)
         for old, new in self.patches:
             if source.count(old) != 1:
                 raise GenerateError(f"{self.name}: a patch matches {source.count(old)} times")
@@ -89,6 +99,23 @@ class Target:
 
 def _reference() -> Path:
     return Path(os.environ.get("PYFECT_REF", Path.home() / "pyfect-ref" / "effect"))
+
+
+def _checkout_release(reference: Path) -> str:
+    package = json.loads((reference / "packages" / "effect" / "package.json").read_text())
+    return package["version"]
+
+
+def _git_show(reference: Path, tag: str, path: str) -> str:
+    result = subprocess.run(
+        ["git", "-C", str(reference), "show", f"{tag}:{path}"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise GenerateError(f"{path} at {tag}: {result.stderr.strip()}")
+    return result.stdout
 
 
 OPENAI = Target("openai", "OpenAI", "FunctionToolCall", "OpenAi")
@@ -137,6 +164,9 @@ OPENROUTER = Target(
     "OpenRouter",
     patches=_OPENROUTER_PATCHES,
     required_in_types=(("ChatToolCall", "id"), ("ChatStreamToolCall", "index")),
+    # 4.1.4's regeneration from a newer spec (#10521) renames or removes hundreds of exported
+    # names, so the package follows 4.1.2's Generated.ts, with later fixes as patches, until 0.7.0.
+    release="4.1.2",
 )
 TARGETS = {target.name: target for target in (OPENAI, OPENROUTER)}
 

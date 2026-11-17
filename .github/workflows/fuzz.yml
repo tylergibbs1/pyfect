@@ -9,7 +9,7 @@ name: fuzz
 # then fix it.
 #
 # runtime-differential runs freshly generated programs (tests/runtime_diff) in pyfect and in
-# Effect 4.1.2 under Node, comparing exits, cause shapes and event order: 300 programs per push
+# Effect 4.1.4 under Node, comparing exits, cause shapes and event order: 300 programs per push
 # to main, 20000 weekly. A difference fails the job with Hypothesis' shrunk program and its
 # seed: add the program to tests/runtime_diff/corpus.json (python -m runtime_diff --add) and fix
 # it.
@@ -92,7 +92,7 @@ jobs:
     timeout-minutes: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 330 || 30 }}
     env:
       PROGRAMS: ${{ inputs.programs || (github.event_name == 'schedule' && '20000') || '300' }}
-      EFFECT_COMMIT: 506eef143bcc1750ce58920aac1e45da7265d103 # Effect 4.1.2, as ci.yml's
+      EFFECT_COMMIT: 289a53f7b1fc40049219c6e69022db2fb859c356 # Effect 4.1.4, as ci.yml's
       PYFECT_EFFECT_REF: ${{ github.workspace }}/.effect
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -103,7 +103,7 @@ jobs:
         with:
           node-version-file: .node-version
 
-      - name: Check out Effect 4.1.2
+      - name: Check out Effect 4.1.4
         run: |
           git init -q .effect
           git -C .effect fetch -q --depth 1 https://github.com/Effect-TS/effect.git "$EFFECT_COMMIT"
