@@ -15,7 +15,14 @@ Both match Effect 4.1.4 (``cluster/Sharding.ts``, ``SqlRunnerStorage.ts``):
 The first is a liveness gap in Effect: ``markShardLocksUnhealthy``
 force-releases the shards, and ``probeShardLocks`` keeps the runner healthy
 with an empty ``refresh`` (``Sharding.ts`` lines 700-756 at effect@4.1.4).
-When Effect fixes it, follow the fix and turn that test around.
+When Effect fixes it (Effect-TS/effect#10676, open), follow the fix and turn
+that test around.
+
+That test keeps the faulted runner registered (``keep_registered``): with
+its lock refreshes failing it heartbeats only on every other refresh tick,
+once a second, and SQLite's second-resolution heartbeats can expire it a
+little over a second after one, so any delay under load let the peer
+take its shards legitimately.
 """
 
 from __future__ import annotations
@@ -80,6 +87,7 @@ def test_shards_stay_assigned_to_a_registered_runner_whose_lock_operations_fail(
         cluster, faulted, peer, shards = yield from two_runners(cluster_db)
         expiration = cluster.config.shard_lock_expiration.to_seconds()
 
+        yield from cluster.keep_registered(faulted)
         yield from cluster.fault_storage(faulted, "locks")
         yield from cluster.wait_until(
             "The faulted runner did not release its shards",
@@ -90,11 +98,13 @@ def test_shards_stay_assigned_to_a_registered_runner_whose_lock_operations_fail(
         # expired, and the peer has read the runners many times over.
         clock = yield from fx.clock.Clock()
         start = clock.current_time_millis_unsafe()
+        probes = faulted.controller.probes
         while elapsed_since(clock, start) < 4 * expiration:
             taken = held_by(cluster, peer) & shards
             assert not taken, f"The peer took over {taken}"
             assert not held_by(cluster, faulted), "The faulted runner reacquired a shard"
             yield from fx.sleep("100 millis")
+        assert faulted.controller.probes > probes, "The liveness probe never heartbeat"
 
         registrations = yield from cluster.registrations()
         faulted_rows = [row for row in registrations if row["address"] == address_of(faulted)]

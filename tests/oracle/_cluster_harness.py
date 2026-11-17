@@ -352,7 +352,9 @@ class _RunnerStorageController:
     again only after acting on the previous read.
 
     ``events`` (pyfect-only) records the shards each acquisition takes.
-    While ``failing_refreshes`` (pyfect-only), lock refreshes fail."""
+    While ``failing_refreshes`` (pyfect-only), lock refreshes fail.
+    ``after_heartbeat`` (pyfect-only) runs after each refresh that
+    succeeds; ``probes`` counts the empty ones (liveness probes) that did."""
 
     def __init__(self, storage: RunnerStorageService, events: StorageEvents, runner: str) -> None:
         self.gate = Latch(True)
@@ -415,6 +417,8 @@ class _RunnerStorageController:
             unregister=unregister,
         )
         self.fault: StorageFault = "none"
+        self.after_heartbeat: fx.Effect[None, Any] = fx.void
+        self.probes = 0
         self.controlled = self._faultable(self.controlled)
 
     def _faultable(self, storage: RunnerStorageService) -> RunnerStorageService:
@@ -431,9 +435,18 @@ class _RunnerStorageController:
 
             return fx.suspend(start)
 
+        def landed(shards: list[ShardId]) -> fx.Effect[None, Any]:
+            def count() -> None:
+                if not shards:
+                    self.probes += 1
+
+            return fx.suspend(lambda: self.after_heartbeat).and_then(fx.sync(count))
+
         def refresh(address: RunnerAddress, shard_ids: Any) -> fx.Effect[list[ShardId], Any]:
             shards = list(shard_ids)
-            return guarded(bool(shards), storage.refresh(address, shards))
+            return guarded(bool(shards), storage.refresh(address, shards)).tap(
+                lambda _: landed(shards)
+            )
 
         def register(runner: Any, healthy: bool) -> fx.Effect[Any, Any]:
             return guarded(False, storage.register(runner, healthy))
@@ -990,6 +1003,27 @@ class Cluster:
             runner.controller.fault = fault
 
         return fx.sync(apply)
+
+    def keep_registered(self, runner: ClusterRunner) -> fx.Effect[None, SqlError]:
+        """Moves ``runner``'s heartbeat an hour ahead, now and after each of
+        its refreshes that succeeds, so it stays registered however late
+        load makes its heartbeats; the heartbeats themselves still run
+        (pyfect-only)."""
+        later = self.sql.on_dialect_or_else(
+            pg=lambda: self.sql.literal("NOW() + INTERVAL '1 hour'"),
+            or_else=lambda: self.sql.literal("datetime(CURRENT_TIMESTAMP, '+1 hours')"),
+        )
+        pin = self.sql(
+            "UPDATE {} SET last_heartbeat = {} WHERE address = {}",
+            self.table("runners"),
+            later,
+            address_key(runner.address),
+        ).as_void()
+
+        def apply() -> None:
+            runner.controller.after_heartbeat = pin
+
+        return pin.and_then(fx.sync(apply))
 
     def cut_socket(
         self,
