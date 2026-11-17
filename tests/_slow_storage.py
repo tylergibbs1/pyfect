@@ -1,10 +1,13 @@
 """Runs a snippet as `_count_sleeps.py` does, with every commit to an SQLite file taking
-10 ms longer, as a slow disk's fsync makes it (`python _slow_storage.py file.py`).
+50 ms longer, as a slow disk's fsync makes it (`python _slow_storage.py file.py`).
 
 In CI, cluster/drain.py once completed 7.3 s of live-clock sleep where it takes 1.1 s on an
 idle machine: a stopping runner releases each of its 300 shards in its own commit, and the
-runner's poll loops keep sleeping for as long as that takes. In-memory databases are not
-slowed: they never wait for a disk.
+runner's poll loops keep sleeping for as long as that takes. cluster/single_runner.py later
+completed 2551 s: its shard locks were in the file, so each of two shutdowns queued 300
+releases behind one connection, and those that waited past the 10 s lock deadline timed
+out together. 10 ms commits kept that queue under the deadline, so the delay is 50 ms.
+In-memory databases are not slowed: they never wait for a disk.
 """
 
 import sqlite3
@@ -13,7 +16,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-COMMIT_DELAY = 0.01
+COMMIT_DELAY = 0.05
 
 _connect = sqlite3.connect
 

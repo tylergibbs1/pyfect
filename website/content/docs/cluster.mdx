@@ -104,8 +104,8 @@ shard moves. Three layers build it with everything it needs:
 
 `single_runner.layer()` needs only a `SqlClient`; `sharding_config=` updates the settings it
 reads from the environment, and `runner_storage_kind="memory"` keeps the shard locks in
-memory. Here a workflow engine runs on it over a SQLite file, and a second run on the same
-file reads the stored result:
+memory. Here a workflow engine runs on it over a SQLite file, with its shard locks in memory
+since no other runner shares them, and a second run on the same file reads the stored result:
 
 <CodeOutput>
 

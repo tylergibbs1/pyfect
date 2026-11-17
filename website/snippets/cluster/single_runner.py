@@ -38,11 +38,12 @@ def app(database: Path):
     sql = fx.layer.effect(
         SqlClient, sqlite.make(sqlite.SqliteClientConfig(filename=str(database)))
     ).pipe(fx.layer.provide(reactivity.layer))
-    # One runner whose messages and shard locks are in SQL, so executions survive a restart.
+    # One runner whose messages are in SQL, so executions survive a restart. With no other
+    # runner to share shards with, its shard locks can stay in memory.
     return (
         Greet.to_layer(greet)
         .pipe(fx.layer.provide_merge(cluster_workflow_engine.layer))
-        .pipe(fx.layer.provide_merge(single_runner.layer()))
+        .pipe(fx.layer.provide_merge(single_runner.layer(runner_storage_kind="memory")))
         .pipe(fx.layer.provide(sql))
         .or_die()
     )
