@@ -125,6 +125,9 @@ class _AfterCommitBuffer:
 # Keyed by the level, so a context without the transaction tag has no
 # buffer, and transactions not started by ``make_with_transaction`` have none.
 _buffers: WeakKeyDictionary[TransactionLevel, _AfterCommitBuffer] = WeakKeyDictionary()
+# The scope of each level's outermost transaction: it closes after the
+# COMMIT or ROLLBACK, and its first finalizer gives the connection back.
+_outermost_scopes: WeakKeyDictionary[TransactionLevel, CloseableScope] = WeakKeyDictionary()
 
 
 def _has_ended(buffer: _AfterCommitBuffer | None) -> bool:
@@ -198,6 +201,25 @@ def make_after_commit(
         return _WithFiber(body)
 
     return after_commit
+
+
+def after_end(
+    transaction_service: type[TransactionConnection],
+    finalizer: Callable[[Connection], Effect[None]],
+) -> Effect[None]:
+    """Run ``finalizer`` on the outermost transaction's connection after its
+    ``COMMIT`` or ``ROLLBACK``, before the connection goes back: for what a
+    session holds past its transaction, such as a MySQL ``GET_LOCK``. Calling
+    it outside a transaction is a defect."""
+
+    def body(fiber: Fiber[Any, Any]) -> Effect[None]:
+        found, level = fiber._context.lookup(transaction_service)
+        if not found:
+            return die(RuntimeError("after_end: not inside a transaction"))
+        scope = _outermost_scopes[level]
+        return scope.add_finalizer(lambda _: finalizer(level.connection))
+
+    return _WithFiber(body)
 
 
 # --- transactions -------------------------------------------------------------------
@@ -328,10 +350,12 @@ class WithTransaction:
         depth = 0 if parent is None else parent.depth + 1
         buffer = _AfterCommitBuffer(None if parent is None else _buffers.get(parent))
         committed = False
+        scope = CloseableScope() if parent is None else _outermost_scopes[parent]
 
         def in_level(conn: Connection) -> Effect[A, E | SqlError, R]:
             level = TransactionLevel(conn, depth)
             _buffers[level] = buffer
+            _outermost_scopes[level] = scope
             found_reactivity, reactivity = services.lookup(Reactivity)
             inner = services.add(opts.transaction_service, level).add(
                 CurrentTransactionService, opts.transaction_service
@@ -380,8 +404,6 @@ class WithTransaction:
                 lambda conn: start(conn).flat_map(lambda _: in_level(conn))
             )
         else:
-            scope = CloseableScope()
-
             acquire: Effect[Connection, SqlError] = _Locally(
                 opts.acquire_connection(restore), lambda ctx: ctx.add(Scope, scope)
             )
@@ -504,6 +526,7 @@ __all__ = [
     "TransactionOptions",
     "WithTransaction",
     "active_transaction_connection",
+    "after_end",
     "make_after_commit",
     "make_with_transaction",
     "transaction_connection",

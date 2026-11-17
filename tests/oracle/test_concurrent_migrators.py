@@ -150,3 +150,56 @@ def test_a_failed_mysql_migration_releases_the_lock(
         return (yield from fx.gen(passing).pipe(fx.provide(other)))
 
     assert (yield from fx.gen(body).pipe(fx.provide(layer))) == [(1, "ok")]
+
+
+@pytest.fixture
+def one_connection_mysql(request: pytest.FixtureRequest) -> fx.Layer[Any, Any]:
+    """A client on the MySQL server whose pool has one connection: the lock
+    has to be released on the transaction's own connection, and this pool
+    can't give a second one."""
+    pytest.importorskip("asyncmy")
+    from pyfect.sql import mysql
+
+    from ._mysql import MysqlServer, query_now
+
+    server: MysqlServer = request.getfixturevalue("mysql_server")
+    query_now(f"DROP TABLE IF EXISTS {_TABLE}, {_TABLE}_migrations")
+    return mysql.layer(mysql.MysqlClientConfig(url=server.url, max_connections=1))
+
+
+@testing.live
+def test_a_mysql_migrator_keeps_its_lock_until_its_transaction_commits(
+    one_connection_mysql: fx.Layer[Any, Any],
+):
+    """(pyfect) a MySQL migrator releases its lock only after its transaction commits"""
+    from ._mysql import query_now
+
+    def body():
+        sql = yield from SqlClient()
+        [row] = yield from sql("SELECT CONNECTION_ID() AS id")
+        loader = migrator.from_record(
+            {
+                "1_create": sql("CREATE TABLE {} (a INTEGER)", sql.identifier(_TABLE)),
+                # not DDL: only the commit makes this row visible to others
+                "2_seed": sql("INSERT INTO {} VALUES (1)", sql.identifier(_TABLE)),
+            }
+        )
+        done = yield from migrator.make()(table=f"{_TABLE}_migrations", loader=loader)
+        # read while the pool still holds the connection: its history goes with it
+        history = yield from fx.sync(
+            lambda: query_now(
+                "SELECT h.SQL_TEXT FROM performance_schema.events_statements_history h"
+                " JOIN performance_schema.threads t ON t.THREAD_ID = h.THREAD_ID"
+                f" WHERE t.PROCESSLIST_ID = {int(str(row['id']))} ORDER BY h.EVENT_ID",
+                root=True,
+            )
+        )
+        return done, [str(text).upper() for (text,) in history]
+
+    done, statements = yield from fx.gen(body).pipe(fx.provide(one_connection_mysql))
+    assert done == [(1, "create"), (2, "seed")]
+    commit = statements.index("COMMIT")
+    release = next(i for i, text in enumerate(statements) if "RELEASE_LOCK" in text)
+    # Released before the commit, another migrator could find the
+    # migrations recorded but miss the rows written after the last DDL.
+    assert commit < release, statements

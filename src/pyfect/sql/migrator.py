@@ -30,6 +30,8 @@ from pyfect._core import Effect, _MatchCause, _Suspend
 from pyfect.effect import fail, succeed, void
 from pyfect.logger._log import log_debug, log_info
 from pyfect.sql.client import SqlClient, SqlClientService
+from pyfect.sql.client._transaction import after_end
+from pyfect.sql.connection import Connection
 from pyfect.sql.error import ConstraintError, SqlError, UniqueViolation
 from pyfect.sql.statement import Fragment
 from pyfect.sql.statement._segments import literal_unsafe
@@ -206,9 +208,18 @@ def _mysql_lock(sql: SqlClientService, table: str) -> Effect[None, MigrationErro
     return locked.flat_map(check)
 
 
-def _mysql_unlock(sql: SqlClientService, table: str) -> Effect[None]:
-    # A failed release means the session is gone, and its locks with it.
-    return sql("SELECT RELEASE_LOCK({})", _mysql_lock_name(sql, table)).ignore()
+def _mysql_unlock_after_end(sql: SqlClientService, table: str) -> Effect[None]:
+    """Releases the lock on the transaction's own connection (MySQL locks
+    belong to a session) once the transaction has committed or rolled back:
+    released before the ``COMMIT``, another migrator could find the
+    migrations recorded but miss the rows written after the last DDL."""
+    text, params = sql("SELECT RELEASE_LOCK({})", _mysql_lock_name(sql, table)).compile()
+
+    def release(connection: Connection) -> Effect[None]:
+        # A failed release means the session is gone, and its locks with it.
+        return connection.execute_unprepared(text, params, None).ignore()
+
+    return after_end(sql.transaction_service, release)
 
 
 _MYSQL_LOCK_SECONDS = 365 * 24 * 60 * 60
@@ -322,7 +333,8 @@ def _run(  # noqa: PLR0917 (the runner's options, passed on once)
     def body() -> Effect[list[tuple[int, str]], Any, Any]:
         lock: Effect[object, Any] = sql.on_dialect_or_else(
             pg=lambda: sql("LOCK TABLE {} IN ACCESS EXCLUSIVE MODE", name),
-            mysql=lambda: _mysql_lock(sql, table),
+            # Registered first, so an interrupt after GET_LOCK still releases it.
+            mysql=lambda: _mysql_unlock_after_end(sql, table).and_then(_mysql_lock(sql, table)),
             or_else=lambda: void,
         )
 
@@ -398,10 +410,7 @@ def _run(  # noqa: PLR0917 (the runner's options, passed on once)
             )
         )
 
-    running = sql.on_dialect_or_else(
-        mysql=lambda: _Suspend(body).ensuring(_mysql_unlock(sql, table)),
-        or_else=lambda: _Suspend(body),
-    )
+    running = _Suspend(body)
     migrations = sql.with_transaction(running) if transactional else running
 
     def unlocked(error: object) -> Effect[list[tuple[int, str]], Any]:

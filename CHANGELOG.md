@@ -7,6 +7,10 @@
 - `socket.from_socket` and `socket.datagram.from_socket` register their own duplicate of the
   adopted socket, so closing the original early no longer stops other sockets from reading.
   The original still closes with the reader's scope, and the caller may close it at any time.
+- MySQL migrator: the `GET_LOCK` that holds a second migrator back was released just before
+  the migration transaction committed, so a second migrator could start in between and miss
+  what the first wrote after its last DDL statement. The lock is now released only once the
+  transaction has committed or rolled back, with no connection beyond the transaction's.
 
 ## 0.6.11 (2026-11-17)
 
