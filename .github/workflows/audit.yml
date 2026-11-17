@@ -3,7 +3,8 @@ name: audit
 # Checks the locked dependencies (uv.lock and website/bun.lock) against known vulnerabilities
 # (OSV) on pushes to main, pull requests and the merge queue, and weekly, so an advisory
 # published after a release still shows up. tests/test_workflow_security.py keeps every
-# workflow's actions pinned.
+# workflow's actions pinned. An ignored advisory needs a reason and an `until` date at most 30
+# days out (tests/test_ci_workflows.py), so it is rechecked instead of outliving its reason.
 
 on:
   push:
@@ -54,4 +55,7 @@ jobs:
 
       - name: Audit website/bun.lock
         working-directory: website
-        run: bun audit
+        # GHSA-fc5q-39xc-vjpf (picomatch ReDoS, no fixed release yet): picomatch is build-time
+        # only, through fumadocs-mdx and fumadocs-core > tinyglobby > fdir; its globs come only from
+        # the repo's config, and nothing in the deployed runtime uses it. until 2026-12-08
+        run: bun audit --ignore=GHSA-fc5q-39xc-vjpf

@@ -8,6 +8,7 @@ must run the same four tools, or a commit green on one machine is red on the oth
 import ast
 import json
 import re
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 import _container_images
@@ -180,6 +181,64 @@ def test_every_check_main_needs_runs_in_the_merge_queue():
     for workflow in ("ci.yml", "extras.yml"):
         text = (WORKFLOWS / workflow).read_text(encoding="utf-8")
         assert re.search(r"(?m)^  merge_group:$", text), workflow
+
+
+_IGNORE_LONGEST = timedelta(days=30)
+
+
+def _audit_ignore_problems(workflow: str, today: date) -> list[str]:
+    """An audit may ignore an advisory only with a comment just above saying why and until
+    when, at most 30 days out, so an ignore is rechecked instead of outliving its reason."""
+    lines = workflow.splitlines()
+    problems: list[str] = []
+    for number, line in enumerate(lines):
+        if "audit" not in line:
+            continue
+        above: list[str] = []
+        for previous in reversed(lines[:number]):
+            if not previous.strip().startswith("#"):
+                break
+            above.insert(0, previous.strip().lstrip("#").strip())
+        comment = " ".join(above)
+        for advisory in re.findall(r"--ignore[= ]+(\S+)", line):
+            why = re.search(
+                rf"{re.escape(advisory)}\b(.{{20,}}?)\buntil (\d{{4}}-\d{{2}}-\d{{2}})", comment
+            )
+            if why is None:
+                problems.append(
+                    f"{advisory}: no reason and `until YYYY-MM-DD` in the comment above"
+                )
+            elif (until := date.fromisoformat(why.group(2))) < today:
+                problems.append(f"{advisory}: ignored until {until}, which has passed: recheck it")
+            elif until - today > _IGNORE_LONGEST:
+                problems.append(f"{advisory}: ignored until {until}, over 30 days out")
+    return problems
+
+
+def test_an_audit_ignores_an_advisory_only_with_a_reason_and_an_expiry():
+    for path in sorted(WORKFLOWS.glob("*.yml")):
+        text = path.read_text(encoding="utf-8")
+        assert _audit_ignore_problems(text, datetime.now(UTC).date()) == [], path.name
+
+
+def test_the_audit_ignore_guard_rejects_a_missing_reason_or_date_and_a_stale_one():
+    today = date(2026, 11, 17)
+    run = "run: bun audit --ignore=GHSA-aaaa-bbbb-cccc"
+    reason = "# GHSA-aaaa-bbbb-cccc: build-time only, no untrusted input reaches it,"
+    cases = {
+        run: "no reason",
+        f"# build-time only, no untrusted input reaches it\n{run}": "no reason",
+        f"{reason}\n{run}": "no reason",
+        f"{reason} until 2026-11-16\n{run}": "has passed",
+        f"{reason} until 2026-12-18\n{run}": "over 30 days",
+        f"{reason}\n# until 2026-12-08\n\n{run}": "no reason",
+    }
+    for text, problem in cases.items():
+        found = _audit_ignore_problems(text, today)
+        assert len(found) == 1 and problem in found[0], (text, found)
+    for until in ("2026-11-17", "2026-12-17"):
+        assert _audit_ignore_problems(f"{reason}\n# until {until}\n{run}", today) == []
+    assert _audit_ignore_problems("run: bun audit", today) == []
 
 
 def test_every_ci_job_has_a_time_budget():
