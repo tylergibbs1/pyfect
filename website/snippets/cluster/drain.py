@@ -1,11 +1,10 @@
-import socket
 from dataclasses import replace
 
 import pyfect as fx
 from pyfect import exit as Exit
 from pyfect import reactivity
 from pyfect import schema as S
-from pyfect.cluster import cluster_socket, runner_address
+from pyfect.cluster import single_runner
 from pyfect.cluster.cluster_schema import Persisted
 from pyfect.cluster.entity import Entity
 from pyfect.cluster.sharding_config import ShardingConfigService
@@ -19,12 +18,6 @@ class Job(Entity, type="Job", rpc_annotations=fx.Context.make(Persisted, True)):
     run = make_rpc("Run", success=S.String)
 
 
-def free_port() -> int:
-    with socket.socket() as probe:
-        probe.bind(("127.0.0.1", 0))
-        return probe.getsockname()[1]
-
-
 def runner(
     termination_timeout: fx.duration.Input,
     work: fx.Effect[None],
@@ -35,12 +28,9 @@ def runner(
         job = fx.sync(started.open_unsafe).and_then(work)
         return job.and_then(fx.sync(lambda: log.append("job finished"))).as_("done")
 
-    port = free_port()
-
     def settings(config: ShardingConfigService) -> ShardingConfigService:
         return replace(
             config,
-            runner_address=runner_address.make("127.0.0.1", port),
             # How long a stopping runner waits for its entities (15 s by default).
             entity_termination_timeout=fx.duration.from_input_unsafe(termination_timeout),
         )
@@ -51,7 +41,7 @@ def runner(
     ).pipe(fx.layer.provide(reactivity.layer))
     return (
         Job.to_layer(Job.handlers().handle(Job.run)(run))
-        .pipe(fx.layer.provide_merge(cluster_socket.layer(sharding_config=settings)))
+        .pipe(fx.layer.provide_merge(single_runner.layer(sharding_config=settings)))
         .pipe(fx.layer.provide(sql))
     )
 
