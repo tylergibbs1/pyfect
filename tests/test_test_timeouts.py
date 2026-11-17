@@ -87,3 +87,72 @@ def test_only_listed_tests_take_longer_than_the_default() -> None:
         "a test that needs more than 5 s of real time is a bug: check timing on the "
         "TestClock or make it faster; delete a fixed test's line from tests/_longer_timeouts.txt"
     )
+
+
+def _is_timed_test(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    for decorator in node.decorator_list:
+        target = decorator.func if isinstance(decorator, ast.Call) else decorator
+        if isinstance(target, ast.Attribute) and target.attr in _DECORATORS:
+            return True
+    return False
+
+
+def _is_fixture(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    return any("fixture" in ast.unparse(decorator) for decorator in node.decorator_list)
+
+
+def _called_names(node: ast.AST) -> set[str]:
+    return {
+        call.func.id
+        for call in ast.walk(node)
+        if isinstance(call, ast.Call) and isinstance(call.func, ast.Name)
+    }
+
+
+def _looks_up_fixtures(node: ast.AST) -> bool:
+    return any(
+        isinstance(call, ast.Call)
+        and isinstance(call.func, ast.Attribute)
+        and call.func.attr == "getfixturevalue"
+        for call in ast.walk(node)
+    )
+
+
+def _timed_fixture_lookups(path: Path) -> list[str]:
+    functions = {
+        node.name: node
+        for node in _source.tree(path).body
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+    }
+    lookups = {
+        name
+        for name, node in functions.items()
+        if _looks_up_fixtures(node) and not _is_fixture(node)
+    }
+    changed = True
+    while changed:
+        changed = False
+        for name, node in functions.items():
+            if name not in lookups and not _is_fixture(node) and _called_names(node) & lookups:
+                lookups.add(name)
+                changed = True
+    name = path.relative_to(TESTS).as_posix()
+    return [
+        f"{name}::{test}"
+        for test, node in functions.items()
+        if test in lookups and _is_timed_test(node)
+    ]
+
+
+def test_timed_tests_get_their_fixtures_before_the_timeout_starts() -> None:
+    """``request.getfixturevalue`` inside a timed test's body runs the fixture under the
+    test's timeout, so a database container's first start (tens of seconds on a CI runner)
+    fails whichever test happens to ask first. Fixtures come in as parameters, or through
+    a fixture that looks them up."""
+    found = [
+        test
+        for path in _source.files(TESTS, "test_*.py")
+        if _source.mentions(path, "getfixturevalue")
+        for test in _timed_fixture_lookups(path)
+    ]
+    assert found == [], "take the fixture as a parameter (or look it up in a fixture)"

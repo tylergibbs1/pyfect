@@ -63,15 +63,24 @@ def backend(request: pytest.FixtureRequest, tmp_path: Path) -> Backend:
     return make_backend(request, tmp_path)
 
 
-def _server(request: pytest.FixtureRequest, name: str) -> Backend:
-    if name == "pg":
-        pytest.importorskip("psycopg")
-        server = request.getfixturevalue("pg_server")
-        return Backend("pg", lambda: pg(server), fresh_prefix("ret"))
-    if name == "mysql":
-        pytest.importorskip("asyncmy")
-        server = request.getfixturevalue("mysql_server")
-        return Backend("mysql", lambda: mysql(server), fresh_prefix("ret"))
+# The servers come in through fixtures, so a container's startup runs in the test's setup,
+# outside its timeout.
+@pytest.fixture
+def pg_backend(request: pytest.FixtureRequest) -> Backend:
+    pytest.importorskip("psycopg")
+    server = request.getfixturevalue("pg_server")
+    return Backend("pg", lambda: pg(server), fresh_prefix("ret"))
+
+
+@pytest.fixture
+def mysql_backend(request: pytest.FixtureRequest) -> Backend:
+    pytest.importorskip("asyncmy")
+    server = request.getfixturevalue("mysql_server")
+    return Backend("mysql", lambda: mysql(server), fresh_prefix("ret"))
+
+
+@pytest.fixture
+def mssql_backend(request: pytest.FixtureRequest) -> Backend:
     pytest.importorskip("pytds")
     server = request.getfixturevalue("mssql_server")
     return Backend("mssql", lambda: mssql(server), fresh_prefix("ret"))
@@ -266,11 +275,9 @@ def test_delete_processed_takes_nan_as_no_cutoff(backend: Backend):
 
 
 @testing.live(timeout="30 seconds")
-def test_save_request_keeps_a_duplicate_whose_original_is_deleted_mid_save(
-    request: pytest.FixtureRequest,
-):
+def test_save_request_keeps_a_duplicate_whose_original_is_deleted_mid_save(pg_backend: Backend):
     """saveRequest keeps a duplicate whose original is deleted mid-save"""
-    backend = _server(request, "pg")
+    backend = pg_backend
 
     def body(env: Env) -> Body:
         sql, storage = env.sql, env.storage
@@ -308,11 +315,9 @@ def test_save_request_keeps_a_duplicate_whose_original_is_deleted_mid_save(
 
 
 @testing.live(timeout="30 seconds")
-def test_clear_replies_does_not_deadlock_with_a_concurrent_delete_processed(
-    request: pytest.FixtureRequest,
-):
+def test_clear_replies_does_not_deadlock_with_a_concurrent_delete_processed(pg_backend: Backend):
     """clearReplies does not deadlock with a concurrent deleteProcessed"""
-    backend = _server(request, "pg")
+    backend = pg_backend
 
     def body(env: Env) -> Body:
         sql, storage = env.sql, env.storage
@@ -358,10 +363,10 @@ def test_clear_replies_does_not_deadlock_with_a_concurrent_delete_processed(
 
 @testing.live(timeout="30 seconds")
 def test_a_late_ack_chunk_does_not_deadlock_with_a_concurrent_delete_processed(
-    request: pytest.FixtureRequest,
+    mysql_backend: Backend,
 ):
     """a late AckChunk does not deadlock with a concurrent deleteProcessed"""
-    backend = _server(request, "mysql")
+    backend = mysql_backend
 
     def body(env: Env) -> Body:
         sql, storage = env.sql, env.storage
@@ -411,10 +416,10 @@ def test_a_late_ack_chunk_does_not_deadlock_with_a_concurrent_delete_processed(
 
 @testing.live(timeout="30 seconds")
 def test_a_stream_reply_does_not_deadlock_with_delete_processed_of_another_request(
-    request: pytest.FixtureRequest,
+    mysql_backend: Backend,
 ):
     """a stream reply does not deadlock with deleteProcessed of another request"""
-    backend = _server(request, "mysql")
+    backend = mysql_backend
 
     def body(env: Env) -> Body:
         sql, storage = env.sql, env.storage
@@ -459,12 +464,10 @@ def test_a_stream_reply_does_not_deadlock_with_delete_processed_of_another_reque
     yield from run(backend, body)
 
 
-@testing.live(timeout="30 seconds")
-def test_fails_the_migrations_when_the_retention_index_cannot_be_created(
-    request: pytest.FixtureRequest,
-):
+@testing.live
+def test_fails_the_migrations_when_the_retention_index_cannot_be_created(mysql_backend: Backend):
     """fails the migrations when the retention index cannot be created"""
-    backend = _server(request, "mysql")
+    backend = mysql_backend
     prefix = fresh_prefix("brokenidx")
 
     def body(env: Env) -> Body:
@@ -495,10 +498,10 @@ def test_fails_the_migrations_when_the_retention_index_cannot_be_created(
 
 @testing.live(timeout="30 seconds")
 def test_a_stream_acknowledgement_does_not_deadlock_with_delete_processed_of_another_request(
-    request: pytest.FixtureRequest,
+    mssql_backend: Backend,
 ):
     """a stream acknowledgement does not deadlock with deleteProcessed of another request"""
-    backend = _server(request, "mssql")
+    backend = mssql_backend
 
     def body(env: Env) -> Body:
         sql, storage = env.sql, env.storage
@@ -545,12 +548,12 @@ def test_a_stream_acknowledgement_does_not_deadlock_with_delete_processed_of_ano
     yield from run(backend, body)
 
 
-@testing.live(timeout="30 seconds")
+@testing.live
 def test_rejects_duplicate_exit_replies_when_another_table_has_the_same_index_name(
-    request: pytest.FixtureRequest,
+    mssql_backend: Backend,
 ):
     """rejects duplicate exit replies when another table has the same index name"""
-    backend = _server(request, "mssql")
+    backend = mssql_backend
     prefix = fresh_prefix("collision")
 
     def body(env: Env) -> Body:
@@ -578,12 +581,12 @@ def test_rejects_duplicate_exit_replies_when_another_table_has_the_same_index_na
     yield from run(backend, body)
 
 
-@testing.live(timeout="30 seconds")
+@testing.live
 def test_acknowledges_and_cleans_up_when_another_table_has_the_lookup_index_names(
-    request: pytest.FixtureRequest,
+    mssql_backend: Backend,
 ):
     """acknowledges and cleans up when another table has the lookup index names"""
-    backend = _server(request, "mssql")
+    backend = mssql_backend
     prefix = fresh_prefix("collision_idx")
 
     def body(env: Env) -> Body:
