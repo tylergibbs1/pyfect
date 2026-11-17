@@ -83,6 +83,16 @@
   it, overriding the client's own `follow_redirects` (Effect's `FetchHttpClient.RequestInit`
   `redirect` option).
 
+- `pyfect.ai.amazon_bedrock`: Amazon Bedrock's Converse API as a provider, as in Effect 4.1.4
+  (#9980). `client` signs requests with AWS Signature Version 4 on the `Digest` and `Mac`
+  services you provide, or sends a Bedrock API key, or runs a `credentials` effect before each
+  request; `layer_config()` reads the `AWS_*` variables. It decodes ConverseStream's
+  event-stream framing (CRC-checked) and maps Bedrock's errors to `AiError`.
+  `language_model` covers text, tool calls, reasoning (with its signature or redacted content,
+  sent back in later turns), images and documents, cache points and structured output (a
+  forced tool, or native with `structured_outputs`). Responses keep the fields and events the
+  provider does not model. No new dependency.
+
 ### Fixed
 
 - A schema whose aliases only reach each other (a JSON Schema `$ref` to itself) took
