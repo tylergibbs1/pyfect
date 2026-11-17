@@ -14,7 +14,7 @@ import asyncio
 import os
 import socket
 import threading
-from collections.abc import Buffer, Callable, Iterator
+from collections.abc import Buffer, Callable, Generator
 from concurrent.futures import Future
 from contextlib import contextmanager
 from pathlib import Path
@@ -91,7 +91,7 @@ def _stalled(data: bytes) -> _Stalled:
 
 
 @contextmanager
-def _newcomer() -> Iterator[tuple[socket.socket, socket.socket]]:
+def _newcomer() -> Generator[tuple[socket.socket, socket.socket]]:
     """A socket pair opened now: it takes the lowest free numbers."""
     a, b = socket.socketpair()
     a.setblocking(False)
@@ -297,7 +297,7 @@ def test_a_listener_opened_while_the_old_server_lets_go_of_its_socket_accepts():
     engine = _SlowToLetGo()
     options: ListenOptions = {"host": "127.0.0.1", "disable_preemptive_shutdown": True}
     listener = make_listener(options, lambda _dispatch: engine)
-    fx.run_blocking(fx.scoped(listener.as_(None)).or_die())  # pyright: ignore[reportArgumentType]
+    fx.run_blocking(fx.scoped(listener.as_(None)).or_die())
     assert engine.holding.is_set() and not engine.done.is_set()
     loop = engine.loop
     assert loop is not None

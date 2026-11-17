@@ -18,7 +18,7 @@ from __future__ import annotations
 import errno
 import os
 import threading
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Generator
 from contextlib import contextmanager, suppress
 
 
@@ -53,7 +53,7 @@ class OwnedFd[R]:
             return work(resource)
 
     @contextmanager
-    def using(self) -> Iterator[R]:
+    def using(self) -> Generator[R]:
         """The resource, kept open until the block ends."""
         with self._lock:
             if self._closing:
