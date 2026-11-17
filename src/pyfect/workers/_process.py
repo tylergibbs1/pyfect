@@ -21,6 +21,7 @@ import sys
 import threading
 from collections.abc import Mapping, Sequence
 
+from pyfect._owned_fd import OwnedFd
 from pyfect.workers._frames import FrameWriter, encode, read_frames
 from pyfect.workers._port import (
     Disconnected,
@@ -42,13 +43,13 @@ written."""
 
 
 class _ProcessWorkerPort(WorkerPort):
-    __slots__ = ("_popen", "_sock", "_writer")
+    __slots__ = ("_channel", "_popen", "_writer")
 
     def __init__(self, popen: subprocess.Popen[bytes], sock: socket.socket) -> None:
         super().__init__()
         self._popen = popen
-        self._sock = sock
-        self._writer = FrameWriter(sock, "pyfect-worker-writer")
+        self._channel = OwnedFd(sock, socket.socket.close)
+        self._writer = FrameWriter(self._channel, "pyfect-worker-writer")
         threading.Thread(target=self._read, name="pyfect-worker-reader", daemon=True).start()
 
     def post(self, message: object) -> None:
@@ -65,10 +66,10 @@ class _ProcessWorkerPort(WorkerPort):
         def unreadable(cause: BaseException) -> None:
             self.events.put(Unreadable(cause))
 
-        read_frames(self._sock, received, unreadable)
+        self._channel.use(lambda sock: read_frames(sock, received, unreadable))
         code = self._popen.wait()
         self._writer.close()
-        self._sock.close()
+        self._channel.close_when_unused()
         self.finish(code)
 
 
@@ -112,13 +113,13 @@ class ProcessWorker(WorkerHandle):
 
 
 class _ProcessParent(ParentPort):
-    __slots__ = ("_closed", "_sock", "_writer")
+    __slots__ = ("_channel", "_closed", "_writer")
 
     def __init__(self, sock: socket.socket) -> None:
         super().__init__()
-        self._sock = sock
+        self._channel = OwnedFd(sock, socket.socket.close)
         self._closed = False
-        self._writer = FrameWriter(sock, "pyfect-worker-writer")
+        self._writer = FrameWriter(self._channel, "pyfect-worker-writer")
         threading.Thread(target=self._read, name="pyfect-worker-reader", daemon=True).start()
         atexit.register(self._writer.close, _FLUSH_TIMEOUT)
 
@@ -136,7 +137,7 @@ class _ProcessParent(ParentPort):
         def unreadable(cause: BaseException) -> None:
             self.inbox.put(Unreadable(cause))
 
-        read_frames(self._sock, received, unreadable)
+        self._channel.use(lambda sock: read_frames(sock, received, unreadable))
         self.inbox.put(Disconnected())
 
 

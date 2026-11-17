@@ -15,6 +15,8 @@ import struct
 import threading
 from collections.abc import Callable
 
+from pyfect._owned_fd import OwnedFd
+
 _HEADER = struct.Struct(">I")
 
 
@@ -50,13 +52,13 @@ def read_frames(
 
 
 class FrameWriter:
-    """Writes frames in order on its own thread; once the socket fails,
-    frames are dropped."""
+    """Writes frames in order on its own thread; once the socket fails or
+    closes, frames are dropped."""
 
-    __slots__ = ("_frames", "_sock", "_thread")
+    __slots__ = ("_channel", "_frames", "_thread")
 
-    def __init__(self, sock: socket.socket, name: str) -> None:
-        self._sock = sock
+    def __init__(self, channel: OwnedFd[socket.socket], name: str) -> None:
+        self._channel = channel
         self._frames: queue.SimpleQueue[bytes | None] = queue.SimpleQueue()
         self._thread = threading.Thread(target=self._run, name=name, daemon=True)
         self._thread.start()
@@ -77,6 +79,9 @@ class FrameWriter:
             if frame is None:
                 return
             try:
-                self._sock.sendall(frame)
+                self._send(frame)
             except OSError:
                 return
+
+    def _send(self, frame: bytes) -> None:
+        self._channel.use(lambda sock: sock.sendall(frame))

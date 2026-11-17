@@ -17,6 +17,7 @@ from pyfect._core import Effect, _WithFiber
 from pyfect._fiber import Fiber
 from pyfect._loop_thread import LoopThread
 from pyfect._os_wait import Resume, WaitsFor, os_wait
+from pyfect._owned_fd import OwnedFd
 from pyfect._root import run_loop
 from pyfect.context import Context
 from pyfect.duration import Duration, from_input_unsafe, zero
@@ -208,8 +209,8 @@ class Running:
     def submit[A](self, make: Callable[[], Coroutine[Any, Any, A]]) -> Future[A]:
         return asyncio.run_coroutine_threadsafe(make(), self.loop)
 
-    def start(self, sock: socket.socket) -> Effect[None, BaseException]:
-        self.served = self.submit(lambda: self.server.serve(sockets=[sock]))
+    def start(self, listening: OwnedFd[socket.socket]) -> Effect[None, BaseException]:
+        self.served = self.submit(lambda: _serve_on(self.server, listening))
         served = self.served
 
         async def started() -> None:
@@ -273,6 +274,13 @@ class Running:
         return suspend(body)
 
 
+async def _serve_on(server: Engine, listening: OwnedFd[socket.socket]) -> None:
+    """``server`` serving on the listening socket, kept open until the engine
+    lets go of it: cancelled or not, it takes the socket off its loop first."""
+    with listening.using() as sock:
+        await server.serve(sockets=[sock])
+
+
 def graceful(options: ListenOptions) -> Duration:
     if options.get("disable_preemptive_shutdown", False):
         return zero
@@ -319,13 +327,16 @@ def make_listener(
 ) -> Effect[HttpServerService, SocketServerError, ScopeTag]:
     """An ``HttpServer`` on ``engine``, listening until the scope closes."""
 
-    def bind() -> Effect[socket.socket, SocketServerError]:
+    def bind() -> Effect[OwnedFd[socket.socket], SocketServerError]:
         try:
-            return succeed(_bind(options.get("host"), options.get("port", 0)))
+            sock = _bind(options.get("host"), options.get("port", 0))
         except OSError as cause:
             return fail(SocketServerError(SocketServerOpenError(cause)))
+        return succeed(OwnedFd(sock, socket.socket.close))
 
-    def run(sock: socket.socket) -> Effect[HttpServerService, SocketServerError, ScopeTag]:
+    def run(
+        listening: OwnedFd[socket.socket],
+    ) -> Effect[HttpServerService, SocketServerError, ScopeTag]:
         dispatch = Dispatch()
 
         def start() -> Effect[Running, SocketServerError]:
@@ -333,7 +344,7 @@ def make_listener(
             loop = current or _loop_thread()
             running = Running(engine(dispatch), loop, graceful=graceful(options))
             return (
-                running.start(sock)
+                running.start(listening)
                 .as_(running)
                 .catch_all(
                     lambda cause: running.stop().and_then(
@@ -343,7 +354,7 @@ def make_listener(
             )
 
         def service(running: Running) -> HttpServerService:
-            host, port = sock.getsockname()[:2]
+            host, port = listening.use(socket.socket.getsockname)[:2]
             address = inet_address_from_native_unsafe(host, port)
             return make_server(serve=_serve(dispatch, running), address=address)
 
@@ -352,8 +363,8 @@ def make_listener(
 
         return acquire_release(suspend(start), stop).map(service)
 
-    def close(sock: socket.socket, _exit: object) -> Effect[None]:
-        return sync(sock.close)
+    def close(listening: OwnedFd[socket.socket], _exit: object) -> Effect[None]:
+        return sync(listening.close_when_unused)
 
     return acquire_release(suspend(bind), close).flat_map(run)
 

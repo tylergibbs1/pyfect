@@ -11,7 +11,9 @@ take yet waits for the socket to become writable on the loop.
 
 from __future__ import annotations
 
+import contextlib
 import errno
+import functools
 import socket
 import struct
 import sys
@@ -25,6 +27,7 @@ from typing import Literal, Never, overload
 from pyfect._core import Effect
 from pyfect._effect_args import require_effect
 from pyfect._lookup import on_lookup_thread
+from pyfect._owned_fd import Closed, OwnedFd
 from pyfect.effect import fail, succeed, suspend, sync
 from pyfect.layer import Layer
 from pyfect.layer import effect as layer_effect
@@ -414,29 +417,31 @@ def _bind(options: Options, events: BackingEvents, plan: _Plan) -> BackingSocket
 def _adopt(
     sock: socket.socket, peer: Endpoint | None, events: BackingEvents
 ) -> Effect[BackingSocket, DatagramSocketError]:
-    def work() -> BackingSocket:
-        try:
-            family: Family = "ipv6" if sock.family == socket.AF_INET6 else "ipv4"
-            sock.setblocking(False)
-        except OSError as cause:
-            sock.close()
-            raise _OpenFailed(open_error(cause, _open_kind(cause))) from cause
-        scope_ids = _scope_ids(family)
-        try:
-            remote = sock.getpeername()
-        except OSError:
-            remote = None
-        if remote is not None:
-            address = BackingAddress(str(remote[0]), int(remote[1]))
-            return _NativeSocket(sock, events, scope_ids, address, connected=True)
-        default = None
-        if peer is not None:
-            resolved = _resolve(peer.host, family) if isinstance(peer, HostPort) else None
-            host = resolved[0] if resolved is not None else _endpoint_host(peer, scope_ids)
-            default = BackingAddress(host, peer.port)
-        return _NativeSocket(sock, events, scope_ids, default, connected=False)
+    return _in_thread(functools.partial(_adopt_now, sock, peer, events))
 
-    return _in_thread(work)
+
+def _adopt_now(sock: socket.socket, peer: Endpoint | None, events: BackingEvents) -> BackingSocket:
+    """Take ``sock`` over (on the adopting thread, which is given it)."""
+    try:
+        family: Family = "ipv6" if sock.family == socket.AF_INET6 else "ipv4"
+        sock.setblocking(False)
+    except OSError as cause:
+        sock.close()
+        raise _OpenFailed(open_error(cause, _open_kind(cause))) from cause
+    scope_ids = _scope_ids(family)
+    try:
+        remote = sock.getpeername()
+    except OSError:
+        remote = None
+    if remote is not None:
+        address = BackingAddress(str(remote[0]), int(remote[1]))
+        return _NativeSocket(sock, events, scope_ids, address, connected=True)
+    default = None
+    if peer is not None:
+        resolved = _resolve(peer.host, family) if isinstance(peer, HostPort) else None
+        host = resolved[0] if resolved is not None else _endpoint_host(peer, scope_ids)
+        default = BackingAddress(host, peer.port)
+    return _NativeSocket(sock, events, scope_ids, default, connected=False)
 
 
 # --- the open socket ------------------------------------------------------
@@ -444,7 +449,9 @@ def _adopt(
 
 class _NativeSocket:
     """A bound, non-blocking UDP socket: read on the loop, written from
-    fibers."""
+    fibers. Closing it takes it off the loop and closes it there, once no
+    send is using it; sends that begin after ``close`` fail as closed, as
+    Node's do once the socket is closed."""
 
     def __init__(
         self,
@@ -455,16 +462,14 @@ class _NativeSocket:
         *,
         connected: bool,
     ) -> None:
-        self._sock = sock
-        self._fd = sock.fileno()
-        self._events = events
         bound = sock.getsockname()
+        self._sock = OwnedFd(sock, self._close_soon)
+        self._events = events
         self.address = BackingAddress(str(bound[0]), int(bound[1]))
         self.scope_ids = scope_ids
         self.peer = peer
         self.connected = connected
         self._lock = threading.Lock()
-        self._closing = False
         # Sends the kernel could not take yet, written in order on the loop.
         self._backlog: deque[tuple[bytes, BackingAddress | None, SendDone]] = deque()
         call_soon(self._start_reading)
@@ -472,22 +477,26 @@ class _NativeSocket:
     # --- loop side ----------------------------------------------------------
 
     def _start_reading(self) -> None:
-        with self._lock:
-            if self._closing:
-                return
-            get_loop().add_reader(self._fd, self._readable)
+        with contextlib.suppress(Closed):
+            self._sock.use(lambda sock: get_loop().add_reader(sock, self._readable))
 
     def _readable(self) -> None:
+        with contextlib.suppress(Closed), self._sock.using() as sock:
+            self._read_batch(sock)
+
+    def _read_batch(self, sock: socket.socket) -> None:
         # At most a batch per callback, as libuv: the selector calls again
         # while datagrams are queued, and the loop's other sockets get turns.
         for _ in range(_READS_PER_CALLBACK):
             try:
-                payload, sender = self._sock.recvfrom(_MAX_DATAGRAM)
+                payload, sender = sock.recvfrom(_MAX_DATAGRAM)
             except (BlockingIOError, InterruptedError):
                 return
             except OSError as cause:
                 if cause.errno in _GONE:
-                    self._closed_underneath()
+                    get_loop().remove_reader(sock)
+                    if not self._sock.closing:
+                        self._events.on_close()
                 else:
                     # An error after opening has no write left to fail, such
                     # as an ICMP report on a connected socket.
@@ -495,22 +504,20 @@ class _NativeSocket:
                 return
             self._events.on_packet(payload, str(sender[0]), int(sender[1]))
 
-    def _closed_underneath(self) -> None:
-        with self._lock:
-            closing = self._closing
-        get_loop().remove_reader(self._fd)
-        if not closing:
-            self._events.on_close()
-
     def _writable(self) -> None:
+        # Closing: ``_close_on_loop`` fails what is left.
+        with contextlib.suppress(Closed), self._sock.using() as sock:
+            self._write_backlog(sock)
+
+    def _write_backlog(self, sock: socket.socket) -> None:
         while True:
             with self._lock:
                 if not self._backlog:
-                    get_loop().remove_writer(self._fd)
+                    get_loop().remove_writer(sock)
                     return
                 payload, destination, done = self._backlog[0]
             try:
-                self._send_now(payload, destination)
+                _send_now(sock, payload, destination)
             except (BlockingIOError, InterruptedError):
                 return
             except OSError as cause:
@@ -525,23 +532,27 @@ class _NativeSocket:
             self._backlog.popleft()
 
     def _wait_writable(self) -> None:
+        # Closing: ``_close_on_loop`` fails the backlog.
+        with contextlib.suppress(Closed):
+            self._sock.use(lambda sock: get_loop().add_writer(sock, self._writable))
+
+    def _close_soon(self, sock: socket.socket) -> None:
+        """Close ``sock`` on the loop, which reads it (``OwnedFd`` calls this
+        once no send uses it)."""
+        call_soon(functools.partial(self._close_on_loop, sock))
+
+    def _close_on_loop(self, sock: socket.socket) -> None:
+        loop = get_loop()
+        loop.remove_reader(sock)
+        loop.remove_writer(sock)
         with self._lock:
-            if self._closing:
-                backlog = list(self._backlog)
-                self._backlog.clear()
-            else:
-                backlog = None
-                get_loop().add_writer(self._fd, self._writable)
-        for _payload, _destination, done in backlog or ():
+            backlog = list(self._backlog)
+            self._backlog.clear()
+        sock.close()
+        for _payload, _destination, done in backlog:
             done(closed_error())
 
     # --- fibers' side -------------------------------------------------------
-
-    def _send_now(self, payload: bytes, destination: BackingAddress | None) -> None:
-        if destination is None:
-            self._sock.send(payload)
-        else:
-            self._sock.sendto(payload, (destination.host, destination.port))
 
     def send(self, payload: bytes, destination: BackingAddress | None, done: SendDone) -> None:
         with self._lock:
@@ -551,11 +562,18 @@ class _NativeSocket:
         if queued:
             return
         try:
-            self._send_now(payload, destination)
-        except (BlockingIOError, InterruptedError):
-            with self._lock:
-                self._backlog.append((payload, destination, done))
-            call_soon(self._wait_writable)
+            with self._sock.using() as sock:
+                try:
+                    _send_now(sock, payload, destination)
+                except (BlockingIOError, InterruptedError):
+                    # Queued while the socket is in use, so the close that
+                    # fails the backlog comes after.
+                    with self._lock:
+                        self._backlog.append((payload, destination, done))
+                    call_soon(self._wait_writable)
+                    return
+        except Closed:
+            done(closed_error())
             return
         except OSError as cause:
             done(_send_error(cause))
@@ -581,30 +599,26 @@ class _NativeSocket:
                 return fail(option)
             level, add, drop, value = option
             try:
-                self._sock.setsockopt(level, add, value)
+                self._sock.use(lambda sock: sock.setsockopt(level, add, value))
             except OSError as cause:
                 return fail(open_error(cause, _open_kind(cause)))
-            return succeed(lambda: sync(lambda: self._sock.setsockopt(level, drop, value)))
+            return succeed(
+                lambda: sync(
+                    lambda: self._sock.use(lambda sock: sock.setsockopt(level, drop, value))
+                )
+            )
 
         return suspend(join)
 
     def close(self) -> None:
-        with self._lock:
-            if self._closing:
-                return
-            self._closing = True
-        call_soon(self._close_on_loop)
+        self._sock.close_when_unused()
 
-    def _close_on_loop(self) -> None:
-        loop = get_loop()
-        loop.remove_reader(self._fd)
-        loop.remove_writer(self._fd)
-        with self._lock:
-            backlog = list(self._backlog)
-            self._backlog.clear()
-        self._sock.close()
-        for _payload, _destination, done in backlog:
-            done(closed_error())
+
+def _send_now(sock: socket.socket, payload: bytes, destination: BackingAddress | None) -> None:
+    if destination is None:
+        sock.send(payload)
+    else:
+        sock.sendto(payload, (destination.host, destination.port))
 
 
 class _Batch:
