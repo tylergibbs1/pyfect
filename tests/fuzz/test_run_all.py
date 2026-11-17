@@ -7,6 +7,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from _subprocess import SUBPROCESS_TIMEOUT
+
 _TESTS = Path(__file__).resolve().parent.parent
 
 
@@ -20,7 +22,7 @@ def test_every_target_reports_its_output_in_one_piece_and_every_failure_counts(t
         capture_output=True,
         text=True,
         check=False,
-        timeout=30,
+        timeout=SUBPROCESS_TIMEOUT,
     )
     assert done.returncode == 1, done.stdout + done.stderr
     body, _, last = done.stdout.rstrip().rpartition("\n")
