@@ -13,9 +13,9 @@ given): linear work grows ``factor`` times, ``n log n`` a little more, quadratic
 ``factor**2`` times; ``EXPONENT`` sits between. Times are the thread's CPU time (the
 process's, ``clock=time.process_time``, for work that can move to other threads) with the
 collector off, so waiting for a CPU on a loaded machine does not count; the two sizes are
-measured in turn, the least of a few runs each, so a stretch on a slower core or with a cold
-cache does not decide it. The size first doubles until the small run takes ``MIN_SECONDS``,
-so fixed costs do not hide the growth.
+measured in turn (the order flipping each round), the least of a few runs each, so a stretch
+on a slower core or with a cold cache does not decide it. The size first doubles until the
+small run takes ``MIN_SECONDS``, so fixed costs do not hide the growth.
 
 An input that outgrows a CPU cache between the two sizes costs more per unit once, which can
 look superlinear over one step; a ratio over the bound is checked again over the next
@@ -61,7 +61,8 @@ def cpu_pair(
 ) -> tuple[float, float]:
     """The least CPU time of each of two pieces of work, run in turn, so a stretch in
     which the machine runs slower (a lower clock speed, a busy neighbour sharing its cache)
-    falls on both instead of inflating their ratio."""
+    falls on both instead of inflating their ratio. The order flips each round (a b, b a,
+    a b), so a speed that alternates between runs does not slow every run of one side."""
     a, b = _least((first, second), runs, clock)
     return a, b
 
@@ -72,11 +73,13 @@ def _least(works: tuple[Work, ...], runs: int, clock: Clock) -> list[float]:
     gc.collect(YOUNG)
     gc.disable()
     try:
+        order = list(enumerate(works))
         for _ in range(runs):
-            for index, work in enumerate(works):
+            for index, work in order:
                 start = clock()
                 work()
                 best[index] = min(best[index], clock() - start)
+            order.reverse()  # a b, b a, a b: each side runs both first and second
     finally:
         if enabled:
             gc.enable()

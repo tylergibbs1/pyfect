@@ -269,3 +269,49 @@ def test_a_slow_stretch_anywhere_does_not_fail_linear_work(start: int) -> None:
     base = 1000
     make: Make = lambda n: clock.work(0.003 * n / base)  # noqa: E731
     assert_near_linear(make, base, _no_doubling(base), clock=clock)
+
+
+class _AlternatingClock:
+    """A thread clock under which every other run (the ``parity``-th, counting from 0) takes
+    ``factor`` times longer: a machine whose speed flips between one measurement and the next
+    (a sibling hardware thread busy, then idle), so samples taken in a fixed order put the
+    slow runs all on one size."""
+
+    def __init__(self, parity: int, factor: float) -> None:
+        self.now, self.reads, self.parity, self.factor = 0.0, 0, parity, factor
+
+    def __call__(self) -> float:
+        self.reads += 1
+        return self.now
+
+    def work(self, seconds: float):
+        def run() -> None:
+            slow = (self.reads - 1) // 2 % 2 == self.parity  # one start read, one end read
+            self.now += seconds * (self.factor if slow else 1)
+
+        return run
+
+
+@pytest.mark.parametrize("parity", [0, 1])
+def test_alternating_speed_does_not_hide_quadratic_work(parity: int) -> None:
+    clock = _AlternatingClock(parity, factor=1.5)
+    base = 1000
+    make: Make = lambda n: clock.work(0.003 * (n / base) ** 2)  # noqa: E731
+    with pytest.raises(AssertionError, match="superlinear"):
+        assert_near_linear(make, base, _no_doubling(base), clock=clock)
+
+
+@pytest.mark.parametrize("parity", [0, 1])
+def test_alternating_speed_does_not_fail_a_linear_cost_step(parity: int) -> None:
+    """The linear work with a one-time cost step of
+    ``test_a_cost_step_between_the_two_sizes_is_not_superlinear``, which CI failed when its
+    larger runs were measured on a slower stretch (2.9x over a doubling, the bound 2.9x)."""
+    clock = _AlternatingClock(parity, factor=1.5)
+    base = 1000
+    step_at = base * 2
+
+    def make(n: int):
+        units = n if n < step_at else 4 * n
+        return clock.work(0.003 * units / base)
+
+    assert_near_linear(make, base, _no_doubling(base), clock=clock)
