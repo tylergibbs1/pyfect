@@ -5,15 +5,15 @@ Coverage counts ported, renamed and §4 exports.
 
 | Module | Exports | Ported | Renamed | §4 | Missing | Coverage |
 |---|---|---|---|---|---|---|
-| Schema | 409 | 318 | 46 | 43 | 2 | 99% |
+| Schema | 409 | 320 | 46 | 43 | 0 | 100% |
 | SchemaAST | 134 | 58 | 8 | 68 | 0 | 100% |
 | SchemaGetter | 53 | 48 | 0 | 5 | 0 | 100% |
 | SchemaTransformation | 50 | 37 | 5 | 8 | 0 | 100% |
 | SchemaIssue | 21 | 16 | 3 | 2 | 0 | 100% |
 | SchemaParser | 34 | 26 | 0 | 8 | 0 | 100% |
-| SchemaRepresentation | 102 | 89 | 6 | 6 | 1 | 99% |
+| SchemaRepresentation | 102 | 90 | 6 | 6 | 0 | 100% |
 | JsonSchema | 16 | 8 | 8 | 0 | 0 | 100% |
-| **All** | 819 | | | | 3 | 99% |
+| **All** | 819 | | | | 0 | 100% |
 
 ## Schema
 
@@ -243,8 +243,8 @@ Coverage counts ported, renamed and §4 exports.
 | `isBetweenBigDecimal` | ported | `pyfect.schema.is_between_big_decimal` |
 | `BigDecimal` | ported | `pyfect.schema.BigDecimal` |
 | `BigDecimalFromString` | ported | `pyfect.schema.BigDecimalFromString` |
-| `Rational` | missing |  |
-| `RationalFromString` | missing |  |
+| `Rational` | ported | `pyfect.schema.Rational` |
+| `RationalFromString` | ported | `pyfect.schema.RationalFromString` |
 | `ByteSize` | ported | `pyfect.schema.ByteSize` |
 | `ByteSizeFromString` | ported | `pyfect.schema.ByteSizeFromString` |
 | `ByteSizeFromBigInt` | ported | `pyfect.schema.ByteSizeFromBigInt` |
@@ -815,7 +815,7 @@ Coverage counts ported, renamed and §4 exports.
 | `BigDecimalReviver` | ported | `pyfect.schema.representation.big_decimal_reviver` |
 | `SemVerReviver` | ported | `pyfect.schema.representation.sem_ver_reviver` |
 | `SemVerRangeReviver` | ported | `pyfect.schema.representation.sem_ver_range_reviver` |
-| `RationalReviver` | missing |  |
+| `RationalReviver` | ported | `pyfect.schema.representation.rational_reviver` |
 | `FileReviver` | §4 | not ported (§4: `SchemaRepresentation` revivers of schemas pyfect has not ported) |
 | `FormDataReviver` | §4 | not ported (§4: `SchemaRepresentation` revivers of schemas pyfect has not ported) |
 | `URLSearchParamsReviver` | §4 | not ported (§4: `SchemaRepresentation` revivers of schemas pyfect has not ported) |

@@ -184,6 +184,13 @@ OMISSIONS: tuple[Omission, ...] = (
     ),
     _some("effect/test/Stream.test.ts", _NODE_STREAMS, r"event|ReadableStream"),
     _some(
+        "effect/test/persistence/PersistedQueueTest.ts",
+        'the suite runs it only for a store built with `cleanup: "unsupported"`, which only '
+        "Cloudflare's Durable Object store is (`platform/cloudflare`, not ported); every pyfect "
+        "store supports cleanup and runs the suite's cleanup cases",
+        r"^cleanup explicitly fails as unsupported$",
+    ),
+    _some(
         "effect/test/eventlog/EventJournal.test.ts",
         "an imported id more than a day ahead of the clock is not the floor of local ids, so one "
         "at the UUID v7 ceiling no longer stops every local write (Effect's do fail); "
