@@ -27,6 +27,7 @@ Each entry under Changed or Removed says what to do instead.
 ## Enforced
 
 `tests/test_changelog.py` fails if a patch section after 0.5.5 has a heading other than
-Fixed, Added, Deprecated, Performance or Docs. The unreleased section counts: once it has a
-Changed or Removed entry, the next release must be a minor one. Releases up to 0.5.5 were
-made before this policy and are not checked.
+Fixed, Added, Deprecated, Performance or Docs. Entries waiting for a release go under
+`## Unreleased` at the top, which has no version yet; the release gives it one, and the check
+then applies: once it has a Changed or Removed entry, the release must be a minor one.
+Releases up to 0.5.5 were made before this policy and are not checked.

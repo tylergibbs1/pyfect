@@ -8,29 +8,54 @@ from pathlib import Path
 
 CHANGELOG = Path(__file__).resolve().parent.parent / "CHANGELOG.md"
 HEADING = re.compile(r"^## (\d+)\.(\d+)\.(\d+) \((unreleased|\d{4}-\d{2}-\d{2})\)$", re.MULTILINE)
+# Entries waiting for a release go under this heading; the release gives them their version.
+UNRELEASED = "## Unreleased"
 
 
-def _sections() -> list[tuple[tuple[int, int, int], str]]:
+def _text() -> str:
+    return CHANGELOG.read_text(encoding="utf-8")
+
+
+def _headings(text: str) -> list[str]:
+    return [line for line in text.splitlines() if line.startswith("## ")]
+
+
+def _sections(text: str) -> list[tuple[tuple[int, int, int], str]]:
+    return [((int(a), int(b), int(c)), when) for a, b, c, when in HEADING.findall(text)]
+
+
+def _unparsed_headings(text: str) -> list[str]:
+    return [h for h in _headings(text) if h != UNRELEASED and not HEADING.match(h)]
+
+
+def _unreleased_positions(text: str) -> list[int]:
     return [
-        ((int(a), int(b), int(c)), when)
-        for a, b, c, when in HEADING.findall(CHANGELOG.read_text(encoding="utf-8"))
+        i
+        for i, heading in enumerate(_headings(text))
+        if heading == UNRELEASED or heading.endswith("(unreleased)")
     ]
 
 
 def test_every_version_heading_parses():
-    text = CHANGELOG.read_text(encoding="utf-8")
-    headings = [line for line in text.splitlines() if line.startswith("## ")]
-    assert len(headings) == len(_sections()), [h for h in headings if not HEADING.match(h)]
+    assert _unparsed_headings(_text()) == []
 
 
 def test_versions_are_unique_and_newest_first():
-    versions = [v for v, _ in _sections()]
+    versions = [v for v, _ in _sections(_text())]
     assert versions == sorted(set(versions), reverse=True)
 
 
 def test_only_the_top_section_is_unreleased():
-    unreleased = [i for i, (_, when) in enumerate(_sections()) if when == "unreleased"]
-    assert unreleased in ([], [0])
+    assert _unreleased_positions(_text()) in ([], [0])
+
+
+def test_the_section_checks_reject_a_misplaced_or_doubled_unreleased_section():
+    released = "## 0.6.10 (2026-11-16)\n\n## 0.6.9 (2026-11-16)\n"
+    assert _unparsed_headings("## Unreleased\n\n" + released) == []
+    assert _unreleased_positions("## Unreleased\n\n" + released) == [0]
+    assert _unreleased_positions(released + "\n## Unreleased\n") == [2]
+    assert _unreleased_positions("## Unreleased\n\n## 0.6.11 (unreleased)\n" + released) == [0, 1]
+    assert _unparsed_headings("## unreleased\n\n## 0.6.10\n") == ["## unreleased", "## 0.6.10"]
 
 
 # docs/VERSIONING.md: a patch release only fixes, adds, deprecates, speeds up or documents.
@@ -39,7 +64,7 @@ POLICY_SINCE = (0, 5, 5)
 
 
 def _headings_by_version() -> dict[tuple[int, int, int], list[str]]:
-    text = CHANGELOG.read_text(encoding="utf-8")
+    text = _text()
     found: dict[tuple[int, int, int], list[str]] = {}
     version: tuple[int, int, int] | None = None
     for line in text.splitlines():
