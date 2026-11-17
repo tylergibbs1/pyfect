@@ -56,6 +56,9 @@ from pyfect.ai import response as ai_response
 from pyfect.ai import tool as ai_tool
 from pyfect.ai import toolkit as ai_toolkit
 from pyfect.ai.ai_error import AiError
+from pyfect.ai.amazon_bedrock import client as bedrock_client
+from pyfect.ai.amazon_bedrock import language_model as bedrock_lm
+from pyfect.ai.amazon_bedrock import schema as bedrock_schema
 from pyfect.ai.anthropic import client as anthropic_client
 from pyfect.ai.anthropic import language_model as anthropic_lm
 from pyfect.ai.anthropic import workload_identity as anthropic_wi
@@ -100,6 +103,8 @@ from pyfect.cli._environment import Environment as CliEnvironment
 from pyfect.cli.cli_error import ValidationError
 from pyfect.cli.global_flag import LogLevel
 from pyfect.context import Tag, TagEffect
+from pyfect.crypto import digest as crypto_digest
+from pyfect.crypto import mac as crypto_mac
 from pyfect.duration import (
     Duration,
     from_input,
@@ -7917,6 +7922,43 @@ def check_ai_providers() -> None:
     anthropic_lm.with_config_override({"output_config": {"effort": "max"}})
     anthropic_lm.with_config_override({"output_config": {"effort": "huge"}})  # pyright: ignore[reportArgumentType]
     compat_lm.with_config_override({"strict_json_schema": "yes"})  # pyright: ignore[reportArgumentType]
+
+
+def check_ai_amazon_bedrock(service: bedrock_client.Service) -> None:
+    # The client signs with the Digest and Mac services, whichever way it authenticates.
+    assert_type(
+        bedrock_client.layer(api_key=redact("key")),
+        fx.Layer[
+            bedrock_client.AmazonBedrockClient,
+            Never,
+            HttpClient | crypto_digest.Digest | crypto_mac.Mac,
+        ],
+    )
+    assert_type(
+        bedrock_client.layer_config(),
+        fx.Layer[
+            bedrock_client.AmazonBedrockClient,
+            fx.ConfigError,
+            HttpClient | crypto_digest.Digest | crypto_mac.Mac,
+        ],
+    )
+    assert_type(
+        bedrock_lm.model("us.anthropic.claude-sonnet-4-5-20250929-v1:0"),
+        ai_model.Model[lm.LanguageModel, bedrock_client.AmazonBedrockClient],
+    )
+    request: bedrock_schema.ConverseRequest = {"modelId": "m", "messages": []}
+    assert_type(
+        service.converse(request),
+        fx.Effect[bedrock_schema.ConverseResponse, ai_error_module.AiError],
+    )
+    assert_type(
+        service.converse_stream(request),
+        Stream[bedrock_schema.ConverseStreamEvent, ai_error_module.AiError],
+    )
+    # Request fields keep the wire's camelCase; the library's own option is snake_case.
+    bedrock_lm.with_config_override({"inferenceConfig": {"maxTokens": 10}})
+    bedrock_lm.with_config_override({"structured_outputs": True})
+    bedrock_lm.with_config_override({"inference_config": {}})  # pyright: ignore[reportArgumentType]
 
 
 def check_ai_provider_client(service: anthropic_client.Service) -> None:

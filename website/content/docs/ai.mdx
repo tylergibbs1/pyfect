@@ -128,6 +128,31 @@ general form for any token endpoint that answers an `access_token` and `expires_
 never follows a redirect, and it refuses a token URL that is not `https`, except on
 localhost.
 
+### Amazon Bedrock
+
+`pyfect.ai.amazon_bedrock.language_model.model(model_id, config)` talks to a model through
+Bedrock's Converse API. `model_id` is a model id, an inference profile id
+(`us.anthropic.claude-sonnet-4-5-20250929-v1:0`) or an ARN. `config` takes the request's own
+fields in Bedrock's camelCase: `inferenceConfig`, `guardrailConfig`, and
+`additionalModelRequestFields` for the model's own parameters, such as extended thinking.
+`client.layer` signs each request with AWS Signature Version 4, on the `Digest` and `Mac`
+services you provide (`pyfect.crypto.native`'s layers or the Web Crypto ones). It can also
+send a Bedrock API key (`api_key`). Or it can run a `credentials` effect before each request,
+where a credential provider fits. `client.layer_config()` reads the variables the AWS tools
+read (`AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`,
+`AWS_BEARER_TOKEN_BEDROCK`). `generate_object` forces a tool named after the object unless
+`"structured_outputs": True` asks for Converse's native structured output.
+`{"amazon-bedrock": {"cachePoint": {"type": "default"}}}` in a message's or part's options
+adds a cache point after it. Streams are read in AWS's event-stream framing.
+
+<CodeOutput>
+
+<include meta='title="amazon_bedrock.py"'>../../snippets/ai/amazon_bedrock.py</include>
+
+<include lang="text">../../snippets/ai/amazon_bedrock.out</include>
+
+</CodeOutput>
+
 `language_model.make(generate_text=..., stream_text=...)` builds a `LanguageModel` from two
 functions of a request's `ProviderOptions` (its prompt, tools and response format). The
 examples below use it to script the model's answers, as a test does.
