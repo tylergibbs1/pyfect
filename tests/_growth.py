@@ -14,7 +14,10 @@ given): linear work grows ``factor`` times, ``n log n`` a little more, quadratic
 process's, ``clock=time.process_time``, for work that can move to other threads) with the
 collector off, so waiting for a CPU on a loaded machine does not count; the two sizes are
 measured in turn (the order flipping each round), the least of a few runs each, so a stretch
-on a slower core or with a cold cache does not decide it. The size first doubles until the
+on a slower core or with a cold cache does not decide it. A sample of the smaller size runs
+it ``factor`` times, so both samples of linear work last about as long and meet the same
+neighbours (a short sample slips between a busy neighbour's bursts more often than a long
+one does). The size first doubles until the
 small run takes ``MIN_SECONDS``, so fixed costs do not hide the growth.
 
 An input that outgrows a CPU cache between the two sizes costs more per unit once, which can
@@ -118,6 +121,21 @@ class Growth:
         )
 
 
+def _compare(make: Make, size: int, factor: int, clock: Clock) -> tuple[float, float]:
+    """The CPU time of one run at ``size`` and of one at ``factor`` times it. Each sample of
+    the smaller size is ``factor`` runs back to back, so for linear work both samples last
+    about as long: a neighbour that slows only runs longer than its quiet stretches slows
+    both alike, where a lone small run would slip between its bursts and the large one not."""
+    one = make(size)
+
+    def runs() -> None:
+        for _ in range(factor):
+            one()
+
+    batch, large = cpu_pair(runs, make(size * factor), clock=clock)
+    return batch / factor, large
+
+
 def growth(
     make: Make,
     size: int,
@@ -133,7 +151,7 @@ def growth(
     ``bound`` is ``factor ** EXPONENT`` unless given, ``floor`` ``MIN_SECONDS * factor``."""
     while size * 2 * factor <= max_size and cpu(make(size), clock=clock) < MIN_SECONDS:
         size *= 2
-    small, large = cpu_pair(make(size), make(size * factor), clock=clock)
+    small, large = _compare(make, size, factor, clock)
     return Growth(
         size,
         small,
@@ -161,9 +179,7 @@ def superlinear(
         return None
     large = found.size * factor
     exponent = math.log(found.bound, factor)
-    beyond = Growth(
-        large, *cpu_pair(make(large), make(large * 2), clock=clock), factor=2, bound=2**exponent
-    )
+    beyond = Growth(large, *_compare(make, large, 2, clock), factor=2, bound=2**exponent)
     return f"superlinear: {found}; then {beyond}" if beyond.superlinear else None
 
 

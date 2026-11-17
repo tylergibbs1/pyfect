@@ -129,28 +129,61 @@ def _no_doubling(size: int) -> int:
     return size * 16 - 1
 
 
-def test_a_cost_step_between_the_two_sizes_is_not_superlinear() -> None:
-    base = _base()
-    step_at = base * 2  # between the small size and the large one, as a cache size would be
+class _QuietWindowClock:
+    """A thread clock for work whose cost the test states (``work(seconds)``). A measured run
+    as long as ``window`` or shorter fits between a neighbour's bursts and runs at full
+    speed; a longer one meets them and takes ``slowdown`` times as long, as on a shared CI
+    runner, where one size measured 94 ms in one comparison and 50 ms in the next
+    (``window=None``: no neighbour)."""
+
+    def __init__(self, window: float | None = None, slowdown: float = 1.9) -> None:
+        self.now, self.pending, self.window, self.slowdown = 0.0, 0.0, window, slowdown
+
+    def __call__(self) -> float:
+        slow = self.window is not None and self.pending > self.window
+        self.now += self.pending * (self.slowdown if slow else 1)
+        self.pending = 0.0
+        return self.now
+
+    def work(self, seconds: float):
+        def run() -> None:
+            self.pending += seconds
+
+        return run
+
+
+_WINDOWS = [None, 0.01, 0.03, 0.06, 0.1, 0.15, 0.3, 0.6, 1.0]
+"""Seconds of quiet between a neighbour's bursts, around the runs these checks measure (3 ms
+to 1 s)."""
+_BASE = 1000
+_RUN = 0.003  # seconds of work at ``_BASE``, about MIN_SECONDS * 1.5 as on a real machine
+
+
+@pytest.mark.parametrize("window", _WINDOWS)
+def test_a_cost_step_between_the_two_sizes_is_not_superlinear(window: float | None) -> None:
+    clock = _QuietWindowClock(window)
+    step_at = _BASE * 2  # between the small size and the large one, as a cache size would be
 
     def make(n: int):
         units = n if n < step_at else 4 * n  # each unit costs 4 times more past the step
-        return lambda: sum(range(units))
+        return clock.work(_RUN * units / _BASE)
 
-    assert_near_linear(make, base, _no_doubling(base))
+    assert_near_linear(make, _BASE, _no_doubling(_BASE), clock=clock)
 
 
-def test_quadratic_work_still_fails() -> None:
-    base = _base()
-    make: Make = lambda n: lambda: sum(range(n * n // base))  # noqa: E731
+@pytest.mark.parametrize("window", _WINDOWS)
+def test_quadratic_work_still_fails(window: float | None) -> None:
+    clock = _QuietWindowClock(window)
+    make: Make = lambda n: clock.work(_RUN * (n / _BASE) ** 2)  # noqa: E731
     with pytest.raises(AssertionError, match="superlinear"):
-        assert_near_linear(make, base, _no_doubling(base))
+        assert_near_linear(make, _BASE, _no_doubling(_BASE), clock=clock)
 
 
-def test_linear_work_passes() -> None:
-    base = _base()
-    make: Make = lambda n: lambda: sum(range(n))  # noqa: E731
-    assert_near_linear(make, base, _no_doubling(base))
+@pytest.mark.parametrize("window", _WINDOWS)
+def test_linear_work_passes(window: float | None) -> None:
+    clock = _QuietWindowClock(window)
+    make: Make = lambda n: clock.work(_RUN * n / _BASE)  # noqa: E731
+    assert_near_linear(make, _BASE, _no_doubling(_BASE), clock=clock)
 
 
 def test_time_off_the_cpu_is_not_counted() -> None:
