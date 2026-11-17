@@ -77,9 +77,27 @@ number without trailing zeros.
 
 </CodeOutput>
 
+## Exact fractions
+
+A `Rational` is an integer numerator over a positive denominator, always in lowest terms,
+so `1/3` added three times is exactly `1`. `from_string` reads `"3"` or `"-4/6"` (and
+returns `None` for `"1.5"` or a zero denominator), `from_number` takes a float's exact
+binary value, and `to_big_decimal(scale=..., mode=...)` rounds to a decimal with the same
+modes as `BigDecimal.round`. Unlike `fractions.Fraction`, a `Rational` never equals a plain
+`int` or `float`; `from_fraction` and `to_fraction` convert between the two.
+
+<CodeOutput>
+
+<include meta='title="rationals.py"'>../../snippets/data_formats/rationals.py</include>
+
+<include lang="text">../../snippets/data_formats/rationals.out</include>
+
+</CodeOutput>
+
 Reference: [`pyfect.encoding.toml`](/docs/reference/encoding/toml),
 [`pyfect.encoding.yaml`](/docs/reference/encoding/yaml),
 [`pyfect.encoding.ini`](/docs/reference/encoding/ini),
 [`pyfect.semver`](/docs/reference/semver),
 [`pyfect.semver_range`](/docs/reference/semver_range),
-[`pyfect.big_decimal`](/docs/reference/big_decimal).
+[`pyfect.big_decimal`](/docs/reference/big_decimal),
+[`pyfect.rational`](/docs/reference/rational).
