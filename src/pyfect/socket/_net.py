@@ -24,7 +24,7 @@ from pyfect.exit import Exit
 from pyfect.latch import Latch
 from pyfect.layer import Layer
 from pyfect.layer import effect as layer_effect
-from pyfect.scope import Scope, acquire_release
+from pyfect.scope import Scope, acquire_release, add_finalizer
 from pyfect.socket._connection import Connection
 from pyfect.socket._errors import (
     CloseEvent,
@@ -297,10 +297,22 @@ def _address(host: str, port: int) -> str:
 
 
 def _adopt(sock: socket.socket) -> Effect[Connection, SocketError, Scope]:
-    async def connect(conn: Connection) -> object:
-        return await get_loop().connect_accepted_socket(lambda: conn, sock)
+    """The loop takes a duplicate of ``sock`` and ``sock`` closes with the scope: the caller
+    closing ``sock`` early closes only its own descriptor, never one the loop watches."""
 
-    return connecting(connect)
+    def body():
+        yield from add_finalizer(lambda _: sync(sock.close))
+        try:
+            watched = sock.dup()
+        except OSError as cause:
+            return (yield from fail(open_error(cause)))
+
+        async def connect(conn: Connection) -> object:
+            return await get_loop().connect_accepted_socket(lambda: conn, watched)
+
+        return (yield from connecting(connect).tap_error(lambda _: sync(watched.close)))
+
+    return gen(body)
 
 
 def from_socket(
@@ -312,7 +324,8 @@ def from_socket(
 ) -> SocketService:
     """A socket over the connected ``socket.socket`` each acquisition of
     the reader gets from ``open`` (Effect's ``fromDuplex``); the socket is
-    taken over and closed with the reader's scope. ``tls_server`` makes TLS
+    taken over and closed with the reader's scope, and the caller may close
+    it at any time. ``tls_server`` makes TLS
     upgrades take the server side; each pull gives at most ``chunk_size`` chunks."""
     require_effect(open, "open")
     return from_connection(

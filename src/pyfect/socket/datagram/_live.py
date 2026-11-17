@@ -38,7 +38,7 @@ from pyfect.net.net_address import (
     format_ip,
     format_native_host,
 )
-from pyfect.scope import Scope
+from pyfect.scope import Scope, add_finalizer
 from pyfect.socket._loop import call_soon, get_loop
 from pyfect.socket.datagram._core import OnError, make_from_backing_socket
 from pyfect.socket.datagram._errors import (
@@ -176,10 +176,15 @@ def from_socket(
 ) -> Effect[DatagramSocketService, Never, object]:
     """Adopt a bound UDP ``socket.socket``: ``acquire`` runs for each
     reader acquisition, in the reader's scope, and the socket is closed
-    with it. A connected socket sends to its remote address."""
+    with it; the caller may close it at any time. A connected socket sends
+    to its remote address."""
     require_effect(acquire, "acquire")
     return make_from_backing_socket(
-        lambda events: acquire.flat_map(lambda sock: _adopt(sock, peer, events)),
+        lambda events: acquire.flat_map(
+            lambda sock: add_finalizer(lambda _: sync(sock.close)).and_then(
+                _adopt(sock, peer, events)
+            )
+        ),
         receive_buffer=receive_buffer,
         on_error=on_error,
     )
@@ -421,27 +426,32 @@ def _adopt(
 
 
 def _adopt_now(sock: socket.socket, peer: Endpoint | None, events: BackingEvents) -> BackingSocket:
-    """Take ``sock`` over (on the adopting thread, which is given it)."""
+    """Watch a duplicate of ``sock`` (on the adopting thread, which is given it);
+    ``sock`` itself closes with the reader's scope."""
     try:
         family: Family = "ipv6" if sock.family == socket.AF_INET6 else "ipv4"
-        sock.setblocking(False)
+        watched = sock.dup()
     except OSError as cause:
-        sock.close()
+        raise _OpenFailed(open_error(cause, _open_kind(cause))) from cause
+    try:
+        watched.setblocking(False)
+    except OSError as cause:
+        watched.close()
         raise _OpenFailed(open_error(cause, _open_kind(cause))) from cause
     scope_ids = _scope_ids(family)
     try:
-        remote = sock.getpeername()
+        remote = watched.getpeername()
     except OSError:
         remote = None
     if remote is not None:
         address = BackingAddress(str(remote[0]), int(remote[1]))
-        return _NativeSocket(sock, events, scope_ids, address, connected=True)
+        return _NativeSocket(watched, events, scope_ids, address, connected=True)
     default = None
     if peer is not None:
         resolved = _resolve(peer.host, family) if isinstance(peer, HostPort) else None
         host = resolved[0] if resolved is not None else _endpoint_host(peer, scope_ids)
         default = BackingAddress(host, peer.port)
-    return _NativeSocket(sock, events, scope_ids, default, connected=False)
+    return _NativeSocket(watched, events, scope_ids, default, connected=False)
 
 
 # --- the open socket ------------------------------------------------------

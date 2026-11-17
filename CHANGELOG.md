@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- `socket.from_socket` and `socket.datagram.from_socket` register their own duplicate of the
+  adopted socket, so closing the original early no longer stops other sockets from reading.
+  The original still closes with the reader's scope, and the caller may close it at any time.
+
 ## 0.6.11 (2026-11-17)
 
 ### Fixed
