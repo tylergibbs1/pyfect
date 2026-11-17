@@ -13,6 +13,7 @@ pytest_plugins = [
     "pytester",
     "_timeout",
     "_asyncio_reports",
+    "_loop_registrations",
     "_shards",
     "_skips",
     "_git_config_guard",

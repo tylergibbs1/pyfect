@@ -247,6 +247,9 @@ def test_a_read_callback_takes_a_bounded_number_of_datagrams() -> None:
         def getsockname(self) -> tuple[str, int]:
             return receiver.getsockname()
 
+        def close(self) -> None:
+            receiver.close()
+
         def recvfrom(self, size: int) -> tuple[bytes, tuple[str, int]]:
             if reads[0] == 0:
                 get_loop().call_soon(lambda: (seen.append(reads[0]), done.set()))
@@ -257,10 +260,14 @@ def test_a_read_callback_takes_a_bounded_number_of_datagrams() -> None:
         return None
 
     events = BackingEvents(ignore, ignore, ignore, ignore)
+    native = _NativeSocket(Counting(), events, {}, None, connected=False)  # pyright: ignore[reportArgumentType]
     try:
-        _NativeSocket(Counting(), events, {}, None, connected=False)  # pyright: ignore[reportArgumentType]
         assert done.wait(10)
     finally:
-        get_loop().call_soon_threadsafe(lambda: get_loop().remove_reader(receiver.fileno()))
-        receiver.close()
+        # On the loop, the reader goes before the socket closes: closed first, its number could
+        # go to a later socket that the stale registration would keep from ever reading.
+        native.close()
+        closed = threading.Event()
+        get_loop().call_soon_threadsafe(closed.set)
+        assert closed.wait(10)
     assert seen[0] <= 64, seen
