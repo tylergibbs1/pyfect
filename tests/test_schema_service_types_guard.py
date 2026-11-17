@@ -15,6 +15,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+import _source
+
 SRC = Path(__file__).parent.parent / "src" / "pyfect"
 
 SERVICE_SLOTS: dict[str, tuple[int, ...]] = {
@@ -75,7 +77,7 @@ def _is_overload(fn: ast.FunctionDef) -> bool:
 
 
 def _hits(path: Path) -> list[str]:
-    tree = ast.parse(path.read_text())
+    tree = _source.tree(path)
     overloaded: set[tuple[int, str]] = set()
     scopes = [n for n in ast.walk(tree) if isinstance(n, (ast.Module, ast.ClassDef))]
     for scope in scopes:
@@ -97,7 +99,7 @@ def _hits(path: Path) -> list[str]:
 
 def test_schema_constructors_keep_the_services_they_need():
     hits = sorted(
-        hit for path in SRC.rglob("*.py") if "generated" not in path.parts for hit in _hits(path)
+        hit for path in _source.files(SRC) if "generated" not in path.parts for hit in _hits(path)
     )
     unexplained = [hit for hit in hits if hit not in ALLOWED]
     assert unexplained == [], (
@@ -112,7 +114,7 @@ def test_the_scan_catches_a_codec_whose_services_became_any():
     source = (
         "def wrap[A, E, RD, RE](schema: S.Codec[A, E, RD, RE]) -> S.Bottom[A, E, Any, Any]: ...\n"
     )
-    fn = ast.parse(source).body[0]
+    fn = _source.parse(source).body[0]
     assert isinstance(fn, ast.FunctionDef)
     assert fn.returns is not None
     assert _any_in_service_slot(fn.returns)

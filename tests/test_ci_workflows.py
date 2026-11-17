@@ -10,6 +10,7 @@ import re
 from pathlib import Path
 
 import _container_images
+import _source
 
 from pyfect.date_time._icu_zones import NODE_VERSION
 
@@ -213,7 +214,7 @@ def _image_keys_named_in(path: Path) -> list[str]:
     """The keys of the ``_container_images.image("key")`` calls in ``path``."""
     return [
         node.args[0].value
-        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
+        for node in _source.walk(path)
         if isinstance(node, ast.Call)
         and isinstance(node.func, ast.Attribute)
         and node.func.attr == "image"
@@ -230,7 +231,7 @@ def _literal_images_in(path: Path) -> list[str]:
     tests/container_images.json, which CI would not have cached."""
     return [
         f"{path.name}:{node.lineno}"
-        for node in ast.parse(path.read_text(encoding="utf-8")).body
+        for node in _source.tree(path).body
         if isinstance(node, ast.Assign)
         and isinstance(node.value, ast.Constant)
         and isinstance(node.value.value, str)
@@ -241,7 +242,7 @@ def _literal_images_in(path: Path) -> list[str]:
 def test_every_container_image_the_oracle_fixtures_name_is_cached():
     """A fixture's image comes from tests/container_images.json, and CI caches each one it
     names (only an ARM-only image, which CI's x86 runners never start, is left out)."""
-    fixtures = sorted((ROOT / "tests" / "oracle").glob("*.py"))
+    fixtures = _source.files(ROOT / "tests" / "oracle", recursive=False)
     assert [hit for path in fixtures for hit in _literal_images_in(path)] == []
     named = {key for path in fixtures for key in _image_keys_named_in(path)}
     assert named <= set(_container_images.IMAGES), named - set(_container_images.IMAGES)

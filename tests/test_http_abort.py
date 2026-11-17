@@ -11,6 +11,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
+import _source
 import pytest
 
 import pyfect as fx
@@ -155,9 +156,9 @@ def test_pyfect_listens_on_signals_with_on_abort() -> None:
     response) would keep running: pyfect's own code uses ``on_abort``."""
     calls = [
         f"{path.relative_to(_SRC)}:{node.lineno}"
-        for path in _SRC.rglob("*.py")
-        if path.name != "abort.py"
-        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
+        for path in _source.files(_SRC)
+        if path.name != "abort.py" and _source.mentions(path, "add_listener")
+        for node in _source.walk(path)
         if isinstance(node, ast.Attribute) and node.attr == "add_listener"
     ]
     assert calls == []

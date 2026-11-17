@@ -14,6 +14,7 @@ import ast
 import functools
 import gc
 import re
+import sysconfig
 import unicodedata
 import weakref
 from collections import OrderedDict
@@ -42,6 +43,8 @@ _TREE_BUDGET = 4 * 2**20
 text, so this holds about 150 MB; every tree of `src/` and `tests/` would be 1.2 GB in each
 process (each pytest-xdist worker)."""
 
+_FREE_THREADED = bool(sysconfig.get_config_var("Py_GIL_DISABLED"))
+
 _kept: OrderedDict[Path, tuple[ast.Module, tuple[ast.AST, ...] | None]] = OrderedDict()
 _kept_bytes = 0
 
@@ -57,9 +60,11 @@ def _parsed(path: Path) -> ast.Module:
     # Kept trees would make every full collection rescan their nodes (``conftest.py`` freezes
     # imported modules for the same reason). Young garbage is collected first so it isn't
     # frozen for good; a frozen tree that is dropped is still freed by its reference count,
-    # as no node refers back to its parent.
-    gc.collect(1)
-    gc.freeze()
+    # as no node refers back to its parent. The free-threaded collector has no young
+    # generation, so there the collection would scan the whole heap once per file.
+    if not _FREE_THREADED:
+        gc.collect(1)
+        gc.freeze()
     return module
 
 
