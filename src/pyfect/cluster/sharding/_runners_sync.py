@@ -168,6 +168,10 @@ def sync_loop(state: ShardingState) -> Effect[Never]:
             and self_runner not in state.all_runners
         )
 
+    # Built once: with a 0 ms refresh the loop runs once per few dozen ops.
+    get_runners = _with_timeout(state.runner_storage.get_runners)
+    refresh = sleep(state.config.refresh_assignments_interval)
+
     @gen
     def run():
         while True:
@@ -175,7 +179,7 @@ def sync_loop(state: ShardingState) -> Effect[Never]:
             if unregistered():
                 yield from state.registration_lock.with_permits(gen(register_self))
 
-            runners = yield from _with_timeout(state.runner_storage.get_runners)
+            runners = yield from get_runners
             membership.observe(runners)
 
             # Make sure this runner is registered.
@@ -194,7 +198,7 @@ def sync_loop(state: ShardingState) -> Effect[Never]:
                     state.runner_storage.set_runner_health(self_runner.address, True)
                 )
 
-            yield from sleep(state.config.refresh_assignments_interval)
+            yield from refresh
 
     def failed(cause: Cause.Cause[Any]) -> Effect[None]:
         return log_debug(cause)

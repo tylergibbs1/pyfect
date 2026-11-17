@@ -78,6 +78,12 @@
   schema node. Code that derives per call no longer pays for it each time, such as
   `ClusterWorkflowEngine.poll`, which derived its workflow's exit codec (about 1 ms) on every
   poll. The memo is held by the schema node, so it does not keep a schema alive.
+- The cluster's runner sync loop builds its storage-read timeout and its refresh sleep once,
+  not on every round. A zero `TestClock` sleep returns without deadline arithmetic, and a
+  won race skips interrupting racers that have already ended. With
+  `refresh_assignments_interval=0` (as in Effect's tests) a round makes 84 pyfect calls
+  instead of 120, and takes the same 11 ops.
+  `tests/test_sharding_round_cost.py` counts the calls so a regression fails a test.
 
 ## 0.6.10 (2026-11-16)
 

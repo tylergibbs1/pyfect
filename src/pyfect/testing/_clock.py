@@ -206,7 +206,10 @@ class TestClock:
         # Effect's TestClock sleep, op for op: a generator that acquires a
         # sleeper, waits on its latch and always removes it.
         def body() -> Generator[Effect[Any], Any]:
-            end = _add_nanos(self._timestamp_ns, nanos_or_infinite(duration))
+            delta = nanos_or_infinite(duration)
+            if delta <= 0:
+                return  # what ``end <= self._timestamp_ns`` decides, without the arithmetic
+            end = _add_nanos(self._timestamp_ns, delta)
             if end <= self._timestamp_ns:
                 return
             yield from acquire_use_release(

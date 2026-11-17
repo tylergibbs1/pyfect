@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import sys
 from collections.abc import Callable, Iterable
-from typing import Any, Literal, Never, overload
+from typing import TYPE_CHECKING, Any, Literal, Never, overload
 
 from pyfect._cause_election import race_failure_cause
 from pyfect._core import (
@@ -35,6 +35,9 @@ from pyfect.duration import from_input_unsafe
 from pyfect.errors import TimeoutException
 from pyfect.exit import Exit, Success
 from pyfect.option import Option, Some
+
+if TYPE_CHECKING:
+    from pyfect.context import Context
 
 _VOID: Effect[None] = _Succeed(None)
 
@@ -167,9 +170,13 @@ def _interrupt_losers(fibers: list[Fiber[Any, Any]], parent: Fiber[Any, Any]) ->
     is won, not when the parent resumes, where a pause would let a loser
     finish and its result (a taken item) be dropped. After ``resume``, so a
     loser's interrupt cannot decide the race; the parent still awaits them."""
-    annotations = parent._interruptor_annotations()
+    annotations: Context | None = None
     for fiber in fibers:
-        fiber.interrupt_as_unsafe(parent.id, annotations)
+        # An ended racer (the winner, at least) ignores an interrupt.
+        if fiber._exit is None:
+            if annotations is None:
+                annotations = parent._interruptor_annotations()
+            fiber.interrupt_as_unsafe(parent.id, annotations)
 
 
 # The public types for these two live on ``Effect.race`` / ``Effect.race_first``.
