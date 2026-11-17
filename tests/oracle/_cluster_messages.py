@@ -8,10 +8,11 @@ from typing import Any, Never, TypedDict
 
 import pyfect as fx
 from pyfect import schema as S
-from pyfect.cluster import entity_address, envelope, shard_id
+from pyfect.cluster import entity_address, envelope, shard_id, snowflake
 from pyfect.cluster.entity_id import EntityId
 from pyfect.cluster.entity_type import EntityType
 from pyfect.cluster.envelope import AckChunk
+from pyfect.cluster.machine_id import MachineId
 from pyfect.cluster.message import OutgoingEnvelope, OutgoingRequest
 from pyfect.cluster.reply import Chunk, ReplyWithContext, WithExit
 from pyfect.cluster.snowflake import Generator
@@ -57,6 +58,7 @@ def make_request(
     rpc: AnyRpc = GetUserRpc,
     payload: Any = None,
     entity_id: str = "1",
+    entity_type: str = "test",
     shard: shard_id.ShardId | None = None,
 ) -> fx.Effect[OutgoingRequest, Never, Generator]:
     def build(snowflakes: Any) -> OutgoingRequest:
@@ -65,7 +67,7 @@ def make_request(
                 request_id=snowflakes.next_unsafe(),
                 address=entity_address.make(
                     shard_id=shard_id.make("default", 1) if shard is None else shard,
-                    entity_type=EntityType("test"),
+                    entity_type=EntityType(entity_type),
                     entity_id=EntityId(entity_id),
                 ),
                 tag=rpc.tag,
@@ -85,11 +87,17 @@ def make_request(
     return Generator().map(build)
 
 
-def make_reply(request: OutgoingRequest) -> fx.Effect[ReplyWithContext, Never, Generator]:
+def make_reply(
+    request: OutgoingRequest, completed_at: int | None = None
+) -> fx.Effect[ReplyWithContext, Never, Generator]:
+    """``completed_at`` sets the reply id's timestamp, which storage treats
+    as the completion time."""
     return Generator().map(
         lambda snowflakes: ReplyWithContext(
             WithExit(
-                id=snowflakes.next_unsafe(),
+                id=snowflakes.next_unsafe()
+                if completed_at is None
+                else snowflake.make(machine_id=MachineId(0), sequence=0, timestamp=completed_at),
                 request_id=request.envelope.request_id,
                 exit=fx.exit.succeed(None),
             ),

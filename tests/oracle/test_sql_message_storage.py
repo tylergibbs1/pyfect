@@ -1,12 +1,12 @@
 """Ports of platform-node's ``test/cluster/SqlMessageStorage.integration.test.ts``
 for ``pyfect.cluster.sql_message_storage`` on SQLite and on the throwaway
-PostgreSQL and MySQL servers (``_postgres.pg_server``, ``_mysql.mysql_server``;
-those cases skip without one).
+PostgreSQL, MySQL and SQL Server servers (``_sql_storage_backends``; those
+cases skip without one). The ``deleteProcessed`` cases are in
+``test_sql_message_storage_retention.py``.
 
 Each test's docstring is the Effect test title. Effect truncates shared
-tables between cases; here SQLite gets a fresh file per test and
-PostgreSQL and MySQL a fresh table prefix. SQL Server is not run (no
-server). ``MessageStorageTest.ts``'s own memory cases ("saves a request",
+tables between cases; here SQLite gets a fresh file per test and the
+servers a fresh table prefix. ``MessageStorageTest.ts``'s own memory cases ("saves a request",
 "detects duplicates", "unprocessedMessages excludes complete requests",
 "repliesFor", "registerReplyHandler") are the same titles already ported in
 ``test_message_storage.py``; its helpers are ``_cluster_messages.py``.
@@ -16,36 +16,29 @@ Omitted:
   message claim": they need ``SET LOCAL`` plan settings and a trigger
   sleeping inside one row's update to force a lock-order race; the claim
   and reset statements both lock in ``rowid`` order (``reset_unprocessed``).
-- "rejects duplicate exit replies when another table has the same index
-  name": SQL Server only.
 - "keeps held messages readable while entity layers build": needs
   ``Sharding`` and ``Entity``, which are not ported.
 """
 
 from __future__ import annotations
 
-import itertools
-import os
 import re
 import time
-from collections.abc import Callable, Generator
-from dataclasses import dataclass
+from collections.abc import Generator
 from pathlib import Path
 from typing import Any, Never
 
 import pytest
 
 import pyfect as fx
-from pyfect import reactivity, testing
-from pyfect.cluster import entity_address, envelope, shard_id, snowflake
+from pyfect import testing
+from pyfect.cluster import entity_address, envelope, shard_id
 from pyfect.cluster import sql_message_storage as SqlMessageStorage
 from pyfect.cluster.cluster_error import PersistenceError
 from pyfect.cluster.entity_id import EntityId
 from pyfect.cluster.entity_type import EntityType
 from pyfect.cluster.message import OutgoingRequest
 from pyfect.cluster.message_storage import (
-    EncodedStorage,
-    MessageStorageService,
     SaveDuplicate,
     SaveSuccess,
     make_encoded,
@@ -54,7 +47,7 @@ from pyfect.cluster.reply import Chunk, WithExit
 from pyfect.cluster.snowflake import Generator as SnowflakeGenerator
 from pyfect.cluster.snowflake import Snowflake
 from pyfect.latch import Latch
-from pyfect.sql.client import SqlClient, SqlClientService
+from pyfect.sql.client import SqlClient
 
 from ._cluster_messages import (
     LongKeyPayload,
@@ -67,73 +60,13 @@ from ._cluster_messages import (
     make_reply,
     make_request,
 )
+from ._sql_storage_backends import BACKENDS, Backend, Env, fresh_prefix, make_backend, pg, run
 from ._sqlite import make_client
 
-_prefixes = itertools.count()
 
-type ClientMaker = Callable[[], fx.Effect[SqlClientService, Any, fx.Scope]]
-
-
-@dataclass(frozen=True)
-class Backend:
-    name: str
-    client: ClientMaker
-    prefix: str
-
-
-@dataclass(frozen=True)
-class Env:
-    storage: MessageStorageService
-    sql: SqlClientService
-    prefix: str
-
-    @property
-    def messages(self) -> Any:
-        return self.sql.identifier(f"{self.prefix}_messages")
-
-    def encoded(self) -> fx.Effect[EncodedStorage]:
-        return SqlMessageStorage.make_encoded_storage(prefix=self.prefix).pipe(
-            fx.provide_service(SqlClient, self.sql)
-        )
-
-
-def _pg(pg_server: Any) -> fx.Effect[SqlClientService, Any, fx.Scope]:
-    pytest.importorskip("psycopg")
-    from pyfect.sql import pg
-
-    return pg.make(pg.PgPoolConfig(url=pg_server.url)).pipe(fx.provide(reactivity.layer))
-
-
-def _mysql(server: Any) -> fx.Effect[SqlClientService, Any, fx.Scope]:
-    from pyfect.sql import mysql
-
-    return mysql.make(mysql.MysqlClientConfig(url=server.url)).pipe(fx.provide(reactivity.layer))
-
-
-@pytest.fixture(params=["sqlite", "pg", "mysql"])
+@pytest.fixture(params=BACKENDS)
 def backend(request: pytest.FixtureRequest, tmp_path: Path) -> Backend:
-    if request.param == "sqlite":
-        return Backend("sqlite", lambda: make_client(tmp_path), "cluster")
-    if request.param == "mysql":
-        pytest.importorskip("asyncmy")
-        server = request.getfixturevalue("mysql_server")
-        return Backend("mysql", lambda: _mysql(server), f"msg_{os.getpid()}_{next(_prefixes)}")
-    pytest.importorskip("psycopg")
-    server = request.getfixturevalue("pg_server")
-    return Backend("pg", lambda: _pg(server), f"msg_{os.getpid()}_{next(_prefixes)}")
-
-
-def _run(
-    backend: Backend, body: Callable[[Env], Generator[fx.Effect[Any, Any, Any], Any]]
-) -> fx.Effect[None, Any, Any]:
-    def run() -> Generator[fx.Effect[Any, Any, Any], Any]:
-        sql = yield from backend.client()
-        storage = yield from SqlMessageStorage.make(prefix=backend.prefix).pipe(
-            fx.provide_service(SqlClient, sql)
-        )
-        yield from fx.gen(lambda: body(Env(storage, sql, backend.prefix)))
-
-    return fx.gen(run).pipe(fx.provide(snowflake.layer_generator))
+    return make_backend(request, tmp_path)
 
 
 def _address(entity_id: str, shard: int = 1) -> entity_address.EntityAddress:
@@ -219,7 +152,7 @@ def test_preserves_ids_above_2_53(tmp_path: Path):
 @testing.live
 def test_creates_an_index_for_insertion_ordered_message_reads(pg_server: Any):
     """creates an index for insertion-ordered message reads"""
-    prefix = f"idx_{os.getpid()}_{next(_prefixes)}"
+    prefix = fresh_prefix("idx")
 
     def body(env: Env) -> Generator[fx.Effect[Any, Any, Any], Any]:
         indexes = yield from env.sql(
@@ -229,7 +162,7 @@ def test_creates_an_index_for_insertion_ordered_message_reads(pg_server: Any):
         )
         assert len(indexes) == 1
 
-    yield from _run(Backend("pg", lambda: _pg(pg_server), prefix), body)
+    yield from run(Backend("pg", lambda: pg(pg_server), prefix), body)
 
 
 @testing.live
@@ -243,7 +176,7 @@ def test_reset_requests_with_no_ids(backend: Backend):
         yield from env.storage.reset_requests([])
         assert len((yield from env.storage.unprocessed_messages([_SHARD]))) == 0
 
-    yield from _run(backend, body)
+    yield from run(backend, body)
 
 
 @testing.live
@@ -261,7 +194,7 @@ def test_reset_requests_releases_only_the_selected_request(backend: Backend):
         assert [m.envelope.request_id for m in messages] == [selected.envelope.request_id]
         assert len((yield from env.storage.unprocessed_messages([_SHARD]))) == 0
 
-    yield from _run(backend, body)
+    yield from run(backend, body)
 
 
 @testing.live
@@ -289,7 +222,7 @@ def test_reset_requests_preserves_replies_and_completed_state(backend: Backend):
         assert (yield from storage.replies_for([streaming, completed])) == replies
         assert (yield from select) == processed
 
-    yield from _run(backend, body)
+    yield from run(backend, body)
 
 
 @testing.live
@@ -307,7 +240,7 @@ def test_clear_replies_requeues_when_expected_reply_is_current(backend: Backend)
         assert (yield from env.storage.replies_for([request])) == []
         assert len((yield from env.storage.unprocessed_messages([_SHARD]))) == 1
 
-    yield from _run(backend, body)
+    yield from run(backend, body)
 
 
 @testing.live
@@ -338,7 +271,7 @@ def test_clear_replies_with_stale_expected_reply(backend: Backend):
         assert (yield from select) == before
         assert len((yield from storage.unprocessed_messages([_SHARD]))) == 0
 
-    yield from _run(backend, body)
+    yield from run(backend, body)
 
 
 @testing.live
@@ -360,7 +293,7 @@ def test_save_request(backend: Backend):
         messages = yield from storage.unprocessed_messages([_SHARD])
         assert _payload_ids(messages) == [6, 7, 8, 9, 10]
 
-    yield from _run(backend, body)
+    yield from run(backend, body)
 
 
 @testing.live
@@ -394,7 +327,7 @@ def test_save_reply_and_save_request_duplicate(backend: Backend):
         error = yield from storage.save_reply((yield from make_reply(request))).flip()
         assert isinstance(error, PersistenceError)
 
-    yield from _run(backend, body)
+    yield from run(backend, body)
 
 
 @testing.live
@@ -407,7 +340,7 @@ def test_detects_duplicates(backend: Backend):
         result = yield from env.storage.save_request((yield from make))
         assert isinstance(result, SaveDuplicate)
 
-    yield from _run(backend, body)
+    yield from run(backend, body)
 
 
 @testing.live
@@ -428,7 +361,7 @@ def test_hashes_primary_keys_longer_than_the_column(backend: Backend):
         assert len(rows) == 1
         assert re.fullmatch(r"[0-9a-f]{64}", str(rows[0]["message_id"]))
 
-    yield from _run(backend, body)
+    yield from run(backend, body)
 
 
 @testing.live
@@ -453,7 +386,7 @@ def test_keeps_short_primary_keys_as_plaintext(backend: Backend):
         )
         assert request_id == request.envelope.request_id
 
-    yield from _run(backend, body)
+    yield from run(backend, body)
 
 
 @testing.live
@@ -482,7 +415,7 @@ def test_detects_duplicates_for_legacy_long_key_rows(tmp_path: Path):
         )
         assert request_id == request.envelope.request_id
 
-    yield from _run(Backend("sqlite", lambda: make_client(tmp_path), "cluster"), body)
+    yield from run(Backend("sqlite", lambda: make_client(tmp_path), "cluster"), body)
 
 
 @testing.live
@@ -496,7 +429,7 @@ def test_unprocessed_messages(backend: Backend):
         yield from env.storage.save_request((yield from make_request()))
         assert len((yield from env.storage.unprocessed_messages([_SHARD]))) == 1
 
-    yield from _run(backend, body)
+    yield from run(backend, body)
 
 
 @testing.live
@@ -511,7 +444,7 @@ def test_unprocessed_messages_honors_the_limit(backend: Backend):
         assert _payload_ids(limited) == [1, 2, 3]
         assert _payload_ids((yield from env.storage.unprocessed_messages([_SHARD]))) == [4, 5]
 
-    yield from _run(backend, body)
+    yield from run(backend, body)
 
 
 @testing.live
@@ -528,7 +461,7 @@ def test_unprocessed_messages_filters_by_address(backend: Backend):
         assert _payload_ids(filtered) == [2, 4]
         assert _payload_ids((yield from env.storage.unprocessed_messages([_SHARD]))) == [1, 3]
 
-    yield from _run(backend, body)
+    yield from run(backend, body)
 
 
 @testing.live
@@ -545,7 +478,7 @@ def test_unprocessed_messages_filters_addresses_by_shard(backend: Backend):
         assert _payload_ids(messages) == [1]
         assert _payload_ids((yield from env.storage.unprocessed_messages([one, two]))) == [2]
 
-    yield from _run(backend, body)
+    yield from run(backend, body)
 
 
 @testing.live
@@ -560,7 +493,7 @@ def test_encoded_unprocessed_messages_fails_closed_for_empty_addresses(backend: 
         assert (yield from encoded.unprocessed_messages([shard], _now(), addresses=[])) == []
         assert len((yield from encoded.unprocessed_messages([shard], _now()))) == 1
 
-    yield from _run(backend, body)
+    yield from run(backend, body)
 
 
 @testing.live
@@ -576,7 +509,7 @@ def test_encoded_reset_addresses_fails_closed_for_empty_list(backend: Backend):
         yield from encoded.reset_addresses([])
         assert (yield from encoded.unprocessed_messages([shard], _now())) == []
 
-    yield from _run(backend, body)
+    yield from run(backend, body)
 
 
 @testing.live
@@ -592,7 +525,7 @@ def test_reset_addresses_releases_claims_in_one_batch(backend: Backend):
         messages = yield from env.storage.unprocessed_messages([_SHARD])
         assert _payload_ids(messages) == [1, 3, 4]
 
-    yield from _run(backend, body)
+    yield from run(backend, body)
 
 
 @testing.live
@@ -605,7 +538,7 @@ def test_unprocessed_messages_excludes_complete_requests(backend: Backend):
         yield from env.storage.save_reply((yield from make_reply(request)))
         assert (yield from env.storage.unprocessed_messages([_SHARD])) == []
 
-    yield from _run(backend, body)
+    yield from run(backend, body)
 
 
 @testing.live
@@ -621,7 +554,7 @@ def test_replies_for(backend: Backend):
         assert len(replies) == 1
         assert replies[0].request_id == request.envelope.request_id
 
-    yield from _run(backend, body)
+    yield from run(backend, body)
 
 
 @testing.live
@@ -639,7 +572,7 @@ def test_register_reply_handler(backend: Backend):
         yield from latch.wait()
         yield from fiber.await_exit()
 
-    yield from _run(backend, body)
+    yield from run(backend, body)
 
 
 @testing.live
@@ -667,7 +600,7 @@ def test_unprocessed_messages_by_id(backend: Backend):
         yield from storage.save_reply((yield from make_reply(request)))
         assert (yield from storage.unprocessed_messages_by_id(ids)) == []
 
-    yield from _run(backend, body)
+    yield from run(backend, body)
 
 
 def test_message_id_width_counts_utf16_code_units():

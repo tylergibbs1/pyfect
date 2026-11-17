@@ -30,10 +30,12 @@ from pyfect.cluster.message import (
     serialize_envelope,
 )
 from pyfect.cluster.message_storage._service import (
+    DeletesProcessed,
     MessageStorageService,
     SaveDuplicate,
     SaveResult,
     SaveSuccess,
+    delete_processed_unsupported,
     make,
 )
 from pyfect.cluster.reply import Reply, ReplyWithContext, WithExit
@@ -63,7 +65,9 @@ class EncodedMessage:
 
 class EncodedStorage(Protocol):
     """What a message storage driver implements (Effect's
-    ``MessageStorage.Encoded``). Lists it is given are never empty."""
+    ``MessageStorage.Encoded``). Lists it is given are never empty. A driver
+    also implements ``DeletesProcessed`` (Effect's ``deleteProcessed``) to
+    support ``message_retention``."""
 
     def save_envelope(
         self, envelope: EnvelopeEncoded, primary_key: str | None, deliver_at: int | None, /
@@ -269,6 +273,16 @@ class _EncodedBase:
 
     def clear_address(self, address: EntityAddress, /) -> Effect[None, PersistenceError]:
         return self._encoded.clear_address(address)
+
+    def delete_processed(
+        self, *, entity_type: str, completed_before: float, limit: int
+    ) -> Effect[int, PersistenceError]:
+        encoded = self._encoded
+        if not isinstance(encoded, DeletesProcessed):
+            return delete_processed_unsupported(encoded)
+        return encoded.delete_processed(
+            entity_type=entity_type, completed_before=completed_before, limit=limit
+        )
 
     def with_transaction[A, E, R](self, effect: Effect[A, E, R], /) -> Effect[A, E, R]:
         require_effect(effect, "effect")

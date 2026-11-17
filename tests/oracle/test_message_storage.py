@@ -17,7 +17,11 @@ from pyfect import schema as S
 from pyfect import testing
 from pyfect.cause import Interrupt
 from pyfect.cluster import entity_address, shard_id, snowflake
-from pyfect.cluster.cluster_error import EntityNotAssignedToRunner, MalformedMessage
+from pyfect.cluster.cluster_error import (
+    EntityNotAssignedToRunner,
+    MalformedMessage,
+    PersistenceError,
+)
 from pyfect.cluster.cluster_schema import Abandon
 from pyfect.cluster.entity_id import EntityId
 from pyfect.cluster.entity_type import EntityType
@@ -29,6 +33,7 @@ from pyfect.cluster.message_storage import (
     SaveDuplicate,
     SaveSuccess,
     layer_memory,
+    make_encoded,
     memory_driver_layer,
 )
 from pyfect.cluster.reply import Reply, ReplyWithContext, WithExit
@@ -43,6 +48,7 @@ from ._cluster_messages import (
     PrimaryKeyTest,
     StreamRpc,
     UnknownSuccessRpc,
+    make_ack_chunk,
     make_chunk_reply,
     make_reply,
     make_request,
@@ -255,6 +261,83 @@ def test_unprocessed_messages_excludes_complete_requests():
         request = yield from make_request()
         yield from storage.save_request(request)
         yield from storage.save_reply((yield from make_reply(request)))
+        messages = yield from storage.unprocessed_messages([request.envelope.address.shard_id])
+        assert messages == []
+
+    yield from fx.gen(body).pipe(fx.provide(memory))
+
+
+CUTOFF = 1_767_225_600_000
+"""``Date.UTC(2026, 0, 1)``, the cutoff of Effect's ``deleteProcessed`` tests."""
+
+
+@testing.effect
+def test_delete_processed_forgets_requests_of_the_entity_type_completed_before_the_cutoff():
+    """deleteProcessed forgets requests of the entity type completed before the cutoff"""
+
+    def request(id: int, entity_type: str = "test") -> fx.Effect[OutgoingRequest, Any, Any]:
+        return make_request(
+            rpc=PrimaryKeyTest, payload=PrimaryKeyPayload(id=id), entity_type=entity_type
+        )
+
+    def body():
+        storage = yield from MessageStorage()
+        expired = yield from request(1)
+        recent = yield from request(2)
+        reset = yield from request(3)
+        other_type = yield from request(4, "other")
+        for r in (expired, recent, reset, other_type):
+            yield from storage.save_request(r)
+        yield from storage.save_reply((yield from make_reply(expired, CUTOFF - 1)))
+        yield from storage.save_reply((yield from make_reply(recent, CUTOFF + 1)))
+        yield from storage.save_reply((yield from make_reply(reset, CUTOFF - 2)))
+        yield from storage.clear_replies(reset.envelope.request_id)
+        yield from storage.save_reply((yield from make_reply(other_type, CUTOFF - 3)))
+
+        deleted = yield from storage.delete_processed(
+            entity_type="test", completed_before=CUTOFF, limit=100
+        )
+        assert deleted == 1
+
+        assert (yield from storage.replies_for_unfiltered([expired.envelope.request_id])) == []
+        assert isinstance((yield from storage.save_request((yield from request(1)))), SaveSuccess)
+        for id, kept in ((2, recent), (3, reset), (4, other_type)):
+            again = yield from request(id, kept.envelope.address.entity_type)
+            assert isinstance((yield from storage.save_request(again)), SaveDuplicate)
+        kept_replies = yield from storage.replies_for_unfiltered(
+            [recent.envelope.request_id, other_type.envelope.request_id]
+        )
+        assert len(kept_replies) == 2
+
+    yield from fx.gen(body).pipe(fx.provide(memory))
+
+
+@testing.effect
+def test_does_not_store_an_ack_chunk_or_interrupt_for_a_request_delete_processed_removed():
+    """does not store an AckChunk or Interrupt for a request deleteProcessed removed"""
+
+    def body():
+        storage = yield from MessageStorage()
+        snowflakes = yield from Generator()
+        request = yield from make_request(rpc=StreamRpc, payload=PrimaryKeyPayload(id=1))
+        chunk = yield from make_chunk_reply(request)
+        yield from storage.save_request(request)
+        yield from storage.save_reply(chunk)
+        yield from storage.save_reply((yield from make_reply(request, CUTOFF - 1)))
+        deleted = yield from storage.delete_processed(
+            entity_type="test", completed_before=CUTOFF, limit=100
+        )
+        assert deleted == 1
+
+        # a late acknowledgement and cancellation for the deleted request
+        yield from storage.save_envelope((yield from make_ack_chunk(request, chunk)))
+        yield from storage.save_envelope(
+            OutgoingEnvelope.interrupt(
+                id=snowflakes.next_unsafe(),
+                request_id=request.envelope.request_id,
+                address=request.envelope.address,
+            )
+        )
         messages = yield from storage.unprocessed_messages([request.envelope.address.shard_id])
         assert messages == []
 
@@ -568,3 +651,28 @@ def test_with_transaction_drops_exit_notifications_of_a_failed_transaction():
         assert seen == []
 
     yield from fx.gen(body).pipe(fx.provide(memory))
+
+
+@testing.effect
+def test_delete_processed_fails_on_a_storage_without_it():
+    """pyfect: a custom storage written before ``delete_processed`` existed
+    fails it with a ``PersistenceError``, so ``message_retention`` logs it."""
+
+    class Legacy:
+        def __getattr__(self, name: str) -> Any:
+            if name == "delete_processed":
+                raise AttributeError(name)
+
+            def anything(*_args: object, **_kwargs: object) -> fx.Effect[None]:
+                return fx.void
+
+            return anything
+
+    def body():
+        storage = yield from make_encoded(Legacy())  # pyright: ignore[reportArgumentType]
+        error = yield from storage.delete_processed(
+            entity_type="test", completed_before=CUTOFF, limit=1
+        ).flip()
+        assert isinstance(error, PersistenceError)
+
+    yield from fx.gen(body).pipe(fx.provide(snowflake.layer_generator))

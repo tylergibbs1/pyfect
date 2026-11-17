@@ -118,9 +118,12 @@ class MemoryEncoded:
                 self.requests[stored["requestId"]] = entry
                 if primary_key:
                     self.requests_by_primary_key[primary_key] = entry
-            elif stored["_tag"] == "AckChunk":
+            else:
                 entry = self.requests.get(stored["requestId"])
-                if entry is not None:
+                # the request was deleted, so there is nothing left to acknowledge or interrupt
+                if entry is None:
+                    return SAVE_SUCCESS
+                if stored["_tag"] == "AckChunk":
                     reply_id = stored["replyId"]
                     for r in entry.replies:
                         if r["_tag"] == "Chunk" and r["id"] == reply_id:
@@ -324,6 +327,42 @@ class MemoryEncoded:
                 if envelope["_tag"] == "Request":
                     self.requests.pop(envelope["requestId"], None)
             self.journal[:] = kept
+
+        return sync(run)
+
+    def delete_processed(
+        self, *, entity_type: str, completed_before: float, limit: int
+    ) -> Effect[int, PersistenceError]:
+        def run() -> int:
+            deleted: set[str] = set()
+            for request_id, entry in self.requests.items():
+                if len(deleted) >= limit:
+                    break
+                exit = next((r for r in entry.replies if r["_tag"] == "WithExit"), None)
+                if (
+                    entry.envelope["address"]["entityType"] == entity_type
+                    and exit is not None
+                    and snowflake.timestamp(Snowflake(int(exit["id"]))) < completed_before
+                ):
+                    deleted.add(request_id)
+                    for r in entry.replies:
+                        self.reply_ids.discard(r["id"])
+            if not deleted:
+                return 0
+            for request_id in deleted:
+                del self.requests[request_id]
+            for primary_key, entry in list(self.requests_by_primary_key.items()):
+                if entry.envelope["requestId"] in deleted:
+                    del self.requests_by_primary_key[primary_key]
+            kept: list[EnvelopeEncoded] = []
+            for envelope in self.journal:
+                if envelope["requestId"] not in deleted:
+                    kept.append(envelope)
+                    continue
+                self.unprocessed.pop(id(envelope), None)
+                self.last_read.pop(id(envelope), None)
+            self.journal[:] = kept
+            return len(deleted)
 
         return sync(run)
 

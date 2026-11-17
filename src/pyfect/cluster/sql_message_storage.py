@@ -13,6 +13,11 @@ PostgreSQL (migration ``0004``, pyfect's): MySQL's in ``utf8mb4_0900_bin``,
 SQL Server's in a ``BIN2`` collation, also comparing lengths where a
 trailing space can occur (``persistence._sql_keys``); Effect leaves them in
 the server's collation, which usually ignores case.
+On MySQL, ``delete_processed`` needs MySQL 8.0.1+ or MariaDB 10.6+ for
+``SKIP LOCKED``. It runs at READ COMMITTED, which needs ``binlog_format``
+``ROW`` or ``MIXED``. Inside a caller's transaction it keeps that
+transaction's isolation level, which must also be READ COMMITTED on MySQL
+before 8.0.20 and on MariaDB, or it can deadlock with a concurrent reply.
 Python's integers are exact, so ids need no ``SafeIntegers``; SHA-256 comes
 from ``hashlib`` (Effect reads a ``Digest`` service).
 """
@@ -20,6 +25,7 @@ from ``hashlib`` (Effect reads a ``Digest`` service).
 from __future__ import annotations
 
 import hashlib
+import math
 from collections.abc import Generator, Mapping, Sequence
 from typing import Any, Final, LiteralString, Never
 
@@ -35,6 +41,7 @@ from pyfect.cluster.cluster_error import PersistenceError
 from pyfect.cluster.entity_address import EntityAddress
 from pyfect.cluster.envelope import Encoded as EnvelopeEncoded
 from pyfect.cluster.envelope import ShardIdEncoded
+from pyfect.cluster.machine_id import MachineId
 from pyfect.cluster.message_storage import (
     SAVE_SUCCESS,
     DuplicateEncoded,
@@ -48,12 +55,12 @@ from pyfect.cluster.message_storage import (
 from pyfect.cluster.reply import ChunkEncoded, Encoded, WithExitEncoded
 from pyfect.cluster.sharding_config import ShardingConfig
 from pyfect.cluster.snowflake import Snowflake
-from pyfect.effect import die, fail_cause, gen, succeed, suspend, void
+from pyfect.effect import die, fail, fail_cause, gen, provide_service, succeed, suspend, void
 from pyfect.persistence._sql_keys import key_equals, mssql_match
 from pyfect.sql import migrator
-from pyfect.sql.client import SqlClient, SqlClientService
+from pyfect.sql.client import BeginTransaction, SqlClient, SqlClientService
 from pyfect.sql.connection import Row
-from pyfect.sql.error import SqlError, is_sql_error
+from pyfect.sql.error import SqlError, UnknownError, is_sql_error
 from pyfect.sql.result import affected_rows
 from pyfect.sql.statement import Fragment, Statement
 
@@ -62,6 +69,13 @@ _WITH_EXIT = 0
 """A reply's ``kind``: ``0`` for an exit, ``NULL`` for a chunk."""
 
 _MESSAGE_ID_WIDTH = 255
+
+_MAX_INSERT_ATTEMPTS = 3
+"""How many times a save inserts a request whose conflicting row
+``delete_processed`` deleted before it could be read."""
+
+_SNOWFLAKE_SPAN = 2**41
+"""Snowflake timestamps are signed 42-bit offsets from the epoch."""
 
 
 def message_id_for_primary_key(primary_key: str) -> str:
@@ -182,6 +196,7 @@ class _Storage:
         self.ids_as_text: bool = sql.dialect == "sqlite"
         self.false = sql.literal("FALSE") if self.supports_booleans else sql.literal("0")
         self.true = sql.literal("TRUE") if self.supports_booleans else sql.literal("1")
+        self.kind_request = sql.literal("0")
         self.kind_ack_chunk = sql.literal("1")
         self.kind_interrupt = sql.literal("2")
         self.kind_with_exit = sql.literal("0")
@@ -205,6 +220,19 @@ class _Storage:
         self.update_lock: Fragment = sql.on_dialect_or_else(
             mssql=lambda: sql.literal("WITH (UPDLOCK)"), or_else=lambda: sql.literal("")
         )
+        # Like update_lock and for_update, but skips locked rows. REPEATABLEREAD keeps
+        # SQL Server's READPAST valid at any session isolation level.
+        self.skip_locked_hint: Fragment = sql.on_dialect_or_else(
+            mssql=lambda: sql.literal("WITH (UPDLOCK, READPAST, REPEATABLEREAD)"),
+            or_else=lambda: sql.literal(""),
+        )
+        self.for_update_skip_locked: Fragment = sql.on_dialect_or_else(
+            mssql=lambda: sql.literal(""),
+            sqlite=lambda: sql.literal(""),
+            or_else=lambda: sql.literal("FOR UPDATE SKIP LOCKED"),
+        )
+        self.messages_table = f"{prefix}_messages"
+        self.replies_table = f"{prefix}_replies"
         reply_join = (
             "r.kind as reply_kind, r.payload as reply_payload, r.sequence as reply_sequence"
         )
@@ -317,40 +345,207 @@ class _Storage:
     def insert_envelope(
         self, row: Mapping[str, object], message_id: str
     ) -> Effect[Sequence[Row], SqlError]:
+        """Inserts the request ``row`` unless one with ``message_id`` is
+        stored, giving that one (with its last reply) when it is."""
         sql = self.sql
-
-        def unless_inserted(inserted: Sequence[object]) -> Effect[Sequence[Row], SqlError]:
-            return succeed([]) if inserted else self.select_by_message_id(message_id)
-
         if sql.dialect == "pg":
-            return sql(
-                "INSERT INTO {} {} ON CONFLICT (message_id) DO NOTHING RETURNING id",
-                self.messages,
-                sql.insert(row),
-            ).flat_map(unless_inserted)
+            return self.insert_unless_exists(
+                message_id,
+                sql(
+                    "INSERT INTO {} {} ON CONFLICT (message_id) DO NOTHING RETURNING id",
+                    self.messages,
+                    sql.insert(row),
+                ).map(lambda rows: len(rows) > 0),
+            )
         if sql.dialect == "mysql":
-
-            def affected(result: Any) -> Effect[Sequence[Row], SqlError]:
-                if affected_rows(result) > 0:
-                    return succeed([])
-                return self.select_by_message_id(message_id)
-
-            return sql("INSERT IGNORE INTO {} {}", self.messages, sql.insert(row)).raw.flat_map(
-                affected
+            return self.insert_unless_exists(
+                message_id,
+                sql("INSERT IGNORE INTO {} {}", self.messages, sql.insert(row)).raw.map(
+                    lambda result: affected_rows(result) > 0
+                ),
             )
         if sql.dialect == "mssql":
-            return sql(
-                "MERGE {} WITH (HOLDLOCK) AS target USING (SELECT {} as message_id) AS source "
-                "ON " + mssql_match("message_id") + " WHEN NOT MATCHED THEN INSERT {} "
-                "OUTPUT inserted.id;",
-                self.messages,
+            return self.insert_unless_exists(
                 message_id,
-                sql.insert(row),
-            ).flat_map(unless_inserted)
+                sql(
+                    "MERGE {} WITH (HOLDLOCK) AS target USING (SELECT {} as message_id) AS source "
+                    "ON " + mssql_match("message_id") + " WHEN NOT MATCHED THEN INSERT {} "
+                    "OUTPUT inserted.id;",
+                    self.messages,
+                    message_id,
+                    sql.insert(row),
+                ).map(lambda rows: len(rows) > 0),
+            )
+        # SQLite has a single writer, so no delete can run between read and insert
         insert = sql("INSERT OR IGNORE INTO {} {}", self.messages, sql.insert(row))
         return sql.with_transaction(
             self.select_by_message_id(message_id).tap(lambda _: insert)
         ).retry(times=3)
+
+    def insert_unless_exists(
+        self, message_id: str, insert: Effect[bool, SqlError], attempt: int = 1
+    ) -> Effect[Sequence[Row], SqlError]:
+        """Runs ``insert``, which says whether it stored the row, and gives
+        the stored row of ``message_id`` when it did not. ``delete_processed``
+        can delete that row before it is read, so the insert runs again
+        rather than report a save that stored nothing."""
+
+        def existing(rows: Sequence[Row]) -> Effect[Sequence[Row], SqlError]:
+            if rows:
+                return succeed(rows)
+            if attempt < _MAX_INSERT_ATTEMPTS:
+                return self.insert_unless_exists(message_id, insert, attempt + 1)
+            return fail(
+                SqlError(
+                    reason=UnknownError(
+                        cause=None,
+                        message=f"Message {message_id} conflicted with a row that was "
+                        "deleted before it could be read",
+                        operation="saveEnvelope",
+                    )
+                )
+            )
+
+        return insert.flat_map(
+            lambda stored: (
+                succeed([]) if stored else self.select_by_message_id(message_id).flat_map(existing)
+            )
+        )
+
+    def limit_fragment(self, limit: int | None) -> Fragment:
+        """``LIMIT``; SQL Server limits only with ``OFFSET`` / ``FETCH``,
+        which needs the statement's ``ORDER BY``."""
+        sql = self.sql
+        if limit is None:
+            return sql.literal("")
+        if sql.dialect == "mssql":
+            return sql.unsafe(f"OFFSET 0 ROWS FETCH NEXT {int(limit)} ROWS ONLY")
+        return sql.unsafe(f"LIMIT {int(limit)}")
+
+    def lock_request(self, request_id: str) -> Effect[Sequence[Row], SqlError]:
+        """Locks the request's row. Writes to a request's replies lock it
+        first, in ``delete_processed``'s order, so they cannot deadlock with
+        it; no row means it was deleted."""
+        return self.sql(
+            "SELECT 1 FROM {} {} WHERE id = {} {}",
+            self.messages,
+            self.update_lock,
+            request_id,
+            self.for_update,
+        )
+
+    def mark_acks_processed(self, request_id: str) -> Effect[object, SqlError]:
+        sql = self.sql
+        if sql.dialect == "mssql":
+            # SQL Server can scan the clustered index of a small table and deadlock on
+            # other requests' rows, so this forces the request_id index
+            return sql(
+                "UPDATE m SET processed = {} FROM {} m WITH (INDEX({})) "
+                "WHERE m.processed = {} AND m.request_id = {} AND m.kind = {}",
+                self.true,
+                self.messages,
+                sql.identifier(f"{self.messages_table}_request_id_idx"),
+                self.false,
+                request_id,
+                self.kind_ack_chunk,
+            )
+        return sql(
+            "UPDATE {} SET processed = {} WHERE processed = {} AND request_id = {} AND kind = {}",
+            self.messages,
+            self.true,
+            self.false,
+            request_id,
+            self.kind_ack_chunk,
+        )
+
+    def delete_requests(self, ids: Fragment) -> Effect[object, SqlError]:
+        """Deletes every message and reply of the requests ``ids``."""
+        sql = self.sql
+        request_index = sql.identifier(f"{self.messages_table}_request_id_idx")
+        lookup_index = sql.identifier(f"{self.replies_table}_request_lookup_idx")
+        if sql.dialect == "mssql":
+            return sql(
+                "DELETE r FROM {} r WITH (INDEX({})) WHERE r.request_id IN ({})",
+                self.replies,
+                lookup_index,
+                ids,
+            ).and_then(
+                sql(
+                    "DELETE m FROM {} m WITH (INDEX({})) WHERE m.request_id IN ({})",
+                    self.messages,
+                    request_index,
+                    ids,
+                )
+            )
+        if sql.dialect == "mysql":
+            # A scanning DELETE locks every row it reads and can deadlock. MySQL ignores
+            # FORCE INDEX here, so an optimizer hint keeps it on the index. Servers
+            # without hints (before 8.0.20, MariaDB) rely on READ COMMITTED.
+            return sql(
+                "DELETE /*+ INDEX({} {}) */ FROM {} WHERE request_id IN ({})",
+                self.replies,
+                lookup_index,
+                self.replies,
+                ids,
+            ).and_then(
+                sql(
+                    "DELETE /*+ INDEX({} {}) */ FROM {} WHERE request_id IN ({})",
+                    self.messages,
+                    request_index,
+                    self.messages,
+                    ids,
+                )
+            )
+        return sql("DELETE FROM {} WHERE request_id IN ({})", self.replies, ids).and_then(
+            sql("DELETE FROM {} WHERE request_id IN ({})", self.messages, ids)
+        )
+
+    def lock_deletable(self, eligible: Fragment, limit: int) -> Effect[Sequence[Row], SqlError]:
+        """Locks up to ``limit`` eligible requests, skipping locked ones,
+        since waiting can deadlock on MySQL's gap locks. Ordering by
+        ``last_reply_id`` keeps the query on the retention index."""
+        sql = self.sql
+        if sql.dialect == "mysql":
+            # A MySQL locking scan also locks ineligible rows, in the opposite order to
+            # lock_request, so find candidates unlocked, then lock them by id and
+            # check them again
+            def lock(candidates: Sequence[Row]) -> Effect[Sequence[Row], SqlError]:
+                if not candidates:
+                    return succeed(candidates)
+                return sql(
+                    "SELECT id FROM {} FORCE INDEX (id) WHERE id IN ({}) AND {} "
+                    "FOR UPDATE SKIP LOCKED",
+                    self.messages,
+                    sql.unsafe(",".join(str(int(str(row["id"]))) for row in candidates)),
+                    eligible,
+                )
+
+            return sql(
+                "SELECT id FROM {} WHERE {} ORDER BY last_reply_id ASC {}",
+                self.messages,
+                eligible,
+                self.limit_fragment(limit),
+            ).flat_map(lock)
+        return sql(
+            "SELECT {} FROM {} {} WHERE {} ORDER BY last_reply_id ASC {} {}",
+            self.id_column,
+            self.messages,
+            self.skip_locked_hint,
+            eligible,
+            self.limit_fragment(limit),
+            self.for_update_skip_locked,
+        )
+
+    def cleanup_isolation[A, E, R](self, effect: Effect[A, E, R]) -> Effect[A, E, R]:
+        """Gap locks at MySQL's default REPEATABLE READ let a scanning
+        ``DELETE`` deadlock with ``save_reply``. READ COMMITTED takes none,
+        but the server rejects it with ``binlog_format`` ``STATEMENT``. A
+        caller's transaction keeps its level."""
+        if self.sql.dialect != "mysql":
+            return effect
+        return effect.pipe(
+            provide_service(BeginTransaction, "SET TRANSACTION ISOLATION LEVEL READ COMMITTED")
+        )
 
     def address_filter(self, addresses: Sequence[EntityAddress], prefix: str) -> Fragment:
         sql = self.sql
@@ -380,12 +575,7 @@ class _Storage:
             if addresses is None
             else sql("AND ({})", self.address_filter(addresses, "m."))
         )
-        if limit is None:
-            limit_fragment: Fragment = sql.literal("")
-        elif sql.dialect == "mssql":
-            limit_fragment = sql.unsafe(f"OFFSET 0 ROWS FETCH NEXT {int(limit)} ROWS ONLY")
-        else:
-            limit_fragment = sql.unsafe(f"LIMIT {int(limit)}")
+        limit_fragment = self.limit_fragment(limit)
         deliverable = sql.unsafe(str(now))
         if sql.dialect == "pg":
             return sql(
@@ -492,28 +682,29 @@ class _Storage:
             plain = sql("INSERT INTO {} {}", self.messages, sql.insert(row)).unprepared.as_(
                 list[Row]()
             )
-            if envelope["_tag"] != "AckChunk":
+            if envelope["_tag"] == "Request":
                 return plain
-            return sql.with_transaction(
-                sql(
-                    "UPDATE {} SET acked = {} WHERE id = {}",
-                    self.replies,
-                    self.true,
-                    envelope["replyId"],
-                )
-                .flat_map(
-                    lambda _: sql(
-                        "UPDATE {} SET processed = {} WHERE processed = {} AND request_id = {} "
-                        "AND kind = {}",
-                        self.messages,
+            request_id = envelope["requestId"]
+            acked_reply = envelope["replyId"] if envelope["_tag"] == "AckChunk" else None
+
+            def locked(request: Sequence[Row]) -> Effect[Sequence[Row], SqlError]:
+                # the request was deleted, so there is nothing left to acknowledge or interrupt
+                if not request:
+                    return succeed([])
+                if acked_reply is None:
+                    return plain
+                return (
+                    sql(
+                        "UPDATE {} SET acked = {} WHERE id = {}",
+                        self.replies,
                         self.true,
-                        self.false,
-                        envelope["requestId"],
-                        self.kind_ack_chunk,
+                        acked_reply,
                     )
+                    .and_then(self.mark_acks_processed(request_id))
+                    .and_then(plain)
                 )
-                .flat_map(lambda _: plain)
-            )
+
+            return sql.with_transaction(self.lock_request(request_id).flat_map(locked))
 
         def result(rows: Sequence[Row]) -> SaveResultEncoded:
             if not rows:
@@ -587,6 +778,7 @@ class _Storage:
         id = str(request_id)
 
         def body() -> Generator[Effect[Any, Any, Any], Any]:
+            yield from self.lock_request(id)
             if expected_reply_id is None:
                 yield from sql(
                     "DELETE FROM {} WHERE request_id = {} AND kind = 0", self.replies, id
@@ -759,6 +951,36 @@ class _Storage:
         messages = sql("DELETE FROM {} WHERE {}", self.messages, entity)
         return _refail(sql.with_transaction(replies.flat_map(lambda _: messages)).as_void())
 
+    def delete_processed(
+        self, *, entity_type: str, completed_before: float, limit: int
+    ) -> Effect[int, PersistenceError]:
+        sql = self.sql
+        # No signed snowflake id is at or before this. Also covers -inf and NaN.
+        if not completed_before > snowflake_.EPOCH_MILLIS - _SNOWFLAKE_SPAN:
+            return succeed(0)
+        # Reply timestamps are whole milliseconds, so round up. Every signed snowflake
+        # id is below the cap, which also covers inf.
+        cap = snowflake_.EPOCH_MILLIS + _SNOWFLAKE_SPAN
+        timestamp = cap if completed_before >= cap else math.ceil(completed_before)
+        cutoff = snowflake_.make(machine_id=MachineId(0), sequence=0, timestamp=timestamp)
+        eligible = sql(
+            "{} AND kind = {} AND processed = {} AND last_reply_id < {}",
+            key_equals(sql, "entity_type", entity_type),
+            self.kind_request,
+            self.true,
+            sql.unsafe(str(cutoff)),
+        )
+
+        def delete(rows: Sequence[Row]) -> Effect[int, SqlError]:
+            if not rows:
+                return succeed(0)
+            ids = sql.unsafe(",".join(str(int(str(row["id"]))) for row in rows))
+            return self.delete_requests(ids).as_(len(rows))
+
+        # locked, so a concurrent clear_replies cannot reset them first
+        locked = self.lock_deletable(eligible, limit).flat_map(delete)
+        return _refail(self.cleanup_isolation(sql.with_transaction(locked)))
+
     def reset_shards(self, shard_ids: Sequence[str], /) -> Effect[None, PersistenceError]:
         filter = self.sql("shard_id IN ({})", self.shard_list(shard_ids))
         return _refail(self.reset_unprocessed(filter).as_void())
@@ -893,9 +1115,12 @@ def _index(sql: SqlClientService, name: str, table: str, columns: str) -> Effect
     target = sql.identifier(table)
     cols = sql.unsafe(columns)
     return sql.on_dialect_or_else(
+        # looked up on its own table: a same-named index on another one is not it
         mssql=lambda: sql(
-            "IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = {}) CREATE INDEX {} ON {} ({})",
+            "IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = {} "
+            "AND object_id = OBJECT_ID({})) CREATE INDEX {} ON {} ({})",
             name,
+            table,
             index,
             target,
             cols,
@@ -958,9 +1183,37 @@ def _exact_keys_mssql(sql: SqlClientService, table: str) -> Effect[object, SqlEr
     return gen(body)
 
 
+def _retention_index(sql: SqlClientService, table: str) -> Effect[object, SqlError]:
+    """The index of ``delete_processed``'s lookup by entity type and final
+    reply id. Unlike ``_index``, a failure on MySQL fails the migration."""
+    name = f"{table}_retention_idx"
+    columns = "entity_type, processed, last_reply_id"
+    if sql.dialect != "mysql":
+        return _index(sql, name, table, columns)
+
+    def create(rows: Sequence[Row]) -> Effect[object, SqlError]:
+        if rows:
+            return void
+        return sql(
+            "CREATE INDEX {} ON {} ({})",
+            sql.identifier(name),
+            sql.identifier(table),
+            sql.unsafe(columns),
+        ).unprepared
+
+    return sql(
+        "SELECT 1 FROM information_schema.statistics "
+        "WHERE table_schema = DATABASE() AND table_name = {} AND index_name = {}",
+        table,
+        name,
+    ).flat_map(create)
+
+
 def migrations(*, prefix: str = "cluster") -> migrator.Loader:
     """The message tables' migrations: ``0001`` to ``0003`` are Effect's,
-    ``0004`` is pyfect's. PostgreSQL DDL is serialized by the migrator;
+    ``0004`` is pyfect's, and ``0005`` and ``0006`` are Effect 4.1.4's
+    ``0004_mssql_lookup_indexes`` and ``0005_retention_index``, numbered
+    after pyfect's. PostgreSQL DDL is serialized by the migrator;
     errors propagate (a retry in an aborted transaction cannot succeed).
     Deployed databases have run the earlier migrations: a change to the
     schema is a new one, never an edit of an old one."""
@@ -1011,12 +1264,35 @@ def migrations(*, prefix: str = "cluster") -> migrator.Loader:
             or_else=lambda: void,
         )
 
+    def mssql_lookup_indexes() -> Generator[Effect[Any, Any, Any], Any]:
+        # 0001 looked SQL Server's indexes up by name alone, so a same-named index on
+        # another table skipped them. Writes force them, so create any missing.
+        sql = (yield from SqlClient()).without_transforms()
+        if sql.dialect != "mssql":
+            return
+        yield from _index(
+            sql,
+            f"{messages_table}_shard_idx",
+            messages_table,
+            "shard_id, processed, last_read, deliver_at",
+        )
+        yield from _index(sql, f"{messages_table}_request_id_idx", messages_table, "request_id")
+        yield from _index(
+            sql, f"{replies_table}_request_lookup_idx", replies_table, "request_id, kind, acked"
+        )
+
+    def retention_index() -> Generator[Effect[Any, Any, Any], Any]:
+        sql = (yield from SqlClient()).without_transforms()
+        yield from _retention_index(sql, messages_table)
+
     return migrator.from_record(
         {
             "0001_create_tables": gen(create_tables),
             "0002_entity_type_size": gen(entity_type_size),
             "0003_pg_messages_rowid_index": gen(pg_rowid_index),
             "0004_exact_keys": gen(exact_keys),
+            "0005_mssql_lookup_indexes": gen(mssql_lookup_indexes),
+            "0006_retention_index": gen(retention_index),
         }
     )
 

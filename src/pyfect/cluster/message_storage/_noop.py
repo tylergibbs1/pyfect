@@ -95,6 +95,11 @@ class _NoopBase:
     def clear_address(self, address: EntityAddress, /) -> Effect[None, PersistenceError]:
         return void
 
+    def delete_processed(
+        self, *, entity_type: str, completed_before: float, limit: int
+    ) -> Effect[int, PersistenceError]:
+        return succeed(0)
+
     def with_transaction[A, E, R](self, effect: Effect[A, E, R], /) -> Effect[A, E, R]:
         require_effect(effect, "effect")
         return effect

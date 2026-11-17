@@ -8790,11 +8790,15 @@ def cluster_core_types() -> None:
 def cluster_storage_types() -> None:
     from pyfect.cluster import (
         k8s_http_client,
+        message_retention,
         message_storage,
         sql_message_storage,
         sql_runner_storage,
     )
+    from pyfect.cluster.cluster_error import PersistenceError
+    from pyfect.cluster.entity import Entity
     from pyfect.cluster.runner_storage import RunnerStorage, RunnerStorageService
+    from pyfect.cluster.sharding import Sharding
     from pyfect.cluster.sharding_config import ShardingConfig
     from pyfect.file_system import FileSystem
     from pyfect.http.client import HttpClient
@@ -8814,6 +8818,16 @@ def cluster_storage_types() -> None:
     assert_type(
         sql_runner_storage.layer, fx.Layer[RunnerStorage, Never, SqlClient | ShardingConfig]
     )
+    # Retention runs a singleton on the runner's storage.
+    assert_type(
+        message_retention.make(entity=Entity, retention="7 days"),
+        fx.Layer[Never, Never, Sharding | message_storage.MessageStorage],
+    )
+    assert_type(
+        message_storage.NOOP.delete_processed(entity_type="t", completed_before=0, limit=1),
+        fx.Effect[int, PersistenceError],
+    )
+    message_storage.NOOP.delete_processed("t", 0, 1)  # pyright: ignore[reportCallIssue]
     assert_type(
         sql_runner_storage.make(prefix="p"),
         fx.Effect[RunnerStorageService, Never, SqlClient | ShardingConfig | fx.Scope],

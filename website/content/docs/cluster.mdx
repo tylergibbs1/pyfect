@@ -279,7 +279,16 @@ dedupes requests by primary key, hands unprocessed messages to the runner that h
 shard, and notifies waiting senders of a final reply after the transaction that stored it
 commits (stream chunks at once).
 `message_storage.layer_memory` keeps them in memory; `sql_message_storage.layer` uses
-Effect's tables on a [SQL](/docs/sql) client (SQLite or PostgreSQL).
+Effect's tables on a [SQL](/docs/sql) client (SQLite, PostgreSQL, MySQL or SQL Server).
+
+A persisted entity keeps every request and its final reply, to answer a duplicate from
+storage, so its tables grow without bound. `message_retention.make(entity=Counter,
+retention="7 days")` adds a singleton that deletes the entity's requests whose final reply
+is older than the retention, once a minute (`interval`), in batches of 1,000. Running
+requests are kept. A request sent again after deletion runs the handler again, so pick a
+retention longer than any client's retry window, and don't use it for workflow or cron
+entities, which read stored replies to know what already ran. On MySQL it needs 8.0.1+ or
+MariaDB 10.6+, with `binlog_format` `ROW` or `MIXED`.
 
 `RunnerStorage` registers runners and holds shard locks, so two runners never own one
 shard. `runner_storage.layer_memory` is for tests; `sql_runner_storage.layer` takes
@@ -408,6 +417,7 @@ Reference: [`pyfect.cluster`](/docs/reference/cluster),
 [`pyfect.hash_ring`](/docs/reference/hash_ring),
 [`sharding_config`](/docs/reference/cluster/sharding_config),
 [`message_storage`](/docs/reference/cluster/message_storage),
+[`message_retention`](/docs/reference/cluster/message_retention),
 [`entity_resource`](/docs/reference/cluster/entity_resource),
 [`k8s_http_client`](/docs/reference/cluster/k8s_http_client),
 [`socket_runner`](/docs/reference/cluster/socket_runner).

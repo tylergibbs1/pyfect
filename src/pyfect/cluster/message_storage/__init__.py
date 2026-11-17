@@ -28,6 +28,7 @@ from pyfect.cluster.message_storage._memory import (
 from pyfect.cluster.message_storage._noop import NOOP, layer_noop
 from pyfect.cluster.message_storage._service import (
     SAVE_SUCCESS,
+    DeletesProcessed,
     MessageStorage,
     MessageStorageService,
     SaveDuplicate,
@@ -42,6 +43,7 @@ __all__ = [
     "CLAIM_EXPIRATION_MILLIS",
     "NOOP",
     "SAVE_SUCCESS",
+    "DeletesProcessed",
     "DuplicateEncoded",
     "EncodedMessage",
     "EncodedStorage",

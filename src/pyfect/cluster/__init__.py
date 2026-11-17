@@ -1,7 +1,8 @@
 """Cluster sharding (Effect's ``effect/cluster``): shard, entity and
 runner addresses, snowflake ids, the sharding configuration, cluster
 errors and RPC annotations, envelopes, messages and replies, message and
-runner storage (in memory and in SQL), the Kubernetes API client,
+runner storage (in memory and in SQL), retention of completed requests
+(``message_retention``), the Kubernetes API client,
 entities and their resources, singletons, the runner protocol
 (``Runners``, ``RunnerServer``, ``RunnerHealth``), ``Sharding`` itself,
 one-runner setups (``test_runner``, ``single_runner``), entity proxies
@@ -32,6 +33,7 @@ from pyfect.cluster import (
     k8s_types,
     machine_id,
     message,
+    message_retention,
     message_storage,
     reply,
     runner,
@@ -132,6 +134,7 @@ __all__ = [
     "k8s_types",
     "machine_id",
     "message",
+    "message_retention",
     "message_storage",
     "reply",
     "runner",
