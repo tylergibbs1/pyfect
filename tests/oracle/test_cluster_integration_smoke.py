@@ -1,5 +1,5 @@
 """Ports of platform-node's ``test/cluster-integration/Smoke.test.ts``,
-``Transport.test.ts``, ``StreamDisconnect.test.ts`` and
+``cluster-integration/Transport.test.ts``, ``StreamDisconnect.test.ts`` and
 ``Residency.test.ts`` on the cluster harness (``_cluster_harness``): real
 socket runners in this process over localhost, on SQLite and on the
 throwaway PostgreSQL server where Effect uses PostgreSQL and MySQL. Each

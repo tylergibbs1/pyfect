@@ -14,8 +14,8 @@ Coverage counts ported, renamed and §4 exports.
 | Scheduler | 4 | 3 | 1 | 0 | 0 | 100% |
 | Semaphore | 11 | 9 | 2 | 0 | 0 | 100% |
 | Latch | 10 | 8 | 2 | 0 | 0 | 100% |
-| Runtime | 6 | 3 | 0 | 3 | 0 | 100% |
-| **All** | 141 | | | | 0 | 100% |
+| Runtime | 7 | 4 | 0 | 3 | 0 | 100% |
+| **All** | 142 | | | | 0 | 100% |
 
 ## Scope
 
@@ -201,6 +201,7 @@ Coverage counts ported, renamed and §4 exports.
 
 | Effect | Status | pyfect |
 |---|---|---|
+| `InterruptExitCode` | ported | `pyfect.run.InterruptExitCode` |
 | `defaultTeardown` | ported | `pyfect.run.default_teardown` |
 | `makeRunMain` | §4 | `run_main` (§4: `Runtime.makeRunMain(f)`) |
 | `errorExitCode` | §4 | an `exit_code` attribute (§4: `Runtime.errorReported`) |

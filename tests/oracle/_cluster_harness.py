@@ -1,5 +1,5 @@
 """The harness of platform-node's ``test/cluster-integration`` suite
-(Effect's ``harness.ts``): clusters of real socket runners in this process,
+(Effect's ``cluster-integration/harness.ts``): clusters of real socket runners in this process,
 talking over localhost through ``socket_runner``, with their messages and
 shard locks in SQL under a table prefix of their own.
 

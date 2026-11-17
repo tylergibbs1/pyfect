@@ -15,7 +15,7 @@ import re
 from dataclasses import dataclass
 from fnmatch import fnmatch
 
-from _effect_titles_m17 import M17_REASON, TITLES
+from _effect_titles_m18 import M18_REASON, TITLES
 
 
 @dataclass(frozen=True)
@@ -35,6 +35,10 @@ def _some(path: str, reason: str, pattern: str) -> Omission:
 
 _TS_TOOLING = "the TypeScript monorepo's own tooling, which works on TypeScript sources"
 _JS_RUNTIME = "binds a JavaScript runtime or browser API Python doesn't run on"
+_WORKERD = (
+    "binds Cloudflare's workerd: Durable Objects, their storage and alarms exist only inside it, "
+    "and pyfect's runtime is CPython with threads, which Python Workers (Pyodide) do not have"
+)
 _UI_BINDING = "binds atoms to a JavaScript UI framework"
 _STDLIB = (
     "section 4: the module is Python's own type or standard library, so the title tests Python"
@@ -52,7 +56,7 @@ NOT_PORTED_HTTP2 = "NOT_PORTED HTTP/2 on Node's server: `http.hypercorn_server` 
 
 OMISSIONS: tuple[Omission, ...] = (
     *(
-        Omission(path, M17_REASON, re.compile("|".join(f"^{re.escape(t)}$" for t in titles)))
+        Omission(path, M18_REASON, re.compile("|".join(f"^{re.escape(t)}$" for t in titles)))
         for path, titles in TITLES.items()
         if titles
     ),
@@ -60,6 +64,7 @@ OMISSIONS: tuple[Omission, ...] = (
         _TS_TOOLING,
         "tools/*/test/**",
     ),
+    *_whole(_WORKERD, "platform/cloudflare/**"),
     *_whole(_UI_BINDING, "atom/react/**", "atom/solid/**", "atom/vue/**"),
     *_whole(
         _JS_RUNTIME,

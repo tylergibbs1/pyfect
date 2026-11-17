@@ -163,6 +163,7 @@ AST = Module(
                 "MutableJson",
                 "unknownToJson",
                 "unknownToStringTree",
+                "requiresOwnProperty",
             ),
             (INTERNAL, "not public"),
         ),
