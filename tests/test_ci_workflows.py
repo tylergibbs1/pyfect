@@ -4,9 +4,12 @@ The check line in CLAUDE.md is what "done" means locally; CI's `lint` and `test`
 the same four tools, or a commit green on one machine is red on the other.
 """
 
+import ast
 import json
 import re
 from pathlib import Path
+
+import _container_images
 
 from pyfect.date_time._icu_zones import NODE_VERSION
 
@@ -57,11 +60,12 @@ def test_the_shards_run_every_test_once_and_the_check_says_so():
     assert "name: manifest-${{ matrix.python }}-full" in lint
 
     check = _job("ci.yml", "check")
-    assert "needs: [lint, test]" in check
+    assert "needs: [lint, images, test]" in check
     # A required check that is skipped counts as passed, so it must run when a shard failed.
     assert "if: always()" in check
-    assert '[ "$LINT" = success ] && [ "$TEST" = success ]' in check
+    assert '[ "$LINT" = success ] && [ "$IMAGES" = success ] && [ "$TEST" = success ]' in check
     assert "LINT: ${{ needs.lint.result }}" in check and "TEST: ${{ needs.test.result }}" in check
+    assert "IMAGES: ${{ needs.images.result }}" in check
     assert "pattern: manifest-${{ matrix.python }}-*" in check
     assert "scripts/test_shards.py verify .shards/full.txt .shards/shard-*.txt" in check
 
@@ -203,3 +207,76 @@ def test_each_driver_runs_its_tests_at_its_newest_and_lowest_versions():
         assert sorted(packages.split()) == sorted(names), extra
         for pattern in tests.split():
             assert list(ROOT.glob(pattern)), f"{extra}: {pattern} matches no test"
+
+
+def _image_keys_named_in(path: Path) -> list[str]:
+    """The keys of the ``_container_images.image("key")`` calls in ``path``."""
+    return [
+        node.args[0].value
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "image"
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "_container_images"
+        and len(node.args) == 1
+        and isinstance(node.args[0], ast.Constant)
+        and isinstance(node.args[0].value, str)
+    ]
+
+
+def _literal_images_in(path: Path) -> list[str]:
+    """Module-level ``..._IMAGE = "name:tag"`` assignments: an image not pinned in
+    tests/container_images.json, which CI would not have cached."""
+    return [
+        f"{path.name}:{node.lineno}"
+        for node in ast.parse(path.read_text(encoding="utf-8")).body
+        if isinstance(node, ast.Assign)
+        and isinstance(node.value, ast.Constant)
+        and isinstance(node.value.value, str)
+        and any(isinstance(t, ast.Name) and t.id.endswith("IMAGE") for t in node.targets)
+    ]
+
+
+def test_every_container_image_the_oracle_fixtures_name_is_cached():
+    """A fixture's image comes from tests/container_images.json, and CI caches each one it
+    names (only an ARM-only image, which CI's x86 runners never start, is left out)."""
+    fixtures = sorted((ROOT / "tests" / "oracle").glob("*.py"))
+    assert [hit for path in fixtures for hit in _literal_images_in(path)] == []
+    named = {key for path in fixtures for key in _image_keys_named_in(path)}
+    assert named <= set(_container_images.IMAGES), named - set(_container_images.IMAGES)
+    cached = {image.key for image in _container_images.cached()}
+    arm_only = {key for key, image in _container_images.IMAGES.items() if image.arm_only}
+    assert named - arm_only <= cached, (named - arm_only) - cached
+    assert cached <= named, f"pinned but no fixture runs it: {sorted(cached - named)}"
+    for image in _container_images.IMAGES.values():
+        assert re.fullmatch(r"sha256:[0-9a-f]{64}", image.digest), image
+
+
+def test_the_server_tests_load_the_cached_images_and_never_pull():
+    """One job per workflow pulls each pinned image once and caches the archives; every job
+    that runs server tests restores them under the same key, made from the pins, and fails on
+    a miss (.github/actions/container-images)."""
+    action = (ROOT / ".github" / "actions" / "container-images" / "action.yml").read_text(
+        encoding="utf-8"
+    )
+    key = (
+        "key: container-images-${{ hashFiles('tests/container_images.json', "
+        "'tests/_container_images.py') }}"
+    )
+    assert action.count(key) == 2, "save and load must use one key, made from the pins"
+    assert "lookup-only: true" in action and "fail-on-cache-miss: true" in action
+    assert "run: python3 tests/_container_images.py save .images" in action
+    assert 'echo "PYFECT_IMAGE_ARCHIVES=$GITHUB_WORKSPACE/.images"' in action
+    save = "uses: ./.github/actions/container-images\n        with:\n          mode: save"
+    load = "uses: ./.github/actions/container-images\n        with:\n          mode: load"
+    for workflow, saver, runners in (
+        ("ci.yml", "images", ["test"]),
+        ("drivers.yml", "images", ["driver"]),
+    ):
+        assert save in _job(workflow, saver), f"{workflow}'s {saver} job saves no images"
+        for runner in runners:
+            job = _job(workflow, runner)
+            assert f"needs: {saver}" in job and load in job, f"{workflow}'s {runner} job"
+    for workflow in WORKFLOWS.glob("*.yml"):
+        assert "docker pull" not in workflow.read_text(encoding="utf-8"), workflow.name

@@ -21,6 +21,7 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
+import _container_images
 import pytest
 
 from pyfect import redacted
@@ -28,7 +29,7 @@ from pyfect import redacted
 from . import _docker as _containers
 from ._shared_server import SharedServer
 
-IMAGE = "mysql:lts"
+IMAGE = _container_images.image("mysql").local
 LABEL = "pyfect.test=mysql"
 _STARTUP_TIMEOUT = 180.0
 

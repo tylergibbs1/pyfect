@@ -21,6 +21,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+import _container_images
 import _ports
 
 from . import _docker as _containers
@@ -68,7 +69,7 @@ def _stop(process: subprocess.Popen[bytes], root: str) -> None:
     shutil.rmtree(root, ignore_errors=True)
 
 
-IMAGE = "redis:8.2-alpine"
+IMAGE = _container_images.image("redis").local
 LABEL = "pyfect.test=redis"
 
 

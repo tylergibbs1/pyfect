@@ -57,8 +57,23 @@ jobs:
           path: .shards/full.txt
           if-no-files-found: error
 
+  images:
+    # The container images the server-backed tests run (tests/container_images.json, pinned by
+    # digest), pulled once and cached as archives under a key made from that file. The shards
+    # restore them and never pull from a registry: one registry hiccup used to fail a shard's
+    # SQL Server tests. A failed pull fails this job once, with the image, and nothing retries.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+
+      - uses: ./.github/actions/container-images
+        with:
+          mode: save
+
   test:
     name: test (${{ matrix.python }}, ${{ matrix.shard }}/5)
+    needs: images
     strategy:
       fail-fast: false
       matrix:
@@ -75,6 +90,10 @@ jobs:
       PYFECT_REQUIRE_ALL_TESTS: "1"
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+
+      - uses: ./.github/actions/container-images
+        with:
+          mode: load
 
       - uses: ./.github/actions/check-setup
         with:
@@ -110,7 +129,7 @@ jobs:
           if-no-files-found: warn
 
   check:
-    needs: [lint, test]
+    needs: [lint, images, test]
     # Runs when a shard failed too: a skipped required check would count as passed.
     if: always()
     strategy:
@@ -123,10 +142,11 @@ jobs:
       - name: Lint and every shard passed
         env:
           LINT: ${{ needs.lint.result }}
+          IMAGES: ${{ needs.images.result }}
           TEST: ${{ needs.test.result }}
         run: |
-          echo "lint: $LINT, test: $TEST"
-          [ "$LINT" = success ] && [ "$TEST" = success ]
+          echo "lint: $LINT, images: $IMAGES, test: $TEST"
+          [ "$LINT" = success ] && [ "$IMAGES" = success ] && [ "$TEST" = success ]
 
       # The steps below run whatever the first found, so a failure also says whether a test
       # was left out.

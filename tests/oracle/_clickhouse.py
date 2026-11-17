@@ -24,12 +24,13 @@ import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
+import _container_images
 import pytest
 
 from . import _docker as _containers
 from ._shared_server import SharedServer
 
-IMAGE = "clickhouse/clickhouse-server:latest"
+IMAGE = _container_images.image("clickhouse").local
 LABEL = "pyfect.test=clickhouse"
 USER = "pyfect"
 PASSWORD = "pyfect"

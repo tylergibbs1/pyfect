@@ -19,12 +19,13 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass
 
+import _container_images
 import pytest
 
 from . import _docker as _containers
 from ._shared_server import SharedServer
 
-IMAGE = "ghcr.io/tursodatabase/libsql-server:main"
+IMAGE = _container_images.image("libsql").local
 LABEL = "pyfect.test=libsql"
 _STARTUP_TIMEOUT = 60.0
 

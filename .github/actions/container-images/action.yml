@@ -1,0 +1,53 @@
+name: container images
+description: >
+  The container images the server-backed tests run (tests/container_images.json, pinned by
+  digest), cached as archives under a key made from that file. `save` (one job per workflow
+  run) pulls each image once when the key is new and caches the archives; a failed pull fails
+  that job once, naming the image, and nothing retries. `load` restores them, failing on a
+  miss, and sets PYFECT_IMAGE_ARCHIVES so the tests load their images and never pull
+  (tests/_container_images.py).
+inputs:
+  mode:
+    description: "`save` or `load`."
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Check the mode
+      shell: bash
+      env:
+        MODE: ${{ inputs.mode }}
+      run: '[ "$MODE" = save ] || [ "$MODE" = load ] || { echo "mode must be save or load, got $MODE"; exit 1; }'
+
+    - name: Look for the cached images
+      if: inputs.mode == 'save'
+      id: cached
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: .images
+        key: container-images-${{ hashFiles('tests/container_images.json', 'tests/_container_images.py') }}
+        lookup-only: true
+
+    - name: Pull and save every image (only when the pins changed)
+      if: inputs.mode == 'save' && steps.cached.outputs.cache-hit != 'true'
+      shell: bash
+      run: python3 tests/_container_images.py save .images
+
+    - if: inputs.mode == 'save' && steps.cached.outputs.cache-hit != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: .images
+        key: ${{ steps.cached.outputs.cache-primary-key }}
+
+    - name: Restore the images the save job cached
+      if: inputs.mode == 'load'
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: .images
+        key: container-images-${{ hashFiles('tests/container_images.json', 'tests/_container_images.py') }}
+        fail-on-cache-miss: true
+
+    - name: Tell the tests where they are
+      if: inputs.mode == 'load'
+      shell: bash
+      run: echo "PYFECT_IMAGE_ARCHIVES=$GITHUB_WORKSPACE/.images" >> "$GITHUB_ENV"

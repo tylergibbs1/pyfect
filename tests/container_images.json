@@ -1,0 +1,31 @@
+{
+  "busybox": {
+    "ref": "busybox:1.37",
+    "digest": "sha256:a7dbc319b1438115a207e11930dc4bb3e643dcb3ec0bdd694bb36cd8fad289ec"
+  },
+  "clickhouse": {
+    "ref": "clickhouse/clickhouse-server:latest",
+    "digest": "sha256:4f491abc44d9f4a1747c033c35ddd5bc385521305d85ca8251ba0824ff597035"
+  },
+  "libsql": {
+    "ref": "ghcr.io/tursodatabase/libsql-server:main",
+    "digest": "sha256:718825e7eea0619b827ff5ee21a17087eb93957470bb73d64735a58d0b121efc"
+  },
+  "mssql": {
+    "ref": "mcr.microsoft.com/mssql/server:2022-latest",
+    "digest": "sha256:4525e3efac9f3e241cb003bb2ff2a82818b502f37e12049d788b1a9fa7e13b7f"
+  },
+  "mssql-edge": {
+    "ref": "mcr.microsoft.com/azure-sql-edge:latest",
+    "digest": "sha256:902628a8be89e35dfb7895ca31d602974c7bafde4d583a0d0873844feb1c42cf",
+    "arm_only": "SQL Server for ARM hosts (tests/oracle/_mssql.py); CI runs on x86"
+  },
+  "mysql": {
+    "ref": "mysql:lts",
+    "digest": "sha256:df90258da46f6e7ff8574ff84f17618aba0765cac749928299c69fd4e7cb8ad8"
+  },
+  "redis": {
+    "ref": "redis:8.2-alpine",
+    "digest": "sha256:da23c2478319ceb4903857d77a2fd7aa5137d9e9d4c8165dafbacedac6403e95"
+  }
+}

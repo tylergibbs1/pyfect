@@ -8,10 +8,12 @@ import os
 import shutil
 import subprocess
 
+import _container_images
+
 OWNER = "pyfect.test.owner"
 """The label holding the pid of the process that started a container."""
 
-PLACEHOLDER_IMAGE = "busybox:1.37"
+PLACEHOLDER_IMAGE = _container_images.image("busybox").local
 """A few megabytes: what a test of the labels creates (never starts) a container from."""
 
 
@@ -71,11 +73,17 @@ def published_port(container: str, port: int) -> int:
     return int(mapped[0].rsplit(":", 1)[1])
 
 
-def pull(image: str, *platform: str) -> None:
-    """Pull ``image`` unless it is there."""
+def pull(image: str) -> None:
+    """Make ``image`` available: one of tests/container_images.json's local tags is loaded or
+    pulled by digest (``_container_images.ensure``); any other name (``PYFECT_MSSQL_IMAGE``)
+    is pulled unless it is there."""
+    pinned = next((i for i in _container_images.IMAGES.values() if i.local == image), None)
+    if pinned is not None:
+        _container_images.ensure(pinned)
+        return
     if docker("image", "inspect", image).returncode == 0:
         return
-    pulled = docker("pull", *platform, image, timeout=900)
+    pulled = docker("pull", image, timeout=900)
     if pulled.returncode != 0:
         raise RuntimeError(f"cannot pull {image}: {pulled.stderr.strip()}")
 

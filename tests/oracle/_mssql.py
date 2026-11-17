@@ -25,6 +25,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
+import _container_images
 import pytest
 
 from pyfect import redacted
@@ -32,8 +33,8 @@ from pyfect import redacted
 from . import _docker as _containers
 from ._shared_server import SharedServer
 
-SQL_SERVER_IMAGE = "mcr.microsoft.com/mssql/server:2022-latest"
-EDGE_IMAGE = "mcr.microsoft.com/azure-sql-edge:latest"
+SQL_SERVER_IMAGE = _container_images.image("mssql").local
+EDGE_IMAGE = _container_images.image("mssql-edge").local
 LABEL = "pyfect.test=mssql"
 PASSWORD = "Pyfect_test_1!"
 DATABASE = "master"
