@@ -170,7 +170,9 @@
   float's exact value), `from_big_decimal`, `from_string` / `format` (`"numerator/denominator"`),
   `to_number_unsafe` (the ratio rounded once) and `to_big_decimal(scale=, mode=)` with
   `BigDecimal`'s rounding modes. `S.Rational` (written in JSON as its text),
-  `S.RationalFromString` and `representation.rational_reviver` come with it.
+  `S.RationalFromString` and `representation.rational_reviver` come with it. Like
+  `big_decimal.from_string`, `from_string` reads at most `rational.MAX_DIGITS` (30,000)
+  significant digits by default, set with `max_digits`, and prints any size.
 
 ### Performance
 

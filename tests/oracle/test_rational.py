@@ -250,3 +250,16 @@ def test_to_string_to_json_inspect_and_pipe() -> None:
     assert repr(third) == "Rational(1/3)"
     assert third.to_json() == {"_id": "Rational", "numerator": "1", "denominator": "3"}
     assert third.multiply(rational.from_big_int(3)) == one
+
+
+def test_from_string_reads_up_to_max_digits_and_prints_any_size() -> None:
+    """pyfect: ``from_string`` reads at most ``MAX_DIGITS`` significant digits by default,
+    as ``big_decimal.from_string``; past Python's 4300-digit ``int`` limit both ways."""
+    long = "7" * 5000
+    value = rational.from_string_unsafe(f"-{long}/1")
+    assert value.format() == f"-{long}/1"
+    assert value.to_json()["numerator"] == f"-{long}"
+    assert rational.from_string("0" * 40_000 + "1/2") == rational.make(1, 2)
+    assert rational.from_string("1" * (rational.MAX_DIGITS + 1)) is None
+    assert rational.from_string("1" * 100, max_digits=99) is None
+    assert rational.from_string("1" * 50 + "/" + "1" * 50, max_digits=99) is None

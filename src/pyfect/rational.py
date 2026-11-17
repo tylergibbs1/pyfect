@@ -20,9 +20,13 @@ from dataclasses import dataclass
 from typing import Literal
 
 from pyfect import big_decimal
-from pyfect._js import js_number
+from pyfect._digits import to_int
+from pyfect._js import int_text, js_number
 
 _MAX_SAFE = 2**53 - 1
+MAX_DIGITS = big_decimal.MAX_DIGITS
+"""The most significant digits ``from_string`` (and so ``S.RationalFromString``) reads by
+default, as ``big_decimal.from_string``: converting a longer run costs superlinear time."""
 _FRACTION = re.compile(r"([+-]?[0-9]+)(?:/([+-]?[0-9]+))?")
 
 
@@ -37,7 +41,8 @@ class Rational:
     def __post_init__(self) -> None:
         if self.denominator <= 0 or math.gcd(self.numerator, self.denominator) != 1:
             raise ValueError(
-                f"Rational({self.numerator}, {self.denominator}) is not in lowest terms with a "
+                f"Rational({int_text(self.numerator)}, {int_text(self.denominator)}) is not in "
+                "lowest terms with a "
                 "positive denominator; use rational.make_unsafe"
             )
 
@@ -45,7 +50,7 @@ class Rational:
 
     def format(self) -> str:
         """``"numerator/denominator"``, which ``from_string`` reads back."""
-        return f"{self.numerator}/{self.denominator}"
+        return f"{int_text(self.numerator)}/{int_text(self.denominator)}"
 
     def __str__(self) -> str:
         return f"Rational({self.format()})"
@@ -57,8 +62,8 @@ class Rational:
         """Effect's ``toJSON``."""
         return {
             "_id": "Rational",
-            "numerator": str(self.numerator),
-            "denominator": str(self.denominator),
+            "numerator": int_text(self.numerator),
+            "denominator": int_text(self.denominator),
         }
 
     def to_number_unsafe(self) -> float:
@@ -333,21 +338,28 @@ def from_number_unsafe(n: float) -> Rational:
     return out
 
 
-def from_string(text: str) -> Rational | None:
+def from_string(text: str, *, max_digits: int = MAX_DIGITS) -> Rational | None:
     """``[+-]digits`` or ``[+-]digits/[+-]digits``, reduced; ``None`` for anything else
-    (whitespace, a decimal point, an exponent, a zero denominator)."""
+    (whitespace, a decimal point, an exponent, a zero denominator) and for more than
+    ``max_digits`` significant digits in all."""
     match = _FRACTION.fullmatch(text)
     if match is None:
         return None
-    denominator = match.group(2)
-    return make(int(match.group(1)), 1 if denominator is None else int(denominator))
+    numerator, denominator = match.group(1), match.group(2)
+    if _significant(numerator) + _significant(denominator or "") > max_digits:
+        return None
+    return make(to_int(numerator), 1 if denominator is None else to_int(denominator))
 
 
-def from_string_unsafe(text: str) -> Rational:
+def _significant(digits: str) -> int:
+    return len(digits.lstrip("+-").lstrip("0"))
+
+
+def from_string_unsafe(text: str, *, max_digits: int = MAX_DIGITS) -> Rational:
     """``from_string``; raises ``ValueError`` on invalid text."""
-    out = from_string(text)
+    out = from_string(text, max_digits=max_digits)
     if out is None:
-        raise ValueError(f"Invalid rational string: {text}")
+        raise ValueError(f"Invalid rational string: {text[:40]}")
     return out
 
 
@@ -368,6 +380,7 @@ def multiply_all(values: Iterable[Rational]) -> Rational:
 
 
 __all__ = [
+    "MAX_DIGITS",
     "ONE",
     "ZERO",
     "Rational",

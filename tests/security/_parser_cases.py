@@ -37,6 +37,7 @@ from pyfect import (
     json_patch,
     json_pointer,
     process,
+    rational,
     semver,
     semver_range,
     stream,
@@ -273,6 +274,8 @@ def schema(target: S.Top, name: str) -> None:
 for _target in (
     big_decimal.from_string,
     big_decimal.from_string_unsafe,
+    rational.from_string,
+    rational.from_string_unsafe,
     byte_size.from_string,
     byte_size.from_string_unsafe,
     shard_id.from_string,
