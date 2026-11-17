@@ -18,6 +18,7 @@ from pyfect import option
 from pyfect import stream as stream_
 from pyfect._context_effects import service_option
 from pyfect._core import Effect
+from pyfect._owned_fd import OwnedFd
 from pyfect.duration import Duration, millis
 from pyfect.effect import fail, gen
 from pyfect.file_system._copy import copy_tree
@@ -159,6 +160,12 @@ def _nanos(time: datetime | float) -> int:
     return round(time * 1_000_000_000)
 
 
+def _open_owned(path: str, flags: int, mode: int) -> tuple[int, OwnedFd[int]]:
+    """The descriptor's number, and the descriptor, closed once unused."""
+    fd = os.open(path, flags, mode)
+    return fd, OwnedFd(fd, os.close)
+
+
 def _write(path: str, data: bytes, flag: OpenFlag, mode: int) -> None:
     fd = os.open(path, _open_flags(flag), mode)
     try:
@@ -275,9 +282,9 @@ class LiveFileSystem(FileSystemService):
                 )
             flags |= no_follow_flag
         return acquire_release(
-            run("open", path, lambda: os.open(path, flags, mode)),
-            lambda fd, _exit: run("open", fd, lambda: os.close(fd)).or_die(),
-        ).map(lambda fd: LiveFile(fd, append=flag.startswith("a")))
+            run("open", path, lambda: _open_owned(path, flags, mode)),
+            lambda opened, _exit: run("open", opened[0], opened[1].close_when_unused).or_die(),
+        ).map(lambda opened: LiveFile(*opened, append=flag.startswith("a")))
 
     def read_directory(
         self, path: str, *, recursive: bool = False

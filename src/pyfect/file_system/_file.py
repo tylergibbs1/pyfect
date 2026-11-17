@@ -9,9 +9,11 @@ from __future__ import annotations
 
 import os
 import threading
+from collections.abc import Callable
 from typing import Never
 
 from pyfect._core import Effect
+from pyfect._owned_fd import OwnedFd
 from pyfect.effect import fail, succeed, suspend, void
 from pyfect.file_system._errors import run
 from pyfect.file_system._model import FileInfo, SeekMode
@@ -56,19 +58,27 @@ def _before_start(method: str) -> Effect[Never, PlatformError]:
 
 
 class LiveFile(File):
-    __slots__ = ("_append", "_fd", "_position")
+    """Its operations use the descriptor through ``owned``, which the
+    scope that opened the file closes once they end."""
 
-    def __init__(self, fd: int, *, append: bool) -> None:
-        self._fd = fd
+    __slots__ = ("_append", "_number", "_owned", "_position")
+
+    def __init__(self, number: int, owned: OwnedFd[int], *, append: bool) -> None:
+        self._number = number
+        self._owned = owned
         self._append = append
         self._position = 0
 
     @property
     def fd(self) -> int:
-        return self._fd
+        return self._number
+
+    def _run[A](self, method: str, work: Callable[[int], A]) -> Effect[A, PlatformError]:
+        """``work`` on the descriptor, on a worker thread."""
+        return run(method, self._number, lambda: self._owned.use(work))
 
     def stat(self) -> Effect[FileInfo, PlatformError]:
-        return run("stat", self._fd, lambda: file_info(os.fstat(self._fd)))
+        return self._run("stat", lambda fd: file_info(os.fstat(fd)))
 
     def seek(self, offset: int, whence: SeekMode = "start") -> Effect[int, PlatformError]:
         def go() -> Effect[int, PlatformError]:
@@ -87,7 +97,7 @@ class LiveFile(File):
         return suspend(go)
 
     def sync(self) -> Effect[None, PlatformError]:
-        return run("sync", self._fd, lambda: os.fsync(self._fd))
+        return self._run("sync", os.fsync)
 
     def read(
         self, buffer: bytearray | memoryview, *, position: int | None = None
@@ -97,9 +107,9 @@ class LiveFile(File):
             if explicit is not None:
                 if explicit < 0:
                     return _before_start("read")
-                return run("read", self._fd, lambda: _read_into(self._fd, buffer, explicit))
+                return self._run("read", lambda fd: _read_into(fd, buffer, explicit))
             start = self._position
-            return run("read", self._fd, lambda: _read_into(self._fd, buffer, start)).map(
+            return self._run("read", lambda fd: _read_into(fd, buffer, start)).map(
                 lambda count: self._advance(start, count)
             )
 
@@ -128,7 +138,7 @@ class LiveFile(File):
                     self._position = start + len(data)
                 return data
 
-            return run("read_alloc", self._fd, lambda: _pread(self._fd, size, start)).map(got)
+            return self._run("read_alloc", lambda fd: _pread(fd, size, start)).map(got)
 
         return suspend(go)
 
@@ -137,7 +147,7 @@ class LiveFile(File):
             if not self._append and self._position > length:
                 self._position = length
 
-        return run("truncate", self._fd, lambda: os.ftruncate(self._fd, length)).map(clamp)
+        return self._run("truncate", lambda fd: os.ftruncate(fd, length)).map(clamp)
 
     def write(self, data: bytes) -> Effect[int, PlatformError]:
         return suspend(lambda: self._write_once("write", data))
@@ -158,7 +168,7 @@ class LiveFile(File):
                     "WriteZero",
                     module="FileSystem",
                     method="write_all",
-                    path_or_descriptor=self._fd,
+                    path_or_descriptor=self._number,
                     description="write returned 0 bytes written",
                 )
             )
@@ -166,9 +176,9 @@ class LiveFile(File):
 
     def _write_once(self, method: str, data: bytes) -> Effect[int, PlatformError]:
         if self._append:
-            return run(method, self._fd, lambda: os.write(self._fd, data))
+            return self._run(method, lambda fd: os.write(fd, data))
         start = self._position
-        return run(method, self._fd, lambda: _pwrite(self._fd, data, start)).map(
+        return self._run(method, lambda fd: _pwrite(fd, data, start)).map(
             lambda count: self._advance(start, count)
         )
 
