@@ -20,7 +20,7 @@ from typing import Any, cast
 
 from pyfect import _json_text as json_text
 from pyfect.sql.mysql import _asyncmy
-from pyfect.sql.mysql._asyncmy import Cursor, PreparedStatement, RawConnection
+from pyfect.sql.mysql._asyncmy import Adapted, Cursor, PreparedStatement
 from pyfect.sql.mysql._bind import bind
 from pyfect.sql.mysql._literal import text_literal
 
@@ -72,12 +72,14 @@ class Session:
         "_running",
         "_statements",
         "_stream",
+        "_writes",
         "broken",
         "raw",
     )
 
-    def __init__(self, raw: RawConnection, options: Mapping[str, Any]) -> None:
-        self.raw = raw
+    def __init__(self, connection: Adapted, options: Mapping[str, Any]) -> None:
+        self.raw = connection.raw
+        self._writes = connection.writes
         self._options = options
         self._lock = asyncio.Lock()
         self._statements: OrderedDict[str, PreparedStatement] = OrderedDict()
@@ -107,7 +109,7 @@ class Session:
         connection is in step and goes on; any other failure (the connection lost, a value
         that could not be read) stopped part way through the response, so the connection is
         closed and the pool replaces it."""
-        if _asyncmy.command_sent(self.raw) and not _asyncmy.is_server_error(error):
+        if self._writes.sent and not _asyncmy.is_server_error(error):
             self._cut_short()
 
     # --- statements -----------------------------------------------------------
@@ -118,7 +120,7 @@ class Session:
         if found is not None:
             statements.move_to_end(sql)
             return found
-        _asyncmy.begin_command(self.raw)
+        self._writes.begin()
         prepared = await self.raw.prepare(sql)
         statements[sql] = prepared
         if len(statements) > _STATEMENT_CACHE_SIZE:
@@ -131,7 +133,7 @@ class Session:
     ) -> list[ResultSet]:
         prepared = await self._prepared(sql)
         parameters = _parameters(params)
-        _asyncmy.begin_command(self.raw)
+        self._writes.begin()
         result = await prepared.execute(parameters)
         description = result.description
         if description is None:
@@ -157,7 +159,7 @@ class Session:
         cursor = _asyncmy.text_cursor(self.raw, as_tuples=as_tuples)
         results: list[ResultSet] = []
         try:
-            _asyncmy.begin_command(self.raw)
+            self._writes.begin()
             await cursor.execute(text)
             while True:
                 if cursor.description is None:
@@ -215,7 +217,7 @@ class Session:
         try:
             cursor = _asyncmy.stream_cursor(self.raw)
             text = self._bound(sql, params)
-            _asyncmy.begin_command(self.raw)
+            self._writes.begin()
             await cursor.execute(text)
         except asyncio.CancelledError:
             self._cut_short()
@@ -306,7 +308,7 @@ class Session:
         thread_id = self.raw.thread_id()
         try:
             async with asyncio.timeout(_KILL_TIMEOUT):
-                side = await _asyncmy.connect(self._options)
+                side = (await _asyncmy.connect(self._options)).raw
                 try:
                     await _asyncmy.kill(side, thread_id, only_statement=only_statement)
                 finally:

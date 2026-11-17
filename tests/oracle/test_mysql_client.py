@@ -117,10 +117,12 @@ class _FakeConnection:
     connected = True
     server_status = 0
     _encoding = "utf8"
-    _next_seq_id = 0
 
     def __init__(self, calls: list[str]) -> None:
         self._calls = calls
+
+    def _write_bytes(self, data: bytes) -> None:
+        return None
 
     def escape(self, obj: object) -> str:
         return repr(obj)

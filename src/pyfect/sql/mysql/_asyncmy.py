@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import codecs
 from collections.abc import Awaitable, Callable, Mapping
+from dataclasses import dataclass
 from typing import Any, Protocol, cast
 
 import asyncmy
@@ -167,47 +168,85 @@ def _replacing_utf8(name: str) -> codecs.CodecInfo | None:
 codecs.register(_replacing_utf8)
 
 
-_UNSENT = -1
-"""``_next_seq_id`` before a command is written; asyncmy keeps it in 0..255 (it wraps), and
-sets it to 1 once it writes a command's first packet."""
-
-
 class UnsupportedAsyncmyError(RuntimeError):
     """The installed asyncmy lacks the connection internals the driver relies on."""
 
 
-def adapt(conn: Any) -> RawConnection:
+class Writes:
+    """Whether a connection has written any part of a command since ``begin``. ``adapt``
+    puts it in place of the connection's ``_write_bytes``, which asyncmy writes every packet
+    through, so it only watches: it never changes what asyncmy keeps or sends."""
+
+    __slots__ = ("_sent", "_write")
+
+    def __init__(self, write: Callable[[bytes], object]) -> None:
+        self._write = write
+        self._sent = False
+
+    def __call__(self, data: bytes) -> object:
+        self._sent = True
+        return self._write(data)
+
+    def begin(self) -> None:
+        """Nothing of the next command is written yet."""
+        self._sent = False
+
+    @property
+    def sent(self) -> bool:
+        """Whether some of the command begun with ``begin`` was written. A failure before
+        that left the connection in step; one after it, unless the server's own error
+        packet, did not."""
+        return self._sent
+
+
+@dataclass(frozen=True, slots=True)
+class Adapted:
+    """A connection set up by ``adapt``, and what it has written."""
+
+    raw: RawConnection
+    writes: Writes
+
+
+def _unsupported(detail: str) -> UnsupportedAsyncmyError:
+    from asyncmy.version import __VERSION__
+
+    return UnsupportedAsyncmyError(
+        f"asyncmy {__VERSION__} is not supported by pyfect.sql.mysql: its connection {detail}"
+    )
+
+
+def adapt(conn: Any) -> Adapted:
     """``conn`` checked and set up for the driver. Two of asyncmy's internals are used, so an
-    asyncmy that renames or retypes them fails here, at connect, never later and quietly:
+    asyncmy that renames or changes them fails here, at connect, never later and quietly:
 
     - ``_encoding``, the codec asyncmy decodes text with, swapped for one that reads bytes
       that are not UTF-8 as U+FFFD, as mysql2 does (Node's ``Buffer.toString``); asyncmy's
       own fails part way through a result (``SELECT ?`` of such bytes on the prepared path);
-    - ``_next_seq_id``, the protocol sequence id, which ``begin_command`` / ``command_sent``
-      read to tell whether a failed command was written (``tests/test_mysql_asyncmy_internals.py``
-      pins both against the installed asyncmy)."""
-    from asyncmy.version import __VERSION__
-
+    - ``_write_bytes``, which asyncmy writes every packet through, watched by ``Writes``
+      (``tests/test_mysql_asyncmy_internals.py`` pins both against the installed asyncmy)."""
     encoding: object = getattr(conn, "_encoding", None)
-    sequence: object = getattr(conn, "_next_seq_id", None)
-    if not isinstance(encoding, str) or type(sequence) is not int:
-        raise UnsupportedAsyncmyError(
-            f"asyncmy {__VERSION__} is not supported by pyfect.sql.mysql: its connection has "
-            f"no str _encoding or int _next_seq_id (got {encoding!r} and {sequence!r})"
-        )
+    if not isinstance(encoding, str):
+        raise _unsupported(f"has no str _encoding (got {encoding!r})")
     try:
         is_utf8 = codecs.lookup(encoding).name == "utf-8"
     except LookupError as cause:
-        raise UnsupportedAsyncmyError(
-            f"asyncmy {__VERSION__} is not supported by pyfect.sql.mysql: its connection's "
-            f"_encoding {encoding!r} is not a codec"
-        ) from cause
+        raise _unsupported(f"_encoding {encoding!r} is not a codec") from cause
+    write: object = getattr(conn, "_write_bytes", None)
+    if not callable(write):
+        raise _unsupported(f"has no _write_bytes method (got {write!r})")
+    writes = Writes(cast("Callable[[bytes], object]", write))
+    try:
+        conn._write_bytes = writes
+    except (AttributeError, TypeError) as cause:
+        raise _unsupported("does not let its _write_bytes be watched") from cause
+    if getattr(conn, "_write_bytes", None) is not writes:
+        raise _unsupported("does not let its _write_bytes be watched")
     if is_utf8:
         conn._encoding = _REPLACING_UTF8
-    return cast("RawConnection", conn)
+    return Adapted(cast("RawConnection", conn), writes)
 
 
-async def connect(options: Mapping[str, Any]) -> RawConnection:
+async def connect(options: Mapping[str, Any]) -> Adapted:
     """A connection, checked and set up by ``adapt``."""
     connecting = cast(
         "Callable[..., Awaitable[object]]",
@@ -216,29 +255,16 @@ async def connect(options: Mapping[str, Any]) -> RawConnection:
     return adapt(await connecting(**options))
 
 
-def begin_command(conn: RawConnection) -> None:
-    """Note that no part of the next command has been written yet (see ``command_sent``)."""
-    cast("Any", conn)._next_seq_id = _UNSENT
-
-
-def command_sent(conn: RawConnection) -> bool:
-    """Whether the command begun with ``begin_command`` has been written: asyncmy sets the
-    sequence id to 1 once it writes the command's first packet, and never back to -1. A
-    failure before that left the connection in step; one after it, unless the server's own
-    error packet, did not."""
-    return cast("Any", conn)._next_seq_id != _UNSENT
-
-
 __all__ = [
+    "Adapted",
     "Cursor",
     "Description",
     "PreparedStatement",
     "RawConnection",
     "Result",
     "UnsupportedAsyncmyError",
+    "Writes",
     "adapt",
-    "begin_command",
-    "command_sent",
     "connect",
     "connect_keywords",
     "end_unbuffered_result",

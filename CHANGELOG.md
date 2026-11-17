@@ -4,6 +4,13 @@
 
 ### Fixed
 
+- `pyfect-dev[mysql]` 0.6.5 to 0.6.9 failed every MySQL statement with asyncmy 0.2.18, which a
+  fresh install resolves (`SqlError(UnknownError(cause=OverflowError("can't convert negative
+  value to unsigned int"), ...))`). The driver wrote -1 into asyncmy's `_next_seq_id` to tell
+  whether a failed command had been sent, and asyncmy 0.2.18 made that field an unsigned int.
+  The driver now watches what the connection writes instead and changes none of asyncmy's
+  state. CI also runs each driver's tests at its newest release and its lowest allowed one,
+  whatever `uv.lock` pins, on every change to the drivers and daily.
 - `migrate_legacy_store(..., taken_from=pair, through_sequence=0)` was accepted (0.6.9) and
   moved every batch, the first ones of the store taking the tables back included, to `pair`'s
   tables. `through_sequence` is now parsed where the call takes it and refused unless it is 1

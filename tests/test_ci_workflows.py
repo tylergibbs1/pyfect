@@ -172,3 +172,34 @@ def test_ci_runs_the_node_the_recorded_answers_came_from():
     for path in (".github/actions/check-setup/action.yml", ".github/workflows/fuzz.yml"):
         text = (ROOT / path).read_text(encoding="utf-8")
         assert "node-version-file: .node-version" in text, path
+
+
+_DRIVER_EXTRAS = ("pg", "mysql", "mssql", "redis")
+"""The extras that install a database or server driver."""
+
+
+def test_each_driver_runs_its_tests_at_its_newest_and_lowest_versions():
+    """asyncmy 0.2.18 failed every MySQL query of a fresh install of 0.6.5-0.6.9, while CI
+    installed uv.lock's 0.2.17. drivers.yml re-resolves each driver extra's packages without
+    the lock, at the newest and the lowest allowed release, on every change to the code using
+    them and daily."""
+    text = (WORKFLOWS / "drivers.yml").read_text(encoding="utf-8")
+    triggers = text.split("\njobs:\n", 1)[0]
+    for path in ('"src/pyfect/sql/**"', '"pyproject.toml"', '"uv.lock"'):
+        assert path in triggers, path
+    assert "schedule:" in triggers and "pull_request_target" not in triggers
+    job = _job("drivers.yml", "driver")
+    assert "resolution: [highest, lowest-direct]" in job
+    assert 'uv pip install --python .venv/bin/python --resolution "$RESOLUTION"' in job
+    assert 'PYFECT_REQUIRE_ALL_TESTS: "1"' in job
+
+    pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    rows = re.findall(r"(?m)^\s+- extra: (\w+)\n\s+packages: (.+)\n\s+tests: (.+)$", job)
+    assert sorted(extra for extra, _, _ in rows) == sorted(_DRIVER_EXTRAS)
+    for extra, packages, tests in rows:
+        listed = re.search(rf"(?ms)^{extra} = \[\n(.*?)^\]", pyproject)
+        assert listed, extra
+        names = re.findall(r'"([\w-]+)', listed.group(1))
+        assert sorted(packages.split()) == sorted(names), extra
+        for pattern in tests.split():
+            assert list(ROOT.glob(pattern)), f"{extra}: {pattern} matches no test"

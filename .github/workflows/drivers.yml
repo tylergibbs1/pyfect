@@ -1,0 +1,87 @@
+name: drivers
+
+# Each database driver extra at its newest release and at the lowest version pyproject.toml
+# allows, whatever uv.lock pins, running that driver's tests. A user's fresh install resolves
+# the newest driver, which the locked CI never sees: asyncmy 0.2.18 failed every MySQL query of
+# pyfect 0.6.5-0.6.9 while uv.lock still pinned 0.2.17. Daily as well, since a driver release
+# comes without a pull request. tests/test_ci_workflows.py keeps a row here per driver extra.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - "src/pyfect/sql/**"
+      - "src/pyfect/persistence/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/drivers.yml"
+  schedule:
+    - cron: "23 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  driver:
+    name: ${{ matrix.driver.extra }} (${{ matrix.resolution }})
+    strategy:
+      fail-fast: false
+      matrix:
+        resolution: [highest, lowest-direct]
+        driver:
+          - extra: pg
+            packages: psycopg
+            tests: tests/test_sql_pg_*.py tests/oracle/test_pg_*.py
+            # The dev group's C build, which must match psycopg's version exactly; the extra
+            # installs none, so psycopg runs on the system libpq, as on a fresh install.
+            drop: psycopg-binary
+          - extra: mysql
+            packages: asyncmy
+            tests: tests/test_mysql_*.py tests/test_sql_mysql_*.py tests/oracle/test_mysql_*.py
+          - extra: mssql
+            packages: python-tds pyopenssl
+            tests: tests/test_mssql_*.py tests/oracle/test_mssql_*.py
+          - extra: redis
+            packages: redis
+            tests: tests/test_redis_*.py tests/oracle/test_redis*.py
+        include:
+          # The newest release on the newest Python, the oldest allowed on the oldest.
+          - resolution: highest
+            python: "3.14"
+          - resolution: lowest-direct
+            python: "3.13"
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      UV_PYTHON: ${{ matrix.python }}
+      EXTRA: ${{ matrix.driver.extra }}
+      PACKAGES: ${{ matrix.driver.packages }}
+      RESOLUTION: ${{ matrix.resolution }}
+      TESTS: ${{ matrix.driver.tests }}
+      DROP: ${{ matrix.driver.drop }}
+      # A test skipped for a missing server or library fails the run (tests/_skips.py).
+      PYFECT_REQUIRE_ALL_TESTS: "1"
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+
+      - name: libpq, for psycopg without its C build
+        if: matrix.driver.extra == 'pg'
+        run: sudo apt-get install -y -q libpq5
+
+      - name: Install, the driver's packages re-resolved without uv.lock
+        run: |
+          uv sync --locked
+          if [ -n "$DROP" ]; then uv pip uninstall --python .venv/bin/python $DROP; fi
+          upgrades=()
+          for package in $PACKAGES; do upgrades+=(--upgrade-package "$package"); done
+          uv pip install --python .venv/bin/python --resolution "$RESOLUTION" "${upgrades[@]}" -e ".[$EXTRA]"
+          uv pip list --python .venv/bin/python | grep -iE "^($(echo "$PACKAGES" | tr ' ' '|')) "
+
+      - name: The driver's tests
+        run: uv run --no-sync pytest -q -p no:randomly -rfEs $TESTS
