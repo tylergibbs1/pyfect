@@ -2,8 +2,11 @@
 
 A ``ThreadWorker`` runs ``target`` on a new daemon thread; the code there
 runs its own runtime (``run_blocking`` or ``run_async``) and finds its parent
-through ``python_worker_runner.layer``. Messages are handed over as they
-are, not copied: send values neither side changes afterwards. The thread
+through ``python_worker_runner.layer``. Each message is copied when it is
+sent, by a pickle round trip, as a process worker's is (Effect's structured
+clone at ``postMessage``): one that cannot be pickled fails the send, one
+that cannot be unpickled arrives as unreadable. Values in the message's
+transfer list are moved: the other side gets those objects themselves. The thread
 exits when ``target`` returns (code 0) or raises (an error event, then
 code 1). A thread cannot be killed: ``kill`` reports it as exited with code
 1 and drops what it sends from then on.
@@ -11,19 +14,60 @@ code 1). A thread cannot be killed: ``kill`` reports it as exited with code
 
 from __future__ import annotations
 
+import io
+import pickle
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
+from typing import cast
 
 from pyfect.workers._port import (
     Disconnected,
     ParentPort,
     Raised,
     Received,
+    Unreadable,
     WorkerHandle,
     WorkerPort,
 )
 
 _local = threading.local()
+
+
+class _Pickler(pickle.Pickler):
+    def __init__(self, file: io.BytesIO, moved: dict[int, int]) -> None:
+        super().__init__(file, protocol=pickle.HIGHEST_PROTOCOL)
+        self._moved = moved
+
+    def persistent_id(self, obj: object) -> int | None:
+        return self._moved.get(id(obj))
+
+
+class _Unpickler(pickle.Unpickler):
+    def __init__(self, file: io.BytesIO, transfers: Sequence[object]) -> None:
+        super().__init__(file)
+        self._transfers = transfers
+
+    def persistent_load(self, pid: object) -> object:
+        return self._transfers[cast("int", pid)]
+
+
+class _Copy:
+    """A message pickled when sent, with the values it moves."""
+
+    __slots__ = ("_payload", "_transfers")
+
+    def __init__(self, message: object, transfers: Sequence[object]) -> None:
+        transfers = tuple(transfers)
+        buffer = io.BytesIO()
+        _Pickler(buffer, {id(value): index for index, value in enumerate(transfers)}).dump(message)
+        self._payload = buffer.getvalue()
+        self._transfers = transfers
+
+    def read(self) -> Received | Unreadable:
+        try:
+            return Received(_Unpickler(io.BytesIO(self._payload), self._transfers).load())
+        except Exception as cause:  # reported as an unreadable message, as from a process
+            return Unreadable(cause)
 
 
 def current_parent() -> ParentPort | None:
@@ -40,15 +84,15 @@ class _ThreadParent(ParentPort):
         self._worker = worker
         self._closed = False
 
-    def post(self, message: object) -> None:
-        self._worker.deliver(message)
+    def post(self, message: object, transfers: Sequence[object]) -> None:
+        self._worker.deliver(_Copy(message, transfers))
 
     def close(self) -> None:
         self._closed = True
 
-    def deliver(self, message: object) -> None:
+    def deliver(self, message: _Copy) -> None:
         if not self._closed:
-            self.inbox.put(Received(message))
+            self.inbox.put(message.read())
 
 
 class _ThreadWorkerPort(WorkerPort):
@@ -59,12 +103,12 @@ class _ThreadWorkerPort(WorkerPort):
         self._killed = False
         self.parent = _ThreadParent(self)
 
-    def post(self, message: object) -> None:
-        self.parent.deliver(message)
+    def post(self, message: object, transfers: Sequence[object]) -> None:
+        self.parent.deliver(_Copy(message, transfers))
 
-    def deliver(self, message: object) -> None:
+    def deliver(self, message: _Copy) -> None:
         if not self._killed:
-            self.events.put(Received(message))
+            self.events.put(message.read())
 
     def kill(self) -> None:
         self._killed = True

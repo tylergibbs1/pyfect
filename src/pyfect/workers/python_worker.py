@@ -53,7 +53,7 @@ class _Port:
         self.worker = worker
 
     def post_message(self, message: object, transfers: Transfers) -> None:
-        self.worker.post(message)
+        self.worker.post(message, transfers)
 
 
 def _receive_error(message: str, cause: BaseException | None = None) -> WorkerError:
@@ -72,7 +72,7 @@ def _setup(options: SetupOptions[WorkerHandle]) -> Effect[_Port, WorkerError]:
 
         def close(_: object) -> Effect[None]:
             def ask() -> None:
-                worker.post((1,))
+                worker.post((1,), ())
 
             return (
                 try_(ask)

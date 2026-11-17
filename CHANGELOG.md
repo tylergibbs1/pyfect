@@ -4,6 +4,13 @@
 
 ### Fixed
 
+- A `ThreadWorker` and its parent got each other's message objects themselves, not copies
+  (0.6.9 and before), so a change made after `send` reached the other side, and on
+  free-threaded Python both raced on them. Thread workers now copy each message when it is
+  sent by a pickle round trip, as process workers do and as Effect's `postMessage`
+  structured-clones it: a message that can't be pickled fails `send`, one that can't be
+  unpickled is a `WorkerReceiveError`. Values in `send`'s transfer list are moved to the
+  thread worker, not copied.
 - `migrate_legacy_store(..., taken_from=pair, through_sequence=0)` was accepted (0.6.9) and
   moved every batch, the first ones of the store taking the tables back included, to `pair`'s
   tables. `through_sequence` is now parsed where the call takes it and refused unless it is 1

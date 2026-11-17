@@ -29,7 +29,13 @@ messages with `run` and answers with `send`.
 A worker that fails to start or exits fails `run`, and a message that can't be posted
 fails `send` (or `run`, if it was sent before the worker was ready), with a
 `WorkerError` whose `reason` is `WorkerSpawnError`, `WorkerSendError`,
-`WorkerReceiveError` or `WorkerUnknownError`. Messages to a process worker are pickled.
+`WorkerReceiveError` or `WorkerUnknownError`.
+
+Each message is pickled when it is sent, to a thread worker as to a process worker, so the
+other side gets a copy: a change made after `send` never reaches it. A message that can't be
+pickled fails `send`. `send(message, transfers)` moves the values in `transfers` to a thread
+worker instead of copying them, so the worker gets those objects themselves; a process
+worker gets copies of them too.
 
 ## RPC over workers
 

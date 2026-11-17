@@ -38,8 +38,8 @@ for a message."""
 
 type Transfers = Sequence[object]
 """Values a platform may move rather than copy with a message (Effect's
-transfer list). The Python platforms copy or share every message and
-ignore them."""
+transfer list). The Python platforms copy every message when it is sent:
+a thread worker moves these values, a process worker copies them too."""
 
 type SendFn = Callable[[Any, Transfers], Effect[None, WorkerError]]
 type RunFn = Callable[

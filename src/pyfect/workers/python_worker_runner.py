@@ -57,8 +57,8 @@ def _log_unhandled(cause: Cause[Any]) -> Effect[None]:
 
 
 def _runner(parent: ParentPort) -> WorkerRunner[Any, Any]:
-    def send_unsafe(_port_id: int, message: object, _transfers: Transfers) -> None:
-        parent.post((1, message))
+    def send_unsafe(_port_id: int, message: object, transfers: Transfers) -> None:
+        parent.post((1, message), transfers)
 
     def run(handler: Handler) -> Effect[None, WorkerError, Any]:
         # The messages are handled on the run's own fiber, so a handler that
@@ -67,7 +67,7 @@ def _runner(parent: ParentPort) -> WorkerRunner[Any, Any]:
             @gen
             def running():
                 fiber_set = yield from FiberSet[Any, Any].make().pipe(provide_service(Scope, scope))
-                parent.post((0,))
+                parent.post((0,), ())
                 while True:
                     event = yield from parent.inbox.take()
                     match event:
