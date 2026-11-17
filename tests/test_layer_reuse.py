@@ -18,7 +18,19 @@ from typing import Any
 
 import pytest
 from _pyfect_modules import modules
-from layer_cases import ai_auth, ai_decisions, ai_otel, cluster, core, crypto, data, http, otlp, rpc
+from layer_cases import (
+    ai_auth,
+    ai_bedrock,
+    ai_decisions,
+    ai_otel,
+    cluster,
+    core,
+    crypto,
+    data,
+    http,
+    otlp,
+    rpc,
+)
 from layer_cases._case import Case
 
 import pyfect
@@ -27,7 +39,7 @@ from pyfect.duration import seconds
 from pyfect.exit import Success
 from pyfect.layer import Layer
 
-_AREAS = (core, crypto, rpc, http, data, cluster, ai_otel, ai_decisions, ai_auth, otlp)
+_AREAS = (core, crypto, rpc, http, data, cluster, ai_otel, ai_decisions, ai_auth, ai_bedrock, otlp)
 CASES: dict[str, Case] = {name: case for area in _AREAS for name, case in area.CASES.items()}
 SKIPPED: dict[str, str] = {name: why for area in _AREAS for name, why in area.SKIPPED.items()}
 
