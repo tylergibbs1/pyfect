@@ -707,7 +707,12 @@ def test_shuts_down_websockets(unresponsive: bool) -> None:
             assert _frames(client)[0] == (8, struct.pack("!H", 1001))
         return
     with client:
-        assert client.close_code == 1001
+        # The client's own thread handles the close frame, so wait for it rather than read
+        # ``close_code`` while the closing handshake may still be under way.
+        with pytest.raises(ConnectionClosed) as closed:
+            client.recv(timeout=TIMEOUT)
+        assert closed.value.rcvd is not None
+        assert closed.value.rcvd.code == 1001
     [exit] = drained
     assert isinstance(exit, Failure)
     assert not exit.cause.has_interrupts
