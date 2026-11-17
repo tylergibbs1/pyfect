@@ -22,7 +22,7 @@ That test keeps the faulted runner registered (``keep_registered``): with
 its lock refreshes failing it heartbeats only on every other refresh tick,
 once a second, and SQLite's second-resolution heartbeats can expire it a
 little over a second after one, so any delay under load let the peer
-take its shards legitimately.
+take its shards. ``test_sharding_lock_failure_heartbeats`` pins that margin.
 """
 
 from __future__ import annotations
@@ -87,6 +87,8 @@ def test_shards_stay_assigned_to_a_registered_runner_whose_lock_operations_fail(
         cluster, faulted, peer, shards = yield from two_runners(cluster_db)
         expiration = cluster.config.shard_lock_expiration.to_seconds()
 
+        # Registration expiry is not what this test is about; the heartbeat
+        # margin is test_sharding_lock_failure_heartbeats's.
         yield from cluster.keep_registered(faulted)
         yield from cluster.fault_storage(faulted, "locks")
         yield from cluster.wait_until(
