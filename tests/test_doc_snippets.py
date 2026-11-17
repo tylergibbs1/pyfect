@@ -277,6 +277,7 @@ def runs(request: pytest.FixtureRequest) -> Iterator[Runs]:
             "test_snippet_runs",
             "test_snippet_tests_pass",
             "test_cluster_snippet_with_a_slow_drain",
+            "test_cluster_snippet_with_slow_storage",
         )
         and isinstance(path := item.callspec.params["path"], Path)
     ]
@@ -286,6 +287,8 @@ def runs(request: pytest.FixtureRequest) -> Iterator[Runs]:
         yield {
             (test, path): pool.submit(run, "-c", SLOW_DRAIN, str(path))
             if test == "test_cluster_snippet_with_a_slow_drain"
+            else pool.submit(run, str(SLOW_STORAGE), str(path))
+            if test == "test_cluster_snippet_with_slow_storage"
             else servers.submit(run_with_server, path)
             if any(path.is_relative_to(server) for server in SERVERS)
             else pool.submit(run, *snippet_args(path))
@@ -345,6 +348,43 @@ def test_cluster_snippet_with_a_slow_drain(path: Path, runs: Runs):
     assert_ran(done)
     expected = path.with_suffix(".out")
     assert slow_drain_output(done) == (expected.read_text() if expected.exists() else "")
+
+
+SLOW_STORAGE = Path(__file__).parent / "_slow_storage.py"
+
+
+@pytest.mark.parametrize(
+    "path", [p for p in CLUSTER_SCRIPTS if name(p) not in sleep_limits()], ids=name
+)
+def test_cluster_snippet_with_slow_storage(path: Path, runs: Runs):
+    """CI's disk once made cluster/drain.py's runners take seconds to stop, and their poll
+    loops slept on for 7.3 s in all. A snippet's sleep must not depend on how fast the
+    disk is. Listed snippets already grow with how long they run, and are not checked."""
+    done = runs["test_cluster_snippet_with_slow_storage", path].result()
+    assert_ran(done)
+    assert_sleeps_in_limit(name(path), done)
+    expected = path.with_suffix(".out")
+    assert done.stdout == (expected.read_text() if expected.exists() else "")
+
+
+def test_slow_storage_slows_file_commits_only(tmp_path: Path):
+    from _slow_storage import SlowCommits, slow_connect
+
+    def delayed(database: str) -> int:
+        db = slow_connect(database, isolation_level=None)
+        db.execute("CREATE TABLE t (x)")
+        for i in range(5):
+            db.execute("INSERT INTO t VALUES (?)", (i,))
+        db.execute("BEGIN")
+        db.execute("INSERT INTO t VALUES (5)")
+        db.execute("COMMIT")
+        db.execute("SELECT * FROM t").fetchall()
+        db.close()
+        return db.delayed if isinstance(db, SlowCommits) else 0
+
+    # Five INSERTs commit on their own; the one inside the transaction waits at its COMMIT.
+    assert delayed(str(tmp_path / "file.db")) == 6
+    assert delayed(":memory:") == 0
 
 
 STOPPING_RUNNER = Path(__file__).parent / "_stopping_runner.py"

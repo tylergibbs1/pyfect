@@ -1,7 +1,5 @@
 import socket
-import tempfile
 from dataclasses import replace
-from pathlib import Path
 
 import pyfect as fx
 from pyfect import exit as Exit
@@ -28,7 +26,6 @@ def free_port() -> int:
 
 
 def runner(
-    database: Path,
     termination_timeout: fx.duration.Input,
     work: fx.Effect[None],
     started: Latch,
@@ -48,8 +45,9 @@ def runner(
             entity_termination_timeout=fx.duration.from_input_unsafe(termination_timeout),
         )
 
+    # Each runner gets its own in-memory database for its messages and shard locks.
     sql = fx.layer.effect(
-        SqlClient, sqlite.make(sqlite.SqliteClientConfig(filename=str(database)))
+        SqlClient, sqlite.make(sqlite.SqliteClientConfig(filename=":memory:"))
     ).pipe(fx.layer.provide(reactivity.layer))
     return (
         Job.to_layer(Job.handlers().handle(Job.run)(run))
@@ -59,15 +57,11 @@ def runner(
 
 
 @fx.fn
-def stop_during_a_job(
-    database: Path, termination_timeout: fx.duration.Input, work: fx.Effect[None]
-):
+def stop_during_a_job(termination_timeout: fx.duration.Input, work: fx.Effect[None]):
     log: list[str] = []
     started = Latch()
     scope = yield from fx.scope.make()
-    context = yield from runner(database, termination_timeout, work, started, log).build_with_scope(
-        scope
-    )
+    context = yield from runner(termination_timeout, work, started, log).build_with_scope(scope)
     make_client = yield from Job.client().pipe(fx.provide(context))
     yield from make_client("report").run().fork()
     yield from started.wait()
@@ -79,17 +73,16 @@ def stop_during_a_job(
 
 
 @fx.fn
-def program(directory: Path):
+def program():
     # The runner drains: half a second of work finishes here before the shard is handed over.
     half_a_second = fx.sleep("500 millis")
-    drained = yield from stop_during_a_job(directory / "drain.db", "5 seconds", half_a_second)
+    drained = yield from stop_during_a_job("5 seconds", half_a_second)
     assert drained == ["job finished", "runner stopped"]
     # With 0 it hands over at once: a job still running stops here, and its persisted
     # request runs again on the runner that takes the shard.
-    handed_over = yield from stop_during_a_job(directory / "handover.db", 0, fx.never)
+    handed_over = yield from stop_during_a_job(0, fx.never)
     assert handed_over == ["runner stopped"]
 
 
-with tempfile.TemporaryDirectory() as directory:
-    quiet = fx.provide_service(fx.MinimumLogLevel, fx.LogLevel.WARN)  # no "Listening on"
-    fx.run_main(program(Path(directory)).pipe(quiet))
+quiet = fx.provide_service(fx.MinimumLogLevel, fx.LogLevel.WARN)  # no "Listening on"
+fx.run_main(program().pipe(quiet))
