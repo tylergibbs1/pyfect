@@ -2,7 +2,7 @@
 
     python -m fuzz --list
     python -m fuzz TARGET [libFuzzer flags...]        # one target, in this process
-    python -m fuzz --all --seconds 60 [--out DIR]     # every target, one process per CPU
+    python -m fuzz --all --seconds 60 [--out DIR]     # every target, one process per physical core
     python -m fuzz --all --group http --seconds 60    # the targets of http_targets.py
     python -m fuzz --differential                     # pyfect vs Effect (Node) on the corpora
     python -m fuzz --differential --write             # save Effect's answers for the corpus
@@ -109,6 +109,26 @@ def _differential(out: Path, write: bool) -> int:
     return 1 if found else 0
 
 
+def physical_cores(cpus: set[int], topology: Path = Path("/sys/devices/system/cpu")) -> int:
+    """The physical cores among ``cpus``: one libFuzzer process per core. Two on one core's
+    hyperthreads each ran about half the inputs one did alone in the same time. 1 when the
+    topology can't be read (not Linux)."""
+    try:
+        siblings = {
+            (topology / f"cpu{cpu}" / "topology" / "thread_siblings_list").read_text().strip()
+            for cpu in cpus
+        }
+    except OSError:
+        return 1
+    return len(siblings) or 1
+
+
+def _default_jobs() -> int:
+    if sys.platform == "linux":
+        return physical_cores(os.sched_getaffinity(0))
+    return 1
+
+
 def _positive(text: str) -> int:
     if (count := int(text)) < 1:
         raise argparse.ArgumentTypeError(f"not a positive count: {text}")
@@ -122,7 +142,7 @@ def main() -> int:
     parser.add_argument("--seconds", type=int, default=60)
     parser.add_argument("--out", type=Path, default=_ROOT / ".fuzz")
     parser.add_argument("--only", nargs="*", default=None)
-    parser.add_argument("--jobs", type=_positive, default=os.process_cpu_count() or 1)
+    parser.add_argument("--jobs", type=_positive, default=_default_jobs())
     parser.add_argument("--group", default=None, help="a target module: codec, http, jose, ...")
     parser.add_argument("--differential", action="store_true")
     parser.add_argument("--write", action="store_true", help="with --differential")
