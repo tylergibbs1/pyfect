@@ -57,13 +57,20 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
+      - name: CPUs
+        run: |
+          nproc
+          lscpu | grep -E '^CPU\(s\)|Thread|Core|Model name'
+
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
       - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
 
       - name: Check the guides' snippets (pyright, pytest)
         run: |
-          uv run pyright website/snippets
+          uv run pyright --threads "$(nproc)" website/snippets
+          # Serial: the tests' fixture already runs the snippets side by side on every CPU but
+          # one; each xdist worker would start every snippet again.
           uv run pytest -q tests/test_doc_snippets.py
 
   reference:
@@ -83,6 +90,8 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Check the API reference documents every module, value and overload
+        # Serial: one generator run (a single process, most of the time) feeds every test; each
+        # xdist worker would run it again.
         run: uv run pytest -q tests/test_api_reference.py
 
       - name: Check the README diagram matches its source

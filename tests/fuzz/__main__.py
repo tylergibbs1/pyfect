@@ -2,7 +2,7 @@
 
     python -m fuzz --list
     python -m fuzz TARGET [libFuzzer flags...]        # one target, in this process
-    python -m fuzz --all --seconds 60 [--out DIR]     # every target, one process each
+    python -m fuzz --all --seconds 60 [--out DIR]     # every target, one process per CPU
     python -m fuzz --all --group http --seconds 60    # the targets of http_targets.py
     python -m fuzz --differential                     # pyfect vs Effect (Node) on the corpora
     python -m fuzz --differential --write             # save Effect's answers for the corpus
@@ -20,8 +20,10 @@ from __future__ import annotations
 
 import argparse
 import importlib
+import os
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
@@ -41,13 +43,15 @@ def _fuzz_one(name: str, flags: list[str]) -> None:
     atheris.Fuzz()
 
 
-def _run_all(seconds: int, out: Path, names: list[str]) -> int:
-    failed: list[str] = []
-    for name in names:
+def _run_all(seconds: int, out: Path, names: list[str], jobs: int) -> int:
+    """Fuzzes ``names`` for ``seconds`` each, ``jobs`` processes at a time (a libFuzzer process
+    keeps one CPU busy), printing each target's output in one piece once it ends."""
+    crashes = out / "crashes"
+    crashes.mkdir(parents=True, exist_ok=True)
+
+    def fuzz(name: str) -> tuple[str, int, str]:
         work = out / "corpus" / name
-        crashes = out / "crashes"
         work.mkdir(parents=True, exist_ok=True)
-        crashes.mkdir(parents=True, exist_ok=True)
         command = [
             sys.executable,
             "-m",
@@ -60,11 +64,26 @@ def _run_all(seconds: int, out: Path, names: list[str]) -> int:
             "-print_final_stats=1",
             *_LIMITS,
         ]
-        print(f"== {name}", flush=True)
-        if subprocess.run(command, cwd=Path(__file__).parent.parent, check=False).returncode:
-            failed.append(name)
+        done = subprocess.run(
+            command,
+            cwd=Path(__file__).parent.parent,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            errors="replace",
+            check=False,
+        )
+        return name, done.returncode, done.stdout
+
+    failed: list[str] = []
+    with ThreadPoolExecutor(max_workers=jobs) as pool:
+        for ended in as_completed([pool.submit(fuzz, name) for name in names]):
+            name, code, output = ended.result()
+            print(f"== {name}\n{output}", end="" if output.endswith("\n") else "\n", flush=True)
+            if code:
+                failed.append(name)
     if failed:
-        print(f"crashed: {', '.join(failed)}", flush=True)
+        print(f"crashed: {', '.join(sorted(failed))}", flush=True)
     return 1 if failed else 0
 
 
@@ -90,6 +109,12 @@ def _differential(out: Path, write: bool) -> int:
     return 1 if found else 0
 
 
+def _positive(text: str) -> int:
+    if (count := int(text)) < 1:
+        raise argparse.ArgumentTypeError(f"not a positive count: {text}")
+    return count
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(prog="python -m fuzz")
     parser.add_argument("--list", action="store_true")
@@ -97,6 +122,7 @@ def main() -> int:
     parser.add_argument("--seconds", type=int, default=60)
     parser.add_argument("--out", type=Path, default=_ROOT / ".fuzz")
     parser.add_argument("--only", nargs="*", default=None)
+    parser.add_argument("--jobs", type=_positive, default=os.process_cpu_count() or 1)
     parser.add_argument("--group", default=None, help="a target module: codec, http, jose, ...")
     parser.add_argument("--differential", action="store_true")
     parser.add_argument("--write", action="store_true", help="with --differential")
@@ -112,7 +138,7 @@ def main() -> int:
             for name, found in TARGETS.items()
             if args.group is None or found.run.__module__.split(".")[-1].startswith(args.group)
         ]
-        return _run_all(args.seconds, args.out, sorted(names))
+        return _run_all(args.seconds, args.out, sorted(names), args.jobs)
     if not rest or rest[0] not in TARGETS:
         parser.error(f"name a target: {', '.join(sorted(TARGETS))}")
     _fuzz_one(rest[0], [*_LIMITS, *rest[1:]])

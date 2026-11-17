@@ -33,6 +33,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
+      - name: CPUs
+        run: |
+          nproc
+          lscpu | grep -E '^CPU\(s\)|Thread|Core|Model name'
+
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
@@ -63,7 +68,8 @@ jobs:
           tests: "false"
 
       - name: Types
-        run: uv run --no-sync pyright
+        # One pyright process per CPU, each checking a share of the files.
+        run: uv run --no-sync pyright --threads "$(nproc)"
 
   collect:
     name: collect (${{ matrix.python }})
@@ -90,6 +96,7 @@ jobs:
       - name: Collect every test (what the shards must run together)
         run: |
           mkdir -p .shards
+          # Serial: collecting is one import pass; xdist workers would each collect every test.
           uv run --no-sync pytest --collect-only -p no:randomly --shard-manifest .shards/full.txt > /dev/null
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -153,10 +160,10 @@ jobs:
       - name: Tests
         run: |
           mkdir -p .shards
-          # Four workers (the runner's vCPUs), in random order; the log's last lines give the
-          # seed (-p randomly --randomly-seed=N repeats it). tests/_parallel.py keeps in-order
-          # files and each database's tests on one worker.
-          uv run --no-sync pytest -q -rfEs -n 4 --shard ${{ matrix.shard }}/5 \
+          # One worker per CPU, in random order; the log's last lines give the seed
+          # (-p randomly --randomly-seed=N repeats it). tests/_parallel.py keeps in-order files
+          # and each database's tests on one worker.
+          uv run --no-sync pytest -q -rfEs -n auto --shard ${{ matrix.shard }}/5 \
             --shard-manifest .shards/shard-${{ matrix.shard }}.txt \
             --shard-durations .shards/durations-${{ matrix.shard }}.json
 

@@ -418,3 +418,68 @@ def test_the_server_tests_load_the_cached_images_and_never_pull():
             assert f"needs: {saver}" in job and load in job, f"{workflow}'s {runner} job"
     for workflow in WORKFLOWS.glob("*.yml"):
         assert "docker pull" not in workflow.read_text(encoding="utf-8"), workflow.name
+
+
+_PYTEST_RUN = re.compile(r"(?:\buv run\b[^#\n]*?\s|\s-m\s+)pytest\b")
+"""A line that runs pytest (``uv run [--no-sync] pytest``, ``python -m pytest``), not one that
+installs it."""
+
+
+def _serial_pytest_problems(workflow: str) -> list[str]:
+    """Every pytest run uses ``-n auto``, one xdist worker per CPU the runner has, or says why
+    it runs serially in a comment just above (``# Serial: ...``)."""
+    lines = workflow.splitlines()
+    problems: list[str] = []
+    for number, line in enumerate(lines):
+        if line.strip().startswith("#") or not _PYTEST_RUN.search(line):
+            continue
+        if re.search(r"\s-n auto\b", line):
+            continue
+        above: list[str] = []
+        for previous in reversed(lines[:number]):
+            if not previous.strip().startswith("#"):
+                break
+            above.insert(0, previous.strip().lstrip("#").strip())
+        reason = re.match(r"Serial: (.{20,})", " ".join(above))
+        if reason is None:
+            problems.append(f"line {number + 1}: no -n auto and no `# Serial: why` above")
+    return problems
+
+
+def test_every_pytest_run_uses_every_core_or_says_why_not():
+    """A runner's CPU count is printed by each workflow's first job; `-n auto` follows it, where
+    a hardcoded `-n 4` would not. Without psutil, xdist's `auto` counts the CPUs the process may
+    use (os.sched_getaffinity); with it, only physical cores."""
+    runs = 0
+    for path in sorted(WORKFLOWS.glob("*.yml")):
+        text = path.read_text(encoding="utf-8")
+        runs += sum(1 for line in text.splitlines() if _PYTEST_RUN.search(line))
+        assert _serial_pytest_problems(text) == [], path.name
+    assert runs >= 6, "the guard finds the workflows' pytest runs"
+    lock = (ROOT / "uv.lock").read_text(encoding="utf-8")
+    assert '\nname = "psutil"\n' not in lock, "psutil makes -n auto count physical cores only"
+
+
+def test_the_serial_pytest_guard_rejects_a_fixed_count_and_a_missing_reason():
+    cases = {
+        "run: uv run --no-sync pytest -q -n 4 tests": 1,
+        "run: uv run pytest -q tests/test_x.py": 1,
+        '"$PY" -m pytest -q tests': 1,
+        "# Serial\nrun: uv run pytest -q tests": 1,
+        "# Serial: too short\nrun: uv run pytest -q tests": 1,
+        "# Serial: one fixture feeds every test, so\n\nrun: uv run pytest tests": 1,
+        "run: uv run --no-sync pytest -q -n auto tests": 0,
+        '"$PY" -m pytest -q -n auto tests': 0,
+        "# Serial: one fixture feeds every test, so workers\n# would repeat it\nuv run pytest": 0,
+        "uv pip install -q --python python . pytest pytest-xdist": 0,
+        "# uv run pytest -q": 0,
+    }
+    for text, count in cases.items():
+        assert len(_serial_pytest_problems(text)) == count, text
+
+
+def test_every_workflow_prints_the_runners_cpus():
+    """The CPU count `-n auto`, `pyright --threads` and the fuzz runner follow, in the log."""
+    step = "      - name: CPUs\n        run: |\n          nproc\n"
+    for path in sorted(WORKFLOWS.glob("*.yml")):
+        assert step in path.read_text(encoding="utf-8"), path.name
