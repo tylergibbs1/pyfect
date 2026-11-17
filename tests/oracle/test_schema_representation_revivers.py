@@ -802,6 +802,11 @@ def test_revives_big_decimal_declaration():
     )
 
 
+def test_revives_rational_declaration():
+    """revives Rational"""
+    assert_declaration_reviver(S.Rational, "effect/schema/Rational", None, R.rational_reviver)
+
+
 def test_revives_sem_ver_declaration():
     """revives SemVer"""
     assert_declaration_reviver(S.SemVer, "effect/schema/SemVer", None, R.sem_ver_reviver)

@@ -162,6 +162,16 @@
   descriptor closes when the last of those operations finishes, and operations started after
   the close fail as closed (a UDP send with `DatagramSocketClosedError`).
 
+### Added
+
+- `pyfect.rational`, Effect 4.1.4's `Rational` (#9990, #10465): exact fractions, always in
+  lowest terms with a positive denominator (the class refuses any other pair; `make` /
+  `make_unsafe` reduce), with Effect's arithmetic, `pow`, comparisons, `from_number` (the
+  float's exact value), `from_big_decimal`, `from_string` / `format` (`"numerator/denominator"`),
+  `to_number_unsafe` (the ratio rounded once) and `to_big_decimal(scale=, mode=)` with
+  `BigDecimal`'s rounding modes. `S.Rational` (written in JSON as its text),
+  `S.RationalFromString` and `representation.rational_reviver` come with it.
+
 ### Performance
 
 - `S.to_codec_json`, `S.to_codec_string_tree` and `S.to_codec_iso` derive a schema's codec

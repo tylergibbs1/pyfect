@@ -13,6 +13,7 @@ from pyfect import duration
 from pyfect import graph
 from pyfect import hash_map
 from pyfect import hash_set
+from pyfect import rational
 from pyfect import semver
 from pyfect import semver_range
 from pyfect.http import url
@@ -123,18 +124,19 @@ type Schema96Type = url.Url
 type Schema97Type = duration.Duration
 type Schema98Type = byte_size.ByteSize
 type Schema99Type = big_decimal.BigDecimal
-type Schema100Type = semver.SemVer
-type Schema101Type = semver_range.SemVerRange
-type Schema102Type = datetime.timezone
-type Schema103Type = zoneinfo.ZoneInfo
-type Schema104Type = datetime.tzinfo
-type Schema105Type = datetime.datetime
-type Schema106Type = PersonType
-type Schema107Type = TreeType
-type Schema108Type = PingType
-type Schema109Type = str
-type Schema110Type = hash_set.HashSet[str]
-type Schema111Type = hash_map.HashMap[str, float]
+type Schema100Type = rational.Rational
+type Schema101Type = semver.SemVer
+type Schema102Type = semver_range.SemVerRange
+type Schema103Type = datetime.timezone
+type Schema104Type = zoneinfo.ZoneInfo
+type Schema105Type = datetime.tzinfo
+type Schema106Type = datetime.datetime
+type Schema107Type = PersonType
+type Schema108Type = TreeType
+type Schema109Type = PingType
+type Schema110Type = str
+type Schema111Type = hash_set.HashSet[str]
+type Schema112Type = hash_map.HashMap[str, float]
 _Struct = TypedDict("_Struct", {"x": float, "y": NotRequired[float]})
 _Struct1 = TypedDict("_Struct1", {"value": str, "children": tuple[TreeType, ...]})
 _Struct2 = TypedDict("_Struct2", {"ping": NotRequired[PingType]})
@@ -246,15 +248,16 @@ Schema96 = S.URL.annotate(expected="URL")
 Schema97 = S.Duration.annotate(expected="Duration")
 Schema98 = S.ByteSize.annotate(expected="ByteSize")
 Schema99 = S.BigDecimal.annotate(expected="BigDecimal")
-Schema100 = S.SemVer.annotate(expected="SemVer")
-Schema101 = S.SemVerRange.annotate(expected="SemVerRange")
-Schema102 = S.TimeZoneOffset.annotate(expected="DateTime.TimeZone.Offset")
-Schema103 = S.TimeZoneNamed.annotate(expected="DateTime.TimeZone.Named")
-Schema104 = S.TimeZone.annotate(expected="DateTime.TimeZone")
-Schema105 = S.DateTimeZoned.annotate(expected="DateTime.Zoned")
-Schema106 = Person
-Schema107 = Tree
-Schema108 = Ping
-Schema109 = S.suspend(lambda: S.String)
-Schema110 = S.HashSet(S.String).annotate(expected="HashSet")
-Schema111 = S.HashMap(S.String, S.Number).annotate(expected="HashMap")
+Schema100 = S.Rational.annotate(expected="Rational")
+Schema101 = S.SemVer.annotate(expected="SemVer")
+Schema102 = S.SemVerRange.annotate(expected="SemVerRange")
+Schema103 = S.TimeZoneOffset.annotate(expected="DateTime.TimeZone.Offset")
+Schema104 = S.TimeZoneNamed.annotate(expected="DateTime.TimeZone.Named")
+Schema105 = S.TimeZone.annotate(expected="DateTime.TimeZone")
+Schema106 = S.DateTimeZoned.annotate(expected="DateTime.Zoned")
+Schema107 = Person
+Schema108 = Tree
+Schema109 = Ping
+Schema110 = S.suspend(lambda: S.String)
+Schema111 = S.HashSet(S.String).annotate(expected="HashSet")
+Schema112 = S.HashMap(S.String, S.Number).annotate(expected="HashMap")

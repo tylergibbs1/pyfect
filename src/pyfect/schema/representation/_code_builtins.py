@@ -170,6 +170,7 @@ _FIXED: Mapping[str, tuple[str, str, tuple[str, ...]]] = {
     "Duration": ("S.Duration", "duration.Duration", ("from pyfect import duration",)),
     "ByteSize": ("S.ByteSize", "byte_size.ByteSize", ("from pyfect import byte_size",)),
     "BigDecimal": ("S.BigDecimal", "big_decimal.BigDecimal", ("from pyfect import big_decimal",)),
+    "Rational": ("S.Rational", "rational.Rational", ("from pyfect import rational",)),
     "SemVer": ("S.SemVer", "semver.SemVer", ("from pyfect import semver",)),
     "SemVerRange": (
         "S.SemVerRange",
@@ -193,6 +194,7 @@ IMPORTED_MODULES = frozenset(
         "graph",
         "hash_map",
         "hash_set",
+        "rational",
         "semver",
         "semver_range",
         "url",

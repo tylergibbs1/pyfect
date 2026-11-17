@@ -28,7 +28,7 @@ import sys
 from collections.abc import Generator
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Literal, NamedTuple
+from typing import Any, Literal, NamedTuple, cast
 
 import pytest
 
@@ -396,6 +396,26 @@ def test_should_track_the_cursor_position_when_writing(fs_layer: Services[FileSy
     yield from file.seek(6, "start")
     yield from file.write(b"blabl")
     assert (yield from fs.read_file_string(path)) == "lorem blabl dolor sit hello world"
+
+
+@pytest.mark.parametrize("method", ["write", "write_all"])
+@testing.effect
+def test_writes_a_buffer_view_at_the_cursor_after_a_backward_seek(
+    fs_layer: Services[FileSystem], method: Literal["write", "write_all"]
+):
+    """%s writes a buffer view at the cursor after a backward seek"""
+    fs = yield from _fs()
+    path = yield from fs.make_temp_file_scoped()
+    file = yield from fs.open(path, flag="w+")
+    yield from file.write_all(b"abcdefghij")
+    yield from file.seek(-7, "current")
+    # A view into a larger buffer, as Effect's ``subarray``: the files take any buffer.
+    view = cast("bytes", memoryview(b"__XYZ12_")[2:7])
+    yield from (file.write(view) if method == "write" else file.write_all(view))
+
+    assert (yield from fs.read_file_string(path)) == "abcXYZ12ij"
+    assert (yield from file.seek(0, "current")) == 8
+    assert (yield from file.stat()).size == 10
 
 
 @testing.effect

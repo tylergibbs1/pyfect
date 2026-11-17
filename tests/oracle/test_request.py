@@ -44,6 +44,7 @@ import pytest
 import pyfect as fx
 from pyfect import batching, exit, testing
 from pyfect import schema as S
+from pyfect._equal import equals
 from pyfect.batching import Entry
 from pyfect.duration import Input as DurationInput
 from pyfect.persistence import PersistenceError, persistable, persistence
@@ -217,6 +218,19 @@ def test_compares_structural_values_when_hashes_collide():
     a, b = Req(-1), Req(-2)
     assert hash(a) == hash(b)
     assert a != b
+
+
+def test_compares_structural_proto_values_regardless_of_key_order():
+    """compares StructuralProto values regardless of key order"""
+
+    @dataclass(frozen=True)
+    class Req(fx.Request[None]):
+        a: int
+        b: int
+
+    first, second = Req(a=1, b=2), Req(b=2, a=1)
+    assert hash(first) == hash(second)
+    assert equals(first, second)
 
 
 @testing.effect

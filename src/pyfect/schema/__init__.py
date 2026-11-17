@@ -375,6 +375,7 @@ from pyfect.schema._primitives import (
     Trimmed,
     Unknown,
 )
+from pyfect.schema._rational import Rational, RationalFromString
 from pyfect.schema._record import Record, RecordSchema
 from pyfect.schema._refine import (
     BrandSchema,
@@ -673,6 +674,8 @@ __all__ = [
     "ParseOptions",
     "Parser",
     "Port",
+    "Rational",
+    "RationalFromString",
     "Record",
     "RecordSchema",
     "Redacted",

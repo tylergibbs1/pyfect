@@ -7,6 +7,13 @@ float as the decimal it was written as, so ``1_000_000_000.001`` is exactly
 ``warnings`` rather than a Console, so "warnings bypass TestConsole" checks
 that the warning is raised and the ``TestConsole`` holds only the ordinary
 output.
+
+Adapted, with the reason: "adjust - advances the clock when detached, copied or inherited"
+checks the detached method only; a spread copy (``{...clock}``) and ``Object.create(clock)``
+are JavaScript object-model operations.
+
+Omitted, with the reason: "serializes a context containing a TestClock" (``JSON.stringify``
+of a context; pyfect contexts have no JSON form).
 """
 
 import math
@@ -174,6 +181,16 @@ def test_set_time_preserves_wall_clock_nanoseconds_for_large_timestamps():
     timestamp = 1_000_000_000_001
     yield from clock.set_time(timestamp)
     assert clock.now_nanos_unsafe() == timestamp * 1_000_000
+
+
+@testing.effect
+def test_adjust_advances_the_clock_when_detached():
+    """TestClock.test.ts "adjust - advances the clock when detached, copied or inherited"."""
+    clock = yield from testing.test_clock()
+    adjust = clock.adjust
+    yield from adjust("1 second")
+    yield from adjust("1 second")
+    assert clock.current_time_millis_unsafe() == 2_000
 
 
 @testing.effect

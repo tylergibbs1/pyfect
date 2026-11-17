@@ -12,7 +12,7 @@ from datetime import datetime, timedelta, timezone, tzinfo
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from pyfect import big_decimal, byte_size
+from pyfect import big_decimal, byte_size, rational
 from pyfect._url import Url
 from pyfect.date_time import (
     format_iso,
@@ -173,6 +173,17 @@ big_decimal_from_string: Transformation[big_decimal.BigDecimal, str] = transform
     encode=_done(_format_big_decimal),
 )
 """A ``BigDecimal`` and its text (Effect's ``bigDecimalFromString``)."""
+
+
+def _format_rational(value: rational.Rational) -> str:
+    return value.format()
+
+
+rational_from_string: Transformation[rational.Rational, str] = transform_effect(
+    decode=_parsed(rational.from_string, "a valid Rational string"),
+    encode=_done(_format_rational),
+)
+"""A ``Rational`` and its ``numerator/denominator`` text (Effect's ``rationalFromString``)."""
 
 
 def _utc_from_string(text: str) -> datetime | None:

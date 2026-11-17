@@ -207,6 +207,7 @@ CASES: dict[str, tuple[Any, list[object], list[object]]] = {
     "duration": (S.Duration, [], ["a"]),
     "byte_size": (S.ByteSize, [], ["a"]),
     "big_decimal": (S.BigDecimal, [], ["a"]),
+    "rational": (S.Rational, [], ["a"]),
     "sem_ver": (S.SemVer, [], [1]),
     "sem_ver_range": (S.SemVerRange, [], [1]),
     "time_zone_offset": (S.TimeZoneOffset, [], [1]),
