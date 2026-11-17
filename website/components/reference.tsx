@@ -20,8 +20,14 @@ function Signature({ children }: { children: ReactNode }) {
 
 function Table({ head, typeHead = 'Type', children }: { head: string; typeHead?: string; children: ReactNode }) {
   return (
-    <div className="typeset-scroll no-scrollbar *:[table]:w-full">
-      <table>
+    <div className="typeset-scroll no-scrollbar *:[table]:w-full *:[table]:table-fixed">
+      {/* Fixed column widths: a streamed page paints the head before its rows, which must not resize it. */}
+      <table className="[&_td]:[overflow-wrap:anywhere]">
+        <colgroup>
+          <col className="w-[28%]" />
+          <col className="w-[30%]" />
+          <col />
+        </colgroup>
         <thead>
           <tr>
             <th>{head}</th>
