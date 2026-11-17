@@ -4,6 +4,12 @@
 
 ### Fixed
 
+- The stdio `McpClient` read text its server left without a final newline when its stdout
+  closed as one last message (0.6.9 and before), so a reply written that way answered its
+  call. As in Effect, only newline-terminated lines are messages: that text is dropped and
+  the call fails with `TransportError` "MCP server closed stdout". The stdio `McpServer`
+  drops such a last request too, as Effect's NDJSON framing does, and both end a line at
+  `\n` only (a `\r` before it is dropped), no longer at a lone `\r`.
 - `migrate_legacy_store(..., taken_from=pair, through_sequence=0)` was accepted (0.6.9) and
   moved every batch, the first ones of the store taking the tables back included, to `pair`'s
   tables. `through_sequence` is now parsed where the call takes it and refused unless it is 1
