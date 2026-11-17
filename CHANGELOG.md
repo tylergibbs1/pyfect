@@ -70,6 +70,19 @@
   implementing `message_storage.DeletesProcessed`; until then `delete_processed` fails with a
   `PersistenceError`.
 
+- `pyfect.ai.workload_identity` (Effect 4.1.4's `WorkloadIdentity`, #10512, #10482): an
+  `HttpClient` transform that authenticates requests with access tokens exchanged for a
+  workload's identity token, cached until shortly before they expire, discarded on a 401,
+  never following a redirect of the exchange and keeping the identity token out of every
+  error. Provider modules `pyfect.ai.anthropic.workload_identity` (federation rules, with the
+  OAuth beta header), `pyfect.ai.openai.workload_identity` (RFC 8693 token exchange; WebSocket
+  mode authenticates each connection) and `pyfect.ai.openrouter.workload_identity`, each with
+  `make` and `layer`.
+
+- `httpx_client.FollowRedirects`: whether httpx follows redirects for the requests sent under
+  it, overriding the client's own `follow_redirects` (Effect's `FetchHttpClient.RequestInit`
+  `redirect` option).
+
 ### Fixed
 
 - A schema whose aliases only reach each other (a JSON Schema `$ref` to itself) took
@@ -240,20 +253,6 @@
   listening socket, a worker process's channel and a UDP socket's sends. Nothing waits: the
   descriptor closes when the last of those operations finishes, and operations started after
   the close fail as closed (a UDP send with `DatagramSocketClosedError`).
-
-### Added
-
-- `pyfect.ai.workload_identity` (Effect 4.1.4's `WorkloadIdentity`, #10512, #10482): an
-  `HttpClient` transform that authenticates requests with access tokens exchanged for a
-  workload's identity token, cached until shortly before they expire, discarded on a 401,
-  never following a redirect of the exchange and keeping the identity token out of every
-  error. Provider modules `pyfect.ai.anthropic.workload_identity` (federation rules, with the
-  OAuth beta header), `pyfect.ai.openai.workload_identity` (RFC 8693 token exchange; WebSocket
-  mode authenticates each connection) and `pyfect.ai.openrouter.workload_identity`, each with
-  `make` and `layer`.
-- `httpx_client.FollowRedirects`: whether httpx follows redirects for the requests sent under
-  it, overriding the client's own `follow_redirects` (Effect's `FetchHttpClient.RequestInit`
-  `redirect` option).
 
 ### Performance
 
