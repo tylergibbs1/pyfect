@@ -116,13 +116,11 @@
 ### Fixed
 
 - Strings: the word-based case helpers (`case.snake_case`, `camel_case`, `config_case` and
-  the others built on `no_case`) treated every letter outside ASCII as a separator, so
-  `snake_case("Café")` gave `"caf"`. Words now hold Unicode letters and their combining
-  marks, and case boundaries work in any cased script (`camel_case("CaféÜber")` is
-  `"caféÜber"`), as in Effect-TS/effect#10638 (after 4.1.4). No normalization is applied.
-  Digits stay ASCII, so a non-ASCII digit such as `٣` still separates words, where Effect
-  keeps it in the word. `config_case`, which `ConfigProvider.constant_case` uses, now maps
-  `straße` to `STRASSE`.
+  the others built on `no_case`) treated every letter and digit outside ASCII as a
+  separator, so `snake_case("Café")` gave `"caf"`. Words now hold Unicode letters, numbers
+  and combining marks, and case boundaries work in any cased script (`camel_case("CaféÜber")`
+  is `"caféÜber"`), as in Effect-TS/effect#10638 (after 4.1.4). No normalization is applied.
+  `config_case`, which `ConfigProvider.constant_case` uses, now maps `straße` to `STRASSE`.
 
 - A schema whose aliases only reach each other (a JSON Schema `$ref` to itself) took
   seconds to fail, and up to a minute on Python 3.14; so did any deep recursion that ran
