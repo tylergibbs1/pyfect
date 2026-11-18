@@ -55,12 +55,14 @@ from pyfect.rpc.message import Ack, Request, ResponseChunk
 from pyfect.schema import transformation as T
 from pyfect.scope import CloseableScope, Scope
 from pyfect.socket import (
+    CloseEvent,
     Reader,
     Socket,
     SocketCloseError,
     SocketError,
     SocketOpenError,
     SocketReadError,
+    SocketWriteError,
     Writer,
 )
 from pyfect.socket import make as socket_make
@@ -652,6 +654,34 @@ def _socket_client(socket: Any, options: rpc_client.SocketOptions | None = None,
             effect.provide_service(ClientProtocol, protocol)
         )
     )
+
+
+@pytest.mark.parametrize("failed_message", ["Request", "Ack"])
+@testing.effect
+def test_reports_socket_write_failures_as_rpc_client_error(failed_message: str):
+    """RpcClient / reports socket ${failedMessage} write failures as RpcClientError"""
+    reason = SocketWriteError(cause=RuntimeError("write EPIPE"))
+    frames = yield from Queue[str].unbounded()
+
+    def write(data: Any) -> Effect[None, SocketError]:
+        if isinstance(data, CloseEvent):
+            return effect.succeed(None)
+        message = json.loads(data if isinstance(data, str) else data.decode())
+        if message["_tag"] == failed_message:
+            return effect.fail(SocketError(reason=reason))
+        if message["_tag"] == "Request":
+            chunk = {"_tag": "Chunk", "requestId": message["id"], "values": ["event"]}
+            return frames.offer(json.dumps(chunk) + "\n").as_void()
+        return effect.succeed(None)
+
+    # Keep the read side open so only the write can report the failure.
+    socket = _socket(frames.take().map(lambda frame: (frame,)), write)
+    client = yield from _socket_client(socket)
+    call = client.ping().as_void() if failed_message == "Request" else client.events().run_drain()
+    error = yield from call.flip()
+
+    assert isinstance(error, RpcClientError)
+    assert error.reason is reason
 
 
 @testing.effect

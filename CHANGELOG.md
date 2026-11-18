@@ -24,6 +24,9 @@
   `tx_retry` (for example `queue.take().exit()` on an empty `TxQueue`): only a body that failed
   with the retry waited for a ref it read to change. The wait is now decided in one place from
   the retry alone, so a body that recovers from it also waits (Effect #10604).
+- RPC client over a socket (`make_protocol_socket`): a failed write of a request or an ack
+  was a defect, so the call died instead of failing. It now fails with `RpcClientError`
+  carrying the socket error's reason, as a lost connection does (Effect #10658).
 
 ## 0.6.12 (2026-11-18)
 

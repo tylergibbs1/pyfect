@@ -141,6 +141,10 @@ class SocketOptions:
     on_ping_timeout: Effect[None] | None = None
 
 
+def _client_error(error: SocketError) -> RpcClientError:
+    return RpcClientError(reason=error.reason)
+
+
 class _SocketClient:
     __slots__ = (
         "_current_error",
@@ -174,11 +178,14 @@ class _SocketClient:
         self._requests: dict[object, int] = {}
         self._current_error: RpcClientError | None = None
 
-    def write_ping(self) -> Effect[None, Any]:
+    def write_ping(self) -> Effect[None, RpcClientError]:
         return suspend(lambda: self._write_frame(self._parser.encode(PING)))
 
-    def _write_frame(self, frame: Frame | None) -> Effect[None, Any]:
-        return _VOID if frame is None else self._writer.write(frame)
+    def _write_frame(self, frame: Frame | None) -> Effect[None, RpcClientError]:
+        """A failed write is the client's error, its socket reason kept."""
+        if frame is None:
+            return _VOID
+        return self._writer.write(frame).map_error(_client_error)
 
     def _broadcast(self, response: Message) -> Effect[None]:
         @gen
@@ -275,7 +282,7 @@ class _SocketClient:
             defect = _defect("Unknown socket error", cause.squash())
             return self.broadcast_error(defect)
         error = found.value
-        rpc_error = RpcClientError(reason=error.reason)
+        rpc_error = _client_error(error)
         if self._options.retry_transient_errors and isinstance(error.reason, SocketOpenError):
             hook = self._options.on_transient_error
             return _VOID if hook is None else hook(rpc_error).ignore_cause()
@@ -289,7 +296,7 @@ class _SocketClient:
             if tag == "Interrupt":
                 request_id = message["requestId"]
                 self._requests.pop(_key(request_id), None)
-            written = suspend(lambda: self._write_frame(self._parser.encode(message))).or_die()
+            written = suspend(lambda: self._write_frame(self._parser.encode(message)))
             if tag != "Request":
                 return written
             key = _key(message["id"])
