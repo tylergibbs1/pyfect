@@ -32,7 +32,7 @@ def _is_linear(call: Callable[[int], object], n: int = 4000) -> bool:
     def sized(k: int) -> Callable[[], object]:
         return lambda: call(k)
 
-    return is_near_linear(sized, n, 2 * n, factor=2, bound=3, floor=0.005)
+    return is_near_linear(sized, n, 2 * n, factor=2, bound=3)
 
 
 def _module_patterns() -> Iterator[tuple[str, re.Pattern[str] | re.Pattern[bytes]]]:

@@ -49,7 +49,7 @@ def test_formatting_a_deep_failure_takes_near_linear_time() -> None:
         issue = result.cause.reasons[0].error.issue
         return lambda: I.format_issue(issue)
 
-    assert_near_linear(sized, 200, 8 * 200, bound=32, floor=0.0032)
+    assert_near_linear(sized, 200, 8 * 200, bound=32)
 
 
 def test_max_issues_none_writes_every_leaf_and_small_failures_are_unchanged() -> None:

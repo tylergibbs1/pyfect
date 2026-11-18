@@ -64,5 +64,5 @@ def test_small_writes_with_the_longest_boundary_stay_cheap() -> None:
 
         return work
 
-    assert_near_linear(writes, 5_000, 20_000, factor=4, bound=8, floor=0)
+    assert_near_linear(writes, 5_000, 20_000, factor=4, bound=8)
     assert errors == []

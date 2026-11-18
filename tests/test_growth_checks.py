@@ -22,7 +22,17 @@ from pathlib import Path
 
 import _source
 import pytest
-from _growth import MIN_SECONDS, RUNS, Make, Work, assert_near_linear, cpu, cpu_pair
+from _growth import (
+    MIN_SECONDS,
+    RUNS,
+    SAMPLE_SECONDS,
+    SAMPLES,
+    Make,
+    Work,
+    assert_near_linear,
+    cpu,
+    cpu_pair,
+)
 from _subprocess import SUBPROCESS_TIMEOUT
 
 _TESTS = _source.TESTS
@@ -208,6 +218,43 @@ def test_one_slow_sample_of_linear_work_is_not_superlinear() -> None:
 
     assert_near_linear(make, _BASE, _no_doubling(_BASE), clock=clock)
     assert calls[_BASE * 8] > 3
+
+
+_QUICK = _RUN / 300  # 10 us at ``_BASE``: work a fast machine finishes far under MIN_SECONDS
+
+
+def test_quadratic_work_too_quick_for_one_run_to_measure_still_fails() -> None:
+    """On a fast machine one run at the largest size allowed lasts well under MIN_SECONDS
+    (0.6 ms here): the work repeats until each sample is long enough, and it is judged."""
+    clock = _QuietWindowClock()
+    make: Make = lambda n: clock.work(_QUICK * (n / _BASE) ** 2)  # noqa: E731
+    with pytest.raises(AssertionError, match="superlinear"):
+        assert_near_linear(make, _BASE, _no_doubling(_BASE), clock=clock)
+
+
+def test_linear_work_too_quick_for_one_run_to_measure_passes() -> None:
+    clock = _QuietWindowClock()
+    make: Make = lambda n: clock.work(_QUICK * n / _BASE)  # noqa: E731
+    assert_near_linear(make, _BASE, _no_doubling(_BASE), clock=clock)
+
+
+def test_each_sample_lasts_at_least_sample_seconds() -> None:
+    clock = _QuietWindowClock()
+    calls: dict[int, int] = {}
+
+    def make(n: int) -> Work:
+        run = clock.work(_QUICK * n / _BASE)
+
+        def work() -> None:
+            calls[n] = calls.get(n, 0) + 1
+            run()
+
+        return work
+
+    assert_near_linear(make, _BASE, _no_doubling(_BASE), clock=clock)
+    large = _BASE * 8
+    sample = (calls[large] - 1) / SAMPLES * _QUICK * 8  # the first run sizes the samples
+    assert sample >= SAMPLE_SECONDS
 
 
 def test_time_off_the_cpu_is_not_counted() -> None:

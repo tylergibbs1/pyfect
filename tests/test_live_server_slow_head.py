@@ -48,7 +48,7 @@ def _read(size: int) -> Callable[[], None]:
 
 def test_a_dripped_head_costs_linear_time():
     # Four times the bytes: about four times the work when linear, sixteen when quadratic.
-    assert_near_linear(_read, 8 * 1024, 32 * 1024, factor=4, bound=8, floor=0)
+    assert_near_linear(_read, 8 * 1024, 32 * 1024, factor=4, bound=8)
 
 
 def test_dripped_heads_and_lines_parse_as_whole_ones():

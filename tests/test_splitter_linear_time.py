@@ -130,7 +130,7 @@ _CASES: dict[str, Run] = {
 
 @pytest.mark.parametrize("name", list(_CASES))
 def test_a_splitter_takes_linear_time(name: str) -> None:
-    assert_near_linear(_CASES[name], _SIZE, 4 * _SIZE, factor=4, bound=8, floor=0)
+    assert_near_linear(_CASES[name], _SIZE, 4 * _SIZE, factor=4, bound=8)
 
 
 def test_multipart_header_values_are_joined_once() -> None:

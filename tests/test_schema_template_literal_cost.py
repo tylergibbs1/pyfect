@@ -29,7 +29,7 @@ def test_a_string_of_many_split_points_fails_in_near_linear_time(
         return lambda: decode(text)
 
     assert isinstance(decode("-" * 1000 + "a"), fx.Failure)
-    assert_near_linear(sized, 50_000, 8 * 50_000, bound=32, floor=0.0032)
+    assert_near_linear(sized, 50_000, 8 * 50_000, bound=32)
 
 
 def test_matching_strings_still_split_as_before() -> None:

@@ -154,7 +154,7 @@ def test_split_lines_is_linear_in_tiny_pieces(within: bool):
 
         return work
 
-    assert_near_linear(split, 50_000, 200_000, factor=4, bound=8, floor=0)
+    assert_near_linear(split, 50_000, 200_000, factor=4, bound=8)
 
 
 @testing.effect

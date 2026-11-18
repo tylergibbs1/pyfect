@@ -109,8 +109,6 @@ class Growth:
     factor: int = FACTOR
     bound: float = BOUND
     """The ratio past which the work is superlinear."""
-    floor: float = MIN_SECONDS * FACTOR
-    """A large run under this many seconds is too quick to judge."""
 
     @property
     def ratio(self) -> float:
@@ -119,11 +117,6 @@ class Growth:
     @property
     def superlinear(self) -> bool:
         return self.ratio > self.bound
-
-    @property
-    def cheap(self) -> bool:
-        """Both runs are too quick to measure: the input is refused or bounded early."""
-        return self.large < self.floor
 
     def __str__(self) -> str:
         return (
@@ -175,23 +168,17 @@ def growth(
     *,
     factor: int = FACTOR,
     bound: float | None = None,
-    floor: float | None = None,
     clock: Clock = time.thread_time,
 ) -> Growth:
     """``make``'s work at ``size`` (doubled until it takes ``MIN_SECONDS``, while
     ``factor`` times it stays within ``max_size``) and at ``factor`` times that size.
-    ``bound`` is ``factor ** EXPONENT`` unless given, ``floor`` ``MIN_SECONDS * factor``."""
+    ``bound`` is ``factor ** EXPONENT`` unless given. However quick one run is, the work
+    repeats until a sample lasts ``SAMPLE_SECONDS``, so every comparison is judged, on a fast
+    machine as on a slow one."""
     while size * 2 * factor <= max_size and cpu(make(size), clock=clock) < MIN_SECONDS:
         size *= 2
     small, large = _compare(make, size, factor, clock)
-    return Growth(
-        size,
-        small,
-        large,
-        factor,
-        factor**EXPONENT if bound is None else bound,
-        MIN_SECONDS * factor if floor is None else floor,
-    )
+    return Growth(size, small, large, factor, factor**EXPONENT if bound is None else bound)
 
 
 def superlinear(
@@ -201,13 +188,12 @@ def superlinear(
     *,
     factor: int = FACTOR,
     bound: float | None = None,
-    floor: float | None = None,
     clock: Clock = time.thread_time,
 ) -> str | None:
     """How ``make``'s work grows past ``bound`` over ``factor`` times the size, and again
     (at the same exponent) over the next doubling past the larger size, or ``None``."""
-    found = growth(make, size, max_size, factor=factor, bound=bound, floor=floor, clock=clock)
-    if found.cheap or not found.superlinear:
+    found = growth(make, size, max_size, factor=factor, bound=bound, clock=clock)
+    if not found.superlinear:
         return None
     large = found.size * factor
     exponent = math.log(found.bound, factor)
@@ -222,13 +208,9 @@ def is_near_linear(
     *,
     factor: int = FACTOR,
     bound: float | None = None,
-    floor: float | None = None,
     clock: Clock = time.thread_time,
 ) -> bool:
-    return (
-        superlinear(make, size, max_size, factor=factor, bound=bound, floor=floor, clock=clock)
-        is None
-    )
+    return superlinear(make, size, max_size, factor=factor, bound=bound, clock=clock) is None
 
 
 def assert_near_linear(
@@ -238,11 +220,8 @@ def assert_near_linear(
     *,
     factor: int = FACTOR,
     bound: float | None = None,
-    floor: float | None = None,
     clock: Clock = time.thread_time,
 ) -> None:
     """Fails when ``make``'s work grows past ``bound`` (see ``superlinear``)."""
-    problem = superlinear(
-        make, size, max_size, factor=factor, bound=bound, floor=floor, clock=clock
-    )
+    problem = superlinear(make, size, max_size, factor=factor, bound=bound, clock=clock)
     assert problem is None, problem
