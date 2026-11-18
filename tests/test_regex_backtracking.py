@@ -11,7 +11,7 @@ from collections.abc import Callable, Iterator
 
 import _source
 import pytest
-from _growth import cpu, is_near_linear
+from _growth import is_near_linear
 from _pyfect_modules import modules
 
 from pyfect import schema as S
@@ -108,7 +108,7 @@ def test_a_resource_uri_template_matches_in_linear_time() -> None:
     template = mcp_server.uri_template(
         "x://", S.String, "-", S.String, "-", mcp_schema.param("c", S.String)
     )
-    assert cpu(lambda: template.match("x://" + "-" * 1500 + "/")) < 0.25
+    assert _is_linear(lambda n: template.match("x://" + "-" * n + "/"))
     assert template.match("x://a-b-c") == {"param0": "a", "param1": "b", "c": "c"}
     assert template.match("x://a-b") is None
 

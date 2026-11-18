@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import NamedTuple
 
 import pytest
-from _growth import cpu
+from _growth import assert_near_linear
 
 from pyfect import glob
 
@@ -74,9 +75,14 @@ def test_braces_beyond_the_expansion_limit() -> None:
 def test_repeated_wildcards() -> None:
     """matches repeated wildcards without exponential backtracking"""
     compiled = glob.make("*a" * 15 + "b")
-    matched: list[bool] = []
-    assert cpu(lambda: matched.append(compiled.match("a" * 30))) < 0.5
-    assert not any(matched)
+    assert not compiled.match("a" * 30)
+
+    def matching(size: int) -> Callable[[], bool]:
+        text = "a" * size
+        return lambda: compiled.match(text)
+
+    # Backtracking over 15 stars grows as a high power of the input; matching stays linear.
+    assert_near_linear(matching, 30)
 
 
 def test_adversarial_patterns() -> None:

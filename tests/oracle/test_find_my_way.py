@@ -14,8 +14,10 @@ Omitted, with the reason:
   compiles code from parameter names.
 """
 
+from collections.abc import Callable
+
 import pytest
-from _growth import cpu
+from _growth import assert_near_linear
 
 from pyfect.http.find_my_way import FindResult, Router, RouterConfig
 
@@ -512,13 +514,19 @@ def test_falls_back_when_a_parameter_exceeds_max_param_length() -> None:
 @pytest.mark.parametrize(
     ("name", "path"),
     [
-        ("avoids backtracking across static parameter separators", "/" + "-" * 16_000 + "a"),
-        ("avoids backtracking across mixed static parameter separators", "/" + "a-" * 8_000 + "b"),
+        ("avoids backtracking across static parameter separators", ("-", "a")),
+        ("avoids backtracking across mixed static parameter separators", ("a-", "b")),
     ],
 )
-def test_avoids_backtracking(name: str, path: str) -> None:
+def test_avoids_backtracking(name: str, path: tuple[str, str]) -> None:
     """$name"""
     del name
     router = Router[bool]()
     router.on("GET", "/:foo-:bar-", True)
-    assert cpu(lambda: router.find("GET", path)) < 1
+    run, end = path
+
+    def finding(size: int) -> Callable[[], object]:
+        long_path = "/" + run * size + end
+        return lambda: router.find("GET", long_path)
+
+    assert_near_linear(finding, 1000)
