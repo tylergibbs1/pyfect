@@ -1,9 +1,11 @@
 """Self-aliases and the keys JavaScript objects treat specially, in the JSON
 Schema importer. Each expected value was printed by Effect 4.0.6 under Node."""
 
+import time
 from typing import Any
 
 import pytest
+from _growth import cpu_pair
 
 from pyfect import exit as Exit
 from pyfect import json_schema as JS
@@ -69,6 +71,37 @@ def test_the_adapters_refuse_a_self_alias_as_any_defect() -> None:
         S.decode_unknown_option(schema)(["x"])
     with pytest.raises(RuntimeError, match="Result adapter can only return schema issues"):
         S.decode_unknown_result(schema)(["x"])
+
+
+def test_the_adapters_refuse_a_self_alias_about_as_fast_as_the_walk_overflows() -> None:
+    """The walk overflows across every fresh stack (``pyfect._stack``), about 180 thousand
+    frames; the sync adapter's refusal rendered them all into its note, a minute on Python
+    3.14. The overflow keeps the frames at each end, so the refusal costs about the walk."""
+    schema = _imported(_items(_SELF))
+
+    def walk() -> None:
+        assert _is_stack_overflow_die(S.decode_unknown_exit(schema)(["x"]))
+
+    def refuse() -> None:
+        with pytest.raises(RuntimeError, match="Sync adapter"):
+            S.decode_unknown_sync(schema)(["x"])
+
+    walked, refused = cpu_pair(walk, refuse, clock=time.process_time)
+    assert refused < 2 * max(walked, 0.001), (walked, refused)
+
+
+def test_a_self_alias_overflow_keeps_the_frames_at_each_end_and_counts_the_rest() -> None:
+    exit = S.decode_unknown_exit(_imported(_items(_SELF)))(["x"])
+    assert isinstance(exit, Exit.Failure)
+    overflow = exit.cause.squash()
+    assert isinstance(overflow, RecursionError)
+    frames = 0
+    tb = overflow.__traceback__
+    while tb is not None:
+        frames += 1
+        tb = tb.tb_next
+    assert frames == 20
+    assert any(note.endswith("frames of the recursion left out]") for note in overflow.__notes__)
 
 
 def test_integer_like_keys_come_first_in_ascending_order() -> None:

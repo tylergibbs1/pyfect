@@ -18,6 +18,7 @@ from collections.abc import Callable, Coroutine
 from typing import Any, Never, Protocol, TypeIs, Unpack, cast
 
 from pyfect._core import Effect
+from pyfect._stack import trimmed_overflow
 from pyfect.cause import die as die_cause
 from pyfect.effect import fail, from_exit, succeed
 from pyfect.exit import Exit, Failure, Success
@@ -86,7 +87,7 @@ def _runner[O](ast: AST, base: ParseOptions) -> _Run[O]:
         except RecursionError as overflow:
             # As in Effect: a walk that overflows the stack is a defect of
             # the parse (a schema whose aliases only reach each other).
-            return die_exit(overflow)
+            return die_exit(trimmed_overflow(overflow))
         return _settled(result)
 
     return run

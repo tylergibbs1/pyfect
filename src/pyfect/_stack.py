@@ -12,9 +12,11 @@ at most ``_STACK_FRAMES`` frames, however high the limit is raised.
 from __future__ import annotations
 
 import contextvars
+import re
 import sys
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
+from types import TracebackType
 
 _STACK_FRAMES = 1000
 """Frames a walk takes from one stack, at most: Python's default recursion
@@ -30,6 +32,11 @@ MAX_FRESH_STACKS = 300
 _HEADROOM`` frames, so far deeper than JavaScript's stack). Past it the walk
 raises ``RecursionError``: a walk that never ends (a cycle) fails instead
 of starting threads until the process runs out of them."""
+
+_EDGE_FRAMES = 10
+"""Frames an overflow keeps at each end of its traceback (V8 keeps an error's ten innermost,
+``Error.stackTraceLimit``). Across ``MAX_FRESH_STACKS`` stacks it holds about 180 thousand,
+which ``Cause.pretty`` took a minute to render on Python 3.14."""
 
 _depth: contextvars.ContextVar[int] = contextvars.ContextVar("pyfect_fresh_stacks", default=0)
 
@@ -56,4 +63,35 @@ def with_fresh_stack[A](f: Callable[[], A]) -> A:
     context = contextvars.copy_context()
     context.run(_depth.set, depth)
     with ThreadPoolExecutor(1, thread_name_prefix="pyfect-deep-stack") as executor:
-        return executor.submit(context.run, f).result()
+        future = executor.submit(context.run, f)
+        try:
+            return future.result()
+        except RecursionError as overflow:
+            # Each stack the overflow unwinds adds its frames; bound them at every hop.
+            raise trimmed_overflow(overflow) from overflow.__cause__
+
+
+_LEFT_OUT = re.compile(r"\[([0-9]+) frames of the recursion left out\]")
+
+
+def trimmed_overflow(overflow: RecursionError) -> RecursionError:
+    """``overflow`` with only the outermost and innermost ``_EDGE_FRAMES`` frames of its
+    traceback, and one note counting every frame left out so far."""
+    frames: list[TracebackType] = []
+    tb = overflow.__traceback__
+    while tb is not None:
+        frames.append(tb)
+        tb = tb.tb_next
+    left_out = len(frames) - 2 * _EDGE_FRAMES
+    if left_out <= 0:
+        return overflow
+    kept = frames[-_EDGE_FRAMES]
+    for frame in reversed(frames[:_EDGE_FRAMES]):
+        kept = TracebackType(kept, frame.tb_frame, frame.tb_lasti, frame.tb_lineno)
+    notes = overflow.__notes__ if hasattr(overflow, "__notes__") else []
+    for note in list(notes):
+        if earlier := _LEFT_OUT.fullmatch(note):
+            notes.remove(note)
+            left_out += int(earlier[1])
+    overflow.add_note(f"[{left_out} frames of the recursion left out]")
+    return overflow.with_traceback(kept)

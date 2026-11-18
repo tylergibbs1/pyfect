@@ -13,6 +13,14 @@
 
 ### Fixed
 
+- A schema whose aliases only reach each other (a JSON Schema `$ref` to itself) took
+  seconds to fail, and up to a minute on Python 3.14; so did any deep recursion that ran
+  past pyfect's fresh stacks. The `RecursionError` carried about 180 thousand frames (one
+  stack's worth for each of the 300 threads the walk moves to), and rendering them, in the
+  sync, option and result adapters' note or a printed traceback, took that long. It still
+  fails, as in Effect, but its traceback now keeps the 10 outermost and 10 innermost frames,
+  with a note counting the rest, so it fails about as fast as the walk reaches its limit.
+
 - Cluster: a runner whose shard lock operations kept failing force-released its shards but
   stayed registered and healthy, because its liveness probe (an empty `refresh`) still
   heartbeat. Its shards then ran nowhere until its lock storage recovered. Once its lock
