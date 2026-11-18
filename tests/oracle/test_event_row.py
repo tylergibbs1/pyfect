@@ -18,6 +18,8 @@ from collections.abc import Callable, Generator, Sequence
 from dataclasses import dataclass
 from typing import Any, TypedDict, cast
 
+import pytest
+
 import pyfect as fx
 from pyfect import schema as S
 from pyfect import testing
@@ -875,10 +877,10 @@ def _converge(commands: Sequence[Command]) -> Generator[Any, Any]:
     assert [(p.storage, c.storage) for p, c in replicas] == [(expected, expected)] * 3
 
 
+@pytest.mark.parametrize("seed", range(60))
 @testing.effect
-def test_replicas_converge():
+def test_replicas_converge(seed: int):
     """replicas converge to the fold of every entry in id order"""
-    for seed in range(60):
-        rng = random.Random(seed)
-        commands = [_random_command(rng) for _ in range(rng.randint(0, 24))]
-        yield from fx.scoped(fx.gen(lambda commands=commands: _converge(commands)))
+    rng = random.Random(seed)
+    commands = [_random_command(rng) for _ in range(rng.randint(0, 24))]
+    yield from fx.scoped(fx.gen(lambda: _converge(commands)))
