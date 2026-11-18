@@ -94,7 +94,7 @@ from pyfect.sql.error import ConnectionError as SqlConnectionError
 from pyfect.sql.error import SqlError
 from pyfect.workflow import WorkflowEngine
 
-from ._sqlite import SQLITE_FILE, make_client
+from ._sqlite import SQLITE_FILE, make_unsynced_client
 
 type Backend = Literal["sqlite", "pg"]
 type LockMode = Literal["advisory", "row"]
@@ -1258,7 +1258,7 @@ def _sqlite(directory: Path) -> fx.Effect[SqlClientService, Any, Scope]:
     """A client on the cluster's SQLite file. Commits skip fsync, as the
     throwaway PostgreSQL server's do (``fsync=off``): a slow disk flush would
     otherwise hold every member's lock refresh past its 500 ms."""
-    return make_client(directory).tap(lambda client: client("PRAGMA synchronous = OFF"))
+    return make_unsynced_client(directory)
 
 
 def _pg(server: Any) -> fx.Effect[SqlClientService, Any, Scope]:

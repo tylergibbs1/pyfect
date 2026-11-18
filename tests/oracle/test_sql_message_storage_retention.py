@@ -60,7 +60,20 @@ type Body = Generator[fx.Effect[Any, Any, Any], Any]
 
 @pytest.fixture(params=BACKENDS)
 def backend(request: pytest.FixtureRequest, tmp_path: Path) -> Backend:
-    return make_backend(request, tmp_path)
+    return make_backend(request, tmp_path, sqlite_fsync=False)
+
+
+@pytest.mark.parametrize("backend", ["sqlite"], indirect=True)
+@testing.live
+def test_the_sqlite_backend_commits_without_fsync(backend: Backend):
+    """These tests check retention, not durability: a runner's slow disk flush must not time
+    them out. test_sql_message_storage keeps a file with the default sync."""
+
+    def body() -> Body:
+        sql = yield from backend.client()
+        assert (yield from sql("PRAGMA synchronous")) == [{"synchronous": 0}]
+
+    yield from fx.scoped(fx.gen(body))
 
 
 # The servers come in through fixtures, so a container's startup runs in the test's setup,

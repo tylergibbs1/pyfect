@@ -69,6 +69,19 @@ def backend(request: pytest.FixtureRequest, tmp_path: Path) -> Backend:
     return make_backend(request, tmp_path)
 
 
+@pytest.mark.parametrize("backend", ["sqlite"], indirect=True)
+@testing.live
+def test_the_sqlite_backend_keeps_the_default_sync(backend: Backend):
+    """One storage suite runs on a SQLite file with the default sync, so that path stays
+    covered while the retention tests skip fsync."""
+
+    def body() -> Generator[fx.Effect[Any, Any, Any], Any]:
+        sql = yield from backend.client()
+        assert (yield from sql("PRAGMA synchronous")) == [{"synchronous": 2}]
+
+    yield from fx.scoped(fx.gen(body))
+
+
 def _address(entity_id: str, shard: int = 1) -> entity_address.EntityAddress:
     return entity_address.make(
         shard_id=shard_id.make("default", shard),
