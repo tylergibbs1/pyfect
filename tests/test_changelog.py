@@ -4,9 +4,12 @@ Merging branches that each add to the unreleased section can leave two copies of
 """
 
 import re
+import shutil
+import subprocess
 from pathlib import Path
 
-CHANGELOG = Path(__file__).resolve().parent.parent / "CHANGELOG.md"
+ROOT = Path(__file__).resolve().parent.parent
+CHANGELOG = ROOT / "CHANGELOG.md"
 HEADING = re.compile(r"^## (\d+)\.(\d+)\.(\d+) \((unreleased|\d{4}-\d{2}-\d{2})\)$", re.MULTILINE)
 # Entries waiting for a release go under this heading; the release gives them their version.
 UNRELEASED = "## Unreleased"
@@ -88,3 +91,63 @@ def test_patch_releases_only_fix_add_deprecate_or_document():
         "these patch sections need a minor release (docs/VERSIONING.md), "
         f"or the entries belong under Fixed / Added / Deprecated: {offenders}"
     )
+
+
+def _repeated_subheadings(text: str) -> list[str]:
+    """``### `` headings that appear twice in one ``## `` section, as ``section / heading``."""
+    seen: set[tuple[str, str]] = set()
+    repeated: list[str] = []
+    section = ""
+    for line in text.splitlines():
+        if line.startswith("## "):
+            section = line
+        elif line.startswith("### "):
+            if (section, line) in seen:
+                repeated.append(f"{section} / {line}")
+            seen.add((section, line))
+    return repeated
+
+
+def test_no_section_repeats_a_subheading():
+    assert _repeated_subheadings(_text()) == []
+
+
+def test_the_subheading_check_rejects_a_heading_doubled_within_a_section():
+    one = "## Unreleased\n\n### Fixed\n\n- a\n\n## 0.6.10 (2026-11-16)\n\n### Fixed\n"
+    assert _repeated_subheadings(one) == []
+    doubled = "## Unreleased\n\n### Fixed\n\n- a\n\n### Fixed\n\n- b\n"
+    assert _repeated_subheadings(doubled) == ["## Unreleased / ### Fixed"]
+
+
+def _git(repo: Path, *args: str) -> str:
+    return subprocess.run(
+        ["git", "-C", str(repo), *args], check=True, capture_output=True, text=True
+    ).stdout
+
+
+def test_the_changelog_merges_by_union():
+    assert _git(ROOT, "check-attr", "merge", "--", "CHANGELOG.md").strip().endswith(": union")
+
+
+def test_branches_adding_fixed_entries_merge_without_conflict(tmp_path: Path):
+    """Two branches that each add an entry under the same heading merge to both entries."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    _git(repo, "config", "user.email", "test@example.invalid")
+    _git(repo, "config", "user.name", "test")
+    shutil.copy(ROOT / ".gitattributes", repo / ".gitattributes")
+    base = "# Changelog\n\n## Unreleased\n\n### Fixed\n\n- base\n\n## 0.6.10 (2026-11-16)\n"
+    changelog = repo / "CHANGELOG.md"
+    changelog.write_text(base)
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-qm", "base")
+    for branch, entry in (("one", "- one\n"), ("two", "- two\n")):
+        _git(repo, "checkout", "-q", "-b", branch, "main")
+        changelog.write_text(base.replace("- base\n", f"- base\n\n{entry}"))
+        _git(repo, "commit", "-qam", branch)
+    _git(repo, "merge", "-q", "--no-edit", "one")
+    merged = changelog.read_text()
+    assert "- one\n" in merged and "- two\n" in merged
+    assert "<<<<<<<" not in merged
+    assert _repeated_subheadings(merged) == []
