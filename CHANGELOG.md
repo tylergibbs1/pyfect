@@ -115,6 +115,11 @@
 
 ### Fixed
 
+- RPC: on a protocol with acknowledgements (sockets and workers), a stream whose consumer
+  had fallen behind blocked every other response on the client's connection, so a call
+  made meanwhile never completed. A chunk that waits for buffer space now waits on its own
+  fiber, still ahead of the stream's end, as in Effect-TS/effect#10572 (after 4.1.4).
+
 - A schema whose aliases only reach each other (a JSON Schema `$ref` to itself) took
   seconds to fail, and up to a minute on Python 3.14; so did any deep recursion that ran
   past pyfect's fresh stacks. The `RecursionError` carried about 180 thousand frames (one

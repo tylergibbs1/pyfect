@@ -537,14 +537,85 @@ def _socket(
 def _frames_socket():
     """Effect's ``makeSocketProtocol``: a JSON socket protocol reading the
     frames offered to a queue."""
+    protocol, frames, _sent = yield from _frames_socket_sent()
+    return protocol, frames
+
+
+def _frames_socket_sent():
+    """``_frames_socket`` that also records the messages the client writes."""
     frames = yield from Queue[str].unbounded()
-    socket = _socket(frames.take().map(lambda frame: (frame,)))
+    sent = yield from Queue[dict[str, Any]].unbounded()
+
+    def write(data: Any) -> Effect[None]:
+        return sent.offer(json.loads(data)).as_void() if isinstance(data, str) else effect.void
+
+    socket = _socket(frames.take().map(lambda frame: (frame,)), write)
     protocol = yield from (
         rpc_client.make_protocol_socket()
         .pipe(effect.provide_service(Socket, socket))
         .pipe(effect.provide_service(rs.RpcSerialization, rs.json))
     )
-    return protocol, frames
+    return protocol, frames, sent
+
+
+@testing.effect
+def test_reads_other_socket_responses_while_a_stream_chunk_waits_for_buffer_space():
+    """RpcClient / reads other socket responses while a stream chunk waits for buffer space (Effect main, #10572)"""  # noqa: E501
+    protocol, frames, sent = yield from _frames_socket_sent()
+    client = yield from rpc_client.make(ChunkGroup).pipe(
+        effect.provide_service(ClientProtocol, protocol)
+    )
+    resume = yield from Latch.make()
+    received: list[str] = []
+    reading = yield from (
+        client.good(stream_buffer_size=1)
+        .run_for_each(lambda value: resume.when_open(effect.sync(lambda: received.append(value))))
+        .fork()
+    )
+    stream_id = _request_id((yield from sent.take()))
+    yield from frames.offer_all(
+        [
+            json.dumps({"_tag": "Chunk", "requestId": stream_id, "values": ["a", "b", "c"]}),
+            json.dumps(
+                {"_tag": "Exit", "requestId": stream_id, "exit": {"_tag": "Success", "value": None}}
+            ),
+        ]
+    )
+    unary = yield from client.unary().fork()
+    unary_id = _request_id((yield from sent.take()))
+    yield from frames.offer(
+        json.dumps(
+            {"_tag": "Exit", "requestId": unary_id, "exit": {"_tag": "Success", "value": "ok"}}
+        )
+    )
+    assert (yield from unary.join()) == "ok"
+    # The stream's Exit is delivered after the waiting values.
+    yield from resume.open()
+    yield from reading.join()
+    assert received == ["a", "b", "c"]
+
+
+@testing.effect
+def test_does_not_acknowledge_a_waiting_socket_chunk_when_its_stream_consumer_is_interrupted():
+    """RpcClient / does not acknowledge a waiting socket chunk when its stream consumer is interrupted (Effect main, #10572)"""  # noqa: E501
+    protocol, frames, sent = yield from _frames_socket_sent()
+    client = yield from rpc_client.make(ChunkGroup).pipe(
+        effect.provide_service(ClientProtocol, protocol)
+    )
+    consuming = Deferred[None]()
+    reader = yield from (
+        client.good(stream_buffer_size=1)
+        .run_for_each(lambda _: consuming.succeed(None).flat_map(lambda _: effect.never))
+        .fork()
+    )
+    request_id = _request_id((yield from sent.take()))
+    yield from frames.offer(
+        json.dumps({"_tag": "Chunk", "requestId": request_id, "values": ["a", "b", "c"]})
+    )
+    yield from consuming.wait()
+    yield from reader.interrupt()
+    yield from effect.yield_now()
+    assert (yield from sent.take_all()) == [{"_tag": "Interrupt", "requestId": request_id}]
 
 
 def _routing_client(protocol: ClientProtocolService, client_id: int):
