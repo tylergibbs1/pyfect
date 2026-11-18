@@ -318,6 +318,14 @@ def test_a_release_needs_ci_its_extras_and_the_docs():
     assert re.search(r"needs: \[ci, extras, docs\]", _job("release.yml", "build")), release
 
 
+def test_the_local_python_request_names_the_gil_build():
+    """Since uv 0.9 a request for "3.14" may resolve to a free-threaded 3.14t interpreter. Plain
+    `uv run` in a worktree then rebuilt its venv on 3.14t, where psycopg-binary has no wheel, so the
+    rebuild failed and left the venv without lefthook or pytest. CI passes --python explicitly."""
+    request = (ROOT / ".python-version").read_text(encoding="utf-8").strip()
+    assert request.endswith("+gil"), request
+
+
 def test_the_check_runs_on_every_python_pyproject_lists():
     """CI once ran only the Python uv picked (3.14, from .python-version), so a 3.13-only
     failure could pass it."""
