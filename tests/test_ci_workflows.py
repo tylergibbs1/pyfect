@@ -86,6 +86,46 @@ def test_the_shards_run_every_test_once_and_the_check_says_so():
     assert "scripts/test_shards.py verify .shards/full.txt .shards/shard-*.txt" in check
 
 
+def _pushes_outside_main(text: str) -> bool:
+    """Whether a workflow runs on a push to a branch other than main: a ``push`` trigger
+    with no filter, a branch filter other than ``[main]``, or ``branches-ignore``. A push of
+    tags only (release.yml) pushes no branch."""
+    triggers = text.split("\njobs:\n", 1)[0]
+    if re.search(r"(?m)^on:\s*(?:push|\[.*\bpush\b.*\])\s*$", triggers):
+        return True
+    found = re.search(r"(?m)^  push:[ \t]*\n((?:(?:    .*)?\n)*)", triggers + "\n")
+    if found is None:
+        return re.search(r"(?m)^  push:", triggers) is not None
+    keys = re.findall(r"(?m)^    ([\w-]+):(.*)$", found.group(1))
+    if not keys:
+        return True
+    return any(
+        key == "branches-ignore" or (key == "branches" and value.strip() != "[main]")
+        for key, value in keys
+    ) or all(key not in ("branches", "tags") for key, _ in keys)
+
+
+def test_no_workflow_runs_on_a_push_to_a_branch_other_than_main():
+    """A branch push runs everything again on a commit its pull request (or main) checks."""
+    for path in sorted(WORKFLOWS.glob("*.yml")):
+        assert not _pushes_outside_main(path.read_text(encoding="utf-8")), path.name
+
+
+def test_the_push_check_sees_each_way_a_branch_push_runs():
+    def on(triggers: str) -> str:
+        return f"on:\n{triggers}\njobs:\n  x:\n"
+
+    assert _pushes_outside_main("on: push\njobs:\n")
+    assert _pushes_outside_main("on: [push, pull_request]\njobs:\n")
+    assert _pushes_outside_main(on("  push:\n  pull_request:\n"))
+    assert _pushes_outside_main(on("  push:\n    branches: [main, 'stack-*']\n"))
+    assert _pushes_outside_main(on("  push:\n    branches-ignore: [gh-pages]\n"))
+    assert _pushes_outside_main(on("  push:\n    paths: [src/**]\n"))
+    assert not _pushes_outside_main(on("  push:\n    branches: [main]\n  pull_request:\n"))
+    assert not _pushes_outside_main(on('  push:\n    tags:\n      - "v*"\n'))
+    assert not _pushes_outside_main(on("  pull_request:\n  schedule:\n"))
+
+
 def test_one_commit_gets_one_run():
     """A pull request is checked by its pull_request run and a push runs only on main. A branch
     push would check the same commit again, and cancelling either copy leaves a failed required
