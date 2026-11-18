@@ -163,7 +163,7 @@ class _StreamBody:
     """A streamed body, read once in asyncio, which stops when ``signal`` fires. A body the
     signal stops before it is read ends with an interruption through ``abandon``."""
 
-    __slots__ = ("_abandon", "_closing", "_context", "_started", "_stream")
+    __slots__ = ("_abandon", "_context", "_started", "_stream")
 
     def __init__(
         self,
@@ -176,14 +176,13 @@ class _StreamBody:
         self._context = context
         self._abandon = abandon
         self._started: AsyncIterator[bytes] | None = None
-        self._closing: list[asyncio.Task[None]] = []
         if signal is not None:
             signal.on_abort(self._abort)
 
     def _abort(self) -> None:
         started = self._started
         if started is not None:
-            self._closing.append(asyncio.ensure_future(_aclose(started)))
+            background.start(_aclose(started), asyncio.get_running_loop())
         elif self._abandon is not None:
             run_fork(self._abandon(interrupt_exit()))
 

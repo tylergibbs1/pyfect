@@ -270,6 +270,7 @@ tests/test_ascii_digits_guard.py::test_no_regex_matches_unicode_digits_or_letter
 tests/test_ascii_digits_guard.py::test_no_regex_parses_a_bare_digit_run  # slow: 2.3 s serial
 tests/test_background_tasks.py::test_loop_threads_go_through_loop_thread  # slow: 3.5 s serial
 tests/test_background_tasks.py::test_no_task_is_dropped  # slow: 5.2 s serial
+tests/test_background_tasks.py::test_no_task_is_kept_in_a_set_of_its_own  # slow: 4.8 s serial
 tests/test_base_exceptions.py::test_no_handler_turns_ctrl_c_into_a_defect  # slow: 3.5 s serial
 tests/test_closed_owner_reasons.py::test_closed_owner_interrupts_name_the_owner  # slow: 3.5 s serial
 tests/test_closure_cycles.py::test_every_allowed_cycle_still_exists  # slow: shares test_no_nested_function_reaches_itself's 8.5 s scan

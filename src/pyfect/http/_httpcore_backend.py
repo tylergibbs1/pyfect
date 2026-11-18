@@ -23,6 +23,7 @@ from collections.abc import AsyncIterator, Callable, Coroutine
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from pyfect import _background as background
 from pyfect._extras import missing_extra
 from pyfect.http._httpx_options import import_httpx
 
@@ -101,10 +102,6 @@ class _Backend:
         await self._backend.sleep(seconds)
 
 
-_CLOSING: set[asyncio.Task[None]] = set()
-"""Closes of streams whose connect was cancelled, held until they finish."""
-
-
 async def _connect(connecting: Coroutine[Any, Any, httpcore.AsyncNetworkStream]) -> _Stream:
     """Run ``connecting`` where a cancel cannot reach it: anyio (4.15.1) leaves the
     socket of a connect cancelled as it succeeds open, and nothing holds it. A
@@ -120,9 +117,7 @@ async def _connect(connecting: Coroutine[Any, Any, httpcore.AsyncNetworkStream])
 def _close_connected(task: asyncio.Future[httpcore.AsyncNetworkStream]) -> None:
     if task.cancelled() or task.exception() is not None:
         return
-    closing = asyncio.ensure_future(task.result().aclose())
-    _CLOSING.add(closing)
-    closing.add_done_callback(_CLOSING.discard)
+    background.start(task.result().aclose(), task.get_loop())
 
 
 class _Connection:

@@ -5,7 +5,11 @@ asyncio holds tasks weakly, so a task whose result is dropped can be
 collected mid-flight ("Task was destroyed but it is pending"): such work
 goes through ``pyfect._background.start``. A loop on a thread of its own
 goes through ``pyfect._loop_thread.LoopThread``, which settles every task
-and async generator before the loop closes.
+and async generator before the loop closes, waiting for the background
+tasks to end. A set of one's own that keeps tasks until they end
+(``add_done_callback(tasks.discard)``) is the same thing done by hand: the
+loop thread cannot see it, so it cancels those tasks at stop, or closes
+under one started meanwhile (a response's close lost that way in CI).
 """
 
 from __future__ import annotations
@@ -55,6 +59,29 @@ def test_no_task_is_dropped() -> None:
     assert dropped == [], "keep the task, or start it with pyfect._background.start"
 
 
+def _kept_by_hand(tree: ast.Module) -> list[int]:
+    """Lines keeping tasks in a set of their own: ``add_done_callback(s.discard)``."""
+    return [
+        node.lineno
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and _name(node) == "add_done_callback"
+        and len(node.args) == 1
+        and isinstance(node.args[0], ast.Attribute)
+        and node.args[0].attr == "discard"
+    ]
+
+
+def test_no_task_is_kept_in_a_set_of_its_own() -> None:
+    kept = [
+        f"{name}:{line}"
+        for name, tree in _sources()
+        if name != "_background.py"
+        for line in _kept_by_hand(tree)
+    ]
+    assert kept == [], "start the task with pyfect._background.start, which a LoopThread waits for"
+
+
 def test_loop_threads_go_through_loop_thread() -> None:
     running = [
         f"{name}:{node.lineno}"
@@ -75,3 +102,12 @@ def test_the_checks_see_a_dropped_task() -> None:
         "tasks.add(asyncio.ensure_future(f()))\n"
     )
     assert _dropped(_source.parse(source)) == [1, 2, 3]
+
+
+def test_the_check_sees_a_task_kept_by_hand() -> None:
+    source = (
+        "task.add_done_callback(self._closing.discard)\n"
+        "task.add_done_callback(_CLOSING.discard)\n"
+        "task.add_done_callback(done)\n"
+    )
+    assert _kept_by_hand(_source.parse(source)) == [1, 2]

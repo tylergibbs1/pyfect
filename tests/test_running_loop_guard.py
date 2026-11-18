@@ -20,6 +20,7 @@ _ALLOWED: dict[tuple[str, str], str] = {
     ("_fiber_collections.py", "future_of"): "the run_promise APIs, called from a coroutine",
     ("managed_runtime.py", "_loop_scheduler"): "called once a loop is known to run here",
     ("http/web_handler.py", "_handle"): "the web handler, called by the server's coroutine",
+    ("http/web_handler.py", "_abort"): "the ASGI server's coroutines fire a body's abort signal",
     ("http/wire.py", "_cancel"): "closes a body on the loop if there is one, else runs it",
     ("http/asgi/_http.py", "__init__"): "made by the ASGI coroutine on the server's loop",
     ("http/asgi/_mount.py", "__init__"): "made by the ASGI coroutine on the server's loop",

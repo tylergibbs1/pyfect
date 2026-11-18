@@ -6,8 +6,11 @@ bodies, when a fiber lets go of a response) with a task it schedules from
 whichever thread dropped it, and keeps no reference to that task; a loop
 stopped and closed right after loses that close half done ("Task was
 destroyed but it is pending", "coroutine method 'aclose' ... was never
-awaited"). A ``LoopThread`` keeps each close task until it ends, and
-``stop`` closes the loop only once its tasks and generators have settled.
+awaited"). A ``LoopThread`` starts each such close with
+``pyfect._background.start``, and ``stop`` closes the loop only once its
+tasks and generators have settled: the background tasks (closes and
+releases, its own and its users') run to their end, those started while it
+stops included; any other coroutine still running is cancelled.
 """
 
 from __future__ import annotations
@@ -19,6 +22,8 @@ import weakref
 from collections.abc import AsyncGenerator, Callable, Coroutine
 from concurrent.futures import Future
 from typing import Any
+
+from pyfect import _background as background
 
 type ExceptionHandler = Callable[[asyncio.AbstractEventLoop, dict[str, Any]], object]
 type _AnyGenerator = AsyncGenerator[Any, Any]
@@ -37,7 +42,6 @@ class LoopThread:
         "_generators",
         "_lock",
         "_stop",
-        "_tasks",
         "loop",
         "stopped",
     )
@@ -55,7 +59,6 @@ class LoopThread:
         self._generators: weakref.WeakSet[_AnyGenerator] = weakref.WeakSet()
         self._closing: set[_AnyGenerator] = set()
         """Generators dropped mid-iteration, kept until their close ends."""
-        self._tasks: set[asyncio.Task[None]] = set()
         self._stop = self.loop.create_future()
         threading.Thread(target=self._run, name=name, daemon=True).start()
 
@@ -94,6 +97,9 @@ class LoopThread:
         await self._stop
         await self._settle()
         await self.loop.shutdown_default_executor()
+        # Closes started while the executor shut down (that await let callbacks
+        # run): the loop must not close under them.
+        await background.settle()
 
     def _finalize(self, generator: _AnyGenerator) -> None:
         """A generator the loop ran was dropped before it ended (on any
@@ -106,9 +112,7 @@ class LoopThread:
         self.loop.call_soon_threadsafe(self._start_close, generator)
 
     def _start_close(self, generator: _AnyGenerator) -> None:
-        task = self.loop.create_task(self._close(generator))
-        self._tasks.add(task)
-        task.add_done_callback(self._tasks.discard)
+        background.start(self._close(generator), self.loop)
 
     async def _close(self, generator: _AnyGenerator) -> None:
         try:
@@ -126,9 +130,10 @@ class LoopThread:
                 self._closing.discard(generator)
 
     async def _settle(self) -> None:
-        """Until nothing is left: cancel the coroutines still running (a
-        generator's close runs to its end), then close the generators still
-        open; each round may drop more generators."""
+        """Until nothing is left: cancel the coroutines still running but
+        the background tasks (closes run to their end), then close the
+        generators still open; each round may drop more generators or start
+        more closes."""
         current = asyncio.current_task()
         while True:
             # Let closes scheduled from other threads start.
@@ -142,8 +147,9 @@ class LoopThread:
                     if not generators:
                         self._closed = True
                         return
+            kept = set(background.running(self.loop))
             for task in running:
-                if task not in self._tasks:
+                if task not in kept:
                     task.cancel()
             closes = [self._close(generator) for generator in generators]
             await asyncio.gather(*running, *closes, return_exceptions=True)

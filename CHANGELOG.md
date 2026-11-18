@@ -121,6 +121,13 @@
 
 ### Fixed
 
+- HTTP (httpx client): a response dropped while its client shut down is closed before the
+  client's loop closes. Its close could start while the connection pool closed, after the
+  wait for pending closes, and the loop thread then cancelled it or closed under it ("Task was
+  destroyed but it is pending"), leaking the connection. Closes of responses, streamed bodies,
+  cancelled connects (httpcore) and aborted web-handler bodies now all go through one helper,
+  which every loop thread waits for, also after its executor shuts down; a test bans keeping
+  such tasks in a set of one's own.
 - `terminal.live(...).size`: the terminal's resize thread ends when the last `size` stream's
   scope closes, as Effect removes its `resize` listener; it kept polling the size every 0.25 s
   for the rest of the process.

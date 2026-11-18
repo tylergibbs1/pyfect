@@ -25,6 +25,7 @@ from concurrent.futures import Future
 from http.cookiejar import CookieJar, DefaultCookiePolicy
 from typing import TYPE_CHECKING, Any, Never
 
+from pyfect import _background as background
 from pyfect._fiber import Fiber
 from pyfect._js import text_encode
 from pyfect._loop_thread import LoopThread
@@ -175,23 +176,16 @@ class _Backend:
         self._thread = LoopThread("pyfect-httpx")
         self.loop = self._thread.loop
         self._lifetime = Lifetime("HTTP client")
-        self._closing: set[asyncio.Task[None]] = set()
-        """Responses being closed (touched on the loop only)."""
 
     def _close_response(self, response: httpx.Response) -> None:
-        task = self.loop.create_task(response.aclose())
-        self._closing.add(task)
-        task.add_done_callback(self._closing.discard)
-
-    async def _settle(self) -> None:
-        """Wait for the responses being closed."""
-        while self._closing:
-            closing = list(self._closing)
-            self._closing.clear()
-            await asyncio.gather(*closing, return_exceptions=True)
+        # Run to its end, even if it starts while the client shuts down: the loop
+        # thread waits for it before its loop closes.
+        background.start(response.aclose(), self.loop)
 
     async def _shutdown(self) -> None:
-        await self._settle()
+        # Responses close before the pool does; one dropped while the pool closes
+        # still closes before the loop does.
+        await background.settle()
         await self.client.aclose()
 
     def submit[A](self, make: Callable[[], Coroutine[Any, Any, A]]) -> Future[A]:
@@ -200,9 +194,7 @@ class _Backend:
         return self._lifetime.submit(lambda: self._thread.submit(make))
 
     def _close_reader(self, reader: StreamAsyncIterator[bytes]) -> None:
-        task = self.loop.create_task(reader.aclose())
-        self._closing.add(task)
-        task.add_done_callback(self._closing.discard)
+        background.start(reader.aclose(), self.loop)
 
     def _call_soon(self, f: Callable[[], object]) -> None:
         """Run ``f`` on the loop; once the backend has closed (and with it
