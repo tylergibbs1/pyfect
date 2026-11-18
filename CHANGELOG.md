@@ -81,7 +81,6 @@
   the new `websocket_close_timeout` option (`"30 seconds"` by default, `ws`'s `closeTimeout`)
   passes. This applies to HTTP/1.1 in cleartext; over TLS and HTTP/2 the server
   still closes at once.
-
 - `socket.from_socket` and `socket.datagram.from_socket` register their own duplicate of the
   adopted socket, so closing the original early no longer stops other sockets from reading.
   The original still closes with the reader's scope, and the caller may close it at any time.
@@ -89,7 +88,6 @@
   the migration transaction committed, so a second migrator could start in between and miss
   what the first wrote after its last DDL statement. The lock is now released only once the
   transaction has committed or rolled back, with no connection beyond the transaction's.
-
 - Cluster SQL runner storage (PostgreSQL, MySQL): a burst of shard releases, such as a runner
   handing shards to runners that just joined, queued on the one reserved lock connection, and
   each release's deadline counted the time it waited. On a busy machine the later ones timed
