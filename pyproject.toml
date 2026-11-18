@@ -136,6 +136,8 @@ fuzz = ["atheris==3.1.0; sys_platform == 'linux'"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+# Survey only: report tests that passed but blocked past their limit, without failing them.
+blocked_past_limit = "warn"
 # An xfail that passes fails the run (tests/test_xfail_guard.py).
 xfail_strict = true
 # A coroutine left pending (a close never awaited before a loop stopped) or
