@@ -18,6 +18,13 @@
   (siblings that failed together, failed finalizers), so tracebacks show each one and callers
   can use `except*`. A cause with one error raises exactly what `run.unwrap` raises. Opt-in:
   `unwrap` and the run functions still raise the first error with the full cause as a note.
+- anyio support for `run_async` and `run_async_exit`, a `ManagedRuntime`'s too, on anyio's
+  asyncio backend (which Starlette and FastAPI use). Leaving a cancelled anyio scope
+  (`move_on_after`, `fail_after`, a task group's `cancel_scope`) interrupts the fiber and ends
+  once its finalizers have run, as `task.cancel()` does; it used to spin forever, since anyio
+  cancels the waiter again at every await and the wait awaited even after the fiber was done.
+  `from_async` and `try_async` cancel an anyio coroutine when the fiber is interrupted. Trio is
+  not supported (`run_async` raises `RuntimeError("no running event loop")` there).
 - Testing: `pyfect.testing.leave_out_host_freezes(source)` leaves the time the host froze the
   whole process for out of every test's timeout, up to the timeout again; `source` returns a
   `HostFreezes(total, settling)`. A timeout that left time out says so: "test timed out after

@@ -33,7 +33,13 @@ def _retrieve[A](future: asyncio.Future[A]) -> None:
 
 async def await_uncancelled[A](future: asyncio.Future[A]) -> A:
     """``future``'s result. Cancelling the waiting task raises here and
-    leaves ``future`` running; its outcome is then marked seen when it ends."""
+    leaves ``future`` running; its outcome is then marked seen when it ends.
+
+    A future already done gives its result without awaiting. A waiter in a
+    cancelled anyio scope is cancelled at every await (level cancellation),
+    so one that awaited a done future would never see it."""
+    if future.done():
+        return future.result()
     try:
         await asyncio.wait((future,))
     except asyncio.CancelledError:

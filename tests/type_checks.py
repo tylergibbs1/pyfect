@@ -1868,6 +1868,14 @@ def check_run_main() -> None:
     fx.run_main(Port())  # pyright: ignore[reportArgumentType]
 
 
+def check_run_async() -> None:
+    # Awaited from asyncio or anyio code: the value, or the Exit with the errors left.
+    assert_type(fx.run_async(fx.from_async(_one_async)), CoroutineType[Any, Any, int]).close()
+    failing = fx.try_async(_one_async, lambda e: Invalid(str(e)))
+    assert_type(fx.run_async_exit(failing), CoroutineType[Any, Any, fx.Exit[int, Invalid]]).close()
+    fx.run_async(failing).close()  # pyright: ignore[reportArgumentType]
+
+
 def check_managed_runtime() -> None:
     runtime = fx.ManagedRuntime.make(merged_live)
     assert_type(runtime, fx.ManagedRuntime[Primary | Port, Never])

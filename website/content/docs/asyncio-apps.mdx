@@ -57,6 +57,23 @@ that into, where Effect's promise rejects with the interruption; `run_async_exit
 rather than returning an interrupted `Exit`. An uninterruptible part of the effect still
 finishes, and what comes after it doesn't run.
 
+Starlette and FastAPI run on anyio's asyncio backend, where `run_async`, `from_async` and
+`try_async` work as they do on plain asyncio. anyio cancels by scope: a task inside a
+cancelled scope (`move_on_after`, `fail_after`, a task group's `cancel_scope`) gets a
+`CancelledError` at every await until it leaves the scope. Leaving such a scope interrupts
+the fiber and ends only once its finalizers have run, and a coroutine awaited with
+`from_async` is cancelled when its fiber is interrupted, so anyio code inside it sees an
+ordinary cancellation. Trio isn't supported: fibers run on an asyncio loop, so `run_async`
+under `trio.run`, or anyio's trio backend, raises `RuntimeError("no running event loop")`.
+
+<CodeOutput>
+
+<include meta='title="anyio_scopes.py"'>../../snippets/asyncio_apps/anyio_scopes.py</include>
+
+<include lang="text">../../snippets/asyncio_apps/anyio_scopes.out</include>
+
+</CodeOutput>
+
 Disposing the runtime interrupts the runs in flight and waits for their finalizers before it
 releases the layer's resources. Every `dispose()` call returns only once they are released,
 whichever thread makes it and even while another disposal is running. A run started after
