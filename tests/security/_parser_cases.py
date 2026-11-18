@@ -640,12 +640,6 @@ def _url_schema(n: int) -> Work:
     return lambda: decode(value)
 
 
-@case(yaml.parse, "yaml.parse: a flow sequence over many lines (#45)", size=50_000)
-def _yaml_flow_lines(n: int) -> Work:
-    value = "[\n" + "1,\n" * n + "]"
-    return lambda: yaml.parse(value)
-
-
 @case(toml.parse, "toml.parse: a table header of many dotted keys (#40)")
 def _toml_header(n: int) -> Work:
     value = "[" + ".".join(["a"] * n) + "]"

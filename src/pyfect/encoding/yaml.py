@@ -353,6 +353,11 @@ class _FlowParser:
         self._token: list[str] | None = None
         self._token_start = 0
 
+    @property
+    def held(self) -> int:
+        """Characters of input held: the line being read."""
+        return len(self._input)
+
     def parse(self) -> object:
         value = self._value()
         self._skip_whitespace()

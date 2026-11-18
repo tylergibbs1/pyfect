@@ -347,8 +347,10 @@ base = checks._base()
 
 
 def make(n):
+    # An eighth of a sample at the base size: a thread_time sample sees only the thread's
+    # start, so it runs the large size dozens of times to fill its 2 ms.
     def work():
-        thread = threading.Thread(target=lambda: sum(range(n * n // base)))
+        thread = threading.Thread(target=lambda: sum(range(n * n // base // 8)))
         thread.start()
         thread.join()
 
