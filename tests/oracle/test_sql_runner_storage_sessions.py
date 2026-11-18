@@ -93,6 +93,28 @@ def _end_lock_session(dialect: str, sql: SqlClientService, prefix: str) -> fx.Ef
     return mysql
 
 
+def _lock_session_ended(dialect: str, sql: SqlClientService, prefix: str) -> fx.Effect[None, Any]:
+    """Waits until no session holds ``shard1``'s advisory lock: at most 3 s,
+    for a server ending a session idle for 1 s (MySQL's whole seconds included)."""
+    if dialect == "pg":
+        namespace = SqlRunnerStorage.postgres_lock_namespace(prefix) & 0xFFFFFFFF
+        held = sql.unsafe(
+            "SELECT pid FROM pg_locks "
+            f"WHERE locktype = 'advisory' AND objsubid = 2 AND classid = {namespace}"
+        ).map(bool)
+    else:
+        held = sql.unsafe(f"SELECT IS_USED_LOCK('{prefix}.{shard1}') AS owner").map(
+            lambda rows: rows[0]["owner"] is not None
+        )
+
+    @fx.gen
+    def wait():
+        while (yield from held):
+            yield from fx.sleep("20 millis")
+
+    return wait.timeout("3 seconds")
+
+
 @testing.live
 def test_an_advisory_refresh_does_not_reacquire_locks_lost_with_the_session(
     backend: tuple[str, ClientMaker],
@@ -121,7 +143,7 @@ def test_an_advisory_refresh_does_not_reacquire_locks_lost_with_the_session(
     yield from fx.gen(body)
 
 
-@testing.live(timeout="60 seconds")
+@testing.live
 def test_the_server_ends_a_lock_session_left_idle_for_the_lock_expiration(
     backend: tuple[str, ClientMaker],
 ):
@@ -129,7 +151,7 @@ def test_the_server_ends_a_lock_session_left_idle_for_the_lock_expiration(
     holds its advisory locks only until the server ends the idle session,
     after ``shard_lock_expiration``. Acquiring again then succeeds on the
     first try, on a new session."""
-    _, make_client = backend
+    dialect, make_client = backend
 
     def body() -> Generator[fx.Effect[Any, Any, Any], Any]:
         client = yield from make_client()
@@ -140,7 +162,8 @@ def test_the_server_ends_a_lock_session_left_idle_for_the_lock_expiration(
         other_client = yield from make_client()
         other = yield from _storage(other_client, prefix)
         assert (yield from other.acquire(address2, [shard1])) == []
-        yield from fx.sleep("2500 millis")
+        # Asked on a client of its own: each storage reserved its pool's one connection.
+        yield from _lock_session_ended(dialect, (yield from make_client()), prefix)
         assert (yield from other.acquire(address2, [shard1])) == [shard1]
 
         assert (yield from expiring.acquire(address1, [shard2])) == [shard2]
