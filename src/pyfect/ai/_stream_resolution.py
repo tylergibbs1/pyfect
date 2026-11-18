@@ -77,17 +77,14 @@ def resolve_stream(
     concurrency: Concurrency,
     *,
     messages: Sequence[P.Message],
-    emitted: Sequence[Any] = (),
 ) -> Effect[Stream[Any, Any, Any], Any, Any]:
-    """The stream of ``emitted``, then ``provider``'s parts (decoded and
+    """The stream of ``provider``'s parts (decoded and
     checked by ``on_chunk``) with the tool results of ``kit``'s tools, or
     approval requests for the calls needing approval (in the context of
     ``messages``). Needs a ``Scope``, which the handlers and the provider's
     run live in."""
 
     def start(queue: Queue[Any, Any]) -> Effect[Stream[Any, Any, Any], Any, Any]:
-        queue.offer_all_unsafe(emitted)
-
         def run(fibers: FiberSet[None, Any], semaphore: Semaphore | None) -> Effect[Any, Any, Any]:
             resolution = _Resolution(kit, queue, fibers, semaphore, messages)
             return resolution.run(provider, on_chunk).fork_scoped()

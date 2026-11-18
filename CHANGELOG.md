@@ -27,6 +27,10 @@
 - RPC client over a socket (`make_protocol_socket`): a failed write of a request or an ack
   was a defect, so the call died instead of failing. It now fails with `RpcClientError`
   carrying the socket error's reason, as a lost connection does (Effect #10658).
+- `LanguageModel.stream_text` with `disable_tool_call_resolution=True` dropped the results of
+  tools approved (or denied) in the prompt, so `Chat.stream_text` did not record them and ran
+  an approved tool again on a later turn. They now come first in the stream whether or not
+  resolution is on (Effect #10614).
 
 ## 0.6.12 (2026-11-18)
 

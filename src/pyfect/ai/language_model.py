@@ -901,12 +901,15 @@ class Service:
             request = _prepared(
                 tracker, _with_tools(replace(options, prompt=prompt), kit, tool_choice), sent
             )
+            # Pre-resolved results come first, resolution on or off, so a chat
+            # keeps them in its history; their encoded form is the result.
+            emitted = [replace(result, result=result.encoded_result) for result in pre]
+            return parts(request).map(lambda stream: stream.prepend(emitted))
+
+        def parts(request: ProviderOptions) -> Effect[Stream[Any, Any, Any], Any, Any]:
             if disable_tool_call_resolution:
                 return fx.succeed(self._stream_parts(request, kit, tracker, not deferred, deferred))
             decode = self._decoder(kit, False, True)
-            # Pre-resolved results are emitted so a chat keeps them in its
-            # history, their encoded form as the result.
-            emitted = [replace(result, result=result.encoded_result) for result in pre]
 
             def on_chunk(chunk: Sequence[EncodedPart]) -> Effect[list[Any], Any, Any]:
                 def checked(parts: list[Any]) -> Effect[list[Any], Any, Any]:
@@ -925,7 +928,6 @@ class Service:
                 on_chunk,
                 concurrency,
                 messages=request.prompt.content,
-                emitted=emitted,
             )
 
         return A.pre_resolve(approvals, kit, concurrency).flat_map(with_pre)

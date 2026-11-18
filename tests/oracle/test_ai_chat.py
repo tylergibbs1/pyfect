@@ -167,6 +167,72 @@ def test_does_not_replay_completed_approved_tool():
     yield from fx.gen(body).pipe(fx.provide(kit.to_layer(counter.handler(count))))
 
 
+_FINISH: Any = {
+    "type": "finish",
+    "reason": "stop",
+    "usage": {"inputTokens": {"uncached": 5, "total": 5}, "outputTokens": {"total": 5}},
+}
+
+
+@testing.effect
+def test_preserves_approval_results_when_streaming_with_tool_call_resolution_disabled():
+    """Chat / preserves approval results when streaming with tool call resolution disabled"""
+    executions = [0]
+    counter = T.make("Counter", parameters=S.Struct(_Empty), success=S.Number, needs_approval=True)
+    kit = K.make(counter)
+
+    def count(_: object, __: object) -> fx.Effect[float]:
+        def run() -> float:
+            executions[0] += 1
+            return executions[0]
+
+        return fx.sync(run)
+
+    provide = with_language_model(stream_text=[_FINISH])
+
+    def body():
+        chat = yield from C.empty
+        initial = yield from chat.generate_text("Run the counters", toolkit=kit).pipe(
+            with_language_model(
+                generate_text=[
+                    {"type": "tool-call", "id": "approved", "name": "Counter", "params": {}},
+                    {"type": "tool-call", "id": "denied", "name": "Counter", "params": {}},
+                ]
+            )
+        )
+        responses = tuple(
+            P.ToolApprovalResponsePart(
+                approval_id=part.approval_id, approved=part.tool_call_id == "approved"
+            )
+            for part in initial.content
+            if part.type == "tool-approval-request"
+        )
+        parts = (
+            yield from chat.stream_text(
+                [P.ToolMessage(content=responses)], toolkit=kit, disable_tool_call_resolution=True
+            )
+            .run_collect()
+            .pipe(provide)
+        )
+
+        assert [part.id if part.type == "tool-result" else part.type for part in parts] == [
+            "approved",
+            "denied",
+            "finish",
+        ]
+        assert executions[0] == 1
+
+        yield from (
+            chat.stream_text("Continue", toolkit=kit, disable_tool_call_resolution=True)
+            .run_drain()
+            .pipe(provide)
+        )
+
+        assert executions[0] == 1
+
+    yield from fx.gen(body).pipe(fx.provide(kit.to_layer(counter.handler(count))))
+
+
 def _stored(store_id: str, chat_id: str) -> fx.Effect[P.Prompt | None, Any, Any]:
     def body():
         backing = yield from BackingPersistence()
