@@ -173,6 +173,11 @@
 - Reactivity: after a write, a refresh or remount of an `atom.kvs` atom showed the value
   from before the write. It now shows the last value written, in both modes, as in
   Effect-TS/effect#10613 (after 4.1.4).
+- AI (OpenAI): in WebSocket mode, an error event whose details had a `null` `code` or
+  `type`, or no `message`, was mapped from the whole event instead of its `error` details.
+  The details' other fields, such as a usage limit's `resets_at` or `plan_type`, were also
+  dropped. The error is now mapped from its details by status and type, and its metadata
+  and body keep every field, as in Effect-TS/effect#10645 (after 4.1.4).
 
 - A schema whose aliases only reach each other (a JSON Schema `$ref` to itself) took
   seconds to fail, and up to a minute on Python 3.14; so did any deep recursion that ran

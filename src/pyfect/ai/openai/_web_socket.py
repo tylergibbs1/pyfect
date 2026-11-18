@@ -94,9 +94,16 @@ _IDLE_TIME_TO_LIVE = "60 seconds"
 
 
 class _NestedError(TypedDict):
-    type: NotRequired[str]
-    code: NotRequired[str]
-    message: str
+    type: NotRequired[str | None]
+    code: NotRequired[str | None]
+    message: NotRequired[str]
+
+
+# Any other keys (a usage limit's ``resets_at``, say) are kept for the error's metadata.
+_NESTED_ERROR = S.StructWithRest(
+    S.Struct(_NestedError),
+    S.Record(S.String, S.Unknown),
+)
 
 
 class _ErrorEvent(TypedDict):
@@ -108,7 +115,7 @@ class _ErrorEvent(TypedDict):
     error: _NestedError
 
 
-_decode_error_event = P.wire_parser_option(S.Struct(_ErrorEvent), _ErrorEvent)
+_decode_error_event = P.wire_parser_option(S.Struct(_ErrorEvent, error=_NESTED_ERROR), _ErrorEvent)
 
 
 def _transport_error(request: _Request, description: str) -> AiError:
@@ -150,7 +157,7 @@ def _event_error(error: dict[str, Any], event: dict[str, Any]) -> tuple[AiError,
     code = error.get("code")
     if isinstance(code, str):
         error_type = code
-    elif kind == "api_error" and _RESPONSE_NOT_FOUND.match(error["message"]):
+    elif kind == "api_error" and _RESPONSE_NOT_FOUND.match(error.get("message") or ""):
         error_type = "previous_response_not_found"
     else:
         error_type = kind if isinstance(kind, str) else "unknown"

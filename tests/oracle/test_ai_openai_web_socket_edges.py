@@ -1,13 +1,16 @@
 """WebSocket mode edges Effect's tests leave open, checked against Effect's
 ``makeSocket`` (the error event decoding run under Node): a connection the
 server closes or a consumer leaves mid-response is replaced, requests are
-sent one at a time, and an error event's details are its decoded fields."""
+sent one at a time, and an error event keeps every field of its details."""
 
 from __future__ import annotations
 
 # pyright: reportUnknownVariableType=false, reportUnknownArgumentType=false
 # pyright: reportUnknownMemberType=false, reportUnknownLambdaType=false
+import json
 from typing import Any, cast
+
+import pytest
 
 import pyfect as fx
 from pyfect import testing
@@ -21,6 +24,7 @@ from pyfect.redacted import make as redact
 from ._ai_http import unexpected
 from .test_ai_openai_client import (
     NOT_FOUND,
+    USAGE_LIMIT_ERROR,
     WsServer,
     chat_over_ws,
     web_socket_mode,
@@ -117,9 +121,9 @@ def test_concurrent_streams_are_sent_one_at_a_time():
 
 
 @testing.live
-def test_error_event_details_are_its_decoded_fields():
-    """Effect decodes ``error`` as ``{type?, code?, message}``: other keys
-    are dropped and the description lists the fields in that order."""
+def test_error_event_details_keep_every_field():
+    """Since Effect #10645 (after 4.1.4) ``error`` decodes as ``{type?, code?, message?}`` with
+    any other keys kept, so the description carries every field."""
     server = WsServer()
     error = {"error": {"message": "bad", "param": "input", "type": "invalid_request_error"}}
     turn = ws_turn(server, {"model": "m", "input": "a"}, lambda _: server.send(error))
@@ -127,7 +131,47 @@ def test_error_event_details_are_its_decoded_fields():
     assert isinstance(exit, Failure)
     reason = _reason(exit)
     assert isinstance(reason, E.InvalidRequestError)
-    assert reason.description == '{"type":"invalid_request_error","message":"bad"}'
+    assert reason.description is not None
+    assert json.loads(reason.description) == error["error"]
+
+
+_ERROR_FRAMES: list[tuple[str, dict[str, Any], type[Any]]] = [
+    ("explicit status", {"status": 429, "error": USAGE_LIMIT_ERROR}, E.RateLimitError),
+    ("no status", {"error": USAGE_LIMIT_ERROR}, E.InternalProviderError),
+    (
+        "no message",
+        {"status": 429, "error": {"type": "usage_limit_reached", "plan_type": "pro"}},
+        E.RateLimitError,
+    ),
+    ("null code", {"status": 429, "error": {**USAGE_LIMIT_ERROR, "code": None}}, E.RateLimitError),
+    ("null type", {"status": 429, "error": {**USAGE_LIMIT_ERROR, "type": None}}, E.RateLimitError),
+    ("mapped type", {"error": {**USAGE_LIMIT_ERROR, "type": "rate_limit_error"}}, E.RateLimitError),
+    ("api error without message", {"error": {"type": "api_error"}}, E.InternalProviderError),
+]
+
+
+@pytest.mark.parametrize(
+    ("frame", "expected"),
+    [(frame, expected) for _, frame, expected in _ERROR_FRAMES],
+    ids=[name for name, _, _ in _ERROR_FRAMES],
+)
+@testing.live
+def test_create_response_stream_preserves_web_socket_error_details(
+    frame: dict[str, Any], expected: type[Any]
+):
+    """createResponseStream / preserves WebSocket error details with $name (Effect main, #10645)"""
+    server = WsServer()
+    turn = ws_turn(
+        server,
+        {"model": "gpt-4o", "input": "test"},
+        lambda _: server.send({"type": "error", **frame}),
+    )
+    exit = yield from web_socket_mode(server, turn, _URL).timeout("5 seconds")
+    assert isinstance(exit, Failure)
+    reason = _reason(exit)
+    assert isinstance(reason, expected)
+    assert reason.metadata == frame["error"]
+    assert json.loads(reason.http["body"]) == frame["error"]
 
 
 @testing.live

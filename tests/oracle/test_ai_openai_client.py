@@ -503,6 +503,29 @@ def test_embedding_429():
 # createResponseStream ---------------------------------------------------------------------
 
 
+USAGE_LIMIT_ERROR = {
+    "type": "usage_limit_reached",
+    "message": "Usage limit reached",
+    "resets_at": 1800000000,
+    "plan_type": "pro",
+    "limit_window_minutes": 300,
+}
+
+
+@testing.effect
+def test_create_response_stream_preserves_the_http_usage_limit_error_body():
+    """createResponseStream / preserves the HTTP usage-limit error body (Effect main, #10645)"""
+    error = yield from _run(
+        lambda c: c.create_response_stream(_TEST).flip(),
+        mock_json({"error": USAGE_LIMIT_ERROR}, status=429),
+    )
+    assert isinstance(error.reason, E.RateLimitError)
+    assert error.reason.http is not None
+    body = error.reason.http.get("body")
+    assert body is not None
+    assert json.loads(body) == {"error": USAGE_LIMIT_ERROR}
+
+
 @testing.effect
 def test_completed_before_done():
     """createResponseStream / emits response.completed before [DONE] in the same SSE chunk"""
