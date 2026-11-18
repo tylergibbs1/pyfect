@@ -11,6 +11,8 @@ from email.policy import HTTP
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
+from _threads import process_wide
+
 from pyfect.http.client import HttpClient
 from pyfect.layer import Layer
 from pyfect.layer import effect as layer_effect
@@ -170,7 +172,9 @@ class _Handler(BaseHTTPRequestHandler):
 def base_url() -> str:
     """The URL of the server, started on first use."""
     server = _Server(("127.0.0.1", 0), _Handler)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
+    threading.Thread(
+        target=server.serve_forever, name=process_wide("oracle-http"), daemon=True
+    ).start()
     return f"http://127.0.0.1:{server.server_address[1]}"
 
 

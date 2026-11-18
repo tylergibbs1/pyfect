@@ -63,12 +63,15 @@ def _answer(query: bytes, *, truncate: bool) -> bytes:
     return packet
 
 
-def _serve_udp(sock: socket.socket) -> None:
-    while True:
+def _serve_udp(sock: socket.socket, stopping: threading.Event) -> None:
+    # Polls ``stopping``: closing a socket does not wake a thread blocked on it (Linux), and
+    # would free its descriptor for an unrelated socket while that thread still uses it.
+    sock.settimeout(0.05)
+    while not stopping.is_set():
         try:
             query, client = sock.recvfrom(512)
-        except OSError:
-            return
+        except TimeoutError:
+            continue
         sock.sendto(_answer(query, truncate=True), client)
 
 
@@ -83,10 +86,16 @@ def name_server() -> Iterator[na.InetAddress]:
     tcp, udp = _ports.tcp_and_udp()
     port = tcp.getsockname()[1]
     tcp.listen()
-    threading.Thread(target=_serve_udp, args=(udp,), daemon=True).start()
-    with serving(_serve_tcp, listener=tcp):
-        yield dns.name_server_from_string(f"127.0.0.1:{port}").get_or_raise()
-    udp.close()
+    stopping = threading.Event()
+    udp_server = threading.Thread(target=_serve_udp, args=(udp, stopping), daemon=True)
+    udp_server.start()
+    try:
+        with serving(_serve_tcp, listener=tcp):
+            yield dns.name_server_from_string(f"127.0.0.1:{port}").get_or_raise()
+    finally:
+        stopping.set()
+        udp_server.join()
+        udp.close()
 
 
 @testing.live(timeout="10 seconds")

@@ -7,6 +7,7 @@ too, as it counts a forked fiber, and the fiber's next ``sleep`` starts on
 time. Waits for outside events (a socket read, a child's exit) are not
 counted: they may never come (DOGFOOD beacon #9)."""
 
+import threading
 import time
 import warnings
 from collections.abc import Callable, Generator
@@ -95,12 +96,14 @@ def test_blocking_work_on_the_asyncio_runner_runs_once_per_adjust():
 
 
 def test_an_interrupted_blocking_wait_does_not_hold_the_clock():
+    released = threading.Event()
+
     @fx.gen
     def program():
         @fx.gen
         def once():
             yield from fx.sleep("1 second")
-            work = yield from fx.blocking(lambda: time.sleep(3)).fork()
+            work = yield from fx.blocking(lambda: released.wait(3)).fork()
             yield from fx.yield_now()
             yield from work.interrupt()
             yield from fx.sleep("10 seconds")
@@ -112,6 +115,9 @@ def test_an_interrupted_blocking_wait_does_not_hold_the_clock():
         return (yield from fiber.join())
 
     started = time.monotonic()
-    with _no_busy_warning():
-        assert testing.run_test(program) == "slept"
+    try:
+        with _no_busy_warning():
+            assert testing.run_test(program) == "slept"
+    finally:
+        released.set()  # the interrupted call, abandoned on its thread, ends with the test
     assert time.monotonic() - started < 1
