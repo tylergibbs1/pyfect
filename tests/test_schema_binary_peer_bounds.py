@@ -50,9 +50,11 @@ def _with_run(schema: S.Codec[Any, Any, Any, Any], value: object) -> Make:
 
 @guards("7a2157a0", "schema-binary-number-varint-unbounded")
 def test_a_long_number_varint_fails_after_the_longest_finite_double() -> None:
+    """The run is read only as far as the longest finite double's code, so its cost does
+    not grow with the run: reading it all is linear, which a linear bound would allow."""
     sized = _with_run(S.Struct(_Number), {"n": 1})
     assert isinstance(sized(148)(), fx.Failure)
-    assert_near_linear(sized, 16_000, 8 * 16_000, bound=32)
+    assert_near_linear(sized, 16_000, 8 * 16_000, bound=4)
 
 
 @guards("7a2157a0", "schema-binary-big-varint-shifted")

@@ -46,7 +46,7 @@ test_httpx_test_clock.py 2  # checks adjust returns promptly in wall time while 
 test_live_server_request_parsing.py 4  # times live-server request timeouts seen by a blocking client socket in a plain thread, outside the TestClock
 test_managed_runtime.py 2  # deadline for a disposer on a real OS thread to begin closing the runtime; the TestClock does not drive that thread
 test_process.py 2  # times concurrent force kills of real sh child processes after 500 ms; OS processes run on real time
-test_schema_recursive_union_cost.py 2  # growth checks handing time.process_time to tests/_growth.py: deep decodes can run on other threads, whose CPU time thread_time misses and the TestClock does not measure
+test_schema_recursive_union_cost.py 3  # growth checks handing time.process_time to tests/_growth.py: deep decodes can run on other threads, whose CPU time thread_time misses and the TestClock does not measure
 test_server_idle_connection_shutdown.py 6  # times real HTTP server adapters stopping with an idle or stalled real client socket; engines and sockets run on real time
 test_test_clock.py 6  # checks adjust and run_test finish promptly in wall time, as busy-fiber waits and warning_delay are real time; the TestClock is under test
 test_test_clock_thread_work.py 2  # checks adjust does not wait out a 3 s blocking thread in wall time; thread work is real time and the TestClock is under test

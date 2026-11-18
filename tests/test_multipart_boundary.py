@@ -41,12 +41,22 @@ def test_a_boundary_of_up_to_70_characters_is_read(boundary: str) -> None:
     assert _parse(quoted, _form(boundary)) == ([], [b"value"])
 
 
-@pytest.mark.parametrize("boundary", ["a" * 71, "a" * 16000, '"a "', '"a@b"'])
+_TOO_LONG = guards("d5cf4ccf", "multipart-boundary-unbounded")
+
+
+@pytest.mark.parametrize(
+    "boundary",
+    [
+        pytest.param("a" * 71, marks=_TOO_LONG),
+        pytest.param("a" * 16000, marks=_TOO_LONG),
+        '"a "',
+        '"a@b"',
+    ],
+)
 def test_a_boundary_outside_rfc_2046_is_invalid(boundary: str) -> None:
     assert _parse(boundary, [])[0] == ["InvalidBoundary"]
 
 
-@guards("d5cf4ccf", "multipart-search-tries-every-index")
 def test_small_writes_with_the_longest_boundary_stay_cheap() -> None:
     """2-byte writes of the boundary's own byte: each scans at most the
     boundary, so four times the writes cost about four times the work."""

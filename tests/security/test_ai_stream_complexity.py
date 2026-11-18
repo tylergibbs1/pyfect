@@ -3,6 +3,9 @@
 The endpoint is a peer: a compatible server or proxy can send millions of tiny deltas within
 the response size limit. Folding them with ``+=`` on an attribute, or parsing everything
 received so far after each one, costs quadratic time on the fiber's thread (#34, #36, #37).
+The timed deltas here are ``_DELTA`` long or longer: copying a few bytes per delta is too
+cheap next to the per-delta work for timing to see at sizes a test can afford, while long
+deltas show it.
 """
 
 from __future__ import annotations
@@ -12,6 +15,7 @@ from __future__ import annotations
 import json
 from typing import Any, TypedDict, cast
 
+import pytest
 from _growth import Work, assert_near_linear
 from _guards import guards
 from oracle._ai_http import MockHttp, sse_response
@@ -27,12 +31,15 @@ from pyfect.ai import toolkit as K
 from pyfect.ai.openai import client as openai_client
 from pyfect.ai.openai import language_model as openai_model
 from pyfect.ai.openai import tool as openai_tool
+from pyfect.ai.openrouter import _stream as openrouter_stream
 from pyfect.ai.openrouter import client as openrouter_client
 from pyfect.ai.openrouter import language_model as openrouter_model
 from pyfect.http import request as http_request
 from pyfect.http import response as http_response
 from pyfect.layer import succeed as layer_succeed
 from pyfect.redacted import make as redact
+
+_DELTA = "x" * 4096
 
 
 @guards("36d23724", "prompt-deltas-concatenated")
@@ -42,12 +49,12 @@ def test_text_deltas_fold_into_a_prompt_in_linear_time() -> None:
     def make(n: int) -> Work:
         parts: list[Any] = [
             R.TextStartPart(id="t"),
-            *(R.TextDeltaPart(id="t", delta="x") for _ in range(n)),
+            *(R.TextDeltaPart(id="t", delta=_DELTA) for _ in range(n)),
             R.TextEndPart(id="t"),
         ]
         return lambda: Pr.from_response_parts(parts)
 
-    assert_near_linear(make, 1000)
+    assert_near_linear(make, 256, 8 * 256)
     folded = Pr.from_response_parts(
         [
             R.TextStartPart(id="t"),
@@ -79,7 +86,7 @@ def _openai_response(**overrides: Any) -> dict[str, Any]:
     }
 
 
-def _code_interpreter_events(deltas: int) -> list[dict[str, Any]]:
+def _code_interpreter_events(deltas: int, piece: str = "x") -> list[dict[str, Any]]:
     item = {
         "type": "code_interpreter_call",
         "id": "ci_1",
@@ -98,7 +105,7 @@ def _code_interpreter_events(deltas: int) -> list[dict[str, Any]]:
             "item": item,
         },
         *(
-            {**delta, "sequence_number": 3 + i, "output_index": 0, "delta": "x"}
+            {**delta, "sequence_number": 3 + i, "output_index": 0, "delta": piece}
             for i in range(deltas)
         ),
         {
@@ -106,7 +113,7 @@ def _code_interpreter_events(deltas: int) -> list[dict[str, Any]]:
             "sequence_number": deltas + 3,
             "item_id": "ci_1",
             "output_index": 0,
-            "code": "x" * deltas,
+            "code": piece * deltas,
         },
         {
             "type": "response.completed",
@@ -143,18 +150,18 @@ _CODE = K.make(openai_tool.CodeInterpreter(container={"type": "auto"}))
 def test_openai_code_interpreter_code_is_folded_in_linear_time() -> None:
     """#34: the code of a code interpreter call arrives as deltas."""
 
-    def run(n: int) -> list[Any]:
+    def run(n: int, piece: str = _DELTA * 4) -> list[Any]:
         program = (
             lm.stream_text(prompt="x", toolkit=_CODE, disable_tool_call_resolution=True)
             .run_collect()
             .pipe(fx.provide(openai_model.model("gpt-4o-mini").layer))
-            .pipe(fx.provide(_openai_stub(_code_interpreter_events(n))))
+            .pipe(fx.provide(_openai_stub(_code_interpreter_events(n, piece))))
         )
         return fx.run_blocking(program)
 
-    calls = [p for p in run(3) if isinstance(p, R.ToolCallPart)]
+    calls = [p for p in run(3, "x") if isinstance(p, R.ToolCallPart)]
     assert [call.params["code"] for call in calls] == ["xxx"]
-    assert_near_linear(lambda n: lambda: run(n), 1000)
+    assert_near_linear(lambda n: lambda: run(n), 128, 8 * 128)
 
 
 class _Args(TypedDict):
@@ -204,7 +211,6 @@ def _openrouter_calls(events: list[object]) -> list[R.ToolCallPart[Any, Any]]:
     return [p for p in parts if isinstance(p, R.ToolCallPart)]
 
 
-@guards("36d23724", "openrouter-arguments-parsed-per-delta")
 def test_openrouter_tool_arguments_are_parsed_in_linear_time() -> None:
     """#36: each delta of a tool call's arguments is not a reason to parse them all again,
     also when every delta closes a bracket inside a string."""
@@ -214,6 +220,28 @@ def test_openrouter_tool_arguments_are_parsed_in_linear_time() -> None:
         assert_near_linear(
             lambda n, d=delta: lambda: _openrouter_calls(_openrouter_events(n, d)), 500
         )
+
+
+@pytest.mark.parametrize("delta", ["x", "}"])
+@guards("36d23724", "openrouter-arguments-parsed-per-delta")
+def test_openrouter_parses_tool_arguments_once_they_can_be_whole(
+    delta: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#36, counted: parsing the arguments received so far after every delta is quadratic,
+    but JSON parsing is fast enough that timing sees it only at sizes a test cannot afford.
+    The arguments are parsed only when their brackets close, so 1000 deltas inside one
+    string parse once."""
+    parsed: list[str] = []
+    parse = openrouter_stream._parsed  # pyright: ignore[reportPrivateUsage]
+
+    def counted(text: str) -> Any:
+        parsed.append(text)
+        return parse(text)
+
+    monkeypatch.setattr(openrouter_stream, "_parsed", counted)
+    calls = _openrouter_calls(_openrouter_events(1000, delta))
+    assert [call.params for call in calls] == [{"a": delta * 1000}]
+    assert len(parsed) == 1
 
 
 def test_openrouter_tool_arguments_emit_as_soon_as_they_parse() -> None:
