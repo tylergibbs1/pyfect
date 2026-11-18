@@ -368,15 +368,17 @@ class Managed[A]:
     bound by ``as``, and the scope closed when the block ends (see
     ``CloseableScope.__enter__``). Each one is entered once."""
 
-    __slots__ = ("_context", "_eff", "_scope")
+    __slots__ = ("_claim", "_context", "_eff", "_scope")
 
     def __init__(self, eff: Effect[A, Any, Any], context: Context[Any]) -> None:
         self._eff = eff
         self._context = context
         self._scope: CloseableScope | None = None
+        # Held from the first entry on, so of threads entering at once exactly one does.
+        self._claim = threading.Lock()
 
     def _open(self) -> tuple[CloseableScope, Effect[A, Any]]:
-        if self._scope is not None:
+        if not self._claim.acquire(blocking=False):
             raise RuntimeError("managed(...) is entered once: call managed(eff) again")
         scope = self._scope = CloseableScope()
         return scope, _Locally(self._eff, lambda ctx: ctx.add(Scope, scope))

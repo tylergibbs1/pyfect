@@ -8,6 +8,7 @@ exception always propagates, with failed finalizers as a note.
 """
 
 import asyncio
+import threading
 from typing import Any
 
 import pytest
@@ -194,6 +195,32 @@ def test_managed_is_entered_once() -> None:
         pass
     with pytest.raises(RuntimeError, match="entered once"), m:
         pass
+
+
+def test_of_threads_entering_one_managed_at_once_exactly_one_does() -> None:
+    seen, resource = recorder()
+    m = managed(resource("a"))
+    start = threading.Barrier(8)
+    outcomes: list[str] = []
+    lock = threading.Lock()
+
+    def enter() -> None:
+        start.wait(timeout=2)
+        try:
+            with m as value:
+                outcome = value
+        except RuntimeError as refused:
+            outcome = str(refused)
+        with lock:
+            outcomes.append(outcome)
+
+    threads = [threading.Thread(target=enter) for _ in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=3)
+    assert sorted(outcomes) == ["a", *["managed(...) is entered once: call managed(eff) again"] * 7]
+    assert seen == [("a", fx.Success(None))]
 
 
 def test_async_with_closes_on_the_loop_and_cancellation_is_an_interruption() -> None:

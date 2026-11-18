@@ -74,6 +74,10 @@ NOT_SHARED: dict[str, str] = {
         "its runs share one scheduler, and building and run_sync hold its own locks "
         "(tests/test_managed_runtime.py runs it from several threads)"
     ),
+    "pyfect.scope.Managed": (
+        "one with block's: of threads entering it at once, its lock lets exactly one in "
+        "(tests/test_scope_with.py enters it from several threads)"
+    ),
     "pyfect.ai._mcp.core.McpServerService": _SERVICE,
     "pyfect.ai.chat.Persisted": _SERVICE,
     "pyfect.ai.language_model.Service": _SERVICE,
