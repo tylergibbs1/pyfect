@@ -21,7 +21,11 @@ thread, ticking for the whole session and recording while a test runs, tells the
   whose stack has not moved for the threshold, while the process used next to no CPU, is a
   fiber step that blocks with the GIL released (a sync sleep or lock), which the timer dump
   cannot see. Fibers never block, so that is "pyfect blocked in <frame>" too. With the CPU
-  busy it is "pyfect busy in <frame>": one long step, or identical steps in a loop.
+  busy it is "pyfect busy in <frame>": one long step, or identical steps in a loop. A sample
+  taken holding the GIL finds a busy thread where it last released it, not where its CPU
+  goes, so while such a stall lasts (and only then) the busy thread is sampled by SIGPROF
+  (``_CpuSamples``); where that cannot be exact (off Linux) the frame is named "near", as
+  approximate.
 
 A stall is added to the failure output of the test it happened in (a "stall" section), and
 a passing test that stalled gets a ``StallWarning``. A test failed by a timeout or the hang
@@ -35,10 +39,13 @@ the dump off; the rest still works.
 
 from __future__ import annotations
 
+import collections
 import faulthandler
 import gc
 import os
 import re
+import signal
+import sys
 import tempfile
 import threading
 import time
@@ -172,6 +179,86 @@ class _Collections:
         return longest
 
 
+_PROFILE_INTERVAL = 0.01
+"""Seconds of process CPU between samples while a busy stall is being profiled."""
+_EXACT = sys.platform == "linux" and hasattr(signal, "ITIMER_PROF")
+"""Linux raises SIGPROF from the timer tick on the thread using the CPU; macOS only at
+system call boundaries, so there it would be as biased as a sample taken with the GIL."""
+
+
+class _CpuSamples:
+    """Where one busy thread really is, sampled only while its stall goes on.
+
+    A sample taken by a Python thread needs the GIL, and while it holds it the busy thread is
+    parked at a point that releases the GIL: every sample of a loop calling ``os.urandom``
+    lands on that call. ``ITIMER_PROF`` makes the kernel raise SIGPROF on the thread using
+    the CPU, and ``faulthandler``'s C handler dumps every stack there, without the GIL. A
+    profiling timer perturbs what it measures (interrupted system calls), so it runs only
+    during a busy stall, and never over a SIGPROF timer or handler someone else set."""
+
+    def __init__(self) -> None:
+        self._file = tempfile.TemporaryFile("w+")  # noqa: SIM115
+        self._lock = threading.Lock()
+        self._ident: str | None = None
+        self._read = 0
+        self._counts: collections.Counter[str] = collections.Counter()
+        self._stacks: dict[str, tuple[Frame, ...]] = {}
+
+    @property
+    def thread(self) -> str | None:
+        """The thread being sampled, if any."""
+        return self._ident
+
+    def start(self, ident: str) -> None:
+        """Samples ``ident`` until ``stop``, where that is exact and SIGPROF is free."""
+        with self._lock:
+            if self._ident is not None or not _EXACT or self._file.closed:
+                return
+            if signal.getitimer(signal.ITIMER_PROF) != (0.0, 0.0):
+                return
+            if signal.getsignal(signal.SIGPROF) is not signal.SIG_DFL:
+                return
+            faulthandler.register(signal.SIGPROF, file=self._file, all_threads=True)
+            signal.setitimer(signal.ITIMER_PROF, _PROFILE_INTERVAL, _PROFILE_INTERVAL)
+            self._ident = ident
+
+    def stop(self) -> None:
+        with self._lock:
+            if self._ident is None:
+                return
+            # Cleared only while still ours: a test may have set its own since.
+            if signal.getitimer(signal.ITIMER_PROF)[1] == _PROFILE_INTERVAL:
+                signal.setitimer(signal.ITIMER_PROF, 0, 0)
+            faulthandler.unregister(signal.SIGPROF)  # puts back the handler it replaced
+            self._file.seek(0)
+            self._file.truncate()
+            self._ident, self._read = None, 0
+            self._counts.clear()
+            self._stacks.clear()
+
+    def busiest(self) -> tuple[tuple[Frame, ...], int, int] | None:
+        """The stack whose innermost frame most samples of the thread were in, with how many
+        were and how many there are; ``None`` before the first."""
+        with self._lock:
+            if self._ident is None:
+                return None
+            data = os.pread(self._file.fileno(), 1 << 20, self._read)
+            self._read += len(data)
+            for thread in _dump_threads(data.decode(errors="replace")):
+                if thread.ident == self._ident:
+                    key = str(thread.frames[0])
+                    self._counts[key] += 1
+                    self._stacks.setdefault(key, thread.frames)
+            if not self._counts:
+                return None
+            key, count = self._counts.most_common(1)[0]
+            return self._stacks[key], count, self._counts.total()
+
+    def close(self) -> None:
+        self.stop()
+        self._file.close()
+
+
 class Watchdog:
     """The watchdog thread and the stalls it saw in the current test."""
 
@@ -192,6 +279,7 @@ class Watchdog:
         # Open for the session: faulthandler writes to its descriptor from a C thread.
         self._file = tempfile.TemporaryFile("w+")  # noqa: SIM115
         self._sample = tempfile.TemporaryFile("w+")  # noqa: SIM115
+        self._cpu = _CpuSamples()
         self._steal = _Steal()
         self._collections = _Collections()
         self._seen: dict[str, tuple[tuple[Frame, ...], float, float]] = {}
@@ -219,6 +307,7 @@ class Watchdog:
             faulthandler.cancel_dump_traceback_later()
         self._file.close()
         self._sample.close()
+        self._cpu.close()
 
     def arm(self) -> None:
         """Starts recording stalls, for a new test."""
@@ -271,6 +360,7 @@ class Watchdog:
 
     def disarm(self) -> None:
         self._armed.clear()
+        self._cpu.stop()  # the test is over: no SIGPROF reaches the next one
 
     def _record(self, stall: str) -> None:
         with self._lock:
@@ -291,6 +381,8 @@ class Watchdog:
                 faulthandler.dump_traceback_later(self.threshold, file=self._file)
             self._stop.wait(self.tick)
             now, now_cpu = time.monotonic(), time.process_time()
+            if generation != self._generation:
+                self._cpu.stop()
             if generation != self._generation:
                 generation = self._generation
                 self._seen.clear()
@@ -382,17 +474,39 @@ class Watchdog:
             if cpu < stuck / 10:
                 head = f"process stalled {stuck:.1f} s: pyfect blocked in {where}"
             else:
-                # Running, not blocked: one long step, or identical steps in a loop (the
-                # samples cannot tell them apart).
-                head = (
-                    f"pyfect busy {stuck:.1f} s in {where} (the same fiber stack in every "
-                    f"sample, process CPU {cpu:.1f} s)"
-                )
+                # Running, not blocked: one long step, or identical steps in a loop.
+                head, stack = self._busy(ident, thread.frames, stuck, cpu)
+                self._stacks[key] = stack
             # Updated each tick while the stack stays the same, so it reads the whole stall.
             with self._lock:
                 index = self._reported[key]
                 if 0 <= index < len(self.stalls):
                     self.stalls[index] = f"{head}\n{self._stacks[key]}"
+        # The sampled stall is over once its thread's stack moved (seen anew now) or it left.
+        sampled = self._cpu.thread
+        if sampled is not None and self._seen.get(sampled, (None, now))[1] == now:
+            self._cpu.stop()
+
+    def _busy(
+        self, ident: str, frames: tuple[Frame, ...], stuck: float, cpu: float
+    ) -> tuple[str, str]:
+        """Names a busy stall by where the CPU samples put the thread (``_CpuSamples``);
+        before the first, or where they cannot be taken, by the GIL-side sample, labelled
+        approximate."""
+        self._cpu.start(ident)
+        busiest = self._cpu.busiest()
+        if busiest is None:
+            head = (
+                f"pyfect busy {stuck:.1f} s near {frames[0]} (approximate: sampled holding "
+                f"the GIL, which parks the thread where it releases it; process CPU {cpu:.1f} s)"
+            )
+            return head, _stack(frames)
+        stack, count, total = busiest
+        head = (
+            f"pyfect busy {stuck:.1f} s in {stack[0]} ({count} of {total} CPU samples, "
+            f"process CPU {cpu:.1f} s)"
+        )
+        return head, _stack(stack)
 
 
 def _no_busy_thread(

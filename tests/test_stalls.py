@@ -4,6 +4,8 @@ Each case runs a small test file under the plugin in a subprocess, with a short
 ``stall_threshold``, and reads the "stall" section of its failure.
 """
 
+import re
+import sys
 from pathlib import Path
 
 import pytest
@@ -337,8 +339,119 @@ def test_a_fiber_running_the_same_stack_on_the_cpu_is_busy_not_blocked(
     the stall is "busy", not "blocked"."""
     out = _run(pytester, monkeypatch, BUSY_FIBER)
     assert "pyfect busy " in out
-    assert " in spin_on_purpose (" in out
+    assert re.search(r" (in|near) spin_on_purpose \(", out), out
     assert "pyfect blocked" not in out
+
+
+BUSY_BETWEEN_GIL_RELEASES = """
+import os
+import signal
+
+import pyfect as fx
+
+
+def spin_on_purpose():
+    return sum(range(10**4))  # about 0.1 ms, holding the GIL
+
+
+def step():
+    spin_on_purpose()
+    os.urandom(1)  # about 1 us, releasing the GIL: where a GIL-side sample always lands
+
+
+@fx.fn
+def steps():
+    for _ in range(15000):  # about 2 s
+        yield from fx.sync(step)
+
+
+def test_spins_between_gil_releases():
+    fx.run_blocking(steps())
+    assert False
+
+
+def test_after_it():
+    # The stall and its test are over: no profiling timer or handler is left behind.
+    assert signal.getitimer(signal.ITIMER_PROF) == (0.0, 0.0)
+    assert signal.getsignal(signal.SIGPROF) is signal.SIG_DFL
+"""
+
+OWN_PROFILING_TIMER = """
+import os
+import signal
+
+import pyfect as fx
+
+fired = []
+
+
+def spin_on_purpose():
+    return sum(range(10**4))
+
+
+def step():
+    spin_on_purpose()
+    os.urandom(1)
+
+
+@fx.fn
+def steps():
+    for _ in range(15000):
+        yield from fx.sync(step)
+
+
+def test_profiles_itself():
+    def on_prof(signum, frame):
+        fired.append(signum)
+
+    signal.signal(signal.SIGPROF, on_prof)
+    signal.setitimer(signal.ITIMER_PROF, 0.05, 0.05)
+    try:
+        fx.run_blocking(steps())  # a busy stall, past the threshold
+        assert signal.getitimer(signal.ITIMER_PROF)[1] == 0.05
+        assert signal.getsignal(signal.SIGPROF) is on_prof
+        assert fired  # its timer kept firing into its own handler
+    finally:
+        signal.setitimer(signal.ITIMER_PROF, 0, 0)
+        signal.signal(signal.SIGPROF, signal.SIG_DFL)
+"""
+
+
+def _outcomes(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch, source: str, **outcomes: int
+) -> str:
+    monkeypatch.setenv("PYTHONPATH", str(Path(__file__).parent))
+    pytester.makepyfile(source)
+    pytester.makeini("[pytest]\nstall_threshold = 0.3\n")
+    result = pytester.runpytest_subprocess("-p", "_stalls", timeout=SUBPROCESS_TIMEOUT)
+    result.assert_outcomes(**outcomes)
+    return result.stdout.str()
+
+
+@pytest.mark.skipif(
+    sys.platform != "linux", reason="exact CPU samples need Linux (macOS raises SIGPROF late)"
+)
+def test_a_busy_stall_is_named_where_its_cpu_goes_not_where_it_releases_the_gil(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A sample taken holding the GIL finds the busy thread where it released it: here
+    every one would read ``os.urandom``'s line in ``step``, under 1 % of the CPU. The CPU
+    samples, taken only during the stall, find ``spin_on_purpose``; the next test sees no
+    profiling timer or handler."""
+    out = _outcomes(pytester, monkeypatch, BUSY_BETWEEN_GIL_RELEASES, failed=1, passed=1)
+    assert "pyfect busy " in out
+    assert " in spin_on_purpose (" in out, out
+    assert "CPU samples" in out
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="the CPU samples run only on Linux")
+def test_a_tests_own_profiling_timer_survives_a_busy_stall(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The watchdog never takes SIGPROF from a test using it: the stall is named
+    approximately, and the test's timer and handler stay its own."""
+    out = _outcomes(pytester, monkeypatch, OWN_PROFILING_TIMER, passed=1, warnings=1)
+    assert "approximate" in out, out
 
 
 def test_an_on_time_dump_with_no_busy_thread_and_no_cpu_is_unexplained() -> None:
