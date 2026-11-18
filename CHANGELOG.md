@@ -152,6 +152,13 @@
 
 ### Fixed
 
+- Schema: checks in a field's `Annotated` metadata were silently dropped. In a schema class or
+  a TypedDict given to `S.Struct`, `on_hand: Annotated[int, S.is_greater_than_or_equal_to(0)]`
+  was plain `S.Int`, so `-1` was accepted; the check now runs when constructing and when
+  decoding, also under a `type` alias, a `NewType` or inside a container
+  (`list[Annotated[int, ...]]`), innermost first. Metadata that is not a check is still
+  ignored, and an explicit `S.field(schema)` still wins. A field annotation with no schema
+  names the field in its error (`Price.value: No schema for the annotation ...`).
 - Schema classes: constructing one with checks on cost twice what it costs with
   `disable_checks` (an `eventlog.Entry` took 3.5 us against 1.9 us). After parsing each
   field, the constructor collected the values and parsed them again as a whole. Each field is

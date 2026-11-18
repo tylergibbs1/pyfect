@@ -27,7 +27,6 @@ are ``pyfect.errors.TaggedError`` subclasses, so ``catch_tag`` takes them.
 
 from __future__ import annotations
 
-import contextlib
 import dataclasses
 import functools
 import inspect
@@ -350,18 +349,6 @@ def _derived(cls: type, name: str) -> AnyBottom:
         raise TypeError(f"{cls.__name__}.{name}: {error}") from None
 
 
-def _derive_resolvable(cls: type, names: tuple[str, ...]) -> None:
-    """Derive the annotation of each field without an explicit schema now, so
-    one with no schema fails where the class is defined. An annotation naming
-    what is not defined yet (the class itself, a class below it) waits for
-    first use."""
-    declared = {f.name: f for f in dataclasses.fields(cast("Any", cls))}
-    for name in names:
-        if _SCHEMA not in declared[name].metadata:
-            with contextlib.suppress(NameError):
-                _derived(cls, name)
-
-
 def _annotation(cls: type, name: str) -> object:
     owner = next(k for k in cls.__mro__ if name in inspect.get_annotations(k))
     module = sys.modules.get(owner.__module__)
@@ -429,7 +416,6 @@ def _define(
     if error:
         shape.name = identifier if identifier is not None else tag or cls.__name__
     type.__setattr__(cls, _SHAPE, shape)
-    _derive_resolvable(cls, shape.field_names)
 
     @functools.wraps(init)
     def __init__(self: object, *args: object, **kwargs: object) -> None:  # noqa: N807  installed as cls.__init__
