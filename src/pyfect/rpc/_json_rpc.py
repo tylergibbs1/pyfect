@@ -194,6 +194,9 @@ def _encode_message(response: Mapping[str, Any]) -> Message:
         }
     if tag == "Exit":
         return _encode_exit(response)
+    defect = _mapping(response.get("defect"))
+    if defect is not None and defect.get("name") == "NdjsonDecodeError":
+        return {"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "Parse error"}}
     return {
         "jsonrpc": "2.0",
         "id": JSON_RPC_INTERNAL_ERROR,

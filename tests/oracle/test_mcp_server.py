@@ -1445,3 +1445,38 @@ def test_should_give_each_layer_stdio_server_its_own_protocol_in_one_layer_graph
     assert response_a["result"]["serverInfo"]["name"] == "A"
     assert response_b["id"] == 2
     assert response_b["result"]["serverInfo"]["name"] == "B"
+
+
+@testing.effect
+def test_should_answer_a_malformed_line_with_a_parse_error_and_initialize_from_the_same_chunk():
+    """McpServer / stdio / should answer a malformed line with a parse error and initialize from the same chunk (Effect main, #10579)"""  # noqa: E501
+    out = yield from Queue[str].unbounded()
+
+    def output(*, end_on_done: bool = False) -> stdio.Output:
+        def write(chunk: str | bytes) -> fx.Effect[None]:
+            return out.offer(chunk.decode() if isinstance(chunk, bytes) else chunk).as_void()
+
+        return cast("stdio.Output", sink.for_each(write))
+
+    yield from (
+        M.layer_stdio(name="A", version="1.0.0", protocols=[P.v2025_11_25])
+        .pipe(
+            fx.layer.provide(
+                stdio.layer_test(
+                    stdin=stream.make(b"{\n" + _initialize_line(1)).concat(stream.never),
+                    stdout=output,
+                )
+            )
+        )
+        # On its own fiber: the server interrupts the fiber that built it when it ends.
+        .build()
+        .fork_scoped()
+    )
+    assert json.loads((yield from out.take())) == {
+        "jsonrpc": "2.0",
+        "id": None,
+        "error": {"code": -32700, "message": "Parse error"},
+    }
+    response = json.loads((yield from out.take()))
+    assert response["id"] == 1
+    assert response["result"] is not None

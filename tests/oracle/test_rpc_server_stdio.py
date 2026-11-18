@@ -330,3 +330,65 @@ def test_runs_overlapping_json_rpc_notifications_and_drops_invalid_ones():
     yield from close_stdin.succeed(None)
     yield from running.await_exit()
     assert _messages(output) == [{"jsonrpc": "2.0", "id": 1, "result": "pong"}]
+
+
+@testing.effect
+def test_keeps_serving_after_a_malformed_ndjson_line():
+    """A malformed line is answered with a defect and the request after it in the same chunk
+    is still served (Effect main, #10579: the decode failure used to resubscribe to stdin and
+    lose the rest of the chunk)."""
+    written = yield from Queue[None].unbounded()
+    close_stdin = Deferred[None]()
+    output: list[str] = []
+    handlers = Hello.to_layer(
+        Hello.handlers().handle(Hello.hello)(lambda _: effect.succeed("world"))
+    )
+    stdio = layer_test(
+        stdin=stream.make(b"{\n" + _line("hello")).concat(
+            stream.from_effect_drain(close_stdin.wait())
+        ),
+        stdout=_output_into(output, written.offer(None).as_void()),
+    )
+    server = yield from _server(Hello, handlers, stdio).launch().fork_scoped()
+    yield from written.take_n(2)
+    defect, exit = _messages(output)
+    assert defect["_tag"] == "Defect"
+    assert defect["defect"]["name"] == "NdjsonDecodeError"
+    assert exit == {"_tag": "Exit", "requestId": 1, "exit": {"_tag": "Success", "value": "world"}}
+    yield from close_stdin.succeed(None)
+    assert default_teardown((yield from server.await_exit())) == 0
+
+
+@testing.effect
+def test_answers_a_malformed_json_rpc_line_with_a_parse_error():
+    """Over NDJSON JSON-RPC a malformed line is answered with JSON-RPC's parse error (-32700,
+    id null) and the request after it in the same chunk is served (Effect main, #10579)."""
+    written = yield from Queue[None].unbounded()
+    close_stdin = Deferred[None]()
+    output: list[str] = []
+    handlers = Hello.to_layer(
+        Hello.handlers().handle(Hello.hello)(lambda _: effect.succeed("world"))
+    )
+    request = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "hello"}) + "\n"
+    stdio = layer_test(
+        stdin=stream.make(("{\n" + request).encode()).concat(
+            stream.from_effect_drain(close_stdin.wait())
+        ),
+        stdout=_output_into(output, written.offer(None).as_void()),
+    )
+    server = yield from (
+        rpc_server.layer(Hello)
+        .pipe(layer.provide(handlers))
+        .pipe(layer.provide(rpc_server.layer_protocol_stdio))
+        .pipe(layer.provide(rs.layer_nd_json_rpc()))
+        .pipe(layer.provide(stdio))
+        .launch()
+        .fork_scoped()
+    )
+    yield from written.take_n(2)
+    assert _messages(output) == [
+        {"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "Parse error"}},
+        {"jsonrpc": "2.0", "id": 1, "result": "world"},
+    ]
+    yield from close_stdin.succeed(None)
+    yield from server.await_exit()

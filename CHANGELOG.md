@@ -115,6 +115,15 @@
 
 ### Fixed
 
+- RPC: a stdio server (`layer_protocol_stdio`) stopped reading the rest of a chunk after a
+  malformed NDJSON line, and dropped the requests that followed it in that chunk. It now
+  answers each malformed line with a defect (with NDJSON JSON-RPC, a `-32700` "Parse error"
+  with a null id) and goes on serving the lines around it. `make_unsafe` takes
+  `on_decode_error`, which the NDJSON formats call with each malformed line instead of
+  raising. After a failed decode, an NDJSON parser also forgets a character split across
+  frames, so the next frame decodes. This follows Effect-TS/effect#10579 (after 4.1.4). MCP
+  stdio already behaved this way and now has Effect's test.
+
 - A schema whose aliases only reach each other (a JSON Schema `$ref` to itself) took
   seconds to fail, and up to a minute on Python 3.14; so did any deep recursion that ran
   past pyfect's fresh stacks. The `RecursionError` carried about 180 thousand frames (one

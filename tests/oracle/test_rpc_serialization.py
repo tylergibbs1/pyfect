@@ -694,3 +694,34 @@ def test_json_rpc_carries_the_discard_marker() -> None:
         "discard": True,
     }
     assert parser.decode(encoded) == [_request(7, "users.get", discard=True)]
+
+
+def test_ndjson_decodes_the_next_frame_after_a_malformed_frame_that_ended_inside_a_multibyte_character() -> (  # noqa: E501
+    None
+):
+    """RpcSerialization / ndjson decodes the next frame after a malformed frame that ended inside a multibyte character (Effect main, #10579)"""  # noqa: E501
+    parser = rs.ndjson.make_unsafe()
+    # A malformed line, then the first byte of a two-byte character.
+    with pytest.raises(rs.NdjsonDecodeError):
+        parser.decode(bytes([123, 10, 195]))
+    assert parser.decode(b'{"ok":true}\n') == [{"ok": True}]
+
+
+def test_ndjson_reports_a_malformed_frame_and_decodes_the_frames_around_it() -> None:
+    """With ``on_decode_error``, a malformed line goes to the handler and the lines before and
+    after it in the same data still decode (Effect #10579's ``onDecodeError``)."""
+    for serialization in (rs.ndjson, rs.nd_json_rpc(control_messages=False)):
+        errors: list[rs.NdjsonDecodeError] = []
+        parser = serialization.make_unsafe(on_decode_error=errors.append)
+        decoded = parser.decode(
+            '{"jsonrpc":"2.0","id":1,"method":"a"}\n{\n{"jsonrpc":"2.0","id":2,'
+        )
+        assert parser.decode('"method":"b"}\n') != []
+        assert len(decoded) == 1
+        assert [type(e) for e in errors] == [rs.NdjsonDecodeError]
+    # A custom parser maker ignores the handler; its errors still raise.
+    custom = rs.RpcSerializationService(
+        rs.json.make_unsafe, "application/json", False, rs.json.codec_for
+    )
+    with pytest.raises(ValueError):
+        custom.make_unsafe(on_decode_error=errors.append).decode("{")
