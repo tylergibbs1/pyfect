@@ -21,6 +21,22 @@
   `big_decimal.from_string`, `from_string` reads at most `rational.MAX_DIGITS` (30,000)
   significant digits by default, set with `max_digits`, and prints any size.
 
+- `http_api.api.RedactedNames`, Effect 4.1.4's `HttpApi.RedactedNames` (#9995): an annotation on
+  an API, group or endpoint naming query parameters and headers whose values are redacted in
+  that endpoint's client and server spans, without modelling them as `Redacted`. A string
+  query name also covers its bracketed keys (`buildargs[NPM_TOKEN]`), the names of the API,
+  group and endpoint add up, and the server applies them before decoding, so a request that
+  fails to decode is redacted too. The values sent and decoded are unchanged.
+
+- `http_api.schema.get_encode_to_with_headers_parts`, Effect 4.1.4's
+  `getEncodeToWithHeadersParts` (#10537): the declared body and headers schemas of an
+  `encode_to_with_headers` schema, also on schemas read through `reflect`.
+  `get_response_encoding_schema` is documented as public, as in Effect.
+
+- `http_api.schema.StreamSse(keep_alive=)`, as in Effect 4.1.4 (#9842): the server writes a
+  `: keepalive` comment each time the interval elapses while the event stream is open, so
+  proxies keep an idle response open.
+
 ### Fixed
 
 - A schema whose aliases only reach each other (a JSON Schema `$ref` to itself) took
@@ -181,22 +197,6 @@
   listening socket, a worker process's channel and a UDP socket's sends. Nothing waits: the
   descriptor closes when the last of those operations finishes, and operations started after
   the close fail as closed (a UDP send with `DatagramSocketClosedError`).
-
-### Added
-
-- `http_api.api.RedactedNames`, Effect 4.1.4's `HttpApi.RedactedNames` (#9995): an annotation on
-  an API, group or endpoint naming query parameters and headers whose values are redacted in
-  that endpoint's client and server spans, without modelling them as `Redacted`. A string
-  query name also covers its bracketed keys (`buildargs[NPM_TOKEN]`), the names of the API,
-  group and endpoint add up, and the server applies them before decoding, so a request that
-  fails to decode is redacted too. The values sent and decoded are unchanged.
-- `http_api.schema.get_encode_to_with_headers_parts`, Effect 4.1.4's
-  `getEncodeToWithHeadersParts` (#10537): the declared body and headers schemas of an
-  `encode_to_with_headers` schema, also on schemas read through `reflect`.
-  `get_response_encoding_schema` is documented as public, as in Effect.
-- `http_api.schema.StreamSse(keep_alive=)`, as in Effect 4.1.4 (#9842): the server writes a
-  `: keepalive` comment each time the interval elapses while the event stream is open, so
-  proxies keep an idle response open.
 
 ### Performance
 
