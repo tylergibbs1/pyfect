@@ -21,8 +21,10 @@ from pyfect import schedule, testing
 from pyfect import schema as S
 from pyfect.clock import now_nanos
 from pyfect.duration import Input as DurationInput
+from pyfect.duration import seconds
 from pyfect.latch import Latch
 from pyfect.persistence import persisted_queue as pq
+from pyfect.persistence.persisted_queue._sql_statements import Dialect
 from pyfect.sql import SqlClient
 
 type Body = Any
@@ -73,6 +75,27 @@ def make_ownership_queue(table_name: str) -> Generator[Any, Any, pq.PersistedQue
     return (
         yield from factory.make(name=table_name, schema=S.String, retry_schedule=schedule.spaced(0))
     )
+
+
+def claims_expired(table_name: str) -> fx.Effect[None, Any, Any]:
+    """Waits, on the live clock, until the database's own clock has expired a
+    claim of ``table_name`` (``make_ownership_queue``'s 1 s lock, by the
+    predicate a take claims with): at most 2 s, as timestamps may be whole
+    seconds."""
+
+    def body():
+        sql = yield from SqlClient()
+        expired = Dialect(sql).seconds_ago(seconds(1))
+        while not (
+            yield from sql(
+                "SELECT sequence FROM {} WHERE acquired_at < {}",
+                sql.identifier(table_name),
+                expired,
+            )
+        ):
+            yield from fx.sleep("20 millis")
+
+    return testing.with_live(fx.gen(body).timeout("3 seconds"))
 
 
 def _succeed[A](value: A, _meta: pq.Metadata) -> fx.Effect[A]:
@@ -254,7 +277,7 @@ class PersistedQueueSqlSuite:
 
             # refreshes stay paused on the TestClock while the live database
             # clock expires the lock, whole-second timestamps included
-            yield from testing.with_live(fx.sleep("2500 millis"))
+            yield from claims_expired(table_name)
 
             b_taken = Latch()
 
