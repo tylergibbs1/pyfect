@@ -1,6 +1,7 @@
 """Case conversion on inputs Effect's tests leave out, each result printed
 by Effect's ``String`` case functions under Node: acronyms, digits,
-non-ASCII letters (never word characters), separator runs."""
+non-ASCII letters, separator runs. Non-ASCII letters are word characters since
+Effect-TS/effect#10638 (after 4.1.4, which dropped them: "nicodeWRd")."""
 
 import pytest
 
@@ -15,7 +16,7 @@ CASES = {
         "MY_URL_PARSER2_GO",
     ),
     "foo  bar__baz--qux": ("fooBarBazQux", "FooBarBazQux", "foo_bar_baz_qux", "FOO_BAR_BAZ_QUX"),
-    "Ünicode_wörd": ("nicodeWRd", "NicodeWRd", "nicode_w_rd", "NICODE_W_RD"),
+    "Ünicode_wörd": ("ünicodeWörd", "ÜnicodeWörd", "ünicode_wörd", "ÜNICODE_WÖRD"),
     "a1B2c3": ("a1B2C3", "A1B2C3", "a_1_b_2_c_3", "A1_B2C3"),
     "___": ("", "", "", ""),
 }
