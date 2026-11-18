@@ -287,6 +287,9 @@ class Watchdog:
         seen at."""
         self._reported: dict[tuple[str, float], int] = {}
         self._stacks: dict[tuple[str, float], str] = {}
+        self._sampled: tuple[tuple[str, float], float, float] | None = None
+        """The busy stall CPU samples are being taken for: its key, and how long it had been
+        stuck and the process CPU used at the last tick."""
         self._test_thread = 0
         self._test_started = (0.0, 0.0)
         self._test_samples: deque[tuple[float, tuple[Frame, ...]]] = deque(maxlen=64)
@@ -352,6 +355,7 @@ class Watchdog:
             if time.monotonic() - self._last > 2 * self.tick:
                 ticks = self._ticks
                 self._ticked.wait_for(lambda: self._ticks != ticks, timeout=4 * self.tick)
+        self._write_sampled_head()
         with self._lock:
             stalls, self.stalls = self.stalls, []
             # A stall already handed out is no longer updated.
@@ -360,7 +364,7 @@ class Watchdog:
 
     def disarm(self) -> None:
         self._armed.clear()
-        self._cpu.stop()  # the test is over: no SIGPROF reaches the next one
+        self._stop_sampling()  # the test is over: no SIGPROF reaches the next one
 
     def _record(self, stall: str) -> None:
         with self._lock:
@@ -382,8 +386,9 @@ class Watchdog:
             self._stop.wait(self.tick)
             now, now_cpu = time.monotonic(), time.process_time()
             if generation != self._generation:
+                # A new test: the sampled stall's index points into the last one's stalls.
                 self._cpu.stop()
-            if generation != self._generation:
+                self._sampled = None
                 generation = self._generation
                 self._seen.clear()
                 self._reported.clear()
@@ -475,7 +480,7 @@ class Watchdog:
                 head = f"process stalled {stuck:.1f} s: pyfect blocked in {where}"
             else:
                 # Running, not blocked: one long step, or identical steps in a loop.
-                head, stack = self._busy(ident, thread.frames, stuck, cpu)
+                head, stack = self._busy(key, thread.frames, stuck, cpu)
                 self._stacks[key] = stack
             # Updated each tick while the stack stays the same, so it reads the whole stall.
             with self._lock:
@@ -485,15 +490,18 @@ class Watchdog:
         # The sampled stall is over once its thread's stack moved (seen anew now) or it left.
         sampled = self._cpu.thread
         if sampled is not None and self._seen.get(sampled, (None, now))[1] == now:
-            self._cpu.stop()
+            self._stop_sampling()
 
     def _busy(
-        self, ident: str, frames: tuple[Frame, ...], stuck: float, cpu: float
+        self, key: tuple[str, float], frames: tuple[Frame, ...], stuck: float, cpu: float
     ) -> tuple[str, str]:
         """Names a busy stall by where the CPU samples put the thread (``_CpuSamples``);
         before the first, or where they cannot be taken, by the GIL-side sample, labelled
         approximate."""
-        self._cpu.start(ident)
+        self._cpu.start(key[0])
+        if self._cpu.thread == key[0]:
+            with self._lock:
+                self._sampled = (key, stuck, cpu)
         busiest = self._cpu.busiest()
         if busiest is None:
             head = (
@@ -501,12 +509,39 @@ class Watchdog:
                 f"the GIL, which parks the thread where it releases it; process CPU {cpu:.1f} s)"
             )
             return head, _stack(frames)
-        stack, count, total = busiest
-        head = (
-            f"pyfect busy {stuck:.1f} s in {stack[0]} ({count} of {total} CPU samples, "
-            f"process CPU {cpu:.1f} s)"
-        )
-        return head, _stack(stack)
+        return _sampled_head(stuck, cpu, busiest)
+
+    def _write_sampled_head(self) -> None:
+        """Names the sampled stall from every CPU sample so far: one that ends a tick after
+        sampling began keeps the head of that tick, written before the first sample."""
+        with self._lock:
+            sampled = self._sampled
+        busiest = self._cpu.busiest()
+        if sampled is None or busiest is None:
+            return
+        key, stuck, cpu = sampled
+        head, stack = _sampled_head(stuck, cpu, busiest)
+        with self._lock:
+            index = self._reported.get(key, -1)
+            if 0 <= index < len(self.stalls):
+                self.stalls[index] = f"{head}\n{stack}"
+
+    def _stop_sampling(self) -> None:
+        self._write_sampled_head()
+        self._cpu.stop()
+        with self._lock:
+            self._sampled = None
+
+
+def _sampled_head(
+    stuck: float, cpu: float, busiest: tuple[tuple[Frame, ...], int, int]
+) -> tuple[str, str]:
+    stack, count, total = busiest
+    head = (
+        f"pyfect busy {stuck:.1f} s in {stack[0]} ({count} of {total} CPU samples, "
+        f"process CPU {cpu:.1f} s)"
+    )
+    return head, _stack(stack)
 
 
 def _no_busy_thread(

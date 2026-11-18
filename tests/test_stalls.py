@@ -344,24 +344,25 @@ def test_a_fiber_running_the_same_stack_on_the_cpu_is_busy_not_blocked(
 
 
 BUSY_BETWEEN_GIL_RELEASES = """
-import os
 import signal
+import time
 
 import pyfect as fx
 
 
 def spin_on_purpose():
-    return sum(range(10**4))  # about 0.1 ms, holding the GIL
+    return sum(range(10**5))  # about 1 ms, holding the GIL
 
 
 def step():
     spin_on_purpose()
-    os.urandom(1)  # about 1 us, releasing the GIL: where a GIL-side sample always lands
+    time.sleep(0.0002)  # releases the GIL, and no CPU: where a GIL-side sample always lands
 
 
 @fx.fn
 def steps():
-    for _ in range(15000):  # about 2 s
+    start = time.process_time()
+    while time.process_time() - start < 2:  # 2 s of CPU, however fast the machine
         yield from fx.sync(step)
 
 
@@ -376,9 +377,42 @@ def test_after_it():
     assert signal.getsignal(signal.SIGPROF) is signal.SIG_DFL
 """
 
-OWN_PROFILING_TIMER = """
-import os
+BUSY_UNTIL_SAMPLED = """
 import signal
+import time
+
+import pyfect as fx
+
+
+def spin_on_purpose(n):
+    return sum(range(n))  # one C call: holds the GIL throughout
+
+
+def step():
+    spin_on_purpose(10**5)  # about 1 ms
+    time.sleep(0.0002)  # room for the watchdog to take the GIL, so its ticks keep time
+
+
+def sampling():
+    return signal.getitimer(signal.ITIMER_PROF) != (0.0, 0.0)
+
+
+@fx.fn
+def steps():
+    start = time.process_time()
+    while not sampling() and time.process_time() - start < 2:
+        yield from fx.sync(step)
+    # About 0.1 s with no tick: the CPU samples go on, the stall ends before the next tick.
+    yield from fx.sync(lambda: spin_on_purpose(10**7))
+
+
+def test_busy_until_sampled():
+    fx.run_blocking(steps())
+"""
+
+OWN_PROFILING_TIMER = """
+import signal
+import time
 
 import pyfect as fx
 
@@ -386,17 +420,18 @@ fired = []
 
 
 def spin_on_purpose():
-    return sum(range(10**4))
+    return sum(range(10**5))
 
 
 def step():
     spin_on_purpose()
-    os.urandom(1)
+    time.sleep(0.0002)
 
 
 @fx.fn
 def steps():
-    for _ in range(15000):
+    start = time.process_time()
+    while time.process_time() - start < 2:  # 2 s of CPU, however fast the machine
         yield from fx.sync(step)
 
 
@@ -435,13 +470,25 @@ def test_a_busy_stall_is_named_where_its_cpu_goes_not_where_it_releases_the_gil(
     pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A sample taken holding the GIL finds the busy thread where it released it: here
-    every one would read ``os.urandom``'s line in ``step``, under 1 % of the CPU. The CPU
+    every one would read ``time.sleep``'s line in ``step``, which uses no CPU. The CPU
     samples, taken only during the stall, find ``spin_on_purpose``; the next test sees no
     profiling timer or handler."""
     out = _outcomes(pytester, monkeypatch, BUSY_BETWEEN_GIL_RELEASES, failed=1, passed=1)
     assert "pyfect busy " in out
     assert " in spin_on_purpose (" in out, out
     assert "CPU samples" in out
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="the CPU samples run only on Linux")
+def test_a_busy_stall_ending_right_after_sampling_starts_is_named_from_its_samples(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The stall ends before the watchdog's next tick, so the only head written during it
+    came before the first sample: it is named from the samples taken until it ended."""
+    out = _outcomes(pytester, monkeypatch, BUSY_UNTIL_SAMPLED, passed=1)
+    assert " in spin_on_purpose (" in out, out
+    assert "CPU samples" in out, out
+    assert "approximate" not in out, out
 
 
 @pytest.mark.skipif(sys.platform != "linux", reason="the CPU samples run only on Linux")
