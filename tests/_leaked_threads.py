@@ -1,16 +1,21 @@
-"""Names the threads a test leaves running after its teardown.
+"""Names the threads a test file's tests leave running after the file is done.
 
 A thread a test started and never stopped runs on through the tests after it, in the same
 process: its work lands in their call counters, timers and stall samples. The check notes the
-threads alive when a test's setup starts and, after its teardown, warns about each new thread
-still running, with the frames it is running.
+threads alive when a test's setup starts and, after its teardown, the new ones still alive.
+Once the file's last test is torn down (its module-scoped layers with it), it warns about each
+of those still running, naming the test that left it and the frames it is running. Within a
+file, a thread may outlive a test: a module's shared layer (``testing.layer_fixture``, Effect's
+``it.layer``) keeps its connections, and their server threads, for every test in the file.
 
 pyfect's own runtime threads (the blocking pools' workers, the background scheduler, the
 loop threads) start on first use and outlive the test that started them; parked at their
 idle point they run nothing, so they are not reported. A runtime thread still running a
-test's work, such as an abandoned blocking call, is.
+test's work, such as an abandoned blocking call, is. Test peers kept for the whole process
+name their threads with ``_threads.process_wide`` and are skipped too.
 """
 
+import concurrent.futures.thread
 import sys
 import threading
 import traceback
@@ -19,11 +24,13 @@ from pathlib import Path
 from types import FrameType
 
 import pytest
-from _threads import live_threads
+from _threads import PROCESS_WIDE, live_threads
 
 import pyfect
 
 _BEFORE = pytest.StashKey[frozenset[threading.Thread]]()
+_LEFT = pytest.StashKey[dict[threading.Thread, str]]()
+"""The threads tests of the current file left alive, with the test that left each."""
 _SRC = str(Path(pyfect.__file__).parent) + "/"
 _IDLE = frozenset(
     {
@@ -33,6 +40,8 @@ _IDLE = frozenset(
     }
 )
 """Where each runtime thread waits for work: its innermost pyfect frame while it waits."""
+_EXECUTOR_IDLE = concurrent.futures.thread._worker.__code__  # pyright: ignore[reportPrivateUsage]
+"""An executor worker waiting for work: a pyfect loop's (``<loop>-executor``) is runtime too."""
 _SETTLE_TRIES = 50
 _SETTLE_STEP = 0.01
 """A thread finishing (a worker between its thunk and its idle point) gets up to 0.5 s."""
@@ -40,14 +49,16 @@ _FRAMES = 4
 
 
 class LeakedThreadWarning(pytest.PytestWarning):
-    """A test left a thread it started running after its teardown."""
+    """A test left a thread it started running after its file was done."""
 
 
 def _frame(thread: threading.Thread) -> FrameType | None:
     return sys._current_frames().get(thread.ident or -1)  # pyright: ignore[reportPrivateUsage]
 
 
-def _parked(frame: FrameType) -> bool:
+def _parked(thread: threading.Thread, frame: FrameType) -> bool:
+    if thread.name.startswith("pyfect-") and frame.f_code is _EXECUTOR_IDLE:
+        return True
     current: FrameType | None = frame
     while current is not None:
         code = current.f_code
@@ -61,7 +72,7 @@ def _running(thread: threading.Thread) -> FrameType | None:
     """The frame ``thread`` is running once it settles, or None once it ends or parks."""
     for _ in range(_SETTLE_TRIES):
         frame = _frame(thread)
-        if not thread.is_alive() or frame is None or _parked(frame):
+        if not thread.is_alive() or frame is None or _parked(thread, frame):
             return None
         thread.join(_SETTLE_STEP)
     return _frame(thread)
@@ -78,19 +89,26 @@ def pytest_runtest_setup(item: pytest.Item) -> None:
 
 
 @pytest.hookimpl(wrapper=True)
-def pytest_runtest_makereport(
-    item: pytest.Item, call: pytest.CallInfo[None]
-) -> Generator[None, pytest.TestReport, pytest.TestReport]:
-    report = yield
+def pytest_runtest_teardown(item: pytest.Item, nextitem: pytest.Item | None) -> Generator[None]:
+    yield
     before = item.stash.get(_BEFORE, None)
-    if call.when == "teardown" and before is not None:
-        for thread in live_threads(""):
-            frame = None if thread in before else _running(thread)
-            if frame is not None:
-                item.warn(
-                    LeakedThreadWarning(f"left thread {thread.name!r} running: {_where(frame)}")
+    if before is None:
+        return
+    left = item.config.stash.setdefault(_LEFT, {})
+    for thread in live_threads(""):
+        if thread not in before and not thread.name.startswith(PROCESS_WIDE):
+            left.setdefault(thread, item.nodeid)
+    if nextitem is not None and nextitem.path == item.path:
+        return
+    for thread, test in left.items():
+        frame = _running(thread)
+        if frame is not None:
+            item.warn(
+                LeakedThreadWarning(
+                    f"{test} left thread {thread.name!r} running past its file: {_where(frame)}"
                 )
-    return report
+            )
+    left.clear()
 
 
 __all__ = ["LeakedThreadWarning"]

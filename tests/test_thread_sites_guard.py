@@ -29,6 +29,9 @@ _STARTS_THREADS = frozenset(
 _SANCTIONED: dict[tuple[str, str], str] = {
     ("_blocking_pool.py", "Thread"): "the bounded pools: fx.blocking's and the four lookup threads",
     ("_loop_thread.py", "Thread"): "a LoopThread's one thread",
+    ("_loop_thread.py", "ThreadPoolExecutor"): (
+        "a LoopThread's default executor, as asyncio makes it (min(32, cpus + 4) threads), named"
+    ),
     ("scheduler.py", "Thread"): "the one background scheduler thread",
     ("_blocking_watchdog.py", "Thread"): "one watchdog, started by PYFECT_WARN_BLOCKING",
     ("_stack.py", "ThreadPoolExecutor"): (

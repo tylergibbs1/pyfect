@@ -213,6 +213,7 @@ def test_disable_preemptive_shutdown_interrupts_requests_at_once() -> None:
     """Effect's ``disablePreemptiveShutdown``: closing the serving scope gives
     requests in flight no time, whatever the timeout says."""
     interrupted: list[bool] = []
+    done = threading.Event()
 
     @fx.fn
     def program():
@@ -221,8 +222,8 @@ def test_disable_preemptive_shutdown_interrupts_requests_at_once() -> None:
         def request() -> None:
             with socket.create_connection(("127.0.0.1", at), timeout=5) as conn:
                 conn.sendall(b"GET /slow HTTP/1.1\r\nhost: x\r\n\r\n")
-                # Longer than the server takes to stop, so no client abort ends it.
-                time.sleep(4)
+                # Held until the test is done, so no client abort ends the request.
+                done.wait(4)
 
         yield from effect.blocking(request).fork_daemon()
         yield from sleep("100 millis")
@@ -230,11 +231,14 @@ def test_disable_preemptive_shutdown_interrupts_requests_at_once() -> None:
     slow = effect.never.on_interrupt(effect.sync(lambda: interrupted.append(True)))
     routes = router.add("GET", "/slow", slow.as_(server_response.empty()))
     started = time.monotonic()
-    _run(
-        _serving(routes, program()),
-        graceful_shutdown_timeout="30 seconds",
-        disable_preemptive_shutdown=True,
-    )
+    try:
+        _run(
+            _serving(routes, program()),
+            graceful_shutdown_timeout="30 seconds",
+            disable_preemptive_shutdown=True,
+        )
+    finally:
+        done.set()
     assert time.monotonic() - started < 3
     assert interrupted == [True]
 
