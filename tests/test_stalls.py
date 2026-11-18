@@ -4,6 +4,7 @@ Each case runs a small test file under the plugin in a subprocess, with a short
 ``stall_threshold``, and reads the "stall" section of its failure.
 """
 
+import re
 from pathlib import Path
 
 import pytest
@@ -441,8 +442,8 @@ def test_a_timeout_after_a_host_freeze_says_what_it_left_out(
 ) -> None:
     out = _limited(pytester, monkeypatch, FROZEN_PAST_ITS_LIMIT)
     assert "TestTimeoutError: test timed out after 1.0 s of running time (" in out
-    assert "host froze the process 1." in out
-    assert "s, not counted)" in out
+    # About 1 s: a freeze is counted as the watchdog's gap less one tick, so never more.
+    assert re.search(r"host froze the process (0\.[89]|1\.[0-9]) s, not counted\)", out), out
 
 
 def test_a_deadlock_times_out_on_time(
