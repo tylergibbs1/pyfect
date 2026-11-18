@@ -13,12 +13,14 @@ given): linear work grows ``factor`` times, ``n log n`` a little more, quadratic
 ``factor**2`` times; ``EXPONENT`` sits between. Times are the thread's CPU time (the
 process's, ``clock=time.process_time``, for work that can move to other threads) with the
 collector off, so waiting for a CPU on a loaded machine does not count; the two sizes are
-measured in turn (the order flipping each round), the least of a few runs each, so a stretch
-on a slower core or with a cold cache does not decide it. A sample of the smaller size runs
-it ``factor`` times, so both samples of linear work last about as long and meet the same
-neighbours (a short sample slips between a busy neighbour's bursts more often than a long
-one does). The size first doubles until the
-small run takes ``MIN_SECONDS``, so fixed costs do not hide the growth.
+measured in turn (the order flipping each round), the least of ``SAMPLES`` samples each, so
+a slow sample or stretch does not decide it (a CPU time can only grow with interference, so
+the least is the closest to the work's own). A sample lasts at least ``SAMPLE_SECONDS`` (the work
+runs back to back until it does), and a sample of the smaller size runs it ``factor`` times
+as often, so both samples of linear work last about as long and meet the same neighbours
+(a short sample slips between a busy neighbour's bursts more often than a long one does).
+The size first doubles until the small run takes ``MIN_SECONDS``, so fixed costs do not
+hide the growth.
 
 An input that outgrows a CPU cache between the two sizes costs more per unit once, which can
 look superlinear over one step; a ratio over the bound is checked again over the next
@@ -42,6 +44,16 @@ EXPONENT = math.log(BOUND, FACTOR)
 MIN_SECONDS = 0.002
 MAX_SIZE = 1 << 22
 RUNS = 3
+SAMPLE_SECONDS = 0.002
+"""Each sample of a comparison runs the work back to back until it lasts this long. On a
+2-CPU container running four measuring processes, samples of a linear parser run shorter
+than 0.5 ms spread up to 1.44 times their median, longer ones stayed within 1.06 at the 90th
+percentile; 2 ms leaves a margin of four."""
+SAMPLES = 4
+"""Samples per side of a comparison; the least decides. Even, so each side runs first as often
+as second, and a speed that flips between samples falls on both sides alike. Their median
+would let a slow stretch over two samples of one side hide quadratic work
+(``test_a_slow_stretch_anywhere_does_not_hide_quadratic_work``)."""
 YOUNG = 1
 """The generations collected before measuring: the garbage earlier runs left. A full
 collection walks the whole test process's heap (40 to 120 ms a call) and changes nothing
@@ -122,18 +134,38 @@ class Growth:
 
 
 def _compare(make: Make, size: int, factor: int, clock: Clock) -> tuple[float, float]:
-    """The CPU time of one run at ``size`` and of one at ``factor`` times it. Each sample of
-    the smaller size is ``factor`` runs back to back, so for linear work both samples last
-    about as long: a neighbour that slows only runs longer than its quiet stretches slows
-    both alike, where a lone small run would slip between its bursts and the large one not."""
-    one = make(size)
+    """The CPU time of one run at ``size`` and of one at ``factor`` times it: the least of
+    ``SAMPLES`` samples each, taken in turn. A sample of the larger size runs the work until
+    it lasts ``SAMPLE_SECONDS``, and one of the smaller size ``factor`` times as many runs,
+    so for linear work both last about as long: a neighbour that slows only runs longer than
+    its quiet stretches slows both alike."""
+    small, large = make(size), make(size * factor)
+    once = cpu(large, 1, clock=clock)
+    runs = max(1, math.ceil(SAMPLE_SECONDS / max(once, 1e-9)))
+    return _least_pair((small, large), (runs * factor, runs), clock)
 
-    def runs() -> None:
-        for _ in range(factor):
-            one()
 
-    batch, large = cpu_pair(runs, make(size * factor), clock=clock)
-    return batch / factor, large
+def _least_pair(
+    works: tuple[Work, Work], runs: tuple[int, int], clock: Clock
+) -> tuple[float, float]:
+    times: tuple[list[float], list[float]] = ([], [])
+    enabled = gc.isenabled()
+    gc.collect(YOUNG)
+    gc.disable()
+    try:
+        order = [0, 1]
+        for _ in range(SAMPLES):
+            for index in order:
+                work, count = works[index], runs[index]
+                start = clock()
+                for _ in range(count):
+                    work()
+                times[index].append((clock() - start) / count)
+            order.reverse()  # each side runs both first and second
+    finally:
+        if enabled:
+            gc.enable()
+    return min(times[0]), min(times[1])
 
 
 def growth(

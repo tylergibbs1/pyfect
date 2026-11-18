@@ -189,6 +189,27 @@ def test_linear_work_passes(window: float | None) -> None:
     assert_near_linear(make, _BASE, _no_doubling(_BASE), clock=clock)
 
 
+def test_one_slow_sample_of_linear_work_is_not_superlinear() -> None:
+    """A neighbour's burst that lands on one sample of the larger size (here 20 times its
+    cost) does not decide: the least sample does."""
+    clock = _QuietWindowClock()
+    calls: dict[int, int] = {}
+
+    def make(n: int) -> Work:
+        run = clock.work(_RUN * n / _BASE)
+
+        def work() -> None:
+            calls[n] = calls.get(n, 0) + 1
+            run()
+            if n > _BASE and calls[n] == 3:  # sample 2 (the first run sizes the samples)
+                clock.work(19 * _RUN * n / _BASE)()
+
+        return work
+
+    assert_near_linear(make, _BASE, _no_doubling(_BASE), clock=clock)
+    assert calls[_BASE * 8] > 3
+
+
 def test_time_off_the_cpu_is_not_counted() -> None:
     """A loaded machine takes the CPU from the measuring thread: here each run also waits
     off the CPU, longer the larger the run (quadratically), as a thread descheduled more
