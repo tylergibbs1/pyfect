@@ -20,7 +20,7 @@ import sys
 import threading
 import weakref
 from collections.abc import AsyncGenerator, Callable, Coroutine
-from concurrent.futures import Future
+from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Any
 
 from pyfect import _background as background
@@ -48,6 +48,8 @@ class LoopThread:
 
     def __init__(self, name: str, *, exception_handler: ExceptionHandler | None = None) -> None:
         self.loop = asyncio.new_event_loop()
+        # Named for the loop: its workers (name resolution, say) outlive any one caller.
+        self.loop.set_default_executor(ThreadPoolExecutor(thread_name_prefix=f"{name}-executor"))
         if exception_handler is not None:
             self.loop.set_exception_handler(exception_handler)
         self.stopped: Future[None] = Future()

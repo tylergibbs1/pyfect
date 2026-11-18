@@ -17,6 +17,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Never, TypedDict, cast
 
 import _ports
+from _threads import process_wide
 
 import pyfect as fx
 from layer_cases._case import AnyEffect, AnyLayer, Case
@@ -448,7 +449,9 @@ def _pods_url() -> str:
     if not _pods_server:
         server = ThreadingHTTPServer((HOST, 0), _PodsHandler)
         server.daemon_threads = True
-        threading.Thread(target=server.serve_forever, daemon=True).start()
+        threading.Thread(
+            target=server.serve_forever, name=process_wide("k8s-pods"), daemon=True
+        ).start()
         _pods_server.append(server)
     return f"http://{HOST}:{_pods_server[0].server_address[1]}"
 

@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any, Never
 
 from _threaded_server import serving
+from _threads import process_wide
 from oracle._graphql import ViewerGroup, graphql_response, http_client_layer
 from oracle._http_api import struct
 from websockets.exceptions import ConnectionClosed
@@ -375,14 +376,14 @@ def _echo(conn: socket.socket, stopping: threading.Event) -> None:
 
 @functools.cache
 def _tcp_echo_port() -> int:
-    return _PEERS.enter_context(serving(_echo)).port
+    return _PEERS.enter_context(serving(_echo, process_wide=True)).port
 
 
 @functools.cache
 def _tls_echo_port() -> int:
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.load_cert_chain(_TLS / "cert.pem", _TLS / "key.pem")
-    return _PEERS.enter_context(serving(_echo, tls=context)).port
+    return _PEERS.enter_context(serving(_echo, tls=context, process_wide=True)).port
 
 
 class _WsPeer:
@@ -394,7 +395,9 @@ class _WsPeer:
         self.spans: set[str] = set()
         self.seen = threading.Condition()
         self.server = sync_serve(self._handle, "127.0.0.1", 0)
-        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        threading.Thread(
+            target=self.server.serve_forever, name=process_wide("ws-peer"), daemon=True
+        ).start()
 
     def url(self, path: str) -> str:
         return f"ws://127.0.0.1:{self.server.socket.getsockname()[1]}{path}"

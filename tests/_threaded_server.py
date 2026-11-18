@@ -23,6 +23,8 @@ import threading
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
 
+import _threads
+
 type Handler = Callable[[socket.socket, threading.Event], None]
 """Serves one connection (a TLS socket, its handshake done, when the server has a context);
 ``stopping`` is set once the server is closing. It may return at any time: its connection is
@@ -38,6 +40,7 @@ class Server:
         handle: Handler,
         tls: ssl.SSLContext | None,
         join_seconds: float,
+        name: str,
     ) -> None:
         self._listener = listener
         self._join_seconds = join_seconds
@@ -53,9 +56,7 @@ class Server:
         host, port = listener.getsockname()[:2]
         self.address: tuple[str, int] = (host, port)
         self.port: int = port
-        self._acceptor = threading.Thread(
-            target=self._accept, name=f"test-server-{port}", daemon=True
-        )
+        self._acceptor = threading.Thread(target=self._accept, name=name.format(port), daemon=True)
         self._acceptor.start()
 
     def drop(self) -> None:
@@ -130,11 +131,16 @@ def serving(
     tls: ssl.SSLContext | None = None,
     listener: socket.socket | None = None,
     join_seconds: float = 10.0,
+    process_wide: bool = False,
 ) -> Generator[Server]:
     """A server on ``listener`` (a new one on a free local port when ``None``), closed when
     the block ends; closing fails if a handler is still running ``join_seconds`` after its
-    connection was shut down."""
-    server = Server(listener or socket.create_server(("127.0.0.1", 0)), handle, tls, join_seconds)
+    connection was shut down. ``process_wide``: a peer kept for the rest of the process
+    (``_threads.process_wide``), whose accepting thread outlives the test that started it."""
+    name = _threads.process_wide("test-server-{}") if process_wide else "test-server-{}"
+    server = Server(
+        listener or socket.create_server(("127.0.0.1", 0)), handle, tls, join_seconds, name
+    )
     try:
         yield server
     finally:
