@@ -2,6 +2,7 @@
 serves when given ``node:http2``'s ``createServer``."""
 
 import base64
+import contextlib
 import os
 import socket
 import time
@@ -176,3 +177,55 @@ def test_a_client_that_never_ends_its_side_is_dropped_after_the_close_timeout() 
     sent = _serve_too_large(8, keep_sending=True, websocket_close_timeout=0.2)
     assert sent.got == b"\x88\x02\x03\xf1"
     assert sent.ended == "reset"
+
+
+def test_a_graceful_shutdown_drops_a_connection_still_draining() -> None:
+    """As Effect's ``NodeHttpServer``: ``server.close`` waits for an upgraded
+    socket ``ws`` is still draining for at most ``gracefulShutdownTimeout``,
+    then destroys it, without waiting out ``ws``'s ``closeTimeout``."""
+    held: list[socket.socket] = []
+
+    def oversized(port: int) -> float:
+        conn, _ = _upgrade(port)
+        held.append(conn)
+        conn.settimeout(5)
+        conn.sendall(_frame(2, b"x" * 4096, fin=False))
+        for _ in range(8):
+            conn.sendall(_frame(0, b"x" * 4096, fin=False))
+        got = b""
+        while chunk := conn.recv(4096):  # the 1009 close, then the server's end
+            got += chunk
+        assert got == b"\x88\x02\x03\xf1"
+        return time.monotonic()  # the connection is draining; shutdown starts now
+
+    @fx.fn
+    def hold():
+        request = yield from HttpServerRequest()
+        ws = yield from request.upgrade
+        pull = yield from reader_bytes(ws)
+        while True:
+            yield from pull
+
+    @fx.fn
+    def program():
+        running = yield from server.HttpServer()
+        assert isinstance(running.address, InetAddressV4)
+        at = running.address.port
+        return (yield from effect.blocking(lambda: oversized(at)))
+
+    routes: fx.Layer[Any, Any, Any] = router.add("GET", "/ws", hold())
+    served = program().pipe(fx.provide(router.serve(routes, disable_logger=True)))
+    engine = hypercorn_server.layer_test(
+        graceful_shutdown_timeout="500 millis",
+        config={"websocket_max_message_size": 8192, "websocket_close_timeout": 30},
+    )
+    try:
+        shutdown_started = fx.run_blocking(scoped(served).pipe(fx.provide(engine)).or_die())
+        # 0.5 s and pyfect's 0.5 s abort grace period (1.0 s measured), far from
+        # the 30 s close timeout.
+        assert time.monotonic() - shutdown_started < 10
+        with contextlib.suppress(OSError):  # dropped with a reset
+            assert held[0].recv(1) == b""
+    finally:
+        for conn in held:
+            conn.close()
