@@ -31,15 +31,17 @@ import itertools
 import os
 import re
 import sqlite3
+import time
 from collections.abc import Callable, Generator
 from dataclasses import replace
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
 import pyfect as fx
 from pyfect import reactivity, testing
+from pyfect.clock import ClockService
 from pyfect.cluster import (
     message_storage,
     runner,
@@ -54,7 +56,7 @@ from pyfect.cluster import (
 from pyfect.cluster import sql_runner_storage as SqlRunnerStorage
 from pyfect.cluster.runner_storage import RunnerStorageService
 from pyfect.cluster.sharding_config import DEFAULTS
-from pyfect.exit import Success
+from pyfect.exit import Failure, Success
 from pyfect.sql.client import SqlClient, SqlClientService
 from pyfect.sql.connection import Connection, SqlError
 
@@ -394,12 +396,18 @@ class _Recorded:
         return self._inner.execute_unprepared(sql, params, transform)
 
 
-def _record_sqlite(monkeypatch: pytest.MonkeyPatch, statements: list[str]) -> None:
-    """Record every statement SQLite connections opened from now on run."""
+def _record_sqlite(
+    monkeypatch: pytest.MonkeyPatch, statements: list[str], *, slow_lock_writes: float = 0.0
+) -> None:
+    """Record every statement SQLite connections opened from now on run. With
+    ``slow_lock_writes``, each write of new shard locks takes that many seconds more, as on a
+    stalled disk."""
 
     class Recording(sqlite3.Connection):
         def execute(self, sql: str, *args: Any) -> sqlite3.Cursor:
             statements.append(sql)
+            if slow_lock_writes and _LOCK_INSERT.search(sql):
+                time.sleep(slow_lock_writes)
             return super().execute(sql, *args)
 
     connect = sqlite3.connect
@@ -410,22 +418,52 @@ def _record_sqlite(monkeypatch: pytest.MonkeyPatch, statements: list[str]) -> No
     monkeypatch.setattr(sqlite3, "connect", recording_connect)
 
 
+_LOCK_INSERT = re.compile(r"INSERT INTO \W?\w+_locks\b")
 _HANDOFF_SHARDS = 250
+_HANDOFF_BUDGET = 4.0
+"""Seconds the handoff scenario may take in all: under the test's 5 s timeout, so an overrun
+fails naming the phase it was in, with the time each phase took."""
 
 
-@pytest.mark.parametrize("advisory", [True, False], ids=["advisory", "no advisory"])
-@testing.live
-def test_hands_off_a_runners_shards_in_a_few_statements(
-    backend: tuple[str, ClientMaker], advisory: bool, monkeypatch: pytest.MonkeyPatch
-):
-    """A stopping runner released each shard in a statement of its own, which on a slow or
-    remote database made shutdown take 50-100 ms per shard (the docs' cluster/runners.py
-    snippet ran past its sleep limit so). The handoff releases them in chunks."""
-    statements: list[str] = []
-    if backend[0] == "sqlite":
-        _record_sqlite(monkeypatch, statements)
+class _Phases:
+    """The phases of a scenario sharing one deadline."""
 
-    def body() -> Generator[fx.Effect[Any, Any, Any], Any]:
+    def __init__(self, budget: float, clock: ClockService) -> None:
+        self.budget = budget
+        self.clock = clock
+        self.started = self.mark = clock.monotonic_unsafe()
+        self.took: list[str] = []
+
+    def remaining(self) -> fx.Duration:
+        left = self.budget - (self.clock.monotonic_unsafe() - self.started)
+        return fx.duration.millis(max(0, round(left * 1000)))
+
+    def done(self, phase: str) -> None:
+        now = self.clock.monotonic_unsafe()
+        self.took.append(f"{phase} {now - self.mark:.2f} s")
+        self.mark = now
+
+    def overrun(self, phase: str, detail: str) -> AssertionError:
+        so_far = "; ".join(self.took) or "none"
+        return AssertionError(
+            f"{phase} did not finish within the scenario's {self.budget:g} s ({detail}; "
+            f"{self.clock.monotonic_unsafe() - self.mark:.2f} s in it; phases before it: {so_far})"
+        )
+
+
+def _close_scope(scope: fx.CloseableScope, _exit: Any) -> fx.Effect[None]:
+    return scope.close(Success(None))
+
+
+def _hand_off(
+    backend: tuple[str, ClientMaker], advisory: bool, statements: list[str], budget: float
+) -> fx.Effect[list[str], Any, fx.Scope]:
+    """A runner takes every shard and stops; gives the release statements its stop ran, after
+    checking another runner can take every lock. Each wait is bounded by what is left of
+    ``budget``, and no bound inside the cluster is longer than it."""
+
+    def body() -> Generator[fx.Effect[Any, Any, Any], Any, list[str]]:
+        phases = _Phases(budget, (yield from fx.clock.clock_with(fx.succeed)))
         client = yield from backend[1]()
         if backend[0] != "sqlite":
             fields = client.fields()
@@ -440,6 +478,9 @@ def test_hands_off_a_runners_shards_in_a_few_statements(
             entity_termination_timeout=fx.duration.zero,
             entity_message_poll_interval=fx.duration.millis(50),
             refresh_assignments_interval=fx.duration.millis(50),
+            # The lock interval bounds each storage operation and the handoff's wait; the
+            # default 10 s is longer than the test may take.
+            shard_lock_refresh_interval=fx.duration.millis(round(budget * 1000)),
         )
         layer = (
             sharding.layer.pipe(fx.layer.provide(SqlRunnerStorage.layer_with(prefix=prefix)))
@@ -451,22 +492,68 @@ def test_hands_off_a_runners_shards_in_a_few_statements(
             .pipe(fx.layer.provide(fx.layer.succeed(SqlClient, client)))
         )
         shards = [shard_id.make("default", n) for n in range(1, _HANDOFF_SHARDS + 1)]
-        scope = fx.CloseableScope()
+        scope = yield from fx.acquire_release(fx.sync(fx.CloseableScope), _close_scope)
         built = yield from layer.build_with_scope(scope)
         service = built.get_unsafe(sharding.Sharding)
-        for _ in range(200):
-            if all(service.has_shard_id(s) for s in shards):
+        phases.done("starting the runner")
+
+        # The acquisition loop opens (and replaces) this latch each time it takes locks.
+        state = cast("Any", service)._state
+        while True:
+            changed = state.shard_locks_changed
+            held = sum(service.has_shard_id(s) for s in shards)
+            if held == _HANDOFF_SHARDS:
                 break
-            yield from fx.sleep("50 millis")
-        assert all(service.has_shard_id(s) for s in shards)
+            if (yield from changed.wait().timeout_option(phases.remaining())) is None:
+                raise phases.overrun(
+                    "acquiring every shard", f"{held} of {_HANDOFF_SHARDS} shards held"
+                )
+        phases.done("acquiring every shard")
 
         del statements[:]
-        yield from scope.close(Success(None))
-        releases = [s for s in statements if _RELEASES.search(s)]
-        assert len(releases) <= 5, releases[:10]
+        closing = yield from scope.close(Success(None)).fork()
+        if (yield from closing.await_exit().timeout_option(phases.remaining())) is None:
+            raise phases.overrun("the handoff", f"{len(statements)} statements run")
+        released = [s for s in statements if _RELEASES.search(s)]
+        phases.done("the handoff")
 
-        # Every lock is free: another runner takes them all.
         other = yield from _storage(client, prefix, shard_lock_disable_advisory=not advisory)
-        assert len((yield from other.acquire(runner_address2, shards))) == _HANDOFF_SHARDS
+        taken = yield from other.acquire(runner_address2, shards).timeout_option(phases.remaining())
+        if taken is None:
+            raise phases.overrun("another runner taking every lock", "acquire in flight")
+        assert len(taken.value) == _HANDOFF_SHARDS, "the handoff left locks held"
+        return released
 
-    yield from fx.gen(body)
+    return fx.gen(body)
+
+
+@pytest.mark.parametrize("advisory", [True, False], ids=["advisory", "no advisory"])
+@testing.live
+def test_hands_off_a_runners_shards_in_a_few_statements(
+    backend: tuple[str, ClientMaker], advisory: bool, monkeypatch: pytest.MonkeyPatch
+):
+    """A stopping runner released each shard in a statement of its own, which on a slow or
+    remote database made shutdown take 50-100 ms per shard (the docs' cluster/runners.py
+    snippet ran past its sleep limit so). The handoff releases them in chunks."""
+    statements: list[str] = []
+    if backend[0] == "sqlite":
+        _record_sqlite(monkeypatch, statements)
+    releases = yield from _hand_off(backend, advisory, statements, _HANDOFF_BUDGET)
+    assert len(releases) <= 5, releases[:10]
+
+
+@testing.live
+def test_the_handoff_scenario_names_the_phase_that_overran(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """On a stalled disk taking the locks outlasts the scenario's budget: it fails naming that
+    phase and how far it got, inside the test's timeout, instead of polling past it."""
+    statements: list[str] = []
+    _record_sqlite(monkeypatch, statements, slow_lock_writes=1.5)
+    backend = ("sqlite", lambda: make_client(tmp_path))
+    result = yield from fx.scoped(_hand_off(backend, True, statements, 1.0)).exit()
+    assert isinstance(result, Failure)
+    message = str(result.cause)
+    assert "acquiring every shard did not finish within the scenario's 1 s" in message
+    assert f"0 of {_HANDOFF_SHARDS} shards held" in message
+    assert "phases before it: starting the runner" in message
