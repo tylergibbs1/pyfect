@@ -4,6 +4,12 @@
 
 ### Added
 
+- Testing: `pyfect.testing.leave_out_host_freezes(source)` leaves the time the host froze the
+  whole process for out of every test's timeout, up to the timeout again; `source` returns a
+  `HostFreezes(total, settling)`. A timeout that left time out says so: "test timed out after
+  5.0 s of running time (7.9 s elapsed; host froze the process 2.9 s, not counted)". Unset,
+  timeouts are unchanged. pyfect's own suite sets it from its stall watchdog, which counts a
+  freeze only when faulthandler's dump came late, so a C call holding the GIL still counts.
 - Cluster: `RunnerStorageService` takes an optional `release_many=` operation, and an
   `EncodedRunnerStorage` driver may add a `release_many` method (`EncodedReleaseMany`); the
   shutdown handoff releases shards in chunks through it (below). A storage without one

@@ -3,19 +3,24 @@
 Both run an effect with a given context and an optional real-time
 ``timeout``. When the timeout passes, the test's fiber is interrupted and
 its finalizers run to completion before ``TestTimeoutError`` is raised.
+Time the host froze the whole process for, as a ``leave_out_host_freezes``
+source reports it, is left out of the timeout, up to the timeout again.
 """
 # pyright: reportPrivateUsage=false
 
 from __future__ import annotations
 
 import asyncio
+import time
+from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any, Never, Protocol
 
 from pyfect._core import Effect
 from pyfect._fiber import Fiber, root_fiber
 from pyfect.clock import Clock
 from pyfect.context import Context
-from pyfect.duration import Duration
+from pyfect.duration import Duration, zero
 from pyfect.exit import Exit, Failure
 from pyfect.run import await_fiber
 from pyfect.scheduler import AsyncioScheduler, Cancel, Scheduler, StalledError, SyncScheduler
@@ -27,6 +32,34 @@ class TestTimeoutError(TimeoutError):
     ran before this was raised."""
 
     __test__ = False
+
+
+@dataclass(frozen=True, slots=True)
+class HostFreezes:
+    """Real time the host froze the whole process for, which a test's timeout leaves out."""
+
+    total: Duration
+    """Every freeze seen so far. It only grows."""
+    settling: Duration | None = None
+    """A freeze may be ending now, not counted yet: ask again after this long."""
+
+
+type HostFreezeSource = Callable[[], HostFreezes]
+
+
+@dataclass(slots=True)
+class _Hook:
+    source: HostFreezeSource | None = None
+
+
+_host_freezes = _Hook()
+
+
+def leave_out_host_freezes(source: HostFreezeSource | None) -> None:
+    """Leaves the host freezes ``source`` reports out of every test's timeout, up to the
+    timeout again; ``None`` stops. A stall watchdog that tells a frozen process from a
+    blocked one sets it: a frozen host is no time the test ran."""
+    _host_freezes.source = source
 
 
 class Runtime(Protocol):
@@ -52,18 +85,59 @@ class _Expiry:
 
 
 class _Deadline:
-    """Interrupts a fiber once ``timeout`` of real time has passed."""
+    """Interrupts a fiber once ``timeout`` of real time has passed, host freezes left out."""
 
-    __slots__ = ("_cancel", "_expiry", "timeout")
+    __slots__ = (
+        "_cancel",
+        "_elapsed",
+        "_expiry",
+        "_frozen",
+        "_frozen_before",
+        "_given",
+        "_scheduler",
+        "_source",
+        "_started",
+        "timeout",
+    )
 
     def __init__(self, fiber: Fiber[Any, Any], timeout: Duration | None) -> None:
         self.timeout = timeout
         self._expiry = _Expiry(fiber)
+        self._scheduler = fiber._scheduler
         self._cancel: Cancel | None = None
+        self._source = _host_freezes.source
+        self._frozen_before = zero if self._source is None else self._source().total
+        self._frozen = zero
+        """The host freezes left out of the timeout."""
+        self._given = zero
+        """Real time added to the timeout: the freezes, and waits for one to settle."""
+        self._started = time.monotonic()
+        self._elapsed = 0.0
         if timeout is None:
             return
+        self._arm(timeout)
+
+    def _arm(self, delay: Duration) -> None:
         # A daemon timer: a stalled test still fails fast with StalledError.
-        self._cancel = fiber._scheduler.call_later(timeout, self._expiry, daemon=True)
+        self._cancel = self._scheduler.call_later(delay, self._due, daemon=True)
+
+    def _due(self) -> None:
+        """The timeout passed: add the host freezes since the start not added yet (and wait
+        for one that may be ending), up to the timeout again; else interrupt."""
+        if self._source is not None and self.timeout is not None:
+            report = self._source()
+            frozen = report.total - self._frozen_before
+            self._frozen = min(frozen, self.timeout)
+            if self._given < self._frozen:
+                more, self._given = self._frozen - self._given, self._frozen
+                self._arm(more)
+                return
+            if report.settling is not None and self._given < self.timeout:
+                self._given += report.settling
+                self._arm(report.settling)
+                return
+        self._elapsed = time.monotonic() - self._started
+        self._expiry()
 
     @property
     def expired(self) -> bool:
@@ -71,6 +145,14 @@ class _Deadline:
 
     def _seconds(self) -> float | None:
         return None if self.timeout is None else self.timeout.to_seconds()
+
+    def _timed_out(self) -> str:
+        if self._frozen <= zero:
+            return f"test timed out after {self._seconds()}s"
+        return (
+            f"test timed out after {self._seconds()} s of running time ({self._elapsed:.1f} s "
+            f"elapsed; host froze the process {self._frozen.to_seconds():.1f} s, not counted)"
+        )
 
     def check[A, E](self, ex: Exit[A, E], context: Context) -> Exit[A, E]:
 
@@ -81,12 +163,8 @@ class _Deadline:
         if not isinstance(ex, Failure):
             # The interrupt came while the test could not be interrupted (a finalizer, an
             # uninterruptible region), which then finished it.
-            raise TestTimeoutError(
-                f"test timed out after {self._seconds()}s; it finished, but after its timeout"
-            )
-        error = TestTimeoutError(
-            f"test timed out after {self._seconds()}s; it was interrupted and its finalizers ran"
-        )
+            raise TestTimeoutError(f"{self._timed_out()}; it finished, but after its timeout")
+        error = TestTimeoutError(f"{self._timed_out()}; it was interrupted and its finalizers ran")
         if not ex.cause.has_interrupts_only:
             error.add_note("While interrupting it:\n" + ex.cause.pretty())
         _note_sleepers(error, context)
@@ -96,8 +174,7 @@ class _Deadline:
         """The real failure when interrupting at the deadline left a finalizer stuck: the
         timeout, which ``StalledError`` would otherwise hide."""
         error = TestTimeoutError(
-            f"test timed out after {self._seconds()}s; it was interrupted and a finalizer never "
-            f"finished ({stall})"
+            f"{self._timed_out()}; it was interrupted and a finalizer never finished ({stall})"
         )
         _note_sleepers(error, context)
         return error

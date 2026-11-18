@@ -19,6 +19,14 @@ runs its finalizers. Write the timeout's unit: a bare number is milliseconds, as
 `timeout=10` gives up after 10 milliseconds (the failure says so). The `pyfect_timeout` ini option
 is in seconds.
 
+On a shared CI machine the host can freeze the whole process for seconds, and a short test then
+times out for time it never ran. `testing.leave_out_host_freezes(source)` takes a function
+returning `testing.HostFreezes(total, settling)` (the freezes seen so far, and how long to wait
+when one may be ending) and leaves that time out of every timeout, up to the timeout again. A
+timeout that left time out reports it: `test timed out after 5.0 s of running time (7.9 s
+elapsed; host froze the process 2.9 s, not counted)`. Count only freezes of the whole process: a
+call that holds the GIL also stops other threads, but it is the test's own time.
+
 <include meta='title="test_retry.py"'>../../snippets/testing/test_retry.py</include>
 
 ### What the test clock waits for

@@ -348,6 +348,123 @@ def test_an_on_time_dump_with_no_busy_thread_and_no_cpu_is_unexplained() -> None
     assert named.startswith("unexplained: ")
 
 
+def _freeze_script(freeze: float) -> str:
+    return f"""
+import os
+import subprocess
+
+import pyfect as fx
+import pyfect.testing as it
+
+
+def freeze_soon():
+    # What a starved host does to the process: no thread runs, and no CPU time passes.
+    script = "sleep 0.2; kill -STOP {{pid}}; sleep {freeze}; kill -CONT {{pid}}"
+    return subprocess.Popen(["sh", "-c", script.format(pid=os.getpid())])
+"""
+
+
+FROZEN_WITHIN_ITS_LIMIT = (
+    _freeze_script(1.5)
+    + """
+
+@it.live(timeout="1 second")
+def test_frozen_then_done():
+    freezer = freeze_soon()
+    yield from fx.sleep("1800 millis")  # 0.3 s of the test's own time, after the freeze
+    freezer.wait(timeout=5)
+"""
+)
+
+FROZEN_PAST_ITS_LIMIT = (
+    _freeze_script(1.0)
+    + """
+
+@it.live(timeout="1 second")
+def test_frozen_and_slow():
+    freezer = freeze_soon()
+    yield from fx.sleep("3 seconds")  # 2 s of the test's own time: past its limit
+    freezer.wait(timeout=5)
+"""
+)
+
+DEADLOCKED_FIBER = """
+import pyfect as fx
+import pyfect.testing as it
+
+
+@it.live(timeout="1 second")
+def test_deadlocked():
+    yield from fx.never  # every fiber waiting: the watchdog keeps ticking
+"""
+
+GIL_HELD_IN_A_STEP = """
+import ctypes
+
+import pyfect as fx
+import pyfect.testing as it
+
+
+def sleep_on_purpose():
+    ctypes.PyDLL(None).sleep(2)  # the GIL held 2 s, no CPU used: looks frozen, is not
+
+
+@it.live(timeout="1 second")
+def test_holds_the_gil():
+    yield from fx.sync(sleep_on_purpose)  # the timeout passes during it
+    yield from fx.never  # so it is due as soon as the step ends
+"""
+
+
+def _limited(pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch, source: str) -> str:
+    monkeypatch.setenv("PYTHONPATH", str(Path(__file__).parent))
+    pytester.makepyfile(source)
+    pytester.makeini("[pytest]\nstall_threshold = 0.3\n")
+    result = pytester.runpytest_subprocess("-p", "_stalls", timeout=SUBPROCESS_TIMEOUT)
+    return result.stdout.str()
+
+
+@pytest.mark.skipif(__import__("sys").platform == "win32", reason="SIGSTOP is POSIX")
+def test_a_host_freeze_is_left_out_of_a_tests_timeout(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Frozen 1.5 s by the host, a test with 0.3 s of its own work stays within its 1 s
+    limit. (On Linux in a container, run under ``docker run --init``: see
+    ``test_a_frozen_process_is_named_a_host_stall``.)"""
+    out = _limited(pytester, monkeypatch, FROZEN_WITHIN_ITS_LIMIT)
+    assert "1 passed" in out, out
+
+
+@pytest.mark.skipif(__import__("sys").platform == "win32", reason="SIGSTOP is POSIX")
+def test_a_timeout_after_a_host_freeze_says_what_it_left_out(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    out = _limited(pytester, monkeypatch, FROZEN_PAST_ITS_LIMIT)
+    assert "TestTimeoutError: test timed out after 1.0 s of running time (" in out
+    assert "host froze the process 1." in out
+    assert "s, not counted)" in out
+
+
+def test_a_deadlock_times_out_on_time(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every fiber waiting is not the host freezing the process: nothing is left out."""
+    out = _limited(pytester, monkeypatch, DEADLOCKED_FIBER)
+    assert "TestTimeoutError: test timed out after 1.0s; it was interrupted" in out
+    assert "not counted" not in out
+
+
+@pytest.mark.skipif(__import__("sys").platform == "win32", reason="libc sleep through ctypes")
+def test_a_c_call_holding_the_gil_times_out_on_time(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A GIL-held sleep starves the watchdog and uses no CPU, as a freeze does, but its
+    faulthandler dump comes on time: pyfect's own time, so nothing is left out."""
+    out = _limited(pytester, monkeypatch, GIL_HELD_IN_A_STEP)
+    assert "TestTimeoutError: test timed out after 1.0s" in out
+    assert "not counted" not in out
+
+
 def test_a_dump_reads_each_threads_frames_innermost_first() -> None:
     dump = (
         "Timeout (0:00:02)!\n"
