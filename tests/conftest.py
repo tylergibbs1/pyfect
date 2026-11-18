@@ -18,6 +18,7 @@ pytest_plugins = [
     "_loop_registrations",
     "_shards",
     "_skips",
+    "_failures_named_at_once",
     "_git_config_guard",
     "_metric_registry",
     "_parallel",
