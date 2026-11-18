@@ -24,7 +24,11 @@ thread, ticking for the whole session and recording while a test runs, tells the
   busy it is "pyfect busy in <frame>": one long step, or identical steps in a loop.
 
 A stall is added to the failure output of the test it happened in (a "stall" section), and
-a passing test that stalled gets a ``StallWarning``. A test failed by a timeout or the hang
+a passing test that stalled gets a ``StallWarning``. A ``pyfect.testing`` test that passed
+although it ran longer than its timeout (host freezes left out) blocked past it: a step the
+timer could not interrupt. ``pyfect.testing`` lets it pass, as Effect's harness does; this
+suite fails it ("fibers never block"), naming the longest stall seen, or with
+``blocked_past_limit = warn`` only warns. A test failed by a timeout or the hang
 alarm (``tests/_timeout.py``) with no stall says so instead, with the process's CPU time and
 where the test's thread was at its last sample before the failure: still running, or
 waiting. Per test, arming and reading the
@@ -37,6 +41,7 @@ from __future__ import annotations
 
 import faulthandler
 import gc
+import inspect
 import os
 import re
 import tempfile
@@ -50,8 +55,9 @@ from typing import Any
 
 import pytest
 
-from pyfect.duration import seconds
+from pyfect.duration import Duration, seconds
 from pyfect.testing import HostFreezes, leave_out_host_freezes
+from pyfect.testing._decorators import settings as testing_settings
 
 ROOT = Path(__file__).parent.parent
 
@@ -73,6 +79,10 @@ _DUMP_FRAME = re.compile(r'^\s+File "(?P<file>[^"]+)", line (?P<line>\d+) in (?P
 
 class StallWarning(pytest.PytestWarning):
     """A test that passed although its process stalled."""
+
+
+class BlockedPastLimitWarning(pytest.PytestWarning):
+    """A ``pyfect.testing`` test that passed, but ran past its timeout (report mode)."""
 
 
 @dataclass(frozen=True)
@@ -350,6 +360,11 @@ class Watchdog:
                 self._frozen += gap - self.tick
         return f"{head}: {named} ({numbers})"
 
+    def frozen_seconds(self) -> float:
+        """Seconds the host froze the whole process for so far."""
+        with self._lock:
+            return self._frozen
+
     def host_freezes(self) -> HostFreezes:
         """The freezes a test's timeout leaves out (``leave_out_host_freezes``). A watchdog
         overdue for its tick may be in a freeze that just ended: ask again after its next."""
@@ -457,6 +472,11 @@ _WATCHDOG = pytest.StashKey[Watchdog]()
 
 def pytest_addoption(parser: pytest.Parser) -> None:
     parser.addini(
+        "blocked_past_limit",
+        "A pyfect.testing test that passes after running past its timeout: fail or warn.",
+        default="fail",
+    )
+    parser.addini(
         "stall_threshold",
         "Seconds without progress that count as a stall (tests/_stalls.py); 0 turns it off.",
         default="2",
@@ -487,6 +507,54 @@ def pytest_unconfigure(config: pytest.Config) -> None:
 
 
 _STALLS = pytest.StashKey[list[str]]()
+_CALL_STARTED = pytest.StashKey[tuple[float, float]]()
+"""When the test's call began (``perf_counter``) and the host freezes so far (seconds)."""
+
+
+def _timeout_of(item: pytest.Item) -> Duration | None:
+    """A ``pyfect.testing`` test's timeout, read from the test the decorator made (``None``:
+    not such a test, or no timeout)."""
+    function = getattr(item, "obj", None)
+    if not inspect.isfunction(function):
+        return None
+    options = inspect.getclosurevars(function).nonlocals.get("options")
+    if options is None or not hasattr(options, "timeout") or not hasattr(options, "mode"):
+        return None
+    timeout: Duration | None = options.timeout
+    return timeout if timeout is not None else testing_settings.timeout
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_call(item: pytest.Item) -> Generator[None, object, object]:
+    watchdog = item.config.stash.get(_WATCHDOG, None)
+    if watchdog is not None:
+        item.stash[_CALL_STARTED] = (time.perf_counter(), watchdog.frozen_seconds())
+    return (yield)
+
+
+def _blocked_past_limit(item: pytest.Item, watchdog: Watchdog, stalls: list[str]) -> str | None:
+    """Why a passing test blocked past its limit, if it ran longer than its timeout with the
+    host freezes left out."""
+    timeout = _timeout_of(item)
+    started = item.stash.get(_CALL_STARTED, None)
+    if timeout is None or started is None:
+        return None
+    ran = time.perf_counter() - started[0] - (watchdog.frozen_seconds() - started[1])
+    limit = timeout.to_seconds()
+    if ran <= limit:
+        return None
+    longest = max(stalls, key=_stall_seconds, default=None)
+    seen = (
+        f"the longest stall seen: {longest.splitlines()[0]}"
+        if longest is not None
+        else "no stall seen: every step ran under the stall threshold"
+    )
+    return f"finished, but blocked past its {limit:.1f} s limit: ran {ran:.1f} s; {seen}"
+
+
+def _stall_seconds(stall: str) -> float:
+    match = re.match(r"(?:process stalled|pyfect busy) ([0-9.]+) s", stall)
+    return float(match[1]) if match else 0.0
 
 
 @pytest.hookimpl(wrapper=True)
@@ -512,6 +580,16 @@ def pytest_runtest_makereport(
         watchdog.disarm()
     stalls = item.stash[_STALLS]
     stalls.extend(watchdog.take())
+    if call.when == "call" and report.passed:
+        blocked = _blocked_past_limit(item, watchdog, stalls)
+        if blocked is not None and item.config.getini("blocked_past_limit") == "warn":
+            item.warn(BlockedPastLimitWarning(blocked))
+        elif blocked is not None:
+            report.outcome = "failed"
+            report.longrepr = blocked
+            report.sections.append(("stall", "\n".join(stalls) or "no stall seen"))
+            stalls.clear()
+            return report
     if stalls and report.failed:
         report.sections.append(("stall", "\n".join(stalls)))
         stalls.clear()
@@ -522,4 +600,4 @@ def pytest_runtest_makereport(
     return report
 
 
-__all__ = ["StallWarning"]
+__all__ = ["BlockedPastLimitWarning", "StallWarning"]
