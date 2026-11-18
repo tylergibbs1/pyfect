@@ -15,12 +15,16 @@ thread, ticking for the whole session and recording while a test runs, tells the
   or "pyfect blocked in <frame>" (a busy thread, a fiber's first).
 - Each tick also samples every thread's stack, as a faulthandler dump (text: holding
   frames would keep what a finished step handled alive). A thread inside ``Fiber._run``
-  whose stack has not moved for the threshold is a fiber step that blocks with the GIL
-  released (a sync sleep or lock), which the timer dump cannot see. Fibers never block, so
-  that is "pyfect blocked in <frame>" too.
+  whose stack has not moved for the threshold, while the process used next to no CPU, is a
+  fiber step that blocks with the GIL released (a sync sleep or lock), which the timer dump
+  cannot see. Fibers never block, so that is "pyfect blocked in <frame>" too. With the CPU
+  busy it is "pyfect busy in <frame>": one long step, or identical steps in a loop.
 
 A stall is added to the failure output of the test it happened in (a "stall" section), and
-a passing test that stalled gets a ``StallWarning``. Per test, arming and reading the
+a passing test that stalled gets a ``StallWarning``. A test failed by a timeout or the hang
+alarm (``tests/_timeout.py``) with no stall says so instead, with the process's CPU time and
+where the test's thread was at its last sample before the failure: still running, or
+waiting. Per test, arming and reading the
 watchdog cost about a microsecond; it waits only when its tick is overdue, after a stall.
 pytest's own ``faulthandler_timeout`` uses the same faulthandler timer, so setting it turns
 the dump off; the rest still works.
@@ -183,9 +187,15 @@ class Watchdog:
         self._sample = tempfile.TemporaryFile("w+")  # noqa: SIM115
         self._steal = _Steal()
         self._collections = _Collections()
-        self._seen: dict[str, tuple[tuple[Frame, ...], float]] = {}
+        self._seen: dict[str, tuple[tuple[Frame, ...], float, float]] = {}
+        """Per thread in a fiber step: its stack, and the time and process CPU it was first
+        seen at."""
         self._reported: dict[tuple[str, float], int] = {}
         self._stacks: dict[tuple[str, float], str] = {}
+        self._test_thread = 0
+        self._test_started = (0.0, 0.0)
+        self._test_samples: list[tuple[float, tuple[Frame, ...]]] = []
+        """The test thread's last two sampled stacks, with the wall time of each."""
         self._thread = threading.Thread(target=self._watch, name="stall-watchdog", daemon=True)
 
     def start(self) -> None:
@@ -206,7 +216,31 @@ class Watchdog:
         with self._lock:
             self.stalls = []
             self._generation += 1
+            self._test_thread = threading.get_ident()
+            self._test_started = (time.monotonic(), time.process_time())
+            self._test_samples = []
         self._armed.set()
+
+    def no_stall(self, failed_at: float, ran: float) -> str:
+        """Why a test that timed out or hung has no stall: the process kept running, and
+        where its thread was at the last sample before ``failed_at`` (wall time)."""
+        if ran < self.threshold:
+            return (
+                f"no stall: this phase ran {ran:.1f} s; the timeout it raised happened before "
+                "it (a fixture's failure, cached)"
+            )
+        started, started_cpu = self._test_started
+        head = (
+            "no stall: the process kept running Python (process CPU "
+            f"{time.process_time() - started_cpu:.1f} s over {time.monotonic() - started:.1f} s)"
+        )
+        with self._lock:
+            before = [frames for at, frames in self._test_samples if at <= failed_at]
+        if not before:
+            return f"{head}; no sample of the test thread before the failure"
+        frames = before[-1]
+        doing = "was waiting in" if frames[0].idle else "was last in"
+        return f"{head}; the test thread {doing} {frames[0]}\n" + _stack(frames)
 
     def take(self) -> list[str]:
         """The stalls seen since the last ``take``. A watchdog overdue for its tick has just
@@ -295,6 +329,12 @@ class Watchdog:
         faulthandler.dump_traceback(self._sample, all_threads=True)
         self._sample.seek(0)
         threads = {t.ident: t for t in _dump_threads(self._sample.read()) if not t.current}
+        test_thread = next(
+            (t for ident, t in threads.items() if int(ident, 16) == self._test_thread), None
+        )
+        if test_thread is not None:
+            with self._lock:
+                self._test_samples = [*self._test_samples[-1:], (time.time(), test_thread.frames)]
         for ident in [ident for ident in self._seen if ident not in threads]:
             del self._seen[ident]
         for ident, thread in threads.items():
@@ -303,9 +343,9 @@ class Watchdog:
                 continue
             seen = self._seen.get(ident)
             if seen is None or seen[0] != thread.frames:
-                self._seen[ident] = (thread.frames, now)
+                self._seen[ident] = (thread.frames, now, time.process_time())
                 continue
-            stuck = now - seen[1]
+            stuck, cpu = now - seen[1], time.process_time() - seen[2]
             key = (ident, seen[1])
             if stuck < self.threshold:
                 continue
@@ -313,13 +353,32 @@ class Watchdog:
                 with self._lock:
                     self._reported[key] = len(self.stalls)
                     self.stalls.append("")
-                where = thread.frames[0]
-                self._stacks[key] = f": pyfect blocked in {where}\n" + _stack(thread.frames)
-            # Updated each tick while the step stays blocked, so it reads the whole stall.
+                self._stacks[key] = _stack(thread.frames)
+            where = thread.frames[0]
+            # A blocking call uses next to no CPU; a busy one on a loaded machine may get
+            # well under half of it.
+            if cpu < stuck / 10:
+                head = f"process stalled {stuck:.1f} s: pyfect blocked in {where}"
+            else:
+                # Running, not blocked: one long step, or identical steps in a loop (the
+                # samples cannot tell them apart).
+                head = (
+                    f"pyfect busy {stuck:.1f} s in {where} (the same fiber stack in every "
+                    f"sample, process CPU {cpu:.1f} s)"
+                )
+            # Updated each tick while the stack stays the same, so it reads the whole stall.
             with self._lock:
                 index = self._reported[key]
                 if 0 <= index < len(self.stalls):
-                    self.stalls[index] = f"process stalled {stuck:.1f} s" + self._stacks[key]
+                    self.stalls[index] = f"{head}\n{self._stacks[key]}"
+
+
+def _timed_out(call: pytest.CallInfo[None]) -> bool:
+    """A timeout, pyfect's ``TestTimeoutError`` among them, or the hang alarm's failure."""
+    excinfo = call.excinfo
+    return excinfo is not None and (
+        excinfo.errisinstance(TimeoutError) or str(excinfo.value).startswith("test hung:")
+    )
 
 
 def _stack(frames: tuple[Frame, ...]) -> str:
@@ -386,6 +445,8 @@ def pytest_runtest_makereport(
     if stalls and report.failed:
         report.sections.append(("stall", "\n".join(stalls)))
         stalls.clear()
+    elif report.failed and _timed_out(call):
+        report.sections.append(("stall", watchdog.no_stall(call.stop, call.duration)))
     elif stalls and call.when == "teardown":
         item.warn(StallWarning(stalls[0].splitlines()[0]))
     return report

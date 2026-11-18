@@ -112,6 +112,114 @@ def test_a_fiber_waiting_on_a_timer_is_no_stall(
     assert "process stalled" not in out
 
 
+BUSY_HANG = """
+def spin_on_purpose():
+    total = 0
+    for n in range(10**4):
+        total += n
+    return total
+
+
+def test_spins():
+    while True:  # never ends: the hang alarm fails it
+        spin_on_purpose()
+"""
+
+WAITING_HANG = """
+import threading
+
+
+def wait_on_purpose():
+    threading.Event().wait()  # nothing sets it
+
+
+def test_waits():
+    wait_on_purpose()
+"""
+
+FIBER_TIMEOUT = """
+import pyfect as fx
+import pyfect.testing as it
+
+
+@it.live(timeout="1 second")
+def test_times_out():
+    yield from fx.never  # nothing wakes it
+"""
+
+BUSY_FIBER = """
+import pyfect as fx
+
+
+def spin_on_purpose():
+    return sum(range(10**5))  # about 1 ms on one line, so every sample reads the same stack
+
+
+@fx.fn
+def steps():
+    for _ in range(4000):  # about 2 s
+        yield from fx.sync(spin_on_purpose)
+
+
+def test_spins_in_steps():
+    fx.run_blocking(steps())
+    assert False
+"""
+
+
+def _hang(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch, source: str, alarm: int = 1
+) -> str:
+    monkeypatch.setenv("PYTHONPATH", str(Path(__file__).parent))
+    pytester.makepyfile(source)
+    pytester.makeini(f"[pytest]\nstall_threshold = 0.3\ntest_timeout = {alarm}\n")
+    result = pytester.runpytest_subprocess(
+        "-p", "_timeout", "-p", "_stalls", timeout=SUBPROCESS_TIMEOUT
+    )
+    result.assert_outcomes(failed=1)
+    return result.stdout.str()
+
+
+def test_a_hang_with_no_stall_says_where_the_test_was_running(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A test the hang alarm fails while it kept running Python (no stall) says so, and
+    names the frame it was last in."""
+    out = _hang(pytester, monkeypatch, BUSY_HANG)
+    assert "test hung: still running after 1s" in out
+    assert "no stall: the process kept running Python" in out
+    assert "the test thread was last in spin_on_purpose (" in out
+
+
+def test_a_hang_waiting_on_a_lock_says_where_the_test_waited(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    out = _hang(pytester, monkeypatch, WAITING_HANG)
+    assert "no stall: the process kept running Python" in out
+    assert "the test thread was waiting in wait (" in out
+    assert "wait_on_purpose (" in out
+
+
+def test_a_pyfect_test_timeout_with_no_stall_says_where_the_test_waited(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    out = _hang(pytester, monkeypatch, FIBER_TIMEOUT, alarm=10)  # pyfect's 1 s timeout first
+    assert "TestTimeoutError" in out
+    assert "no stall: the process kept running Python" in out
+    assert "the test thread was waiting in " in out
+
+
+def test_a_fiber_running_the_same_stack_on_the_cpu_is_busy_not_blocked(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Identical steps in a loop look like one step that never moves; with the CPU busy
+    the stall is "busy", not "blocked"."""
+    out = _run(pytester, monkeypatch, BUSY_FIBER)
+    assert "pyfect busy " in out
+    assert " in spin_on_purpose (" in out
+    assert "pyfect blocked" not in out
+
+
 def test_a_dump_reads_each_threads_frames_innermost_first() -> None:
     dump = (
         "Timeout (0:00:02)!\n"
