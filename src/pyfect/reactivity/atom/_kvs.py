@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Literal, overload
 
-from pyfect.option import Option
+from pyfect.option import Option, Some
 from pyfect.reactivity import async_result
 from pyfect.reactivity.async_result import AsyncResult, Success
 from pyfect.reactivity.atom._types import AtomContext, FnContext, Writable, WriteContext, writable
@@ -48,16 +48,24 @@ def kvs(
     ``AsyncResult``."""
     from pyfect.persistence.key_value_store import KeyValueStore
 
-    def store_value(value: Any, _get: FnContext) -> Any:
-        return KeyValueStore().flat_map(lambda s: s.to_schema_store(schema).set(key, value))
+    def store_value(value: Any, get: FnContext) -> Any:
+        stored = KeyValueStore().flat_map(lambda s: s.to_schema_store(schema).set(key, value))
+        return stored.map(lambda _: get.set(persisted_atom, value))
 
     set_atom = runtime.fn(store_value)
     result_atom = runtime.atom(
         KeyValueStore().flat_map(lambda s: s.to_schema_store(schema).get(key))
     )
+    # The store's answer, or the last value written to it: a refresh or remount reads this,
+    # not a load that may have started before the write (Effect #10613).
+    persisted_atom: Writable[AsyncResult[Option[Any], Any], Any] = writable(
+        lambda get: get(result_atom),
+        lambda ctx, value: ctx.set_self(async_result.success(Some(value))),
+    )
 
     def read_async(get: AtomContext) -> Any:
         get.mount(set_atom)
+        get.mount(persisted_atom)
 
         def mapper(result: AsyncResult[Option[Any], Any]) -> AsyncResult[Any, Any]:
             def or_default(found: Option[Any]) -> Any:
@@ -70,10 +78,11 @@ def kvs(
             return async_result.map(result, or_default)
 
         get.subscribe(result_atom, lambda result: get.set_self(mapper(result)))
-        return mapper(get.once(result_atom))
+        return mapper(get.once(persisted_atom))
 
     def read_sync(get: AtomContext) -> Any:
         get.mount(set_atom)
+        get.mount(persisted_atom)
 
         def on_result(result: AsyncResult[Option[Any], Any]) -> None:
             if not isinstance(result, Success):
@@ -87,7 +96,8 @@ def kvs(
                 get.set_self(value)
                 get.set(set_atom, value)
 
-        get.subscribe(result_atom, on_result, immediate=True)
+        get.subscribe(result_atom, on_result)
+        on_result(get.once(persisted_atom))
         current = get.self()
         return default_value() if current is None else current.value
 
