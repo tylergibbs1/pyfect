@@ -18,6 +18,10 @@ class NotFound(fx.TaggedError):
     key: str
 
 
+class Crash(Exception):
+    pass
+
+
 class Gone(S.TaggedError):
     id: int
 
@@ -28,7 +32,7 @@ def describe(ex: fx.Exit[int, NotFound]) -> str:
             return f"value {value}"
         case fx.Failure(fx.Cause([Fail(NotFound(key))])):
             return f"no {key}"
-        case fx.Failure(fx.Cause([Die(ZeroDivisionError() as defect), *_])):
+        case fx.Failure(fx.Cause([Die(Crash() as defect), *_])):
             return f"crashed: {defect}"
         case fx.Failure(fx.Cause([Interrupt(_), *_])):
             return "interrupted"
@@ -39,8 +43,11 @@ def describe(ex: fx.Exit[int, NotFound]) -> str:
 def test_exits_of_runs_match_positionally() -> None:
     assert describe(fx.run_sync_exit(fx.succeed(1))) == "value 1"
     assert describe(fx.run_sync_exit(fx.fail(NotFound("motd")))) == "no motd"
-    crashed = fx.run_sync_exit(fx.sync(lambda: 1 // 0))
-    assert describe(crashed) == "crashed: division by zero"
+
+    def crash() -> int:
+        raise Crash("bug")
+
+    assert describe(fx.run_sync_exit(fx.sync(crash))) == "crashed: bug"
     assert describe(fx.run_sync_exit(fx.interrupt())) == "interrupted"
 
 
