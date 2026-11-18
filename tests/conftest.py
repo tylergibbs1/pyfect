@@ -19,6 +19,7 @@ pytest_plugins = [
     "_git_config_guard",
     "_metric_registry",
     "_parallel",
+    "_stalls",
 ]
 
 # pytest imports readline before this file loads, and GNU readline (Linux) exports COLUMNS and

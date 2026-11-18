@@ -2,6 +2,7 @@
 # A line is `path reads  # reason` (tests/_inventory.py): the reason names the real time the
 # file measures and why the TestClock cannot drive it.
 _connection_release.py 2  # deadline for the OS to close real sockets to a real HTTP server (counted in /dev/fd); the TestClock does not drive kernel sockets
+_stalls.py 8  # the stall watchdog measures how long the real process went without running (tick gaps, process CPU, GC passes); a stall is real time the TestClock never sees
 cross_run/_hammer.py 2  # hang deadline joining real OS threads that each make their own runs; the TestClock belongs to one run and cannot bound other threads
 cross_run/cases_fibers.py 6  # settle deadlines for fibers and scopes ending on other OS threads in other runs; no single run's TestClock covers those threads
 cross_run/test_run_ownership.py 2  # times a quick run while another thread's run sleeps 2 s on its live clock; each run has its own clock, so no TestClock spans both
