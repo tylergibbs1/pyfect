@@ -164,6 +164,10 @@
   (`list[Annotated[int, ...]]`), innermost first. Metadata that is not a check is still
   ignored, and an explicit `S.field(schema)` still wins. A field annotation with no schema
   names the field in its error (`Price.value: No schema for the annotation ...`).
+- Scheduler: a timer a run left pending when it returned (a forked fiber's sleep or timeout,
+  handed to the background scheduler) stays in the background scheduler's heap until its
+  deadline once cancelled, so an interrupted hour-long sleep held its entry for the hour.
+  Cancelling it now removes it there too, as for every other timer.
 - Schema classes: constructing one with checks on cost twice what it costs with
   `disable_checks` (an `eventlog.Entry` took 3.5 us against 1.9 us). After parsing each
   field, the constructor collected the values and parsed them again as a whole. Each field is

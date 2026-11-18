@@ -23,6 +23,7 @@ from _gc_census import tracked_count
 import pyfect as fx
 from pyfect import testing
 from pyfect._timer_heap import TimerHeap
+from pyfect.scheduler import BACKGROUND
 
 _SRC = _source.SRC
 
@@ -62,6 +63,24 @@ def test_interrupted_sleeps_leave_nothing_behind_until_their_deadline() -> None:
 
 def test_interrupted_sleeps_on_the_test_clock_leave_nothing_behind() -> None:
     assert testing.run_test(_objects_left_by_cancelled_timers(5_000)) < 1_000
+
+
+def test_a_timer_a_run_hands_to_the_background_lets_go_once_cancelled() -> None:
+    """A run that returns hands its pending timers to the background scheduler
+    (``SyncScheduler.adopt``); cancelled there, they go at once too."""
+
+    @fx.fn
+    def sleepers():
+        fibers = yield from fx.for_each(range(1_000), lambda _: fx.sleep("1 hour").fork_daemon())
+        yield from fx.yield_now()  # let them start sleeping
+        return fibers
+
+    timers = BACKGROUND._timers  # pyright: ignore[reportPrivateUsage]
+    before = len(timers)
+    fibers = fx.run_blocking(sleepers())
+    assert len(timers) - before >= 1_000
+    fx.run_blocking(fx.Fiber.interrupt_all(fibers))
+    assert len(timers) - before < 100
 
 
 def test_the_heap_pops_due_entries_in_order_and_skips_cancelled_ones() -> None:

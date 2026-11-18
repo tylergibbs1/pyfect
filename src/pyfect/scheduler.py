@@ -298,6 +298,8 @@ class SyncScheduler(Tracking):
         self._adopter: SyncScheduler | None = None
         # Tasks of this scheduler queued or running on the adopter (``driver``).
         self._forwarded = 0
+        # The adopter's cancel of each timer ``adopt`` moved there, until it fires.
+        self._moved: dict[_timer_heap.TimerEntry[_Timer], Cancel] = {}
 
     def runs_here(self) -> bool:
         """Whether this thread is the one running the scheduler's tasks."""
@@ -330,8 +332,15 @@ class SyncScheduler(Tracking):
             into.schedule(self._forward(task))
         for entry in timers:
             timer = entry.value
-            if timer is not None:
-                into.call_at(entry.when, self._counted(self._fire(entry)), daemon=timer.daemon)
+            if timer is None:
+                continue
+            moved = into.call_at(entry.when, self._counted(self._fire(entry)), daemon=timer.daemon)
+            with self._cond:
+                cancelled = entry.owner is None
+                if not cancelled:
+                    self._moved[entry] = moved
+            if cancelled:  # while it moved
+                moved()
 
     def _forward(self, task: Task) -> Task:
         """``task`` for the adopter, counted while queued or running there."""
@@ -369,6 +378,7 @@ class SyncScheduler(Tracking):
             with self._cond:
                 timer = entry.value
                 entry.owner = entry.value = None
+                self._moved.pop(entry, None)
             if timer is not None:
                 timer.task()
 
@@ -408,6 +418,9 @@ class SyncScheduler(Tracking):
         def cancel() -> None:
             with self._cond:
                 entry.cancel()
+                moved = self._moved.pop(entry, None)
+            if moved is not None:  # ``adopt`` moved it: the adopter lets go of it too
+                moved()
 
         return cancel
 
