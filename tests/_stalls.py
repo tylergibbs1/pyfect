@@ -284,8 +284,11 @@ class Watchdog:
         generation = -1
         while not self._stop.is_set():
             if self.dump:
-                faulthandler.dump_traceback_later(self.threshold, file=self._file)
+                # Noted before arming: a freeze between the two would otherwise put the due
+                # time after it, and the dump the C watchdog writes at resume would read as
+                # on time.
                 self._dump_due = time.time() + self.threshold
+                faulthandler.dump_traceback_later(self.threshold, file=self._file)
             self._stop.wait(self.tick)
             now, now_cpu = time.monotonic(), time.process_time()
             if generation != self._generation:
@@ -331,24 +334,13 @@ class Watchdog:
             return f"{head}: pyfect blocked in garbage collection ({took})"
         busy = [t for t in threads if not t.current and not t.frames[0].idle]
         fibers = [t for t in busy if t.in_fiber_step]
-        on_time = late is not None and late <= self.tick
+        # Never much before its due time: a dump that reads so is no evidence either way.
+        on_time = late is not None and -self.tick <= late <= self.tick
         if (fibers or busy) and (on_time or cpu >= gap / 2):
             frames = (fibers or busy)[0].frames
             return f"{head}: pyfect blocked in {frames[0]} ({numbers})\n" + _stack(frames)
-        return f"{head}: {self._no_busy_thread(gap, cpu, late, on_time)} ({numbers})"
-
-    def _no_busy_thread(self, gap: float, cpu: float, late: float | None, on_time: bool) -> str:
-        """Names a stall the dump shows no pyfect frame for: the host froze the process (the
-        C watchdog was frozen too, so it wrote late or not yet), or something unknown."""
-        if on_time:
-            return "in-process: the dump came on time, but no Python thread was busy"
-        if not self.dump:
-            return "host or a C call holding the GIL: no dump to tell"
-        if late is not None:
-            return f"host: process frozen, the dump {late:.1f} s late"
-        if cpu < gap / 2:
-            return "host: process frozen, no dump written yet"
-        return "in-process: no stack captured"
+        named = _no_busy_thread(gap, cpu, late, on_time=on_time, dump=self.dump)
+        return f"{head}: {named} ({numbers})"
 
     def _sample_fibers(self, now: float) -> None:
         """Reports a fiber step whose stack has not moved for the threshold. The stacks come
@@ -401,6 +393,25 @@ class Watchdog:
                 index = self._reported[key]
                 if 0 <= index < len(self.stalls):
                     self.stalls[index] = f"{head}\n{self._stacks[key]}"
+
+
+def _no_busy_thread(
+    gap: float, cpu: float, late: float | None, *, on_time: bool, dump: bool
+) -> str:
+    """Names a stall the dump shows no pyfect frame for: the host froze the process (the
+    C watchdog was frozen too, so it wrote late or not yet), or something unknown."""
+    if on_time and cpu >= gap / 2:
+        return "in-process: the dump came on time, but no Python thread was busy"
+    if on_time:
+        # Nothing in the process explains a stall with no busy thread and no CPU used.
+        return "unexplained: the dump came on time, but no thread was busy and no CPU used"
+    if not dump:
+        return "host or a C call holding the GIL: no dump to tell"
+    if late is not None:
+        return f"host: process frozen, the dump {late:.1f} s late"
+    if cpu < gap / 2:
+        return "host: process frozen, no dump written yet"
+    return "in-process: no stack captured"
 
 
 def _below_the_alarm(frames: tuple[Frame, ...]) -> tuple[Frame, ...]:

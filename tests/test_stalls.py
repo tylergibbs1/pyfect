@@ -7,7 +7,12 @@ Each case runs a small test file under the plugin in a subprocess, with a short
 from pathlib import Path
 
 import pytest
-from _stalls import DumpedThread, Frame, _dump_threads  # pyright: ignore[reportPrivateUsage]
+from _stalls import (
+    DumpedThread,
+    Frame,
+    _dump_threads,  # pyright: ignore[reportPrivateUsage]
+    _no_busy_thread,  # pyright: ignore[reportPrivateUsage]
+)
 from _subprocess import SUBPROCESS_TIMEOUT
 
 BLOCKING_FIBER = """
@@ -94,6 +99,44 @@ def test_deadlocks():
     assert False
 """
 
+FROZEN_RIGHT_AFTER_ARMING = """
+import faulthandler
+import os
+import subprocess
+import threading
+import time
+
+import _stalls
+import pyfect as fx
+
+
+class StopAfterArming:
+    \"\"\"The watchdog's faulthandler, whose next arming is followed by a SIGSTOP of the
+    process before the watchdog notes when the dump is due.\"\"\"
+
+    def __init__(self):
+        self.next = threading.Event()
+
+    def __getattr__(self, name):
+        return getattr(faulthandler, name)
+
+    def dump_traceback_later(self, *args, **kwargs):
+        faulthandler.dump_traceback_later(*args, **kwargs)
+        if self.next.is_set():
+            self.next.clear()
+            script = f"kill -STOP {os.getpid()}; sleep 1; kill -CONT {os.getpid()}"
+            subprocess.Popen(["sh", "-c", script])
+            time.sleep(0.3)  # the stop lands here: armed, the due time not yet noted
+
+
+def test_is_frozen_right_after_arming():
+    shim = StopAfterArming()
+    _stalls.faulthandler = shim
+    shim.next.set()
+    fx.run_blocking(fx.sleep("2 seconds"))
+    assert False
+"""
+
 IDLE_WAIT = """
 import pyfect as fx
 
@@ -153,6 +196,19 @@ def test_a_frozen_process_is_named_a_host_stall(
     not getattr(__import__("sys"), "_is_gil_enabled", lambda: True)(),
     reason="free-threaded: no GIL to hold, so the watchdog keeps running",
 )
+@pytest.mark.skipif(__import__("sys").platform == "win32", reason="SIGSTOP is POSIX")
+def test_a_freeze_right_after_the_dump_is_armed_is_a_host_stall(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#135's CI: a freeze that lands between arming faulthandler's dump and noting when it
+    is due made the due time fall after the freeze, so the dump the C watchdog wrote at
+    resume read as on time, and the stall as in-process. The due time is noted first."""
+    out = _run(pytester, monkeypatch, FROZEN_RIGHT_AFTER_ARMING)
+    assert "process stalled 1." in out
+    assert ": host: process frozen, " in out
+    assert "on time" not in out
+
+
 def test_a_c_call_sleeping_with_the_gil_held_is_named_pyfect_not_host(
     pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -283,6 +339,13 @@ def test_a_fiber_running_the_same_stack_on_the_cpu_is_busy_not_blocked(
     assert "pyfect busy " in out
     assert " in spin_on_purpose (" in out
     assert "pyfect blocked" not in out
+
+
+def test_an_on_time_dump_with_no_busy_thread_and_no_cpu_is_unexplained() -> None:
+    """Nothing in the process explains such a stall, so it is neither called in-process nor
+    counted as a host freeze."""
+    named = _no_busy_thread(1.1, 0.0, 0.0, on_time=True, dump=True)
+    assert named.startswith("unexplained: ")
 
 
 def test_a_dump_reads_each_threads_frames_innermost_first() -> None:
