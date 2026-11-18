@@ -115,13 +115,15 @@
 
 ### Fixed
 
-- Cluster: with SQL message storage, a workflow activity could restart in a loop after a
-  durable-clock wakeup. The workflow engine's guarded reset (`clear_replies` with
-  `expected_reply_id`) requeued the request but also reset the interrupt its last run had
-  consumed, so the interrupt was delivered again and the activity was interrupted and rerun.
-  The guarded reset now locks the request only when its current reply is the expected one,
-  deletes the interrupts that reply consumed, and keeps an interrupt received after it, as
-  Effect does since Effect-TS/effect#10629 (after 4.1.4).
+- Cluster: activities could rerun after a durable-clock wakeup on SQL storage. The workflow
+  engine's guarded reset (`clear_replies` with `expected_reply_id`) requeued the request, but
+  it also reset the interrupt that the activity's last run had consumed. That interrupt was
+  delivered again, so the next run was interrupted and the activity reran, sometimes several
+  times in a row. In the dogfood traces this caused 3 of one activity's 12 runs. The guarded
+  reset now locks the request only while its current reply is the expected one. It deletes
+  the interrupts that reply consumed and keeps any interrupt received after it, as Effect
+  does since Effect-TS/effect#10629 (after 4.1.4). Most of the other reruns came from
+  shard-lock flaps, which are at-least-once behaviour.
 
 - A schema whose aliases only reach each other (a JSON Schema `$ref` to itself) took
   seconds to fail, and up to a minute on Python 3.14; so did any deep recursion that ran
