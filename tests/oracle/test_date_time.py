@@ -895,15 +895,36 @@ def test_accepts_trailing_zone_designators_in_any_case(text: str, expected: str)
     assert _make(text) == expected
 
 
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("Tue, 27 Jan 2026 17:14:06 -0500 (EST)", "2026-01-27T22:14:06.000Z"),
+        ("Tue, 27 Jan 2026 17:14:06 +0530 (India Standard Time)", "2026-01-27T11:44:06.000Z"),
+        ("Tue, 27 Jan 2026 17:14:06 -05 ", "2026-01-27T22:14:06.000Z"),
+        ("Tue, 27 Jan 2026 05:14:06 PM EST (Eastern Standard Time)", "2026-01-27T22:14:06.000Z"),
+        ("Tue, 27 Jan 2026 17:14:06 -0500 EST (Eastern Standard Time)", "2026-01-27T22:14:06.000Z"),
+        ("Tue, 27 Jan 2026 17:14:06 est\r\n", "2026-01-27T22:14:06.000Z"),
+        ("12:00:00 2024-01-01 (note)", "2024-01-01T12:00:00.000Z"),
+        ("2024-01-01 ", "2024-01-01T00:00:00.000Z"),
+        ("01-01-2024 (note)", "2024-01-01T00:00:00.000Z"),
+    ],
+)
+def test_preserves_zone_interpretation_before_comments_or_whitespace(text: str, expected: str):
+    """preserves zone interpretation before comments or whitespace: %s"""
+    assert _make(text) == expected
+
+
 def test_every_zone_word_the_parser_reads_counts_as_a_zone():
     """Not an Effect title: ``make`` adds no ``Z`` after any zone word ``Date.parse`` reads,
-    in any case, so the word's offset applies."""
+    in any case and before trailing whitespace or a comment, so the word's offset applies."""
     for name, (kind, hours) in _js_date._KEYWORDS.items():  # pyright: ignore[reportPrivateUsage]
         if kind != _js_date._ZONE:  # pyright: ignore[reportPrivateUsage]
             continue
         expected = f"2024-06-01T{10 - hours:02d}:00:00.000Z"
         for word in (name, name.upper()):
-            assert _make(f"June 1, 2024 10:00 {word}") == expected, word
+            for suffix in ("", " ", "\r\n", " (comment)", " (comment) "):
+                text = f"June 1, 2024 10:00 {word}{suffix}"
+                assert _make(text) == expected, text
 
 
 # --- rounding across DST (Effect 4.1.2) ------------------------------------------------

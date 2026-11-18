@@ -39,6 +39,10 @@
   tracing off, and the ids of a span annotated with `DisablePropagation`. Log records now carry
   the nearest span that allows propagation, or none (Effect #10609). The OpenTelemetry logger
   (`pyfect.otel.logger`) had the same bug and is fixed the same way.
+- `DateTime.make` ignored a zone followed by trailing whitespace or a comment, as in
+  `"Tue, 27 Jan 2026 17:14:06 -0500 (EST)"`: it added a `Z` and read the time as UTC. A
+  whitespace-separated offset or zone word before whitespace and one comment now counts as
+  the zone (Effect #10620).
 
 ## 0.6.12 (2026-11-18)
 

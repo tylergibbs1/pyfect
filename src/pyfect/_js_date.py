@@ -21,6 +21,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
+from pyfect._js import SPACE
 from pyfect.date_time._zones import zone_local
 
 _MS_PER_DAY = 86_400_000
@@ -470,22 +471,38 @@ def parse(text: str) -> int | None:
     return date if abs(date) <= _MAX_TIME else None
 
 
+_ZONE_WORDS = "|".join(name for name, (kind, _) in _KEYWORDS.items() if kind == _ZONE)
+"""Every zone word ``parse`` reads (Effect's ``z``, ``gmt``, ``ut``, ``utc`` and the US
+abbreviations), taken from the parser's own keywords so the checks below can't disagree
+with it."""
+
 _HAS_ZONE = re.compile(r"Z|GMT|[+-][0-9]{2}$|[+-][0-9]{2}:?[0-9]{2}$|\]$")
-_ENDS_IN_ZONE = re.compile(
-    "(?:" + "|".join(name for name, (kind, _) in _KEYWORDS.items() if kind == _ZONE) + ")$",
-    re.IGNORECASE,
+_ENDS_IN_ZONE = re.compile(f"(?:{_ZONE_WORDS})$", re.IGNORECASE)
+"""A trailing zone word, in any case."""
+_ZONE_BEFORE_COMMENT = re.compile(
+    f"[{SPACE}](?:[+-][0-9]{{2}}(?::?[0-9]{{2}})?|{_ZONE_WORDS})"
+    f"[{SPACE}]*(?:\\([^()]*\\)[{SPACE}]*)?$",
+    re.IGNORECASE | re.ASCII,
 )
-"""A trailing zone word ``parse`` reads, in any case (Effect's ``hasZone``: ``z``, ``gmt``,
-``ut``, ``utc`` and the US abbreviations), taken from the parser's own keywords so the two
-can't disagree."""
+"""A whitespace-separated offset or zone word followed by whitespace and at most one
+non-nested comment, as in ``"... 17:14:06 -0500 (EST)"``. ``re.ASCII`` keeps the case
+folding to ASCII, as a JavaScript ``/i`` regex without ``u``; the space class is
+JavaScript's (``_js.SPACE``)."""
+
+
+def _names_zone(text: str) -> bool:
+    """Effect's ``hasZone``: ``text`` already names a zone, so ``make`` adds no ``Z``."""
+    return any(
+        pattern.search(text) is not None
+        for pattern in (_HAS_ZONE, _ENDS_IN_ZONE, _ZONE_BEFORE_COMMENT)
+    )
 
 
 def parse_input(text: str) -> int | None:
     """A ``DateTime.Input`` string, as Effect's ``DateTime.makeUnsafe``
     reads it: ``parse``, with a ``Z`` added when ``text`` names no zone,
     so a date-time without an offset is UTC rather than local time."""
-    has_zone = _HAS_ZONE.search(text) is not None or _ENDS_IN_ZONE.search(text) is not None
-    return parse(text if has_zone else text + "Z")
+    return parse(text if _names_zone(text) else text + "Z")
 
 
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
