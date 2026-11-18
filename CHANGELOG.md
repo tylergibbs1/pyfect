@@ -154,6 +154,10 @@
   the interrupts that reply consumed and keeps any interrupt received after it, as Effect
   does since Effect-TS/effect#10629 (after 4.1.4). Most of the other reruns came from
   shard-lock flaps, which are at-least-once behaviour.
+- Cluster: activities could rerun after a durable-clock wakeup on SQL storage: a reset
+  requeued interrupts the activity had already consumed, so its next run was interrupted.
+  The reset now removes those interrupts and keeps any received after the activity's
+  reply, as Effect does since Effect-TS/effect#10629 (after 4.1.4).
 
 - A schema whose aliases only reach each other (a JSON Schema `$ref` to itself) took
   seconds to fail, and up to a minute on Python 3.14; so did any deep recursion that ran
