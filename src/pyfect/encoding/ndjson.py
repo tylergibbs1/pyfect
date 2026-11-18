@@ -228,6 +228,7 @@ def decode_string[E = Never, D = None](
 
 _LF = 0x0A
 _CR = 0x0D
+_BOM = b"\xef\xbb\xbf"
 
 
 class _ByteLines:
@@ -244,19 +245,26 @@ class _ByteLines:
         self.size = 0
         self.after_cr = False
 
-    def take_line(self, chunk: bytes, start: int, end: int) -> bytes:
+    def take_line(self, chunk: bytes, start: int, end: int) -> bytes | memoryview:
+        """The line ending at ``end``: read where it lies when it is all in ``chunk``, joined
+        once when it began in earlier chunks."""
         if not self.pending:
-            return chunk[start:end]
-        self.pending.append(chunk[start:end])
-        line = b"".join(self.pending)
+            return memoryview(chunk)[start:end]
+        if start < end:
+            self.pending.append(chunk[start:end])
+        line = b"".join(self.pending)  # one piece is returned as it is, not copied
         self.pending = []
         self.size = 0
         return line
 
-    def decode_line(self, data: bytes, out: list[Json], unterminated: bool) -> NdjsonError | None:
+    def decode_line(
+        self, data: bytes | memoryview, out: list[Json], unterminated: bool
+    ) -> NdjsonError | None:
         first = self.first
+        if first and data[:3] == _BOM:
+            data = memoryview(data)[3:]  # as ``utf-8-sig`` reads it, without its copies
         try:
-            line = data.decode("utf-8-sig" if first else "utf-8")
+            line = str(data, "utf-8")
         except UnicodeDecodeError as cause:
             return NdjsonError("Unpack", cause, reason="InvalidUtf8", unterminated=unterminated)
         self.first = False

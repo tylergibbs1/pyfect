@@ -85,8 +85,9 @@ class _LineSplitter:
     def _line(self, end: str) -> str:
         if not self._pending:
             return end
-        self._pending.append(end)
-        line = "".join(self._pending)
+        if end:
+            self._pending.append(end)
+        line = "".join(self._pending)  # one piece is returned as it is, not copied
         self._pending = []
         self.pending_length = 0
         return line

@@ -361,7 +361,35 @@ text(static_server.parse_range, lambda value: static_server.parse_range(value, 1
 text(semver.parse_component, lambda value: semver.parse_component(value, "major"))
 text(libsql_config.parse_target, lambda value: libsql_config.parse_target(value, None, None))
 data(jwks.parse_json_object)
-data(event_log_session_auth.decode_session_auth_payload)
+
+
+def _session_auth_payload(value: str) -> bytes:
+    """A canonical payload whose three variable fields each hold ``value``: the adversaries
+    as bytes are refused at the first length prefix, which measures nothing."""
+    payload = event_log_session_auth.SessionAuthPayload(
+        remote_id=value,
+        challenge=value.encode(),
+        public_key=value,
+        signing_public_key=bytes(event_log_session_auth.ED25519_PUBLIC_KEY_LENGTH),
+    )
+    return fx.run_blocking(event_log_session_auth.encode_session_auth_payload(payload).or_die())
+
+
+for _kind, _make_input in ADVERSARIES.items():
+
+    def _session_auth(n: int, make_input: Callable[[int], str] = _make_input) -> Work:
+        decode = event_log_session_auth.decode_session_auth_payload
+        data = _session_auth_payload(make_input(n // 3))
+        return lambda: fx.run_blocking(decode(data).or_die())
+
+    CASES.append(
+        Case(
+            f"{_qualified(event_log_session_auth.decode_session_auth_payload)}: {_kind}",
+            event_log_session_auth.decode_session_auth_payload,
+            _session_auth,
+            size=1 << 16,  # copying a field is cheap: below this, the call's fixed cost hides it
+        )
+    )
 
 
 @case(
