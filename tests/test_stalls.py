@@ -260,6 +260,23 @@ def test_waits():
     wait_on_purpose()
 """
 
+WAITING_ON_A_WORKER = """
+import threading
+import time
+
+
+def sleep_on_purpose():
+    time.sleep(3)  # past the 1 s alarm: the work the test waits for is stuck
+
+
+def test_waits_on_a_worker():
+    done = threading.Event()
+    parked = threading.Event()
+    threading.Thread(target=sleep_on_purpose, name="pyfect-sqlite_0", daemon=True).start()
+    threading.Thread(target=parked.wait, name="pyfect-parked", daemon=True).start()
+    done.wait()  # what the worker would set when it finished
+"""
+
 FIBER_TIMEOUT = """
 import pyfect as fx
 import pyfect.testing as it
@@ -349,6 +366,18 @@ def test_a_hang_waiting_on_a_lock_says_where_the_test_waited(
     assert "no stall: the process kept running Python" in out
     assert "the test thread was waiting in wait (" in out
     assert "wait_on_purpose (" in out
+
+
+def test_a_hang_waiting_on_a_worker_names_the_working_pyfect_threads(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#153's CI: a test waited 5 s on the sqlite worker, and the report could not tell
+    whether the worker was stuck or had finished with the wake lost. A waiting test thread
+    now comes with every pyfect thread that was working at that sample, and where."""
+    out = _hang(pytester, monkeypatch, WAITING_ON_A_WORKER)
+    assert "the test thread was waiting in wait (" in out
+    assert "pyfect-sqlite_0 was in sleep_on_purpose (" in out, out
+    assert "pyfect-parked was in" not in out, out
 
 
 def test_a_pyfect_test_timeout_with_no_stall_says_where_the_test_waited(
