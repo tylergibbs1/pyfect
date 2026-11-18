@@ -96,6 +96,7 @@ tests/test_cluster_workflow_engine_resets.py::test_replies_are_reset_only_throug
 tests/test_crypto_key_loading_guard.py::test_keys_are_loaded_only_through_the_lib_loaders
 tests/test_date_time_exact_epoch.py::test_no_float_between_an_instant_and_a_timedelta
 tests/test_disable_checks_ports.py::test_ports_keep_effects_disable_checks_constructions
+tests/test_doc_at_least_once.py::test_no_doc_says_activities_or_compensations_run_once
 tests/test_doc_inline_code.py::test_the_checked_file_holds_every_self_contained_inline_span
 tests/test_doc_snippets.py::test_diagrams_exist_and_are_used
 tests/test_doc_snippets.py::test_every_snippet_is_used_by_a_guide
@@ -277,6 +278,7 @@ tests/test_current_time_millis_type.py::test_every_clock_is_checked  # slow: 3.9
 tests/test_curried_lambdas.py::test_no_doc_passes_a_lambda_the_pipe_cannot_type  # slow: 7.8 s serial
 tests/test_curried_lambdas.py::test_the_check_sees_a_curried_lambda  # slow: 2.5 s serial
 tests/test_curried_lambdas.py::test_the_combinators_are_found  # slow: 2.5 s serial
+tests/test_doc_at_least_once.py::test_no_docstring_says_activities_or_compensations_run_once  # slow: 1.7 s serial
 tests/test_duration_literals.py::test_a_constant_means_what_its_own_module_binds  # slow: 5.0 s serial
 tests/test_duration_literals.py::test_no_bare_number_is_given_where_a_duration_is_taken  # slow: 5.0 s serial
 tests/test_duration_literals.py::test_no_epoch_seconds_are_given_where_epoch_millis_are_taken  # slow: 4.9 s serial
