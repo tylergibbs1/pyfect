@@ -1,0 +1,74 @@
+---
+title: Subinterpreters
+description: "interpreter_pool runs pure functions in Python 3.14's subinterpreters, each with its own GIL: parallel CPU work on the GIL build without separate processes."
+---
+
+On the GIL build, Python code in `fx.blocking` takes turns with every other thread. Python 3.14's
+`concurrent.interpreters` runs code in subinterpreters: interpreters in the same process, each with
+its own GIL and its own modules, so pure-Python work in them runs on several cores at once without
+the start-up, memory and pipes of a `ProcessWorker`. `pyfect.interpreter_pool` runs functions in
+them from effects.
+
+Provide a pool with `interpreter_pool.layer(size=...)` (one interpreter per CPU by default; each
+starts on first need and closes when the layer is released) and call a function with
+`interpreter_pool.call(f, *args)`. A raised exception is a defect; `try_call` fails with an
+`UnknownError` around it instead, or with what `catch=` makes of it, as `fx.try_blocking` does.
+
+<include meta='title="checksums.py"'>../../snippets/subinterpreters/checksums.py</include>
+
+<include meta='title="test_checksums.py"'>../../snippets/subinterpreters/test_checksums.py</include>
+
+## What crosses
+
+A subinterpreter shares no objects with yours. The function, its arguments, its result and a
+raised exception are copied across with `pickle`:
+
+- The function must be importable: a module-level function of a module on `sys.path`, which
+  the subinterpreter imports the first time it runs something from it. Each subinterpreter
+  starts with your program's `sys.path`. A function defined in the script you ran (`__main__`)
+  or a lambda can't cross. Keep these functions in a module that imports little: importing
+  `pyfect` there takes up to a second.
+- Arguments and results must pickle. Objects the function changes are copies, so return what
+  you need instead.
+- An exception comes back as itself when it pickles, with the
+  `concurrent.interpreters.ExecutionFailed` that describes it (traceback included) as its
+  `__cause__`. One that doesn't pickle comes back as that `ExecutionFailed`.
+
+## Interruption
+
+Python can't stop a call that has started. Interrupting the fiber abandons it, as `fx.blocking`
+does: a call still waiting for a free interpreter is withdrawn and never runs, while a running
+one goes on until it returns and its result is dropped. Releasing the layer fails calls still
+waiting with `InterpreterPoolClosedError` and closes every idle interpreter before it returns; an
+abandoned call's interpreter closes when the call returns. The pool's threads are daemon threads,
+so an abandoned call doesn't hold the process open at exit.
+
+## What it measured
+
+[`benchmarks/interpreter_pool.py`](https://github.com/tylergibbs1/pyfect/blob/main/benchmarks/interpreter_pool.py)
+runs 8 calls of the same pure-Python function (about 80 ms alone) with `concurrency=8`, on an
+18-core Apple M-series machine other jobs were also using. The rate is 8 times one call's time
+over the fan-out's:
+
+| | 3.14 | 3.14t |
+| --- | --- | --- |
+| inline (`fx.sync`) | 1.01x | 1.02x |
+| `fx.blocking` | 1.02x | 5.60x |
+| `interpreter_pool.call` | 7.05x | 6.41x |
+
+The round trip of a call that does nothing, p50 / p95, unloaded:
+
+| | 3.14 | 3.14t |
+| --- | --- | --- |
+| `fx.blocking` | 0.024 / 0.032 ms | 0.017 / 0.031 ms |
+| `interpreter_pool.call` | 0.036 / 0.049 ms | 0.354 / 0.391 ms |
+
+So on the GIL build a pool of subinterpreters is the way to spread pure-Python work over cores
+inside one process. On free-threaded 3.14t, `fx.blocking` does it too, with no copying and a
+tenth of the round trip, so the pool only pays there for isolation. With a pure-Python loop
+spinning on a thread per core, either round trip waits on the OS for a core (3.14t, p95 21 ms
+for the pool, 29 ms for `fx.blocking`), and on the GIL build behind every busy thread for the
+GIL, hundreds of milliseconds.
+
+`concurrent.interpreters` is new in Python 3.14: on 3.13, building the layer dies with
+`InterpretersUnavailableError`.

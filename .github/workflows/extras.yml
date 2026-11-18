@@ -123,6 +123,7 @@ jobs:
           tests/test_base_exceptions.py
           tests/test_source_cache.py
           tests/oracle/test_synchronous_resume.py
+          tests/test_interpreter_pool.py
 
   soak-short:
     # Six minutes of tests/soak (soak.yml runs it for hours): leaks, stuck fibers, stalls,

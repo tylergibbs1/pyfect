@@ -33,6 +33,7 @@ _SANCTIONED: dict[tuple[str, str], str] = {
         "a LoopThread's default executor, as asyncio makes it (min(32, cpus + 4) threads), named"
     ),
     ("scheduler.py", "Thread"): "the one background scheduler thread",
+    ("interpreter_pool.py", "Thread"): "at most size per interpreter pool, one per subinterpreter",
     ("_blocking_watchdog.py", "Thread"): "one watchdog, started by PYFECT_WARN_BLOCKING",
     ("_stack.py", "ThreadPoolExecutor"): (
         "joined before it returns, nested at most MAX_FRESH_STACKS deep"

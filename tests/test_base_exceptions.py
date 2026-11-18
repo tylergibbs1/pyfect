@@ -552,6 +552,7 @@ def test_no_bare_exception_handler_in_the_runtime_core():
 # loop thread), where Ctrl-C is never delivered.
 _OFF_FIBER = {
     "_blocking_pool.py",
+    "interpreter_pool.py",
     "workers/_thread.py",
     "sql/sqlite/_worker.py",
     "sql/mssql/_worker.py",
