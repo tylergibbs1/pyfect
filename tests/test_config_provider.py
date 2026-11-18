@@ -135,7 +135,8 @@ def test_constant_case_follows_effects_config_case():
         "HTTP2Server": "HTTP2_SERVER",
         "_leading": "LEADING",
         "a__b": "A_B",
-        "straße": "STRA_E",
+        # Effect main since #10638 (after 4.1.4) keeps Unicode letters; 4.1.4 gave "STRA_E".
+        "straße": "STRASSE",
     }
     env = {expected: name for name, expected in cases.items()}
     provider = cp.from_env(env=env).constant_case()

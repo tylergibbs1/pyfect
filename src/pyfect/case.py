@@ -1,8 +1,9 @@
 """Case conversion: the case functions of Effect's ``String`` module.
 
 The word-based converters split their input into words at case changes
-(``"camelCase"``, ``"CAMELCase"``), letter/digit boundaries and any run of
-characters other than ASCII letters and digits, then join the words again::
+(``"camelCase"``, ``"CAMELCase"``, also in other scripts: ``"CaféÜber"``), letter/digit
+boundaries and any run of characters other than Unicode letters, combining marks and ASCII
+digits, then join the words again. No Unicode normalization is applied::
 
     case.snake_case("helloWorld")     # "hello_world"
     case.camel_case("hello world")    # "helloWorld"
@@ -17,22 +18,33 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable, Sequence
+from functools import cache
 
 type Patterns = re.Pattern[str] | Sequence[re.Pattern[str]]
 """A pattern or several, applied in order. Each replaces every match."""
 
-# Camel case ("camelCase" -> "camel Case", "CAMELCase" -> "CAMEL Case") and
-# digit boundaries ("camel2case" -> "camel 2 case").
-_SPLIT = (
-    re.compile(r"([a-z0-9])([A-Z])"),
-    re.compile(r"([A-Z])([A-Z][a-z])"),
-    re.compile(r"([A-Za-z])([0-9])"),
-    re.compile(r"([0-9])([A-Za-z])"),
-)
-# Config paths keep digit groups such as "v2".
-_CONFIG_SPLIT = _SPLIT[:2]
-_STRIP = re.compile(r"[^A-Za-z0-9]+")
 _CAPITAL = re.compile(r"([A-Z])")
+
+
+@cache
+def _defaults() -> tuple[tuple[re.Pattern[str], ...], tuple[re.Pattern[str], ...], re.Pattern[str]]:
+    """The word patterns, ``split``, ``config_split`` and ``strip``, compiled on first use
+    (their Unicode classes are long). Letters are Unicode letters (Effect's ``\\p{L}``),
+    with any combining marks after them; digits stay ASCII."""
+    from pyfect._case_unicode import LETTER, LOWER, MARK, UPPER
+
+    # Camel case ("camelCase" -> "camel Case", "CAMELCase" -> "CAMEL Case").
+    lower_upper = re.compile(f"([{LOWER}0-9][{MARK}]*)([{UPPER}])")
+    upper_upper = re.compile(f"([{UPPER}][{MARK}]*)([{UPPER}][{MARK}]*[{LOWER}])")
+    # Digit boundaries ("camel2case" -> "camel 2 case"); config paths keep digit groups
+    # such as "v2".
+    split = (
+        lower_upper,
+        upper_upper,
+        re.compile(f"([{LETTER}][{MARK}]*)([0-9])"),
+        re.compile(f"([0-9][{MARK}]*)([{LETTER}])"),
+    )
+    return split, split[:2], re.compile(f"[^{LETTER}{MARK}0-9]+")
 
 
 def _patterns(patterns: Patterns) -> Sequence[re.Pattern[str]]:
@@ -54,8 +66,8 @@ def _words(
 def no_case(
     text: str,
     *,
-    split: Patterns = _SPLIT,
-    strip: Patterns = _STRIP,
+    split: Patterns | None = None,
+    strip: Patterns | None = None,
     delimiter: str = " ",
     transform: Callable[[str], str] = str.lower,
 ) -> str:
@@ -65,8 +77,14 @@ def no_case(
     Each ``split`` pattern has two groups, and a word boundary goes between
     them; each match of a ``strip`` pattern becomes a boundary. Unlike a
     JavaScript regex without the ``g`` flag, a pattern replaces every match.
+    Left out, they are the converters' own patterns.
     """
-    words = _words(text, _patterns(split), _patterns(strip))
+    default_split, _, default_strip = _defaults()
+    words = _words(
+        text,
+        default_split if split is None else _patterns(split),
+        (default_strip,) if strip is None else _patterns(strip),
+    )
     return delimiter.join(transform(word) for word in words)
 
 
@@ -81,7 +99,8 @@ def pascal_case(text: str) -> str:
 
 def camel_case(text: str) -> str:
     """``"hello world"`` -> ``"helloWorld"``."""
-    words = _words(text, _SPLIT, (_STRIP,))
+    split, _, strip = _defaults()
+    words = _words(text, split, (strip,))
     return "".join(w.lower() if i == 0 else _capitalized(w) for i, w in enumerate(words))
 
 
@@ -95,7 +114,8 @@ def config_case(text: str) -> str:
     """CONSTANT_CASE that keeps digit groups (``"api-v2 xml"`` ->
     ``"API_V2_XML"``), as configuration keys are written. Not idempotent:
     ``"field2value"`` gives ``"FIELD2VALUE"``, which gives ``"FIELD2_VALUE"``."""
-    return "_".join(word.upper() for word in _words(text, _CONFIG_SPLIT, (_STRIP,)))
+    _, config_split, strip = _defaults()
+    return "_".join(word.upper() for word in _words(text, config_split, (strip,)))
 
 
 def kebab_case(text: str) -> str:

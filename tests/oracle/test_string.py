@@ -214,3 +214,64 @@ def test_snake_case_converts_to_snake_case() -> None:
     """snakeCase: converts to snake_case"""
     assert case.snake_case("hello world") == "hello_world"
     assert case.snake_case("helloWorld") == "hello_world"
+
+
+def test_unicode_case_conversion_preserves_accented_letters_at_case_boundaries() -> None:
+    """Unicode case conversion: preserves accented letters at case boundaries (Effect main, #10638)"""  # noqa: E501
+    assert case.camel_case("CaféÜber") == "caféÜber"
+
+
+def test_unicode_case_conversion_preserves_caseless_letters_at_number_boundaries() -> None:
+    """Unicode case conversion: preserves caseless letters at number boundaries (Effect main, #10638)"""  # noqa: E501
+    assert case.snake_case("日本語2テキスト") == "日本語_2_テキスト"
+
+
+def test_unicode_case_conversion_preserves_combining_marks() -> None:
+    """Unicode case conversion: preserves combining marks (Effect main, #10638)"""
+    assert case.snake_case("हिन्दी भाषा") == "हिन्दी_भाषा"
+
+
+def test_unicode_case_conversion_marks_at_non_ascii_number_boundaries() -> None:
+    """Unicode case conversion: preserves marks at non-ASCII number boundaries (Effect main,
+    #10638). Effect counts every Unicode number (``\\p{N}``) as a digit and gives
+    ``"cafe\\u0301_٣\\u0308_a"``; pyfect's digits are ASCII only, so ``٣`` separates words
+    like any other character that is not a letter, mark or digit. The marks stay."""
+    assert case.snake_case("café٣̈a") == "café_̈a"
+
+
+def test_unicode_case_conversion_config_keys_with_non_ascii_digits() -> None:
+    """Unicode case conversion: preserves Unicode config keys without splitting digit groups
+    (Effect main, #10638). Effect gives ``"CAFÉ٣_NAME"``; with ASCII-only digits ``٣``
+    separates words. Unicode letters keep their case boundaries."""
+    assert case.config_case("café٣Name") == "CAFÉ_NAME"
+    assert case.config_case("café3Name") == "CAFÉ3_NAME"
+
+
+def test_unicode_case_conversion_preserves_decomposed_marks_at_case_boundaries() -> None:
+    """Unicode case conversion: preserves decomposed marks at case boundaries without normalization (Effect main, #10638)"""  # noqa: E501
+    assert case.snake_case("caféBar") == "café_bar"
+    assert case.config_case("ǾǼø") == "Ǿ_ǼØ"
+
+
+def test_case_unicode_classes_match_unicodedata() -> None:
+    """The generated letter and mark classes agree with this Python's ``unicodedata`` on
+    every code point it has assigned. The classes are Unicode 17.0.0: characters added since
+    are unassigned in older Pythons, and U+0295 moved from Ll to Lo in 17.0.0."""
+    import unicodedata
+
+    from pyfect import _case_unicode as u
+
+    everything = "".join(chr(cp) for cp in range(0x110000) if not 0xD800 <= cp <= 0xDFFF)
+    categories = {
+        "LETTER": ("Lu", "Ll", "Lt", "Lm", "Lo"),
+        "UPPER": ("Lu",),
+        "LOWER": ("Ll",),
+        "MARK": ("Mn", "Mc", "Me"),
+    }
+    for name, wanted in categories.items():
+        matched = set(re.findall(f"[{getattr(u, name)}]", everything))
+        for char in everything:
+            category = unicodedata.category(char)
+            if category == "Cn" or char == "\u0295":
+                continue
+            assert (char in matched) == (category in wanted), (name, hex(ord(char)), category)
