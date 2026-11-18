@@ -14,6 +14,8 @@ import ast
 import functools
 import gc
 import re
+import subprocess
+import sys
 import threading
 import time
 from pathlib import Path
@@ -21,6 +23,7 @@ from pathlib import Path
 import _source
 import pytest
 from _growth import MIN_SECONDS, RUNS, Make, Work, assert_near_linear, cpu, cpu_pair
+from _subprocess import SUBPROCESS_TIMEOUT
 
 _TESTS = _source.TESTS
 _GROWTH_NAME = re.compile(r"linear|quadratic|backtrack|exponential|cheap")
@@ -214,22 +217,73 @@ def test_measuring_collects_only_the_young_generations(monkeypatch: pytest.Monke
     assert generations and max(generations) < 2
 
 
-def test_process_time_sees_work_on_another_thread() -> None:
-    """Work that can move to other threads: ``thread_time`` counts only the calling thread,
-    so quadratic work done on another one looks cheap; ``clock=time.process_time`` sees it."""
-    base = _base()
+_OTHER_THREAD_CHECK = """
+import threading, time
+import test_growth_checks as checks
+from _growth import assert_near_linear
 
-    def make(n: int) -> Work:
-        def work() -> None:
-            thread = threading.Thread(target=lambda: sum(range(n * n // base)))
+base = checks._base()
+
+
+def make(n):
+    def work():
+        thread = threading.Thread(target=lambda: sum(range(n * n // base)))
+        thread.start()
+        thread.join()
+
+    return work
+
+
+assert_near_linear(make, base, checks._no_doubling(base))
+try:
+    assert_near_linear(make, base, checks._no_doubling(base), clock=time.process_time)
+except AssertionError as error:
+    assert "superlinear" in str(error), error
+else:
+    raise SystemExit("process_time missed the quadratic work on another thread")
+"""
+
+
+class _BusyThreads:
+    """Threads of this process spinning in Python until ``stop``."""
+
+    def __init__(self, count: int) -> None:
+        self._stop = threading.Event()
+        self._threads = [threading.Thread(target=self._spin, daemon=True) for _ in range(count)]
+        for thread in self._threads:
             thread.start()
+
+    def _spin(self) -> None:
+        while not self._stop.is_set():
+            pass
+
+    def stop(self) -> None:
+        self._stop.set()
+        for thread in self._threads:
             thread.join()
 
-        return work
 
-    assert_near_linear(make, base, _no_doubling(base))
-    with pytest.raises(AssertionError, match="superlinear"):
-        assert_near_linear(make, base, _no_doubling(base), clock=time.process_time)
+def test_process_time_sees_work_on_another_thread() -> None:
+    """Work that can move to other threads: ``thread_time`` counts only the calling thread,
+    so quadratic work done on another one looks cheap; ``clock=time.process_time`` sees it.
+
+    It runs in a fresh interpreter. ``process_time`` counts every thread of the process, and
+    a thread an earlier test left running in this one (pytest-xdist on a CI runner) takes the
+    GIL at each of the small size's thread switches: its CPU time inflated the small sample
+    to 13-20 ms against 3 ms of work, and the ratio fell from 61x to 12x, under the bound."""
+    busy = _BusyThreads(3)  # as an earlier test might leave them
+    try:
+        ran = subprocess.run(
+            [sys.executable, "-c", _OTHER_THREAD_CHECK],
+            cwd=_source.TESTS,
+            capture_output=True,
+            text=True,
+            timeout=SUBPROCESS_TIMEOUT,
+            check=False,
+        )
+    finally:
+        busy.stop()
+    assert ran.returncode == 0, ran.stdout + ran.stderr
 
 
 class _SlowingClock:
