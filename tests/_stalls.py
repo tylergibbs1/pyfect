@@ -11,8 +11,11 @@ thread, ticking for the whole session and recording while a test runs, tells the
   while the stall is still on.
 - A tick that comes ``stall_threshold`` late is a process stall. With the dump, the time
   ``gc.callbacks`` saw collecting, the process's CPU time over the gap and, on Linux, the
-  CPU steal of ``/proc/stat`` and ``/proc/loadavg``, it is named "host" (no thread busy)
-  or "pyfect blocked in <frame>" (a busy thread, a fiber's first).
+  CPU steal of ``/proc/stat`` and ``/proc/loadavg``, it is named "host" or "pyfect blocked
+  in <frame>" (a busy thread, a fiber's first). When the dump was written tells them
+  apart: faulthandler's watchdog needs no GIL, so a dump written on time means the process
+  was running (a C call holding the GIL, which also uses no CPU, is pyfect), and only one
+  written late, or not yet, with next to no CPU used is the host freezing the process.
 - Each tick also samples every thread's stack, as a faulthandler dump (text: holding
   frames would keep what a finished step handled alive). A thread inside ``Fiber._run``
   whose stack has not moved for the threshold, while the process used next to no CPU, is a
@@ -34,6 +37,7 @@ from __future__ import annotations
 
 import faulthandler
 import gc
+import os
 import re
 import tempfile
 import threading
@@ -181,6 +185,8 @@ class Watchdog:
         self._ticks = 0
         self._generation = 0
         self._last = time.monotonic()
+        self._dump_due = 0.0
+        """When (wall time) the armed faulthandler dump is due."""
         self._stop = threading.Event()
         self._lock = threading.Lock()
         # Open for the session: faulthandler writes to its descriptor from a C thread.
@@ -279,6 +285,7 @@ class Watchdog:
         while not self._stop.is_set():
             if self.dump:
                 faulthandler.dump_traceback_later(self.threshold, file=self._file)
+                self._dump_due = time.time() + self.threshold
             self._stop.wait(self.tick)
             now, now_cpu = time.monotonic(), time.process_time()
             if generation != self._generation:
@@ -292,7 +299,7 @@ class Watchdog:
                 self._steal.mark()
                 self._collections.take_longest()
                 if self.dump:
-                    self._take_dump()
+                    self._take_dump()  # a dump of no stall
             last, cpu = now, now_cpu
             if self._armed.is_set():
                 self._sample_fibers(now)
@@ -301,31 +308,47 @@ class Watchdog:
                 self._ticks += 1
                 self._ticked.notify_all()
 
-    def _take_dump(self) -> list[DumpedThread]:
+    def _take_dump(self) -> tuple[list[DumpedThread], float | None]:
+        """The dump's threads, and how late after it was due it was written (``None``: not
+        written)."""
+        written = os.fstat(self._file.fileno())
         self._file.seek(0)
         text = self._file.read()
         self._file.seek(0)
         self._file.truncate()
-        return _dump_threads(text)
+        late = written.st_mtime - self._dump_due if written.st_size else None
+        return _dump_threads(text), late
 
     def _process_stall(self, gap: float, cpu: float) -> str:
         """Names a stall of the whole process: no Python thread ran for ``gap`` seconds."""
         head = f"process stalled {gap:.1f} s"
         collected, generation = self._collections.take_longest()
-        threads = self._take_dump() if self.dump else []
+        threads, late = self._take_dump() if self.dump else ([], None)
         steal, load = self._steal.since_last(), _load()
+        numbers = f"{steal}, {load}, process CPU {cpu:.1f} s"
         if collected >= self.threshold / 2:
             took = f"generation {generation}, {collected:.1f} s"
             return f"{head}: pyfect blocked in garbage collection ({took})"
         busy = [t for t in threads if not t.current and not t.frames[0].idle]
         fibers = [t for t in busy if t.in_fiber_step]
-        if fibers or (busy and cpu >= gap / 2):
+        on_time = late is not None and late <= self.tick
+        if (fibers or busy) and (on_time or cpu >= gap / 2):
             frames = (fibers or busy)[0].frames
-            return f"{head}: pyfect blocked in {frames[0]}\n" + _stack(frames)
+            return f"{head}: pyfect blocked in {frames[0]} ({numbers})\n" + _stack(frames)
+        return f"{head}: {self._no_busy_thread(gap, cpu, late, on_time)} ({numbers})"
+
+    def _no_busy_thread(self, gap: float, cpu: float, late: float | None, on_time: bool) -> str:
+        """Names a stall the dump shows no pyfect frame for: the host froze the process (the
+        C watchdog was frozen too, so it wrote late or not yet), or something unknown."""
+        if on_time:
+            return "in-process: the dump came on time, but no Python thread was busy"
+        if not self.dump:
+            return "host or a C call holding the GIL: no dump to tell"
+        if late is not None:
+            return f"host: process frozen, the dump {late:.1f} s late"
         if cpu < gap / 2:
-            idle = "all threads idle" if threads and not busy else "no thread busy"
-            return f"{head}: host ({idle}, {steal}, {load}, process CPU {cpu:.1f} s)"
-        return f"{head}: in-process ({steal}, {load}, process CPU {cpu:.1f} s, no stack captured)"
+            return "host: process frozen, no dump written yet"
+        return "in-process: no stack captured"
 
     def _sample_fibers(self, now: float) -> None:
         """Reports a fiber step whose stack has not moved for the threshold. The stacks come

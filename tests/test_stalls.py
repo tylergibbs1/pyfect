@@ -55,6 +55,45 @@ def test_is_frozen():
     assert False
 """
 
+GIL_HELD_SLEEP = """
+import ctypes
+
+
+def sleep_on_purpose():
+    ctypes.PyDLL(None).sleep(1)  # libc sleep through PyDLL: the GIL stays held, no CPU used
+
+
+def test_sleeps_holding_the_gil():
+    sleep_on_purpose()  # outside a fiber, as a driver's C call on the test's thread
+    assert False
+"""
+
+DEADLOCK = """
+import threading
+import time
+
+
+def test_deadlocks():
+    # Every thread waits on a lock another holds (bounded, so the test ends): nothing runs,
+    # but nothing holds the GIL either, so the watchdog keeps ticking.
+    first, second = threading.Lock(), threading.Lock()
+
+    def take(held, wanted):
+        with held:
+            time.sleep(0.1)
+            wanted.acquire(timeout=1.5)
+
+    threads = [
+        threading.Thread(target=take, args=(first, second)),
+        threading.Thread(target=take, args=(second, first)),
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert False
+"""
+
 IDLE_WAIT = """
 import pyfect as fx
 
@@ -99,10 +138,36 @@ def test_a_c_call_holding_the_gil_is_named_from_the_faulthandler_dump(
 def test_a_frozen_process_is_named_a_host_stall(
     pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """The host froze every thread, faulthandler's C watchdog too, so its dump is written
+    late, once the process runs again. On Linux in a container, run this under an init
+    process (``docker run --init``): as PID 1 the test process ignores a SIGSTOP sent from
+    inside its own namespace, and never freezes."""
     out = _run(pytester, monkeypatch, FROZEN_PROCESS)
     assert "process stalled 1." in out
-    assert ": host (" in out
+    assert ": host: process frozen, " in out  # the dump late, or not yet at resume
     assert "pyfect blocked" not in out
+
+
+@pytest.mark.skipif(__import__("sys").platform == "win32", reason="libc sleep through ctypes")
+@pytest.mark.skipif(
+    not getattr(__import__("sys"), "_is_gil_enabled", lambda: True)(),
+    reason="free-threaded: no GIL to hold, so the watchdog keeps running",
+)
+def test_a_c_call_sleeping_with_the_gil_held_is_named_pyfect_not_host(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Like a frozen host it uses no CPU and starves the watchdog thread, but faulthandler's
+    C watchdog needs no GIL and writes its dump on time: the process was running."""
+    out = _run(pytester, monkeypatch, GIL_HELD_SLEEP)
+    assert "pyfect blocked in sleep_on_purpose (" in out
+    assert ": host" not in out
+
+
+def test_a_deadlock_is_no_stall(pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every thread blocked on a lock leaves the GIL free: the watchdog still ticks on time,
+    so a deadlock is never taken for a frozen host."""
+    out = _run(pytester, monkeypatch, DEADLOCK)
+    assert "process stalled" not in out
 
 
 def test_a_fiber_waiting_on_a_timer_is_no_stall(
