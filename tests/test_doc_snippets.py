@@ -31,6 +31,7 @@ import pytest
 from _count_sleeps import MARKER
 from _inventory import parse
 from _next_item import NEXT_ITEM
+from _parallel import schedules_by_scope
 
 from pyfect.duration import from_input_unsafe
 
@@ -325,17 +326,19 @@ class Runs:
 
 @pytest.fixture(scope="module")
 def runs(request: pytest.FixtureRequest) -> Iterator[Runs]:
-    """This process's snippet runs. Without xdist it runs every collected test, in order, so
-    their runs all start at once and a test waits only for the few ahead of it. An xdist
-    worker's ``session.items`` lists every collected test, not only those it is sent, so it
-    starts a run only when its test, or the test before it (``start_the_next_run``), asks:
-    starting them all made each worker run every snippet, and a worker's database snippet
-    queued behind all the others."""
+    """This process's snippet runs. When it runs every snippet test (without xdist, or under
+    the suite's scheduler, which sends them all to one worker:
+    ``test_parallel.py::test_the_snippet_runs_are_scheduled_together``), their runs all start
+    at once, in the order the tests run, so a test waits only for the few ahead of it. Under
+    another distribution (``--dist worksteal``, ``loadfile``, ...) a worker's ``session.items``
+    still lists every collected test, not only those it is sent: there a run starts when its
+    test, or the test before it (``start_the_next_run``), asks, or every worker would run
+    every snippet."""
     workers = int(os.environ.get("PYTEST_XDIST_WORKER_COUNT", "1"))
     pool = ThreadPoolExecutor(max_workers=snippet_threads(os.process_cpu_count() or 1, workers))
     servers = ThreadPoolExecutor(max_workers=1)
     started = Runs(pool, servers)
-    if not hasattr(request.config, "workerinput"):
+    if not hasattr(request.config, "workerinput") or schedules_by_scope(request.config):
         for item in request.session.items:
             key = run_key(item)
             if key is not None:
@@ -547,11 +550,12 @@ CHEAP_SNIPPETS = (
 )
 
 
-def test_each_worker_starts_only_its_own_runs(tmp_path: Path):
-    """Two xdist workers, two snippet tests each: four runs in all, each started by the worker
-    that runs its test. ``worksteal`` splits the tests between the workers (the suite's own
-    scheduler keeps nearly all of this file's tests on one worker), and every worker's
-    ``session.items`` still lists all four."""
+@pytest.mark.parametrize(("dist", "workers"), [("worksteal", 2), ("load", 1)])
+def test_each_worker_starts_only_its_own_runs(tmp_path: Path, dist: str, workers: int):
+    """Two xdist workers and four snippet tests: four runs in all, each started by the worker
+    that runs its test. ``worksteal`` splits the tests between the workers, and every
+    worker's ``session.items`` still lists all four; the suite's scheduler (``load``) sends
+    them all to one worker, which starts them all at once."""
     log = tmp_path / "runs.log"
     ids = [
         f"tests/test_doc_snippets.py::test_snippet_runs[{snippet}]" for snippet in CHEAP_SNIPPETS
@@ -565,7 +569,7 @@ def test_each_worker_starts_only_its_own_runs(tmp_path: Path):
             "-n",
             "2",
             "--dist",
-            "worksteal",
+            dist,
             "-p",
             "no:randomly",
             "-p",
@@ -585,4 +589,4 @@ def test_each_worker_starts_only_its_own_runs(tmp_path: Path):
     started = log.read_text().splitlines()
     snippets = sorted(line.split()[2] for line in started)
     assert snippets == sorted(CHEAP_SNIPPETS), "\n".join(started)
-    assert {line.split()[0] for line in started} == {"gw0", "gw1"}, "\n".join(started)
+    assert len({line.split()[0] for line in started}) == workers, "\n".join(started)

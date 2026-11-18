@@ -80,9 +80,15 @@ def pytest_terminal_summary(terminalreporter: Any, config: pytest.Config) -> Non
     terminalreporter.write_line(f"random order: repeat it with -p randomly --randomly-seed={seed}")
 
 
+def schedules_by_scope(config: pytest.Config) -> bool:
+    """Whether this run's xdist workers are sent whole scopes (``scope_of``) by this plugin's
+    scheduler: a worker that runs one test of a scope runs all of them."""
+    return config.getoption("dist", "no") in ("load", "loadgroup")
+
+
 @pytest.hookimpl(optionalhook=True)
 def pytest_xdist_make_scheduler(config: pytest.Config, log: Any) -> object | None:
-    if config.getoption("dist") not in ("load", "loadgroup"):
+    if not schedules_by_scope(config):
         return None
     from xdist.scheduler import LoadScopeScheduling  # pyright: ignore[reportMissingTypeStubs]
 
