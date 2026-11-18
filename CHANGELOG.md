@@ -162,6 +162,20 @@
   stops the migrations creating the lookup indexes of the message tables, as in Effect 4.1.4
   (#10267). Migration `0005_mssql_lookup_indexes` creates any that are missing.
 
+- `openai_compat`: PDFs given as bytes, base64 text or a data URL are sent as Chat Completions
+  `file` parts (`{"type": "file", "file": {...}}`), and an uploaded file's id as a `file`
+  part too, as in Effect 4.1.4 (#10514). Bytes were sent as their data URL in a text part, and
+  base64 text and data URLs were dropped.
+
+- `openai_compat`: responses with `null` for optional fields (`service_tier`, a tool call's
+  `id`, `type` and `arguments`, `tool_calls`, an embedding's `object` and `usage`) decode, as
+  in Effect 4.1.4 (#10515). A stream's `service_tier: null` no longer drops the tier an
+  earlier chunk reported.
+
+- `openai_compat` and `openrouter`: a refusal (`message.refusal`, or streamed
+  `delta.refusal`) with a `stop` finish reports `content-filter` and the refusal text in the
+  finish part's `metadata`, as in Effect 4.1.4 (#10534, #10432).
+
 ## 0.6.12 (2026-11-18)
 
 ### Fixed
