@@ -30,6 +30,7 @@ import _source
 import pytest
 from _count_sleeps import MARKER
 from _inventory import parse
+from _next_item import NEXT_ITEM
 
 from pyfect.duration import from_input_unsafe
 
@@ -205,10 +206,6 @@ def assert_sleeps_in_limit(snippet: str, done: subprocess.CompletedProcess[str])
         )
 
 
-# A run of a snippet, by the name of the test that checks it and the snippet.
-Runs = dict[tuple[str, Path], Future[subprocess.CompletedProcess[str]]]
-
-
 def assert_ran(done: subprocess.CompletedProcess[str]) -> None:
     """Fails unless a run exited 0. `run_main` reports a failure on stdout, so the message
     is both streams in full: pytest truncates the CompletedProcess repr."""
@@ -262,48 +259,104 @@ def slow_drain_output(done: subprocess.CompletedProcess[str]) -> str:
     return STOPPING_RUNNER_LOG.sub("", done.stdout)
 
 
+SNIPPET_TESTS = (
+    "test_snippet_runs",
+    "test_snippet_tests_pass",
+    "test_cluster_snippet_with_a_slow_drain",
+    "test_cluster_snippet_with_slow_storage",
+)
+
+# A run of a snippet: the name of the test that checks it, and the snippet.
+type RunKey = tuple[str, Path]
+
+RUN_LOG = "PYFECT_SNIPPET_RUN_LOG"
+"""A file each started run appends a line to (its xdist worker, test and snippet), for
+``test_each_worker_starts_only_its_own_runs``."""
+
+
+def run_key(item: pytest.Item | None) -> RunKey | None:
+    """The run ``item`` checks, if it is a snippet test."""
+    if (
+        isinstance(item, pytest.Function)
+        and item.originalname in SNIPPET_TESTS
+        and isinstance(path := item.callspec.params["path"], Path)
+    ):
+        return item.originalname, path
+    return None
+
+
+class Runs:
+    """Snippet runs, each started once, the first time it is asked for. A run is mostly an
+    interpreter importing pyfect, so one after another they took minutes: they run side by
+    side on this process's share of the CPUs (the other xdist workers have the rest), one left
+    free, as some snippets time their own wake-ups (threads/lag.py) and a CPU taken by another
+    run would make them late, as it would other workers' tests. Snippets of a database server
+    share it, so they run one at a time, alongside the others; one that finds no server skips
+    its test."""
+
+    def __init__(self, pool: ThreadPoolExecutor, servers: ThreadPoolExecutor) -> None:
+        self._pool = pool
+        self._servers = servers
+        self._started: dict[RunKey, Future[subprocess.CompletedProcess[str]]] = {}
+
+    def __getitem__(self, key: RunKey) -> Future[subprocess.CompletedProcess[str]]:
+        return self.start(key)
+
+    def start(self, key: RunKey) -> Future[subprocess.CompletedProcess[str]]:
+        started = self._started.get(key)
+        if started is None:
+            started = self._started[key] = self._submit(*key)
+            log = os.environ.get(RUN_LOG)
+            if log:
+                worker = os.environ.get("PYTEST_XDIST_WORKER", "main")
+                with Path(log).open("a") as lines:
+                    lines.write(f"{worker} {key[0]} {name(key[1])}\n")
+        return started
+
+    def _submit(self, test: str, path: Path) -> Future[subprocess.CompletedProcess[str]]:
+        if test == "test_cluster_snippet_with_a_slow_drain":
+            return self._pool.submit(run, "-c", SLOW_DRAIN, str(path))
+        if test == "test_cluster_snippet_with_slow_storage":
+            return self._pool.submit(run, str(SLOW_STORAGE), str(path))
+        if any(path.is_relative_to(server) for server in SERVERS):
+            return self._servers.submit(run_with_server, path)
+        return self._pool.submit(run, *snippet_args(path))
+
+
 @pytest.fixture(scope="module")
 def runs(request: pytest.FixtureRequest) -> Iterator[Runs]:
-    """The runs of this session's snippets, all started at once in the order their tests run,
-    so a test waits only for the few runs ahead of it.
-
-    A run is mostly an interpreter importing pyfect, so one after another they took minutes.
-    They run side by side on this process's share of the CPUs (the other xdist workers have
-    the rest), one left free: some snippets time their own wake-ups (threads/lag.py), and a
-    CPU taken by another run would make them late, as it would other workers' tests. Snippets of a
-    database server share it, so they run one at a time, alongside the others; one that
-    finds no server skips its test.
-    """
-    keys = [
-        (item.originalname, path)
-        for item in request.session.items
-        if isinstance(item, pytest.Function)
-        and item.originalname
-        in (
-            "test_snippet_runs",
-            "test_snippet_tests_pass",
-            "test_cluster_snippet_with_a_slow_drain",
-            "test_cluster_snippet_with_slow_storage",
-        )
-        and isinstance(path := item.callspec.params["path"], Path)
-    ]
+    """This process's snippet runs. Without xdist it runs every collected test, in order, so
+    their runs all start at once and a test waits only for the few ahead of it. An xdist
+    worker's ``session.items`` lists every collected test, not only those it is sent, so it
+    starts a run only when its test, or the test before it (``start_the_next_run``), asks:
+    starting them all made each worker run every snippet, and a worker's database snippet
+    queued behind all the others."""
     workers = int(os.environ.get("PYTEST_XDIST_WORKER_COUNT", "1"))
     pool = ThreadPoolExecutor(max_workers=snippet_threads(os.process_cpu_count() or 1, workers))
     servers = ThreadPoolExecutor(max_workers=1)
+    started = Runs(pool, servers)
+    if not hasattr(request.config, "workerinput"):
+        for item in request.session.items:
+            key = run_key(item)
+            if key is not None:
+                started.start(key)
     try:
-        yield {
-            (test, path): pool.submit(run, "-c", SLOW_DRAIN, str(path))
-            if test == "test_cluster_snippet_with_a_slow_drain"
-            else pool.submit(run, str(SLOW_STORAGE), str(path))
-            if test == "test_cluster_snippet_with_slow_storage"
-            else servers.submit(run_with_server, path)
-            if any(path.is_relative_to(server) for server in SERVERS)
-            else pool.submit(run, *snippet_args(path))
-            for test, path in keys
-        }
+        yield started
     finally:
         pool.shutdown(cancel_futures=True)
         servers.shutdown(cancel_futures=True)
+
+
+@pytest.fixture(autouse=True)
+def start_the_next_run(request: pytest.FixtureRequest) -> None:
+    """A snippet test's run, then the next test's, start now: the next one is under way while
+    this test waits on its own."""
+    keys = [run_key(request.node), run_key(request.node.stash.get(NEXT_ITEM, None))]
+    wanted = [key for key in keys if key is not None]
+    if wanted:
+        started: Runs = request.getfixturevalue("runs")
+        for key in wanted:
+            started.start(key)
 
 
 @pytest.mark.parametrize("path", SCRIPTS, ids=name)
@@ -484,3 +537,52 @@ def test_the_snippet_runs_leave_the_other_xdist_workers_their_cpus():
     assert snippet_threads(cpus=18, workers=4) == 3
     assert snippet_threads(cpus=4, workers=1) == 3
     assert snippet_threads(cpus=1, workers=1) == 1
+
+
+CHEAP_SNIPPETS = (
+    "atoms/atoms.py",
+    "batching/sizes.py",
+    "asyncio_apps/memo_map.py",
+    "cli/deploy_help.py",
+)
+
+
+def test_each_worker_starts_only_its_own_runs(tmp_path: Path):
+    """Two xdist workers, two snippet tests each: four runs in all, each started by the worker
+    that runs its test. ``worksteal`` splits the tests between the workers (the suite's own
+    scheduler keeps nearly all of this file's tests on one worker), and every worker's
+    ``session.items`` still lists all four."""
+    log = tmp_path / "runs.log"
+    ids = [
+        f"tests/test_doc_snippets.py::test_snippet_runs[{snippet}]" for snippet in CHEAP_SNIPPETS
+    ]
+    done = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            "-q",
+            "-n",
+            "2",
+            "--dist",
+            "worksteal",
+            "-p",
+            "no:randomly",
+            "-p",
+            "no:cacheprovider",
+            *ids,
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=120,
+        cwd=ROOT,
+        # Not the outer run's xdist worker variables (PYTEST_XDIST_WORKER, ...).
+        env={k: v for k, v in os.environ.items() if not k.startswith("PYTEST_")}
+        | {RUN_LOG: str(log)},
+    )
+    assert done.returncode == 0, f"stdout:\n{done.stdout}\nstderr:\n{done.stderr}"
+    started = log.read_text().splitlines()
+    snippets = sorted(line.split()[2] for line in started)
+    assert snippets == sorted(CHEAP_SNIPPETS), "\n".join(started)
+    assert {line.split()[0] for line in started} == {"gw0", "gw1"}, "\n".join(started)
