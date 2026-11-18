@@ -314,6 +314,34 @@ def test_a_hang_with_no_stall_says_where_the_test_was_running(
     assert "the test thread was last in spin_on_purpose (" in out
 
 
+SLOW_RUNNER_AFTER_THE_FAILURE = """
+import time
+
+import _pytest.capture
+
+# pytest's own work after the failure unwound the test, made slow enough to be sampled:
+# compiled under capture.py's name, so its frame reads as the runner's.
+_SOURCE = '''
+def suspend_global_capture(self, in_=False):
+    time.sleep(0.5)
+    return _original(self, in_)
+'''
+_scope = {"time": time, "_original": _pytest.capture.CaptureManager.suspend_global_capture}
+exec(compile(_SOURCE, _pytest.capture.__file__, "exec"), _scope)
+_pytest.capture.CaptureManager.suspend_global_capture = _scope["suspend_global_capture"]
+"""
+
+
+def test_a_hang_names_the_test_not_the_runner_work_after_it(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#149's CI: the last sample before the phase ended was taken after the failure had
+    unwound the test, in pytest's capture code, and was reported as where the test was."""
+    pytester.makeconftest(SLOW_RUNNER_AFTER_THE_FAILURE)
+    out = _hang(pytester, monkeypatch, BUSY_HANG)
+    assert "the test thread was last in spin_on_purpose (" in out, out
+
+
 def test_a_hang_waiting_on_a_lock_says_where_the_test_waited(
     pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
 ) -> None:
