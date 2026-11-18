@@ -71,6 +71,9 @@ _IDLE_FILES = (
     "subprocess.py",
 )
 
+_STDLIB = os.path.dirname(threading.__file__) + os.sep  # as frames name it, links resolved
+_RUNNER = tuple(f"{os.sep}{package}{os.sep}" for package in ("_pytest", "pytest", "pluggy"))
+
 _DUMP_THREAD = re.compile(r"^(?:Current thread|Thread) (0x[0-9a-f]+)", re.MULTILINE)
 _DUMP_FRAME = re.compile(r'^\s+File "(?P<file>[^"]+)", line (?P<line>\d+) in (?P<func>\S+)$')
 
@@ -89,6 +92,14 @@ class Frame:
         path = Path(self.file)
         shown = path.relative_to(ROOT) if path.is_relative_to(ROOT) else path
         return f"{self.func} ({shown}:{self.line})"
+
+    @property
+    def runner(self) -> bool:
+        """In pytest, pluggy or the standard library (frozen modules too): a test thread with
+        only these frames is past its test (the failure unwound it) or not in one yet."""
+        if self.file.startswith("<frozen ") or any(part in self.file for part in _RUNNER):
+            return True
+        return self.file.startswith(_STDLIB) and f"{os.sep}site-packages{os.sep}" not in self.file
 
     @property
     def idle(self) -> bool:
@@ -339,7 +350,9 @@ class Watchdog:
             before = [
                 below
                 for at, frames in self._test_samples
-                if at <= failed_at and (below := _below_the_alarm(frames))
+                if at <= failed_at
+                and (below := _below_the_alarm(frames))
+                and not all(frame.runner for frame in below)
             ]
         if not before:
             return f"{head}; no sample of the test thread before the failure"
