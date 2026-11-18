@@ -196,8 +196,29 @@ def _decode_runners(rows: list[tuple[str, bool]]) -> list[tuple[Runner, bool]]:
     return runners
 
 
+_ENCODED_OPERATIONS = (
+    "register",
+    "unregister",
+    "set_runner_health",
+    "acquire",
+    "refresh",
+    "release",
+    "release_many",
+    "release_all",
+)
+
+
 def make_encoded(encoded: EncodedRunnerStorage) -> RunnerStorageService:
-    """A runner storage on the driver ``encoded``."""
+    """A runner storage on the driver ``encoded``. Raises ``TypeError`` naming
+    the operations ``encoded`` does not implement."""
+    missing = [name for name in _ENCODED_OPERATIONS if not callable(getattr(encoded, name, None))]
+    if not hasattr(encoded, "get_runners"):
+        missing.insert(0, "get_runners")
+    if missing:
+        raise TypeError(
+            f"{type(encoded).__name__} does not implement EncodedRunnerStorage: "
+            f"missing {', '.join(missing)}"
+        )
 
     def acquire(
         address: RunnerAddress, shard_ids: Iterable[ShardId]

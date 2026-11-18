@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Changed
+
+- Cluster: a runner storage needs a `release_many` operation, which the shutdown handoff uses
+  to release shards in chunks (below). `RunnerStorageService(...)` takes it as a required
+  `release_many=` argument, and an `EncodedRunnerStorage` driver needs a `release_many` method.
+  A storage without it now fails when it is made: the constructor raises `TypeError` for the
+  missing argument, and `make_encoded` raises `TypeError` naming each missing method. To keep
+  a custom storage releasing one shard at a time, pass
+  `release_many=lambda address, shards: fx.for_each(shards, lambda s: release(address, s), discard=True)`
+  (a driver's method is the same over its `self.release`); a storage that can release several
+  locks in one write should do that instead.
+
 ### Fixed
 
 - Cluster: a runner whose shard lock operations kept failing force-released its shards but
