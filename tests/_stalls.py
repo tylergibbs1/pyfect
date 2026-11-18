@@ -38,6 +38,7 @@ import re
 import tempfile
 import threading
 import time
+from collections import deque
 from collections.abc import Generator
 from dataclasses import dataclass
 from pathlib import Path
@@ -194,8 +195,10 @@ class Watchdog:
         self._stacks: dict[tuple[str, float], str] = {}
         self._test_thread = 0
         self._test_started = (0.0, 0.0)
-        self._test_samples: list[tuple[float, tuple[Frame, ...]]] = []
-        """The test thread's last two sampled stacks, with the wall time of each."""
+        self._test_samples: deque[tuple[float, tuple[Frame, ...]]] = deque(maxlen=64)
+        """The test thread's recent sampled stacks, with the wall time of each: 16 thresholds
+        of them, so the samples taken between a failure and its report leave some from
+        before it."""
         self._thread = threading.Thread(target=self._watch, name="stall-watchdog", daemon=True)
 
     def start(self) -> None:
@@ -218,7 +221,7 @@ class Watchdog:
             self._generation += 1
             self._test_thread = threading.get_ident()
             self._test_started = (time.monotonic(), time.process_time())
-            self._test_samples = []
+            self._test_samples.clear()
         self._armed.set()
 
     def no_stall(self, failed_at: float, ran: float) -> str:
@@ -235,7 +238,11 @@ class Watchdog:
             f"{time.process_time() - started_cpu:.1f} s over {time.monotonic() - started:.1f} s)"
         )
         with self._lock:
-            before = [frames for at, frames in self._test_samples if at <= failed_at]
+            before = [
+                below
+                for at, frames in self._test_samples
+                if at <= failed_at and (below := _below_the_alarm(frames))
+            ]
         if not before:
             return f"{head}; no sample of the test thread before the failure"
         frames = before[-1]
@@ -334,7 +341,7 @@ class Watchdog:
         )
         if test_thread is not None:
             with self._lock:
-                self._test_samples = [*self._test_samples[-1:], (time.time(), test_thread.frames)]
+                self._test_samples.append((time.time(), test_thread.frames))
         for ident in [ident for ident in self._seen if ident not in threads]:
             del self._seen[ident]
         for ident, thread in threads.items():
@@ -371,6 +378,15 @@ class Watchdog:
                 index = self._reported[key]
                 if 0 <= index < len(self.stalls):
                     self.stalls[index] = f"{head}\n{self._stacks[key]}"
+
+
+def _below_the_alarm(frames: tuple[Frame, ...]) -> tuple[Frame, ...]:
+    """A stack sampled while the hang alarm's handler ran (``pytest.fail`` in ``on_alarm``,
+    innermost), from the frame it interrupted."""
+    at = 0
+    while at < len(frames) and frames[at].file.endswith(("/_timeout.py", "/outcomes.py")):
+        at += 1
+    return frames[at:]
 
 
 def _timed_out(call: pytest.CallInfo[None]) -> bool:
