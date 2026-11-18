@@ -4,7 +4,9 @@ import gc
 import os
 import re
 from collections.abc import Iterator
+from pathlib import Path
 
+import _effect_ref
 import pytest
 
 from pyfect.schema.compiler import _registry
@@ -54,6 +56,18 @@ def no_schema_compiler_left_installed() -> Iterator[None]:
     if _registry.active():
         _registry.reset()
         pytest.fail(f"this test left {_COMPILER_LEFT}")
+
+
+@pytest.fixture(scope="session")
+def effect_checkout() -> Path:
+    """Effect's repository at the commit CI pins (``_effect_ref.py``): skips without a checkout
+    and fails, naming both commits, on one at another commit."""
+    try:
+        return _effect_ref.checkout()
+    except _effect_ref.NoCheckout as missing:
+        pytest.skip(str(missing))
+    except _effect_ref.WrongCommit as wrong:
+        pytest.fail(str(wrong), pytrace=False)
 
 
 _ADDRESS = re.compile(r" at 0x[0-9a-fA-F]+")

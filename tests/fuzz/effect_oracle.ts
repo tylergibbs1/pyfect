@@ -2,10 +2,12 @@
 //   node tests/fuzz/effect_oracle.ts INPUTS.json > ANSWERS.json
 // INPUTS.json is [[parser, text], ...]; each answer is what `answers` in differential.py
 // computes in pyfect, as JSON (null where the parser rejects the text), run with TZ=UTC. Reads Effect's
-// sources from $PYFECT_EFFECT_REF (an Effect 4.1.2 checkout). Node 24 runs TypeScript.
+// sources from $PYFECT_EFFECT_REF (the pinned checkout, tests/_effect_ref.py). Node 24 runs TypeScript.
 import { readFileSync } from "node:fs"
 
-const R = `${process.env.PYFECT_EFFECT_REF}/packages/effect/src/`
+const EFFECT = process.env.PYFECT_EFFECT_REF
+if (!EFFECT) throw new Error("set PYFECT_EFFECT_REF=$(uv run python tests/_effect_ref.py), the pinned Effect checkout")
+const R = `${EFFECT}/packages/effect/src/`
 const Base64 = await import(R + "encoding/Base64.ts")
 const Base64Url = await import(R + "encoding/Base64Url.ts")
 const Hex = await import(R + "encoding/Hex.ts")

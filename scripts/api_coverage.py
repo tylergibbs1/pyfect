@@ -1,8 +1,8 @@
 """Effect export coverage: ``uv run python scripts/api_coverage.py CLUSTER``.
 
 Lists every value export of the Effect modules a cluster names (read from
-the TypeScript source of the reference checkout, ``$PYFECT_REF`` or
-``~/pyfect-ref/effect``) and finds each in pyfect's public API:
+the TypeScript source of the Effect checkout at the commit CI pins, found
+by ``tests/_effect_ref.py``) and finds each in pyfect's public API:
 
 - ``ported``: a public name spelled as Effect's, or in snake_case
   (``try_``, ``as_`` for Python keywords), in one of the cluster's lookup
@@ -25,7 +25,6 @@ from __future__ import annotations
 import argparse
 import importlib
 import inspect
-import os
 import re
 import sys
 from dataclasses import dataclass, field
@@ -33,6 +32,9 @@ from pathlib import Path
 from types import ModuleType
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from tests import _effect_ref  # noqa: E402, TID251
+
 PARITY = ROOT / "docs" / "PARITY.md"
 
 
@@ -63,10 +65,6 @@ class Row:
     export: str
     status: str
     where: str
-
-
-def reference_root() -> Path:
-    return Path(os.environ.get("PYFECT_REF", Path.home() / "pyfect-ref" / "effect"))
 
 
 _DECLARATION = re.compile(
@@ -177,12 +175,12 @@ def _cell(text: str) -> str:
     return text.replace("|", "\\|")
 
 
-def render(cluster: Cluster) -> tuple[str, list[str]]:
+def render(cluster: Cluster, effect: Path) -> tuple[str, list[str]]:
     rules = section_four()
     errors: list[str] = []
     tables: list[tuple[Module, list[Row]]] = []
     for module in cluster.modules:
-        source = (reference_root() / "packages" / module.source).read_text()
+        source = (effect / "packages" / module.source).read_text()
         rows, problems = check_module(module, effect_exports(source), rules)
         errors += problems
         tables.append((module, rows))
@@ -233,8 +231,13 @@ def main() -> int:
     mode.add_argument("--write", action="store_true", help="save docs/coverage/CLUSTER.md")
     mode.add_argument("--check", action="store_true", help="fail if the saved table differs")
     args = parser.parse_args()
+    try:
+        effect = _effect_ref.checkout()
+    except (_effect_ref.NoCheckout, _effect_ref.WrongCommit) as problem:
+        print(f"error: {problem}", file=sys.stderr)
+        return 2
     cluster = load(args.cluster)
-    text, errors = render(cluster)
+    text, errors = render(cluster, effect)
     for error in errors:
         print(f"error: {error}", file=sys.stderr)
     target = ROOT / "docs" / "coverage" / f"{cluster.name}.md"

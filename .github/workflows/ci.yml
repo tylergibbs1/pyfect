@@ -81,9 +81,8 @@ jobs:
     timeout-minutes: 3
     env:
       UV_PYTHON: ${{ matrix.python }}
-      EFFECT_COMMIT: 289a53f7b1fc40049219c6e69022db2fb859c356 # Effect 4.1.4, as ../pyfect-ref/effect
+      EFFECT_COMMIT: 289a53f7b1fc40049219c6e69022db2fb859c356 # Effect 4.1.4; tests/_effect_ref.py checks local checkouts against it
       PYFECT_EFFECT_REF: ${{ github.workspace }}/.effect
-      PYFECT_REF: ${{ github.workspace }}/.effect
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
@@ -133,9 +132,8 @@ jobs:
     timeout-minutes: 14
     env:
       UV_PYTHON: ${{ matrix.python }}
-      EFFECT_COMMIT: 289a53f7b1fc40049219c6e69022db2fb859c356 # Effect 4.1.4, as ../pyfect-ref/effect
+      EFFECT_COMMIT: 289a53f7b1fc40049219c6e69022db2fb859c356 # Effect 4.1.4; tests/_effect_ref.py checks local checkouts against it
       PYFECT_EFFECT_REF: ${{ github.workspace }}/.effect
-      PYFECT_REF: ${{ github.workspace }}/.effect
       # A test skipped for a missing server, binary or interpreter fails the run (tests/_skips.py).
       PYFECT_REQUIRE_ALL_TESTS: "1"
     steps:

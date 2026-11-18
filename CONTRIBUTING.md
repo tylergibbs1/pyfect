@@ -27,6 +27,19 @@ pushed version (CI checks the rest). Both are configured in `lefthook.yml`.
 A clone that used the old `scripts/install-hooks` has `core.hooksPath` set, and Lefthook
 won't install over it. Remove it first with `git config --unset core.hooksPath`.
 
+Some tests and scripts read Effect's own source, at the commit CI pins (`EFFECT_COMMIT` in
+`.github/workflows/ci.yml`). Make that checkout once, and again whenever the pin moves:
+
+```sh
+uv run python tests/_effect_ref.py
+```
+
+It prints where the checkout is: `~/pyfect-ref/effect-<commit>`, a worktree of
+`~/pyfect-ref/effect`, cloned from Effect's repository if missing. Every clone and worktree
+finds it without any setup, so branches that pin different Effects each find their own.
+`PYFECT_EFFECT_REF` overrides it. Without a checkout these tests skip, and with a checkout
+at another commit they fail and say how to fix it.
+
 ## The one check
 
 A change is ready when this passes:

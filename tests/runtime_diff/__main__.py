@@ -1,6 +1,6 @@
 """Compare pyfect's runtime with Effect's on generated cases (a program and the
 ``MaxOpsBeforeYield`` it runs under), from ``tests/`` (Node 24 and
-``PYFECT_EFFECT_REF`` needed):
+the pinned Effect checkout, ``_effect_ref.py``, needed):
 
     python -m runtime_diff --fresh 500 [--seed N]    # fail on the first difference, shrunk
     python -m runtime_diff --survey 2000 [--seed N]  # every difference in a batch, smallest first

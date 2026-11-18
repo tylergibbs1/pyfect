@@ -22,9 +22,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 350
     env:
-      EFFECT_COMMIT: 289a53f7b1fc40049219c6e69022db2fb859c356 # Effect 4.1.4, as ../pyfect-ref/effect
+      EFFECT_COMMIT: 289a53f7b1fc40049219c6e69022db2fb859c356 # Effect 4.1.4; tests/_effect_ref.py checks local checkouts against it
       PYFECT_EFFECT_REF: ${{ github.workspace }}/.effect
-      PYFECT_REF: ${{ github.workspace }}/.effect
     steps:
       - name: CPUs
         run: |

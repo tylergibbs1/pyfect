@@ -21,6 +21,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
 
+import _effect_ref
+
 from pyfect import (
     _json_text,
     big_decimal,
@@ -206,7 +208,8 @@ def pyfect_answers(inputs: Iterable[tuple[str, str]]) -> list[Answer]:
 
 
 def effect_answers(inputs: list[tuple[str, str]]) -> list[Answer]:
-    """Effect's answers, from Node; needs ``PYFECT_EFFECT_REF``."""
+    """Effect's answers, from Node reading the pinned Effect checkout (``_effect_ref.py``)."""
+    effect = _effect_ref.checkout()
     with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as file:
         json.dump(inputs, file)
     try:
@@ -217,7 +220,7 @@ def effect_answers(inputs: list[tuple[str, str]]) -> list[Answer]:
             check=True,
             # A zoneless cron runs in the zone of the time it starts from: a JavaScript
             # ``Date`` has none, so Node takes the machine's; pyfect's start is in UTC.
-            env={**os.environ, "TZ": "UTC"},
+            env={**os.environ, "TZ": "UTC", _effect_ref.ENV: str(effect)},
         ).stdout
     finally:
         os.unlink(file.name)

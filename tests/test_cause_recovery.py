@@ -5,7 +5,6 @@ names the Effect test it follows.
 """
 
 import math
-import os
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -432,7 +431,7 @@ def test_recovery_reads_causes_only_through_find_recoverable_error():
     assert offenders == []
 
 
-# Where Effect 4.1.2 calls ``causeElectDefects`` (internal/effect.ts, by the
+# Where Effect calls ``causeElectDefects`` (internal/effect.ts, by the
 # function around the call) and what ports each call. Nothing else elects.
 _ELECTING_SITES = {
     "findRecoverableError": "cause.py: Cause.find_recoverable_error",
@@ -441,10 +440,6 @@ _ELECTING_SITES = {
     "iterateConcurrentImpl": "_cause_election.py: late_sibling_cause",
 }
 _SRC = _source.SRC
-_EFFECT_TS = (
-    Path(os.environ.get("PYFECT_EFFECT_REF") or _SRC.parent.parent.parent / "pyfect-ref" / "effect")
-    / "packages/effect/src/internal/effect.ts"
-)
 
 
 def test_only_the_ports_of_effects_electing_sites_elect_defects():
@@ -466,11 +461,10 @@ def test_only_the_ports_of_effects_electing_sites_elect_defects():
     assert election.count(".elect_defects()") == len(functions)
 
 
-@pytest.mark.skipif(not _EFFECT_TS.is_file(), reason=f"no Effect checkout at {_EFFECT_TS}")
-def test_effect_still_elects_exactly_where_pyfect_does():
+def test_effect_still_elects_exactly_where_pyfect_does(effect_checkout: Path):
     """Every ``causeElectDefects`` call in Effect's internal/effect.ts, named by
     the function it is in, has its port in ``_ELECTING_SITES``, and no more."""
-    lines = _EFFECT_TS.read_text().splitlines()
+    lines = (effect_checkout / "packages/effect/src/internal/effect.ts").read_text().splitlines()
     owners: list[str] = []
     for n, line in enumerate(lines):
         if "causeElectDefects(" in line and not line.startswith("export const causeElectDefects"):

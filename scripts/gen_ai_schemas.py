@@ -23,8 +23,8 @@ The TypeScript is read with a parser for the subset the generator emits
 the declaration, so an Effect update that changes the shape fails loudly
 instead of producing a wrong schema. ``--check`` fails when the files on
 disk differ from what the source gives. The sources are
-``$PYFECT_REF/packages/ai/<provider>/src/Generated.ts``, ``$PYFECT_REF``
-defaulting to ``~/pyfect-ref/effect``; without ``--provider`` every
+``packages/ai/<provider>/src/Generated.ts`` of the Effect checkout at the
+commit CI pins (``tests/_effect_ref.py``); without ``--provider`` every
 target is written (or checked).
 """
 
@@ -32,7 +32,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import re
 import subprocess
 import sys
@@ -41,6 +40,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import gen_ai_client
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from tests import _effect_ref  # noqa: TID251
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -76,18 +78,15 @@ class Target:
     def out_dir(self) -> Path:
         return ROOT / "src" / "pyfect" / "ai" / self.name / "generated"
 
-    def default_source(self) -> Path:
-        return _reference() / self.source_path
-
     @property
     def source_path(self) -> str:
         return f"packages/ai/{self.name}/src/Generated.ts"
 
-    def read_source(self) -> str:
-        """The reference checkout's Generated.ts (at ``release``), with ``patches`` applied."""
-        reference = _reference()
+    def read_source(self, reference: Path) -> str:
+        """The Generated.ts of the Effect checkout at ``reference`` (at ``release``), with
+        ``patches`` applied."""
         if self.release is None or _checkout_release(reference) == self.release:
-            source = self.default_source().read_text()
+            source = (reference / self.source_path).read_text()
         else:
             source = _git_show(reference, f"effect@{self.release}", self.source_path)
         for old, new in self.patches:
@@ -95,10 +94,6 @@ class Target:
                 raise GenerateError(f"{self.name}: a patch matches {source.count(old)} times")
             source = source.replace(old, new)
         return source
-
-
-def _reference() -> Path:
-    return Path(os.environ.get("PYFECT_REF", Path.home() / "pyfect-ref" / "effect"))
 
 
 def _checkout_release(reference: Path) -> str:
@@ -169,10 +164,6 @@ OPENROUTER = Target(
     release="4.1.2",
 )
 TARGETS = {target.name: target for target in (OPENAI, OPENROUTER)}
-
-
-def default_source(target: Target = OPENAI) -> Path:
-    return target.default_source()
 
 
 class GenerateError(Exception):
@@ -956,9 +947,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.source is not None and args.provider is None:
         parser.error("a source needs --provider")
     targets = [TARGETS[args.provider]] if args.provider else list(TARGETS.values())
+    source_file: Path | None = args.source
+    reference: Path | None = None
     failed = False
     for target in targets:
-        source = args.source.read_text() if args.source else target.read_source()
+        if source_file is not None:
+            source = source_file.read_text()
+        else:
+            reference = reference or _effect_ref.checkout()
+            source = target.read_source(reference)
         files = generate(source, target)
         if not args.check:
             _write(target, files)

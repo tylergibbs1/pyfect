@@ -1,9 +1,8 @@
 """The coverage tables in docs/coverage/ match what ``scripts/api_coverage.py``
 computes now: an export that loses its pyfect counterpart, a stale rename or
-a §4 key that no longer exists fails here. Needs Effect's source (the
-reference checkout, ``$PYFECT_REF``); skipped without it."""
+a §4 key that no longer exists fails here. Reads Effect's source from the
+``effect_checkout`` fixture."""
 
-import os
 import subprocess
 import sys
 from pathlib import Path
@@ -11,11 +10,10 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
-REFERENCE = Path(os.environ.get("PYFECT_REF", Path.home() / "pyfect-ref" / "effect"))
 CLUSTERS = sorted(p.stem for p in (ROOT / "docs" / "coverage").glob("*.md"))
 
 
-@pytest.mark.skipif(not REFERENCE.is_dir(), reason="no Effect reference checkout")
+@pytest.mark.usefixtures("effect_checkout")
 @pytest.mark.parametrize("cluster", CLUSTERS)
 def test_saved_coverage_table_is_current(cluster: str) -> None:
     run = subprocess.run(

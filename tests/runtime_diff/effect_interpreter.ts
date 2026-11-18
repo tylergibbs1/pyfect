@@ -4,13 +4,15 @@
 // PROGRAMS.json is a list of cases, {"program": ..., "budget": n}: a program in program.py's
 // JSON form and the MaxOpsBeforeYield it runs under. Each answer is
 // {"exit": ..., "log": [...], "stuck": bool}, what interpret.py computes in pyfect.
-// Reads Effect's sources from $PYFECT_EFFECT_REF (an Effect 4.1.2 checkout). Node 24 runs
+// Reads Effect's sources from $PYFECT_EFFECT_REF (the pinned checkout, tests/_effect_ref.py). Node 24 runs
 // TypeScript. Keep it in step with interpret.py: the two must build the same program.
 import { readFileSync } from "node:fs"
 import { registerHooks } from "node:module"
 import { createInterface } from "node:readline"
 
-const R = `${process.env.PYFECT_EFFECT_REF}/packages/effect/src/`
+const EFFECT = process.env.PYFECT_EFFECT_REF
+if (!EFFECT) throw new Error("set PYFECT_EFFECT_REF=$(uv run python tests/_effect_ref.py), the pinned Effect checkout")
+const R = `${EFFECT}/packages/effect/src/`
 
 // Effect 4.1.2's internal/effect.ts as pyfect runs it: each patch replaces text that must occur
 // exactly once, so a changed source fails loudly instead of comparing against the wrong runtime.

@@ -2,8 +2,8 @@
 
 ``effect_answers.json`` is what effect_oracle.ts (Effect 4.1.2 under Node) answers
 for every corpus input of a parser Effect also has; regenerate it after changing
-the corpus with ``PYFECT_EFFECT_REF=... python -m fuzz --differential --write``
-(from ``tests/``).
+the corpus with ``python -m fuzz --differential --write`` (from ``tests/``; Node
+reads the pinned Effect checkout, ``_effect_ref.py``).
 """
 
 import json

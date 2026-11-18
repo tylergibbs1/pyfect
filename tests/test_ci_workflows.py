@@ -12,6 +12,7 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 import _container_images
+import _effect_ref
 import _source
 
 from pyfect.date_time._icu_zones import NODE_VERSION
@@ -41,7 +42,7 @@ def test_ci_runs_the_check_in_claude_md():
     for job in (types, test, _job("ci.yml", "collect")):
         assert "uses: ./.github/actions/check-setup" in job
     for job in (test, _job("ci.yml", "collect")):
-        assert "PYFECT_EFFECT_REF" in job, "the oracle tests need Effect's checkout"
+        assert _effect_ref.ENV in job, "the oracle tests need Effect's checkout"
 
 
 def test_one_pyright_run_checks_every_python():
@@ -335,7 +336,7 @@ def test_workflows_pin_one_effect_commit():
 def test_the_fuzz_workflow_compares_fresh_programs_with_node():
     job = _job("fuzz.yml", "runtime-differential")
     assert "python -m runtime_diff --fresh" in job
-    assert "PYFECT_EFFECT_REF" in job and "setup-node" in job
+    assert _effect_ref.ENV in job and "setup-node" in job
 
 
 def test_ci_runs_the_node_the_recorded_answers_came_from():

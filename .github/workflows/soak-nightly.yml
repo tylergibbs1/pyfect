@@ -51,9 +51,8 @@ jobs:
     timeout-minutes: 125
     env:
       UV_PYTHON: "3.14"
-      EFFECT_COMMIT: 289a53f7b1fc40049219c6e69022db2fb859c356 # Effect 4.1.4, as ../pyfect-ref/effect
+      EFFECT_COMMIT: 289a53f7b1fc40049219c6e69022db2fb859c356 # Effect 4.1.4; tests/_effect_ref.py checks local checkouts against it
       PYFECT_EFFECT_REF: ${{ github.workspace }}/.effect
-      PYFECT_REF: ${{ github.workspace }}/.effect
       # A test skipped for a missing server fails the round (tests/_skips.py).
       PYFECT_REQUIRE_ALL_TESTS: "1"
     steps:

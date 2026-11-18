@@ -1,13 +1,15 @@
 // Effect's inflater and Zip.decode on the streams of _inflate_corpus.py, under Node:
 //   uv run python tests/oracle/_inflate_corpus.py > corpus.json
-//   node tests/oracle/inflate_oracle.ts corpus.json > tests/oracle/fixtures/inflate_oracle.json
+//   PYFECT_EFFECT_REF=$(uv run python tests/_effect_ref.py) node tests/oracle/inflate_oracle.ts corpus.json > tests/oracle/fixtures/inflate_oracle.json
 // Each case keeps its input; "raw" pushes the splits one per NeedInput, "bytewise" one
 // byte per NeedInput (so "pushes" is the byte at which the stream fails), "zip" reads
 // the stream as entry "f" of a zip archive pulled in chunks of zipSplits.
 import { createHash } from "node:crypto"
 import { readFileSync } from "node:fs"
 
-const R = "/Users/tylergibbs/pyfect-ref/effect/packages/effect/src/"
+const EFFECT = process.env.PYFECT_EFFECT_REF
+if (!EFFECT) throw new Error("set PYFECT_EFFECT_REF=$(uv run python tests/_effect_ref.py), the pinned Effect checkout")
+const R = `${EFFECT}/packages/effect/src/`
 const { Effect, Exit, Stream } = await import(R + "index.ts")
 const Zip = await import(R + "encoding/Zip.ts")
 const { ByteQueue, Inflater, InflateMemory, NeedInput } = await import(R + "internal/inflate.ts")

@@ -1,16 +1,13 @@
 """Every ``it`` / ``test`` title in Effect's checkout is ported, or omitted with a reason.
 
-A title counts as ported only by a test that names its Effect file. The checkout is
-``$PYFECT_EFFECT_REF`` (Effect's repository root), or else ``../pyfect-ref/effect`` beside the
-repository; the module is skipped without one, as in CI, and fails on a checkout of another
-Effect release than ``EFFECT_VERSION``, which the lists are written against. See
+A title counts as ported only by a test that names its Effect file. The checkout is the
+``effect_checkout`` fixture's (``_effect_ref.py``): the tests that read it skip without one and
+fail on a checkout of another commit than the one CI pins, which the lists are written against. See
 ``_effect_titles.py`` for what counts as ported and ``_effect_title_omissions.py`` for the list.
 """
 
 from __future__ import annotations
 
-import json
-import os
 from collections import defaultdict
 from fnmatch import fnmatch
 from pathlib import Path
@@ -30,28 +27,11 @@ from _effect_titles import (
 )
 from _source import TESTS
 
-EFFECT_VERSION = "4.1.4"
-
-_CHECKOUT = Path(
-    os.environ.get("PYFECT_EFFECT_REF") or TESTS.parent.parent / "pyfect-ref" / "effect"
-)
-_PACKAGES = _CHECKOUT / "packages"
-
-pytestmark = pytest.mark.skipif(
-    not _PACKAGES.is_dir(),
-    reason=f"no Effect checkout at {_CHECKOUT}; set PYFECT_EFFECT_REF to Effect's repository",
-)
-
 
 @pytest.fixture(scope="module")
-def effect_files() -> dict[str, Path]:
-    version = json.loads((_PACKAGES / "effect" / "package.json").read_text())["version"]
-    if version != EFFECT_VERSION:
-        pytest.fail(
-            f"the Effect checkout at {_CHECKOUT} is {version}, and the title lists are written "
-            f"against {EFFECT_VERSION}; check out effect@{EFFECT_VERSION} or set PYFECT_EFFECT_REF"
-        )
-    return {path.relative_to(_PACKAGES).as_posix(): path for path in effect_test_files(_PACKAGES)}
+def effect_files(effect_checkout: Path) -> dict[str, Path]:
+    packages = effect_checkout / "packages"
+    return {path.relative_to(packages).as_posix(): path for path in effect_test_files(packages)}
 
 
 def _test_modules() -> list[Path]:

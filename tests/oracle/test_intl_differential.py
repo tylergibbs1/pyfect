@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import cast
 from zoneinfo import ZoneInfo
 
+import _effect_ref
 import pytest
 
 from pyfect.date_time import intl, zone_named
@@ -140,11 +141,8 @@ def test_the_docs_state_the_versions() -> None:
         assert name in page
 
 
-@pytest.mark.skipif(
-    shutil.which("node") is None or "PYFECT_EFFECT_REF" not in os.environ,
-    reason="needs node and an Effect checkout (PYFECT_EFFECT_REF)",
-)
-def test_the_answers_are_nodes_answers() -> None:
+@pytest.mark.skipif(shutil.which("node") is None, reason="needs node")
+def test_the_answers_are_nodes_answers(effect_checkout: Path) -> None:
     node = subprocess.run(["node", "--version"], capture_output=True, text=True, check=True)
     recorded = _recorded()
     if node.stdout.strip() != f"v{recorded.versions[0]}":
@@ -156,7 +154,7 @@ def test_the_answers_are_nodes_answers() -> None:
         capture_output=True,
         text=True,
         check=True,
-        env={**os.environ, **ENVIRONMENT},
+        env={**os.environ, **ENVIRONMENT, _effect_ref.ENV: str(effect_checkout)},
     )
     assert json.loads(result.stdout)["answers"] == recorded.answers[::50]
 

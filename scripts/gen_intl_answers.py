@@ -2,7 +2,7 @@
 ``formatUtc`` and ``formatLocal`` (``Intl.DateTimeFormat`` under Node) answer
 for every case of ``tests/oracle/intl_matrix.py``::
 
-    PYFECT_EFFECT_REF=../effect uv run python scripts/gen_intl_answers.py
+    uv run python scripts/gen_intl_answers.py
 
 Runs ``tests/oracle/intl_oracle.ts`` on the ``node`` on ``PATH`` with
 ``LC_ALL=en_US.UTF-8`` (the cases without a locale, or with one ICU lacks, use
@@ -23,12 +23,12 @@ from pathlib import Path
 _ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(_ROOT))
 
+from tests import _effect_ref  # noqa: E402, TID251
 from tests.oracle.intl_matrix import ANSWERS, ENVIRONMENT, ORACLE, cases, digest  # noqa: E402, TID251
 
 
 def main() -> None:
-    if "PYFECT_EFFECT_REF" not in os.environ:
-        sys.exit("set PYFECT_EFFECT_REF to an Effect 4.1.2 checkout")
+    effect = _effect_ref.checkout()
     found = cases()
     result = subprocess.run(
         ["node", str(ORACLE)],
@@ -36,7 +36,7 @@ def main() -> None:
         capture_output=True,
         text=True,
         check=True,
-        env={**os.environ, **ENVIRONMENT},
+        env={**os.environ, **ENVIRONMENT, _effect_ref.ENV: str(effect)},
     )
     recorded = json.loads(result.stdout)
     recorded["cases"] = digest(found)

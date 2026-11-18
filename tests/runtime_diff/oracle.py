@@ -1,7 +1,7 @@
 """Effect's answers for programs, from effect_interpreter.ts under Node, and the
 checked-in corpus of them (``corpus.json``) that every pytest run replays.
 
-Needs Node 24 and ``PYFECT_EFFECT_REF`` (an Effect 4.1.2 checkout) for anything
+Needs Node 24 and the pinned Effect checkout (``tests/_effect_ref.py``) for anything
 that asks Node; replaying the corpus needs neither.
 """
 
@@ -13,6 +13,8 @@ import subprocess
 from pathlib import Path
 from types import TracebackType
 from typing import IO, Self, cast
+
+import _effect_ref
 
 from .interpret import answer
 from .program import Case, Json, from_json, to_json
@@ -27,14 +29,14 @@ class EffectOracle:
     """A Node process answering programs one at a time (``--serve``)."""
 
     def __init__(self) -> None:
-        if not os.environ.get("PYFECT_EFFECT_REF"):
-            raise RuntimeError("set PYFECT_EFFECT_REF to an Effect 4.1.2 checkout")
+        effect = _effect_ref.checkout()
         self._node = subprocess.Popen(
             ["node", str(INTERPRETER), "--serve"],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             text=True,
             encoding="utf-8",
+            env={**os.environ, _effect_ref.ENV: str(effect)},
         )
 
     def answer(self, case: Case) -> Json:

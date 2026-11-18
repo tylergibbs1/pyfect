@@ -119,10 +119,7 @@ def test_no_declarations():
         gen.generate("export type Nothing = string\n", _SCHEMAS_ONLY)
 
 
-@pytest.mark.skipif(
-    not all(target.default_source().exists() for target in gen.TARGETS.values()),
-    reason="no Effect reference checkout at $PYFECT_REF",
-)
+@pytest.mark.usefixtures("effect_checkout")
 def test_checked_in_package_is_fresh():
     assert gen.main(["--check"]) == 0
 
@@ -392,18 +389,15 @@ def test_every_provider_has_its_client():
 
 
 @pytest.mark.parametrize("source", ["", "a a"], ids=["missing", "twice"])
-def test_a_patch_matches_its_text_exactly_once(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, source: str
-):
+def test_a_patch_matches_its_text_exactly_once(tmp_path: Path, source: str):
     """A patch whose text moved or repeats in a newer Generated.ts fails the run instead of
     leaving the fix out or applying it where it doesn't belong."""
     generated = tmp_path / "packages" / "ai" / "openai" / "src" / "Generated.ts"
     generated.parent.mkdir(parents=True)
     generated.write_text(source)
-    monkeypatch.setenv("PYFECT_REF", str(tmp_path))
     target = gen.Target("openai", "OpenAI", "FunctionToolCall", patches=(("a", "b"),))
     with pytest.raises(gen.GenerateError, match="a patch matches"):
-        target.read_source()
+        target.read_source(tmp_path)
 
 
 def test_a_key_required_in_types_decodes_when_absent_and_stays_required_to_read():
@@ -428,9 +422,7 @@ def test_a_key_required_in_types_must_name_an_optional_key():
         gen.generate(_STRUCT, target)
 
 
-def test_a_target_pinned_to_a_release_reads_its_tag(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_a_target_pinned_to_a_release_reads_its_tag(tmp_path: Path) -> None:
     """A package that follows an older release than the reference checkout reads that
     release's Generated.ts from the checkout's history."""
     path = "packages/ai/thing/src/Generated.ts"
@@ -448,9 +440,8 @@ def test_a_target_pinned_to_a_release_reads_its_tag(
     git(*identity, "commit", "-qm", "old")
     git(*identity, "tag", "effect@9.0.0")
     (tmp_path / path).write_text("new")
-    monkeypatch.setenv("PYFECT_REF", str(tmp_path))
-    assert gen.Target("thing", "Thing", "Thing").read_source() == "new"
-    assert gen.Target("thing", "Thing", "Thing", release="9.0.0").read_source() == "old"
-    assert gen.Target("thing", "Thing", "Thing", release="9.0.1").read_source() == "new"
+    assert gen.Target("thing", "Thing", "Thing").read_source(tmp_path) == "new"
+    assert gen.Target("thing", "Thing", "Thing", release="9.0.0").read_source(tmp_path) == "old"
+    assert gen.Target("thing", "Thing", "Thing", release="9.0.1").read_source(tmp_path) == "new"
     with pytest.raises(gen.GenerateError, match=r"effect@8\.0\.0"):
-        gen.Target("thing", "Thing", "Thing", release="8.0.0").read_source()
+        gen.Target("thing", "Thing", "Thing", release="8.0.0").read_source(tmp_path)

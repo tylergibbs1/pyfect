@@ -6,33 +6,22 @@ For each pyfect test module, the Effect test files its docstrings name (as in
 call ``A(...)``. Where they also construct ``A`` with its checks, a module that calls ``A(...)``
 must use ``S.new(A, disable_checks=True)`` somewhere too, unless ``MIXED_EXCEPTIONS`` says why
 not. A port that dropped the option ran every check Effect skips: 450 thousand of them made one
-test time out in CI. Constructions inside helpers of other modules are not seen. Skipped without
-an Effect checkout, as in CI.
+test time out in CI. Constructions inside helpers of other modules are not seen. Effect's files
+come from the ``effect_checkout`` fixture.
 """
 
 from __future__ import annotations
 
 import ast
-import os
 import re
 from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import _source
-import pytest
 from _effect_titles import effect_test_files, named_files, skip_balanced, skip_string
 
 _TESTS = _source.TESTS
-_CHECKOUT = Path(
-    os.environ.get("PYFECT_EFFECT_REF") or _TESTS.parent.parent / "pyfect-ref" / "effect"
-)
-_PACKAGES = _CHECKOUT / "packages"
-
-pytestmark = pytest.mark.skipif(
-    not _PACKAGES.is_dir(),
-    reason=f"no Effect checkout at {_CHECKOUT}; set PYFECT_EFFECT_REF to Effect's repository",
-)
 
 MIXED_EXCEPTIONS: dict[tuple[str, str], str] = {
     (
@@ -166,14 +155,15 @@ def test_port_calls_finds_plain_and_unchecked_constructions() -> None:
     assert calls.unchecked == {"RemoteEntry"}
 
 
-def test_ports_keep_effects_disable_checks_constructions() -> None:
+def test_ports_keep_effects_disable_checks_constructions(effect_checkout: Path) -> None:
+    packages = effect_checkout / "packages"
     by_file: dict[str, Constructions] = {}
-    for path in effect_test_files(_PACKAGES):
+    for path in effect_test_files(packages):
         source = path.read_text()
         if "disableChecks" in source:
-            by_file[path.relative_to(_PACKAGES).as_posix()] = constructions(source)
+            by_file[path.relative_to(packages).as_posix()] = constructions(source)
     assert by_file, "no Effect test constructs a class with disableChecks: is the checkout right?"
-    all_files = [path.relative_to(_PACKAGES).as_posix() for path in effect_test_files(_PACKAGES)]
+    all_files = [path.relative_to(packages).as_posix() for path in effect_test_files(packages)]
     problems: list[str] = []
     ported: set[str] = set()
     excused: set[tuple[str, str]] = set()

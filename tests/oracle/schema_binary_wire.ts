@@ -1,8 +1,12 @@
-const R = "/Users/tylergibbs/pyfect-ref/effect/packages/effect/src/"
+// Effect's SchemaBinary frames, under Node:
+//   PYFECT_EFFECT_REF=$(uv run python tests/_effect_ref.py) node tests/oracle/schema_binary_wire.ts
+const EFFECT = process.env.PYFECT_EFFECT_REF
+if (!EFFECT) throw new Error("set PYFECT_EFFECT_REF=$(uv run python tests/_effect_ref.py), the pinned Effect checkout")
+const R = `${EFFECT}/packages/effect/src/`
 const SchemaBinary = await import(R + "encoding/SchemaBinary.ts")
 const { Schema } = await import(R + "index.ts")
 const { BigDecimal, Cause, DateTime, Duration, Exit, Option, Redacted, Result } = await import(R + "index.ts")
-const RpcMessage = await import("/Users/tylergibbs/pyfect-ref/effect/packages/effect/src/rpc/RpcMessage.ts")
+const RpcMessage = await import(R + "rpc/RpcMessage.ts")
 const Int = Schema.Number.check(Schema.isInt())
 const Person = Schema.Struct({ name: Schema.String, age: Schema.Number, active: Schema.Boolean, nickname: Schema.optionalKey(Schema.String) })
 const Row = Schema.Struct({ id: Schema.String, label: Schema.String, tags: Schema.Array(Schema.String), attributes: Schema.Record(Schema.String, Schema.String), score: Schema.optionalKey(Schema.Number) })

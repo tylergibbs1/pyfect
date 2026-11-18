@@ -1,10 +1,12 @@
 // Effect's Xml, Tar and Zip on the corpus of _archive_corpus.py, under Node:
 //   uv run python tests/oracle/_archive_corpus.py > corpus.json
-//   node tests/oracle/archive_oracle.ts corpus.json > tests/oracle/fixtures/archive_oracle.json
+//   PYFECT_EFFECT_REF=$(uv run python tests/_effect_ref.py) node tests/oracle/archive_oracle.ts corpus.json > tests/oracle/fixtures/archive_oracle.json
 import { createHash } from "node:crypto"
 import { readFileSync } from "node:fs"
 
-const R = "/Users/tylergibbs/pyfect-ref/effect/packages/effect/src/"
+const EFFECT = process.env.PYFECT_EFFECT_REF
+if (!EFFECT) throw new Error("set PYFECT_EFFECT_REF=$(uv run python tests/_effect_ref.py), the pinned Effect checkout")
+const R = `${EFFECT}/packages/effect/src/`
 const { Effect, Exit, Stream } = await import(R + "index.ts")
 const Xml = await import(R + "encoding/Xml.ts")
 const Tar = await import(R + "encoding/Tar.ts")
