@@ -13,6 +13,7 @@ from __future__ import annotations
 import ast
 import functools
 import gc
+import math
 import re
 import subprocess
 import sys
@@ -182,6 +183,58 @@ def test_a_cost_step_between_the_two_sizes_is_not_superlinear(window: float | No
         return clock.work(_RUN * units / _BASE)
 
     assert_near_linear(make, _BASE, _no_doubling(_BASE), clock=clock)
+
+
+def _stepped(clock: _QuietWindowClock, steps: dict[int, float], power: int = 1) -> Make:
+    """Work of ``n ** power`` units whose cost per unit is multiplied by each step's factor
+    once ``n`` reaches its size."""
+
+    def make(n: int) -> Work:
+        per_unit = math.prod(factor for at, factor in steps.items() if n >= at)
+        return clock.work(_RUN * per_unit * (n / _BASE) ** power)
+
+    return make
+
+
+@pytest.mark.parametrize("window", _WINDOWS)
+def test_two_cost_steps_across_the_comparisons_are_not_superlinear(window: float | None) -> None:
+    """Linear work whose cost per unit steps up within the first comparison (an input out of
+    the second-level cache) and again within the next doubling (out of the last one). Each
+    comparison alone looks superlinear: 25.6x over 8 times the size, then 3.2x over a
+    doubling."""
+    clock = _QuietWindowClock(window)
+    make = _stepped(clock, {_BASE * 2: 3.2, _BASE * 12: 1.6})
+    assert_near_linear(make, _BASE, _no_doubling(_BASE), clock=clock)
+
+
+def test_a_size_that_costs_more_in_one_comparison_than_the_next_is_not_superlinear() -> None:
+    """Linear work whose large buffers are faulted in again on every run while the allocator
+    hands them back, as CI measured one 4 MB input at 4.18 ms in one comparison and 0.85 ms in
+    the next: runs from twice the base size cost 3.2 times as much per unit until the
+    allocator settles (the first comparison's runs of the larger size), and from 12 times
+    the base size always."""
+    clock = _QuietWindowClock()
+    settles_after = 1 + SAMPLES  # the runs of the first comparison's larger size
+    faulted: list[int] = []
+
+    def make(n: int) -> Work:
+        def work() -> None:
+            if n >= _BASE * 2:
+                faulted.append(n)
+            slow = n >= _BASE * 12 or (n >= _BASE * 2 and len(faulted) <= settles_after)
+            clock.work(_RUN * (3.2 if slow else 1) * n / _BASE)()
+
+        return work
+
+    assert_near_linear(make, _BASE, _no_doubling(_BASE), clock=clock)
+
+
+@pytest.mark.parametrize("window", _WINDOWS)
+def test_quadratic_work_with_a_cost_step_still_fails(window: float | None) -> None:
+    clock = _QuietWindowClock(window)
+    make = _stepped(clock, {_BASE * 2: 3.2}, power=2)
+    with pytest.raises(AssertionError, match="superlinear"):
+        assert_near_linear(make, _BASE, _no_doubling(_BASE), clock=clock)
 
 
 @pytest.mark.parametrize("window", _WINDOWS)
