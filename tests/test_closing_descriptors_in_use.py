@@ -13,6 +13,9 @@ from __future__ import annotations
 import asyncio
 import os
 import socket
+import subprocess
+import sys
+import tempfile
 import threading
 from collections.abc import Buffer, Callable, Generator
 from concurrent.futures import Future
@@ -35,6 +38,21 @@ from pyfect.socket.datagram._model import BackingAddress, BackingEvents
 from pyfect.workers._process import _ProcessWorkerPort  # pyright: ignore[reportPrivateUsage]
 
 _WAIT = 5.0
+_CHILD_WAIT = 30.0
+
+
+def _alone(body: Callable[[], None]) -> None:
+    """Run ``body``, a function of this module, in a new Python process. Its
+    newcomer must take the number a close freed, the lowest free one; in this
+    process a thread another test left may open a descriptor in between."""
+    child = subprocess.run(
+        [sys.executable, "-W", "error::ResourceWarning", __file__, body.__name__],
+        capture_output=True,
+        text=True,
+        timeout=_CHILD_WAIT,
+        check=False,
+    )
+    assert child.returncode == 0, child.stderr
 
 
 class _HeldPool:
@@ -133,10 +151,19 @@ def _open_then(
     return got[0], exit
 
 
-def test_a_write_the_pool_starts_after_the_close_writes_nowhere(
-    tmp_path: Path, held_pool: _HeldPool
-):
-    path = tmp_path / "log"
+def test_a_write_the_pool_starts_after_the_close_writes_nowhere():
+    _alone(_a_write_the_pool_starts_after_the_close_writes_nowhere)
+
+
+def _a_write_the_pool_starts_after_the_close_writes_nowhere() -> None:
+    with tempfile.TemporaryDirectory() as tmp, pytest.MonkeyPatch.context() as patch:
+        held_pool = _HeldPool(_blocking_pool.pool())
+        patch.setattr(_blocking_pool._Shared, "pool", held_pool)  # pyright: ignore[reportPrivateUsage]
+        _write_after_the_close(Path(tmp) / "log", held_pool)
+
+
+def _write_after_the_close(path: Path, held_pool: _HeldPool) -> None:
+    """The closed number is the lowest free one, so the newcomer takes it."""
 
     def write(file: Any) -> fx.Effect[Any, Any]:
         def hold() -> None:
@@ -405,3 +432,30 @@ def test_a_datagram_sent_after_close_fails_as_closed():
     assert len(results) == 1 and isinstance(results[0], DatagramSocketError)
     assert isinstance(results[0].reason, DatagramSocketClosedError)
     peer.close()
+
+
+def test_a_descriptor_this_process_opens_before_the_newcomer_does_not_take_its_number(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """A thread another test left in the test process may open a descriptor
+    between the close and the newcomer, and take the number the close freed."""
+    taken: list[socket.socket] = []
+    socketpair = socket.socketpair
+
+    def after_another_open(*args: Any, **kwargs: Any) -> tuple[socket.socket, socket.socket]:
+        taken.append(socket.socket())
+        return socketpair(*args, **kwargs)
+
+    monkeypatch.setattr(socket, "socketpair", after_another_open)
+    try:
+        test_a_write_the_pool_starts_after_the_close_writes_nowhere()
+    finally:
+        for sock in taken:
+            sock.close()
+
+
+if __name__ == "__main__":  # a body _alone runs
+    unraisable: list[object] = []
+    sys.unraisablehook = unraisable.append
+    globals()[sys.argv[1]]()
+    assert not unraisable, unraisable
