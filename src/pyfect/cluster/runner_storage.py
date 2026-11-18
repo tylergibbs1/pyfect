@@ -7,10 +7,11 @@ stores addresses, runners and shard ids as text
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Sequence
-from typing import Any, Protocol, Self
+from typing import Any, Protocol, Self, runtime_checkable
 
 from pyfect import layer as layer_
 from pyfect import schema as S
+from pyfect._concurrency import for_each
 from pyfect._core import Effect
 from pyfect._service_copy import replaced
 from pyfect.cluster import shard_id as shard_id_
@@ -58,7 +59,8 @@ class RunnerStorageService:
             [RunnerAddress, Iterable[ShardId]], Effect[list[ShardId], PersistenceError]
         ],
         release: Callable[[RunnerAddress, ShardId], Effect[None, PersistenceError]],
-        release_many: Callable[[RunnerAddress, Sequence[ShardId]], Effect[None, PersistenceError]],
+        release_many: Callable[[RunnerAddress, Sequence[ShardId]], Effect[None, PersistenceError]]
+        | None = None,
         release_all: Callable[[RunnerAddress], Effect[None, PersistenceError]],
     ) -> None:
         self._register = register
@@ -123,7 +125,14 @@ class RunnerStorageService:
     ) -> Effect[None, PersistenceError]:
         """Releases the locks the runner at ``address`` holds on
         ``shard_ids``, in one write where the storage can. Fails with
-        ``PersistenceError`` when the storage cannot be written."""
+        ``PersistenceError`` when the storage cannot be written.
+
+        A storage made without ``release_many`` releases them one at a time
+        through its current ``release``, so a copy with a replaced
+        ``release`` uses the replacement."""
+        if self._release_many is None:
+            release = self._release
+            return for_each(shard_ids, lambda shard_id: release(address, shard_id), discard=True)
         return self._release_many(address, shard_ids)
 
     def release_all(self, address: RunnerAddress) -> Effect[None, PersistenceError]:
@@ -164,11 +173,17 @@ class EncodedRunnerStorage(Protocol):
 
     def release(self, address: str, shard_id: str, /) -> Effect[None, PersistenceError]: ...
 
+    def release_all(self, address: str, /) -> Effect[None, PersistenceError]: ...
+
+
+@runtime_checkable
+class EncodedReleaseMany(Protocol):
+    """What a driver adds to release several shard locks in one write; without it,
+    ``make_encoded`` releases them one ``release`` at a time."""
+
     def release_many(
         self, address: str, shard_ids: Sequence[str], /
     ) -> Effect[None, PersistenceError]: ...
-
-    def release_all(self, address: str, /) -> Effect[None, PersistenceError]: ...
 
 
 _runner_json = S.from_json_string(Runner)
@@ -196,29 +211,9 @@ def _decode_runners(rows: list[tuple[str, bool]]) -> list[tuple[Runner, bool]]:
     return runners
 
 
-_ENCODED_OPERATIONS = (
-    "register",
-    "unregister",
-    "set_runner_health",
-    "acquire",
-    "refresh",
-    "release",
-    "release_many",
-    "release_all",
-)
-
-
 def make_encoded(encoded: EncodedRunnerStorage) -> RunnerStorageService:
-    """A runner storage on the driver ``encoded``. Raises ``TypeError`` naming
-    the operations ``encoded`` does not implement."""
-    missing = [name for name in _ENCODED_OPERATIONS if not callable(getattr(encoded, name, None))]
-    if not hasattr(encoded, "get_runners"):
-        missing.insert(0, "get_runners")
-    if missing:
-        raise TypeError(
-            f"{type(encoded).__name__} does not implement EncodedRunnerStorage: "
-            f"missing {', '.join(missing)}"
-        )
+    """A runner storage on the driver ``encoded``. A driver that is also an
+    ``EncodedReleaseMany`` releases several shards in one write."""
 
     def acquire(
         address: RunnerAddress, shard_ids: Iterable[ShardId]
@@ -246,11 +241,24 @@ def make_encoded(encoded: EncodedRunnerStorage) -> RunnerStorageService:
         acquire=acquire,
         refresh=refresh,
         release=lambda address, shard: encoded.release(encode_runner_address(address), str(shard)),
-        release_many=lambda address, shards: encoded.release_many(
-            encode_runner_address(address), [str(s) for s in shards]
-        ),
+        release_many=_release_many(encoded),
         release_all=lambda address: encoded.release_all(encode_runner_address(address)),
     )
+
+
+def _release_many(
+    encoded: EncodedRunnerStorage,
+) -> Callable[[RunnerAddress, Sequence[ShardId]], Effect[None, PersistenceError]] | None:
+    if not isinstance(encoded, EncodedReleaseMany):
+        return None
+    batch = encoded
+
+    def release_many(
+        address: RunnerAddress, shard_ids: Sequence[ShardId]
+    ) -> Effect[None, PersistenceError]:
+        return batch.release_many(encode_runner_address(address), [str(s) for s in shard_ids])
+
+    return release_many
 
 
 def _shard_ids(shards: list[str]) -> list[ShardId]:
@@ -324,6 +332,7 @@ layer_memory: layer_.Layer[RunnerStorage] = layer_.effect(RunnerStorage, make_me
 """``RunnerStorage`` in memory (``make_memory``), for a single process or tests."""
 
 __all__ = [
+    "EncodedReleaseMany",
     "EncodedRunnerStorage",
     "PersistenceError",
     "RunnerStorage",

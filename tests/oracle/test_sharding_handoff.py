@@ -693,7 +693,6 @@ def _singleton_storage(state: _SingletonStorageState) -> RunnerStorageService:
         acquire=granted,
         refresh=granted,
         release=lambda _address, _shard_id: fx.void,
-        release_many=lambda _address, _shard_ids: fx.void,
         release_all=lambda _address: fx.void,
     )
 

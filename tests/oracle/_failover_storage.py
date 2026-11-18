@@ -150,9 +150,6 @@ def make_failover_storage(state: FailoverState, clock: ClockService) -> RunnerSt
         acquire=acquire,
         refresh=refresh,
         release=release,
-        release_many=lambda address, shards: fx.for_each(
-            shards, lambda shard: release(address, shard), discard=True
-        ),
         release_all=release_all,
     )
 

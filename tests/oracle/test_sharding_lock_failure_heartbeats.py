@@ -143,9 +143,6 @@ class _Storage:
             acquire=lambda _address, shard_ids: locked(shard_ids),
             refresh=refresh,
             release=release,
-            release_many=lambda address, shards: fx.for_each(
-                shards, lambda shard: release(address, shard), discard=True
-            ),
             release_all=release_all,
         )
 

@@ -2,17 +2,14 @@
 
 ## Unreleased
 
-### Changed
+### Added
 
-- Cluster: a runner storage needs a `release_many` operation, which the shutdown handoff uses
-  to release shards in chunks (below). `RunnerStorageService(...)` takes it as a required
-  `release_many=` argument, and an `EncodedRunnerStorage` driver needs a `release_many` method.
-  A storage without it now fails when it is made: the constructor raises `TypeError` for the
-  missing argument, and `make_encoded` raises `TypeError` naming each missing method. To keep
-  a custom storage releasing one shard at a time, pass
-  `release_many=lambda address, shards: fx.for_each(shards, lambda s: release(address, s), discard=True)`
-  (a driver's method is the same over its `self.release`); a storage that can release several
-  locks in one write should do that instead.
+- Cluster: `RunnerStorageService` takes an optional `release_many=` operation, and an
+  `EncodedRunnerStorage` driver may add a `release_many` method (`EncodedReleaseMany`); the
+  shutdown handoff releases shards in chunks through it (below). A storage without one
+  releases a chunk one shard at a time through its current `release`, so existing storages
+  keep working unchanged. A custom storage that can release several locks in one write should
+  implement it.
 
 ### Fixed
 
@@ -62,7 +59,7 @@
 - Cluster: a stopping runner released each of its shards in a storage write of its own, so on
   a slow or remote database shutdown took 50-100 ms per shard. The shutdown handoff now
   releases them 100 at a time, one write each, through the new
-  `RunnerStorageService.release_many` (`EncodedRunnerStorage.release_many` for drivers). A
+  `RunnerStorageService.release_many` (`EncodedReleaseMany.release_many` for drivers). A
   failed chunk is retried as a single release is, and SQL runner storage still releases
   through the reserved lock connection one operation at a time.
 
