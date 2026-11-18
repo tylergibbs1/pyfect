@@ -576,7 +576,7 @@ class _Storage:
 
             def pg(conn: Connection, _pid: int) -> Effect[None, SqlError]:
                 def body() -> Generator[Effect[Any, Any, Any], Any]:
-                    held = numbers
+                    held: list[int] = numbers
                     # A lock taken more than once needs as many unlocks.
                     for _ in range(5):
                         unlocks = ", ".join(
@@ -584,7 +584,7 @@ class _Storage:
                             for number in held
                         )
                         yield from conn.execute_raw(f"SELECT {unlocks}", [])
-                        taken = yield from conn.execute_values(
+                        taken: Sequence[tuple[object, ...]] = yield from conn.execute_values(
                             "SELECT objid FROM pg_locks WHERE locktype = 'advisory' "
                             f"AND granted = true AND classid = {self.lock_namespace_oid} "
                             f"AND objid IN ({', '.join(map(str, held))}) "
@@ -604,12 +604,15 @@ class _Storage:
 
             def mysql(conn: Connection, pid: int) -> Effect[None, SqlError]:
                 def body() -> Generator[Effect[Any, Any, Any], Any]:
-                    held = names
+                    held: list[str] = names
                     while held:
                         releases = ", ".join(f"RELEASE_LOCK('{name}')" for name in held)
                         yield from conn.execute_raw(f"SELECT {releases}", [])
                         used = ", ".join(f"IS_USED_LOCK('{name}')" for name in held)
-                        taken = (yield from conn.execute_values(f"SELECT {used}", []))[0]
+                        rows: Sequence[tuple[object, ...]] = yield from conn.execute_values(
+                            f"SELECT {used}", []
+                        )
+                        taken = rows[0]
                         held = [
                             name
                             for name, taken_by in zip(held, taken, strict=True)

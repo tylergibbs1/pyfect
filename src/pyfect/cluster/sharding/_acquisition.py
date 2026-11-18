@@ -12,6 +12,7 @@ from collections.abc import Sequence
 from typing import Any, Never
 
 from pyfect import cause as Cause
+from pyfect._concurrency import for_each
 from pyfect._core import Effect
 from pyfect._fiber import Fiber
 from pyfect.clock import sleep
@@ -198,10 +199,9 @@ class ShardAcquisition:
             shard_ids, False, state.runner_storage.release_many(self._self_address, shard_ids)
         )
 
-        @gen
-        def record(timed: tuple[Duration, None]):
-            for _ in shard_ids:
-                yield from cluster_metrics.shard_release_duration.update(timed[0])
+        def record(timed: tuple[Duration, None]) -> Effect[None]:
+            update = cluster_metrics.shard_release_duration.update
+            return for_each(shard_ids, lambda _: update(timed[0]), discard=True)
 
         tracked = (
             self._retry_release(release, "releaseShards", shardIds=list(shard_ids))
