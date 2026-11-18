@@ -51,7 +51,7 @@ jobs:
     timeout-minutes: 125
     env:
       UV_PYTHON: "3.14"
-      EFFECT_COMMIT: 506eef143bcc1750ce58920aac1e45da7265d103 # Effect 4.1.2, as ../pyfect-ref/effect
+      EFFECT_COMMIT: 289a53f7b1fc40049219c6e69022db2fb859c356 # Effect 4.1.4, as ../pyfect-ref/effect
       PYFECT_EFFECT_REF: ${{ github.workspace }}/.effect
       PYFECT_REF: ${{ github.workspace }}/.effect
       # A test skipped for a missing server fails the round (tests/_skips.py).
