@@ -4,7 +4,8 @@ A thread a test started and never stopped runs on through the tests after it, in
 process: its work lands in their call counters, timers and stall samples. The check notes the
 threads alive when a test's setup starts and, after its teardown, the new ones still alive.
 Once the file's last test is torn down (its module-scoped layers with it), it warns about each
-of those still running, naming the test that left it and the frames it is running. Within a
+of those still running, naming the test that left it and the frames it is running: as an
+error in that last test's teardown, or with ``leaked_threads = warn`` as a warning. Within a
 file, a thread may outlive a test: a module's shared layer (``testing.layer_fixture``, Effect's
 ``it.layer``) keeps its connections, and their server threads, for every test in the file.
 
@@ -31,6 +32,8 @@ import pyfect
 _BEFORE = pytest.StashKey[frozenset[threading.Thread]]()
 _LEFT = pytest.StashKey[dict[threading.Thread, str]]()
 """The threads tests of the current file left alive, with the test that left each."""
+_LEAKED = pytest.StashKey[list[str]]()
+"""What the file's last test found still running once the file was done."""
 _SRC = str(Path(pyfect.__file__).parent) + "/"
 _IDLE = frozenset(
     {
@@ -50,6 +53,14 @@ _FRAMES = 4
 
 class LeakedThreadWarning(pytest.PytestWarning):
     """A test left a thread it started running after its file was done."""
+
+
+def pytest_addoption(parser: pytest.Parser) -> None:
+    parser.addini(
+        "leaked_threads",
+        "A thread a test file's tests leave running past the file: fail or warn.",
+        default="fail",
+    )
 
 
 def _frame(thread: threading.Thread) -> FrameType | None:
@@ -100,15 +111,30 @@ def pytest_runtest_teardown(item: pytest.Item, nextitem: pytest.Item | None) -> 
             left.setdefault(thread, item.nodeid)
     if nextitem is not None and nextitem.path == item.path:
         return
-    for thread, test in left.items():
-        frame = _running(thread)
-        if frame is not None:
-            item.warn(
-                LeakedThreadWarning(
-                    f"{test} left thread {thread.name!r} running past its file: {_where(frame)}"
-                )
-            )
+    item.stash[_LEAKED] = [
+        f"{test} left thread {thread.name!r} running past its file: {_where(frame)}"
+        for thread, test in left.items()
+        if (frame := _running(thread)) is not None
+    ]
     left.clear()
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_makereport(
+    item: pytest.Item, call: pytest.CallInfo[None]
+) -> Generator[None, pytest.TestReport, pytest.TestReport]:
+    """Fails the teardown of a file's last test with the threads its tests left running."""
+    report = yield
+    leaked = item.stash.get(_LEAKED, None) if call.when == "teardown" else None
+    if not leaked:
+        return report
+    if item.config.getini("leaked_threads") == "warn":
+        for leak in leaked:
+            item.warn(LeakedThreadWarning(leak))
+    elif report.passed:
+        report.outcome = "failed"
+        report.longrepr = "\n".join(leaked)
+    return report
 
 
 __all__ = ["LeakedThreadWarning"]

@@ -106,15 +106,33 @@ def test_starts_a_process_wide_peer():
 
 
 def _warnings(pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch, **files: str) -> str:
-    """The run's warnings summary; every test in ``files`` passes. A file named ``stop``
-    (the shared event) is added, and ``test_z`` stops it after the others have run."""
+    """The run's warnings summary, with leaks only warned about; every test in ``files``
+    passes. A file named ``stop`` (the shared event) is added, and ``test_z`` stops it after
+    the others have run."""
     monkeypatch.setenv("PYTHONPATH", str(Path(__file__).parent))
+    pytester.makeini("[pytest]\nleaked_threads = warn\n")
     pytester.makepyfile(stop=STOP, **files, test_z=STOPS_IT)
     pytester.syspathinsert()
     result = pytester.runpytest_subprocess("-p", "_leaked_threads", timeout=SUBPROCESS_TIMEOUT)
     result.assert_outcomes(passed=sum(source.count("def test_") for source in files.values()) + 1)
     out = result.stdout.str()
     return out.split("warnings summary")[1] if "warnings summary" in out else ""
+
+
+def test_a_thread_left_running_past_its_file_fails_the_file(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Enforced by default: the file's last test errors in its teardown, naming the test
+    that left the thread and what it runs; the tests themselves passed."""
+    monkeypatch.setenv("PYTHONPATH", str(Path(__file__).parent))
+    pytester.makepyfile(stop=STOP, test_a=LEAVES_A_THREAD, test_z=STOPS_IT)
+    pytester.syspathinsert()
+    result = pytester.runpytest_subprocess("-p", "_leaked_threads", timeout=SUBPROCESS_TIMEOUT)
+    result.assert_outcomes(passed=3, errors=1)
+    out = " ".join(result.stdout.str().split())
+    assert "ERROR at teardown of test_after_it_in_the_file" in out, out
+    assert "test_a.py::test_leaves_a_thread left thread 'left-behind' running past its file" in out
+    assert "in parse_forever" in out, out
 
 
 def test_a_thread_left_running_past_its_file_is_named_with_the_test_and_its_stack(
