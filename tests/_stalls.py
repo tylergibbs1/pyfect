@@ -56,6 +56,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from _threads import live_threads
 
 ROOT = Path(__file__).parent.parent
 
@@ -303,10 +304,10 @@ class Watchdog:
         stuck and the process CPU used at the last tick."""
         self._test_thread = 0
         self._test_started = (0.0, 0.0)
-        self._test_samples: deque[tuple[float, tuple[Frame, ...]]] = deque(maxlen=64)
-        """The test thread's recent sampled stacks, with the wall time of each: 16 thresholds
-        of them, so the samples taken between a failure and its report leave some from
-        before it."""
+        self._test_samples: deque[tuple[float, tuple[Frame, ...], _Working]] = deque(maxlen=64)
+        """The test thread's recent sampled stacks, with the wall time of each and the pyfect
+        threads working then: 16 thresholds of them, so the samples taken between a failure
+        and its report leave some from before it."""
         self._thread = threading.Thread(target=self._watch, name="stall-watchdog", daemon=True)
 
     def start(self) -> None:
@@ -348,17 +349,23 @@ class Watchdog:
         )
         with self._lock:
             before = [
-                below
-                for at, frames in self._test_samples
+                (below, working)
+                for at, frames, working in self._test_samples
                 if at <= failed_at
                 and (below := _below_the_alarm(frames))
                 and not all(frame.runner for frame in below)
             ]
         if not before:
             return f"{head}; no sample of the test thread before the failure"
-        frames = before[-1]
-        doing = "was waiting in" if frames[0].idle else "was last in"
-        return f"{head}; the test thread {doing} {frames[0]}\n" + _stack(frames)
+        frames, working = before[-1]
+        if not frames[0].idle:
+            return f"{head}; the test thread was last in {frames[0]}\n" + _stack(frames)
+        # Whether what it waited for was stuck, or had finished and its wake was lost.
+        return (
+            f"{head}; the test thread was waiting in {frames[0]}\n{_stack(frames)}"
+            + "".join(f"{name} was in {stack[0]}\n{_stack(stack)}" for name, stack in working)
+            + ("" if working else "no pyfect thread was working (each was idle or gone)\n")
+        )
 
     def take(self) -> list[str]:
         """The stalls seen since the last ``take``. A watchdog overdue for its tick has just
@@ -465,8 +472,14 @@ class Watchdog:
             (t for ident, t in threads.items() if int(ident, 16) == self._test_thread), None
         )
         if test_thread is not None:
+            names = {thread.ident: thread.name for thread in live_threads("pyfect-")}
+            working = tuple(
+                (name, thread.frames)
+                for ident, thread in threads.items()
+                if (name := names.get(int(ident, 16))) and not thread.frames[0].idle
+            )
             with self._lock:
-                self._test_samples.append((time.time(), test_thread.frames))
+                self._test_samples.append((time.time(), test_thread.frames, working))
         for ident in [ident for ident in self._seen if ident not in threads]:
             del self._seen[ident]
         for ident, thread in threads.items():
@@ -591,6 +604,10 @@ def _timed_out(call: pytest.CallInfo[None]) -> bool:
     return excinfo is not None and (
         excinfo.errisinstance(TimeoutError) or str(excinfo.value).startswith("test hung:")
     )
+
+
+type _Working = tuple[tuple[str, tuple[Frame, ...]], ...]
+"""The pyfect threads (``pyfect-*``) doing work at a sample: name and stack of each."""
 
 
 def _stack(frames: tuple[Frame, ...]) -> str:
