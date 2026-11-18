@@ -50,6 +50,16 @@
   message, no help) and its type joins the command's errors. A `CliError` is still shown
   with the help.
 
+- `pyfect.rpc.open_rpc`, Effect 4.1.4's `OpenRpc` (#10173): `from_rpc_group(group, info=...,
+  servers=...)` describes a group's RPCs as an OpenRPC 1.3.2 document, with Draft 7 schemas
+  (shared definitions under `components.schemas`) of what the JSON-RPC serializer sends: named
+  or positional params, the result, errors read from literal `code`/`message` fields, and an
+  `x-effect-stream` extension for streaming RPCs. The `Summary`, `Description`, `Tags`,
+  `Examples`, `Deprecated`, `ExternalDocs` and `Errors` annotations fill in each method.
+
+- `RpcGroup.annotations`, `annotate` and `annotate_merge` (Effect's group annotations): defaults
+  for the group's RPCs, which their own annotations override.
+
 ### Fixed
 
 - A schema whose aliases only reach each other (a JSON Schema `$ref` to itself) took
