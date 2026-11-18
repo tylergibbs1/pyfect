@@ -402,6 +402,72 @@ def test_a_c_call_holding_the_gil_times_out_on_time(
     assert "not counted" not in out
 
 
+BLOCKS_PAST_ITS_LIMIT = """
+import time
+
+import pyfect as fx
+import pyfect.testing as it
+
+
+def block_on_purpose():
+    time.sleep(1.5)  # a blocking call in a fiber step: the timer cannot fire during it
+
+
+@it.live(timeout="1 second")
+def test_blocks():
+    yield from fx.sync(block_on_purpose)
+"""
+
+WITHIN_ITS_LIMIT = """
+import pyfect as fx
+import pyfect.testing as it
+
+
+@it.live(timeout="1 second")
+def test_waits():
+    yield from fx.sleep("300 millis")
+"""
+
+
+def _blocking(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch, source: str, mode: str
+) -> pytest.RunResult:
+    monkeypatch.setenv("PYTHONPATH", str(Path(__file__).parent))
+    pytester.makepyfile(source)
+    pytester.makeini(f"[pytest]\nstall_threshold = 0.3\nblocked_past_limit = {mode}\n")
+    return pytester.runpytest_subprocess("-p", "_stalls", timeout=SUBPROCESS_TIMEOUT)
+
+
+def test_a_test_that_blocked_past_its_limit_fails(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A step that blocks past the timeout passes in ``pyfect.testing``, as in Effect: the
+    timer cannot fire while the thread is blocked. Our suite fails it ("fibers never
+    block"), naming the stall."""
+    result = _blocking(pytester, monkeypatch, BLOCKS_PAST_ITS_LIMIT, "fail")
+    result.assert_outcomes(failed=1)
+    out = result.stdout.str()
+    assert "finished, but blocked past its 1.0 s limit: ran 1." in out
+    assert "pyfect blocked in block_on_purpose (" in out
+
+
+def test_a_test_that_blocked_past_its_limit_warns_in_report_mode(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    result = _blocking(pytester, monkeypatch, BLOCKS_PAST_ITS_LIMIT, "warn")
+    # The watchdog's own StallWarning for the block, then the limit's.
+    result.assert_outcomes(passed=1, warnings=2)
+    out = result.stdout.str()
+    assert "StallWarning: process stalled 1." in out
+    assert "BlockedPastLimitWarning: finished, but blocked past its 1.0 s limit" in out
+
+
+def test_a_test_within_its_limit_passes(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _blocking(pytester, monkeypatch, WITHIN_ITS_LIMIT, "fail").assert_outcomes(passed=1)
+
+
 def test_a_dump_reads_each_threads_frames_innermost_first() -> None:
     dump = (
         "Timeout (0:00:02)!\n"
