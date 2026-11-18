@@ -26,7 +26,6 @@ from pyfect.exit import Exit, Success
 from pyfect.otel._attributes import to_attribute_value, to_attributes
 from pyfect.tracer import (
     AnySpan,
-    DisablePropagation,
     Ended,
     ExternalSpan,
     SpanKind,
@@ -282,11 +281,3 @@ def populate_context(
     return trace.set_span_in_context(
         NonRecordingSpan(make_span_context(span, annotations)), context
     )
-
-
-def propagated_span(span: AnySpan | None) -> AnySpan | None:
-    """``span``, or its nearest ancestor, that does not disable
-    propagation."""
-    while span is not None and span.annotations.get_unsafe(DisablePropagation):
-        span = None if isinstance(span, ExternalSpan) else span.parent
-    return span

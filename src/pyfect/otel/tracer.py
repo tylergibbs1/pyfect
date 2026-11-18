@@ -41,10 +41,10 @@ from pyfect.otel._span import (
     external_span_of,
     make_external_span,
     populate_context,
-    propagated_span,
 )
 from pyfect.otel._wrapper import EffectSpanView
-from pyfect.tracer import ParentSpan, Span, Tracer, current_span
+from pyfect.tracer import Span, Tracer, current_span
+from pyfect.tracer._spans import propagated_parent_span
 
 __all__ = [
     "EffectSpanView",
@@ -79,7 +79,7 @@ class OtelTracerProvider(Tag[trace.TracerProvider]):
 def _context_hook[T](run: Callable[[], T], fiber: Fiber[Any, Any], /) -> T:
     """Runs a fiber step with the fiber's current span active in
     OpenTelemetry's context."""
-    span = propagated_span(fiber.get_ref(ParentSpan))
+    span = propagated_parent_span(fiber)
     if span is None:
         return run()
     context = populate_context(otel_context.get_current(), span)

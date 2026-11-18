@@ -15,11 +15,12 @@ import pyfect as fx
 from pyfect import cause, layer, testing
 from pyfect._version import VERSION
 from pyfect.clock import now_nanos
+from pyfect.context import Context
 from pyfect.http.client import HttpClient
 from pyfect.layer import Layer
 from pyfect.logger import LogLevel, Options
 from pyfect.observability import otlp_exporter, otlp_logger, otlp_serialization
-from pyfect.tracer import ExternalSpan
+from pyfect.tracer import DisablePropagation, ExternalSpan
 
 from ._otlp import Collector, client_layer, collector
 
@@ -135,5 +136,35 @@ def test_pads_a_64_bit_trace_id_to_32_hex_characters():
         yield from fx.log("test").with_parent_span(parent)
         yield from _flush()
         assert _log_record(seen)["traceId"] == "0000000000000000463ac35c9f6413ad"
+
+    yield from program.pipe(layer.provide(_test_layer(http)))
+
+
+@testing.effect
+def test_correlates_logs_with_the_nearest_span_that_allows_propagation():
+    """correlates logs with the nearest span that allows propagation"""
+    seen, http = collector()
+    logs = fx.all(
+        fx.log("tracing disabled").with_span("disabled").with_tracer_enabled(False),
+        fx.log("propagation disabled").with_span(
+            "disabled", annotations=Context.make(DisablePropagation, True)
+        ),
+    )
+
+    @fx.gen
+    def program():
+        yield from logs
+        unsampled = ExternalSpan(
+            trace_id="80f198ee56343ba864fe8b2a57d3eff7", span_id="0020000000000001", sampled=False
+        )
+        yield from logs.with_parent_span(unsampled)
+        yield from _flush()
+        records = seen.json()[0]["resourceLogs"][0]["scopeLogs"][0]["logRecords"]
+        assert [(record.get("traceId"), record.get("spanId")) for record in records] == [
+            (None, None),
+            (None, None),
+            ("80f198ee56343ba864fe8b2a57d3eff7", "0020000000000001"),
+            ("80f198ee56343ba864fe8b2a57d3eff7", "0020000000000001"),
+        ]
 
     yield from program.pipe(layer.provide(_test_layer(http)))

@@ -35,6 +35,10 @@
   `expire_cookie`, `remove_cookie`, `merge_cookies` and the rest) reset an explicit
   `content-type` or `content-length` to the body's. They now keep the headers as they are;
   removing a content header still falls back to the body's (Effect #10605).
+- `otlp_logger` exported the invalid ids of the no-op span for a log inside a span made with
+  tracing off, and the ids of a span annotated with `DisablePropagation`. Log records now carry
+  the nearest span that allows propagation, or none (Effect #10609). The OpenTelemetry logger
+  (`pyfect.otel.logger`) had the same bug and is fixed the same way.
 
 ## 0.6.12 (2026-11-18)
 

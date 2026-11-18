@@ -32,7 +32,7 @@ from pyfect.observability.otlp_resource import (
 )
 from pyfect.observability.otlp_serialization import OtlpSerialization
 from pyfect.scope import Scope
-from pyfect.tracer import ParentSpan
+from pyfect.tracer._spans import propagated_parent_span
 
 __all__ = [
     "LogRecord",
@@ -124,7 +124,7 @@ def _log_record(options: Options, exclude_log_spans: bool, clock: ClockService) 
         "body": unknown_to_attribute_value(message[0] if len(message) == 1 else list(message)),
         "droppedAttributesCount": 0,
     }
-    span = fiber.get_ref(ParentSpan)
+    span = propagated_parent_span(fiber)
     if span is not None:
         record["traceId"] = span.trace_id.rjust(32, "0")
         record["spanId"] = span.span_id

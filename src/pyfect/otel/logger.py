@@ -33,7 +33,7 @@ from pyfect.otel._shutdown import DEFAULT_SHUTDOWN_TIMEOUT, flush_and_shut_down
 from pyfect.otel._span import populate_context
 from pyfect.otel.resource import OtelResource
 from pyfect.scope import acquire_release
-from pyfect.tracer import ParentSpan
+from pyfect.tracer._spans import propagated_parent_span
 
 __all__ = [
     "OtelLoggerProvider",
@@ -75,7 +75,7 @@ def _record(options: Options, observed: int) -> LogRecord:
         for key, value in fiber.get_ref(CurrentLogAnnotations).items()
     }
     attributes["effect.fiberId"] = fiber.id
-    span = fiber.get_ref(ParentSpan)
+    span = propagated_parent_span(fiber)
     context = otel_context.get_current()
     if span is not None:
         context = populate_context(context, span, span.annotations)

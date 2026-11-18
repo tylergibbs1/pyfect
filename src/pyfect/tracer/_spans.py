@@ -45,12 +45,20 @@ from pyfect.tracer._refs import (
 _VOID: Effect[None] = _Succeed(None)
 
 
-def _propagating(span: AnySpan | None) -> AnySpan | None:
+def propagated_span(span: AnySpan | None) -> AnySpan | None:
     """``span``, or the nearest ancestor of it whose annotations do not
-    disable propagation."""
+    disable propagation (Effect's ``filterDisablePropagation``). A span made
+    with tracing off is a ``NoopSpan`` that disables propagation, so its
+    ids are never exported or sent."""
     while span is not None and span.annotations.get_unsafe(DisablePropagation):
         span = None if isinstance(span, ExternalSpan) else span.parent
     return span
+
+
+def propagated_parent_span(fiber: Fiber[Any, Any]) -> AnySpan | None:
+    """The span whose trace and span ids ``fiber``'s logs, outgoing requests
+    and child contexts may carry: ``propagated_span`` of its current one."""
+    return propagated_span(fiber.get_ref(ParentSpan))
 
 
 def make_span_unsafe(fiber: Fiber[Any, Any], name: str, options: SpanOptions) -> Span:
@@ -62,7 +70,7 @@ def make_span_unsafe(fiber: Fiber[Any, Any], name: str, options: SpanOptions) ->
     )
     parent = options.get("parent")
     if parent is None and not options.get("root", False):
-        parent = _propagating(fiber.get_ref(ParentSpan))
+        parent = propagated_parent_span(fiber)
     if annotations is None:
         annotations = Context.empty()
     if disabled:
