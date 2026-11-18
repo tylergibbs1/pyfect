@@ -1,7 +1,8 @@
 # Git hooks: `uv run lefthook install`, once per clone (worktrees share .git/hooks).
 # pre-commit lint-fixes and formats the staged Python files and stages the fixes; pre-push also
-# runs pyright, too slow for every commit, on the files the pushed refs add. CI still runs the
-# full check on everything.
+# runs pyright, too slow for every commit, on the files the pushed refs add, and the tests that
+# scan the whole repository, which a change to any file can fail. CI still runs the full check
+# on everything.
 # `git commit --no-verify` / `git push --no-verify` skip them.
 glob_matcher: doublestar
 # Only `lefthook install` installs: `lefthook run` would otherwise install into .git/hooks,
@@ -36,6 +37,9 @@ pre-push:
       # Reads git's pushed refs on stdin and runs pushed-files below on what they add.
       run: uv run --frozen --quiet python scripts/pre_push.py
       use_stdin: true
+    - name: repository scans
+      # The tests that scan src/ or tests/, which a change to any file can fail.
+      run: uv run --frozen --quiet python scripts/repo_scans.py
 
 # Not a git hook: scripts/pre_push.py runs it with the pushed files.
 pushed-files:

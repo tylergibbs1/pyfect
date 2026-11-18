@@ -8,6 +8,7 @@ to pass two error-free arguments. Defaulted TypeVars in separate slots
 meet in a union: a function is flagged when two of them do."""
 
 import ast
+import functools
 
 import _source
 
@@ -27,13 +28,18 @@ def _never_defaulted(node: Generic, prefix: str) -> list[str]:
     ]
 
 
-def _generics() -> list[tuple[str, Generic]]:
-    return [
+@functools.cache
+def _generics() -> tuple[tuple[str, Generic], ...]:
+    """Every generic with a type parameter defaulted to ``Never``: only a file that names
+    ``Never`` can hold one."""
+    return tuple(
         (f"{path.relative_to(SRC)}:{node.lineno} {node.name}", node)
         for path in _source.files(SRC)
+        if _source.mentions(path, "Never")
         for node in _source.walk(path)
         if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef)
-    ]
+        and node.type_params
+    )
 
 
 def test_the_scan_sees_defaulted_type_parameters():

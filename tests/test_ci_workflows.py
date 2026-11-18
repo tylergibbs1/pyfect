@@ -349,6 +349,8 @@ def test_each_driver_runs_its_tests_at_its_newest_and_lowest_versions():
 
 def _image_keys_named_in(path: Path) -> list[str]:
     """The keys of the ``_container_images.image("key")`` calls in ``path``."""
+    if not _source.mentions(path, "_container_images"):  # parsing every fixture costs 3 s
+        return []
     return [
         node.args[0].value
         for node in _source.walk(path)
@@ -366,6 +368,8 @@ def _image_keys_named_in(path: Path) -> list[str]:
 def _literal_images_in(path: Path) -> list[str]:
     """Module-level ``..._IMAGE = "name:tag"`` assignments: an image not pinned in
     tests/container_images.json, which CI would not have cached."""
+    if not _source.mentions(path, "IMAGE"):
+        return []
     return [
         f"{path.name}:{node.lineno}"
         for node in _source.tree(path).body
@@ -389,6 +393,18 @@ def test_every_container_image_the_oracle_fixtures_name_is_cached():
     assert cached <= named, f"pinned but no fixture runs it: {sorted(cached - named)}"
     for image in _container_images.IMAGES.values():
         assert re.fullmatch(r"sha256:[0-9a-f]{64}", image.digest), image
+
+
+def test_the_image_scan_finds_a_named_key_and_a_literal_image(tmp_path: Path):
+    fixture = tmp_path / "conftest_fixture.py"
+    fixture.write_text(
+        'POSTGRES_IMAGE = "postgres:17"\n\n\n'
+        "def start():\n"
+        '    return _container_images.image("uncached")\n'
+    )
+    assert _literal_images_in(fixture) == ["conftest_fixture.py:1"]
+    assert _image_keys_named_in(fixture) == ["uncached"]
+    assert "uncached" not in _container_images.IMAGES
 
 
 def test_the_server_tests_load_the_cached_images_and_never_pull():

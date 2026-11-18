@@ -36,6 +36,8 @@ def _timer_callbacks(tree: ast.Module) -> list[tuple[int, ast.FunctionDef | ast.
     found: list[tuple[int, ast.FunctionDef | ast.Lambda]] = []
     for scope in ast.walk(tree):
         defs = {n.name: n for n in ast.iter_child_nodes(scope) if isinstance(n, ast.FunctionDef)}
+        if not defs and scope is not tree:
+            continue  # only the module's walk needs to find the lambdas
         for node in ast.walk(scope):
             if not (
                 isinstance(node, ast.Call)
@@ -56,6 +58,8 @@ def test_no_timer_callback_warns_in_its_own_context():
     offenders: list[str] = []
     checked = 0
     for path in _source.files(SRC):
+        if not _source.mentions(path, "call_later"):
+            continue
         tree = _source.tree(path)
         for line, callback in _timer_callbacks(tree):
             checked += 1

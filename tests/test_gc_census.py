@@ -83,6 +83,8 @@ def test_a_class_whose_metaclass_checks_instances_in_python_is_refused() -> None
 
 def _reads_gc_objects(path: Path) -> list[int]:
     lines: list[int] = []
+    if not _source.mentions(path, "get_objects"):  # both reads below name it
+        return lines
     for node in _source.walk(path):
         match node:
             case ast.Attribute(attr="get_objects", value=ast.Name(id="gc")):

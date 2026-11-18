@@ -1,5 +1,6 @@
 """The Lefthook git hooks (lefthook.yml): pre-commit fixes and formats the staged Python files and
-stages the result, pre-push runs ruff and pyright on what the pushed refs add (scripts/pre_push.py).
+stages the result, pre-push runs ruff and pyright on what the pushed refs add (scripts/pre_push.py)
+and the tests listed in tests/_repo_guards.txt.
 
 Each test installs the hooks into a throwaway repository, never this one: worktrees share one git
 config and one hooks directory. Global and system git config are ignored, so a contributor's own
@@ -45,6 +46,10 @@ def _repo(tmp_path: Path) -> Path:
     repo.mkdir()
     for name in ("pyproject.toml", "uv.lock", ".venv", "src", "scripts", "lefthook.yml"):
         (repo / name).symlink_to(ROOT / name)
+    (repo / ".gitignore").write_text("__pycache__/\n")
+    (repo / "tests").mkdir()
+    (repo / "tests" / "test_scan.py").write_text("def test_scan():\n    pass\n")
+    (repo / "tests" / "_repo_guards.txt").write_text("tests/test_scan.py::test_scan\n")
     _git(repo, "init", "-q", "-b", "main")
     installed = _run(repo, "uv", "run", "--frozen", "--quiet", "lefthook", "install")
     assert installed.returncode == 0, installed.stdout + installed.stderr
@@ -136,6 +141,38 @@ def test_a_push_of_a_file_pyright_rejects_is_stopped(tmp_path: Path):
     pushed = _push(repo, "main")
     assert pushed.returncode != 0
     assert "reportAssignmentType" in pushed.stdout + pushed.stderr
+
+
+def test_a_push_is_stopped_when_a_listed_repository_scan_fails(tmp_path: Path):
+    repo = _repo(tmp_path)
+    _commit_unchecked(repo, {"tests/test_scan.py": "def test_scan():\n    assert False\n"})
+    pushed = _push(repo, "main")
+    assert pushed.returncode != 0
+    assert "test_scan" in pushed.stdout + pushed.stderr
+
+
+def test_the_repository_scans_cannot_change_the_pushing_repositorys_config(tmp_path: Path):
+    # Git exports GIT_DIR to a worktree's hooks, which would point a test's
+    # `git -C <other repo>` back at the pushing repository.
+    _git(_repo(tmp_path), "worktree", "add", "-q", str(tmp_path / "worktree"), "-b", "side")
+    repo = tmp_path / "worktree"
+    scan = (
+        "import subprocess\n"
+        "from pathlib import Path\n"
+        "\n"
+        'OTHER = str(Path(__file__).parents[2] / "other.git")\n'
+        "\n"
+        "\n"
+        "def test_scan():\n"
+        '    subprocess.run(["git", "init", "-q", "--bare", OTHER], check=True)\n'
+        '    subprocess.run(["git", "-C", OTHER, "config", "x.y", "z"], check=True)\n'
+    )
+    _commit_unchecked(repo, {"tests/test_scan.py": scan})
+    before = _git(repo, "config", "--local", "--list")
+    pushed = _push(repo, "side")
+    assert pushed.returncode == 0, pushed.stdout + pushed.stderr
+    assert _git(repo, "config", "--local", "--list") == before
+    assert _git(tmp_path / "other.git", "config", "x.y") == "z"
 
 
 def test_a_clean_push_and_a_branch_deletion_pass(tmp_path: Path):

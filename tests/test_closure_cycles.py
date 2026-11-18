@@ -22,6 +22,7 @@ through a nested function fails.
 from __future__ import annotations
 
 import ast
+import functools
 import symtable
 from collections.abc import Iterator
 
@@ -208,14 +209,15 @@ def _cycles(source: str, tree: ast.Module, relative: str) -> list[str]:
     return found
 
 
-def _all_cycles() -> list[str]:
-    return [
+@functools.cache
+def _all_cycles() -> tuple[str, ...]:
+    return tuple(
         cycle
         for path in _source.files(SRC)
         for cycle in _cycles(
             _source.text(path), _source.tree(path), path.relative_to(SRC).as_posix()
         )
-    ]
+    )
 
 
 def test_no_nested_function_reaches_itself() -> None:
