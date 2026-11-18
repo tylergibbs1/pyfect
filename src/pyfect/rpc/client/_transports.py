@@ -16,6 +16,7 @@ from pyfect.duration import Duration, from_input_unsafe, nanos_or_infinite
 from pyfect.duration import Input as DurationInput
 from pyfect.effect import fail, gen, succeed, suspend
 from pyfect.latch import Latch
+from pyfect.queue import Queue
 from pyfect.result import Ok
 from pyfect.rpc.client._protocol import (
     ClientProtocolParts,
@@ -97,14 +98,32 @@ def default_retry_policy() -> Schedule[Any, Any, Never, Never]:
 
 
 class _Pinger:
-    __slots__ = ("_awaiting", "_clock", "_last_seen", "_timeout", "latch")
+    """Ticks from when the protocol is made (a socket that never opens is dropped as silent)
+    and again from each open, so a connection is silent no sooner than two intervals after
+    it opened."""
+
+    __slots__ = ("_awaiting", "_clock", "_last_seen", "_opens", "_timeout", "latch")
 
     def __init__(self, clock: Any, timeout: Duration) -> None:
         self._clock = clock
         self._timeout = nanos_or_infinite(timeout)
         self._last_seen = clock.monotonic_nanos_unsafe()
         self._awaiting = False
+        self._opens: Queue[None, Never] = Queue()
         self.latch = Latch(False)
+
+    def opened(self) -> Effect[None]:
+        """The connection opened: the silence and the ticks count from now."""
+
+        def restart() -> Effect[None]:
+            self.on_frame()
+            return self._opens.offer(None).as_void()
+
+        return suspend(restart)
+
+    def ticking(self, ticks: Effect[Never, Any]) -> Effect[Never, Any]:
+        """``ticks``, started again at each open."""
+        return ticks.race_first(self._opens.take()).forever()
 
     def on_frame(self) -> None:
         self._last_seen = self._clock.monotonic_nanos_unsafe()
@@ -249,6 +268,7 @@ class _SocketClient:
                 reader = yield from socket.reader
                 self._current_error = None
                 connected.append(True)
+                yield from self._pinger.opened()
                 if hooks is not None:
                     yield from hooks.on_connect
                 while True:
@@ -331,9 +351,8 @@ def make_protocol_socket(
             client = _SocketClient(
                 serialization, write=write, ids=ids, writer=writer, pinger=pinger, options=resolved
             )
-            yield from fork_scoped(
-                pinger.tick(client.write_ping()).delay(interval).ignore().forever().interruptible()
-            )
+            ticks = pinger.tick(client.write_ping()).delay(interval).ignore().forever()
+            yield from fork_scoped(pinger.ticking(ticks).interruptible())
             policy = resolved.retry_policy or default_retry_policy()
             connection = client.connection(socket, hooks).tap_cause(client.on_cause)
             yield from fork_scoped(
