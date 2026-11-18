@@ -50,6 +50,9 @@ from typing import Any
 
 import pytest
 
+from pyfect.duration import seconds
+from pyfect.testing import HostFreezes, leave_out_host_freezes
+
 ROOT = Path(__file__).parent.parent
 
 # Where an idle thread waits: a frame here, innermost, is no work being done.
@@ -185,6 +188,8 @@ class Watchdog:
         self._ticks = 0
         self._generation = 0
         self._last = time.monotonic()
+        self._frozen = 0.0
+        """Seconds the host froze the whole process for, over the session."""
         self._dump_due = 0.0
         """When (wall time) the armed faulthandler dump is due."""
         self._stop = threading.Event()
@@ -335,7 +340,20 @@ class Watchdog:
         if (fibers or busy) and (on_time or cpu >= gap / 2):
             frames = (fibers or busy)[0].frames
             return f"{head}: pyfect blocked in {frames[0]} ({numbers})\n" + _stack(frames)
-        return f"{head}: {self._no_busy_thread(gap, cpu, late, on_time)} ({numbers})"
+        named = self._no_busy_thread(gap, cpu, late, on_time)
+        if named.startswith("host: process frozen"):
+            with self._lock:
+                self._frozen += gap - self.tick
+        return f"{head}: {named} ({numbers})"
+
+    def host_freezes(self) -> HostFreezes:
+        """The freezes a test's timeout leaves out (``leave_out_host_freezes``). A watchdog
+        overdue for its tick may be in a freeze that just ended: ask again after its next."""
+        with self._ticked:
+            overdue = time.monotonic() - self._last > 2 * self.tick
+        with self._lock:
+            total = self._frozen
+        return HostFreezes(seconds(total), seconds(2 * self.tick) if overdue else None)
 
     def _no_busy_thread(self, gap: float, cpu: float, late: float | None, on_time: bool) -> str:
         """Names a stall the dump shows no pyfect frame for: the host froze the process (the
@@ -446,11 +464,14 @@ def pytest_configure(config: pytest.Config) -> None:
     watchdog = Watchdog(threshold, dump=faulthandler_timeout <= 0)
     watchdog.start()
     config.stash[_WATCHDOG] = watchdog
+    if watchdog.dump:  # without the dump a freeze and a GIL-held call look alike
+        leave_out_host_freezes(watchdog.host_freezes)
 
 
 def pytest_unconfigure(config: pytest.Config) -> None:
     watchdog = config.stash.get(_WATCHDOG, None)
     if watchdog is not None:
+        leave_out_host_freezes(None)
         watchdog.stop()
         del config.stash[_WATCHDOG]
 

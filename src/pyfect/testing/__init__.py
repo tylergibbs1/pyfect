@@ -72,7 +72,12 @@ from pyfect.testing._flaky import flaky
 from pyfect.testing._layers import Services, effect_fixture, layer_fixture
 from pyfect.testing._prop import Arbitrary, PropertyFalsifiedError, effect_prop, live_prop, prop
 from pyfect.testing._runners import run_test, run_test_async, run_test_async_exit, run_test_exit
-from pyfect.testing._runtime import TestTimeoutError
+from pyfect.testing._runtime import (
+    HostFreezes,
+    HostFreezeSource,
+    TestTimeoutError,
+    leave_out_host_freezes,
+)
 from pyfect.testing._schema import SchemaAsserts, SchemaCheck
 
 __all__ = [
@@ -80,6 +85,8 @@ __all__ = [
     "BusyFiberWarning",
     "ClockNotAdvancedWarning",
     "Entry",
+    "HostFreezeSource",
+    "HostFreezes",
     "PropertyFalsifiedError",
     "SchemaAsserts",
     "SchemaCheck",
@@ -102,6 +109,7 @@ __all__ = [
     "error_lines",
     "flaky",
     "layer_fixture",
+    "leave_out_host_freezes",
     "live",
     "live_prop",
     "log_lines",
