@@ -9,7 +9,6 @@ from __future__ import annotations
 import time
 from typing import Literal, TypedDict
 
-import pytest
 from _growth import Work, assert_near_linear
 from _guards import guards
 
@@ -44,6 +43,17 @@ class End(TypedDict):
     kind: Literal["end"]
 
 
+class LateA(TypedDict):
+    # Two members whose discriminators follow the recursive field.
+    next: LateA | LateB | End
+    kind: Literal["a"]
+
+
+class LateB(TypedDict):
+    next: LateA | LateB | End
+    kind: Literal["b"]
+
+
 def _filter(depth: int) -> object:
     value: object = {"op": "eq", "field": "x"}
     for _ in range(depth):
@@ -51,25 +61,39 @@ def _filter(depth: int) -> object:
     return value
 
 
-def _late(depth: int) -> object:
+def _late(depth: int, kind: str = "late") -> object:
     value: object = {"kind": "end"}
     for _ in range(depth):
-        value = {"next": value, "kind": "late"}
+        value = {"next": value, "kind": kind}
     return value
 
 
 _GUARD = guards("2dfb157a", "recursive-union-tries-every-member")
 
 
-@pytest.mark.parametrize("errors", [pytest.param("all", marks=_GUARD), "first"])
-def test_mutually_recursive_typed_dicts_decode_in_linear_time(errors: str) -> None:
-    decode = S.decode_unknown_exit(
-        S.Union(S.Struct(And), S.Struct(Or), S.Struct(Eq)),
-        errors="all" if errors == "all" else "first",
-    )
+@_GUARD
+def test_mutually_recursive_typed_dicts_decode_in_linear_time() -> None:
+    decode = S.decode_unknown_exit(S.Union(S.Struct(And), S.Struct(Or), S.Struct(Eq)), errors="all")
 
     def sized(depth: int) -> Work:
         value = _filter(depth)
+        return lambda: decode(value)
+
+    assert isinstance(sized(30)(), fx.Success)
+    assert_near_linear(sized, 6, 6 * 4, factor=4, bound=8, clock=time.process_time)
+
+
+@_GUARD
+def test_members_whose_discriminator_follows_the_recursive_field_decode_in_linear_time() -> None:
+    """Stopping at the first error does not help when the discriminator comes after the
+    recursive field: trying the wrong member first would decode the rest of the value
+    before its ``kind`` fails, at every level."""
+    decode = S.decode_unknown_exit(
+        S.Union(S.Struct(LateA), S.Struct(LateB), S.Struct(End)), errors="first"
+    )
+
+    def sized(depth: int) -> Work:
+        value = _late(depth, "b")
         return lambda: decode(value)
 
     assert isinstance(sized(30)(), fx.Success)

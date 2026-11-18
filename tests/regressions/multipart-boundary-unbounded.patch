@@ -1,0 +1,11 @@
+--- a/src/pyfect/http/multipart_parser/__init__.py
++++ b/src/pyfect/http/multipart_parser/__init__.py
+@@ -311,7 +311,7 @@ def make(
+     characters; Effect takes any), it reports ``InvalidBoundary`` at once
+     and ignores every write."""
+     boundary = ct.parse(headers.get("content-type")).parameters.get("boundary")
+-    if boundary is None or not _BOUNDARY.fullmatch(boundary):
++    if boundary is None:
+         on_error(InvalidBoundary())
+         return _Noop()
+     return _Parser(

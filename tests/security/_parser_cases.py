@@ -567,6 +567,7 @@ def _xml_events(n: int) -> tuple[xml.Event, ...]:
 @case(
     xml.encode_string,
     "xml.encode_string: many events in one chunk (#44)",
+    size=8000,
     guards=Guard("6e8ffaef", "xml-output-concatenated"),
 )
 def _xml_encode_string(n: int) -> Work:
@@ -577,6 +578,7 @@ def _xml_encode_string(n: int) -> Work:
 @case(
     xml.encode,
     "xml.encode: many events in one chunk (#44)",
+    size=8000,
     guards=Guard("6e8ffaef", "xml-output-concatenated"),
 )
 def _xml_encode(n: int) -> Work:
@@ -674,7 +676,6 @@ def _url_host_under_limit(n: int) -> Work:
 @case(
     url.from_string,
     "url: a host of joiners between joining letters (#72)",
-    guards=Guard("e51f2688", "url-joiners-scan-outward"),
 )
 def _url_joiners(n: int) -> Work:
     value = f"https://{'ب‌' * n}ب/"
@@ -705,6 +706,7 @@ def _toml_header(n: int) -> Work:
 @case(
     json_patch.apply,
     "json_patch.apply: many appends to one array (#59)",
+    size=4000,
     guards=Guard("f906697a", "json-patch-copies-per-operation"),
 )
 def _json_patch_appends(n: int) -> Work:

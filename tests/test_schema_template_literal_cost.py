@@ -1,6 +1,8 @@
 """A ``TemplateLiteral`` tries each split point of a string without copying
 the text on either side of it, so a string that does not match fails in time
-linear in its length (it used to copy both sides at every split)."""
+linear in its length (it used to copy both sides at every split). The string
+ends in an astral character: copying a slice of it then costs four bytes a
+character and a scan, so the copies show at sizes a test can afford."""
 
 import pytest
 from _growth import Work, assert_near_linear
@@ -9,29 +11,34 @@ from _guards import guards
 import pyfect as fx
 from pyfect import schema as S
 
+_COPIES = guards("b05d8f13", "template-literal-copies-each-split")
+
 
 @pytest.mark.parametrize(
     "schema",
     [
-        S.TemplateLiteral(S.String, "-", S.Number),
-        S.TemplateLiteral(S.String, "-", S.BigInt),
-        S.TemplateLiteral(S.String, "-", "x"),
-        S.TemplateLiteral(S.String, "-", S.Union(S.Number, S.Literal("y"))),
+        pytest.param(S.TemplateLiteral(S.String, "-", S.Number), marks=_COPIES, id="number"),
+        pytest.param(S.TemplateLiteral(S.String, "-", S.BigInt), marks=_COPIES, id="bigint"),
+        # Fails at its last literal before trying a split.
+        pytest.param(S.TemplateLiteral(S.String, "-", "x"), id="literal"),
+        pytest.param(
+            S.TemplateLiteral(S.String, "-", S.Union(S.Number, S.Literal("y"))),
+            marks=_COPIES,
+            id="union",
+        ),
     ],
-    ids=["number", "bigint", "literal", "union"],
 )
-@guards("b05d8f13", "template-literal-copies-each-split")
 def test_a_string_of_many_split_points_fails_in_near_linear_time(
     schema: S.TemplateLiteralSchema,
 ) -> None:
     decode = S.decode_unknown_exit(schema)
 
     def sized(n: int) -> Work:
-        text = "-" * n + "a"
+        text = "-" * n + "\N{GRINNING FACE}"
         return lambda: decode(text)
 
-    assert isinstance(decode("-" * 1000 + "a"), fx.Failure)
-    assert_near_linear(sized, 50_000, 8 * 50_000, bound=32)
+    assert isinstance(decode("-" * 1000 + "\N{GRINNING FACE}"), fx.Failure)
+    assert_near_linear(sized, 10_000, 8 * 10_000)
 
 
 def test_matching_strings_still_split_as_before() -> None:
