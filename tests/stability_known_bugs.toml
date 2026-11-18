@@ -18,11 +18,6 @@ title = "A redelivered persisted keep_alive(True) request completes the held kee
 link = "https://github.com/Effect-TS/effect/pull/10709"
 
 [[bug]]
-area = "cluster"
-title = "Shards stay stranded on a runner whose shard-lock refreshes keep failing (Effect #10689)"
-link = "https://github.com/tylergibbs1/pyfect/pull/118"
-
-[[bug]]
 area = "sql"
 title = "The in-memory EventJournal drops entries imported during an upload"
 link = "https://github.com/Effect-TS/effect/pull/10624"
