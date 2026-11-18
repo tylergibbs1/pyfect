@@ -422,15 +422,18 @@ class _Storage:
             return sql.unsafe(f"OFFSET 0 ROWS FETCH NEXT {int(limit)} ROWS ONLY")
         return sql.unsafe(f"LIMIT {int(limit)}")
 
-    def lock_request(self, request_id: str) -> Effect[Sequence[Row], SqlError]:
+    def lock_request(
+        self, request_id: str, filter: Fragment | None = None
+    ) -> Effect[Sequence[Row], SqlError]:
         """Locks the request's row. Writes to a request's replies lock it
         first, in ``delete_processed``'s order, so they cannot deadlock with
-        it; no row means it was deleted."""
+        it; no row means it was deleted, or does not match ``filter``."""
         return self.sql(
-            "SELECT 1 FROM {} {} WHERE id = {} {}",
+            "SELECT 1 FROM {} {} WHERE id = {} {} {}",
             self.messages,
             self.update_lock,
             request_id,
+            self.sql.literal("") if filter is None else filter,
             self.for_update,
         )
 
@@ -776,45 +779,34 @@ class _Storage:
     ) -> Effect[None, PersistenceError]:
         sql = self.sql
         id = str(request_id)
+        # A guarded reset touches only rows stamped by the expected reply, so interrupts
+        # received after it are kept (Effect #10629).
+        stamped = (
+            sql.literal("")
+            if expected_reply_id is None
+            else sql("AND last_reply_id = {}", str(expected_reply_id))
+        )
 
         def body() -> Generator[Effect[Any, Any, Any], Any]:
-            yield from self.lock_request(id)
-            if expected_reply_id is None:
-                yield from sql(
-                    "DELETE FROM {} WHERE request_id = {} AND kind = 0", self.replies, id
-                )
-                yield from sql(
-                    "DELETE FROM {} WHERE request_id = {} AND kind = {}",
-                    self.messages,
-                    id,
-                    self.kind_interrupt,
-                )
-                yield from sql(
-                    "UPDATE {} SET processed = {}, last_reply_id = NULL, last_read = NULL "
-                    "WHERE request_id = {}",
-                    self.messages,
-                    self.false,
-                    id,
-                )
+            # Lock and check the current reply before changing any of the request's rows.
+            current = yield from self.lock_request(id, stamped)
+            if expected_reply_id is not None and not current:
                 return
-            expected = str(expected_reply_id)
-            # checked here, at the storage boundary, not at an earlier read
+            yield from sql("DELETE FROM {} WHERE request_id = {} AND kind = 0", self.replies, id)
             yield from sql(
-                "DELETE FROM {} WHERE request_id = {} AND kind = 0 "
-                "AND EXISTS (SELECT 1 FROM {} WHERE id = {} AND last_reply_id = {})",
-                self.replies,
-                id,
+                "DELETE FROM {} WHERE request_id = {} AND kind = {} {}",
                 self.messages,
                 id,
-                expected,
+                self.kind_interrupt,
+                stamped,
             )
             yield from sql(
                 "UPDATE {} SET processed = {}, last_reply_id = NULL, last_read = NULL "
-                "WHERE request_id = {} AND last_reply_id = {}",
+                "WHERE request_id = {} {}",
                 self.messages,
                 self.false,
                 id,
-                expected,
+                stamped,
             )
 
         return _refail(sql.with_transaction(gen(body)))

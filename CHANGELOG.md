@@ -115,6 +115,14 @@
 
 ### Fixed
 
+- Cluster: with SQL message storage, a workflow activity could restart in a loop after a
+  durable-clock wakeup. The workflow engine's guarded reset (`clear_replies` with
+  `expected_reply_id`) requeued the request but also reset the interrupt its last run had
+  consumed, so the interrupt was delivered again and the activity was interrupted and rerun.
+  The guarded reset now locks the request only when its current reply is the expected one,
+  deletes the interrupts that reply consumed, and keeps an interrupt received after it, as
+  Effect does since Effect-TS/effect#10629 (after 4.1.4).
+
 - A schema whose aliases only reach each other (a JSON Schema `$ref` to itself) took
   seconds to fail, and up to a minute on Python 3.14; so did any deep recursion that ran
   past pyfect's fresh stacks. The `RecursionError` carried about 180 thousand frames (one
