@@ -11,6 +11,12 @@
   the migration transaction committed, so a second migrator could start in between and miss
   what the first wrote after its last DDL statement. The lock is now released only once the
   transaction has committed or rolled back, with no connection beyond the transaction's.
+- Cluster SQL runner storage (PostgreSQL, MySQL): a burst of shard releases, such as a runner
+  handing shards to runners that just joined, queued on the one reserved lock connection, and
+  each release's deadline counted the time it waited. On a busy machine the later ones timed
+  out, which replaced the connection and dropped every shard lock the runner kept, and the
+  shards then churned until it caught up. Releases now take the connection one at a time and
+  wait outside the deadline, as in Effect PR #10686.
 
 ## 0.6.11 (2026-11-17)
 

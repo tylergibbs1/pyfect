@@ -44,6 +44,7 @@ from pyfect.cluster.sharding_config import ShardingConfig, ShardingConfigService
 from pyfect.effect import gen, provide_service, suspend, void
 from pyfect.exit import Exit
 from pyfect.scope import CloseableScope, Scope, fork_in
+from pyfect.semaphore import Semaphore
 from pyfect.sql import migrator
 from pyfect.sql.client import SqlClient, SqlClientService
 from pyfect.sql.connection import Connection
@@ -136,6 +137,9 @@ class _Storage:
         self.layer_scope = layer_scope
         self.lock_conn = lock_conn
         self.disable_advisory = disable_advisory
+        self.release_permit = None if lock_conn is None else Semaphore(1)
+        """One release at a time on the reserved connection, waiting outside the deadline
+        (Effect PR #10686)."""
         self.deadline = effective_interval(config)
         self.lock_namespace = postgres_lock_namespace(prefix)
         # pg_locks shows the signed int4 key as an unsigned oid
@@ -743,9 +747,10 @@ class _Storage:
         )
 
     def release(self, address: str, shard_id: str, /) -> Effect[None, PersistenceError]:
-        return PersistenceError.refail(
-            self.with_lock_operation_deadline(self.release_shard(address, shard_id)).as_void()
-        )
+        release = self.with_lock_operation_deadline(self.release_shard(address, shard_id))
+        if self.release_permit is not None:
+            release = self.release_permit.with_permits(release)
+        return PersistenceError.refail(release.as_void())
 
     def release_all(self, address: str, /) -> Effect[None, PersistenceError]:
         return PersistenceError.refail(

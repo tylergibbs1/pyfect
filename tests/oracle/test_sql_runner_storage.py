@@ -42,7 +42,9 @@ from pyfect.cluster import runner, runner_address, shard_id, sharding_config
 from pyfect.cluster import sql_runner_storage as SqlRunnerStorage
 from pyfect.cluster.runner_storage import RunnerStorageService
 from pyfect.cluster.sharding_config import DEFAULTS
+from pyfect.exit import Success
 from pyfect.sql.client import SqlClient, SqlClientService
+from pyfect.sql.connection import Connection, SqlError
 
 from ._sqlite import make_client
 
@@ -251,5 +253,95 @@ def test_an_interrupted_lock_operation_keeps_the_reserved_connection(pg_server: 
         yield from faults.set("clear")
         yield from fx.sleep("200 millis")
         assert reserves == [1]
+
+    yield from fx.gen(body)
+
+
+class _OneSessionSlowUnlocks:
+    """A reserved connection that runs one statement at a time, as one database session does,
+    and takes ``_UNLOCK_TIME`` for each shard's ``pg_advisory_unlock``. Counts the releases in
+    flight at once (Effect's ``activeQueries`` of a partitioned connection)."""
+
+    def __init__(self, inner: Connection, counts: dict[str, int]) -> None:
+        self._inner = inner
+        self._counts = counts
+        self._session = fx.Semaphore(1)
+
+    def _run[A](self, sql: str, effect: fx.Effect[A, SqlError]) -> fx.Effect[A, SqlError]:
+        if "pg_advisory_unlock(" not in sql:
+            return self._session.with_permits(effect)
+        counts = self._counts
+
+        def enter() -> None:
+            counts["active"] += 1
+            counts["most_active"] = max(counts["most_active"], counts["active"])
+
+        def leave() -> None:
+            counts["active"] -= 1
+
+        slow = fx.sleep(_UNLOCK_TIME).and_then(effect)
+        return fx.sync(enter).and_then(self._session.with_permits(slow)).ensuring(fx.sync(leave))
+
+    def execute(self, sql: str, params: Any, transform: Any, /) -> Any:
+        return self._run(sql, self._inner.execute(sql, params, transform))
+
+    def execute_raw(self, sql: str, params: Any, /) -> Any:
+        return self._run(sql, self._inner.execute_raw(sql, params))
+
+    def execute_stream(self, sql: str, params: Any, transform: Any, /) -> Any:
+        return self._inner.execute_stream(sql, params, transform)
+
+    def execute_values(self, sql: str, params: Any, /) -> Any:
+        return self._run(sql, self._inner.execute_values(sql, params))
+
+    def execute_values_unprepared(self, sql: str, params: Any, /) -> Any:
+        return self._run(sql, self._inner.execute_values_unprepared(sql, params))
+
+    def execute_unprepared(self, sql: str, params: Any, transform: Any, /) -> Any:
+        return self._run(sql, self._inner.execute_unprepared(sql, params, transform))
+
+
+_UNLOCK_TIME = "300 millis"
+"""Half the lock-operation deadline below (600 ms): one release fits it, three in a row do
+not."""
+
+
+@testing.live
+def test_serializes_shard_releases_without_losing_retained_locks(pg_server: Any):
+    """serializes shard releases without losing retained locks
+
+    From Effect PR #10686: a burst of releases queued on the one reserved lock connection
+    passed the operation deadline, which rebuilt the connection and dropped every lock the
+    runner kept (pyfect's cluster-integration tests failed so under load)."""
+
+    def body() -> Generator[fx.Effect[Any, Any, Any], Any]:
+        client = yield from _pg(pg_server)
+        counts = {"active": 0, "most_active": 0, "reserved": 0}
+
+        def reserve(conn: Connection) -> Connection:
+            counts["reserved"] += 1
+            return _OneSessionSlowUnlocks(conn, counts)
+
+        fields = client.fields()
+        fields["reserve"] = client.reserve.map(reserve)
+        storage = yield from _storage(
+            SqlClientService(**fields),
+            _prefix("serialized"),
+            shard_lock_refresh_interval=fx.duration.millis(600),
+            shard_lock_expiration=fx.duration.millis(1800),
+        )
+        shards = [shard_id.make("default", n) for n in (1, 2, 3, 4)]
+        yield from storage.register(
+            runner.make(address=runner_address1, groups=("default",), weight=1), True
+        )
+        assert (yield from storage.acquire(runner_address1, shards)) == shards
+
+        releases = [storage.release(runner_address1, shard).exit() for shard in shards[1:]]
+        exits = yield from fx.all(*releases, concurrency="unbounded")
+
+        assert list(exits) == [Success(None)] * 3
+        assert counts["most_active"] == 1
+        assert counts["reserved"] == 1
+        assert (yield from storage.refresh(runner_address1, shards)) == shards[:1]
 
     yield from fx.gen(body)
