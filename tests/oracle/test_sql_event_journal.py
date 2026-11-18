@@ -811,6 +811,31 @@ def test_with_remote_uncommitted_uploads_each_entry_once(make: fx.Effect[Any, An
 
 @_JOURNALS
 @testing.effect
+def test_with_remote_uncommitted_preserves_older_entries_imported_during_an_upload(
+    make: fx.Effect[Any, Any, Any],
+):
+    """SqlEventJournal / withRemoteUncommited preserves older entries imported during an upload"""
+
+    def body():
+        journal: J.EventJournalService = yield from make
+        remote_id = J.make_remote_id_unsafe()
+        local = yield from _write(journal, "local")
+        older = entry(local.created_at_millis - 1)
+        yield from journal.with_remote_uncommitted(
+            remote_id,
+            lambda _: journal.write_from_remote(
+                remote_id=J.make_remote_id_unsafe(),
+                entries=remote_entries([older]),
+                effect=lambda _: fx.void,
+            ),
+        )
+        assert (yield from _upload(journal, remote_id)) == fx.Some([older.id_string])
+
+    yield from _run(body)
+
+
+@_JOURNALS
+@testing.effect
 def test_write_many_commits_and_publishes_a_batch_in_order_only_when_its_callback_succeeds(
     make: fx.Effect[Any, Any, Any],
 ):

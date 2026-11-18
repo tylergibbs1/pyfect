@@ -16,6 +16,10 @@
   restart storage no longer redelivered it and the entity was not reactivated. The entity
   now keeps the held request's id and gives its redelivery no reply; a second
   `keep_alive(True)` is still answered at once (Effect #10709).
+- `EventJournal` (`make_memory`): `with_remote_uncommitted` trimmed the remote's pending list
+  through the last entry it uploaded, so an older entry imported from another remote while the
+  upload ran was dropped and never uploaded. Only the uploaded entries are removed now
+  (Effect #10624).
 
 ## 0.6.12 (2026-11-18)
 

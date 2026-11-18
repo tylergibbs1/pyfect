@@ -434,6 +434,14 @@ def _insert_ordered(entries: list[Entry], is_sorted: bool, additions: Sequence[E
 class _Remote:
     sequence: int
     missing: list[Entry]
+    """In id order; imports from other remotes are inserted anywhere in it,
+    also while an upload of an earlier snapshot is running."""
+
+    def uploaded(self, entries: Sequence[Entry]) -> None:
+        """Forget exactly ``entries``, never a position: an entry imported
+        between them during the upload is still missing."""
+        ids = {entry.id for entry in entries}
+        self.missing = [entry for entry in self.missing if entry.id not in ids]
 
 
 class _MemoryJournal(EventJournalService):
@@ -564,12 +572,7 @@ class _MemoryJournal(EventJournalService):
             def trim() -> None:
                 if isinstance(exit, Failure) or not missing:
                     return
-                last = missing[-1]
-                remote = self._ensure_remote(remote_id)
-                for i in range(len(remote.missing) - 1, -1, -1):
-                    if remote.missing[i].id == last.id:
-                        remote.missing = remote.missing[i + 1 :]
-                        break
+                self._ensure_remote(remote_id).uploaded(missing)
 
             return sync(trim)
 
