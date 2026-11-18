@@ -34,6 +34,8 @@ except ImportError as error:  # pragma: no cover - depends on the environment
     raise missing_extra("pyfect.http.hypercorn_server", "http2", error) from error
 
 from pyfect._core import Effect
+from pyfect.duration import Duration, from_input_unsafe, seconds
+from pyfect.duration import Input as DurationInput
 from pyfect.file_system import FileSystem
 from pyfect.http._asgi_listener import (
     Dispatch,
@@ -59,10 +61,10 @@ from pyfect.socket.server import SocketServerError
 class Options(ListenOptions):
     config: NotRequired[Mapping[str, Any]]
     """More ``hypercorn.Config`` attributes (``certfile``, ``keyfile``,
-    ``alpn_protocols``, ``h2_max_concurrent_streams``...), and
-    ``websocket_close_timeout``: how long, in seconds, a WebSocket connection
-    the server closed waits for the client to end it (``ws``'s
-    ``closeTimeout``, 30 by default)."""
+    ``alpn_protocols``, ``h2_max_concurrent_streams``...)."""
+    websocket_close_timeout: NotRequired[DurationInput]
+    """How long a WebSocket connection the server closed waits for the client
+    to end it before it is dropped (``ws``'s ``closeTimeout``, 30 seconds)."""
 
 
 class _EngineLogger(Logger):
@@ -76,7 +78,7 @@ class _EngineLogger(Logger):
 
 
 class _Config(Config):
-    websocket_close_timeout: float = 30.0
+    websocket_close_timeout: Duration = seconds(30)
 
     def create_ssl_context(self) -> ssl.SSLContext | None:
         context = super().create_ssl_context()
@@ -122,10 +124,10 @@ async def _handle_events_closing(self: WSStream) -> None:
 class _EndWriting:
     """From a closed WebSocket stream to its connection: end our side, as
     ``ws``'s ``socket.end()`` after its close frame, and drop the connection
-    after ``timeout`` seconds if the client has not ended it (``ws``'s
+    after ``timeout`` if the client has not ended it (``ws``'s
     ``closeTimeout``, then ``socket.destroy()``)."""
 
-    timeout: float
+    timeout: Duration
 
 
 async def _h11_stream_send(self: H11Protocol, event: Any) -> None:
@@ -139,7 +141,7 @@ async def _tcp_protocol_send(self: TCPServer, event: ConnectionEvent) -> None:
     if isinstance(event, _EndWriting):
         with contextlib.suppress(OSError, RuntimeError):
             self.writer.write_eof()
-        self.loop.call_later(event.timeout, self.writer.transport.abort)
+        self.loop.call_later(event.timeout.to_seconds(), self.writer.transport.abort)
     else:
         await _tcp_send(self, event)
 
@@ -165,6 +167,9 @@ class _Hypercorn:
         self.config.graceful_timeout = engine_backstop_seconds(options)
         self.config.logger_class = _EngineLogger
         self.config.websocket_max_message_size = DEFAULT_MAX_MESSAGE_SIZE
+        self.config.websocket_close_timeout = from_input_unsafe(
+            options.get("websocket_close_timeout", "30 seconds")
+        )
         for name, value in options.get("config", {}).items():
             setattr(self.config, name, value)
         self.started = False

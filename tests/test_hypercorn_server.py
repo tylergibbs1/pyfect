@@ -5,14 +5,15 @@ import base64
 import contextlib
 import os
 import socket
-import time
 from dataclasses import dataclass
 from typing import Any, Literal
 
 import httpx
+from _timing import wait_until
 
 import pyfect as fx
 from pyfect import effect
+from pyfect.duration import Input as DurationInput
 from pyfect.http import hypercorn_server, router, server, server_response
 from pyfect.http.server_request import HttpServerRequest
 from pyfect.net.net_address import InetAddressV4
@@ -119,17 +120,21 @@ def _too_large(port: int, frames: int, keep_sending: bool) -> _Sent:
             return _Sent(head, sent_all, "reset", got)
         if keep_sending:
             # Never end our side: send until the server drops the connection.
-            deadline = time.monotonic() + 5
-            try:
-                while time.monotonic() < deadline:
+            def dropped() -> bool:
+                try:
                     conn.sendall(_frame(0, b"x" * 4096, fin=False))
-            except OSError:
-                return _Sent(head, sent_all, "reset", got)
-            return _Sent(head, sent_all, "open", got)
+                except OSError:
+                    return True
+                return False
+
+            wait_until(dropped, what="the server to drop a client that keeps sending")
+            return _Sent(head, sent_all, "reset", got)
         return _Sent(head, sent_all, "eof", got)
 
 
-def _serve_too_large(frames: int, *, keep_sending: bool = False, **config: Any) -> _Sent:
+def _serve_too_large(
+    frames: int, *, keep_sending: bool = False, close_timeout: DurationInput = "30 seconds"
+) -> _Sent:
     @fx.fn
     def hold():
         request = yield from HttpServerRequest()
@@ -147,7 +152,9 @@ def _serve_too_large(frames: int, *, keep_sending: bool = False, **config: Any) 
 
     routes: fx.Layer[Any, Any, Any] = router.add("GET", "/ws", hold())
     served = program().pipe(fx.provide(router.serve(routes, disable_logger=True)))
-    engine = hypercorn_server.layer_test(config={"websocket_max_message_size": 8192, **config})
+    engine = hypercorn_server.layer_test(
+        websocket_close_timeout=close_timeout, config={"websocket_max_message_size": 8192}
+    )
     return fx.run_blocking(scoped(served).pipe(fx.provide(engine)).or_die())
 
 
@@ -173,8 +180,8 @@ def test_a_client_still_sending_gets_the_1009_close_without_a_reset() -> None:
 
 def test_a_client_that_never_ends_its_side_is_dropped_after_the_close_timeout() -> None:
     """As ``ws``'s ``closeTimeout``: once the server has closed, a client that
-    keeps sending is dropped after ``websocket_close_timeout`` seconds."""
-    sent = _serve_too_large(8, keep_sending=True, websocket_close_timeout=0.2)
+    keeps sending is dropped once ``websocket_close_timeout`` has passed."""
+    sent = _serve_too_large(8, keep_sending=True, close_timeout="200 millis")
     assert sent.got == b"\x88\x02\x03\xf1"
     assert sent.ended == "reset"
 
@@ -182,10 +189,11 @@ def test_a_client_that_never_ends_its_side_is_dropped_after_the_close_timeout() 
 def test_a_graceful_shutdown_drops_a_connection_still_draining() -> None:
     """As Effect's ``NodeHttpServer``: ``server.close`` waits for an upgraded
     socket ``ws`` is still draining for at most ``gracefulShutdownTimeout``,
-    then destroys it, without waiting out ``ws``'s ``closeTimeout``."""
+    then destroys it, without waiting out ``ws``'s ``closeTimeout``. Here the
+    close timeout is an hour: waiting it out would trip the per-test alarm."""
     held: list[socket.socket] = []
 
-    def oversized(port: int) -> float:
+    def oversized(port: int) -> None:
         conn, _ = _upgrade(port)
         held.append(conn)
         conn.settimeout(5)
@@ -195,8 +203,7 @@ def test_a_graceful_shutdown_drops_a_connection_still_draining() -> None:
         got = b""
         while chunk := conn.recv(4096):  # the 1009 close, then the server's end
             got += chunk
-        assert got == b"\x88\x02\x03\xf1"
-        return time.monotonic()  # the connection is draining; shutdown starts now
+        assert got == b"\x88\x02\x03\xf1"  # the connection is draining; shutdown starts
 
     @fx.fn
     def hold():
@@ -217,13 +224,12 @@ def test_a_graceful_shutdown_drops_a_connection_still_draining() -> None:
     served = program().pipe(fx.provide(router.serve(routes, disable_logger=True)))
     engine = hypercorn_server.layer_test(
         graceful_shutdown_timeout="500 millis",
-        config={"websocket_max_message_size": 8192, "websocket_close_timeout": 30},
+        websocket_close_timeout="1 hour",
+        config={"websocket_max_message_size": 8192},
     )
     try:
-        shutdown_started = fx.run_blocking(scoped(served).pipe(fx.provide(engine)).or_die())
-        # 0.5 s and pyfect's 0.5 s abort grace period (1.0 s measured), far from
-        # the 30 s close timeout.
-        assert time.monotonic() - shutdown_started < 10
+        # Returns after the 0.5 s graceful timeout and pyfect's 0.5 s abort grace period.
+        fx.run_blocking(scoped(served).pipe(fx.provide(engine)).or_die())
         with contextlib.suppress(OSError):  # dropped with a reset
             assert held[0].recv(1) == b""
     finally:

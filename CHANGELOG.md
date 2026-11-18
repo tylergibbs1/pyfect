@@ -8,8 +8,8 @@
   closed the connection at once, so a client still sending its message got a reset and could
   miss the close. As Effect's `ws` server does, it now ends its side after the close and reads
   and drops what the client still sends until the client ends too, or until
-  `websocket_close_timeout` (a new `config` key, 30 seconds by default like `ws`'s
-  `closeTimeout`) passes. This applies to HTTP/1.1 in cleartext; over TLS and HTTP/2 the server
+  the new `websocket_close_timeout` option (`"30 seconds"` by default, `ws`'s `closeTimeout`)
+  passes. This applies to HTTP/1.1 in cleartext; over TLS and HTTP/2 the server
   still closes at once.
 - `socket.from_socket` and `socket.datagram.from_socket` register their own duplicate of the
   adopted socket, so closing the original early no longer stops other sockets from reading.
