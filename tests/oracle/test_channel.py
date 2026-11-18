@@ -7,8 +7,8 @@ tuples here (``fromIterableArray`` writes ``(1, 2)``), ``Uint8Array`` is
 ``bytes``, ``Cause.die("x")`` holds an exception, and a resume goes through
 the scheduler, so a port may yield where Effect's fiber would already have
 run. ``Stream.take(n)`` / ``Stream.runDrain`` are ``run_for_each_while``
-counting to ``n``; ``countOps`` counts scheduled tasks with
-``MaxOpsBeforeYield`` at 1 (one per operation).
+counting to ``n``; ``countOps`` counts the ops an ``EffectScheduler``'s
+``should_yield`` is asked about, never yielding, as Effect's does.
 
 A ``Filter`` is a function returning ``Ok(value)`` or ``Err(rest)``
 (``pyfect.result``), as in ``Stream``; ``Filter.make`` is not needed.
@@ -35,10 +35,9 @@ import pytest
 
 import pyfect as fx
 from pyfect import cause, channel, schedule, testing
-from pyfect._wake_tracking import WakeTracker
-from pyfect.duration import Duration
+from pyfect._fiber import Fiber
 from pyfect.result import Err, Ok, Result
-from pyfect.scheduler import Cancel, Scheduler, Task
+from pyfect.scheduler import EffectScheduler, ExecutionMode, MixedScheduler, SchedulerDispatcher
 
 
 @testing.effect
@@ -250,26 +249,22 @@ def test_map():
 # --- repetition -----------------------------------------------------------------
 
 
-class _CountingScheduler:
-    """Counts the tasks scheduled on it: with ``MaxOpsBeforeYield`` at 1,
-    one per fiber operation (Effect's ``countOps``)."""
+class _CountingScheduler(EffectScheduler):
+    """Effect's ``countOps`` scheduler: ``shouldYield`` counts each op it is
+    asked about and never yields, so the count costs no scheduling."""
 
-    def __init__(self, inner: Scheduler) -> None:
-        self.inner = inner
-        self.scheduled = 0
+    execution_mode: ExecutionMode = "sync"
 
-    def schedule(self, task: Task, priority: int = 0) -> None:
-        self.scheduled += 1
-        self.inner.schedule(task)
+    def __init__(self) -> None:
+        self.ops = 0
+        self._mixed = MixedScheduler("sync")
 
-    def call_later(self, delay: Duration, task: Task, *, daemon: bool = False) -> Cancel:
-        return self.inner.call_later(delay, task, daemon=daemon)
+    def should_yield(self, fiber: Fiber[Any, Any]) -> bool:
+        self.ops += 1
+        return False
 
-    def track(self, tracker: WakeTracker, f: Callable[[], None]) -> None:
-        self.inner.track(tracker, f)
-
-    def outside_work(self) -> WakeTracker:
-        return self.inner.outside_work()
+    def make_dispatcher(self) -> SchedulerDispatcher:
+        return self._mixed.make_dispatcher()
 
 
 def _take_drain(source: channel.Channel[Any, Any, Any], n: int) -> fx.Effect[None, Any]:
@@ -284,13 +279,9 @@ def _take_drain(source: channel.Channel[Any, Any, Any], n: int) -> fx.Effect[Non
 
 
 def _count_ops(source: channel.Channel[Any, Any, Any], n: int) -> Generator[Any, Any, int]:
-    counting = _CountingScheduler((yield from fx.CurrentScheduler()))
-    yield from (
-        _take_drain(source, n)
-        .pipe(fx.provide_service(fx.MaxOpsBeforeYield, 1))
-        .pipe(fx.provide_service(fx.CurrentScheduler, counting))
-    )
-    return counting.scheduled
+    counting = _CountingScheduler()
+    yield from _take_drain(source, n).pipe(fx.provide_service(fx.CurrentScheduler, counting))
+    return counting.ops
 
 
 _source = channel.succeed((1,))
@@ -308,6 +299,30 @@ def test_work_per_repetition_does_not_grow(kind: str):
     small = yield from _count_ops(_repeated[kind], 1_000)
     large = yield from _count_ops(_repeated[kind], 2_000)
     assert large / small < 2.5
+
+
+@testing.effect
+def test_count_ops_sees_work_per_repetition_grow():
+    """The count above fails a channel whose work grows with each repetition."""
+    runs = 0
+
+    def growing() -> channel.Channel[tuple[int], Never]:
+        nonlocal runs
+        runs += 1
+        work: fx.Effect[None] = fx.void
+        for _ in range(runs // 20):
+            work = work.flat_map(lambda _: fx.void)
+        return channel.from_effect(work.as_((1,)))
+
+    def ratio() -> Generator[Any, Any, float]:
+        nonlocal runs
+        runs = 0
+        small = yield from _count_ops(channel.suspend(growing).forever(), 1_000)
+        runs = 0
+        large = yield from _count_ops(channel.suspend(growing).forever(), 2_000)
+        return large / small
+
+    assert (yield from ratio()) > 2.5
 
 
 @testing.effect
