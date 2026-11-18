@@ -56,15 +56,15 @@ SAFE: dict[tuple[str, str], str] = {
 }
 
 _CASE_CLASSES = (
-    "Unicode letter and mark classes from pyfect._case_unicode; each repeat is of one class"
+    "Unicode letter, mark and number classes from pyfect._case_unicode; each repeat is of one class"
 )
 
 BUILT_AT_RUN_TIME: dict[tuple[str, str], str] = {
-    ("src/pyfect/case.py", "f'([0-9][{MARK}]*)([{LETTER}])'"): _CASE_CLASSES,
-    ("src/pyfect/case.py", "f'([{LETTER}][{MARK}]*)([0-9])'"): _CASE_CLASSES,
-    ("src/pyfect/case.py", "f'([{LOWER}0-9][{MARK}]*)([{UPPER}])'"): _CASE_CLASSES,
+    ("src/pyfect/case.py", "f'([{NUMBER}][{MARK}]*)([{LETTER}])'"): _CASE_CLASSES,
+    ("src/pyfect/case.py", "f'([{LETTER}][{MARK}]*)([{NUMBER}])'"): _CASE_CLASSES,
+    ("src/pyfect/case.py", "f'([{LOWER}{NUMBER}][{MARK}]*)([{UPPER}])'"): _CASE_CLASSES,
     ("src/pyfect/case.py", "f'([{UPPER}][{MARK}]*)([{UPPER}][{MARK}]*[{LOWER}])'"): _CASE_CLASSES,
-    ("src/pyfect/case.py", "f'[^{LETTER}{MARK}0-9]+'"): _CASE_CLASSES,
+    ("src/pyfect/case.py", "f'[^{LETTER}{MARK}{NUMBER}]+'"): _CASE_CLASSES,
     ("src/pyfect/ai/_generated_support.py", "python"): "a generated schema's translated pattern",
     (
         "src/pyfect/encoding/csv/_channels.py",

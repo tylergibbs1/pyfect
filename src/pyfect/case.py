@@ -2,8 +2,8 @@
 
 The word-based converters split their input into words at case changes
 (``"camelCase"``, ``"CAMELCase"``, also in other scripts: ``"CaféÜber"``), letter/digit
-boundaries and any run of characters other than Unicode letters, combining marks and ASCII
-digits, then join the words again. No Unicode normalization is applied::
+boundaries and any run of characters other than Unicode letters, combining marks and
+numbers, then join the words again. No Unicode normalization is applied::
 
     case.snake_case("helloWorld")     # "hello_world"
     case.camel_case("hello world")    # "helloWorld"
@@ -29,22 +29,22 @@ _CAPITAL = re.compile(r"([A-Z])")
 @cache
 def _defaults() -> tuple[tuple[re.Pattern[str], ...], tuple[re.Pattern[str], ...], re.Pattern[str]]:
     """The word patterns, ``split``, ``config_split`` and ``strip``, compiled on first use
-    (their Unicode classes are long). Letters are Unicode letters (Effect's ``\\p{L}``),
-    with any combining marks after them; digits stay ASCII."""
-    from pyfect._case_unicode import LETTER, LOWER, MARK, UPPER
+    (their Unicode classes are long), as Effect's ``\\p{L}``, ``\\p{M}`` and ``\\p{N}``
+    patterns. Words are only split here, never read as numbers."""
+    from pyfect._case_unicode import LETTER, LOWER, MARK, NUMBER, UPPER
 
     # Camel case ("camelCase" -> "camel Case", "CAMELCase" -> "CAMEL Case").
-    lower_upper = re.compile(f"([{LOWER}0-9][{MARK}]*)([{UPPER}])")
+    lower_upper = re.compile(f"([{LOWER}{NUMBER}][{MARK}]*)([{UPPER}])")
     upper_upper = re.compile(f"([{UPPER}][{MARK}]*)([{UPPER}][{MARK}]*[{LOWER}])")
     # Digit boundaries ("camel2case" -> "camel 2 case"); config paths keep digit groups
     # such as "v2".
     split = (
         lower_upper,
         upper_upper,
-        re.compile(f"([{LETTER}][{MARK}]*)([0-9])"),
-        re.compile(f"([0-9][{MARK}]*)([{LETTER}])"),
+        re.compile(f"([{LETTER}][{MARK}]*)([{NUMBER}])"),
+        re.compile(f"([{NUMBER}][{MARK}]*)([{LETTER}])"),
     )
-    return split, split[:2], re.compile(f"[^{LETTER}{MARK}0-9]+")
+    return split, split[:2], re.compile(f"[^{LETTER}{MARK}{NUMBER}]+")
 
 
 def _patterns(patterns: Patterns) -> Sequence[re.Pattern[str]]:
