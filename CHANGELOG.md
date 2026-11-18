@@ -11,6 +11,16 @@
   keep working unchanged. A custom storage that can release several locks in one write should
   implement it.
 
+- `pyfect.rational`, Effect 4.1.4's `Rational` (#9990, #10465): exact fractions, always in
+  lowest terms with a positive denominator (the class refuses any other pair; `make` /
+  `make_unsafe` reduce), with Effect's arithmetic, `pow`, comparisons, `from_number` (the
+  float's exact value), `from_big_decimal`, `from_string` / `format` (`"numerator/denominator"`),
+  `to_number_unsafe` (the ratio rounded once) and `to_big_decimal(scale=, mode=)` with
+  `BigDecimal`'s rounding modes. `S.Rational` (written in JSON as its text),
+  `S.RationalFromString` and `representation.rational_reviver` come with it. Like
+  `big_decimal.from_string`, `from_string` reads at most `rational.MAX_DIGITS` (30,000)
+  significant digits by default, set with `max_digits`, and prints any size.
+
 ### Fixed
 
 - A schema whose aliases only reach each other (a JSON Schema `$ref` to itself) took
@@ -72,6 +82,7 @@
 - `metric.summary` accepted a NaN quantile: its range check `quantile < 0 or quantile > 1`
   is false for NaN. The first update now dies with "Quantile must be between 0 and 1, found:
   NaN", as for any quantile out of range (Effect #10680).
+
 - Cluster: a stopping runner released each of its shards in a storage write of its own, so on
   a slow or remote database shutdown took 50-100 ms per shard. The shutdown handoff now
   releases them 100 at a time, one write each, through the new
@@ -170,18 +181,6 @@
   listening socket, a worker process's channel and a UDP socket's sends. Nothing waits: the
   descriptor closes when the last of those operations finishes, and operations started after
   the close fail as closed (a UDP send with `DatagramSocketClosedError`).
-
-### Added
-
-- `pyfect.rational`, Effect 4.1.4's `Rational` (#9990, #10465): exact fractions, always in
-  lowest terms with a positive denominator (the class refuses any other pair; `make` /
-  `make_unsafe` reduce), with Effect's arithmetic, `pow`, comparisons, `from_number` (the
-  float's exact value), `from_big_decimal`, `from_string` / `format` (`"numerator/denominator"`),
-  `to_number_unsafe` (the ratio rounded once) and `to_big_decimal(scale=, mode=)` with
-  `BigDecimal`'s rounding modes. `S.Rational` (written in JSON as its text),
-  `S.RationalFromString` and `representation.rational_reviver` come with it. Like
-  `big_decimal.from_string`, `from_string` reads at most `rational.MAX_DIGITS` (30,000)
-  significant digits by default, set with `max_digits`, and prints any size.
 
 ### Performance
 
