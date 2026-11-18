@@ -10,13 +10,13 @@ class NotFound(fx.TaggedError):
 
 def describe(exit: fx.Exit[str, NotFound]) -> str:
     match exit:
-        case fx.Success(value=value):
+        case fx.Success(value):
             return f"got {value}"
-        case fx.Failure(cause=cause):
+        case fx.Failure(cause):
             match cause.find_error():  # Ok(first typed error), or Err(the cause without one)
-                case fx.Ok(value=NotFound(key=key)):
+                case fx.Ok(NotFound(key)):
                     return f"no {key}"
-                case fx.Err(error=rest):  # a defect or an interruption
+                case fx.Err(rest):  # a defect or an interruption
                     return f"crashed: {rest.pretty()}"
 
 

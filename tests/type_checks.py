@@ -12,7 +12,17 @@ from contextlib import AbstractAsyncContextManager, AbstractContextManager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from types import CoroutineType
-from typing import Any, Literal, Never, NotRequired, Protocol, TypedDict, TypeIs, assert_type
+from typing import (
+    Any,
+    Literal,
+    Never,
+    NotRequired,
+    Protocol,
+    TypedDict,
+    TypeIs,
+    assert_never,
+    assert_type,
+)
 
 from _pytest.fixtures import FixtureFunctionDefinition
 from opentelemetry.trace import Span as OtelApiSpan
@@ -1519,6 +1529,82 @@ def check_option(o: fx.Option[int | None]) -> None:
         case fx.Some(value):
             assert_type(value, int | None)
         case None:
+            pass
+
+
+class _MatchGone(S.TaggedError):
+    id: int
+
+
+def check_native_match(
+    ex: fx.Exit[int, NotFound | Invalid], o: fx.Option[str], r: fx.Result[int, str]
+) -> None:
+    # Positional patterns follow each class's fields; every case narrows, and a
+    # match that leaves one out is not exhaustive.
+    match ex:
+        case fx.Success(value):
+            assert_type(value, int)
+        case fx.Failure(cause):
+            assert_type(cause, fx.Cause[NotFound | Invalid])
+    match ex:
+        case fx.Success(_):
+            pass
+        case _:
+            assert_type(ex, fx.Failure[NotFound | Invalid])
+    match o:
+        case fx.Some(value):
+            assert_type(value, str)
+        case None:
+            pass
+        case _:
+            assert_never(o)
+    match r:
+        case fx.Ok(value):
+            assert_type(value, int)
+        case fx.Err(failure):
+            assert_type(failure, str)
+        case _:
+            assert_never(r)
+
+
+def check_native_match_cause(c: fx.Cause[NotFound]) -> None:
+    match c:
+        case fx.Cause([Fail(only)]):
+            assert_type(only, NotFound)
+        case fx.Cause([Die(defect), *_]):
+            assert_type(defect, object)
+        case fx.Cause([Interrupt(fiber_id), *_]):
+            assert_type(fiber_id, int | None)
+        case _:
+            pass
+    for reason in c.reasons:
+        match reason:
+            case Fail(NotFound(key)):
+                assert_type(key, str)
+            case Die(_) | Interrupt(_):
+                pass
+            case _:
+                assert_never(reason)
+
+
+def check_native_match_errors(error: NotFound | Invalid | _MatchGone) -> None:
+    match error:
+        case NotFound(key):
+            assert_type(key, str)
+        case Invalid(why):
+            assert_type(why, str)
+        case _MatchGone(id=gone):
+            assert_type(gone, int)
+        case _:
+            assert_never(error)
+    match Done(3):
+        case Done(left):
+            assert_type(left, int)
+    # Schema classes take keywords, so their fields match by keyword only.
+    match error:
+        case _MatchGone(gone):  # pyright: ignore[reportGeneralTypeIssues, reportUnknownVariableType]
+            pass
+        case _:
             pass
 
 
