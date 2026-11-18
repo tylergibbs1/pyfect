@@ -157,11 +157,7 @@ def _gateway_check(
 
     def check(response: HttpClientResponse) -> Effect[HttpClientResponse, HttpClientError]:
         status = response.status
-        if (
-            status < 400
-            or status >= 500
-            or not response.request.url.endswith("/v1/messages?beta=true")
-        ):
+        if not 400 <= status < 500 or not response.request.url.endswith("/v1/messages?beta=true"):
             return fx.succeed(response)
 
         def decide(body: Any) -> Effect[HttpClientResponse, HttpClientError]:

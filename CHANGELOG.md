@@ -43,6 +43,9 @@
   `"Tue, 27 Jan 2026 17:14:06 -0500 (EST)"`: it added a `Z` and read the time as UTC. A
   whitespace-separated offset or zone word before whitespace and one comment now counts as
   the zone (Effect #10620).
+- `metric.summary` accepted a NaN quantile: its range check `quantile < 0 or quantile > 1`
+  is false for NaN. The first update now dies with "Quantile must be between 0 and 1, found:
+  NaN", as for any quantile out of range (Effect #10680).
 
 ## 0.6.12 (2026-11-18)
 

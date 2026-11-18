@@ -3,9 +3,9 @@ number and equals itself (``Order.ts``: ``if (isNaN(self)) return -1``). Python'
 false both ways with ``NaN``, so a bare ``sorted`` or comparison leaves it anywhere.
 
 Expected values follow Effect 4.1.4's code: ``TxPriorityQueue`` merges by its ``Order``,
-``Metric.histogram`` sorts its boundaries and ``Metric.summary`` its samples and quantiles
-with ``Order.Number``, and ``Schema.isLessThan`` and friends compare with it
-(``Order.isLessThan(Order.Number)``).
+``Metric.histogram`` sorts its boundaries and ``Metric.summary`` its samples with
+``Order.Number`` (a NaN quantile is rejected, Effect #10680), and ``Schema.isLessThan`` and
+friends compare with it (``Order.isLessThan(Order.Number)``).
 """
 
 import math
@@ -93,23 +93,6 @@ def test_summary_sorts_nan_samples_first(observed: list[float]):
     quantiles = yield from _own_registry(body)
     assert [q for q, _ in quantiles] == [0, 0.5, 1]
     assert _same([v for _, v in quantiles if v is not None], [nan, 1.0, 2.0])
-
-
-@testing.effect
-def test_summary_sorts_a_nan_quantile_first():
-    @fx.gen
-    def body():
-        summary = metric.summary(
-            "nan-quantile", max_age="1 minute", max_size=10, quantiles=[1, nan]
-        )
-        yield from summary.update(4.0)
-        return (yield from summary.value()).quantiles
-
-    quantiles = yield from _own_registry(body)
-    # Effect reads ``samples[Math.ceil(NaN * n) - 1]``: undefined.
-    assert math.isnan(quantiles[0][0])
-    assert quantiles[0][1] is None
-    assert quantiles[1] == (1, 4.0)
 
 
 # --- Schema bound checks ------------------------------------------------------------------

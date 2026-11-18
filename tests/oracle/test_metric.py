@@ -37,6 +37,7 @@ import pytest
 
 import pyfect as fx
 from pyfect import metric, testing
+from pyfect.cause import Die
 
 _attributes = {"x": "a", "y": "b"}
 _ids = itertools.count(1)
@@ -738,6 +739,17 @@ def test_histogram_preserves_precision_of_boundary_values():
     for index, (boundary, _) in enumerate(result.buckets):
         if index < len(boundaries):
             assert boundary == boundaries[index]
+
+
+@testing.effect
+def test_summary_rejects_nan_quantiles_on_first_use():
+    """Summary > rejects NaN quantiles on first use"""
+    summary = metric.summary(_next_id(), max_age="1 minute", max_size=10, quantiles=[math.nan])
+    result = yield from summary.update(1).exit()
+    assert isinstance(result, fx.Failure)
+    reason = result.cause.reasons[0]
+    assert isinstance(reason, Die)
+    assert str(reason.defect) == "Quantile must be between 0 and 1, found: NaN"
 
 
 @testing.effect

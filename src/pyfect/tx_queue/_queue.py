@@ -238,7 +238,7 @@ class TxQueue[A, E = Never](TxEnqueue[A, E], TxDequeue[A, E]):
         """Wait for ``minimum`` items, then take up to ``maximum``; a closing
         queue gives what is left. Takes nothing if either count is 0 or less,
         or ``minimum > maximum``."""
-        if minimum <= 0 or maximum <= 0 or minimum > maximum:
+        if maximum <= 0 or not 0 < minimum <= maximum:
             return self._take_at_least(0, 0)
         return self._take_at_least(minimum, maximum)
 

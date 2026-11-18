@@ -250,7 +250,7 @@ def _quote(value: str) -> str:
     for byte in value.encode("utf-8", "surrogatepass"):
         if byte in (0x22, 0x5C):
             out.append("\\" + chr(byte))
-        elif byte < 0x20 or byte > 0x7E:
+        elif not 0x20 <= byte <= 0x7E:
             out.append(_decimal_escape(byte))
         else:
             out.append(chr(byte))
@@ -275,7 +275,7 @@ def _format_name(text: str) -> str:
                 i += 1
             else:
                 out.append("\\\\")
-        elif byte <= 0x20 or byte > 0x7E:
+        elif not 0x20 < byte <= 0x7E:
             out.append(_decimal_escape(byte))
         else:
             out.append(("\\" if byte in _NAME_SPECIALS else "") + chr(byte))

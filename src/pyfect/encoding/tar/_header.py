@@ -97,7 +97,7 @@ def _read_octal(block: bytes, offset: int, length: int) -> int:
     value = 0
     for i in range(start, end):
         c = block[i]
-        if c < 0x30 or c > 0x37:
+        if not 0x30 <= c <= 0x37:
             raise invalid_header(f"invalid octal number in the header field at offset {offset}")
         value = value * 8 + (c - 0x30)
     return value
@@ -392,7 +392,7 @@ def _ustar_block(
 
 
 def _check_number(field: str, value: object, largest: int) -> int:
-    if not isinstance(value, int) or value < 0 or value > largest:
+    if not isinstance(value, int) or not 0 <= value <= largest:
         raise invalid_header(f"invalid {field} {value}")
     return value
 
@@ -462,7 +462,7 @@ def encode_header(header: Header) -> bytes:  # noqa: PLR0912, PLR0915
         pax.append(("uid", str(uid)))
     if gid > _MAX_OCTAL_7:
         pax.append(("gid", str(gid)))
-    if mtime < 0 or mtime > _MAX_OCTAL_11:
+    if not 0 <= mtime <= _MAX_OCTAL_11:
         pax.append(("mtime", str(mtime)))
 
     fitting = path if path_fits else _to_ascii(path)[:100]
@@ -475,7 +475,7 @@ def encode_header(header: Header) -> bytes:  # noqa: PLR0912, PLR0915
         mode=mode,
         uid=0 if uid > _MAX_OCTAL_7 else uid,
         gid=0 if gid > _MAX_OCTAL_7 else gid,
-        mtime=0 if mtime < 0 or mtime > _MAX_OCTAL_11 else mtime,
+        mtime=mtime if 0 <= mtime <= _MAX_OCTAL_11 else 0,
         linkname=link_target if link_target_fits else _to_ascii(link_target)[:100],
         uname=uname if uname_fits else _to_ascii(uname)[:32],
         gname=gname if gname_fits else _to_ascii(gname)[:32],

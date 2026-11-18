@@ -14,6 +14,7 @@ from collections.abc import Iterable, Sequence
 from typing import Any, Literal, overload
 
 from pyfect import _number_order
+from pyfect._js import js_number
 from pyfect._timestamps import millis_to_nanos
 from pyfect.clock import Clock
 from pyfect.context import Context
@@ -215,8 +216,8 @@ class _Summary(Series[Any, Any]):
     def _create_hooks(self) -> Hooks:
         max_age_ns, max_size, quantiles = self._max_age_ns, self._max_size, self._quantiles
         for quantile in quantiles:
-            if quantile < 0 or quantile > 1:
-                raise ValueError(f"Quantile must be between 0 and 1, found: {quantile}")
+            if not 0 <= quantile <= 1:
+                raise ValueError(f"Quantile must be between 0 and 1, found: {js_number(quantile)}")
         observations: list[tuple[float, float] | None] = [None] * max_size
         head = 0
         count = 0
