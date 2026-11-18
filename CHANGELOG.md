@@ -139,6 +139,16 @@
   failed chunk is retried as a single release is, and SQL runner storage still releases
   through the reserved lock connection one operation at a time.
 
+- Cluster: an `AckChunk` or `Interrupt` saved for a request that is no longer stored is
+  dropped instead of stored, on the memory and SQL storages, as in Effect 4.1.4 (#10267).
+  Writes to a request's replies (`AckChunk`, `clear_replies`) lock its row first, so they
+  can't deadlock with `delete_processed`, and a request save whose conflicting row is deleted
+  before it is read inserts again rather than report a save that stored nothing.
+
+- `sql_message_storage` on SQL Server: an index of the same name on another table no longer
+  stops the migrations creating the lookup indexes of the message tables, as in Effect 4.1.4
+  (#10267). Migration `0005_mssql_lookup_indexes` creates any that are missing.
+
 ## 0.6.12 (2026-11-18)
 
 ### Fixed
@@ -163,16 +173,6 @@
   out, which replaced the connection and dropped every shard lock the runner kept, and the
   shards then churned until it caught up. Releases now take the connection one at a time and
   wait outside the deadline, as in Effect PR #10686.
-
-- Cluster: an `AckChunk` or `Interrupt` saved for a request that is no longer stored is
-  dropped instead of stored, on the memory and SQL storages, as in Effect 4.1.4 (#10267).
-  Writes to a request's replies (`AckChunk`, `clear_replies`) lock its row first, so they
-  can't deadlock with `delete_processed`, and a request save whose conflicting row is deleted
-  before it is read inserts again rather than report a save that stored nothing.
-
-- `sql_message_storage` on SQL Server: an index of the same name on another table no longer
-  stops the migrations creating the lookup indexes of the message tables, as in Effect 4.1.4
-  (#10267). Migration `0005_mssql_lookup_indexes` creates any that are missing.
 
 ### Performance
 
