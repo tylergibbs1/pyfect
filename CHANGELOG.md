@@ -35,6 +35,11 @@
   the annotation ...`), instead of on first use. An annotation naming something not defined yet
   (the class itself, a class further down) is still derived on first use, and its error names
   the field too.
+- Schema: `S.Decimal`, a finite `decimal.Decimal` (Python-only; Effect's decimal stays
+  `S.BigDecimal`), and the schema of a `decimal.Decimal` annotation, which had none. JSON
+  writes it as its text (`"9.99"`, `"1E+2"`), which reads back to the same digits and exponent;
+  the text read is ASCII digits with an optional sign, point and exponent, so `NaN`, spaces and
+  underscores, which `decimal.Decimal()` would take, are refused.
 - Testing: `pyfect.testing.leave_out_host_freezes(source)` leaves the time the host froze the
   whole process for out of every test's timeout, up to the timeout again; `source` returns a
   `HostFreezes(total, settling)`. A timeout that left time out says so: "test timed out after

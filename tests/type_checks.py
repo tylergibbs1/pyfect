@@ -4520,6 +4520,20 @@ def check_schema_classes(unknown: object) -> None:
     _ = (as_schema, Wrong, NeedsServices)
 
 
+def check_schema_decimal(unknown: object) -> None:
+    """``S.Decimal`` is the schema of a ``decimal.Decimal`` annotation."""
+    import decimal
+
+    from pyfect import schema as S
+
+    class Price(S.Class):
+        amount: decimal.Decimal
+
+    assert_type(Price(amount=decimal.Decimal(1)).amount, decimal.Decimal)
+    assert_type(S.Decimal, S.Bottom[decimal.Decimal])
+    assert_type(S.decode_unknown_sync(S.Decimal)(unknown), decimal.Decimal)
+
+
 class _NotFound(fx.schema.TaggedError):
     id: int
 

@@ -7,7 +7,8 @@ classes: ``str`` String, ``int`` Int, ``float`` Number, ``bool`` Boolean,
 ``AbstractSet[X]`` FrozenSet, ``HashSet[X]`` HashSet, ``HashMap[K, V]``
 HashMap, ``Redacted[X]`` Redacted, ``duration.Duration``
 Duration, ``bytes`` Bytes, ``ZoneInfo`` TimeZoneNamed, ``timezone``
-TimeZoneOffset, ``Url`` URL, ``JsonValue`` Json, a schema class itself; ``Annotated[T, ...]`` is
+TimeZoneOffset, ``Url`` URL, ``JsonValue`` Json, ``decimal.Decimal`` Decimal,
+a schema class itself; ``Annotated[T, ...]`` is
 ``T``'s schema with the checks among its metadata (``S.is_greater_than(0)``,
 ...; other metadata is ignored), a ``NewType`` stands for ``T``, a ``type``
 alias for its value. Anything else raises ``TypeError``: give such a field
@@ -18,6 +19,7 @@ from __future__ import annotations
 
 import collections.abc
 import datetime as dt
+import decimal
 import enum
 import sys
 import types
@@ -38,6 +40,7 @@ from pyfect.schema._assignable import assignable
 from pyfect.schema._codecs import URL, Bytes
 from pyfect.schema._collections import FrozenSet
 from pyfect.schema._data import Redacted
+from pyfect.schema._decimal import Decimal
 from pyfect.schema._hash_collections import HashMap, HashSet
 from pyfect.schema._literals import Enum, Literal, Literals, Union
 from pyfect.schema._primitives import Any as AnySchema
@@ -59,6 +62,7 @@ _SIMPLE: dict[object, AnyBottom] = {
     Any: AnySchema,
     _duration.Duration: Duration,
     bytes: Bytes,
+    decimal.Decimal: Decimal,
     ZoneInfo: TimeZoneNamed,
     dt.timezone: TimeZoneOffset,
     Url: URL,
