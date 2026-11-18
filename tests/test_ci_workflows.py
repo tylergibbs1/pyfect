@@ -83,8 +83,25 @@ def test_the_shards_run_every_test_once_and_the_check_says_so():
     for job in jobs:
         assert f"${{{{ needs.{job}.result }}}}" in check, job
         assert f'[ "${job.upper()}" = success ]' in check, job
-    assert "pattern: manifest-${{ matrix.python }}-*" in check
-    assert "scripts/test_shards.py verify .shards/full.txt .shards/shard-*.txt" in check
+    assert "--pattern 'manifest-${{ matrix.python }}-*' --dir .shards" in check
+    assert "actions: read" in check, "gh run download lists the run's artifacts"
+    assert "scripts/test_shards.py verify .shards/*/full.txt .shards/*/shard-*.txt" in check
+
+
+def test_ci_downloads_artifacts_without_the_download_artifact_action():
+    """actions/download-artifact (v8.0.2 and earlier) leaves a failed blob request's socket
+    open when it retries, so node stays alive until the socket's 3-minute timeout
+    (actions/toolkit#2575). That cancelled `check (3.13)`, whose budget is 2 minutes, twice on
+    2026-11-18, so ci.yml downloads with `gh run download`, which exits when it is done. The
+    release's publish job keeps the action: it has no short budget, so the hang costs it at
+    most 3 minutes, which is cheaper than changing the publish path untested."""
+    text = (WORKFLOWS / "ci.yml").read_text(encoding="utf-8")
+    using = [
+        number
+        for number, line in enumerate(text.splitlines(), 1)
+        if "actions/download-artifact@" in line
+    ]
+    assert using == [], "use gh run download"
 
 
 def _pushes_outside_main(text: str) -> bool:
