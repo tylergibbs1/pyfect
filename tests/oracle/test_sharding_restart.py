@@ -26,7 +26,7 @@ from pyfect.cluster import (
     sharding_config,
 )
 from pyfect.cluster.cluster_schema import Persisted
-from pyfect.cluster.entity import Entity
+from pyfect.cluster.entity import Entity, KeepAliveRpc, keep_alive
 from pyfect.cluster.entity_address import EntityAddress
 from pyfect.cluster.message import Incoming, IncomingRequest, OutgoingRequest
 from pyfect.cluster.message_storage import MessageStorage, MessageStorageService
@@ -35,6 +35,7 @@ from pyfect.cluster.snowflake import Snowflake
 from pyfect.duration import millis
 from pyfect.latch import Latch
 from pyfect.layer import Layer
+from pyfect.queue import Queue
 from pyfect.rpc import make as make_rpc
 from pyfect.scope import CloseableScope
 
@@ -146,13 +147,15 @@ def _restart_sharding(
                 sharding_config.layer(
                     replace(
                         sharding_config.DEFAULTS,
-                        entity_mailbox_capacity=10,
-                        entity_message_poll_interval=millis(5000),
-                        refresh_assignments_interval=millis(0),
-                        entity_termination_timeout=millis(60_000),
-                        entity_reply_poll_interval=millis(1),
-                        send_retry_interval=millis(10),
-                        **config,
+                        **{
+                            "entity_mailbox_capacity": 10,
+                            "entity_message_poll_interval": millis(5000),
+                            "refresh_assignments_interval": millis(0),
+                            "entity_termination_timeout": millis(60_000),
+                            "entity_reply_poll_interval": millis(1),
+                            "send_retry_interval": millis(10),
+                            **config,
+                        },
                     )
                 )
             )
@@ -229,3 +232,75 @@ def test_replays_a_durable_caller_parked_on_a_queued_request_when_its_target_clo
     )
     assert exit == Exit.succeed("child")
     assert (state.children, state.continued) == (1, ["child"])
+
+
+class KeepAliveRecovery(Entity, type="KeepAliveRecovery"):
+    start = make_rpc("Start")
+
+
+@testing.effect
+def test_reactivates_a_held_keep_alive_after_its_runner_scope_closes_without_replying():
+    """reactivates a held keep-alive after its runner scope closes without replying"""
+    inner = yield from _make_shared_memory_storage
+    saved = yield from Queue[Snowflake].unbounded()
+    activated = yield from Queue[None].unbounded()
+    stopped = [0]
+
+    def save_request(message: OutgoingRequest) -> fx.Effect[Any, Any]:
+        def record(_: object) -> fx.Effect[Any]:
+            if message.envelope.tag == KeepAliveRpc.tag:
+                return saved.offer(message.envelope.request_id)
+            return fx.void
+
+        return inner.save_request(message).tap(record)
+
+    storage = patched(inner, save_request=save_request)
+    e = KeepAliveRecovery
+
+    @fx.gen
+    def build():
+        yield from fx.add_finalizer(
+            lambda _: fx.sync(lambda: stopped.__setitem__(0, stopped[0] + 1))
+        )
+        yield from keep_alive(True)
+        yield from activated.offer(None)
+        return e.handlers().handle(e.start)(lambda _: fx.void)
+
+    layer = _restart_sharding(
+        e.to_layer_effect(build),
+        storage,
+        refresh_assignments_interval=millis(60_000),
+        entity_termination_timeout=millis(0),
+    )
+    scope = CloseableScope()
+    runner = yield from layer.build_with_scope(scope)
+
+    @fx.gen
+    def first():
+        yield from _advance_until((yield from e.client())("holder").start())
+        yield from activated.take()
+        yield from testing.adjust("1 millis")
+        yield from testing.adjust("10 minutes")
+        yield from (yield from sharding.Sharding()).poll_storage
+        yield from testing.adjust("1 millis")
+
+    yield from first.pipe(fx.provide(runner))
+    original = yield from saved.take()
+    assert (yield from storage.replies_for_unfiltered([original])) == []
+
+    yield from _advance_until(scope.close(_VOID))
+    assert stopped[0] == 1, "closing the runner must stop the activation"
+    assert (yield from storage.replies_for_unfiltered([original])) == [], (
+        "scope close must not acknowledge work"
+    )
+
+    # No client request on the new runner: the persisted keep-alive must activate it.
+    @fx.gen
+    def second():
+        yield from _advance_until(activated.take())
+        yield from testing.adjust("1 millis")
+        assert (yield from storage.replies_for_unfiltered([original])) == []
+        assert stopped[0] == 1, "the recovered activation must remain alive"
+
+    yield from fx.scoped(second).pipe(fx.provide(layer))
+    assert stopped[0] == 2

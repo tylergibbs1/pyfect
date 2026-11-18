@@ -66,7 +66,7 @@ class EntityReaperService:
                     for state in list(registered.servers.values()):
                         idle = now - state.last_active_check
                         if (
-                            state.keep_alive_enabled
+                            state.keep_alive_request_id is not None
                             or state.active_requests
                             or idle < registered.max_idle_millis
                         ):

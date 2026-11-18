@@ -11,6 +11,11 @@
   other runners take its shards over. A probe that works no longer counts as recovery; a lock
   refresh that works again registers it again. This follows Effect's fix
   (Effect-TS/effect#10689); Effect 4.1.4 has the gap.
+- Cluster: a persisted `keep_alive(True)` request that storage redelivered (after its claim
+  expired) was answered at once. Its stored reply ended the hold early, so after a runner
+  restart storage no longer redelivered it and the entity was not reactivated. The entity
+  now keeps the held request's id and gives its redelivery no reply; a second
+  `keep_alive(True)` is still answered at once (Effect #10709).
 
 ## 0.6.12 (2026-11-18)
 

@@ -74,7 +74,9 @@ class EntityState:
     write: WriteFn
     keep_alive_latch: Latch
     last_active_check: int
-    keep_alive_enabled: bool = False
+    keep_alive_request_id: Snowflake | None = None
+    """The ``keep_alive(True)`` request held until the latch opens. A
+    redelivery of it gets no reply; any other keep-alive is answered at once."""
 
 
 class Residency(Protocol):

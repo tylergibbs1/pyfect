@@ -111,12 +111,16 @@ class EntityManager:
             return retry_respond(4, message.respond(reply)).or_die()
 
         reply = suspend(respond)
-        if server.keep_alive_enabled:
+        request_id = message.envelope.request_id
+        if server.keep_alive_request_id == request_id:
+            # A redelivery of the held request: answering it would end the hold.
+            return _VOID
+        if server.keep_alive_request_id is not None:
             return reply
-        server.keep_alive_enabled = True
+        server.keep_alive_request_id = request_id
 
         def disabled() -> Effect[None]:
-            server.keep_alive_enabled = False
+            server.keep_alive_request_id = None
             return reply
 
         waiting = server.keep_alive_latch.when_open(suspend(disabled))

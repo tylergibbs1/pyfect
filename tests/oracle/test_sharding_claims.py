@@ -13,7 +13,7 @@ from pyfect import schedule, testing
 from pyfect.cluster import sharding
 from pyfect.cluster.cluster_error import PersistenceError
 from pyfect.cluster.cluster_schema import Persisted, Uninterruptible
-from pyfect.cluster.entity import Entity, EntityHandlers
+from pyfect.cluster.entity import CurrentAddress, Entity, EntityHandlers, keep_alive
 from pyfect.cluster.entity_address import EntityAddress
 from pyfect.cluster.message import IncomingRequest, OutgoingEnvelope
 from pyfect.cluster.message_storage import MemoryDriver, MessageStorageService
@@ -80,6 +80,78 @@ def _with_claims(log: _ClaimLog, **extra: Any) -> Layer[Any]:
     return capped(
         lambda storage: log.storage(storage, **extra), refresh_assignments_interval=millis(60_000)
     )
+
+
+class KeepAliveRedelivery(Entity, type="KeepAliveRedelivery"):
+    enable = make_rpc("Enable")
+    release = make_rpc("Release")
+
+
+@testing.effect
+def test_holds_a_keep_alive_across_claim_expirations_until_release():
+    """holds a keep-alive across claim expirations until release while answering redundant
+    requests"""
+    log = _ClaimLog()
+    e = KeepAliveRedelivery
+
+    @fx.gen
+    def build():
+        address = yield from CurrentAddress()
+
+        def hold(enabled: bool) -> fx.Effect[None, Never, Any]:
+            return keep_alive(enabled).pipe(fx.provide_service(CurrentAddress, address))
+
+        return (
+            e.handlers()
+            .handle(e.enable)(lambda _: hold(True))
+            .handle(e.release)(lambda _: hold(False))
+        )
+
+    layer = e.to_layer_effect(build).pipe(fx.layer.provide_merge(_with_claims(log)))
+
+    @fx.gen
+    def body():
+        yield from testing.adjust("1 millis")
+        service = yield from sharding.Sharding()
+        driver = yield from MemoryDriver()
+        client = (yield from e.client())("holder")
+        encoded = driver.encoded
+
+        # Only keep-alives are persisted here, so the journal lists them in send order.
+        def reply_counts() -> list[int]:
+            return [len(encoded.requests[env["requestId"]].replies) for env in encoded.journal]
+
+        def poll() -> fx.Effect[None]:
+            return service.poll_storage.and_then(testing.adjust("1 millis"))
+
+        yield from client.enable()
+        yield from poll()
+        assert reply_counts() == [0]
+        original = Snowflake(int(encoded.journal[0]["requestId"]))
+        assert log.claimed == [original]
+
+        # Another enable has a distinct id and must not replace the held request.
+        yield from client.enable()
+        yield from poll()
+        assert reply_counts() == [0, 1]
+
+        for _ in range(2):
+            log.clear()
+            yield from testing.adjust(fx.duration.seconds(_TEN_MINUTES))
+            yield from poll()
+            assert log.claimed == [original], (
+                "storage must redeliver the held request after claim expiry"
+            )
+            assert reply_counts() == [0, 1], "redelivery must not answer the held keep-alive"
+
+        yield from client.release()
+        yield from testing.adjust("1 millis")
+        assert reply_counts() == [1, 1], "release must answer the original request once"
+        yield from testing.adjust(fx.duration.seconds(_TEN_MINUTES))
+        yield from poll()
+        assert reply_counts() == [1, 1], "completed keep-alives must not be answered again"
+
+    yield from body.pipe(fx.provide(layer))
 
 
 class ClaimDefectReplay(
