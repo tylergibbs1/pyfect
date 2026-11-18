@@ -51,6 +51,12 @@
 
 ### Fixed
 
+- Cluster: a stopping runner released each of its shards in a storage write of its own, so on
+  a slow or remote database shutdown took 50-100 ms per shard. The shutdown handoff now
+  releases them 100 at a time, one write each, through the new
+  `RunnerStorageService.release_many` (`EncodedRunnerStorage.release_many` for drivers). A
+  failed chunk is retried as a single release is, and SQL runner storage still releases
+  through the reserved lock connection one operation at a time.
 - `hypercorn_server`: after a too-large WebSocket message the server sent the 1009 close and
   closed the connection at once, so a client still sending its message got a reset and could
   miss the close. As Effect's `ws` server does, it now ends its side after the close and reads
