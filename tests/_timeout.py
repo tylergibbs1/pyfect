@@ -7,6 +7,7 @@ traceback that shows where the test was stuck.
 
 import signal
 from collections.abc import Generator
+from contextlib import contextmanager
 from types import FrameType
 
 import pytest
@@ -30,3 +31,16 @@ def pytest_runtest_call(item: pytest.Item) -> Generator[None, object, object]:
     finally:
         signal.setitimer(signal.ITIMER_REAL, 0)
         signal.signal(signal.SIGALRM, previous)
+
+
+@contextmanager
+def suspended() -> Generator[None]:
+    """The running test's alarm stopped, and given back what it had left after: for a shared
+    server's start (``oracle/_shared_server.py``), which waits on its own deadline and fails
+    with its own cause instead of as the first test that happened to ask for it."""
+    remaining, _ = signal.setitimer(signal.ITIMER_REAL, 0)
+    try:
+        yield
+    finally:
+        if remaining:
+            signal.setitimer(signal.ITIMER_REAL, remaining)

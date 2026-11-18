@@ -80,7 +80,6 @@ def _start_container() -> RedisServer:
     started = _containers.docker(
         "run",
         "-d",
-        "--rm",
         "--label",
         LABEL,
         "--label",
@@ -95,16 +94,14 @@ def _start_container() -> RedisServer:
         "no",
     )
     if started.returncode != 0:
-        raise RuntimeError(f"cannot start Redis: {started.stderr.strip()}")
+        raise _containers.ContainerFailed(f"cannot start Redis: {started.stderr.strip()}")
     container = started.stdout.strip()
     atexit.register(_containers.remove, container)
     try:
         port = _containers.published_port(container, 6379)
-        deadline = time.monotonic() + 30
-        while not _ready(port):
-            if time.monotonic() > deadline:
-                raise RuntimeError("the Redis container did not start")
-            time.sleep(0.05)
+        _containers.wait_ready(
+            "Redis", container, lambda: None if _ready(port) else "no PING reply yet", 30, 0.05
+        )
     except BaseException:
         _containers.remove(container)
         raise

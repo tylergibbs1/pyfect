@@ -1,12 +1,23 @@
 """Throwaway database containers for the driver tests (``_mysql``,
 ``_mssql``): the ``docker`` command, the reaping of labelled containers
-whose owning test process is gone, and published ports."""
+whose owning test process is gone, published ports, and the wait for a
+started container to serve.
+
+A container that does not start fails with ``ContainerFailed``, which
+carries its state (exit code, whether the kernel killed it for memory) and
+the end of its logs. Containers run without ``--rm``, so that state and
+those logs outlive a crash; the owner removes them at exit (``remove``), or
+the next run does (``reap_stale``).
+"""
 
 from __future__ import annotations
 
 import os
 import shutil
 import subprocess
+import time
+from collections.abc import Callable
+from pathlib import Path
 
 import _container_images
 
@@ -15,6 +26,11 @@ OWNER = "pyfect.test.owner"
 
 PLACEHOLDER_IMAGE = _container_images.image("busybox").local
 """A few megabytes: what a test of the labels creates (never starts) a container from."""
+
+
+class ContainerFailed(Exception):
+    """A started container that stopped, or did not serve in time: never skipped, unlike a
+    missing Docker (``require_docker``)."""
 
 
 def docker(*args: str, timeout: float = 60) -> subprocess.CompletedProcess[str]:
@@ -69,8 +85,56 @@ def remove(container: str) -> None:
 def published_port(container: str, port: int) -> int:
     mapped = docker("port", container, f"{port}/tcp").stdout.split()
     if not mapped:
-        raise RuntimeError(f"the container published no port {port}")
+        raise ContainerFailed(f"the container published no port {port}: {diagnosis(container)}")
     return int(mapped[0].rsplit(":", 1)[1])
+
+
+_STATE = (
+    "status={{.State.Status}} exit_code={{.State.ExitCode}} oom_killed={{.State.OOMKilled}} "
+    "error={{.State.Error}} started={{.State.StartedAt}} finished={{.State.FinishedAt}}"
+)
+
+
+def _host_memory() -> str:
+    meminfo = Path("/proc/meminfo")
+    if not meminfo.exists():
+        return ""
+    fields = dict(line.split(":", 1) for line in meminfo.read_text().splitlines() if ":" in line)
+    return f"; host MemAvailable {fields.get('MemAvailable', '?').strip()}"
+
+
+def diagnosis(container: str) -> str:
+    """The container's state, its memory use and the host's, and the end of its logs."""
+    state = docker("inspect", "-f", _STATE, container)
+    usage = docker("stats", "--no-stream", "--format", "{{.MemUsage}}", container)
+    logs = docker("logs", "--tail", "40", container)
+    return (
+        f"{(state.stdout or state.stderr).strip()}; memory {usage.stdout.strip() or '?'}"
+        f"{_host_memory()}\n--- its last log lines ---\n{logs.stdout}{logs.stderr}"
+    )
+
+
+def running(container: str) -> bool:
+    return docker("inspect", "-f", "{{.State.Running}}", container).stdout.strip() == "true"
+
+
+def wait_ready(
+    name: str, container: str, waiting: Callable[[], str | None], timeout: float, poll: float
+) -> None:
+    """Until ``waiting()`` returns ``None``; until then it says what the server still lacks.
+    ``ContainerFailed`` (with the ``diagnosis``) when the container stops, at once, or when
+    ``timeout`` seconds pass."""
+    deadline = time.monotonic() + timeout
+    while (missing := waiting()) is not None:
+        if not running(container):
+            raise ContainerFailed(
+                f"the {name} container stopped ({missing}): {diagnosis(container)}"
+            )
+        if time.monotonic() > deadline:
+            raise ContainerFailed(
+                f"{name} did not start in {timeout:g} s ({missing}): {diagnosis(container)}"
+            )
+        time.sleep(poll)
 
 
 def pull(image: str) -> None:
@@ -91,10 +155,14 @@ def pull(image: str) -> None:
 __all__ = [
     "OWNER",
     "PLACEHOLDER_IMAGE",
+    "ContainerFailed",
     "alive",
+    "diagnosis",
     "docker",
     "published_port",
     "pull",
     "reap_stale",
     "remove",
+    "running",
+    "wait_ready",
 ]

@@ -17,7 +17,6 @@ from __future__ import annotations
 import atexit
 import os
 import subprocess
-import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -62,32 +61,29 @@ def reap_stale() -> list[str]:
     return _containers.reap_stale(LABEL)
 
 
+def _waiting(server: MysqlServer) -> str | None:
+    """``None`` once ``test`` can log in over TCP: the image's init server listens on no port,
+    so a TCP login means the final server is up."""
+    probe = _docker(
+        "exec",
+        server.container,
+        "mysql",
+        "--protocol=TCP",
+        "-h127.0.0.1",
+        "-utest",
+        "-ptest",
+        "-e",
+        "SELECT 1",
+        "test",
+        timeout=30,
+    )
+    return None if probe.returncode == 0 else f"test cannot log in yet: {probe.stderr.strip()}"
+
+
 def _wait_ready(server: MysqlServer) -> None:
-    """Until ``test`` can log in over TCP: the image's init server listens
-    on no port, so a TCP login means the final server is up."""
-    deadline = time.monotonic() + _STARTUP_TIMEOUT
-    while True:
-        probe = _docker(
-            "exec",
-            server.container,
-            "mysql",
-            "--protocol=TCP",
-            "-h127.0.0.1",
-            "-utest",
-            "-ptest",
-            "-e",
-            "SELECT 1",
-            "test",
-            timeout=30,
-        )
-        if probe.returncode == 0:
-            return
-        state = _docker("inspect", "-f", "{{.State.Running}}", server.container).stdout.strip()
-        if state != "true":
-            raise RuntimeError(f"the MySQL container stopped: {probe.stderr.strip()}")
-        if time.monotonic() > deadline:
-            raise RuntimeError("MySQL did not start in time")
-        time.sleep(0.5)
+    _containers.wait_ready(
+        "MySQL", server.container, lambda: _waiting(server), _STARTUP_TIMEOUT, 0.5
+    )
 
 
 def _start() -> MysqlServer:
@@ -97,7 +93,6 @@ def _start() -> MysqlServer:
     started = _docker(
         "run",
         "-d",
-        "--rm",
         "--label",
         LABEL,
         "--label",
@@ -121,7 +116,7 @@ def _start() -> MysqlServer:
         "--skip-log-bin",
     )
     if started.returncode != 0:
-        raise RuntimeError(f"cannot start MySQL: {started.stderr.strip()}")
+        raise _containers.ContainerFailed(f"cannot start MySQL: {started.stderr.strip()}")
     container = started.stdout.strip()
     atexit.register(_containers.remove, container)
     try:

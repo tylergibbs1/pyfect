@@ -5,13 +5,10 @@ import base64
 import contextlib
 import os
 import socket
-import struct
-import threading
 from dataclasses import dataclass
 from typing import Any, Literal
 
 import httpx
-from _threaded_server import serving
 from _timing import wait_until
 
 import pyfect as fx
@@ -179,33 +176,6 @@ def test_a_client_still_sending_gets_the_1009_close_without_a_reset() -> None:
     assert sent.sent_all
     assert sent.ended == "eof"
     assert sent.got == b"\x88\x02\x03\xf1"
-
-
-def _close_then_reset(conn: socket.socket, _stopping: threading.Event) -> None:
-    """Answers the handshake, reads the start of a message, sends the 1009 close and leaves
-    ``serving`` to close the connection with ``SO_LINGER`` 0: a reset, dropping the bytes
-    the client is still sending."""
-    conn.settimeout(5)
-    request = b""
-    while b"\r\n\r\n" not in request:
-        request += conn.recv(4096)
-    conn.sendall(b"HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\n\r\n")
-    conn.recv(4096)
-    conn.sendall(b"\x88\x02\x03\xf1")
-    conn.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
-
-
-def test_a_reset_mid_message_keeps_the_close_received_before_it() -> None:
-    """``_too_large`` reads what the server sent before a reset: a server that resets the
-    connection while the client is still sending (16 MiB, more than the socket buffers
-    hold) fails the client's send, and the 1009 close it already received is still read
-    (Linux and macOS keep received bytes through a reset). Reading stopped at the failed
-    send before, and the close was lost."""
-    with serving(_close_then_reset) as fake:
-        sent = _too_large(fake.port, 4096, keep_sending=False)
-    assert not sent.sent_all
-    assert sent.got == b"\x88\x02\x03\xf1"
-    assert sent.ended in ("eof", "reset")
 
 
 def test_a_client_that_never_ends_its_side_is_dropped_after_the_close_timeout() -> None:

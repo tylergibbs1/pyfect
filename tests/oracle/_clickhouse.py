@@ -18,7 +18,6 @@ import atexit
 import base64
 import os
 import subprocess
-import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -71,18 +70,19 @@ def _request(server: ClickhouseServer, sql: str) -> str:
         return response.read().decode()
 
 
+def _waiting(server: ClickhouseServer) -> str | None:
+    """``None`` once the server runs queries for ``pyfect``."""
+    try:
+        _request(server, "SELECT 1")
+    except (OSError, urllib.error.HTTPError) as error:
+        return f"no query runs yet: {type(error).__name__}: {error}"
+    return None
+
+
 def _wait_ready(server: ClickhouseServer) -> None:
-    """Until the server runs queries for ``pyfect``."""
-    deadline = time.monotonic() + _STARTUP_TIMEOUT
-    while True:
-        try:
-            _request(server, "SELECT 1")
-        except (OSError, urllib.error.HTTPError):
-            if time.monotonic() > deadline:
-                raise RuntimeError("the ClickHouse server did not start in time") from None
-            time.sleep(0.25)
-        else:
-            return
+    _containers.wait_ready(
+        "ClickHouse server", server.container, lambda: _waiting(server), _STARTUP_TIMEOUT, 0.25
+    )
 
 
 def _start() -> ClickhouseServer:
@@ -92,7 +92,6 @@ def _start() -> ClickhouseServer:
     started = _containers.docker(
         "run",
         "-d",
-        "--rm",
         "--label",
         LABEL,
         "--label",
@@ -118,7 +117,9 @@ def _start() -> ClickhouseServer:
         IMAGE,
     )
     if started.returncode != 0:
-        raise RuntimeError(f"cannot start the ClickHouse server: {started.stderr.strip()}")
+        raise _containers.ContainerFailed(
+            f"cannot start the ClickHouse server: {started.stderr.strip()}"
+        )
     container = started.stdout.strip()
     atexit.register(_containers.remove, container)
     try:

@@ -14,7 +14,6 @@ from __future__ import annotations
 import atexit
 import os
 import subprocess
-import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -46,19 +45,21 @@ def reap_stale() -> list[str]:
     return _containers.reap_stale(LABEL)
 
 
+def _waiting(server: LibsqlServer) -> str | None:
+    """``None`` once the server answers HTTP (Effect's ``waitForServer``)."""
+    try:
+        with urllib.request.urlopen(f"{server.url}/v2", timeout=5):
+            return None
+    except urllib.error.HTTPError:
+        return None
+    except OSError as error:
+        return f"no HTTP answer yet: {type(error).__name__}: {error}"
+
+
 def _wait_ready(server: LibsqlServer) -> None:
-    """Until the server answers HTTP (Effect's ``waitForServer``)."""
-    deadline = time.monotonic() + _STARTUP_TIMEOUT
-    while True:
-        try:
-            with urllib.request.urlopen(f"{server.url}/v2", timeout=5):
-                return
-        except urllib.error.HTTPError:
-            return
-        except OSError:
-            if time.monotonic() > deadline:
-                raise RuntimeError("the libSQL server did not start in time") from None
-            time.sleep(0.25)
+    _containers.wait_ready(
+        "libSQL server", server.container, lambda: _waiting(server), _STARTUP_TIMEOUT, 0.25
+    )
 
 
 def _start() -> LibsqlServer:
@@ -68,7 +69,6 @@ def _start() -> LibsqlServer:
     started = _containers.docker(
         "run",
         "-d",
-        "--rm",
         "--label",
         LABEL,
         "--label",
@@ -84,7 +84,9 @@ def _start() -> LibsqlServer:
         "0.0.0.0:8080",
     )
     if started.returncode != 0:
-        raise RuntimeError(f"cannot start the libSQL server: {started.stderr.strip()}")
+        raise _containers.ContainerFailed(
+            f"cannot start the libSQL server: {started.stderr.strip()}"
+        )
     container = started.stdout.strip()
     atexit.register(_containers.remove, container)
     try:

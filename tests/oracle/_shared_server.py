@@ -2,16 +2,18 @@
 
 A start that finds what it needs missing (``absent``: no binary, no Docker, no driver) skips
 the test with the reason, and every later test with it. A start that ends any other way (an
-error, or the per-test timeout's ``Failed`` in a stalled ``docker run``) fails the test, and
-every later test fails at once with that error instead of starting the server again and
-waiting out a timeout of its own. Each server module calls ``SharedServer.get`` from its
-``server()``.
+error, a container that stopped or did not serve in time: ``_docker.ContainerFailed``) fails
+the test, and every later test fails at once with that error instead of starting the server
+again. The start runs with the test's hang alarm stopped (``_timeout.suspended``): it waits
+on its own deadline, so a server that does not come up fails with its state and logs, not as
+a test that hung. Each server module calls ``SharedServer.get`` from its ``server()``.
 """
 
 import importlib
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
+import _timeout
 import pytest
 
 
@@ -36,7 +38,8 @@ class SharedServer[S]:
             pytest.fail(f"{self.name} did not start in an earlier test: {self._failure}")
         try:
             importlib.import_module(self.driver)
-            self._server = start()
+            with _timeout.suspended():
+                self._server = start()
         except (ImportError, *self.absent) as error:
             self._skip = f"no {self.name}: {error}"
         except (Exception, pytest.fail.Exception) as error:

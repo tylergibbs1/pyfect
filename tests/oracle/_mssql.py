@@ -20,7 +20,6 @@ import atexit
 import os
 import platform
 import subprocess
-import time
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -115,31 +114,22 @@ def _starting(connection: Any) -> str | None:
     return None
 
 
+def _waiting(server: MssqlServer) -> str | None:
+    """What the server still lacks: a login for ``sa``, then the end of startup (``STARTING``)."""
+    try:
+        connection = _login(server.host, server.port)
+    except Exception as error:
+        return f"sa cannot log in yet: {type(error).__name__}: {error}"
+    try:
+        return _starting(connection)
+    finally:
+        connection.close()
+
+
 def _wait_ready(server: MssqlServer) -> None:
-    """Until ``sa`` logs in and the server has finished starting (``STARTING``)."""
-    deadline = time.monotonic() + _STARTUP_TIMEOUT
-    while True:
-        failure: Exception | None = None
-        try:
-            connection = _login(server.host, server.port)
-        except Exception as error:
-            running = _containers.docker(
-                "inspect", "-f", "{{.State.Running}}", server.container
-            ).stdout.strip()
-            if running != "true":
-                logs = _containers.docker("logs", "--tail", "20", server.container)
-                raise RuntimeError(f"the SQL Server container stopped: {logs.stdout}") from error
-            failure, starting = error, "sa cannot log in yet"
-        else:
-            try:
-                starting = _starting(connection)
-            finally:
-                connection.close()
-            if starting is None:
-                return
-        if time.monotonic() > deadline:
-            raise RuntimeError(f"SQL Server did not start in time: {starting}") from failure
-        time.sleep(1)
+    _containers.wait_ready(
+        "SQL Server", server.container, lambda: _waiting(server), _STARTUP_TIMEOUT, 1
+    )
 
 
 def _start() -> MssqlServer:
@@ -150,7 +140,6 @@ def _start() -> MssqlServer:
     started = _containers.docker(
         "run",
         "-d",
-        "--rm",
         "--label",
         LABEL,
         "--label",
@@ -164,7 +153,7 @@ def _start() -> MssqlServer:
         chosen,
     )
     if started.returncode != 0:
-        raise RuntimeError(f"cannot start SQL Server: {started.stderr.strip()}")
+        raise _containers.ContainerFailed(f"cannot start SQL Server: {started.stderr.strip()}")
     container = started.stdout.strip()
     atexit.register(_containers.remove, container)
     try:

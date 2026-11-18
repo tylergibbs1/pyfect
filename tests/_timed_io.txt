@@ -9,16 +9,13 @@ cross_run/test_run_ownership.py 2  # times a quick run while another thread's ru
 fuzz/_harness.py 2  # re-arms the enclosing SIGALRM itimer minus the time a fuzz target ran; signal timers run on real time outside any effect run
 fuzz/server_target.py 2  # deadline for the live server to close a loopback connection after the fuzz client stops; the client is a plain blocking socket
 interleave/_harness.py 5  # optional PYFECT_INTERLEAVE_BUDGET wall-time box for schedule exploration, and its report; bounds the harness's own CPU, not effect time
-oracle/_clickhouse.py 2  # deadline for a ClickHouse Docker container to start serving queries; the server runs on real time in another process
+oracle/_docker.py 2  # deadline for a Docker container (SQL Server, MySQL, ClickHouse, libSQL, Redis) to serve; the server runs on real time in another process
 oracle/_interrupt_on_server.py 4  # deadlines for a statement to appear on, then vanish from, a real database server; the server runs on real time in another process
-oracle/_libsql.py 2  # deadline for a libSQL (sqld) Docker container to answer HTTP; the server runs on real time in another process
 oracle/_live_http.py 2  # deadline reading a live-server response on a blocking client socket in a plain thread; that socket is outside the TestClock
-oracle/_mssql.py 2  # deadline for a SQL Server Docker container to accept logins; the server runs on real time in another process
-oracle/_mysql.py 2  # deadline for a MySQL Docker container to accept TCP logins; the server runs on real time in another process
 oracle/_pg_close_while_reading.py 2  # deadline polling pg_stat_activity until a backend waits on a lock, then goes idle, in a script run as its own process; the PostgreSQL server runs on real time in another process
 oracle/_pg_owner.py 2  # deadline for a PostgreSQL postmaster to exit after SIGQUIT before SIGKILL; the server is another process on real time
 oracle/_postgres.py 2  # deadline polling pg_stat_activity until a backend runs a statement; the PostgreSQL server runs on real time in another process
-oracle/_redis.py 4  # deadlines for a Redis container or redis-server process to accept connections; the server runs on real time in another process
+oracle/_redis.py 2  # deadline for a redis-server process to accept connections; the server runs on real time in another process
 oracle/test_child_process_spawner.py 2  # measures scope close while real child processes and descendants exit or get killed after grace periods; OS processes run on real time
 oracle/test_clickhouse_driver.py 2  # deadline for an interrupted query to leave a real ClickHouse server's process list; the server runs on real time in another process
 oracle/test_completions.py 2  # deadline for an interactive bash subprocess to print its prompt; the shell runs on real time in another process
