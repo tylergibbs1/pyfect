@@ -10,6 +10,7 @@ a steady-state round calls (``sys.monitoring``) instead.
 
 import collections
 import sys
+import threading
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from dataclasses import replace
@@ -39,7 +40,7 @@ _ROUNDS = 400
 
 
 class _Calls:
-    """The pyfect functions started while counting, by qualified name."""
+    """The pyfect functions the counting thread started while counting, by qualified name."""
 
     def __init__(self) -> None:
         self.by_name: collections.Counter[str] = collections.Counter()
@@ -50,11 +51,13 @@ class _Calls:
         tool = next(t for t in (5, 4, 3) if mon.get_tool(t) is None)
         mon.use_tool_id(tool, "pyfect round cost")
         by_name = self.by_name
+        counting = threading.get_ident()
 
         def started(code: CodeType, _offset: int) -> object:
             if not code.co_filename.startswith(_SRC):
                 return mon.DISABLE
-            by_name[code.co_qualname] += 1
+            if threading.get_ident() == counting:
+                by_name[code.co_qualname] += 1
             return None
 
         mon.register_callback(tool, mon.events.PY_START, started)
@@ -125,3 +128,17 @@ def test_a_sync_round_at_a_zero_refresh_stays_cheap(monkeypatch: pytest.MonkeyPa
     # Everything: 84 calls a round when this was written, 120 before.
     total = sum(per_round.values())
     assert total <= 88, sorted(per_round.items(), key=lambda kv: -kv[1])
+
+
+def test_pyfect_work_on_another_thread_is_not_counted():
+    # The round runs on one thread; another test's leftover thread in the same worker
+    # (seen on CI: schema parsing) must not inflate its count.
+    calls = _Calls()
+    calls.start()
+    try:
+        other = threading.Thread(target=lambda: fx.run_blocking(fx.succeed(1).map(str)))
+        other.start()
+        other.join()
+    finally:
+        calls.stop()
+    assert not calls.by_name, sorted(calls.by_name.items())
