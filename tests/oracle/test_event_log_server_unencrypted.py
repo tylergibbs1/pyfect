@@ -586,13 +586,15 @@ def _large_group(fallback: bool):
     return fx.scoped(fx.gen(body)).pipe(fx.provide(L.layer_registry))
 
 
-@testing.effect
+# Effect's timeout for this test: test/eventlog/EventLogServerUnencrypted.test.ts:217.
+@testing.effect(timeout="30 seconds")
 def test_compact_backlog_large_group_projection():
     """compactBacklog handles large groups with projection"""
     yield from _large_group(False)
 
 
-@testing.effect
+# Effect's timeout for this test: test/eventlog/EventLogServerUnencrypted.test.ts:217.
+@testing.effect(timeout="30 seconds")
 def test_compact_backlog_large_group_fallback():
     """compactBacklog handles large groups with fallback"""
     yield from _large_group(True)
