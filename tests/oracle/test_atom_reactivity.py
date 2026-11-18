@@ -9,7 +9,7 @@ is outside this port).
 
 import json
 from dataclasses import dataclass
-from typing import Any, Never
+from typing import Any, Literal, Never
 
 import pytest
 
@@ -455,3 +455,31 @@ def test_reports_asynchronous_runtime_layer_finalizer_failures_on_disposal():
     finally:
         yield from release.open()
         registry.dispose()
+
+
+@pytest.mark.parametrize("mode", ["sync", "async"])
+def test_kvs_retains_persisted_writes_across_refresh(
+    timers: FakeTimers, mode: Literal["sync", "async"]
+) -> None:
+    """kvs / ${mode} mode retains persisted writes across refresh (Effect main, #10613)"""
+    seeded = layer.effect(
+        KeyValueStore,
+        fx.sync(key_value_store.make_memory).tap(
+            lambda store: store.set("theme", json.dumps("light"))
+        ),
+    )
+    stored = atom.kvs(
+        mode=mode,
+        runtime=atom.runtime(seeded),
+        key="theme",
+        schema=schema.String,
+        default_value=lambda: "light",
+    )
+    r = timers.registry()
+    r.mount(stored)
+    r.set(stored, "dark")
+    r.refresh(stored)
+    value = r.get(stored)
+    assert (
+        async_result.get_or_raise(value) if async_result.is_async_result(value) else value
+    ) == "dark"
