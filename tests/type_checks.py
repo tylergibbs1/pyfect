@@ -4505,6 +4505,18 @@ def check_schema_classes(unknown: object) -> None:
         radius: float
 
     assert_type(Circle(radius=1).radius, float)
+
+    from typing import Annotated
+
+    class Stock(S.Class):
+        on_hand: Annotated[int, S.is_greater_than_or_equal_to(0)]
+        sku: Annotated[str, S.is_min_length(1)] = S.field(S.NonEmptyString)
+
+    stock = Stock(on_hand=1, sku="a")
+    assert_type(stock.on_hand, int)
+    assert_type(stock.sku, str)
+    Stock(on_hand="1", sku="a")  # pyright: ignore[reportArgumentType]
+    assert_type(S.decode_unknown_sync(Stock)(unknown), Stock)
     _ = (as_schema, Wrong, NeedsServices)
 
 

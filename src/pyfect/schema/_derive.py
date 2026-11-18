@@ -7,9 +7,11 @@ classes: ``str`` String, ``int`` Int, ``float`` Number, ``bool`` Boolean,
 ``AbstractSet[X]`` FrozenSet, ``HashSet[X]`` HashSet, ``HashMap[K, V]``
 HashMap, ``Redacted[X]`` Redacted, ``duration.Duration``
 Duration, ``bytes`` Bytes, ``ZoneInfo`` TimeZoneNamed, ``timezone``
-TimeZoneOffset, ``Url`` URL, ``JsonValue`` Json, a schema class itself; ``Annotated[T, ...]`` and
-a ``NewType`` stand for ``T``, a ``type`` alias for its value. Anything
-else raises ``TypeError``: give such a field its schema explicitly.
+TimeZoneOffset, ``Url`` URL, ``JsonValue`` Json, a schema class itself; ``Annotated[T, ...]`` is
+``T``'s schema with the checks among its metadata (``S.is_greater_than(0)``,
+...; other metadata is ignored), a ``NewType`` stands for ``T``, a ``type``
+alias for its value. Anything else raises ``TypeError``: give such a field
+its schema explicitly.
 """
 
 from __future__ import annotations
@@ -90,11 +92,22 @@ def schema_of(annotation: object, expanding: frozenset[object] = frozenset()) ->
         if alias in expanding:
             raise TypeError(f"The type alias {alias!r} refers to itself: give the field its schema")
     inner = expanding.union(aliases)
+    if get_origin(annotation) is typing.Annotated:
+        return _of_annotated(get_args(annotation), inner)
     simple = _SIMPLE.get(annotation) if _hashable(annotation) else None
     found = simple or _of_form(annotation, inner) or _of_class(annotation)
     if found is None:
         raise TypeError(f"No schema for the annotation {annotation!r}: give the field its schema")
     return found
+
+
+def _of_annotated(args: tuple[object, ...], expanding: frozenset[object]) -> AnyBottom:
+    """``Annotated[T, ...]``: ``T``'s schema with the checks among the metadata."""
+    schema = schema_of(args[0], expanding)
+    checks = [
+        cast("ast.Check[Any]", m) for m in args[1:] if isinstance(m, (ast.Filter, ast.FilterGroup))
+    ]
+    return schema.check(checks[0], *checks[1:]) if checks else schema
 
 
 def _of_form(annotation: object, expanding: frozenset[object]) -> AnyBottom | None:
@@ -136,13 +149,18 @@ def _unpacked(annotation: object) -> bool:
     )
 
 
+_QUALIFIERS = (typing.Required, typing.NotRequired, typing.ReadOnly)
+"""A TypedDict key's qualifiers: they say whether it may be missing, not its schema."""
+
+
 def _unwrap(annotation: object) -> tuple[tuple[object, ...], object]:
-    """The type ``Annotated[T, ...]``, a ``NewType`` or a ``type`` alias
-    stands for, and the aliases passed through. An alias with a schema of
-    its own (``JsonValue``) is kept."""
+    """The type a ``NewType``, a ``type`` alias or a TypedDict key's
+    qualifier (``NotRequired[T]``, ...) stands for, and the aliases passed
+    through. An alias with a schema of its own (``JsonValue``) is kept, and
+    so is ``Annotated``, whose metadata ``schema_of`` reads."""
     aliases: list[object] = []
     while True:
-        if get_origin(annotation) is typing.Annotated:
+        if get_origin(annotation) in _QUALIFIERS:
             annotation = get_args(annotation)[0]
         elif isinstance(annotation, typing.NewType):
             annotation = annotation.__supertype__
@@ -216,9 +234,10 @@ def typed_dict_fields(
         raise TypeError(f"{typed_dict_name(typed_dict)} has no key {unknown[0]!r}")
     for name, schema in overrides.items():
         _require_fits(typed_dict, name, hints[name], schema)
+    # With ``Annotated``, whose metadata carries checks.
+    annotated = typed_dict_hints(typed_dict, include_extras=True)
     return {
-        name: overrides[name] if name in overrides else schema_of(hint)
-        for name, hint in hints.items()
+        name: overrides[name] if name in overrides else schema_of(annotated[name]) for name in hints
     }
 
 
