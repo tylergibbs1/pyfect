@@ -273,6 +273,9 @@ def make[RD = Never](
     with their ids and names. With ``schema_directory`` and migrations run,
     ``dump_schema`` writes ``<schema_directory>/_schema.sql``.
 
+    Each run is wrapped in a ``Migrator.run`` span with the migrations table
+    name in the ``effect.sql.migrator.table`` attribute.
+
     ``transform_writes`` transforms only the effects that create the
     migrations table and insert into it, for clients such as ClickHouse
     that run row-less statements differently from queries."""
@@ -430,7 +433,16 @@ def _run(  # noqa: PLR0917 (the runner's options, passed on once)
             lambda _: void,
         ).as_(done)
 
-    return _ensure_table(sql, table, transform_writes).and_then(completed).flat_map(dump)
+    return (
+        _ensure_table(sql, table, transform_writes)
+        .and_then(completed)
+        .flat_map(dump)
+        .with_span(
+            "Migrator.run",
+            attributes={"effect.sql.migrator.table": table},
+            capture_stack_trace=False,
+        )
+    )
 
 
 _RECORD_KEY = re.compile(r"([0-9]+)_(.+)")

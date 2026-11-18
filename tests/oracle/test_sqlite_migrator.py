@@ -11,6 +11,7 @@ from pyfect.sql.client import SqlClient
 from pyfect.sql.error import LockTimeoutError, SqlError, is_sql_error
 from pyfect.sql.migrator import MigrationError
 from pyfect.sql.sqlite import migrator as sqlite_migrator
+from pyfect.tracer import Ended, NativeSpan, SpanRequest, Tracer
 
 from ._sqlite import make_client
 
@@ -58,3 +59,26 @@ def test_fails_on_lock_errors(tmp_path: Path):
 
     assert isinstance(error, SqlError)
     assert isinstance(error.reason, LockTimeoutError)
+
+
+@testing.effect
+def test_wraps_a_run_with_no_pending_migrations_in_a_span(tmp_path: Path):
+    """Migrator.make / wraps a run with no pending migrations in a span (Effect main, #10688)"""
+    migrator_client = yield from make_client(tmp_path)
+    table = "traced_make_migrations"
+    spans: list[NativeSpan] = []
+
+    def span(request: SpanRequest) -> NativeSpan:
+        made = NativeSpan(request)
+        spans.append(made)
+        return made
+
+    yield from (
+        sqlite_migrator.run(loader=sqlite_migrator.from_record({}), table=table)
+        .pipe(fx.provide_service(SqlClient, migrator_client))
+        .with_tracer(Tracer.make(span))
+    )
+    run = next(s for s in spans if s.name == "Migrator.run")
+    assert run.attributes.get("effect.sql.migrator.table") == table
+    assert isinstance(run.status, Ended)
+    assert [s.name for s in spans if s.parent is None] == ["Migrator.run"]

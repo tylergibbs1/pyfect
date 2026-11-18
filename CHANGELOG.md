@@ -187,6 +187,10 @@
 - Observability: an OTLP exporter with an infinite export interval kept a fiber waiting
   forever for an interval that never ends. It now starts no export loop and exports only on
   a flush, a full batch or shutdown, as in Effect-TS/effect#10556 (after 4.1.4).
+- SQL: a migrator run had no span of its own, so with no pending migrations it left no
+  trace, and per-migration spans had no common parent. Each `Migrator` run is now wrapped in
+  a `Migrator.run` span carrying the table name in `effect.sql.migrator.table`, as in
+  Effect-TS/effect#10688 (after 4.1.4).
 
 - A schema whose aliases only reach each other (a JSON Schema `$ref` to itself) took
   seconds to fail, and up to a minute on Python 3.14; so did any deep recursion that ran
