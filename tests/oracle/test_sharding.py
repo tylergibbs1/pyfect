@@ -305,6 +305,33 @@ def _runners_layer(
 
 
 @testing.effect
+def test_bounds_a_deduplicated_stream_by_its_slowest_caller():
+    """bounds a deduplicated stream by its slowest caller (Effect main, #10572)"""
+
+    @fx.gen
+    def body():
+        yield from testing.adjust("1 millis")
+        state = yield from EntityState()
+        client = (yield from TestEntity.client())("1")
+        # Never read, with room for one value.
+        yield from client.stream_with_key(
+            KeyPayload(key="shared"), as_queue=True, stream_buffer_size=1
+        )
+        received: list[int] = []
+        yield from (
+            client.stream_with_key(KeyPayload(key="shared"))
+            .run_for_each(lambda value: fx.sync(lambda: received.append(value)))
+            .fork()
+        )
+        for _ in range(10):
+            yield from state.stream_messages.offer(None)
+            yield from testing.adjust("1 second")
+        assert received == [0]
+
+    yield from scoped(body).pipe(fx.provide(test_sharding))
+
+
+@testing.effect
 def test_durable_messages_are_retried_on_restart():
     """durable messages are retried on restart"""
 

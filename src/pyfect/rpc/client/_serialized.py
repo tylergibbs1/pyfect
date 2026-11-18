@@ -4,7 +4,7 @@ the requests for the ``ClientProtocol`` and decodes its responses."""
 from __future__ import annotations
 
 import itertools
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Never, cast, overload
 
@@ -36,7 +36,7 @@ from pyfect.rpc.message import (
     ResponseExit,
 )
 from pyfect.rpc.schema import get_stream_schemas
-from pyfect.scope import Scope, fork_scoped
+from pyfect.scope import CloseableScope, Scope, fork_scoped
 from pyfect.workers.transferable import Collector, make_collector_unsafe
 
 _VOID: Effect[None] = succeed(None)
@@ -91,6 +91,7 @@ class _Serialized:
         "_id",
         "_protocol",
         "core",
+        "scope",
     )
 
     def __init__(self, group: type[RpcGroup], protocol: ClientProtocolService) -> None:
@@ -102,6 +103,7 @@ class _Serialized:
         self._closing = Deferred[None, Never]()
         self._decode_defect = S.decode_sync(protocol.codec_for(S.Defect()))
         self.core: ClientCore | None = None
+        self.scope: CloseableScope | None = None
 
     def _core(self) -> ClientCore:
         core = self.core
@@ -250,9 +252,17 @@ class _Serialized:
             stop = self._interrupt_request(request_id).ignore().race_first(self._closing.wait())
             return written.flat_map(lambda _: stop)
 
-        written: Effect[None] = decoded.or_die().flat_map(
-            lambda values: core.write(ResponseChunk(0, request_id, tuple(values)))
-        )
+        def deliver(values: Sequence[object]) -> Effect[None]:
+            write = core.write(ResponseChunk(0, request_id, tuple(values)))
+            scope = self.scope
+            if not self._protocol.supports_ack or scope is None:
+                return write
+            # The server waits for each chunk's Ack, so a chunk waiting for buffer space must
+            # not block other responses on this connection. Starting immediately keeps it
+            # ahead of the Exit (Effect #10572).
+            return write.fork_in(scope, start_immediately=True).as_void()
+
+        written: Effect[None] = decoded.or_die().flat_map(deliver)
         # Uninterruptible but for the decode and write: an interrupt during
         # the cleanup lands after the decode failure is recovered.
         return uninterruptible_mask(
@@ -340,9 +350,10 @@ def _make(
         )
         client, core = yield from make_core(group, state.on_from_client, core_options)
         state.core = core
+        scope = yield from Scope()
+        state.scope = scope
         listen = protocol.run(state._id, state.on_response)  # pyright: ignore[reportPrivateUsage]
         yield from fork_scoped(listen.catch_cause(lambda _: _VOID).interruptible())
-        scope = yield from Scope()
         # Finalizers run in reverse order: this runs while the client still runs.
         yield from scope.add_finalizer(lambda _: state.close())
         return client
