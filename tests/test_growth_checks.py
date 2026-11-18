@@ -339,25 +339,45 @@ def test_measuring_collects_only_the_young_generations(monkeypatch: pytest.Monke
 
 
 _OTHER_THREAD_CHECK = """
-import threading, time
+import queue, threading, time
 import test_growth_checks as checks
 from _growth import assert_near_linear
 
 base = checks._base()
 
+# One worker for every run. Starting a thread per run cost about 0.2 ms of process time, all
+# of the run at the smallest size the 64x span judges (a quarter of the base size, 0.02 ms
+# of work), so the span measured about 580x against its 576x bound and the check missed the
+# quadratic work in 5 of 12 runs. Handing a run to a waiting thread costs about 0.04 ms.
+jobs, done = queue.SimpleQueue(), queue.SimpleQueue()
 
-def make(n):
-    # An eighth of a sample at the base size: a thread_time sample sees only the thread's
-    # start, so it runs the large size dozens of times to fill its 2 ms.
+
+def worker():
+    while (units := jobs.get()) is not None:
+        sum(range(units))
+        done.put(None)
+
+
+threading.Thread(target=worker, daemon=True).start()
+
+
+# What thread_time sees of a run: a handoff alone would make a sample repeat the large size
+# a hundred times to fill its 2 ms, so the calling thread also does 0.2 ms of fixed work.
+pad = checks._units_for(0.0002)
+
+
+def make(n, own=0):
+    units = n * n // base // 8  # an eighth of a sample at the base size
+
     def work():
-        thread = threading.Thread(target=lambda: sum(range(n * n // base // 8)))
-        thread.start()
-        thread.join()
+        sum(range(own))
+        jobs.put(units)
+        done.get()
 
     return work
 
 
-assert_near_linear(make, base, checks._no_doubling(base))
+assert_near_linear(lambda n: make(n, pad), base, checks._no_doubling(base))
 try:
     assert_near_linear(make, base, checks._no_doubling(base), clock=time.process_time)
 except AssertionError as error:
