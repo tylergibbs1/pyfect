@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from pyfect._extras import missing_extra
+from pyfect._futures import await_uncancelled
 from pyfect.http._httpx_options import import_httpx
 
 if TYPE_CHECKING:
@@ -111,7 +112,7 @@ async def _connect(connecting: Coroutine[Any, Any, httpcore.AsyncNetworkStream])
     cancelled caller returns at once; the connect finishes and its stream is closed."""
     task = asyncio.ensure_future(connecting)
     try:
-        return _Stream(await asyncio.shield(task))
+        return _Stream(await await_uncancelled(task))
     except asyncio.CancelledError:
         task.add_done_callback(_close_connected)
         raise

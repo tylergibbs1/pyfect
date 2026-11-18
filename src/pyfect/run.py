@@ -47,7 +47,7 @@ from typing import Any, Never, Protocol, cast, overload
 from pyfect._core import Effect, _Succeed
 from pyfect._effect_args import require_effect
 from pyfect._fiber import Fiber
-from pyfect._futures import settle
+from pyfect._futures import await_uncancelled, settle
 from pyfect._root import ambient_run, loop_running_here, new_root, start_root
 from pyfect.cause import Cause, _raised_tagged_error_hint
 from pyfect.context import Context, Tag
@@ -454,7 +454,7 @@ async def await_fiber[A, E](fiber: Fiber[A, E]) -> Exit[A, E]:
     cancelled: asyncio.CancelledError | None = None
     while True:
         try:
-            ex = await asyncio.shield(done)
+            ex = await await_uncancelled(done)
         except asyncio.CancelledError as error:
             # Every cancel, the first or a later one, waits for the fiber.
             if cancelled is None:
