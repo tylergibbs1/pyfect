@@ -280,8 +280,9 @@ class _Shape:
         return values
 
     def _types_fit(self, instance: object, options: ParseOptions) -> bool:
-        """Each field's value parses against its Type at once. Without checks
-        no filter runs, so ``validate`` may parse again to build the issue."""
+        """Each field's value parses against its Type (and its checks, unless
+        disabled) at once: what the constructor's parse of the field values
+        accepts, as it has no checks of its own."""
         for name, type_ in self._build().types:
             if type(type_.parse(getattr(instance, name), options)) is not Success:
                 return False
@@ -291,8 +292,13 @@ class _Shape:
         """Raise ``SchemaError`` unless ``instance``'s fields fit their
         schemas' Types and the class's checks pass (skipped with
         ``disable_checks``)."""
-        if options.get("disable_checks") and self._types_fit(instance, options):
-            return
+        if self._types_fit(instance, options):
+            match ast.check_instance(self, instance, options):
+                case Success():
+                    return
+                case failure:
+                    raise_schema_failure(failure.cause.map(SchemaError), CONSTRUCTOR)
+        # Parse again for the issue, reported against the whole constructor input.
         values: dict[object, object] = {} if self.tag is None else {"_tag": self.tag}
         for name in self.field_names:
             values[name] = getattr(instance, name)

@@ -6,6 +6,7 @@ Merging branches that each add to the unreleased section can leave two copies of
 import re
 import shutil
 import subprocess
+from collections import Counter
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -183,3 +184,43 @@ def test_branches_adding_fixed_entries_merge_without_conflict(tmp_path: Path):
     assert "- one\n" in merged and "- two\n" in merged
     assert "<<<<<<<" not in merged
     assert _repeated_subheadings(merged) == []
+
+
+def _released_sections(text: str) -> dict[str, list[str]]:
+    """Each released version's heading and its lines."""
+    sections: dict[str, list[str]] = {}
+    lines: list[str] | None = None
+    for line in text.splitlines():
+        if line.startswith("## "):
+            lines = sections.setdefault(line, []) if HEADING.match(line) else None
+        elif lines is not None:
+            lines.append(line)
+    return {h: body for h, body in sections.items() if not h.endswith("(unreleased)")}
+
+
+def _added_to_released(base: str, head: str) -> list[str]:
+    """Lines ``head`` adds inside a version ``base`` already released: an entry meant for
+    the next release that landed under a shipped one."""
+    head_sections = _released_sections(head)
+    added: list[str] = []
+    for heading, lines in _released_sections(base).items():
+        left = Counter(lines)
+        for line in head_sections.get(heading, []):
+            if left[line] > 0:
+                left[line] -= 1
+            else:
+                added.append(f"{heading}: {line}")
+    return added
+
+
+def test_no_branch_adds_to_a_released_section():
+    """Main's CHANGELOG is the released record (CI fetches ``origin/main`` for this)."""
+    base = _git(ROOT, "show", "origin/main:CHANGELOG.md")
+    assert _added_to_released(base, _text()) == [], "move the entry to ## Unreleased"
+
+
+def test_the_released_section_check_rejects_an_entry_under_a_shipped_version():
+    base = "## Unreleased\n\n### Fixed\n\n- a\n\n## 0.6.12 (2026-11-18)\n\n### Fixed\n\n- b\n"
+    late = base.replace("- b\n", "- b\n- c\n")
+    assert _added_to_released(base, late) == ["## 0.6.12 (2026-11-18): - c"]
+    assert _added_to_released(base, base.replace("- a\n", "- a\n- c\n")) == []

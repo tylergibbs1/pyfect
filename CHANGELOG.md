@@ -121,6 +121,12 @@
 
 ### Fixed
 
+- Schema classes: constructing one with checks on cost twice what it costs with
+  `disable_checks` (an `eventlog.Entry` took 3.5 us against 1.9 us). After parsing each
+  field, the constructor collected the values and parsed them again as a whole. Each field is
+  now parsed once, its checks included, then the class's own checks run, so checks on cost
+  about what checks off cost, as in Effect. A construction that fails reports the same issue
+  as before.
 - HTTP (httpx client): a response dropped while its client shut down is closed before the
   client's loop closes. Its close could start while the connection pool closed, after the
   wait for pending closes, and the loop thread then cancelled it or closed under it ("Task was
