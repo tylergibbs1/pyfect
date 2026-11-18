@@ -151,6 +151,10 @@ class ShardingState:
     """Shards whose entities are force interrupted and locks fully
     released before normal reacquisition."""
     shard_locks_healthy_latch: Latch = field(default_factory=lambda: Latch(True))
+    shard_locks_failing_since: int | None = None
+    """When the lock operations started failing (epoch milliseconds), until a
+    refresh of the held locks succeeds: a successful empty probe does not
+    show that the locks work again."""
     handoff_latch: Latch = field(default_factory=Latch)
     """Open once shutdown hands every shard off."""
     handed_off_latch: Latch = field(default_factory=Latch)
@@ -200,6 +204,14 @@ class ShardingState:
 
     def now_millis(self) -> int:
         return now_millis_unsafe(self.clock)
+
+    def shard_locks_expired(self) -> bool:
+        """The lock operations have failed for ``shard_lock_expiration``: the
+        runner unregisters until they work again, so its peers take its shards."""
+        since = self.shard_locks_failing_since
+        return since is not None and self.now_millis() - since >= to_millis(
+            self.config.shard_lock_expiration
+        )
 
     def residency_at_capacity(self) -> bool:
         return self.residency.at_capacity_unsafe()

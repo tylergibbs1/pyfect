@@ -175,15 +175,22 @@ def sync_loop(state: ShardingState) -> Effect[Never]:
     @gen
     def run():
         while True:
+            if self_runner is not None and state.shard_locks_expired():
+                # Its lock operations keep failing: leave, so the other runners
+                # take its shards, until a lock refresh works again.
+                if self_runner in state.all_runners:
+                    yield from state.registration_lock.with_permits(
+                        _with_timeout(state.runner_storage.unregister(self_runner.address))
+                    )
             # Make sure this runner is registered.
-            if unregistered():
+            elif unregistered():
                 yield from state.registration_lock.with_permits(gen(register_self))
 
             runners = yield from get_runners
             membership.observe(runners)
 
             # Make sure this runner is registered.
-            if unregistered():
+            if unregistered() and not state.shard_locks_expired():
                 continue
 
             # Recompute the shard assignments when the healthy runners changed.

@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Cluster: a runner whose shard lock operations kept failing force-released its shards but
+  stayed registered and healthy, because its liveness probe (an empty `refresh`) still
+  heartbeat. Its shards then ran nowhere until its lock storage recovered. Once its lock
+  operations have failed for `shard_lock_expiration`, the runner now unregisters itself so the
+  other runners take its shards over. A probe that works no longer counts as recovery; a lock
+  refresh that works again registers it again. This follows Effect's fix
+  (Effect-TS/effect#10689); Effect 4.1.4 has the gap.
+
 ## 0.6.12 (2026-11-18)
 
 ### Fixed

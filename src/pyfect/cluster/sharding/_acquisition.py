@@ -387,6 +387,8 @@ class ShardAcquisition:
         state = self._state
 
         def run() -> Effect[None]:
+            if state.shard_locks_failing_since is None:
+                state.shard_locks_failing_since = state.now_millis()
             if not state.shard_locks_healthy_latch.close_unsafe():
                 return _VOID
             affected = tuple(dict.fromkeys((*state.acquired_shards, *state.releasing_shards)))
@@ -433,9 +435,12 @@ class ShardAcquisition:
 
         def run() -> Effect[None, Any]:
             refreshed = [*state.acquired_shards, *state.releasing_shards]
-            return state.runner_storage.refresh(address, refreshed).map(
-                lambda acquired: state.release_lost_shards(refreshed, acquired)
-            )
+
+            def refreshed_locks(acquired: list[ShardId]) -> None:
+                state.shard_locks_failing_since = None
+                state.release_lost_shards(refreshed, acquired)
+
+            return state.runner_storage.refresh(address, refreshed).map(refreshed_locks)
 
         return (
             suspend(run)

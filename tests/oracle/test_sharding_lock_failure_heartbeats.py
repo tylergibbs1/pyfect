@@ -5,8 +5,10 @@ cluster storage of Effect-TS/effect#10676's tests).
 
 The lock interval I is at most a third of ``shard_lock_expiration`` E, so a
 healthy runner, heartbeating every I, survives a missed heartbeat. While its
-lock operations fail, Effect 4.1.4 heartbeats only on probe ticks, every 2I
-(``Sharding.ts`` lines 740-764), so one missed probe expires it."""
+lock operations fail it heartbeats only on probe ticks, every 2I, as Effect
+4.1.4 does (``Sharding.ts`` lines 740-764), so one missed probe expires it.
+After E of failures it unregisters itself on purpose (Effect-TS/effect#10689),
+which is not counted as a missed read here."""
 
 from __future__ import annotations
 
@@ -63,6 +65,8 @@ class _Storage:
     probes: list[Probe] = field(default_factory=list[Probe])
     expired_reads: int = 0
     """Reads of the runners that missed the registered runner."""
+    unregistered: int = 0
+    """Times the runner unregistered itself."""
 
     def now(self) -> float:
         return self.clock.current_time_millis_unsafe()
@@ -119,7 +123,11 @@ class _Storage:
             return fx.suspend(run)
 
         def unregister(address: RunnerAddress) -> fx.Effect[None, PersistenceError]:
-            return fx.sync(lambda: self.heartbeats.pop(address, None)).as_void()
+            def run() -> None:
+                self.unregistered += 1
+                self.heartbeats.pop(address, None)
+
+            return fx.sync(run)
 
         def release(_address: RunnerAddress, _shard: ShardId) -> fx.Effect[None, PersistenceError]:
             return fx.suspend(lambda: locks_failed if self.fail_locks else fx.void)
@@ -139,9 +147,10 @@ class _Storage:
         )
 
 
-def _expired_reads_after_lock_failure(probes: list[Probe]) -> fx.Effect[int]:
-    """Starts a runner, fails its lock operations and plays ``probes``, and
-    counts the reads of the runners that missed it."""
+def _expired_reads_after_lock_failure(probes: list[Probe]) -> fx.Effect[tuple[int, int]]:
+    """Starts a runner, fails its lock operations for well over E and plays
+    ``probes``, and counts the reads of the runners that missed it while it
+    was registered, and its unregistrations."""
     config = replace(
         sharding_config.DEFAULTS,
         runner_address=_address,
@@ -179,20 +188,22 @@ def _expired_reads_after_lock_failure(probes: list[Probe]) -> fx.Effect[int]:
         storage.probes = list(probes)
         for _ in range(400):
             yield from testing.adjust("10 millis")
-        expired = storage.expired_reads
+        expired, unregistered = storage.expired_reads, storage.unregistered
 
         closing = yield from scope.close(Exit.succeed(None)).fork()
         while closing.poll_unsafe() is None:
             yield from testing.adjust("100 millis")
-        return expired
+        return expired, unregistered
 
     return run
 
 
 @testing.effect
 def test_a_runner_whose_lock_operations_fail_survives_a_late_probe():
-    expired = yield from _expired_reads_after_lock_failure([LATE])
+    expired, unregistered = yield from _expired_reads_after_lock_failure([LATE])
     assert expired == 0, f"{expired} reads missed the runner"
+    # Its probes kept working, yet it left once the lock operations had failed for E.
+    assert unregistered == 1, f"unregistered {unregistered} times"
 
 
 @pytest.mark.xfail(
@@ -205,5 +216,5 @@ def test_a_runner_whose_lock_operations_fail_survives_a_late_probe():
 @testing.effect
 def test_a_runner_whose_lock_operations_fail_survives_a_probe_one_interval_late():
     # The first probe misses its deadline of one interval; the next is on time
-    expired = yield from _expired_reads_after_lock_failure(["hang"])
+    expired, _ = yield from _expired_reads_after_lock_failure(["hang"])
     assert expired == 0, f"{expired} reads missed the runner"
