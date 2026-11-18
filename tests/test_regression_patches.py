@@ -36,9 +36,7 @@ def test_the_patch_applies_to_todays_source(patch: Path) -> None:
 
 def test_every_patch_is_used_by_a_guard() -> None:
     named = {
-        name
-        for path in _source.TESTS.rglob("*.py")
-        for name in _NAMED.findall(path.read_text(encoding="utf-8"))
+        name for path in _source.files(_source.TESTS) for name in _NAMED.findall(_source.text(path))
     }
     unused = sorted(path.stem for path in _PATCHES if path.stem not in named)
     assert not unused, f"no test guards these patches: {unused}"
