@@ -4,9 +4,10 @@ event on ``process.stdout``.
 ``SIGWINCH`` (POSIX, installed from the main thread) reports them; the
 handler only puts a token in a ``SimpleQueue``, which is safe to call from a
 signal handler, and a daemon thread tells the subscribers, so no fiber code
-runs inside the handler. Where the signal cannot be installed (Windows, or
-a first subscriber off the main thread) the thread polls the size, as
-libuv does on Windows."""
+runs inside the handler. The thread runs only while there are subscribers,
+as Effect removes its ``resize`` listener when the ``size`` scope closes.
+Where the signal cannot be installed (Windows, or a first subscriber off the
+main thread) the thread polls the size, as libuv does on Windows."""
 
 from __future__ import annotations
 
@@ -53,6 +54,7 @@ class _Resizes:
             with self._lock:
                 if self._listeners.pop(key, None) is not None and not self._listeners:
                     self._uninstall()
+                    self._pending.put(None)  # wakes the thread to end
 
         return unsubscribe
 
@@ -88,6 +90,9 @@ class _Resizes:
                 last = current
             with self._lock:
                 listeners = list(self._listeners.values())
+                if not listeners:
+                    self._thread = None
+                    return
             for listener in listeners:
                 listener()
 
