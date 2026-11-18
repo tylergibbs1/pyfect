@@ -46,16 +46,22 @@ def _peak(work: Callable[[], object], size: int) -> Peak:
     return peak(work, size)
 
 
-def test_a_last_line_of_bytes_costs_only_its_decoded_text() -> None:
+def _decoding(data: bytes) -> int:
+    """What decoding ``data`` alone peaks at: CPython 3.13's UTF-8 decoder holds about three
+    times what 3.14's does."""
+    return _peak(data.decode, len(data)).peak
+
+
+def test_a_last_line_of_bytes_costs_only_its_decoding() -> None:
     data = _TEXT.encode()
     found = _peak(lambda: _decode((data,)), len(data))
-    assert found.peak <= 1.5 * _DECODED + SLACK, found
+    assert found.peak <= _decoding(data) + 0.25 * len(data) + SLACK, found
 
 
-def test_a_terminated_line_of_bytes_costs_only_its_decoded_text() -> None:
+def test_a_terminated_line_of_bytes_costs_only_its_decoding() -> None:
     data = _TEXT.encode() + b"\n"
     found = _peak(lambda: _decode((data,)), len(data))
-    assert found.peak <= 1.5 * _DECODED + SLACK, found
+    assert found.peak <= _decoding(data) + 0.25 * len(data) + SLACK, found
 
 
 def test_a_last_line_of_text_is_not_copied() -> None:

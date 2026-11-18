@@ -245,32 +245,34 @@ class _ByteLines:
         self.size = 0
         self.after_cr = False
 
-    def take_line(self, chunk: bytes, start: int, end: int) -> bytes | memoryview:
-        """The line ending at ``end``: read where it lies when it is all in ``chunk``, joined
-        once when it began in earlier chunks."""
+    def take_line(self, chunk: bytes, start: int, end: int) -> tuple[bytes, int, int]:
+        """The line ending at ``end``, as bytes and where it lies in them: in ``chunk`` when
+        it is all there, joined once when it began in earlier chunks."""
         if not self.pending:
-            return memoryview(chunk)[start:end]
+            return chunk, start, end
         if start < end:
             self.pending.append(chunk[start:end])
         line = b"".join(self.pending)  # one piece is returned as it is, not copied
         self.pending = []
         self.size = 0
-        return line
+        return line, 0, len(line)
 
     def decode_line(
-        self, data: bytes | memoryview, out: list[Json], unterminated: bool
+        self, line: tuple[bytes, int, int], out: list[Json], unterminated: bool
     ) -> NdjsonError | None:
+        data, start, end = line
         first = self.first
-        if first and data[:3] == _BOM:
-            data = memoryview(data)[3:]  # as ``utf-8-sig`` reads it, without its copies
+        if first and data.startswith(_BOM, start, end):
+            start += len(_BOM)  # as ``utf-8-sig`` reads it, without its copies
         try:
-            line = str(data, "utf-8")
+            with memoryview(data) as view, view[start:end] as part:
+                text = str(part, "utf-8")
         except UnicodeDecodeError as cause:
             return NdjsonError("Unpack", cause, reason="InvalidUtf8", unterminated=unterminated)
         self.first = False
-        if first and unterminated and not line:
+        if first and unterminated and not text:
             return None  # a byte-order mark alone is not a record
-        return _parse_line(line, out, self.ignore_empty_lines, unterminated)
+        return _parse_line(text, out, self.ignore_empty_lines, unterminated)
 
     def too_large(self) -> NdjsonError:
         cause = ValueError(f"NDJSON line exceeds max_line_bytes of {self.max_line_bytes}")
