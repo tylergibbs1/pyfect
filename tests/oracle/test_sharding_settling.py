@@ -76,6 +76,7 @@ def _membership_storage(membership: Membership) -> RunnerStorageService:
         acquire=grant,
         refresh=grant,
         release=_void,
+        release_many=_void,
         release_all=_void,
     )
 
@@ -330,6 +331,9 @@ def _shared_cluster_storage(cluster: _SharedCluster, port: int) -> RunnerStorage
         acquire=acquire,
         refresh=refresh,
         release=release,
+        release_many=lambda address, shards: fx.for_each(
+            shards, lambda shard: release(address, shard), discard=True
+        ),
         release_all=release_all,
     )
 

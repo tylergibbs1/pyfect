@@ -395,6 +395,9 @@ class _RunnerStorageController:
         def release(address: RunnerAddress, shard: ShardId) -> fx.Effect[None, Any]:
             return unless_killed(lambda: storage.release(address, shard))
 
+        def release_many(address: RunnerAddress, shards: Any) -> fx.Effect[None, Any]:
+            return unless_killed(lambda: storage.release_many(address, shards))
+
         def release_all(address: RunnerAddress) -> fx.Effect[None, Any]:
             return unless_killed(lambda: storage.release_all(address))
 
@@ -413,6 +416,7 @@ class _RunnerStorageController:
             acquire=acquire,
             refresh=refresh,
             release=release,
+            release_many=release_many,
             release_all=release_all,
             unregister=unregister,
         )
@@ -463,6 +467,9 @@ class _RunnerStorageController:
         def release(address: RunnerAddress, shard: ShardId) -> fx.Effect[None, Any]:
             return guarded(True, storage.release(address, shard))
 
+        def release_many(address: RunnerAddress, shards: Any) -> fx.Effect[None, Any]:
+            return guarded(True, storage.release_many(address, shards))
+
         def release_all(address: RunnerAddress) -> fx.Effect[None, Any]:
             return guarded(True, storage.release_all(address))
 
@@ -475,6 +482,7 @@ class _RunnerStorageController:
             acquire=acquire,
             refresh=refresh,
             release=release,
+            release_many=release_many,
             release_all=release_all,
         )
 

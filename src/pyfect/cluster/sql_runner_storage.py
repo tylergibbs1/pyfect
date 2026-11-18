@@ -545,29 +545,54 @@ class _Storage:
         )
         return self.exec_values(statement).map(first_column)
 
-    def release_shard(self, address: str, shard_id: str) -> Effect[object, SqlError]:
+    def release_shards(self, address: str, shard_ids: Sequence[str]) -> Effect[object, SqlError]:
+        """Release ``shard_ids`` in one statement (and one check, for advisory locks)."""
         sql = self.sql
+        shards = self.string_list(shard_ids)
+        if sql.dialect == "pg" and self.disable_advisory:
+            # Lock the rows in one order, as the bulk release does, so two
+            # multi-row writes cannot deadlock.
+            return self.exec(
+                sql(
+                    "WITH locked AS (SELECT shard_id FROM {} WHERE address = {} AND shard_id IN {} "
+                    "{} FOR UPDATE) "
+                    "DELETE FROM {} WHERE address = {} "
+                    "AND shard_id IN (SELECT shard_id FROM locked)",
+                    self.locks,
+                    address,
+                    shards,
+                    self.pg_lock_order,
+                    self.locks,
+                    address,
+                )
+            )
         delete = sql(
-            "DELETE FROM {} WHERE address = {} AND shard_id = {}", self.locks, address, shard_id
+            "DELETE FROM {} WHERE address = {} AND shard_id IN {}", self.locks, address, shards
         )
-        if sql.dialect in ("pg", "mysql") and self.disable_advisory:
+        if sql.dialect == "mysql" and self.disable_advisory:
             return self.exec(delete)
         if sql.dialect == "pg":
-            number = self.lock_numbers[shard_id]
+            numbers = sorted(self.lock_numbers[s] for s in shard_ids)
 
             def pg(conn: Connection, _pid: int) -> Effect[None, SqlError]:
                 def body() -> Generator[Effect[Any, Any, Any], Any]:
+                    held = numbers
+                    # A lock taken more than once needs as many unlocks.
                     for _ in range(5):
-                        yield from conn.execute_raw(
-                            f"SELECT pg_advisory_unlock({self.lock_namespace}, {number})", []
+                        unlocks = ", ".join(
+                            f"pg_advisory_unlock({self.lock_namespace}, {number})"
+                            for number in held
                         )
+                        yield from conn.execute_raw(f"SELECT {unlocks}", [])
                         taken = yield from conn.execute_values(
-                            "SELECT 1 FROM pg_locks WHERE locktype = 'advisory' AND granted = true "
-                            f"AND classid = {self.lock_namespace_oid} AND objid = {number} "
-                            "AND objsubid = 2 AND pid = pg_backend_pid()",
+                            "SELECT objid FROM pg_locks WHERE locktype = 'advisory' "
+                            f"AND granted = true AND classid = {self.lock_namespace_oid} "
+                            f"AND objid IN ({', '.join(map(str, held))}) "
+                            "AND objsubid = 2 AND pid = pg_backend_pid() ORDER BY objid",
                             [],
                         )
-                        if not taken:
+                        held = [int(str(row[0])) for row in taken]
+                        if not held:
                             return
                     yield from conn.execute_raw("SELECT pg_advisory_unlock_all()", [])
 
@@ -575,15 +600,21 @@ class _Storage:
 
             return self.use_lock_conn(pg)
         if sql.dialect == "mysql":
-            name = self.lock_names[shard_id]
+            names = [self.lock_names[s] for s in shard_ids]
 
             def mysql(conn: Connection, pid: int) -> Effect[None, SqlError]:
                 def body() -> Generator[Effect[Any, Any, Any], Any]:
-                    while True:
-                        yield from conn.execute_raw(f"SELECT RELEASE_LOCK('{name}')", [])
-                        taken = yield from conn.execute_values(f"SELECT IS_USED_LOCK('{name}')", [])
-                        if not taken or taken[0][0] is None or int(str(taken[0][0])) != pid:
-                            return
+                    held = names
+                    while held:
+                        releases = ", ".join(f"RELEASE_LOCK('{name}')" for name in held)
+                        yield from conn.execute_raw(f"SELECT {releases}", [])
+                        used = ", ".join(f"IS_USED_LOCK('{name}')" for name in held)
+                        taken = (yield from conn.execute_values(f"SELECT {used}", []))[0]
+                        held = [
+                            name
+                            for name, taken_by in zip(held, taken, strict=True)
+                            if taken_by is not None and int(str(taken_by)) == pid
+                        ]
 
                 return gen(body)
 
@@ -747,7 +778,12 @@ class _Storage:
         )
 
     def release(self, address: str, shard_id: str, /) -> Effect[None, PersistenceError]:
-        release = self.with_lock_operation_deadline(self.release_shard(address, shard_id))
+        return self.release_many(address, [shard_id])
+
+    def release_many(
+        self, address: str, shard_ids: Sequence[str], /
+    ) -> Effect[None, PersistenceError]:
+        release = self.with_lock_operation_deadline(self.release_shards(address, shard_ids))
         if self.release_permit is not None:
             release = self.release_permit.with_permits(release)
         return PersistenceError.refail(release.as_void())

@@ -35,6 +35,7 @@ class RunnerStorageService:
         "_register",
         "_release",
         "_release_all",
+        "_release_many",
         "_set_runner_health",
         "_unregister",
     )
@@ -57,6 +58,7 @@ class RunnerStorageService:
             [RunnerAddress, Iterable[ShardId]], Effect[list[ShardId], PersistenceError]
         ],
         release: Callable[[RunnerAddress, ShardId], Effect[None, PersistenceError]],
+        release_many: Callable[[RunnerAddress, Sequence[ShardId]], Effect[None, PersistenceError]],
         release_all: Callable[[RunnerAddress], Effect[None, PersistenceError]],
     ) -> None:
         self._register = register
@@ -66,6 +68,7 @@ class RunnerStorageService:
         self._acquire = acquire
         self._refresh = refresh
         self._release = release
+        self._release_many = release_many
         self._release_all = release_all
 
     def register(self, runner: Runner, healthy: bool) -> Effect[MachineId, PersistenceError]:
@@ -115,6 +118,14 @@ class RunnerStorageService:
         cannot be written."""
         return self._release(address, shard_id)
 
+    def release_many(
+        self, address: RunnerAddress, shard_ids: Sequence[ShardId]
+    ) -> Effect[None, PersistenceError]:
+        """Releases the locks the runner at ``address`` holds on
+        ``shard_ids``, in one write where the storage can. Fails with
+        ``PersistenceError`` when the storage cannot be written."""
+        return self._release_many(address, shard_ids)
+
     def release_all(self, address: RunnerAddress) -> Effect[None, PersistenceError]:
         """Releases every shard lock the runner at ``address`` holds. Fails
         with ``PersistenceError`` when the storage cannot be written."""
@@ -152,6 +163,10 @@ class EncodedRunnerStorage(Protocol):
     ) -> Effect[list[str], PersistenceError]: ...
 
     def release(self, address: str, shard_id: str, /) -> Effect[None, PersistenceError]: ...
+
+    def release_many(
+        self, address: str, shard_ids: Sequence[str], /
+    ) -> Effect[None, PersistenceError]: ...
 
     def release_all(self, address: str, /) -> Effect[None, PersistenceError]: ...
 
@@ -210,6 +225,9 @@ def make_encoded(encoded: EncodedRunnerStorage) -> RunnerStorageService:
         acquire=acquire,
         refresh=refresh,
         release=lambda address, shard: encoded.release(encode_runner_address(address), str(shard)),
+        release_many=lambda address, shards: encoded.release_many(
+            encode_runner_address(address), [str(s) for s in shards]
+        ),
         release_all=lambda address: encoded.release_all(encode_runner_address(address)),
     )
 
@@ -271,6 +289,7 @@ def _make_memory() -> RunnerStorageService:
         acquire=acquire,
         refresh=refresh,
         release=release,
+        release_many=lambda _address, _shard_ids: succeed(None),
         release_all=release_all,
     )
 

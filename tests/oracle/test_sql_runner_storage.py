@@ -29,6 +29,8 @@ from __future__ import annotations
 
 import itertools
 import os
+import re
+import sqlite3
 from collections.abc import Callable, Generator
 from dataclasses import replace
 from pathlib import Path
@@ -38,7 +40,17 @@ import pytest
 
 import pyfect as fx
 from pyfect import reactivity, testing
-from pyfect.cluster import runner, runner_address, shard_id, sharding_config
+from pyfect.cluster import (
+    message_storage,
+    runner,
+    runner_address,
+    runner_health,
+    runners,
+    shard_id,
+    sharding,
+    sharding_config,
+    snowflake,
+)
 from pyfect.cluster import sql_runner_storage as SqlRunnerStorage
 from pyfect.cluster.runner_storage import RunnerStorageService
 from pyfect.cluster.sharding_config import DEFAULTS
@@ -343,5 +355,118 @@ def test_serializes_shard_releases_without_losing_retained_locks(pg_server: Any)
         assert counts["most_active"] == 1
         assert counts["reserved"] == 1
         assert (yield from storage.refresh(runner_address1, shards)) == shards[:1]
+
+    yield from fx.gen(body)
+
+
+_RELEASES = re.compile(r"pg_advisory_unlock|RELEASE_(ALL_)?LOCKS?\(|DELETE FROM \W?\w+_locks\b")
+
+
+class _Recorded:
+    """A connection that records the SQL of every statement it runs."""
+
+    def __init__(self, inner: Connection, statements: list[str]) -> None:
+        self._inner = inner
+        self._statements = statements
+
+    def execute(self, sql: str, params: Any, transform: Any, /) -> Any:
+        self._statements.append(sql)
+        return self._inner.execute(sql, params, transform)
+
+    def execute_raw(self, sql: str, params: Any, /) -> Any:
+        self._statements.append(sql)
+        return self._inner.execute_raw(sql, params)
+
+    def execute_stream(self, sql: str, params: Any, transform: Any, /) -> Any:
+        self._statements.append(sql)
+        return self._inner.execute_stream(sql, params, transform)
+
+    def execute_values(self, sql: str, params: Any, /) -> Any:
+        self._statements.append(sql)
+        return self._inner.execute_values(sql, params)
+
+    def execute_values_unprepared(self, sql: str, params: Any, /) -> Any:
+        self._statements.append(sql)
+        return self._inner.execute_values_unprepared(sql, params)
+
+    def execute_unprepared(self, sql: str, params: Any, transform: Any, /) -> Any:
+        self._statements.append(sql)
+        return self._inner.execute_unprepared(sql, params, transform)
+
+
+def _record_sqlite(monkeypatch: pytest.MonkeyPatch, statements: list[str]) -> None:
+    """Record every statement SQLite connections opened from now on run."""
+
+    class Recording(sqlite3.Connection):
+        def execute(self, sql: str, *args: Any) -> sqlite3.Cursor:
+            statements.append(sql)
+            return super().execute(sql, *args)
+
+    connect = sqlite3.connect
+
+    def recording_connect(database: Any, *args: Any, **kwargs: Any) -> sqlite3.Connection:
+        return connect(database, *args, factory=Recording, **kwargs)
+
+    monkeypatch.setattr(sqlite3, "connect", recording_connect)
+
+
+_HANDOFF_SHARDS = 250
+
+
+@pytest.mark.parametrize("advisory", [True, False], ids=["advisory", "no advisory"])
+@testing.live
+def test_hands_off_a_runners_shards_in_a_few_statements(
+    backend: tuple[str, ClientMaker], advisory: bool, monkeypatch: pytest.MonkeyPatch
+):
+    """A stopping runner released each shard in a statement of its own, which on a slow or
+    remote database made shutdown take 50-100 ms per shard (the docs' cluster/runners.py
+    snippet ran past its sleep limit so). The handoff releases them in chunks."""
+    statements: list[str] = []
+    if backend[0] == "sqlite":
+        _record_sqlite(monkeypatch, statements)
+
+    def body() -> Generator[fx.Effect[Any, Any, Any], Any]:
+        client = yield from backend[1]()
+        if backend[0] != "sqlite":
+            fields = client.fields()
+            fields["reserve"] = client.reserve.map(lambda conn: _Recorded(conn, statements))
+            client = SqlClientService(**fields)
+        prefix = _prefix("handoff")
+        config = replace(
+            DEFAULTS,
+            runner_address=runner_address1,
+            shards_per_group=_HANDOFF_SHARDS,
+            shard_lock_disable_advisory=not advisory,
+            entity_termination_timeout=fx.duration.zero,
+            entity_message_poll_interval=fx.duration.millis(50),
+            refresh_assignments_interval=fx.duration.millis(50),
+        )
+        layer = (
+            sharding.layer.pipe(fx.layer.provide(SqlRunnerStorage.layer_with(prefix=prefix)))
+            .pipe(fx.layer.provide(runner_health.layer_noop))
+            .pipe(fx.layer.provide(runners.layer_noop))
+            .pipe(fx.layer.provide(message_storage.layer_memory))
+            .pipe(fx.layer.provide(snowflake.layer_generator))
+            .pipe(fx.layer.provide(sharding_config.layer(config)))
+            .pipe(fx.layer.provide(fx.layer.succeed(SqlClient, client)))
+        )
+        shards = [shard_id.make("default", n) for n in range(1, _HANDOFF_SHARDS + 1)]
+        scope = fx.CloseableScope()
+        built = yield from layer.build_with_scope(scope)
+        service = built.get_unsafe(sharding.Sharding)
+        for _ in range(200):
+            if all(service.has_shard_id(s) for s in shards):
+                break
+            yield from fx.sleep("50 millis")
+        assert all(service.has_shard_id(s) for s in shards)
+
+        del statements[:]
+        yield from scope.close(Success(None))
+        releases = [s for s in statements if _RELEASES.search(s)]
+        assert len(releases) <= 5, releases[:10]
+
+        # Every lock is free: another runner takes them all.
+        other = yield from _storage(client, prefix, shard_lock_disable_advisory=not advisory)
+        assert len((yield from other.acquire(runner_address2, shards))) == _HANDOFF_SHARDS
 
     yield from fx.gen(body)

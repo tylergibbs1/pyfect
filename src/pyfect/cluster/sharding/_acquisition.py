@@ -30,6 +30,9 @@ from ._state import ShardingState
 
 _VOID: Effect[None] = succeed(None)
 
+HANDOFF_RELEASE_CHUNK = 100
+"""Shards a handing-off runner releases in one storage write."""
+
 
 class ShardAcquisition:
     """The acquisition loop's state on a runner with an address."""
@@ -187,6 +190,33 @@ class ShardAcquisition:
         )
         return self._release_map.run(shard_id, tracked, only_if_missing=True).as_void()
 
+    def _release_chunk(self, shard_ids: Sequence[ShardId]) -> Effect[None]:
+        """``release_shard`` for several shards in one storage write, tracked
+        under each shard's key."""
+        state = self._state
+        release = self._run_release(
+            shard_ids, False, state.runner_storage.release_many(self._self_address, shard_ids)
+        )
+
+        @gen
+        def record(timed: tuple[Duration, None]):
+            for _ in shard_ids:
+                yield from cluster_metrics.shard_release_duration.update(timed[0])
+
+        tracked = (
+            self._retry_release(release, "releaseShards", shardIds=list(shard_ids))
+            .timed()
+            .flat_map(record)
+        )
+
+        @gen
+        def run():
+            fiber = yield from self._release_map.run(shard_ids[0], tracked)
+            for shard_id in shard_ids[1:]:
+                yield from self._release_map.set(shard_id, fiber)
+
+        return run
+
     def _warn_forced_release_pending(self) -> Effect[None]:
         state = self._state
 
@@ -263,12 +293,19 @@ class ShardAcquisition:
         @gen
         def run():
             yield from self.release_forced_shards()
-            for shard_id in list(state.releasing_shards):
-                if shard_id in state.force_releasing_shards:
-                    continue
-                if self._release_map.has_unsafe(shard_id):
-                    continue
-                yield from self.release_shard(shard_id)
+            pending = [
+                shard_id
+                for shard_id in state.releasing_shards
+                if shard_id not in state.force_releasing_shards
+                and not self._release_map.has_unsafe(shard_id)
+            ]
+            if not state.handoff_latch.is_open():
+                for shard_id in pending:
+                    yield from self.release_shard(shard_id)
+                return
+            # Handing off, every shard goes: release them in a few writes, not one each.
+            for start in range(0, len(pending), HANDOFF_RELEASE_CHUNK):
+                yield from self._release_chunk(pending[start : start + HANDOFF_RELEASE_CHUNK])
 
         return run
 
