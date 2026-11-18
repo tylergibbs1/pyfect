@@ -1,0 +1,11 @@
+--- a/src/pyfect/channel/_text.py
++++ b/src/pyfect/channel/_text.py
+@@ -104,7 +104,7 @@ class _LineSplitter:
+                 self.mid_crlf = False
+             start = self._split_chunk(text, start, lines)
+             if start < len(text):
+-                self._pending.append(text[start:])
++                self._pending[:] = ["".join(self._pending) + text[start:]]
+                 self.pending_length += len(text) - start
+         return tuple(lines)
+ 

@@ -6,6 +6,7 @@ from typing import Any
 
 import pytest
 from _growth import cpu_pair
+from _guards import guards
 
 from pyfect import exit as Exit
 from pyfect import json_schema as JS
@@ -73,6 +74,7 @@ def test_the_adapters_refuse_a_self_alias_as_any_defect() -> None:
         S.decode_unknown_result(schema)(["x"])
 
 
+@guards("f3729050", "overflow-keeps-every-frame")
 def test_the_adapters_refuse_a_self_alias_about_as_fast_as_the_walk_overflows() -> None:
     """The walk overflows across every fresh stack (``pyfect._stack``), about 180 thousand
     frames; the sync adapter's refusal rendered them all into its note, a minute on Python

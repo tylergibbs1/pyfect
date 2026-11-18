@@ -1,0 +1,11 @@
+--- a/src/pyfect/encoding/sse.py
++++ b/src/pyfect/encoding/sse.py
+@@ -186,7 +186,7 @@ class Parser:
+                     continue
+             found = _LINE_BREAK.search(chunk, position)
+             if found is None:
+-                self._pending.append(chunk[position:])
++                self._pending[:] = ["".join(self._pending) + chunk[position:]]
+                 self._pending_size += length - position
+                 break
+             end = found.start()

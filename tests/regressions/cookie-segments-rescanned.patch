@@ -1,0 +1,13 @@
+--- a/src/pyfect/http/cookies.py
++++ b/src/pyfect/http/cookies.py
+@@ -418,9 +418,7 @@
+         if eq == -1:
+             break
+         if eq > end:
+-            # Skip every segment without ``=`` before ``eq`` at once (as
+-            # jshttp/cookie does): one at a time rescans to ``eq`` for each.
+-            pos = header.rfind(";", 0, eq) + 1
++            pos = end + 1
+             continue
+         key = trim(header[pos:eq])
+         if key not in result:

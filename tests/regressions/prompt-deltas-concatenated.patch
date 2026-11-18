@@ -1,0 +1,11 @@
+--- a/src/pyfect/ai/prompt.py
++++ b/src/pyfect/ai/prompt.py
+@@ -574,7 +574,7 @@ class _Builder:
+ 
+     def delta(self, kind: str, id: str, delta: str, metadata: Mapping[str, JsonValue]) -> None:
+         if (active := self.active.get((kind, id))) is not None:
+-            active.pieces.append(delta)
++            active.pieces[:] = ["".join(active.pieces) + delta]
+             if metadata:
+                 active.options = _merge_options(active.options, metadata)
+ 

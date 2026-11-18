@@ -1,0 +1,79 @@
+--- a/src/pyfect/_whatwg_url/_idna.py
++++ b/src/pyfect/_whatwg_url/_idna.py
+@@ -97,52 +97,37 @@ class _Counts:
+         return total
+ 
+ 
+-def punycode_encode(text: str) -> str | None:
+-    """RFC 3492 encoding (without the ``xn--`` prefix); ``None`` on overflow, as Node's
+-    encoder refuses it. The RFC walks the whole label once per distinct code point, which
+-    is quadratic in a label a peer chose; here the code points below the one being encoded
+-    are counted with ``_Counts``, in ``O(n log n)``."""
++def punycode_encode(text: str) -> str:
++    """RFC 3492 encoding (without the ``xn--`` prefix)."""
++    points = [ord(ch) for ch in text]
+     output = [ch for ch in text if ord(ch) < 0x80]
+     basic = handled = len(output)
+     if basic:
+         output.append("-")
+-    smaller = _Counts(len(text))
+-    positions: dict[int, list[int]] = {}
+-    for index, ch in enumerate(text):
+-        if ord(ch) < 0x80:
+-            smaller.mark(index)
+-        else:
+-            positions.setdefault(ord(ch), []).append(index)
+     n, delta, bias = 0x80, 0, 72
+-    for m in sorted(positions):
+-        if m - n > (_MAX_INT - delta) // (handled + 1):
+-            return None
++    while handled < len(points):
++        m = min(p for p in points if p >= n)
+         delta += (m - n) * (handled + 1)
+-        previous = 0
+-        for index in positions[m]:
+-            delta += smaller.before(index) - smaller.before(previous)
+-            if delta > _MAX_INT:
+-                return None
+-            q, k = delta, _BASE
+-            while True:
+-                t = _threshold(k, bias)
+-                if q < t:
+-                    break
+-                output.append(_DIGITS[t + (q - t) % (_BASE - t)])
+-                q = (q - t) // (_BASE - t)
+-                k += _BASE
+-            output.append(_DIGITS[q])
+-            bias = _adapt(delta, handled + 1, handled == basic)
+-            delta = 0
+-            handled += 1
+-            previous = index + 1
+-        delta += smaller.before(len(text)) - smaller.before(previous)
+-        if delta > _MAX_INT:
+-            return None
+-        for index in positions[m]:
+-            smaller.mark(index)
++        n = m
++        for p in points:
++            if p < n:
++                delta += 1
++            elif p == n:
++                q, k = delta, _BASE
++                while True:
++                    t = _threshold(k, bias)
++                    if q < t:
++                        break
++                    digit = t + (q - t) % (_BASE - t)
++                    output.append("abcdefghijklmnopqrstuvwxyz0123456789"[digit])
++                    q = (q - t) // (_BASE - t)
++                    k += _BASE
++                output.append("abcdefghijklmnopqrstuvwxyz0123456789"[q])
++                bias = _adapt(delta, handled + 1, handled == basic)
++                delta = 0
++                handled += 1
+         delta += 1
+-        n = m + 1
++        n += 1
+     return "".join(output)
+ 
+ 

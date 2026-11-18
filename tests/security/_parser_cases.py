@@ -25,6 +25,7 @@ from itertools import cycle, islice
 from typing import Any, TypedDict, cast
 
 from _growth import MAX_SIZE, Make, Work
+from _guards import Guard
 
 import pyfect as fx
 from pyfect import (
@@ -105,6 +106,7 @@ class Case:
     max_size: int = MAX_SIZE
     fixed_elsewhere: str | None = None
     """Why the case still fails here: a lead fixed on another branch, flipped at merge."""
+    guards: Guard | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -115,6 +117,7 @@ class Amplified:
     plain: Work
     """The same parser on plain input of the same length."""
     bound: float = 2
+    guards: Guard | None = None
 
 
 CASES: list[Case] = []
@@ -128,9 +131,10 @@ def case(
     size: int = 1000,
     max_size: int = MAX_SIZE,
     fixed_elsewhere: str | None = None,
+    guards: Guard | None = None,
 ) -> Callable[[Make], Make]:
     def register(make: Make) -> Make:
-        CASES.append(Case(id, target, make, size, max_size, fixed_elsewhere))
+        CASES.append(Case(id, target, make, size, max_size, fixed_elsewhere, guards))
         return make
 
     return register
@@ -395,6 +399,7 @@ for _kind, _make_input in ADVERSARIES.items():
 @case(
     cookies.parse_header,
     "cookies.parse_header: many empty pairs (#49)",
+    guards=Guard("0be98c4b", "cookie-segments-rescanned"),
 )
 def _cookie_pairs(n: int) -> Work:
     value = ";" * n + "=x"
@@ -418,6 +423,7 @@ CASES.append(
         multipart_parser.decode_field,
         _punycode_field,
         size=64_000,
+        guards=Guard("bc7bda37", "charset-label-reaches-any-codec"),
     )
 )
 
@@ -435,6 +441,7 @@ CASES.append(
         find_my_way.Router.find,
         _router_escapes,
         size=16_000,
+        guards=Guard("09a13966", "router-escapes-spliced"),
     )
 )
 
@@ -450,6 +457,7 @@ CASES.append(
         WebRequest,
         _repeated_header,
         size=4000,
+        guards=Guard("ce40a38a", "header-lines-joined-per-line"),
     )
 )
 
@@ -481,7 +489,11 @@ channel(channel_schema.decode_unknown, lambda: channel_schema.decode_unknown(S.S
 channel(channel_schema.decode, lambda: channel_schema.decode(S.String))
 
 
-@case(xml.decode, "xml.decode: a comment with a non-ASCII character in every chunk (#42)")
+@case(
+    xml.decode,
+    "xml.decode: a comment with a non-ASCII character in every chunk (#42)",
+    guards=Guard("6e8ffaef", "xml-pending-comment-reparsed"),
+)
 def _xml_non_ascii(n: int) -> Work:
     chunk = "é".encode() + b"a" * 62
     return run_channel([b"<r><!--", *[chunk] * n, b"--></r>"], xml.decode())
@@ -490,6 +502,7 @@ def _xml_non_ascii(n: int) -> Work:
 @case(
     xml.decode,
     "xml.decode: a leading comment with a non-ASCII character and ?> in every chunk (#42)",
+    guards=Guard("6e8ffaef", "xml-pending-comment-reparsed"),
 )
 def _xml_non_ascii_leading_comment(n: int) -> Work:
     # The first token, so the US-ASCII declaration is still undecided; a comment can't be it,
@@ -498,12 +511,21 @@ def _xml_non_ascii_leading_comment(n: int) -> Work:
     return run_channel([b"<!--", *[chunk] * n, b"--><r/>"], xml.decode())
 
 
-@case(xml.decode_string, "xml.decode_string: text split by CDATA sections (#43)", size=8000)
+@case(
+    xml.decode_string,
+    "xml.decode_string: text split by CDATA sections (#43)",
+    size=8000,
+    guards=Guard("6e8ffaef", "xml-cdata-text-concatenated"),
+)
 def _xml_cdata_text(n: int) -> Work:
     return run_channel(["<r>" + "xxxxxxxxxxxx<![CDATA[]]>" * n + "</r>"], xml.decode_string())
 
 
-@case(xml.elements, "xml.elements: many text events in one element (#43)")
+@case(
+    xml.elements,
+    "xml.elements: many text events in one element (#43)",
+    guards=Guard("6e8ffaef", "xml-element-text-concatenated"),
+)
 def _xml_collected_text(n: int) -> Work:
     events: list[xml.Event] = [
         xml.StartElement("r", {}),
@@ -514,7 +536,10 @@ def _xml_collected_text(n: int) -> Work:
 
 
 @case(
-    xml.decode_string, "xml.decode_string: tags in a chunk past max_token_size (#41)", size=20_000
+    xml.decode_string,
+    "xml.decode_string: tags in a chunk past max_token_size (#41)",
+    size=20_000,
+    guards=Guard("6e8ffaef", "xml-long-token-window-copied"),
 )
 def _xml_markup_window(n: int) -> Work:
     return run_channel(["<r>" + "<a/>" * n + "</r>"], xml.decode_string(max_token_size=64))
@@ -539,13 +564,21 @@ def _xml_events(n: int) -> tuple[xml.Event, ...]:
     return (*events, xml.EndElement("r"))
 
 
-@case(xml.encode_string, "xml.encode_string: many events in one chunk (#44)")
+@case(
+    xml.encode_string,
+    "xml.encode_string: many events in one chunk (#44)",
+    guards=Guard("6e8ffaef", "xml-output-concatenated"),
+)
 def _xml_encode_string(n: int) -> Work:
     events = _xml_events(n)
     return run_channel(list(events), xml.encode_string(), chunk_size=len(events))
 
 
-@case(xml.encode, "xml.encode: many events in one chunk (#44)")
+@case(
+    xml.encode,
+    "xml.encode: many events in one chunk (#44)",
+    guards=Guard("6e8ffaef", "xml-output-concatenated"),
+)
 def _xml_encode(n: int) -> Work:
     events = _xml_events(n)
     return run_channel(list(events), xml.encode(), chunk_size=len(events))
@@ -563,7 +596,12 @@ def _tar_with_global_records(n: int) -> bytes:
     return out.getvalue()
 
 
-@case(tar.decode, "tar.decode: global PAX records before many entries (#24)", size=256)
+@case(
+    tar.decode,
+    "tar.decode: global PAX records before many entries (#24)",
+    size=256,
+    guards=Guard("dcafc1e1", "tar-global-records-split-per-entry"),
+)
 def _tar_global_records(n: int) -> Work:
     return run_channel([_tar_with_global_records(n)], tar.decode())
 
@@ -600,6 +638,7 @@ def _schema_binary_varint(n: int) -> Work:
     serialization.json_rpc,
     "rpc json_rpc: a batch of hash-colliding integer ids (#27)",
     size=2000,
+    guards=Guard("ef422c27", "peer-key-is-the-value"),
 )
 def _json_rpc_ids(n: int) -> Work:
     collide = 2**61 - 1
@@ -610,7 +649,11 @@ def _json_rpc_ids(n: int) -> Work:
 # ------------------------------------------------------------------------- lead inputs
 
 
-@case(url.from_string, "url: a host of distinct non-ASCII letters (#72)", max_size=80_000)
+@case(
+    url.from_string,
+    "url: a host of distinct non-ASCII letters (#72)",
+    max_size=80_000,
+)
 def _url_host(n: int) -> Work:
     value = f"https://{distinct_letters(n)}/"
     return lambda: url.from_string(value)
@@ -621,58 +664,92 @@ def _url_host(n: int) -> Work:
     "url: distinct non-ASCII letters under the host limit (#72)",
     size=300,
     max_size=5400,
+    guards=Guard("e51f2688", "url-punycode-rescans-label"),
 )
 def _url_host_under_limit(n: int) -> Work:
     value = f"https://{distinct_letters(n)}/"
     return lambda: url.from_string(value)
 
 
-@case(url.from_string, "url: a host of joiners between joining letters (#72)")
+@case(
+    url.from_string,
+    "url: a host of joiners between joining letters (#72)",
+    guards=Guard("e51f2688", "url-joiners-scan-outward"),
+)
 def _url_joiners(n: int) -> Work:
     value = f"https://{'ب‌' * n}ب/"
     return lambda: url.from_string(value)
 
 
-@case(S.URLFromString, "URLFromString: distinct non-ASCII letters (#72)", max_size=80_000)
+@case(
+    S.URLFromString,
+    "URLFromString: distinct non-ASCII letters (#72)",
+    max_size=80_000,
+)
 def _url_schema(n: int) -> Work:
     value = f"https://{distinct_letters(n)}/"
     decode = S.decode_unknown_exit(S.URLFromString)
     return lambda: decode(value)
 
 
-@case(toml.parse, "toml.parse: a table header of many dotted keys (#40)")
+@case(
+    toml.parse,
+    "toml.parse: a table header of many dotted keys (#40)",
+    guards=Guard("12c66350", "toml-header-message-per-key"),
+)
 def _toml_header(n: int) -> Work:
     value = "[" + ".".join(["a"] * n) + "]"
     return lambda: toml.parse(value)
 
 
-@case(json_patch.apply, "json_patch.apply: many appends to one array (#59)")
+@case(
+    json_patch.apply,
+    "json_patch.apply: many appends to one array (#59)",
+    guards=Guard("f906697a", "json-patch-copies-per-operation"),
+)
 def _json_patch_appends(n: int) -> Work:
     patch: Any = [{"op": "add", "path": "/-", "value": 0}] * n
     return lambda: json_patch.apply(patch, [])
 
 
-@case(json_patch.apply, "json_patch.apply: many keys added to a nested object (#59)")
+@case(
+    json_patch.apply,
+    "json_patch.apply: many keys added to a nested object (#59)",
+    guards=Guard("f906697a", "json-patch-copies-per-operation"),
+)
 def _json_patch_nested(n: int) -> Work:
     patch: Any = [{"op": "add", "path": f"/a/b/k{i}", "value": i} for i in range(n)]
     return lambda: json_patch.apply(patch, {"a": {"b": {}}})
 
 
-@case(S.BigDecimalFromString, "BigDecimalFromString: a long digit run (#31)")
+@case(
+    S.BigDecimalFromString,
+    "BigDecimalFromString: a long digit run (#31)",
+    guards=Guard("ef8f293a", "big-decimal-digits-unbounded"),
+)
 def _big_decimal_digits(n: int) -> Work:
     decode = S.decode_unknown_exit(S.BigDecimalFromString)
     value = "7" * n
     return lambda: decode(value)
 
 
-@case(S.BigDecimalFromString, "BigDecimalFromString: a long exponent (#31)")
+@case(
+    S.BigDecimalFromString,
+    "BigDecimalFromString: a long exponent (#31)",
+    guards=Guard("ef8f293a", "big-decimal-exponent-converted"),
+)
 def _big_decimal_exponent(n: int) -> Work:
     decode = S.decode_unknown_exit(S.BigDecimalFromString)
     value = f"1e{'7' * n}"
     return lambda: decode(value)
 
 
-@case(S.RegExp, "RegExp JSON: flags of distinct characters (#67)", max_size=500_000)
+@case(
+    S.RegExp,
+    "RegExp JSON: flags of distinct characters (#67)",
+    max_size=500_000,
+    guards=Guard("022fe6db", "regexp-flags-backtrack"),
+)
 def _regexp_flags(n: int) -> Work:
     decode = S.decode_unknown_exit(S.to_codec_json(S.RegExp))
     value = {"source": "a", "flags": "".join(chr(0x100 + i) for i in range(n))}
@@ -682,6 +759,7 @@ def _regexp_flags(n: int) -> Work:
 @case(
     S.FrozenSet,
     "FrozenSet(Number) JSON: hash-colliding integers (#25)",
+    guards=Guard("ef422c27", "hash-flood-unguarded"),
 )
 def _frozen_set_collisions(n: int) -> Work:
     decode = S.decode_unknown_exit(S.to_codec_json(S.FrozenSet(S.Number)))
@@ -707,9 +785,14 @@ _BIG = 1 << 20
 
 
 def _amplified(
-    target: object, id: str, costly: Callable[[], object], plain: Callable[[], object]
+    target: object,
+    id: str,
+    costly: Callable[[], object],
+    plain: Callable[[], object],
+    *,
+    guards: Guard | None = None,
 ) -> None:
-    AMPLIFIED.append(Amplified(id, target, ignoring(costly), ignoring(plain)))
+    AMPLIFIED.append(Amplified(id, target, ignoring(costly), ignoring(plain), guards=guards))
 
 
 _decode_big_decimal = S.decode_unknown_exit(S.BigDecimalFromString)
@@ -718,24 +801,28 @@ _amplified(
     "BigDecimalFromString: a long digit run, hashed (#31)",
     lambda: hash(_decode_big_decimal("7" * _BIG)),
     lambda: hash(_decode_big_decimal("a" * _BIG)),
+    guards=Guard("ef8f293a", "big-decimal-digits-unbounded"),
 )
 _amplified(
     S.BigDecimalFromString,
     "BigDecimalFromString: a long exponent (#31)",
     lambda: _decode_big_decimal("1e" + "7" * _BIG),
     lambda: _decode_big_decimal("a" * _BIG),
+    guards=Guard("ef8f293a", "big-decimal-exponent-converted"),
 )
 _amplified(
     yaml.parse,
     "yaml.parse: a long hexadecimal key (#32)",
     lambda: yaml.parse(f"0x{'f' * _BIG}: 1"),
     lambda: yaml.parse(f"{'g' * _BIG}: 1"),
+    guards=Guard("12c66350", "yaml-long-integer-keys"),
 )
 _amplified(
     yaml.parse,
     "yaml.parse: a long decimal key (#32)",
     lambda: yaml.parse(f"{'7' * _BIG}: 1"),
     lambda: yaml.parse(f"{'g' * _BIG}: 1"),
+    guards=Guard("12c66350", "yaml-long-integer-keys"),
 )
 
 

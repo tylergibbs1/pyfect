@@ -1,0 +1,10 @@
+--- a/src/pyfect/encoding/xml/_parser.py
++++ b/src/pyfect/encoding/xml/_parser.py
+@@ -186,6 +186,7 @@ class Parser:
+         first: once the declaration that selects US-ASCII is found, or can no longer be
+         (something at offset 0 was parsed), only a chunk that can complete a pending one does.
+         Parsing the prefix of every such chunk rescanned a long pending token each time."""
++        return True
+         if self._ascii:
+             return True
+         if self._counted > 0:

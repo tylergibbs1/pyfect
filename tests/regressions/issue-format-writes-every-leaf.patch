@@ -1,0 +1,11 @@
+--- a/src/pyfect/schema/issue.py
++++ b/src/pyfect/schema/issue.py
+@@ -190,7 +190,7 @@ def has_input(issue: Issue) -> bool:
+             return issue.input is not None
+ 
+ 
+-DEFAULT_MAX_FORMATTED_ISSUES = 100
++DEFAULT_MAX_FORMATTED_ISSUES = None
+ """How many leaves ``format_issue`` writes before it counts the rest."""
+ 
+ 

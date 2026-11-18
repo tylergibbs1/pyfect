@@ -1,0 +1,11 @@
+--- a/src/pyfect/encoding/xml/_writer.py
++++ b/src/pyfect/encoding/xml/_writer.py
+@@ -117,7 +117,7 @@ class Writer:
+     def push(self, value: Event, /) -> None:
+         text = self._write(value)
+         if text:
+-            self._pieces.append(text)
++            self._pieces[:] = ["".join(self._pieces) + text]
+ 
+     def end(self) -> None:
+         if self._stack:

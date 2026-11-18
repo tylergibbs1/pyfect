@@ -1,0 +1,11 @@
+--- a/src/pyfect/sql/statement/_compiler.py
++++ b/src/pyfect/sql/statement/_compiler.py
+@@ -80,7 +80,7 @@ class _Text:
+         self._last = ""
+ 
+     def _size(self) -> int:
+-        return self._starts[-1] + len(self._parts[-1]) if self._parts else 0
++        return len("".join(self._parts))
+ 
+     def append(self, text: str) -> None:
+         if not text:

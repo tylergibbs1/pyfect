@@ -15,6 +15,7 @@ from typing import Any
 
 import pytest
 from _growth import assert_near_linear
+from _guards import guards
 
 from pyfect import schema as S
 from pyfect.channel._text import (
@@ -128,7 +129,21 @@ _CASES: dict[str, Run] = {
 }
 
 
-@pytest.mark.parametrize("name", list(_CASES))
+_GUARDS = {
+    "rpc ndjson, one long line": guards("fd125524", "rpc-ndjson-pending-concatenated"),
+    "clickhouse rows, one long row": guards("fd125524", "clickhouse-rows-rescanned"),
+    "split_lines, one long line": guards("fd125524", "split-lines-pending-concatenated"),
+    "ndjson bytes, one long line": guards("fd125524", "ndjson-bytes-pending-concatenated"),
+    "sse, one long line": guards("fd125524", "sse-pending-concatenated"),
+    "csv, one long field": guards("fd125524", "csv-field-concatenated"),
+    "csv, one long quoted field": guards("fd125524", "csv-field-concatenated"),
+}
+
+
+@pytest.mark.parametrize(
+    "name",
+    [pytest.param(name, marks=[_GUARDS[name]] if name in _GUARDS else []) for name in _CASES],
+)
 def test_a_splitter_takes_linear_time(name: str) -> None:
     assert_near_linear(_CASES[name], _SIZE, 4 * _SIZE, factor=4, bound=8)
 

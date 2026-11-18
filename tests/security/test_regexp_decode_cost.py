@@ -12,6 +12,7 @@ from __future__ import annotations
 import re
 
 from _growth import cpu_pair
+from _guards import guards
 
 from pyfect import schema as S
 from pyfect.exit import Failure, Success
@@ -21,6 +22,7 @@ _decode = S.decode_unknown_exit(S.to_codec_json(S.RegExp))
 _CLASSES = f"[ -{chr(0xFFFF)}]" * 1000
 
 
+@guards("022fe6db", "regexp-wide-classes-compiled")
 def test_wide_classes_cost_about_what_a_plain_source_does() -> None:
     plain = "a" * len(_CLASSES)
     wide, narrow = cpu_pair(

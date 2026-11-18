@@ -1,0 +1,11 @@
+--- a/src/pyfect/rpc/serialization.py
++++ b/src/pyfect/rpc/serialization.py
+@@ -196,7 +196,7 @@ class _NdjsonParser:
+             position = newline + 1
+             newline = text.find("\n", position)
+         if position < len(text):
+-            self._pending.append(text[position:])
++            self._pending[:] = ["".join(self._pending) + text[position:]]
+             self._pending_length += len(text) - position
+             if self._exceeded(self._pending_length):
+                 raise self._fail_max()

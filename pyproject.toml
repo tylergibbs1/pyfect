@@ -136,6 +136,9 @@ fuzz = ["atheris==3.1.0; sys_platform == 'linux'"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+markers = [
+    "guards(guard): the fix a regression test guards (tests/_guards.py, scripts/check_regression_guards.py)",
+]
 # An xfail that passes fails the run (tests/test_xfail_guard.py).
 xfail_strict = true
 # A coroutine left pending (a close never awaited before a loop stopped) or

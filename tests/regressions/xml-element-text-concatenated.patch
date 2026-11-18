@@ -1,0 +1,11 @@
+--- a/src/pyfect/encoding/xml/_collector.py
++++ b/src/pyfect/encoding/xml/_collector.py
+@@ -28,7 +28,7 @@ class _Open:
+         self._text: list[str] = []
+ 
+     def add_text(self, text: str) -> None:
+-        self._text.append(text)
++        self._text[:] = ["".join(self._text) + text]
+ 
+     def add_element(self, element: Element) -> None:
+         self._end_text()

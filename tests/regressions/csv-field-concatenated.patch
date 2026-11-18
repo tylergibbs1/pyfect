@@ -1,0 +1,20 @@
+--- a/src/pyfect/encoding/csv/_parser.py
++++ b/src/pyfect/encoding/csv/_parser.py
+@@ -135,7 +135,7 @@ class Parser:
+                 found = self.special.search(text, i)
+                 j = length if found is None else found.start()
+                 if j > i:
+-                    field.append(text[i:j])
++                    field[:] = ["".join(field) + text[i:j]]
+                 if found is None:
+                     i = j
+                     break
+@@ -159,7 +159,7 @@ class Parser:
+                 end = text.find('"', i)
+                 j = length if end == -1 else end
+                 if j > i:
+-                    field.append(text[i:j])
++                    field[:] = ["".join(field) + text[i:j]]
+                     self.count_lines(text, i, j)
+                 if end == -1:
+                     i = j

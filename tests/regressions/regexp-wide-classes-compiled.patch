@@ -1,0 +1,11 @@
+--- a/src/pyfect/schema/_decimal_regexp.py
++++ b/src/pyfect/schema/_decimal_regexp.py
+@@ -172,8 +172,6 @@ def _compile(source: str, flags: str) -> re.Pattern[str] | None:
+     for letter in flags:
+         value |= known[letter]
+     try:
+-        if _class_code_points(_sre_parser.parse(source, value)) > MAX_CLASS_CODE_POINTS:
+-            return None
+         # Not ``re.compile``: its process-wide cache would keep peer sources alive
+         return cast("re.Pattern[str]", _sre_compiler.compile(source, value))
+     except (re.error, RecursionError, OverflowError):

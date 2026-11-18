@@ -9,6 +9,7 @@ outgrows the line being read.
 from __future__ import annotations
 
 import pytest
+from _guards import guards
 
 from pyfect.encoding import yaml
 from pyfect.encoding.yaml import _FlowParser  # pyright: ignore[reportPrivateUsage]
@@ -30,6 +31,7 @@ def _most_held(text: str, monkeypatch: pytest.MonkeyPatch) -> int:
     return max(held)
 
 
+@guards("12c66350", "yaml-flow-copies-lines")
 @pytest.mark.parametrize(
     "line", ["1,", "abc,", "'a b',", '"a",', "[1],", "{a: 1},", "&x 1,"], ids=repr
 )
@@ -40,6 +42,7 @@ def test_a_flow_sequence_holds_one_line_at_a_time(
     assert _most_held(text, monkeypatch) <= len(line) + 1
 
 
+@guards("12c66350", "yaml-flow-copies-lines")
 def test_a_flow_mapping_holds_one_line_at_a_time(monkeypatch: pytest.MonkeyPatch) -> None:
     text = "{\n" + "".join(f"k{i}: v,\n" for i in range(_LINES)) + "}"
     assert _most_held(text, monkeypatch) <= len(f"k{_LINES}: v,") + 1

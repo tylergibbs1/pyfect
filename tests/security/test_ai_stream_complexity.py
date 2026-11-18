@@ -13,6 +13,7 @@ import json
 from typing import Any, TypedDict, cast
 
 from _growth import Work, assert_near_linear
+from _guards import guards
 from oracle._ai_http import MockHttp, sse_response
 
 import pyfect as fx
@@ -34,6 +35,7 @@ from pyfect.layer import succeed as layer_succeed
 from pyfect.redacted import make as redact
 
 
+@guards("36d23724", "prompt-deltas-concatenated")
 def test_text_deltas_fold_into_a_prompt_in_linear_time() -> None:
     """#37: ``Chat`` folds a streamed response into its history with ``from_response_parts``."""
 
@@ -137,6 +139,7 @@ def _openai_stub(events: list[dict[str, Any]]) -> Any:
 _CODE = K.make(openai_tool.CodeInterpreter(container={"type": "auto"}))
 
 
+@guards("36d23724", "openai-code-concatenated")
 def test_openai_code_interpreter_code_is_folded_in_linear_time() -> None:
     """#34: the code of a code interpreter call arrives as deltas."""
 
@@ -201,6 +204,7 @@ def _openrouter_calls(events: list[object]) -> list[R.ToolCallPart[Any, Any]]:
     return [p for p in parts if isinstance(p, R.ToolCallPart)]
 
 
+@guards("36d23724", "openrouter-arguments-parsed-per-delta")
 def test_openrouter_tool_arguments_are_parsed_in_linear_time() -> None:
     """#36: each delta of a tool call's arguments is not a reason to parse them all again,
     also when every delta closes a bracket inside a string."""

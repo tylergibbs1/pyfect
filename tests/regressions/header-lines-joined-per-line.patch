@@ -1,0 +1,13 @@
+--- a/src/pyfect/http/_header_lines.py
++++ b/src/pyfect/http/_header_lines.py
+@@ -9,7 +9,7 @@ def joined(lines: Iterable[tuple[str, str]]) -> dict[str, str]:
+     """Each name's values joined with ``", "``, in order. Collected first and
+     joined once: appending to the joined text per line copies it each time,
+     quadratic in a head of many lines of one name."""
+-    values: dict[str, list[str]] = {}
++    out: dict[str, str] = {}
+     for name, value in lines:
+-        values.setdefault(name, []).append(value)
+-    return {name: ", ".join(each) for name, each in values.items()}
++        out[name] = f"{out[name]}, {value}" if name in out else value
++    return out

@@ -11,6 +11,7 @@ from typing import TypedDict
 
 import pytest
 from _growth import assert_near_linear
+from _guards import guards
 
 from pyfect import schema as S
 from pyfect.http import cookies
@@ -66,7 +67,21 @@ CASES: dict[str, tuple[Case, int]] = {
 stay at seconds, so it fails quickly)."""
 
 
-@pytest.mark.parametrize("name", sorted(CASES))
+_GUARDS = {
+    "Cookie header of segments without =": guards("0be98c4b", "cookie-segments-rescanned"),
+    "ASGI request with many lines of one header": guards(
+        "ce40a38a", "header-lines-joined-per-line"
+    ),
+    "find-my-way path with %25 runs": guards("b81c53e9", "router-escapes-spliced"),
+    "HttpApi parameters joined by a comma": guards(
+        "3db5d666", "http-api-parameter-crosses-separator"
+    ),
+}
+
+
+@pytest.mark.parametrize(
+    "name", [pytest.param(name, marks=[_GUARDS[name]]) for name in sorted(CASES)]
+)
 def test_peer_input_is_parsed_in_linear_time(name: str) -> None:
     make, size = CASES[name]
     assert_near_linear(make, size, 8 * size, bound=16)

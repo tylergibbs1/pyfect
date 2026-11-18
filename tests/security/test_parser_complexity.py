@@ -14,6 +14,7 @@ from typing import Any
 
 import pytest
 from _growth import assert_near_linear, cpu_pair
+from _guards import Guard
 from _pyfect_modules import modules
 
 from pyfect import schema as S
@@ -26,15 +27,16 @@ _PARSER_NAME = re.compile(
 )
 
 
-def _marks(fixed_elsewhere: str | None) -> list[Any]:
-    if fixed_elsewhere is None:
-        return []
-    return [pytest.mark.xfail(reason=fixed_elsewhere, strict=True)]
+def _marks(fixed_elsewhere: str | None, guards: Guard | None) -> list[Any]:
+    marks: list[Any] = [] if guards is None else [guards.mark]
+    if fixed_elsewhere is not None:
+        marks.append(pytest.mark.xfail(reason=fixed_elsewhere, strict=True))
+    return marks
 
 
 def _cases() -> Iterator[Any]:
     for found in CASES:
-        yield pytest.param(found, id=found.id, marks=_marks(found.fixed_elsewhere))
+        yield pytest.param(found, id=found.id, marks=_marks(found.fixed_elsewhere, found.guards))
 
 
 @pytest.mark.parametrize("found", list(_cases()))
@@ -42,7 +44,9 @@ def test_parser_takes_near_linear_time(found: Case) -> None:
     assert_near_linear(found.make, found.size, found.max_size)
 
 
-@pytest.mark.parametrize("found", [pytest.param(a, id=a.id) for a in AMPLIFIED])
+@pytest.mark.parametrize(
+    "found", [pytest.param(a, id=a.id, marks=_marks(None, a.guards)) for a in AMPLIFIED]
+)
 def test_costly_input_costs_about_as_much_as_plain_input(found: Amplified) -> None:
     costly, plain = cpu_pair(found.costly, found.plain)
     assert costly <= found.bound * max(plain, 0.001), (

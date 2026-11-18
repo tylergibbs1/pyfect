@@ -1,0 +1,11 @@
+--- a/src/pyfect/encoding/xml/_parser.py
++++ b/src/pyfect/encoding/xml/_parser.py
+@@ -712,7 +712,7 @@ class Parser:
+         if self._state != CONTENT:
+             raise self._syntax("CDATA sections are only allowed inside the root element", i)
+         self._add_text(i, end + 3 - i)
+-        self._text.append(_normalize_lines(s[i + 9 : end]))
++        self._text[:] = ["".join(self._text) + _normalize_lines(s[i + 9 : end])]
+         return end + 3
+ 
+     def _doctype_declaration(self, s: str, i: int) -> int:

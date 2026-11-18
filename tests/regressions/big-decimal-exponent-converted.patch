@@ -1,0 +1,11 @@
+--- a/src/pyfect/big_decimal.py
++++ b/src/pyfect/big_decimal.py
+@@ -499,8 +499,6 @@ def _split_exponent(text: str) -> tuple[str, int] | None:
+     if separator is None:
+         return text, 0
+     base, exponent = text[: separator.start()], text[separator.end() :]
+-    if len(exponent.lstrip("+-").lstrip("0")) > _MAX_SAFE_DIGITS:
+-        return None
+     parsed = signed_digits_value(exponent)
+     if base == "" or parsed is None or not -_MAX_SAFE <= parsed <= _MAX_SAFE:
+         return None

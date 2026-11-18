@@ -4,6 +4,7 @@ linear in its length (it used to copy both sides at every split)."""
 
 import pytest
 from _growth import Work, assert_near_linear
+from _guards import guards
 
 import pyfect as fx
 from pyfect import schema as S
@@ -19,6 +20,7 @@ from pyfect import schema as S
     ],
     ids=["number", "bigint", "literal", "union"],
 )
+@guards("b05d8f13", "template-literal-copies-each-split")
 def test_a_string_of_many_split_points_fails_in_near_linear_time(
     schema: S.TemplateLiteralSchema,
 ) -> None:

@@ -1,0 +1,11 @@
+--- a/src/pyfect/sql/clickhouse/_rows.py
++++ b/src/pyfect/sql/clickhouse/_rows.py
+@@ -59,7 +59,7 @@ class RowSplitter:
+         rows: list[str] = []
+         start = 0
+         pending = self._pending
+-        while (end := pending.find(b"\n", max(start, self._scanned))) >= 0:
++        while (end := pending.find(b"\n", start)) >= 0:
+             if self._tag is not None and end > 0 and pending[end - 1] == 0x0D:
+                 # ``start`` is past the row before the exception's ``\r\n``.
+                 self._tail = bytearray(pending[end - 1 :])

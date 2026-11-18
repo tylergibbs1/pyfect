@@ -1,0 +1,11 @@
+--- a/src/pyfect/encoding/xml/_parser.py
++++ b/src/pyfect/encoding/xml/_parser.py
+@@ -342,7 +342,7 @@ class Parser:
+             # Markup is parsed from at most max_token_size + 1 characters, so that
+             # its errors do not depend on how the input is chunked
+             long = n - i > self._max_token_size
+-            end = self._bounded_markup(s, i) if long else self._markup(s, i)
++            end = self._markup(s[: int(i + self._max_token_size + 1)] if long else s, i)
+             if end == -1:
+                 if long:
+                     raise self._token_limit(self._base + i)

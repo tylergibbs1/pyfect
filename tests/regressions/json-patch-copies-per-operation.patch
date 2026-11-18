@@ -1,0 +1,18 @@
+--- a/src/pyfect/json_patch.py
++++ b/src/pyfect/json_patch.py
+@@ -130,15 +130,11 @@ class _Owned:
+         self._objects: dict[int, object] = {}
+ 
+     def array(self, container: _Array) -> list[JsonValue]:
+-        if id(container) in self._objects:
+-            return cast("list[JsonValue]", container)
+         copy = list(container)
+         self._objects[id(copy)] = copy
+         return copy
+ 
+     def mapping(self, container: _Object) -> dict[str, JsonValue]:
+-        if id(container) in self._objects:
+-            return cast("dict[str, JsonValue]", container)
+         copy = dict(container)
+         self._objects[id(copy)] = copy
+         return copy

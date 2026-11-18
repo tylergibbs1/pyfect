@@ -14,6 +14,7 @@ from typing import Any, cast
 import _source
 import pytest
 from _growth import Work, assert_near_linear
+from _guards import guards
 
 import pyfect as fx
 from pyfect import schema as S
@@ -45,6 +46,7 @@ def test_peer_key_keeps_equal_ids_equal_and_spreads_colliding_ones() -> None:
     assert len({hash(peer_key(i)) for i in _colliding(1000)}) > 990
 
 
+@guards("ef422c27", "peer-key-is-the-value")
 def test_peer_key_dict_and_set_take_colliding_ids_in_near_linear_time() -> None:
     def dict_of(n: int) -> Work:
         ids = _colliding(n)
@@ -124,6 +126,7 @@ def _json(text: str) -> Any:
     ],
     ids=["frozenset", "map", "is_unique", "unknown_set"],
 )
+@guards("ef422c27", "hash-flood-unguarded")
 def test_schema_sets_and_maps_of_colliding_numbers_fail_in_near_linear_time(
     schema: S.Codec[Any, Any, Any, Any], shape: Callable[[list[int]], object]
 ) -> None:
@@ -156,6 +159,7 @@ def test_schema_sets_of_ordinary_numbers_still_decode() -> None:
     assert decode([1, 2, 2, P, 2 * P]) == frozenset({1, 2, P, 2 * P})
 
 
+@guards("ef422c27", "peer-key-is-the-value")
 def test_json_rpc_batches_of_colliding_ids_take_near_linear_time() -> None:
     def sized(n: int) -> Work:
         batch = [{"jsonrpc": "2.0", "method": "m", "id": i} for i in _colliding(n)]

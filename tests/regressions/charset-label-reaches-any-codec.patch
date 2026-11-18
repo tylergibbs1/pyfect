@@ -1,0 +1,8 @@
+--- a/src/pyfect/_whatwg_encoding.py
++++ b/src/pyfect/_whatwg_encoding.py
+@@ -115,4 +115,4 @@ def decode(label: str, data: bytes) -> str:
+     name = label.strip(" \t\n\f\r").lower()
+     if name == "x-user-defined":
+         return data.decode("latin-1").translate(_X_USER_DEFINED)
+-    return data.decode(LABELS.get(name, "utf-8"), "replace")
++    return data.decode(LABELS.get(name, name), "replace")

@@ -1,0 +1,14 @@
+--- a/src/pyfect/ai/openrouter/_stream.py
++++ b/src/pyfect/ai/openrouter/_stream.py
+@@ -258,11 +258,8 @@ class _Stream:
+                 )
+             if delta:
+                 parts.append({"type": "tool-params-delta", "id": active.id, "delta": delta})
+-            if not active.shape.add(delta):
+-                continue
+             ok, params = _parsed(active.params.text())
+             if not ok:
+-                active.shape.failed()
+                 continue
+             parts.append({"type": "tool-params-end", "id": active.id})
+             parts.append((yield from self._tool_call(active, params)))

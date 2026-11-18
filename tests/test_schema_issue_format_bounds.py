@@ -9,6 +9,7 @@ import json
 from typing import Any, TypedDict
 
 from _growth import Work, assert_near_linear
+from _guards import guards
 
 from pyfect import schema as S
 from pyfect.schema import issue as I
@@ -43,6 +44,7 @@ def test_a_deep_failure_of_many_leaves_has_a_message_linear_in_its_input() -> No
     assert message.count("\n  at ") == I.DEFAULT_MAX_FORMATTED_ISSUES
 
 
+@guards("8608f02f", "issue-format-writes-every-leaf")
 def test_formatting_a_deep_failure_takes_near_linear_time() -> None:
     def sized(n: int) -> Work:
         result: Any = _decode(_deep(n, n))

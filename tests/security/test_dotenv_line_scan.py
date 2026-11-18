@@ -15,6 +15,7 @@ from itertools import product
 from typing import Any
 
 from _growth import cpu_pair
+from _guards import guards
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
@@ -36,6 +37,7 @@ def _reading(contents: str) -> Callable[[], object]:
     return lambda: from_dot_env_contents(contents)
 
 
+@guards("967c6353", "dotenv-blank-runs-rescanned")
 def test_blank_lines_before_a_line_without_a_value_cost_about_what_plain_text_does() -> None:
     # The last line is not a NAME=value line, so no line start in the run begins one.
     blank = "\n" * _LINES + "x"

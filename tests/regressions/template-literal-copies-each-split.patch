@@ -1,0 +1,10 @@
+--- a/src/pyfect/schema/ast/_template_literal.py
++++ b/src/pyfect/schema/ast/_template_literal.py
+@@ -103,6 +103,7 @@ def match_part(node: AST, text: str, options: ParseOptions) -> bool:
+ def _match_span(node: AST, input: str, start: int, end: int, options: ParseOptions) -> bool:  # noqa: PLR0911
+     """``input[start:end]`` is a segment of ``node``. The span is copied only
+     for a part that reads it whole, so trying every split stays linear."""
++    input, start, end = input[start:end], 0, end - start
+     match node:
+         case String():
+             return node.checks is None or _passes(node, input[start:end], options)

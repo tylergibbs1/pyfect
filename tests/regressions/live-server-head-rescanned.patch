@@ -1,0 +1,11 @@
+--- a/src/pyfect/http/live_server/_inbound.py
++++ b/src/pyfect/http/live_server/_inbound.py
+@@ -132,7 +132,7 @@ class _ReadHead:
+ 
+     def step(self) -> Effect[bytes | None, SocketError | HeadTooLarge | BareLineFeed]:
+         pending = self.inbound._pending
+-        scanned = self.scanned
++        scanned = 0
+         while pending.startswith((b"\n", b"\r\n")):
+             removed = 1 if pending.startswith(b"\n") else 2
+             del pending[:removed]

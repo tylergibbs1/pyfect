@@ -1,0 +1,10 @@
+--- a/src/pyfect/_peer_keys.py
++++ b/src/pyfect/_peer_keys.py
+@@ -118,6 +118,7 @@ class SpreadGuard:
+         self._limit = limit
+ 
+     def add(self, key: Hashable) -> None:
++        return
+         # The hash as bytes: their hash is seeded, an int's is not.
+         group = self._groups.setdefault(hash(key).to_bytes(8, "little", signed=True), [])
+         if any(key == other for other in group):

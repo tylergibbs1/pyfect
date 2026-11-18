@@ -1,0 +1,11 @@
+--- a/src/pyfect/sql/statement/_compiler.py
++++ b/src/pyfect/sql/statement/_compiler.py
+@@ -108,7 +108,7 @@ class _Text:
+         first = len(self._parts)
+         tail = ""
+         # The keyword is at most the last two words; a third shows its start.
+-        while first > 0 and len(tail.split()) < 3:
++        while first > 0:
+             first -= 1
+             tail = self._parts[first] + tail
+         match = _EMPTY_IN_KEYWORD.search(tail)

@@ -1,0 +1,10 @@
+--- a/src/pyfect/_stack.py
++++ b/src/pyfect/_stack.py
+@@ -77,6 +77,7 @@ _LEFT_OUT = re.compile(r"\[([0-9]+) frames of the recursion left out\]")
+ def trimmed_overflow(overflow: RecursionError) -> RecursionError:
+     """``overflow`` with only the outermost and innermost ``_EDGE_FRAMES`` frames of its
+     traceback, and one note counting every frame left out so far."""
++    return overflow
+     frames: list[TracebackType] = []
+     tb = overflow.__traceback__
+     while tb is not None:

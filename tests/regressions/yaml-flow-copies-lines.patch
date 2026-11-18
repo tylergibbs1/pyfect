@@ -1,0 +1,16 @@
+--- a/src/pyfect/encoding/yaml.py
++++ b/src/pyfect/encoding/yaml.py
+@@ -473,12 +473,7 @@ class _FlowParser:
+         if self._index == len(self._input) and self._depth > 0:
+             line = self._next_line(self._depth)
+             if line is not None:
+-                if self._token is not None:
+-                    self._token.append(self._input[self._token_start :])
+-                    self._token_start = 0
+-                self._dropped += len(self._input)
+-                self._input = f"\n{line}"
+-                self._index = 0
++                self._input += f"\n{line}"
+         return self._input[self._index : self._index + 1]
+ 
+     def _fail(self, message: str) -> Never:

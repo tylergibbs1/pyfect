@@ -1,0 +1,14 @@
+--- a/src/pyfect/encoding/schema_binary/_reader.py
++++ b/src/pyfect/encoding/schema_binary/_reader.py
+@@ -123,7 +123,10 @@ class Reader:
+         while self.byte() >= 0x80:
+             if max_bytes is not None and self.pos - start >= max_bytes:
+                 raise self.fail("safe integer length")
+-        return _from_groups(bytes(self.buf[start : self.pos]))
++        value = 0
++        for i, b in enumerate(self.buf[start : self.pos]):
++            value |= (b & 0x7F) << (7 * i)
++        return value
+ 
+     def skip_varint(self) -> None:
+         """Scans without accumulating an attacker-controlled integer."""

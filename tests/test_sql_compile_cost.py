@@ -8,6 +8,7 @@ import re
 
 import _source
 from _growth import Work, assert_near_linear
+from _guards import guards
 
 import pyfect as fx
 from pyfect.sql import statement as st
@@ -15,6 +16,7 @@ from pyfect.sql.statement import Fragment, Literal, Parameter, and_, make_compil
 from pyfect.sql.statement._compiler import _Text  # pyright: ignore[reportPrivateUsage]
 
 
+@guards("e87833d3", "sql-text-joined-per-append")
 def test_and_of_many_clauses_compiles_in_near_linear_time() -> None:
     def sized(n: int) -> Work:
         fragment = and_([Fragment((Literal("tag = "), Parameter(i))) for i in range(n)])
@@ -24,6 +26,7 @@ def test_and_of_many_clauses_compiles_in_near_linear_time() -> None:
     assert_near_linear(sized, 5_000, 8 * 5_000, bound=32)
 
 
+@guards("e87833d3", "sql-empty-in-scans-whole-text")
 def test_many_empty_in_lists_on_one_line_compile_in_near_linear_time() -> None:
     sql = st.make(fx.never, make_compiler_sqlite(), [], None)
 

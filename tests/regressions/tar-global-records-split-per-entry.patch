@@ -1,0 +1,10 @@
+--- a/src/pyfect/encoding/tar/_decoder.py
++++ b/src/pyfect/encoding/tar/_decoder.py
+@@ -199,6 +199,7 @@ class Decoder:
+         self._global_split = None
+ 
+     def _split_global(self, records: dict[str, str]) -> _GlobalRecords:
++        self._global_split = None
+         if self._global_split is None:
+             fields = {key: value for key, value in records.items() if key in PAX_HEADER_KEYS}
+             custom = {key: value for key, value in records.items() if key not in fields}

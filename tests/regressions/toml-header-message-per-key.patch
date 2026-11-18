@@ -1,0 +1,10 @@
+--- a/src/pyfect/encoding/toml.py
++++ b/src/pyfect/encoding/toml.py
+@@ -159,6 +159,7 @@ class _Parser:
+     def _resolve_table(self, path: list[str], array: bool) -> _Table:
+         table = self.root
+         for index, key in enumerate(path):
++            _redefined(path, index)
+             value = table.get(key)
+             last = index == len(path) - 1
+             if value is not None and id(value) in self._inline:

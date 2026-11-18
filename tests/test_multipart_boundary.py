@@ -7,6 +7,7 @@ from collections.abc import Callable
 
 import pytest
 from _growth import assert_near_linear
+from _guards import guards
 
 from pyfect.http import multipart_parser as mp
 
@@ -45,6 +46,7 @@ def test_a_boundary_outside_rfc_2046_is_invalid(boundary: str) -> None:
     assert _parse(boundary, [])[0] == ["InvalidBoundary"]
 
 
+@guards("d5cf4ccf", "multipart-search-tries-every-index")
 def test_small_writes_with_the_longest_boundary_stay_cheap() -> None:
     """2-byte writes of the boundary's own byte: each scans at most the
     boundary, so four times the writes cost about four times the work."""

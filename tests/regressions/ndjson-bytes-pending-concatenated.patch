@@ -1,0 +1,11 @@
+--- a/src/pyfect/encoding/ndjson.py
++++ b/src/pyfect/encoding/ndjson.py
+@@ -299,7 +299,7 @@ class _ByteLines:
+                 if length and self.size + length > self.max_line_bytes:
+                     return self.too_large()
+                 if end == -1:
+-                    self.pending.append(chunk[start:])
++                    self.pending[:] = [b"".join(self.pending) + chunk[start:]]
+                     self.size += length
+                     break
+                 error = self.decode_line(self.take_line(chunk, start, end), out, False)

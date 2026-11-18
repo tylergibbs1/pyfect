@@ -1,0 +1,11 @@
+--- a/src/pyfect/ai/openai/_stream.py
++++ b/src/pyfect/ai/openai/_stream.py
+@@ -258,7 +258,7 @@ class _Stream:
+         code = call.code_interpreter
+         delta = ("" if code.has_code else '"') + escape_json_delta(event["delta"])
+         code.has_code = True
+-        code.streamed_code.append(event["delta"])
++        code.streamed_code[:] = ["".join(code.streamed_code) + event["delta"]]
+         return [{"type": "tool-params-delta", "id": call.id, "delta": delta}]
+ 
+     def code_done(self, event: Any) -> Gen[list[Part]]:

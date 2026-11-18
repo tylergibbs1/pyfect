@@ -1,0 +1,11 @@
+--- a/src/pyfect/encoding/schema_binary/_reader.py
++++ b/src/pyfect/encoding/schema_binary/_reader.py
+@@ -142,7 +142,7 @@ class Reader:
+         # float JavaScript reads, which an integer check then rejects.
+         self.pos = start
+         # A finite double's sign-magnitude code fits in 1025 bits.
+-        code = self.uvarint_big(_NUMBER_VARINT_FALLBACK_MAX_BYTES)
++        code = self.uvarint_big()
+         magnitude = code >> 1
+         if magnitude <= W.MAX_SAFE:
+             return W.sign_magnitude(code)

@@ -9,6 +9,7 @@ incrementally; each byte is now searched once.
 from collections.abc import Callable
 
 from _growth import assert_near_linear
+from _guards import guards
 
 import pyfect as fx
 from pyfect.effect import Effect, succeed
@@ -46,6 +47,7 @@ def _read(size: int) -> Callable[[], None]:
     return work
 
 
+@guards("5c8d2280", "live-server-head-rescanned")
 def test_a_dripped_head_costs_linear_time():
     # Four times the bytes: about four times the work when linear, sixteen when quadratic.
     assert_near_linear(_read, 8 * 1024, 32 * 1024, factor=4, bound=8)

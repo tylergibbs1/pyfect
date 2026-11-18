@@ -1,0 +1,13 @@
+--- a/src/pyfect/schema/_decimal_regexp.py
++++ b/src/pyfect/schema/_decimal_regexp.py
+@@ -164,9 +164,7 @@ def _compile(source: str, flags: str) -> re.Pattern[str] | None:
+     known = dict(_FLAGS)
+     # Each known letter at most once, as JavaScript's ``RegExp`` requires; the length is
+     # checked first, so the rest looks at a handful of letters.
+-    if len(flags) > len(known):
+-        return None
+-    if any(letter not in known or flags.count(letter) > 1 for letter in flags):
++    if re.fullmatch(r"(?!.*(.).*\1)[ims]*", flags) is None:
+         return None
+     value = 0
+     for letter in flags:
