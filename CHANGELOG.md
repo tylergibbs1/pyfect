@@ -184,6 +184,9 @@
   and combining marks, and case boundaries work in any cased script (`camel_case("CaféÜber")`
   is `"caféÜber"`), as in Effect-TS/effect#10638 (after 4.1.4). No normalization is applied.
   `config_case`, which `ConfigProvider.constant_case` uses, now maps `straße` to `STRASSE`.
+- Observability: an OTLP exporter with an infinite export interval kept a fiber waiting
+  forever for an interval that never ends. It now starts no export loop and exports only on
+  a flush, a full batch or shutdown, as in Effect-TS/effect#10556 (after 4.1.4).
 
 - A schema whose aliases only reach each other (a JSON Schema `$ref` to itself) took
   seconds to fail, and up to a minute on Python 3.14; so did any deep recursion that ran

@@ -324,10 +324,12 @@ def make(
         timer = _Timer(armed=Latch(exports_empty), keep_armed=exports_empty)
         # Forked after the shutdown finalizer, so the loop stops before the
         # shutdown flush.
-        scope = yield from Scope()
-        yield from timer.loop(
-            interval, export_fibers.run(run_export), lambda: bool(buffer)
-        ).fork_in(scope)
+        # An infinite interval never fires: no loop waits for it (Effect #10556).
+        if interval.is_finite():
+            scope = yield from Scope()
+            yield from timer.loop(
+                interval, export_fibers.run(run_export), lambda: bool(buffer)
+            ).fork_in(scope)
         export_now = run_export.and_then(sync(lambda: timer.disarm_if_empty(bool(buffer))))
 
         flusher = yield from Flusher()
