@@ -4,6 +4,14 @@
 
 ### Added
 
+- Scopes from plain Python code: `fx.managed(eff)` runs a scoped effect (a resource from
+  `acquire_release`, or `layer.build()` for a layer's services) on entering a `with` or
+  `async with` block, binds its value, and closes its scope when the block ends.
+  `CloseableScope` is a context manager too. The block's exit is the scope's: a raise is a
+  defect, Ctrl-C or asyncio cancellation an interruption, so finalizers run as `fx.scoped`
+  runs them, in reverse order and with the same exit. The block's exception propagates, with
+  failed finalizers added as a note; after a clean block they are raised as `run_blocking`
+  raises their merged cause. A failed acquire releases what it acquired and is raised.
 - Testing: `pyfect.testing.leave_out_host_freezes(source)` leaves the time the host froze the
   whole process for out of every test's timeout, up to the timeout again; `source` returns a
   `HostFreezes(total, settling)`. A timeout that left time out says so: "test timed out after

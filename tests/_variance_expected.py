@@ -410,6 +410,7 @@ EXPECTED: dict[str, tuple[Variance, ...]] = {
     "pyfect.schema.transformation.Transformation": ("inv", "inv", "out", "out"),
     "pyfect.schema.variant_schema.Field": ("out",),
     "pyfect.schema.variant_schema.VariantStructSchema": ("out",),
+    "pyfect.scope.Managed": ("out",),
     "pyfect.sql.SqlRequest": ("out", "out", "out", "out"),
     "pyfect.sql.Statement": ("inv",),
     "pyfect.sql.migrator.Runner": ("out",),

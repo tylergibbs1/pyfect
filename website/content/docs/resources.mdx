@@ -18,6 +18,17 @@ interrupted halfway. Finalizers run in reverse order of acquisition.
 
 <include meta='title="finalizers.py"'>../../snippets/resources/finalizers.py</include>
 
+## From plain Python code
+
+`with` and `async with` stand in for `fx.scoped` in code outside pyfect. `fx.managed(eff)` runs
+a scoped effect on entering, binds its value, and closes its scope when the block ends; give it a
+layer's `build()` effect to hold its services for the block. A `CloseableScope` is a context manager
+too. A raise in the block is the scope's failure, Ctrl-C or asyncio cancellation its
+interruption, so finalizers see the exit `fx.scoped` would give them, in the same order. The
+block's exception still propagates; a finalizer that fails is added to it as a note.
+
+<include meta='title="with_blocks.py"'>../../snippets/resources/with_blocks.py</include>
+
 ## In layers
 
 A layer built with `layer.effect(Tag, acquire_release(...))` owns its resource: it is acquired

@@ -231,6 +231,7 @@ from pyfect.scope import (
     acquire_release,
     acquire_use_release,
     add_finalizer,
+    managed,
     scoped,
     scoped_with,
 )
@@ -649,6 +650,7 @@ __all__ = [
     "logger",
     "make_span",
     "make_span_scoped",
+    "managed",
     "metric",
     "mutable_hash_map",
     "mutable_hash_set",

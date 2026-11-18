@@ -7,6 +7,11 @@ with ``make``, ``eff.pipe(provide(scope))`` runs ``eff`` in it and leaves
 it open; ``eff.pipe(use(scope))`` also closes it when ``eff`` ends. Finalizers run in
 reverse order of registration, uninterruptibly, and all of them run even if
 some fail.
+
+From plain Python code, ``with`` / ``async with`` stand in for ``scoped``:
+a ``CloseableScope`` closes when the block ends, and ``managed(eff)`` runs a
+scoped effect (a resource, ``layer.build()``) on entering and closes its
+scope on leaving, with the block's exit.
 """
 # pyright: reportPrivateUsage=false
 
@@ -15,7 +20,8 @@ from __future__ import annotations
 import threading
 from collections.abc import Callable, Generator
 from functools import partial
-from typing import Any, Literal, Never, cast, overload
+from types import TracebackType
+from typing import Any, Literal, Never, Self, cast, overload
 
 from pyfect._concurrency import for_each
 from pyfect._core import (
@@ -38,8 +44,8 @@ from pyfect._effect_base import Step
 from pyfect._effect_resources import _call_user_now, _run_finalizer
 from pyfect._fiber import Fiber, Uninterruptible
 from pyfect._interrupt_reason import closed
-from pyfect.context import Tag
-from pyfect.exit import Exit, as_void_all
+from pyfect.context import Context, Tag
+from pyfect.exit import Exit, Failure, as_void_all
 
 type Finalizer = Callable[[Exit[Any, Any]], Effect[object, Never, Any]]
 
@@ -190,6 +196,39 @@ class CloseableScope:
 
         return _Sync(lambda: self.fork_unsafe(strategy))
 
+    def __enter__(self) -> Self:
+        """``with scope:`` closes the scope when the block ends, blocking
+        this thread: with ``Success(None)``, or with the block's raise as a
+        defect (Ctrl-C as an interruption). The block's exception
+        propagates; failed finalizers are raised as ``run.unwrap`` raises
+        their cause, or added to the block's exception as a note."""
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
+        from pyfect._scope_with import exit_blocking
+
+        exit_blocking(self, exc)
+
+    async def __aenter__(self) -> Self:
+        """``async with scope:``, closing on the running loop; a cancelled
+        block closes it as interrupted."""
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
+        from pyfect._scope_with import exit_async
+
+        await exit_async(self, exc)
+
     def fork_unsafe(self, strategy: Strategy = "sequential") -> CloseableScope:
         """``fork``, run at once."""
         child = CloseableScope(strategy)
@@ -324,6 +363,104 @@ def scoped_with[A, E = Never, R = Never](
     return _Suspend(body)
 
 
+class Managed[A]:
+    """``managed(eff)``: ``eff`` run in a new scope on entering, its value
+    bound by ``as``, and the scope closed when the block ends (see
+    ``CloseableScope.__enter__``). Each one is entered once."""
+
+    __slots__ = ("_context", "_eff", "_scope")
+
+    def __init__(self, eff: Effect[A, Any, Any], context: Context[Any]) -> None:
+        self._eff = eff
+        self._context = context
+        self._scope: CloseableScope | None = None
+
+    def _open(self) -> tuple[CloseableScope, Effect[A, Any]]:
+        if self._scope is not None:
+            raise RuntimeError("managed(...) is entered once: call managed(eff) again")
+        scope = self._scope = CloseableScope()
+        return scope, _Locally(self._eff, lambda ctx: ctx.add(Scope, scope))
+
+    def _entered(self) -> CloseableScope:
+        if self._scope is None:
+            raise RuntimeError("managed(...) exited before it was entered")
+        return self._scope
+
+    def __enter__(self) -> A:
+        """Run the effect, blocking this thread as ``run_blocking``. If it
+        fails, the scope closes with its exit and the failure is raised as
+        ``run.unwrap`` raises it."""
+        from pyfect._scope_with import exit_blocking, fail_blocking
+        from pyfect.run import run_blocking_exit
+
+        scope, eff = self._open()
+        try:
+            ex = run_blocking_exit(eff, context=self._context)
+        except BaseException as exc:
+            exit_blocking(scope, exc)
+            raise
+        if isinstance(ex, Failure):
+            fail_blocking(scope, ex)
+        return ex.value
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
+        from pyfect._scope_with import exit_blocking
+
+        exit_blocking(self._entered(), exc)
+
+    async def __aenter__(self) -> A:
+        """``__enter__`` on the running loop, as ``run_async``."""
+        from pyfect._scope_with import exit_async, fail_async
+        from pyfect.run import run_async_exit
+
+        scope, eff = self._open()
+        try:
+            ex = await run_async_exit(eff, context=self._context)
+        except BaseException as exc:
+            await exit_async(scope, exc)
+            raise
+        if isinstance(ex, Failure):
+            await fail_async(scope, ex)
+        return ex.value
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
+        from pyfect._scope_with import exit_async
+
+        await exit_async(self._entered(), exc)
+
+
+@overload
+def managed[A](eff: Effect[A, Any, Scope]) -> Managed[A]: ...
+@overload
+def managed[A, R](eff: Effect[A, Any, Scope | R], *, context: Context[R]) -> Managed[A]: ...
+def managed(eff: Effect[Any, Any, Any], *, context: Context[Any] | None = None) -> Managed[Any]:
+    """A scoped effect as a context manager, for plain Python code (Effect's
+    ``scoped`` around the block)::
+
+        with fx.managed(connection) as conn:   # acquire_release(...)
+            ...
+        # released here, with the block's exit
+
+        async with fx.managed(AppLive.build()) as services:   # a layer
+            ...
+
+    ``context`` gives the services the effect needs besides ``Scope``. A
+    failure to acquire is raised; resources acquired before it are
+    released first."""
+    require_effect(eff, "eff")
+    return Managed(eff, Context.empty() if context is None else context)
+
+
 def add_finalizer[R = Never](
     f: Callable[[Exit[Any, Any]], Effect[object, Never, R]],
 ) -> Effect[None, Never, Scope | R]:
@@ -425,6 +562,7 @@ def _interrupt_unless_self(fiber: Fiber[Any, Any], current: Fiber[Any, Any]) -> 
 __all__ = [
     "CloseableScope",
     "Finalizer",
+    "Managed",
     "Scope",
     "Strategy",
     "acquire_release",
@@ -433,6 +571,7 @@ __all__ = [
     "fork_in",
     "fork_scoped",
     "make",
+    "managed",
     "provide",
     "scoped",
     "scoped_with",

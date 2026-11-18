@@ -1938,6 +1938,23 @@ def check_context_effects(ctx: fx.Context[Primary | Port]) -> None:
     )
 
 
+async def check_with_scopes(primary_layer: layer.Layer[Primary]) -> None:
+    # `with` binds the scoped effect's value; its services besides Scope come by context.
+    res = fx.acquire_release(fx.succeed(1), lambda _n, _ex: fx.void)
+    with fx.managed(res) as n:
+        assert_type(n, int)
+    async with fx.managed(primary_layer.build()) as services:
+        assert_type(services, fx.Context[Primary])
+    needs_port = Port().zip(res)
+    with fx.managed(needs_port, context=fx.Context.make(Port, 1)) as pair:
+        assert_type(pair, tuple[int, int])
+    fx.managed(needs_port)  # pyright: ignore[reportArgumentType]
+    with fx.CloseableScope() as scope:
+        assert_type(scope, fx.CloseableScope)
+    async with fx.CloseableScope() as scope:
+        assert_type(scope, fx.CloseableScope)
+
+
 # --- layer building and combinators ---------------------------------------------------
 
 
