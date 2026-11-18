@@ -55,7 +55,6 @@
 - `metric.summary` accepted a NaN quantile: its range check `quantile < 0 or quantile > 1`
   is false for NaN. The first update now dies with "Quantile must be between 0 and 1, found:
   NaN", as for any quantile out of range (Effect #10680).
-
 - Cluster: a stopping runner released each of its shards in a storage write of its own, so on
   a slow or remote database shutdown took 50-100 ms per shard. The shutdown handoff now
   releases them 100 at a time, one write each, through the new
