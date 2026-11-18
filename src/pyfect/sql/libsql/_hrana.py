@@ -17,6 +17,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any, cast
 
 from pyfect._extras import missing_extra
+from pyfect._futures import await_uncancelled
 
 try:
     import httpx
@@ -101,12 +102,6 @@ def _http_error(response: httpx.Response) -> LibsqlError:
     return LibsqlError(message, "SERVER_ERROR")
 
 
-def _retrieve(task: asyncio.Task[Any]) -> None:
-    """Marks the outcome of a request nobody waits for as seen."""
-    if not task.cancelled():
-        task.exception()
-
-
 class _Stream:
     """One Hrana stream: the baton of its last response, and the URL the
     server asked to be sent the next one.
@@ -137,10 +132,9 @@ class _Stream:
             raise LibsqlError("The stream is closed", "HRANA_CLOSED_ERROR")
         task = asyncio.ensure_future(self._send(requests))
         try:
-            return await asyncio.shield(task)
+            return await await_uncancelled(task)
         except asyncio.CancelledError:
             if not task.done():
-                task.add_done_callback(_retrieve)
                 self._pending = task
             raise
 

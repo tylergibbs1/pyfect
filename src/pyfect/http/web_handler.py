@@ -22,6 +22,7 @@ from pyfect import _background as background
 from pyfect._core import Effect, _WithFiber
 from pyfect._effect_args import require_effect
 from pyfect._fiber import Fiber
+from pyfect._futures import await_uncancelled
 from pyfect._layer_core import MemoMap, require_layer
 from pyfect.context import Context
 from pyfect.effect import fail, succeed, try_async, void
@@ -397,7 +398,7 @@ def to_web_handler_layer_with[E, LE](
     disposing: list[asyncio.Future[None]] = []
 
     async def handler(request: WebRequest, extra: Context[Any] | None = None) -> WebResponse:
-        exit = await asyncio.shield(building)
+        exit = await await_uncancelled(building)
         if not isinstance(exit, Success):
             raise exit.cause.raisable()
         return await exit.value(request, extra)

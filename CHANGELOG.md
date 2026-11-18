@@ -236,6 +236,14 @@
   `delta.refusal`) with a `stop` finish reports `content-filter` and the refusal text in the
   finish part's `metadata`, as in Effect 4.1.4 (#10534, #10432).
 
+- An interrupted libSQL (Hrana over HTTP) query whose request then failed, or an
+  interrupted HTTP connect that then failed, printed "... exception in shielded future"
+  with a traceback through the loop's exception handler on Python releases whose
+  `asyncio.shield` reports a shielded future's later failure (3.14.7 among them), though
+  pyfect retrieves it. pyfect no longer uses `asyncio.shield`: it waits through
+  `asyncio.wait` and marks an abandoned outcome as seen, so nothing is printed, as in
+  Effect.
+
 ## 0.6.12 (2026-11-18)
 
 ### Fixed
