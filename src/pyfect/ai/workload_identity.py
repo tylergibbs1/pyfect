@@ -301,7 +301,7 @@ def make[E = Never, R = Never](
 
             def on_response(response: HttpClientResponse) -> Effect[_Token, HttpClientError]:
                 status = response.status
-                if status < 200 or status >= 600 or 300 <= status < 400:
+                if not 200 <= status < 600 or 300 <= status < 400:
                     return fx.fail(
                         request_error(
                             f"The token endpoint responded with the status {status}. "
