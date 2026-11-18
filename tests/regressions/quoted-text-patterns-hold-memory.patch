@@ -1,0 +1,93 @@
+diff --git a/src/pyfect/cli/prompt/_date_parts.py b/src/pyfect/cli/prompt/_date_parts.py
+index efe1410e..c3a54641 100644
+--- a/src/pyfect/cli/prompt/_date_parts.py
++++ b/src/pyfect/cli/prompt/_date_parts.py
+@@ -345,7 +345,7 @@ class _Meridiem(Part):
+ 
+ 
+ _DATE_PART = re.compile(
+-    r'\\(.)|"((?:\\["\\]|[^"])++(?=")|(?=(?:\\["\\]|[^"])*+\Z)[\s\S]*(?="))"|(D[Do]?|d{3,4}|d)|(M{1,4})|(YY(?:YY)?)|([aA])|([Hh]{1,2})|(m{1,2})|(s{1,2})|(S{1,4})|.'
++    r'\\(.)|"((?:\\["\\]|[^"])+)"|(D[Do]?|d{3,4}|d)|(M{1,4})|(YY(?:YY)?)|([aA])|([Hh]{1,2})|(m{1,2})|(s{1,2})|(S{1,4})|.'
+ )
+ _GROUPS: dict[int, Callable[[str, WallClock, Locales], Part]] = {
+     2: lambda token, clock, locales: _Token(re.sub(r"\\(.)", r"\1", token), clock, locales),
+diff --git a/src/pyfect/config_provider/_dotenv.py b/src/pyfect/config_provider/_dotenv.py
+index 1e29596d..d5368759 100644
+--- a/src/pyfect/config_provider/_dotenv.py
++++ b/src/pyfect/config_provider/_dotenv.py
+@@ -17,25 +17,9 @@ from pyfect.platform_error import PlatformError
+ _S = f"[{_js.SPACE}]"
+ _START = f"(?:\\A|(?<=[{_js.LINE_END}]))"
+ _END = f"(?=[{_js.LINE_END}]|\\Z)"
+-_AFTER = f"{_S}*(?:[{_js.LINE_END}#]|\\Z)"
+-"""What may follow a value: spaces, then a line end, a comment or the end."""
+-
+-
+-def _quoted(quote: str) -> str:
+-    """Effect's ``\\s*'(?:\\\\'|[^'])*'`` for ``quote``, without backtracking.
+-
+-    A quote after a backslash may close the value or belong to it; Effect's pattern closes
+-    at the last such quote, before the first one after no backslash, that ``_AFTER`` accepts.
+-    Here an escaped quote is passed only while a later one (or the unescaped one) is
+-    accepted, so ``re`` keeps no frame per character."""
+-    escaped = rf"(?<=\\){quote}"
+-    later = rf"(?=(?:[^{quote}]++|{escaped}(?!{_AFTER}))*+{quote}(?={_AFTER}))"
+-    return rf"{_S}*{quote}(?:[^{quote}]++|{escaped}(?:(?!{_AFTER})|{later}))*+{quote}"
+-
+-
+ _LINE = re.compile(
+     rf"{_START}{_S}*(?:export{_S}+)?([A-Za-z0-9_.-]+)(?:{_S}*={_S}*?|:{_S}+?)"
+-    rf"({_quoted("'")}|{_quoted('"')}|{_quoted('`')}|[^#\r\n]+)?"
++    rf"({_S}*'(?:\\'|[^'])*'|{_S}*\"(?:\\\"|[^\"])*\"|{_S}*`(?:\\`|[^`])*`|[^#\r\n]+)?"
+     rf"{_S}*(?:#[^{_js.LINE_END}]*)?{_END}"
+ )
+ _QUOTED = re.compile(rf"{_START}(['\"`])([\s\S]*)\1{_END}")
+diff --git a/src/pyfect/http/multipart_parser/_content_type.py b/src/pyfect/http/multipart_parser/_content_type.py
+index 58c8b290..a4f0b9c2 100644
+--- a/src/pyfect/http/multipart_parser/_content_type.py
++++ b/src/pyfect/http/multipart_parser/_content_type.py
+@@ -8,8 +8,8 @@ from dataclasses import dataclass, field
+ from urllib.parse import unquote_to_bytes
+ 
+ _QUOTED = (
+-    r'"(?:[\t\u0020\u0021\u0023-\u005b\u005d-\u007e\u0080-\U0010ffff]++'
+-    r'|\\[\t\u0020-\U0010ffff])*+"'
++    r'"(?:[\t\u0020\u0021\u0023-\u005b\u005d-\u007e\u0080-\U0010ffff]'
++    r'|\\[\t\u0020-\U0010ffff])*"'
+ )
+ _TOKEN = r"[!#$%&'*+.^\w`|~-]+"
+ _PARAM = re.compile(rf"; *({_TOKEN})=({_QUOTED}|{_TOKEN}) *", re.ASCII)
+diff --git a/src/pyfect/sql/mysql/_bind.py b/src/pyfect/sql/mysql/_bind.py
+index fa24fcc6..ce971c97 100644
+--- a/src/pyfect/sql/mysql/_bind.py
++++ b/src/pyfect/sql/mysql/_bind.py
+@@ -13,7 +13,7 @@ from collections.abc import Callable, Sequence
+ from typing import cast
+ 
+ _OUTSIDE_STRINGS = r"""
+-    | `(?:[^`]++|``)*+`?           # `name`
++    | `(?:[^`]|``)*`?              # `name`
+     | /\*(?!M?!).*?(?:\*/|\Z)      # /* comment */, but /*! and /*M! hold statement text
+     | --(?=[\x00-\x20\x7f]|\Z)[^\n]* # -- then whitespace or a control character
+     | \#[^\n]*                     # comment
+@@ -21,16 +21,16 @@ _OUTSIDE_STRINGS = r"""
+ """
+ _TOKEN = re.compile(
+     r"""
+-      '(?:[^'\\]++|\\.|'')*+'?     # 'string', with \ escapes and ''
+-    | "(?:[^"\\]++|\\.|"")*+"?     # "string"
++      '(?:[^'\\]|\\.|'')*'?        # 'string', with \ escapes and ''
++    | "(?:[^"\\]|\\.|"")*"?        # "string"
+     """
+     + _OUTSIDE_STRINGS,
+     re.VERBOSE | re.DOTALL,
+ )
+ _TOKEN_NO_BACKSLASH_ESCAPES = re.compile(
+     r"""
+-      '(?:[^']++|'')*+'?           # 'string', where \ is plain text
+-    | "(?:[^"]++|"")*+"?           # "string"
++      '(?:[^']|'')*'?              # 'string', where \ is plain text
++    | "(?:[^"]|"")*"?              # "string"
+     """
+     + _OUTSIDE_STRINGS,
+     re.VERBOSE | re.DOTALL,

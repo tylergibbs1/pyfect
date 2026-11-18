@@ -19,6 +19,7 @@ from typing import Any, cast
 
 import pytest
 from _growth import cpu_pair
+from _guards import guards
 from _memory import PER_BYTE, assert_bounded_memory
 from hypothesis import given, settings
 from hypothesis import strategies as st
@@ -112,7 +113,22 @@ _PARSERS: dict[str, Parse] = {
 }
 
 
-@pytest.mark.parametrize("name", list(_PARSERS))
+_GUARD = guards("55be85de", "quoted-text-patterns-hold-memory")
+_GUARDED = frozenset(
+    {
+        "content-type quoted parameter",
+        "content-disposition quoted parameter",
+        ".env quoted value",
+        "mysql string",
+        "mysql string, no backslash escapes",
+        "date mask quoted text",
+    }
+)
+
+
+@pytest.mark.parametrize(
+    "name", [pytest.param(name, marks=[_GUARD] if name in _GUARDED else []) for name in _PARSERS]
+)
 def test_a_parser_holds_a_few_bytes_per_input_byte(name: str) -> None:
     parse = _PARSERS[name]
     assert_bounded_memory(parse.work, SIZE, parse.per_byte)
@@ -299,6 +315,7 @@ def test_each_pattern_matches_every_short_input_as_before(name: str) -> None:
             assert now == _found(before, text, searched=rewrite.searched), text
 
 
+@_GUARD
 def test_a_date_mask_of_backslashes_after_an_escaped_quote_costs_about_what_plain_text_does() -> (
     None
 ):

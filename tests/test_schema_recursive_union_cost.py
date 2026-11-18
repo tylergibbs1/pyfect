@@ -11,6 +11,7 @@ from typing import Literal, TypedDict
 
 import pytest
 from _growth import Work, assert_near_linear
+from _guards import guards
 
 import pyfect as fx
 from pyfect import schema as S
@@ -57,7 +58,10 @@ def _late(depth: int) -> object:
     return value
 
 
-@pytest.mark.parametrize("errors", ["all", "first"])
+_GUARD = guards("2dfb157a", "recursive-union-tries-every-member")
+
+
+@pytest.mark.parametrize("errors", [pytest.param("all", marks=_GUARD), "first"])
 def test_mutually_recursive_typed_dicts_decode_in_linear_time(errors: str) -> None:
     decode = S.decode_unknown_exit(
         S.Union(S.Struct(And), S.Struct(Or), S.Struct(Eq)),
@@ -83,6 +87,7 @@ def test_a_discriminator_after_the_recursive_field_still_picks_the_member() -> N
     assert_near_linear(sized, 8, 8 * 4, factor=4, bound=8, clock=time.process_time)
 
 
+@_GUARD
 def test_issues_name_the_members_a_discriminator_picks() -> None:
     decode = S.decode_unknown_exit(S.Union(S.Struct(And), S.Struct(Or), S.Struct(Eq)), errors="all")
     bad = {

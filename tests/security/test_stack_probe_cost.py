@@ -19,6 +19,7 @@ from typing import Literal, TypedDict
 import _source
 import pytest
 from _growth import Work, assert_near_linear
+from _guards import guards
 
 import pyfect as fx
 from pyfect import schema as S
@@ -71,6 +72,10 @@ def _probes(count: int) -> None:
         stack_nearly_full()
 
 
+_GUARD = guards("a8c73765", "stack-probe-walks-to-the-limit")
+
+
+@_GUARD
 def test_a_nested_recursive_union_decodes_in_time_linear_in_its_depth() -> None:
     decode = S.decode_unknown_exit(S.Union(S.Struct(And), S.Struct(Or), S.Struct(Eq)))
 
@@ -83,6 +88,7 @@ def test_a_nested_recursive_union_decodes_in_time_linear_in_its_depth() -> None:
     assert_near_linear(sized, 16, max_size=4096, clock=time.process_time)
 
 
+@_GUARD
 def test_a_probe_at_every_level_costs_time_linear_in_the_depth() -> None:
     def sized(depth: int) -> Work:
         return lambda: _at_depth(depth, lambda: _probes(depth))
@@ -121,6 +127,7 @@ def _stack_depth(frame: FrameType | None) -> int:
     return depth
 
 
+@_GUARD
 def test_a_probe_costs_the_same_far_down_a_stack_as_near_its_top(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

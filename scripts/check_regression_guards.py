@@ -44,7 +44,7 @@ class _Collector:
 
 def _guarded_files() -> list[str]:
     found = subprocess.run(
-        ["git", "grep", "-l", "-e", "@guards(", "-e", "guards=Guard(", "--", "tests"],
+        ["git", "grep", "-l", "-e", "from _guards import", "--", "tests"],
         cwd=ROOT,
         capture_output=True,
         text=True,
@@ -128,8 +128,13 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Every regression test fails against its bug.")
     parser.add_argument("patches", nargs="*", help="check only the guards of these patches")
     only = set(parser.parse_args().patches)
+    guarded = _collect()
+    if unknown := only - {guard.patch for guard in guarded}:
+        raise SystemExit(f"no test guards {sorted(unknown)}")
+    if not guarded:
+        raise SystemExit("no guarded tests found")
     verdicts: list[Verdict] = []
-    for guard, nodeids in sorted(_collect().items(), key=lambda pair: pair[0].patch):
+    for guard, nodeids in sorted(guarded.items(), key=lambda pair: pair[0].patch):
         if only and guard.patch not in only:
             continue
         for nodeid, (verdict, why) in check(guard, nodeids).items():

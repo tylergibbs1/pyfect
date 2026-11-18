@@ -1,0 +1,11 @@
+--- a/src/pyfect/_stack.py
++++ b/src/pyfect/_stack.py
+@@ -43,7 +43,7 @@ _depth: contextvars.ContextVar[int] = contextvars.ContextVar("pyfect_fresh_stack
+ 
+ def stack_nearly_full() -> bool:
+     """Whether the next level of a walk belongs on a fresh stack."""
+-    frames = min(sys.getrecursionlimit(), _STACK_FRAMES)
++    frames = sys.getrecursionlimit()
+     try:
+         sys._getframe(max(frames - _HEADROOM, 1))  # pyright: ignore[reportPrivateUsage]
+     except ValueError:
