@@ -37,7 +37,7 @@ from pyfect.cluster import sql_message_storage as SqlMessageStorage
 from pyfect.cluster.cluster_error import PersistenceError
 from pyfect.cluster.entity_id import EntityId
 from pyfect.cluster.entity_type import EntityType
-from pyfect.cluster.message import OutgoingRequest
+from pyfect.cluster.message import IncomingRequest, OutgoingEnvelope, OutgoingRequest
 from pyfect.cluster.message_storage import (
     SaveDuplicate,
     SaveSuccess,
@@ -226,19 +226,46 @@ def test_reset_requests_preserves_replies_and_completed_state(backend: Backend):
 
 
 @testing.live
-def test_clear_replies_requeues_when_expected_reply_is_current(backend: Backend):
-    """clearReplies requeues when the expected reply is current"""
+def test_clear_replies_requeues_the_request_without_replaying_consumed_interrupts(
+    backend: Backend,
+):
+    """clearReplies requeues when the expected reply is current (Effect 4.1.4's title),
+    which Effect main (#10629) renamed "clearReplies requeues the request without replaying
+    consumed interrupts": a guarded reset requeued the interrupt its reply had consumed, so
+    after a durable-clock wakeup the activity was interrupted and rerun in a loop."""
 
     def body(env: Env) -> Generator[fx.Effect[Any, Any, Any], Any]:
+        storage = env.storage
+        snowflakes = yield from SnowflakeGenerator()
         request = yield from make_request()
         reply = yield from make_reply(request)
-        yield from env.storage.save_request(request)
-        yield from env.storage.save_reply(reply)
-        yield from env.storage.clear_replies(
+
+        def interrupt() -> OutgoingEnvelope:
+            return OutgoingEnvelope.interrupt(
+                id=snowflakes.next_unsafe(),
+                request_id=request.envelope.request_id,
+                address=request.envelope.address,
+            )
+
+        yield from storage.save_request(request)
+        yield from storage.save_envelope(interrupt())
+        yield from storage.save_reply(reply)
+        # An interrupt received after completion belongs to the next execution.
+        pending = interrupt()
+        yield from storage.save_envelope(pending)
+        yield from storage.clear_replies(
             request.envelope.request_id, expected_reply_id=reply.reply.id
         )
-        assert (yield from env.storage.replies_for([request])) == []
-        assert len((yield from env.storage.unprocessed_messages([_SHARD]))) == 1
+        # A duplicate reset must not remove that pending interrupt either.
+        yield from storage.clear_replies(
+            request.envelope.request_id, expected_reply_id=reply.reply.id
+        )
+        assert (yield from storage.replies_for([request])) == []
+        messages = yield from storage.unprocessed_messages([_SHARD])
+        assert [
+            m.envelope.request_id if isinstance(m, IncomingRequest) else m.envelope.id
+            for m in messages
+        ] == [request.envelope.request_id, pending.envelope.id]
 
     yield from run(backend, body)
 
