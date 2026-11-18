@@ -44,6 +44,26 @@ class Parser(Protocol):
     def encode(self, response: object, /) -> Frame | None: ...
 
 
+type OnDecodeError = Callable[[NdjsonDecodeError], None]
+"""Receives each malformed NDJSON line instead of ``decode`` raising."""
+
+
+class _Framed:
+    """The parser maker of a built-in NDJSON format, which can report malformed lines to an
+    ``OnDecodeError`` instead of raising. A plain call makes a parser that raises."""
+
+    __slots__ = ("_make",)
+
+    def __init__(self, make: Callable[[OnDecodeError | None], Parser]) -> None:
+        self._make = make
+
+    def __call__(self) -> Parser:
+        return self._make(None)
+
+    def reporting(self, on_decode_error: OnDecodeError) -> Parser:
+        return self._make(on_decode_error)
+
+
 class RpcSerializationService:
     """A wire format of RPC messages (Effect's ``RpcSerialization``):
     ``make_unsafe`` makes a parser per connection and ``codec_for`` the
@@ -73,12 +93,17 @@ class RpcSerializationService:
         self.includes_framing = includes_framing
         self._codec_for = codec_for
 
-    def make_unsafe(self) -> Parser:
+    def make_unsafe(self, *, on_decode_error: OnDecodeError | None = None) -> Parser:
         """A new parser, holding the state of one connection (a partly
         received frame, say). Its ``decode`` raises on malformed data, or
         ``MaxBufferSizeExceeded`` when a framed format holds more than its
-        buffer limit of an unfinished message."""
-        return self._make_unsafe()
+        buffer limit of an unfinished message. With ``on_decode_error``, the
+        NDJSON formats hand it each malformed line instead, so the lines
+        around it still decode; other formats and failures still raise."""
+        make = self._make_unsafe
+        if on_decode_error is not None and isinstance(make, _Framed):
+            return make.reporting(on_decode_error)
+        return make()
 
     @property
     def codec_for(self) -> CodecFor:
@@ -149,10 +174,13 @@ class _NdjsonParser:
     and each arriving frame is searched once, so a line trickled in small frames costs linear
     time (Effect's parser searches its whole buffer again for every frame)."""
 
-    __slots__ = ("_decoder", "_max", "_pending", "_pending_length")
+    __slots__ = ("_decoder", "_max", "_on_decode_error", "_pending", "_pending_length")
 
-    def __init__(self, max_buffer_size: MaxBufferSize) -> None:
+    def __init__(
+        self, max_buffer_size: MaxBufferSize, on_decode_error: OnDecodeError | None = None
+    ) -> None:
         self._max = max_buffer_size
+        self._on_decode_error = on_decode_error
         self._pending: list[str] = []
         self._pending_length = 0
         self._decoder = text_decoder()
@@ -164,8 +192,14 @@ class _NdjsonParser:
         self._pending = []
         self._pending_length = 0
 
-    def _fail_max(self) -> MaxBufferSizeExceeded:
+    def _reset(self) -> None:
+        """Forgets the connection's partial input, including a character split across frames,
+        so the data after a failed decode starts clean."""
         self._drop_pending()
+        self._decoder.reset()
+
+    def _fail_max(self) -> MaxBufferSizeExceeded:
+        self._reset()
         return MaxBufferSizeExceeded(cast("int", self._max))
 
     def _parse(self, line: str, items: list[object]) -> None:
@@ -175,8 +209,11 @@ class _NdjsonParser:
         try:
             items.append(parse(line))
         except ValueError as cause:
-            self._drop_pending()
-            raise NdjsonDecodeError(cause) from cause
+            error = NdjsonDecodeError(cause)
+            if self._on_decode_error is None:
+                self._reset()
+                raise error from cause
+            self._on_decode_error(error)
 
     def decode(self, data: Frame, /) -> list[object]:
         text = data if isinstance(data, str) else self._decoder.decode(data)
@@ -219,7 +256,9 @@ def make_ndjson(
     decode with ``MaxBufferSizeExceeded``; a line that is not JSON with
     ``NdjsonDecodeError``. Blank lines are skipped."""
     return RpcSerializationService(
-        make_unsafe=lambda: _NdjsonParser(max_buffer_size),
+        make_unsafe=_Framed(
+            lambda on_decode_error: _NdjsonParser(max_buffer_size, on_decode_error)
+        ),
         content_type="application/x-ndjson",
         includes_framing=True,
         codec_for=_codec_for_json,
@@ -264,8 +303,13 @@ def json_rpc(
 class _NdJsonRpcParser:
     __slots__ = ("_batches", "_control_messages", "_parser")
 
-    def __init__(self, max_buffer_size: MaxBufferSize, control_messages: bool) -> None:
-        self._parser = _NdjsonParser(max_buffer_size)
+    def __init__(
+        self,
+        max_buffer_size: MaxBufferSize,
+        control_messages: bool,
+        on_decode_error: OnDecodeError | None,
+    ) -> None:
+        self._parser = _NdjsonParser(max_buffer_size, on_decode_error)
         self._batches: Batches = {}
         self._control_messages = control_messages
 
@@ -292,7 +336,11 @@ def nd_json_rpc(
     """JSON-RPC 2.0, one JSON value per line (``control_messages`` as in
     ``json_rpc``)."""
     return RpcSerializationService(
-        make_unsafe=lambda: _NdJsonRpcParser(max_buffer_size, control_messages),
+        make_unsafe=_Framed(
+            lambda on_decode_error: _NdJsonRpcParser(
+                max_buffer_size, control_messages, on_decode_error
+            )
+        ),
         content_type=content_type,
         includes_framing=True,
         codec_for=_codec_for_json,
@@ -356,9 +404,7 @@ def with_codec_for(
     service: RpcSerializationService, codec_for: CodecFor
 ) -> RpcSerializationService:
     """``service`` with other value codecs."""
-    return RpcSerializationService(
-        service.make_unsafe, service.content_type, service.includes_framing, codec_for
-    )
+    return service.__replace__(codec_for=codec_for)
 
 
 layer_json: Layer[RpcSerialization] = layer_succeed(RpcSerialization, json)
@@ -427,6 +473,7 @@ __all__ = [
     "MaxBufferSizeExceeded",
     "MaxFrameSize",
     "NdjsonDecodeError",
+    "OnDecodeError",
     "Parser",
     "RpcSerialization",
     "RpcSerializationService",

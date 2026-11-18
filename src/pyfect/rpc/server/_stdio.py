@@ -18,7 +18,7 @@ from pyfect.layer import Layer
 from pyfect.layer import effect as layer_effect
 from pyfect.logger import log_error
 from pyfect.queue import Queue
-from pyfect.rpc.message import EofEncoded
+from pyfect.rpc.message import EofEncoded, response_defect_encoded
 from pyfect.rpc.serialization import Frame, RpcSerialization
 from pyfect.rpc.server._protocol import (
     Message,
@@ -28,6 +28,7 @@ from pyfect.rpc.server._protocol import (
     WriteRequest,
     with_run,
 )
+from pyfect.rpc.server._serialized import encode_defect_for
 from pyfect.run import InterruptExitCode
 from pyfect.schedule import spaced
 from pyfect.scope import Scope, fork_scoped
@@ -48,17 +49,36 @@ def make_protocol_stdio() -> Effect[ServerProtocolService, Never, Stdio | RpcSer
         stdio = yield from Stdio()
         fiber = yield from current_fiber()
         serialization = yield from RpcSerialization()
+        encode_defect = encode_defect_for(serialization.codec_for)
 
         def parts(write: WriteRequest) -> Effect[ProtocolParts, Never, Any]:
             @gen
             def build():
                 output = yield from Queue[Frame, Done].bounded(_OUTPUT_BUFFER)
-                parser = serialization.make_unsafe()
+                errors: list[object] = []
+                parser = serialization.make_unsafe(on_decode_error=errors.append)
+
+                def send(_client: int, response: Message) -> Effect[None]:
+                    encoded = parser.encode(response)
+                    return succeed(None) if encoded is None else output.offer(encoded).as_void()
 
                 def on_input(data: bytes) -> Effect[None]:
+                    decoded: list[object] = []
+                    try:
+                        decoded = parser.decode(data)
+                    except Exception as cause:
+                        errors.append(cause)
+                    # Decode failures are answered, not raised: a failure would resubscribe to
+                    # stdin and lose the rest of the input (Effect #10579).
+                    failed = errors.copy()
+                    errors.clear()
+
                     @gen
                     def each():
-                        for message in parser.decode(data):
+                        for error in failed:
+                            defect = response_defect_encoded(encode_defect(error))
+                            yield from send(_CLIENT, cast("Message", defect))
+                        for message in decoded:
                             yield from write(_CLIENT, cast("Message", message))
 
                     return each
@@ -76,10 +96,6 @@ def make_protocol_stdio() -> Effect[ServerProtocolService, Never, Stdio | RpcSer
                     .retry(spaced(_RETRY_EVERY))
                     .on_exit(lambda exit: _end_server(fiber, exit))
                 )
-
-                def send(_client: int, response: Message) -> Effect[None]:
-                    encoded = parser.encode(response)
-                    return succeed(None) if encoded is None else output.offer(encoded).as_void()
 
                 return ProtocolParts(
                     disconnects=(yield from Queue[int].unbounded()),
