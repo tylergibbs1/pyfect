@@ -508,6 +508,9 @@ def pytest_unconfigure(config: pytest.Config) -> None:
 
 _STALLS = pytest.StashKey[list[str]]()
 _CALL_STARTED = pytest.StashKey[tuple[float, float]]()
+_TEST_ENDED = pytest.StashKey[float]()
+"""When the test function returned or raised (wall time): a sample after it is pytest
+unwinding the call phase, not the test."""
 """When the test's call began (``perf_counter``) and the host freezes so far (seconds)."""
 
 
@@ -530,6 +533,14 @@ def pytest_runtest_call(item: pytest.Item) -> Generator[None, object, object]:
     if watchdog is not None:
         item.stash[_CALL_STARTED] = (time.perf_counter(), watchdog.frozen_seconds())
     return (yield)
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_pyfunc_call(pyfuncitem: pytest.Function) -> Generator[None, object, object]:
+    try:
+        return (yield)
+    finally:
+        pyfuncitem.stash[_TEST_ENDED] = time.time()
 
 
 def _blocked_past_limit(item: pytest.Item, watchdog: Watchdog, stalls: list[str]) -> str | None:
@@ -594,7 +605,8 @@ def pytest_runtest_makereport(
         report.sections.append(("stall", "\n".join(stalls)))
         stalls.clear()
     elif report.failed and _timed_out(call):
-        report.sections.append(("stall", watchdog.no_stall(call.stop, call.duration)))
+        failed_at = item.stash.get(_TEST_ENDED, call.stop) if call.when == "call" else call.stop
+        report.sections.append(("stall", watchdog.no_stall(failed_at, call.duration)))
     elif stalls and call.when == "teardown":
         item.warn(StallWarning(stalls[0].splitlines()[0]))
     return report

@@ -313,6 +313,31 @@ def test_a_hang_with_no_stall_says_where_the_test_was_running(
     assert "the test thread was last in spin_on_purpose (" in out
 
 
+SLOW_TO_UNWIND = """
+import time
+
+import pytest
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_call(item):
+    try:
+        return (yield)
+    finally:
+        time.sleep(0.4)  # several ticks after the test raised, before the call phase ends
+"""
+
+
+def test_the_frame_named_is_the_tests_not_pytests_after_it(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Samples taken after the test function raised, while pytest still unwinds the call
+    phase (CI caught one in capture's ``suspend``), are not where the test was."""
+    pytester.makeconftest(SLOW_TO_UNWIND)
+    out = _hang(pytester, monkeypatch, BUSY_HANG)
+    assert "the test thread was last in spin_on_purpose (" in out
+
+
 def test_a_hang_waiting_on_a_lock_says_where_the_test_waited(
     pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
 ) -> None:
