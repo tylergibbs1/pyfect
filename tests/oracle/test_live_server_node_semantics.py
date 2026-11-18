@@ -177,6 +177,7 @@ def test_closes_a_connection_whose_client_stops_reading_when_the_shutdown_timeou
     """``graceful_shutdown_timeout`` bounds the shutdown even while a bytes
     body waits for a client that stopped reading (uvicorn exits on time)."""
     started = threading.Event()
+    done = threading.Event()
 
     def stall(at: int) -> None:
         conn = socket.socket()
@@ -185,7 +186,7 @@ def test_closes_a_connection_whose_client_stops_reading_when_the_shutdown_timeou
         conn.sendall(b"GET / HTTP/1.1\r\nhost: x\r\n\r\n")
         conn.recv(1)
         started.set()
-        time.sleep(TIMEOUT)
+        done.wait(TIMEOUT)  # held until the test is done
         conn.close()
 
     @fx.fn
@@ -199,7 +200,10 @@ def test_closes_a_connection_whose_client_stops_reading_when_the_shutdown_timeou
     layer_live = live_server.layer(host="127.0.0.1", graceful_shutdown_timeout="300 millis")
     program = scoped(serving()).pipe(fx.provide(layer_live))
     started_at = time.monotonic()
-    fx.run_blocking(program.timeout(fx.duration.seconds(TIMEOUT)).or_die())
+    try:
+        fx.run_blocking(program.timeout(fx.duration.seconds(TIMEOUT)).or_die())
+    finally:
+        done.set()
     assert time.monotonic() - started_at < 2.5
 
 
