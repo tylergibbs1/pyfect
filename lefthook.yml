@@ -8,6 +8,10 @@ glob_matcher: doublestar
 # Only `lefthook install` installs: `lefthook run` would otherwise install into .git/hooks,
 # which every worktree shares, as a side effect.
 no_auto_install: true
+# The hooks run lefthook through uv from the checkout they run in, and fail when they can't, so no
+# hook depends on the worktree that installed it or skips its checks.
+lefthook: uv run --frozen --quiet lefthook
+assert_lefthook_installed: true
 
 pre-commit:
   jobs:

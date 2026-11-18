@@ -9,6 +9,7 @@ core.hooksPath or hooks cannot change the outcome.
 
 import json
 import os
+import shutil
 import subprocess
 import tomllib
 from pathlib import Path
@@ -86,6 +87,41 @@ def test_install_writes_both_hooks_and_leaves_git_config_alone(tmp_path: Path):
     assert os.access(repo / ".git" / "hooks" / "pre-commit", os.X_OK)
     assert os.access(repo / ".git" / "hooks" / "pre-push", os.X_OK)
     assert _run(repo, "git", "config", "--local", "core.hooksPath").stdout == ""
+
+
+def test_the_installed_hooks_pin_no_environment_path(tmp_path: Path):
+    """An install from a worktree wrote that worktree's venv path into the shared hooks; once the
+    worktree was removed, the hooks found no lefthook and let every commit and push through."""
+    repo = _repo(tmp_path)
+    for hook in ("pre-commit", "pre-push"):
+        text = (repo / ".git" / "hooks" / hook).read_text()
+        # lefthook still writes its fallbacks, but the configured command comes before them all.
+        run = text.find('uv run --frozen --quiet lefthook "$@"')
+        assert run != -1, hook
+        assert "site-packages" not in text[:run], hook
+
+
+def test_a_push_is_stopped_when_the_hook_cannot_run_lefthook(tmp_path: Path):
+    """Worktrees share one hooks directory. A hook that pinned the installing worktree's venv, and
+    let the push through when that venv was gone, skipped every pre-push check unnoticed."""
+    repo = _repo(tmp_path)
+    _commit_unchecked(repo, {"bad.py": "x  =  1\n"})
+    (repo / ".venv").unlink()
+    only_git = tmp_path / "bin"
+    only_git.mkdir()
+    git = shutil.which("git")
+    assert git is not None
+    (only_git / "git").symlink_to(git)
+    pushed = subprocess.run(
+        ["git", "push", "-q", "origin", "main"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        env=ENV | {"PATH": f"{only_git}:/usr/bin:/bin"},
+        timeout=120,
+        check=False,
+    )
+    assert pushed.returncode != 0, pushed.stdout + pushed.stderr
 
 
 def test_running_a_hook_by_hand_installs_nothing(tmp_path: Path):
