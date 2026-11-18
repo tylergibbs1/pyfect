@@ -40,6 +40,13 @@
   writes it as its text (`"9.99"`, `"1E+2"`), which reads back to the same digits and exponent;
   the text read is ASCII digits with an optional sign, point and exponent, so `NaN`, spaces and
   underscores, which `decimal.Decimal()` would take, are refused.
+- `fx.on_thread(eff)` (Python-only): runs `eff` as the root fiber of a run of its own on a new
+  thread, with the caller's services, and takes on its value, typed failure or defect.
+  Interrupting the caller interrupts it and waits for its finalizers. On free-threaded 3.14t
+  CPU-heavy effects under it use several cores (an effect of 100k `fx.sync` steps: 1.6x on 4
+  threads, 2.6x on 8; see the new "Parallel effects" guide and `benchmarks/parallel.py`); the
+  default single-thread runtime is unchanged.
+
 - Testing: `pyfect.testing.leave_out_host_freezes(source)` leaves the time the host froze the
   whole process for out of every test's timeout, up to the timeout again; `source` returns a
   `HostFreezes(total, settling)`. A timeout that left time out says so: "test timed out after

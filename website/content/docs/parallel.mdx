@@ -1,0 +1,80 @@
+---
+title: Parallel effects
+description: "fx.on_thread runs an effect as a run of its own on another thread: on free-threaded Python, CPU-heavy effects use several cores. What it costs and when it pays."
+---
+
+Every fiber of a run takes turns on the run's thread (see [Threads and throughput](/docs/threads)),
+so two CPU-heavy fibers of one run never compute at the same time. `fx.on_thread(eff)` runs `eff`
+as the root fiber of a run of its own, on a new thread, and takes on its result: its value, its
+typed failure or its defect. Effects under `on_thread` go in parallel with the caller and with
+each other on free-threaded Python (3.14t). On the GIL build they still take turns, at bytecode
+boundaries instead of fiber steps, so the caller's run keeps serving its other fibers while one
+computes, as with `fx.blocking`.
+
+<CodeOutput>
+
+<include meta='title="on_thread.py"'>../../snippets/parallel/on_thread.py</include>
+
+<include lang="text">../../snippets/parallel/on_thread.out</include>
+
+</CodeOutput>
+
+The effect sees the caller's services. Interrupting the caller interrupts the effect on its own
+run and waits for its finalizers, as interrupting a forked fiber does, so a timeout or a race
+around `on_thread` cleans up what the effect opened. What the effect forks and leaves running
+goes on in the background once it ends, as after `fx.run_blocking`.
+
+<CodeOutput>
+
+<include meta='title="interrupt.py"'>../../snippets/parallel/interrupt.py</include>
+
+<include lang="text">../../snippets/parallel/interrupt.out</include>
+
+</CodeOutput>
+
+## `fx.blocking`, `fx.on_thread` or a process
+
+- A plain function, however heavy: `fx.blocking(f)`. It already runs on a pool thread, in
+  parallel on 3.14t, and costs less to start. Interrupting it abandons the thread.
+- An effect of many steps (a loop of `fx.sync` calls, a stream, a parser written with
+  effects): `fx.on_thread(eff)`. It can be interrupted, and its finalizers run.
+- Parallel work on the GIL build: a `ProcessWorker` from [workers](/docs/workers), or one
+  process per core.
+
+## What it measured
+
+[`benchmarks/parallel.py`](https://github.com/tylergibbs1/pyfect/blob/main/benchmarks/parallel.py)
+runs N copies of the same work with `concurrency=N`. "Pure" is one pure-Python function (about
+100 ms); "steps" is an effect of 100,000 `fx.sync` steps. The rate is N times one task's time
+alone over the fan-out's time: 1.0x is no faster than one at a time. Best of three, on an
+18-core Apple M-series machine that other jobs were also using, so read the ratios, not the
+milliseconds:
+
+| Work | N | 3.14 inline | 3.14 `on_thread` | 3.14t inline | 3.14t `blocking` | 3.14t `on_thread` |
+| --- | --- | --- | --- | --- | --- | --- |
+| pure | 4 | 1.04x | 0.97x | 1.01x | 2.87x | 3.38x |
+| pure | 8 | 1.27x | 1.15x | 0.97x | 4.52x | 4.20x |
+| steps | 4 | 1.04x | 1.05x | 1.09x | n/a | 1.58x |
+| steps | 8 | 0.97x | 0.92x | 1.11x | n/a | 2.57x |
+
+On the GIL build nothing runs faster, and `on_thread` costs a few percent. On 3.14t a pure
+function scales the same through either. An effect of many steps scales, but less than a
+pure function: every step touches objects all threads share (the runtime's classes, methods
+and constants), and free-threaded CPython keeps their reference counts with atomic operations
+that the cores fight over. A plain thread calling `fx.run_blocking` scales no better.
+
+Starting and finishing a hand-off, from asking to the work starting and from the work ending to
+the caller running again, p50 / p95 in milliseconds:
+
+| | 3.14 unloaded | 3.14t unloaded | 3.14t, a busy thread per core |
+| --- | --- | --- | --- |
+| `blocking` start | 0.03 / 0.07 | 0.01 / 0.04 | 0.03 / 0.13 |
+| `blocking` finish | 0.03 / 0.07 | 0.01 / 0.06 | 0.07 / 1.2 |
+| `on_thread` start | 0.05 / 0.12 | 0.07 / 0.14 | 0.08 / 0.14 |
+| `on_thread` finish | 0.06 / 0.14 | 0.03 / 0.09 | 0.25 / 1.0 |
+
+`on_thread` starts a thread per call, so it suits work of a millisecond or more. With every core
+busy, a wake-up waits for the OS to give the waiting thread a core: on 3.14t the finish's p95
+went from about 1 ms (the table, N=4) to 15 ms for `on_thread` and 25 ms for `blocking` (a
+run with N=8), while on the GIL build either waits for the GIL behind every busy thread, with
+a p50 of 30 to 130 ms.

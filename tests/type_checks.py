@@ -761,6 +761,7 @@ def check_error_constructors(
     assert_type(
         fx.try_blocking(lambda: 1, lambda e: Invalid(str(e))), fx.Effect[int, Invalid, Never]
     )
+    assert_type(fx.on_thread(fx.try_(lambda: 1)), fx.Effect[int, fx.UnknownError, Never])
     assert_type(fx.fail_sync(Gone), fx.Effect[Never, Gone, Never])
     assert_type(fx.fail_cause_sync(lambda: fx.cause.fail(1)), fx.Effect[Never, int, Never])
     assert_type(fx.from_result(r), fx.Effect[int, str, Never])
