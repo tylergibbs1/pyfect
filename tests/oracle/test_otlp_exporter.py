@@ -17,7 +17,7 @@ from typing import Any, Literal
 import pytest
 
 import pyfect as fx
-from pyfect import config_provider, layer, metric, stream, testing
+from pyfect import config_provider, duration, layer, metric, stream, testing
 from pyfect._version import VERSION
 from pyfect.clock import Clock, ClockService, current_time_millis
 from pyfect.duration import Duration
@@ -70,7 +70,11 @@ def _make_exporter(
     )
 
 
-def _make_exporter_raw(max_batch_size: int | Literal["disabled"] = 1, body: Any = None):
+def _make_exporter_raw(
+    max_batch_size: int | Literal["disabled"] = 1,
+    body: Any = None,
+    export_interval: DurationInput = "1 hour",
+):
     def payload(items: list[Any]) -> tuple[HttpBody, fx.Effect[None]]:
         return (body(items) if body is not None else http_body.EMPTY), fx.void
 
@@ -78,7 +82,7 @@ def _make_exporter_raw(max_batch_size: int | Literal["disabled"] = 1, body: Any 
         label="OtlpExporterTest",
         url="http://localhost:4318/v1/logs",
         headers=None,
-        export_interval="1 hour",
+        export_interval=export_interval,
         max_batch_size=max_batch_size,
         body=payload,
         shutdown_timeout="1 second",
@@ -228,6 +232,47 @@ class _CountingClock:
 
     def _done(self) -> None:
         self.pending -= 1
+
+
+class _ActiveFibers:
+    def __init__(self) -> None:
+        self.active = 0
+
+    def record_fiber_start(self, context: Any) -> None:
+        self.active += 1
+
+    def record_fiber_end(self, context: Any, exit: Any) -> None:
+        self.active -= 1
+
+
+@testing.effect
+def test_keeps_no_background_fiber_with_an_infinite_interval():
+    """keeps no background fiber with an infinite interval (Effect main, #10556)"""
+    fibers = _ActiveFibers()
+    seen, http = with_status(200)
+
+    @fx.gen
+    def program():
+        exporter = yield from _make_exporter_raw(2, None, duration.infinity)
+        flusher = yield from otlp_exporter.Flusher()
+        assert fibers.active == 0
+
+        exporter.push({"value": 1})
+        yield from flusher.flush
+        assert len(seen.requests) == 1
+
+        exporter.push({"value": 2})
+        exporter.push({"value": 3})
+        yield from _yield_now_n(3)
+        assert fibers.active == 0
+        assert len(seen.requests) == 2
+
+        exporter.push({"value": 4})
+
+    yield from _with_flusher(program, http).pipe(
+        fx.provide_service(metric.FiberRuntimeMetrics, fibers)
+    )
+    assert len(seen.requests) == 3
 
 
 @testing.effect

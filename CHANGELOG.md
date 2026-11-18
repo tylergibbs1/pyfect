@@ -115,6 +115,10 @@
 
 ### Fixed
 
+- Observability: an OTLP exporter with an infinite export interval kept a fiber waiting
+  forever for an interval that never ends. It now starts no export loop and exports only on
+  a flush, a full batch or shutdown, as in Effect-TS/effect#10556 (after 4.1.4).
+
 - A schema whose aliases only reach each other (a JSON Schema `$ref` to itself) took
   seconds to fail, and up to a minute on Python 3.14; so did any deep recursion that ran
   past pyfect's fresh stacks. The `RecursionError` carried about 180 thousand frames (one
