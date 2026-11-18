@@ -11,6 +11,7 @@ Otherwise as ``uvicorn_server``, on the same request handling and shutdown.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import dataclasses
 import socket
 import ssl
@@ -22,9 +23,12 @@ from pyfect._extras import missing_extra
 try:
     from hypercorn.app_wrappers import ASGIWrapper
     from hypercorn.asyncio.run import worker_serve  # pyright: ignore[reportUnknownVariableType]
+    from hypercorn.asyncio.tcp_server import TCPServer
     from hypercorn.config import Config, Sockets
+    from hypercorn.events import Event as ConnectionEvent
     from hypercorn.logging import Logger
     from hypercorn.protocol.events import Event, Request, StreamClosed
+    from hypercorn.protocol.h11 import H11Protocol
     from hypercorn.protocol.ws_stream import WSStream
 except ImportError as error:  # pragma: no cover - depends on the environment
     raise missing_extra("pyfect.http.hypercorn_server", "http2", error) from error
@@ -55,7 +59,10 @@ from pyfect.socket.server import SocketServerError
 class Options(ListenOptions):
     config: NotRequired[Mapping[str, Any]]
     """More ``hypercorn.Config`` attributes (``certfile``, ``keyfile``,
-    ``alpn_protocols``, ``h2_max_concurrent_streams``...)."""
+    ``alpn_protocols``, ``h2_max_concurrent_streams``...), and
+    ``websocket_close_timeout``: how long, in seconds, a WebSocket connection
+    the server closed waits for the client to end it (``ws``'s
+    ``closeTimeout``, 30 by default)."""
 
 
 class _EngineLogger(Logger):
@@ -69,6 +76,8 @@ class _EngineLogger(Logger):
 
 
 class _Config(Config):
+    websocket_close_timeout: float = 30.0
+
     def create_ssl_context(self) -> ssl.SSLContext | None:
         context = super().create_ssl_context()
         return None if context is None else close_without_waiting(context)
@@ -90,18 +99,61 @@ async def _handle_without_extensions(self: WSStream, event: Event) -> None:
 
 async def _handle_events_closing(self: WSStream) -> None:
     """After a too-large message hypercorn sends 1009 but keeps the message
-    and the connection: pyfect's servers drop both, as ``ws`` does."""
+    and the connection: pyfect's servers drop both, as ``ws`` does. Over
+    HTTP/1.1 in cleartext they also close as ``ws`` does: the handler's socket
+    ends at once, the server ends its side of the connection and reads and
+    drops what the client still sends until it ends its side too (or
+    ``websocket_close_timeout`` passes), so a client still sending its message
+    gets the 1009 close, not a reset."""
     await _handle_events(self)
     buffer = self.buffer
-    if isinstance(self.config, _Config) and buffer.length > buffer.max_length and not self.closed:
+    config = self.config
+    if isinstance(config, _Config) and buffer.length > buffer.max_length and not self.closed:
         buffer.clear()
-        await self.send(StreamClosed(stream_id=self.stream_id))
+        if self.scheme == "ws" and self.scope["http_version"] in ("1.0", "1.1"):
+            # Closed, the stream drops all the data still to come.
+            await self.handle(StreamClosed(stream_id=self.stream_id))
+            await self.send(cast("Any", _EndWriting(config.websocket_close_timeout)))
+        else:
+            await self.send(StreamClosed(stream_id=self.stream_id))
 
+
+@dataclasses.dataclass(frozen=True)
+class _EndWriting:
+    """From a closed WebSocket stream to its connection: end our side, as
+    ``ws``'s ``socket.end()`` after its close frame, and drop the connection
+    after ``timeout`` seconds if the client has not ended it (``ws``'s
+    ``closeTimeout``, then ``socket.destroy()``)."""
+
+    timeout: float
+
+
+async def _h11_stream_send(self: H11Protocol, event: Any) -> None:
+    if isinstance(event, _EndWriting):
+        await self.send(cast("ConnectionEvent", event))
+    else:
+        await _h11_send(self, event)
+
+
+async def _tcp_protocol_send(self: TCPServer, event: ConnectionEvent) -> None:
+    if isinstance(event, _EndWriting):
+        with contextlib.suppress(OSError, RuntimeError):
+            self.writer.write_eof()
+        self.loop.call_later(event.timeout, self.writer.transport.abort)
+    else:
+        await _tcp_send(self, event)
+
+
+_h11_send = H11Protocol.stream_send
+_tcp_send = TCPServer.protocol_send
 
 # Only streams of a pyfect server (its ``_Config``) change; other hypercorn
-# servers in the process are left as they are.
+# servers in the process are left as they are (only a pyfect stream sends
+# ``_EndWriting``).
 WSStream.handle = _handle_without_extensions
 WSStream._handle_events = _handle_events_closing  # pyright: ignore[reportPrivateUsage]
+H11Protocol.stream_send = _h11_stream_send
+TCPServer.protocol_send = _tcp_protocol_send
 
 
 class _Hypercorn:

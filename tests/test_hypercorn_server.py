@@ -4,7 +4,9 @@ serves when given ``node:http2``'s ``createServer``."""
 import base64
 import os
 import socket
-from typing import Any
+import time
+from dataclasses import dataclass
+from typing import Any, Literal
 
 import httpx
 
@@ -79,34 +81,54 @@ def _frame(opcode: int, payload: bytes, *, fin: bool) -> bytes:
     return head + b"\0\0\0\0" + payload  # a zero mask leaves the payload as it is
 
 
-def _too_large(port: int, frames: int = 8) -> tuple[str, bytes]:
-    """The handshake's reply, then what the server sends after an oversized
-    message until it closes the connection (``b"open"`` if it stays open)."""
+@dataclass(frozen=True)
+class _Sent:
+    """What a client sending an oversized message saw."""
+
+    head: str
+    """The handshake's reply."""
+    sent_all: bool
+    """Every frame went out: the server never reset the connection mid-send."""
+    ended: Literal["eof", "reset", "open"]
+    """How reading ended: the server's FIN, a reset, or still open after 5 s."""
+    got: bytes
+    """What the server sent after the handshake."""
+
+
+def _too_large(port: int, frames: int, keep_sending: bool) -> _Sent:
     conn, head = _upgrade(port)
     with conn:
-        conn.sendall(_frame(2, b"x" * 4096, fin=False))
         conn.settimeout(5)
-        got = b""
+        sent_all = True
         try:
+            conn.sendall(_frame(2, b"x" * 4096, fin=False))
             for _ in range(frames):
                 conn.sendall(_frame(0, b"x" * 4096, fin=False))
         except TimeoutError:
-            return head, b"open"
+            return _Sent(head, False, "open", b"")
         except OSError:
-            # The server closed before reading the rest (a reset): what it sent
-            # first is still to be read.
-            pass
+            sent_all = False  # reset; what the server sent first is still to be read
+        got = b""
         try:
             while chunk := conn.recv(4096):
                 got += chunk
         except TimeoutError:
-            return head, b"open"
+            return _Sent(head, sent_all, "open", got)
         except OSError:
-            pass  # the reset, after the bytes before it
-        return head, got
+            return _Sent(head, sent_all, "reset", got)
+        if keep_sending:
+            # Never end our side: send until the server drops the connection.
+            deadline = time.monotonic() + 5
+            try:
+                while time.monotonic() < deadline:
+                    conn.sendall(_frame(0, b"x" * 4096, fin=False))
+            except OSError:
+                return _Sent(head, sent_all, "reset", got)
+            return _Sent(head, sent_all, "open", got)
+        return _Sent(head, sent_all, "eof", got)
 
 
-def _serve_too_large(frames: int) -> tuple[str, bytes]:
+def _serve_too_large(frames: int, *, keep_sending: bool = False, **config: Any) -> _Sent:
     @fx.fn
     def hold():
         request = yield from HttpServerRequest()
@@ -120,27 +142,37 @@ def _serve_too_large(frames: int) -> tuple[str, bytes]:
         running = yield from server.HttpServer()
         assert isinstance(running.address, InetAddressV4)
         at = running.address.port
-        return (yield from effect.blocking(lambda: _too_large(at, frames)))
+        return (yield from effect.blocking(lambda: _too_large(at, frames, keep_sending)))
 
     routes: fx.Layer[Any, Any, Any] = router.add("GET", "/ws", hold())
     served = program().pipe(fx.provide(router.serve(routes, disable_logger=True)))
-    engine = hypercorn_server.layer_test(config={"websocket_max_message_size": 8192})
+    engine = hypercorn_server.layer_test(config={"websocket_max_message_size": 8192, **config})
     return fx.run_blocking(scoped(served).pipe(fx.provide(engine)).or_die())
 
 
 def test_web_sockets_refuse_compression_and_close_after_a_too_large_message() -> None:
     """Effect's ``ws`` server leaves permessage-deflate off and closes the
     socket on a too-large message: an inflated frame has no size bound."""
-    head, after = _serve_too_large(8)
-    assert "101" in head.splitlines()[0]
-    assert "permessage-deflate" not in head
-    assert after != b"open"
-    assert b"\x88\x02\x03\xf1" in after  # the 1009 close
+    sent = _serve_too_large(8)
+    assert "101" in sent.head.splitlines()[0]
+    assert "permessage-deflate" not in sent.head
+    assert sent.ended != "open"
+    assert b"\x88\x02\x03\xf1" in sent.got  # the 1009 close
 
 
-def test_the_1009_close_reaches_a_client_still_sending() -> None:
-    """The server closes while the client is still sending its message (8 MiB
-    here, more than the socket buffers hold), so the client's send fails with
-    a reset; the 1009 close it already received is still there to read."""
-    _, after = _serve_too_large(2048)
-    assert b"\x88\x02\x03\xf1" in after
+def test_a_client_still_sending_gets_the_1009_close_without_a_reset() -> None:
+    """As ``ws``: after the 1009 close the server ends its side and reads and
+    drops the rest of the message (8 MiB here, more than the socket buffers
+    hold), so the client sends it all, then reads the close and the end."""
+    sent = _serve_too_large(2048)
+    assert sent.sent_all
+    assert sent.ended == "eof"
+    assert sent.got == b"\x88\x02\x03\xf1"
+
+
+def test_a_client_that_never_ends_its_side_is_dropped_after_the_close_timeout() -> None:
+    """As ``ws``'s ``closeTimeout``: once the server has closed, a client that
+    keeps sending is dropped after ``websocket_close_timeout`` seconds."""
+    sent = _serve_too_large(8, keep_sending=True, websocket_close_timeout=0.2)
+    assert sent.got == b"\x88\x02\x03\xf1"
+    assert sent.ended == "reset"
