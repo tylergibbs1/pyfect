@@ -79,13 +79,18 @@ def _no_wait(_seconds: float) -> None:
     return None
 
 
+def _always_running(_container: str) -> bool:
+    return True
+
+
 def test_is_ready_only_once_the_server_has_finished_starting(monkeypatch: pytest.MonkeyPatch):
     # Seen on a fresh container: the first login came while msdb was still recovering, then
     # system tasks and logins waited on each other's locks for about 3 s more; a test's first
     # statements waited behind them.
     server = _Starting((1, 4), (0, 2), (0, 0))
     monkeypatch.setattr(_mssql, "_login", server.login)
-    monkeypatch.setattr(_mssql.time, "sleep", _no_wait)
+    monkeypatch.setattr(_docker, "running", _always_running)
+    monkeypatch.setattr(_docker.time, "sleep", _no_wait)
     _mssql._wait_ready(_mssql.MssqlServer("127.0.0.1", 1433, "container"))  # pyright: ignore[reportPrivateUsage]
     assert (server.logins, server.closed, server.states) == (3, 3, [])
 
