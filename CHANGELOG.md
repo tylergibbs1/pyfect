@@ -20,6 +20,10 @@
   through the last entry it uploaded, so an older entry imported from another remote while the
   upload ran was dropped and never uploaded. Only the uploaded entries are removed now
   (Effect #10624).
+- `fx.tx` spun on the CPU, rerunning its body at once, when the body recovered from
+  `tx_retry` (for example `queue.take().exit()` on an empty `TxQueue`): only a body that failed
+  with the retry waited for a ref it read to change. The wait is now decided in one place from
+  the retry alone, so a body that recovers from it also waits (Effect #10604).
 
 ## 0.6.12 (2026-11-18)
 

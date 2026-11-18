@@ -33,7 +33,6 @@ from pyfect._core import (
     _FailCause,
     _FromExit,
     _Locally,
-    _Succeed,
     _Sync,
     _WithFiber,
     uninterruptible_mask,
@@ -41,11 +40,10 @@ from pyfect._core import (
 from pyfect._effect_args import require_effect
 from pyfect._js import same_value
 from pyfect._waiters import wake_soon_from_here
-from pyfect.cause import Cause
 from pyfect.cause import interrupt as interrupt_cause
 from pyfect.clock import Clock, ClockService
 from pyfect.context import Tag
-from pyfect.exit import Exit, Success
+from pyfect.exit import Exit, Failure, Success
 
 if TYPE_CHECKING:
     from pyfect._fiber import Fiber
@@ -279,13 +277,11 @@ def _boundary[A, E](
     state = TransactionMeta(clock.now_nanos_unsafe())
 
     def run(restore: Restore) -> Effect[A, E]:
-        attempt = (
-            _Locally[A, E, Never](restore(eff), lambda ctx: ctx.add(Transaction, state))
-            .tap_cause(lambda cause: _after_failure(state, cause, restore))
-            .exit()
-        )
+        attempt = _Locally[A, E, Never](
+            restore(eff), lambda ctx: ctx.add(Transaction, state)
+        ).exit()
 
-        return attempt.flat_map(_Attempts(state, clock, attempt).step)
+        return attempt.flat_map(_Attempts(state, clock, attempt, restore).step)
 
     return uninterruptible_mask(run) if restore is None else run(restore)
 
@@ -294,37 +290,51 @@ class _Attempts[A, E]:
     """Reruns a transaction's ``attempt`` until it commits; a state object, as
     a closure calling itself would keep the body alive after the run."""
 
-    __slots__ = ("attempt", "clock", "state")
+    __slots__ = ("attempt", "clock", "restore", "state")
 
     def __init__(
-        self, state: TransactionMeta, clock: ClockService, attempt: Effect[Exit[A, E]]
+        self,
+        state: TransactionMeta,
+        clock: ClockService,
+        attempt: Effect[Exit[A, E]],
+        restore: Restore,
     ) -> None:
         self.state = state
         self.clock = clock
         self.attempt = attempt
+        self.restore = restore
 
     def step(self, ex: Exit[A, E]) -> Effect[A, E]:
+        """The one place that decides what an attempt's exit means. A
+        ``tx_retry`` waits for a change before the rerun however the body
+        ended: failing with the retry, or recovering from it and succeeding."""
         state = self.state
-        if state._retry or not state._try_commit(isinstance(ex, Success)):
-            state._next_attempt(self.clock.now_nanos_unsafe())
-            return self.attempt.flat_map(self.step)
+        if state._retry:
+            if isinstance(ex, Failure) and not ex.cause.has_interrupts_only:
+                # ``tx_retry`` interrupted the body, but something else failed
+                # too (a finalizer): that failure is the transaction's outcome.
+                state._clear()
+            else:
+                return self.restore(_await_change(state)).exit().flat_map(self._after_wait)
+        if not state._try_commit(isinstance(ex, Success)):
+            return self._rerun()
+        return self._finish(ex)
+
+    def _after_wait(self, waited: Exit[None, Never]) -> Effect[A, E]:
+        if isinstance(waited, Failure):
+            # Interrupted while waiting: nothing of this run is published.
+            return self._finish(Failure(waited.cause))
+        return self._rerun()
+
+    def _rerun(self) -> Effect[A, E]:
+        self.state._next_attempt(self.clock.now_nanos_unsafe())
+        return self.attempt.flat_map(self.step)
+
+    def _finish(self, ex: Exit[A, E]) -> Effect[A, E]:
+        state = self.state
         state._clear()
         state._completed = True
         return _FromExit(ex)
-
-
-_VOID: Effect[None] = _Succeed(None)
-
-
-def _after_failure(state: TransactionMeta, cause: Cause[Any], restore: Restore) -> Effect[None]:
-    if not state._retry:
-        return _VOID
-    if not cause.has_interrupts_only:
-        # ``tx_retry`` interrupted the body, but something else failed too
-        # (a finalizer): that failure is the transaction's outcome.
-        state._clear()
-        return _VOID
-    return restore(_await_change(state))
 
 
 def _await_change(state: TransactionMeta) -> Effect[None]:

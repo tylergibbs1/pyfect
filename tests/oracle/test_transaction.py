@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import pyfect as fx
+from pyfect import exit as Exit
 from pyfect import testing
 
 
@@ -192,6 +193,48 @@ def test_should_preserve_nested_writes_when_nested_failure_is_caught():
 
 
 # --- retry --------------------------------------------------------------------
+
+
+@testing.effect
+def test_should_wait_for_a_read_value_to_change_after_recovering_a_retry():
+    """should wait for a read value to change after recovering a retry"""
+    queue = yield from fx.TxQueue[int].unbounded()
+    runs = 0
+
+    @fx.fn
+    def body():
+        nonlocal runs
+        runs += 1
+        return (yield from queue.take().exit())
+
+    waiter = yield from fx.tx(body()).fork(start_immediately=True)
+
+    yield from _yield_times(10)
+    assert runs == 1
+
+    yield from queue.offer(42)
+    assert (yield from waiter.join()) == Exit.succeed(42)
+    assert runs == 2
+
+
+@testing.effect
+def test_should_interrupt_a_recovered_retry_without_committing_its_writes():
+    """should interrupt a recovered retry without committing its writes"""
+    written = fx.TxRef(0)
+
+    @fx.fn
+    def body():
+        yield from written.set(1)
+        yield from fx.tx_retry.exit()
+
+    waiter = yield from fx.tx(body()).fork(start_immediately=True)
+
+    yield from waiter.interrupt()
+    exit = yield from waiter.await_exit()
+
+    assert isinstance(exit, fx.Failure)
+    assert exit.cause.has_interrupts
+    assert (yield from fx.tx(written.get())) == 0
 
 
 @testing.effect
