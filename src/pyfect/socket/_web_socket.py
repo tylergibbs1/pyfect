@@ -364,7 +364,7 @@ class _Buffer:
             hwm = self.high_water_mark
             if hwm is not None:
                 self.size += _byte_length(data)
-            waiters = self.signal.notify_locked()
+            waiters = self.signal.arrived_locked()
             if hwm is not None and self.size >= hwm and self.pausable is not None:
                 self._pause()
             elif hwm is not None and self.size > hwm and self.pausable is None and not waiters:
@@ -405,9 +405,9 @@ class _Buffer:
                 return succeed(taken)
             if taken is not None:
                 return fail(taken)
-            return self.signal.wait(self._readable).flat_map(lambda _: self.pull())
+            return self.signal.wait_arrival(self._readable).flat_map(lambda _: suspend(step))
 
-        return suspend(step)
+        return self.signal.take_turn(step)
 
 
 def _message_data(data: object) -> Chunk:

@@ -30,7 +30,7 @@ from collections.abc import Callable
 from pyfect._core import Effect
 from pyfect._os_wait import Resume, os_wait
 from pyfect.duration import Duration, from_input_unsafe
-from pyfect.effect import fail, succeed, suspend, void
+from pyfect.effect import fail, succeed, suspend, sync, void, yield_now
 from pyfect.socket._errors import SocketError, close_error, read_error, write_error
 from pyfect.socket._loop import call_soon, get_loop
 from pyfect.socket._tls_session import Received, TlsSession
@@ -39,6 +39,7 @@ _HANDSHAKE_TIMEOUT = from_input_unsafe("120 seconds")
 """How long an accepted connection's TLS handshake may take (Node's ``handshakeTimeout``)."""
 
 HIGH_WATER_MARK = 64 * 1024
+_YIELD = yield_now()
 
 
 class Signal:
@@ -47,11 +48,13 @@ class Signal:
     they read. One signal serves several conditions, so a wake means only
     that something changed."""
 
-    __slots__ = ("_waiters", "lock")
+    __slots__ = ("_arrived", "_waiters", "lock")
 
     def __init__(self, lock: threading.Lock) -> None:
         self.lock = lock
         self._waiters: list[Callable[[], None]] = []
+        # Whether something a pull takes arrived since the last pull took or waited.
+        self._arrived = False
 
     def wait(self, ready: Callable[[], bool]) -> Effect[None]:
         """Wait until ``ready`` holds, parking again after a wake for some
@@ -79,6 +82,33 @@ class Signal:
         it."""
         waiters, self._waiters = self._waiters, []
         return waiters
+
+    def arrived_locked(self) -> list[Callable[[], None]]:
+        """``notify_locked`` for something a pull takes: bytes, a message, a packet."""
+        self._arrived = True
+        return self.notify_locked()
+
+    def take_turn[A, E](self, take: Callable[[], Effect[A, E]]) -> Effect[A, E]:
+        """``take()``, the start of a pull. In a browser or Node each arrival is an event of
+        its own, run after the tasks queued before it; here it comes on another thread, and
+        can land while the reader is still handling the last one. Then the pull yields once
+        first, so those tasks (a consumer the last item woke) run before it reads on."""
+
+        def first() -> Effect[A, E]:
+            if not self._arrived:
+                return take()
+            self._arrived = False
+            return _YIELD.flat_map(lambda _: suspend(take))
+
+        return suspend(first)
+
+    def wait_arrival(self, ready: Callable[[], bool]) -> Effect[None]:
+        """``wait(ready)`` for a pull: its wake went through the scheduler, behind the
+        tasks queued before it, so what arrived meanwhile is read without a yield."""
+        return self.wait(ready).flat_map(lambda _: sync(self._settle))
+
+    def _settle(self) -> None:
+        self._arrived = False
 
     def _forget(self, wake: Callable[[], None]) -> None:
         with self.lock:
@@ -155,7 +185,7 @@ class Connection(asyncio.Protocol):
                     self._chunks.extend(received.data)
                     self._size += sum(map(len, received.data))
                     self._pause_if_full()
-                waiters = self.signal.notify_locked()
+                waiters = self.signal.arrived_locked()
             for wake in waiters:
                 wake()
         if received.error is not None:
@@ -304,7 +334,7 @@ class Connection(asyncio.Protocol):
     ) -> Effect[A, SocketError]:
         """``take`` of the buffered chunks (at most ``limit``), called in the step
         that takes them, so an interrupt cannot lose them."""
-        return suspend(_PullInto(self, take, limit).step)
+        return self.signal.take_turn(_PullInto(self, take, limit).step)
 
     def closed(self) -> Effect[None]:
         """Wait until the transport is lost."""
@@ -438,7 +468,7 @@ class _PullInto[A]:
             return succeed(self.take(taken))
         if taken is not None:
             return fail(taken)
-        return conn.signal.wait(conn._readable).flat_map(self.again)
+        return conn.signal.wait_arrival(conn._readable).flat_map(self.again)
 
     def again(self, _: object) -> Effect[A, SocketError]:
         return suspend(self.step)

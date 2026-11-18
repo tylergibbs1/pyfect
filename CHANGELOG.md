@@ -181,6 +181,12 @@
   `RunnerStorageService.release_many` (`EncodedReleaseMany.release_many` for drivers). A
   failed chunk is retried as a single release is, and SQL runner storage still releases
   through the reserved lock connection one operation at a time.
+- Sockets: a WebSocket, TCP or UDP read that found data which arrived while its fiber was still
+  running took it at once, ahead of the tasks queued before it. A stream RPC over a WebSocket,
+  whose client acks each chunk on receipt, then kept the server producing: the reader acked
+  chunk after chunk while the consumer that had its items waited, so `take(5)` saw the server
+  make 7-35 items on Linux, where Effect makes 5 or 6. Such a read now yields once first, as
+  each arrival is an event of its own in a browser or Node.
 
 - Cluster: an `AckChunk` or `Interrupt` saved for a request that is no longer stored is
   dropped instead of stored, on the memory and SQL storages, as in Effect 4.1.4 (#10267).

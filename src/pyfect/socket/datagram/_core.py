@@ -113,7 +113,7 @@ class ReaderState:
                     return
             # A sliding queue's ``maxlen`` discards the oldest packet.
             self.queue.append(ReceivedDatagram(payload, host, port, self))
-            waiters = self.signal.notify_locked()
+            waiters = self.signal.arrived_locked()
         for wake in waiters:
             wake()
 
@@ -156,7 +156,7 @@ class ReaderState:
             handle.close()
 
     def pull(self) -> Effect[tuple[Datagram, ...], DatagramSocketError]:
-        return suspend(self._take)
+        return self.signal.take_turn(self._take)
 
     def _take(self) -> Effect[tuple[Datagram, ...], DatagramSocketError]:
         with self.lock:
@@ -167,7 +167,7 @@ class ReaderState:
             failure = self.failure
         if failure is not None:
             return fail(failure)
-        return self.signal.wait(self._ready).and_then(self.pull())
+        return self.signal.wait_arrival(self._ready).and_then(suspend(self._take))
 
     def _ready(self) -> bool:
         return bool(self.queue) or self.failure is not None
