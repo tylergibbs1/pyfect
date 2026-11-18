@@ -1,0 +1,88 @@
+# Open known bugs, one [[bug]] per bug: the area it blocks (scripts/stability.py's AREAS), a
+# title and a link. Remove an entry in the change that fixes the bug. tests/test_stability.py
+# checks every entry.
+
+[[bug]]
+area = "rpc"
+title = "One malformed NDJSON line on stdio stops RPC/MCP stdio serving and loses buffered input"
+link = "https://github.com/Effect-TS/effect/pull/10579"
+
+[[bug]]
+area = "workflow"
+title = "Activities restart in a loop after a durable-clock wakeup with SQL message storage (clear_replies)"
+link = "https://github.com/Effect-TS/effect/pull/10629"
+
+[[bug]]
+area = "cluster"
+title = "A redelivered persisted keep_alive(True) request completes the held keep-alive early"
+link = "https://github.com/Effect-TS/effect/pull/10709"
+
+[[bug]]
+area = "cluster"
+title = "Shards stay stranded on a runner whose shard-lock refreshes keep failing (Effect #10689)"
+link = "https://github.com/tylergibbs1/pyfect/pull/118"
+
+[[bug]]
+area = "sql"
+title = "The in-memory EventJournal drops entries imported during an upload"
+link = "https://github.com/Effect-TS/effect/pull/10624"
+
+[[bug]]
+area = "rpc"
+title = "One stalled stream consumer blocks every response on its RpcClient connection when acks are on"
+link = "https://github.com/Effect-TS/effect/pull/10572"
+
+[[bug]]
+area = "core"
+title = "Effect.tx spins on the CPU when its body recovers tx_retry"
+link = "https://github.com/Effect-TS/effect/pull/10604"
+
+[[bug]]
+area = "rpc"
+title = "An RPC client socket write failure is a defect, not an RpcClientError"
+link = "https://github.com/Effect-TS/effect/pull/10658"
+
+[[bug]]
+area = "ai"
+title = "stream_text with disable_tool_call_resolution drops the results of tools approved earlier"
+link = "https://github.com/Effect-TS/effect/pull/10614"
+
+[[bug]]
+area = "http"
+title = "HttpServerResponse set_status, remove_header and the cookie setters reset an explicit content-type or content-length"
+link = "https://github.com/Effect-TS/effect/pull/10605"
+
+[[bug]]
+area = "core"
+title = "Atom.kvs shows a value from before the last write after a refresh or remount"
+link = "https://github.com/Effect-TS/effect/pull/10613"
+
+[[bug]]
+area = "ai"
+title = "OpenAI WebSocket error events with a null type or code, or no message, fail to decode"
+link = "https://github.com/Effect-TS/effect/pull/10645"
+
+[[bug]]
+area = "observability"
+title = "OtlpLogger exports the no-op span's trace ids for logs in spans when tracing is disabled"
+link = "https://github.com/Effect-TS/effect/pull/10609"
+
+[[bug]]
+area = "core"
+title = "The case helpers (case.py) split and strip ASCII letters only"
+link = "https://github.com/Effect-TS/effect/pull/10638"
+
+[[bug]]
+area = "core"
+title = "DateTime.make ignores a zone followed by a comment or trailing whitespace"
+link = "https://github.com/Effect-TS/effect/pull/10620"
+
+[[bug]]
+area = "observability"
+title = "A NaN summary quantile passes the range check"
+link = "https://github.com/Effect-TS/effect/pull/10680"
+
+[[bug]]
+area = "observability"
+title = "An infinite OTLP export interval still runs the export loop fiber"
+link = "https://github.com/Effect-TS/effect/pull/10556"

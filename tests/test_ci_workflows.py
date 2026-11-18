@@ -244,7 +244,7 @@ def test_the_audit_ignore_guard_rejects_a_missing_reason_or_date_and_a_stale_one
 def test_every_ci_job_has_a_time_budget():
     """A job's timeout is its budget: one that grows past it fails instead of slowing every
     run down."""
-    for workflow in ("ci.yml", "extras.yml"):
+    for workflow in ("ci.yml", "extras.yml", "soak-nightly.yml"):
         text = (WORKFLOWS / workflow).read_text(encoding="utf-8")
         jobs = re.findall(r"(?m)^  ([\w-]+):\n", text.split("\njobs:\n", 1)[1])
         for job in jobs:
@@ -411,6 +411,7 @@ def test_the_server_tests_load_the_cached_images_and_never_pull():
     for workflow, saver, runners in (
         ("ci.yml", "images", ["test"]),
         ("drivers.yml", "images", ["driver"]),
+        ("soak-nightly.yml", "images", ["cluster"]),
     ):
         assert save in _job(workflow, saver), f"{workflow}'s {saver} job saves no images"
         for runner in runners:
@@ -483,3 +484,27 @@ def test_every_workflow_prints_the_runners_cpus():
     step = "      - name: CPUs\n        run: |\n          nproc\n"
     for path in sorted(WORKFLOWS.glob("*.yml")):
         assert step in path.read_text(encoding="utf-8"), path.name
+
+
+def test_the_nightly_soak_runs_the_kill_suites_daily_and_never_retries():
+    """scripts/stability.py's bar needs the nightly soak green; a retried or tolerated failure
+    would hide the bug it found. Its rounds rerun the suites that kill runners and restart
+    clusters, on every server, and the first failed round fails the job and opens an issue."""
+    text = (WORKFLOWS / "soak-nightly.yml").read_text(encoding="utf-8")
+    assert re.search(r'(?m)^    - cron: "\d+ \d+ \* \* \*"$', text), "scheduled daily"
+    for tolerated in ("continue-on-error", "--reruns", "retry", "|| true", "set +e"):
+        assert tolerated not in text, tolerated
+    rounds = _job("soak-nightly.yml", "cluster")
+    files = [
+        path
+        for pattern in re.findall(r"tests/oracle/[\w*]+\.py", rounds)
+        for path in ROOT.glob(pattern)
+    ]
+    assert any("cluster.kill(" in path.read_text(encoding="utf-8") for path in files)
+    assert any("mysql_server" in path.read_text(encoding="utf-8") for path in files)
+    assert any("cluster_db" in path.read_text(encoding="utf-8") for path in files), "PostgreSQL"
+    assert "exit 1" in rounds and 'PYFECT_REQUIRE_ALL_TESTS: "1"' in rounds
+    assert "-m soak run" in _job("soak-nightly.yml", "soak")
+    report = _job("soak-nightly.yml", "report")
+    assert "needs: [images, cluster, soak]" in report
+    assert "if: failure() || cancelled()" in report and "gh issue create" in report
