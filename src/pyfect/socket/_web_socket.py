@@ -399,15 +399,18 @@ class _Buffer:
         return bool(self.chunks) or self.error is not None
 
     def pull(self) -> Effect[tuple[Chunk, ...], SocketError]:
-        def step() -> Effect[tuple[Chunk, ...], SocketError]:
-            taken = self._take()
-            if isinstance(taken, tuple):
-                return succeed(taken)
-            if taken is not None:
-                return fail(taken)
-            return self.signal.wait_arrival(self._readable).flat_map(lambda _: suspend(step))
+        return self.signal.take_turn(self._step)
 
-        return self.signal.take_turn(step)
+    def _step(self) -> Effect[tuple[Chunk, ...], SocketError]:
+        taken = self._take()
+        if isinstance(taken, tuple):
+            return succeed(taken)
+        if taken is not None:
+            return fail(taken)
+        return self.signal.wait_arrival(self._readable).flat_map(self._again)
+
+    def _again(self, _: object) -> Effect[tuple[Chunk, ...], SocketError]:
+        return suspend(self._step)
 
 
 def _message_data(data: object) -> Chunk:
