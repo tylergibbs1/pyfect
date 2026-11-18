@@ -129,21 +129,24 @@ class HttpServerResponse:
             "body": self.body.to_json(),
         }
 
-    def _replace(
+    def _copy(
         self,
         *,
         status: int | None = None,
         status_text: str | None = None,
-        headers: Headers | None = None,
         cookies: Cookies | None = None,
+        body: _body.HttpBody | None = None,
     ) -> HttpServerResponse:
-        return HttpServerResponse(
-            self.status if status is None else status,
-            self.status_text if status_text is None else status_text,
-            self.headers if headers is None else headers,
-            self.cookies if cookies is None else cookies,
-            self.body,
-        )
+        """This response with its headers as they are: a status, cookie or
+        body change never brings back the body's content headers over
+        explicit ones (Effect's ``copyResponse``)."""
+        response = object.__new__(HttpServerResponse)
+        response.status = self.status if status is None else status
+        response.status_text = self.status_text if status_text is None else status_text
+        response.headers = self.headers
+        response.cookies = self.cookies if cookies is None else cookies
+        response.body = self.body if body is None else body
+        return response
 
     def set_header(self, key: str, value: str) -> HttpServerResponse:
         return HttpServerResponse(
@@ -164,10 +167,18 @@ class HttpServerResponse:
         )
 
     def remove_header(self, key: str) -> HttpServerResponse:
-        return self._replace(headers=self.headers.remove(key))
+        """The response without ``key``; a removed content header falls
+        back to the body's."""
+        return HttpServerResponse(
+            self.status,
+            self.status_text,
+            cookies=self.cookies,
+            body=self.body,
+            owned_headers=self.headers.remove(key),
+        )
 
     def set_status(self, status: int, status_text: str | None = None) -> HttpServerResponse:
-        return self._replace(status=status, status_text=status_text)
+        return self._copy(status=status, status_text=status_text)
 
     def set_body(self, body: _body.HttpBody) -> HttpServerResponse:
         """The response with ``body``, its content headers following it."""
@@ -181,59 +192,53 @@ class HttpServerResponse:
 
     def set_body_keep_headers(self, body: _body.HttpBody) -> HttpServerResponse:
         """The response with ``body`` and its headers unchanged."""
-        response = object.__new__(HttpServerResponse)
-        response.status = self.status
-        response.status_text = self.status_text
-        response.headers = self.headers
-        response.cookies = self.cookies
-        response.body = body
-        return response
+        return self._copy(body=body)
 
     def remove_cookie(self, name: str) -> HttpServerResponse:
-        return self._replace(cookies=self.cookies.remove(name))
+        return self._copy(cookies=self.cookies.remove(name))
 
     def replace_cookies(self, cookies: Cookies) -> HttpServerResponse:
-        return self._replace(cookies=cookies)
+        return self._copy(cookies=cookies)
 
     def merge_cookies(self, cookies: Cookies) -> HttpServerResponse:
-        return self._replace(cookies=self.cookies.merge(cookies))
+        return self._copy(cookies=self.cookies.merge(cookies))
 
     def update_cookies(self, f: Callable[[Cookies], Cookies]) -> HttpServerResponse:
-        return self._replace(cookies=f(self.cookies))
+        return self._copy(cookies=f(self.cookies))
 
     def set_cookie(
         self, name: str, value: str, **options: Unpack[CookieOptionsInput]
     ) -> Effect[HttpServerResponse, CookiesError]:
         return from_result(self.cookies.set(name, value, **options)).map(
-            lambda cookies: self._replace(cookies=cookies)
+            lambda cookies: self._copy(cookies=cookies)
         )
 
     def set_cookie_unsafe(
         self, name: str, value: str, **options: Unpack[CookieOptionsInput]
     ) -> HttpServerResponse:
-        return self._replace(cookies=self.cookies.set_unsafe(name, value, **options))
+        return self._copy(cookies=self.cookies.set_unsafe(name, value, **options))
 
     def expire_cookie(
         self, name: str, **options: Unpack[CookieOptionsInput]
     ) -> Effect[HttpServerResponse, CookiesError]:
         return from_result(self.cookies.expire_cookie(name, **options)).map(
-            lambda cookies: self._replace(cookies=cookies)
+            lambda cookies: self._copy(cookies=cookies)
         )
 
     def expire_cookie_unsafe(
         self, name: str, **options: Unpack[CookieOptionsInput]
     ) -> HttpServerResponse:
-        return self._replace(cookies=self.cookies.expire_cookie_unsafe(name, **options))
+        return self._copy(cookies=self.cookies.expire_cookie_unsafe(name, **options))
 
     def set_cookies(
         self, cookies: Iterable[CookieEntry]
     ) -> Effect[HttpServerResponse, CookiesError]:
         return from_result(self.cookies.set_all(cookies)).map(
-            lambda cookies: self._replace(cookies=cookies)
+            lambda cookies: self._copy(cookies=cookies)
         )
 
     def set_cookies_unsafe(self, cookies: Iterable[CookieEntry]) -> HttpServerResponse:
-        return self._replace(cookies=self.cookies.set_all_unsafe(cookies))
+        return self._copy(cookies=self.cookies.set_all_unsafe(cookies))
 
 
 def is_http_server_response(value: object) -> bool:

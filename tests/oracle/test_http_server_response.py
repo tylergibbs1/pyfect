@@ -263,6 +263,62 @@ def test_set_header_overrides_body_derived_content_headers() -> None:
     assert response.headers["content-length"] == "1"
 
 
+def _explicit_content_headers() -> HttpServerResponse:
+    return server_response.text("body").set_headers(
+        {"content-type": "text/custom", "content-length": "1", "x-test": "ok"}
+    )
+
+
+_KEEPING_UPDATES: list[tuple[str, Callable[[HttpServerResponse], HttpServerResponse]]] = [
+    ("set_status", lambda r: r.set_status(201)),
+    ("remove_header", lambda r: r.remove_header("x-test")),
+    ("set_cookie_unsafe", lambda r: r.set_cookie_unsafe("session", "123")),
+    ("set_cookie", lambda r: fx.run_sync(r.set_cookie("session", "123").or_die())),
+    ("set_cookies_unsafe", lambda r: r.set_cookies_unsafe([("session", "123")])),
+    ("set_cookies", lambda r: fx.run_sync(r.set_cookies([("session", "123")]).or_die())),
+    ("expire_cookie_unsafe", lambda r: r.expire_cookie_unsafe("session")),
+    ("expire_cookie", lambda r: fx.run_sync(r.expire_cookie("session").or_die())),
+    ("remove_cookie", lambda r: r.remove_cookie("session")),
+    ("replace_cookies", lambda r: r.replace_cookies(r.cookies)),
+    ("merge_cookies", lambda r: r.merge_cookies(r.cookies)),
+    ("update_cookies", lambda r: r.update_cookies(lambda c: c)),
+]
+
+
+@pytest.mark.parametrize(("name", "update"), _KEEPING_UPDATES)
+def test_keeps_explicit_content_headers_when_the_status_cookies_or_other_headers_change(
+    name: str, update: Callable[[HttpServerResponse], HttpServerResponse]
+) -> None:
+    """keeps explicit content headers when the status, cookies or other headers change"""
+    del name
+    updated = update(_explicit_content_headers())
+    assert updated.headers["content-type"] == "text/custom"
+    assert updated.headers["content-length"] == "1"
+
+
+_CONTENT_CHANGING = {"set_header", "set_headers", "set_body", "set_body_keep_headers"}
+"""The setters that change headers or the body on purpose; ``set_body_keep_headers`` keeps
+every header, as its name says."""
+
+
+def test_every_response_setter_is_checked_for_keeping_explicit_content_headers() -> None:
+    """Not an Effect title: a new setter must join the table above, so it cannot quietly
+    rebuild the content headers from the body (Effect #10605)."""
+    setters = {
+        name
+        for name in vars(HttpServerResponse)
+        if not name.startswith("_") and callable(getattr(HttpServerResponse, name))
+    } - {"to_json"}
+    assert setters == {name for name, _ in _KEEPING_UPDATES} | _CONTENT_CHANGING
+
+
+def test_removing_an_explicit_content_header_restores_the_body_s() -> None:
+    """keeps explicit content headers when the status, cookies or other headers change"""
+    response = _explicit_content_headers()
+    assert response.remove_header("content-type").headers["content-type"] == "text/plain"
+    assert response.remove_header("content-length").headers["content-length"] == "4"
+
+
 def test_from_web_preserves_content_length_through_a_web_round_trip() -> None:
     """fromWeb preserves content-length through a Web round trip"""
     response = response_from_web(WebResponse("hello", headers={"content-length": "5"}))

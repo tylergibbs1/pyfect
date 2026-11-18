@@ -31,6 +31,10 @@
   tools approved (or denied) in the prompt, so `Chat.stream_text` did not record them and ran
   an approved tool again on a later turn. They now come first in the stream whether or not
   resolution is on (Effect #10614).
+- `HttpServerResponse.set_status`, `remove_header` and the cookie setters (`set_cookie`,
+  `expire_cookie`, `remove_cookie`, `merge_cookies` and the rest) reset an explicit
+  `content-type` or `content-length` to the body's. They now keep the headers as they are;
+  removing a content header still falls back to the body's (Effect #10605).
 
 ## 0.6.12 (2026-11-18)
 
