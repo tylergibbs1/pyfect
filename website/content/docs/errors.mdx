@@ -51,6 +51,17 @@ with tracebacks. Interruptions are printed only when there is nothing else, as i
 
 <include meta='title="defects.py"'>../../snippets/errors/defects.py</include>
 
+## Exception groups
+
+Raised into plain Python, a failed run raises one error: the first typed error, else the first
+defect, with the full cause as a note when it holds more. To raise every error instead, take
+the `Exit` and call `run.unwrap_group(exit)`: a cause with several errors becomes an
+`ExceptionGroup`, so the traceback shows each one and `except*` can pick them out, and a cause
+with one error raises what the run function would. `cause.to_exception_group()` gives the group
+itself.
+
+<include meta='title="exception_groups.py"'>../../snippets/errors/exception_groups.py</include>
+
 ## Reading a failed Exit
 
 `fx.run_blocking_exit` gives an `Exit`: `Success(value)` or `Failure(cause)`. To get the typed error

@@ -471,17 +471,37 @@ def unwrap[A](ex: Exit[A, Any]) -> A:
     note when there is more than one reason)."""
     if isinstance(ex, Success):
         return ex.value
-    error = ex.cause.raisable()
-    hint = _raised_tagged_error_hint(error)
-    if (
-        hint is not None
-        and any(d is error for d in ex.cause.defects)
-        and hint not in (getattr(error, "__notes__", None) or ())
-    ):
-        error.add_note(hint)
+    error = _with_hint(ex.cause.raisable(), ex.cause)
     if len(ex.cause.reasons) > 1:
         error.add_note("Full cause:\n" + ex.cause.pretty())
     raise error
+
+
+def unwrap_group[A](ex: Exit[A, Any]) -> A:
+    """``unwrap``, except that a cause holding several errors (siblings that
+    failed together, failed finalizers) is raised as
+    ``cause.to_exception_group()``, so the traceback shows each one and
+    ``except*`` can pick them out. A cause with one error raises exactly
+    what ``unwrap`` raises."""
+    if isinstance(ex, Success) or len(ex.cause.pretty_errors()) < 2:
+        return unwrap(ex)
+    group = ex.cause.to_exception_group()
+    for error in group.exceptions:
+        _with_hint(error, ex.cause)
+    raise group
+
+
+def _with_hint(error: BaseException, cause: Cause[Any]) -> BaseException:
+    """``error``, noting how to fail with it if it is a ``TaggedError`` that
+    was raised (a defect of ``cause``), unless it says so already."""
+    hint = _raised_tagged_error_hint(error)
+    if (
+        hint is not None
+        and any(d is error for d in cause.defects)
+        and hint not in (getattr(error, "__notes__", None) or ())
+    ):
+        error.add_note(hint)
+    return error
 
 
 __all__ = [
@@ -505,4 +525,5 @@ __all__ = [
     "run_sync",
     "run_sync_exit",
     "unwrap",
+    "unwrap_group",
 ]

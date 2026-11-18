@@ -264,6 +264,17 @@ class Cause(Generic[E_co]):
         )
         return errors if errors or not self.reasons else (_interrupted(self),)
 
+    def to_exception_group(self, message: str | None = None) -> BaseExceptionGroup[BaseException]:
+        """``pretty_errors`` as one exception group, for tracebacks that show
+        every error and for ``except*``: an ``ExceptionGroup`` when each is an
+        ``Exception``, else a ``BaseExceptionGroup``. ``message`` defaults to
+        how many errors it holds. An empty cause gives a group of one
+        ``EmptyCauseError``, as ``raisable`` raises."""
+        errors = self.pretty_errors() or (EmptyCauseError("Empty cause"),)
+        if message is None:
+            message = f"{len(errors)} error{'' if len(errors) == 1 else 's'}"
+        return BaseExceptionGroup(message, errors)
+
     def pretty_stacks(self) -> tuple[str, ...]:
         """Each of ``pretty_errors`` rendered with its traceback and cause
         chain, followed by the span frames its reason records (Effect's

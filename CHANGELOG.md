@@ -12,6 +12,12 @@
   runs them, in reverse order and with the same exit. The block's exception propagates, with
   failed finalizers added as a note; after a clean block they are raised as `run_blocking`
   raises their merged cause. A failed acquire releases what it acquired and is raised.
+- Exception groups for causes: `Cause.to_exception_group(message=None)` gives a cause's
+  `pretty_errors()` as one `ExceptionGroup` (a `BaseExceptionGroup` when one is not an
+  `Exception`), and `run.unwrap_group(exit)` raises it for a cause holding several errors
+  (siblings that failed together, failed finalizers), so tracebacks show each one and callers
+  can use `except*`. A cause with one error raises exactly what `run.unwrap` raises. Opt-in:
+  `unwrap` and the run functions still raise the first error with the full cause as a note.
 - Testing: `pyfect.testing.leave_out_host_freezes(source)` leaves the time the host froze the
   whole process for out of every test's timeout, up to the timeout again; `source` returns a
   `HostFreezes(total, settling)`. A timeout that left time out says so: "test timed out after

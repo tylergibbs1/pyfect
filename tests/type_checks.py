@@ -192,6 +192,7 @@ from pyfect.rpc import client as rpc_client
 from pyfect.rpc import server as rpc_server
 from pyfect.rpc import test as rpc_test
 from pyfect.rpc.serialization import RpcSerialization
+from pyfect.run import unwrap_group
 from pyfect.scheduler import Scheduler, SyncScheduler
 from pyfect.schema import SchemaError
 from pyfect.schema import model as Model
@@ -1640,6 +1641,8 @@ def check_cause(c: fx.Cause[str]) -> None:
     assert_type(c.pretty_errors(), tuple[BaseException, ...])
     assert_type(fx.cause.from_reasons([Interrupt(1), Die(ValueError())]), fx.Cause[Never])
     assert_type(c + fx.cause.fail(1), fx.Cause[str | int])
+    assert_type(c.to_exception_group(), BaseExceptionGroup[BaseException])
+    assert_type(unwrap_group(fx.exit.succeed(1)), int)
 
 
 # --- TaggedError hashing -----------------------------------------------------------
