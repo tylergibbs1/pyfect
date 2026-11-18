@@ -79,6 +79,10 @@ BUILT_AT_RUN_TIME: dict[tuple[str, str], str] = {
         ),
     ): "IMF-fixdate: fixed-width fields, no group repeated",
     (
+        "src/pyfect/http_api/api.py",
+        "f'^{re.escape(name)}\\\\['",
+    ): "a redacted query name, escaped, before a literal [",
+    (
         "src/pyfect/http/headers.py",
         (
             "f'(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday), "
