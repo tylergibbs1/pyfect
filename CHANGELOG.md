@@ -28,38 +28,47 @@
   other runners take its shards over. A probe that works no longer counts as recovery; a lock
   refresh that works again registers it again. This follows Effect's fix
   (Effect-TS/effect#10689); Effect 4.1.4 has the gap.
+
 - Cluster: a persisted `keep_alive(True)` request that storage redelivered (after its claim
   expired) was answered at once. Its stored reply ended the hold early, so after a runner
   restart storage no longer redelivered it and the entity was not reactivated. The entity
   now keeps the held request's id and gives its redelivery no reply; a second
   `keep_alive(True)` is still answered at once (Effect #10709).
+
 - `EventJournal` (`make_memory`): `with_remote_uncommitted` trimmed the remote's pending list
   through the last entry it uploaded, so an older entry imported from another remote while the
   upload ran was dropped and never uploaded. Only the uploaded entries are removed now
   (Effect #10624).
+
 - `fx.tx` spun on the CPU, rerunning its body at once, when the body recovered from
   `tx_retry` (for example `queue.take().exit()` on an empty `TxQueue`): only a body that failed
   with the retry waited for a ref it read to change. The wait is now decided in one place from
   the retry alone, so a body that recovers from it also waits (Effect #10604).
+
 - RPC client over a socket (`make_protocol_socket`): a failed write of a request or an ack
   was a defect, so the call died instead of failing. It now fails with `RpcClientError`
   carrying the socket error's reason, as a lost connection does (Effect #10658).
+
 - `LanguageModel.stream_text` with `disable_tool_call_resolution=True` dropped the results of
   tools approved (or denied) in the prompt, so `Chat.stream_text` did not record them and ran
   an approved tool again on a later turn. They now come first in the stream whether or not
   resolution is on (Effect #10614).
+
 - `HttpServerResponse.set_status`, `remove_header` and the cookie setters (`set_cookie`,
   `expire_cookie`, `remove_cookie`, `merge_cookies` and the rest) reset an explicit
   `content-type` or `content-length` to the body's. They now keep the headers as they are;
   removing a content header still falls back to the body's (Effect #10605).
+
 - `otlp_logger` exported the invalid ids of the no-op span for a log inside a span made with
   tracing off, and the ids of a span annotated with `DisablePropagation`. Log records now carry
   the nearest span that allows propagation, or none (Effect #10609). The OpenTelemetry logger
   (`pyfect.otel.logger`) had the same bug and is fixed the same way.
+
 - `DateTime.make` ignored a zone followed by trailing whitespace or a comment, as in
   `"Tue, 27 Jan 2026 17:14:06 -0500 (EST)"`: it added a `Z` and read the time as UTC. A
   whitespace-separated offset or zone word before whitespace and one comment now counts as
   the zone (Effect #10620).
+
 - `metric.summary` accepted a NaN quantile: its range check `quantile < 0 or quantile > 1`
   is false for NaN. The first update now dies with "Quantile must be between 0 and 1, found:
   NaN", as for any quantile out of range (Effect #10680).
