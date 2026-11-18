@@ -9,11 +9,15 @@
     )
     charge_id = yield from charge
 
-An activity is an effect. Run inside a workflow, it runs once: its exit
-is stored (encoded by its schemas), and a replay of the workflow gets the
-stored exit back instead of running it again. An activity interrupted
-from outside is retried (up to 10 times, exponential from 400 ms, at most
-10 s apart; ``interrupt_retry_policy`` changes that).
+An activity is an effect. Run inside a workflow, its exit is stored
+(encoded by its schemas), and a replay of the workflow gets the stored exit
+back instead of running it again. It runs at least once, not exactly once:
+a run that stops before the exit is stored (on a cluster, when a runner
+loses the workflow's shard, also when a shard-lock refresh times out under
+load) leaves it to run again, so make it idempotent (``idempotency_key``).
+An activity interrupted from outside is retried (up to 10 times,
+exponential from 400 ms, at most 10 s apart; ``interrupt_retry_policy``
+changes that).
 
 Only completed results are stored: an activity that suspends (waiting on
 a child workflow or a durable clock) runs again when the workflow

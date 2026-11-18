@@ -14,7 +14,8 @@
 A workflow has a tag, schemas for its payload, success and error, and an
 idempotency key: the execution id is a digest of the tag and the key, so
 executing the same payload again joins the same execution. Inside the
-handler, activities (``activity.make``) run once and are replayed,
+handler, activities (``activity.make``) store their results and are replayed
+(they run at least once, so make them idempotent),
 ``durable_deferred`` / ``durable_clock`` suspend the run until a value or
 a time comes, and ``with_compensation`` undoes a step if the workflow
 fails later.

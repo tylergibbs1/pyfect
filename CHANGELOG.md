@@ -125,6 +125,13 @@
   scope closes, as Effect removes its `resize` listener; it kept polling the size every 0.25 s
   for the rest of the process.
 
+- Docs: workflow activities and compensations run at least once, not once as the workflow
+  guide, the README and the `activity` and `workflow` docstrings said. A runner that loses a
+  workflow's shard (killed, or its shard-lock refresh timing out under load) leaves every
+  activity whose result was not stored yet to run again on the next owner, as in Effect. The
+  guide now says so and shows an idempotency key; `tests/test_doc_at_least_once.py` keeps the
+  old claim out of the docs and docstrings.
+
 - A schema whose aliases only reach each other (a JSON Schema `$ref` to itself) took
   seconds to fail, and up to a minute on Python 3.14; so did any deep recursion that ran
   past pyfect's fresh stacks. The `RecursionError` carried about 180 thousand frames (one

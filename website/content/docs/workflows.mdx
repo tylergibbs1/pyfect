@@ -1,6 +1,6 @@
 ---
 title: Workflows
-description: "Long-running processes that survive waiting: steps run once, waits suspend, and failures undo what already happened."
+description: "Long-running processes that survive waiting: step results are stored, waits suspend, and failures undo what already happened."
 ---
 
 A workflow is an effect the engine can stop and replay. Each step's result is stored, so
@@ -47,6 +47,25 @@ An activity interrupted by a replay runs again; `activity.retry(times=n)` retrie
 one with a fresh attempt, and `activity.idempotency_key(name)` gives a key, stable across
 replays, to send to the system it calls.
 
+Activities run at least once, not exactly once. Only a stored result keeps an activity from
+running again, and a run can stop between an activity's side effect and the save of its
+result. On a [cluster](/docs/cluster#workflows) that happens whenever a runner loses a
+workflow's shard: when the runner is killed, and also when its shard-lock refresh does not
+answer within the refresh interval, since the runner then releases every shard it holds.
+That interval is `shard_lock_refresh_interval` (10 seconds by default), at most a third of
+`shard_lock_expiration`; set short, as tests do (500 ms), heavy CPU load trips it often. The
+runner that takes the shard replays the workflow and runs every activity whose result was
+not stored yet again. Effect's cluster engine does the same. Make each activity safe to repeat, usually by
+passing the system it calls a key that stays the same across runs:
+
+<CodeOutput>
+
+<include meta='title="idempotent.py"'>../../snippets/workflows/idempotent.py</include>
+
+<include lang="text">../../snippets/workflows/idempotent.out</include>
+
+</CodeOutput>
+
 ## Durable clocks and deferreds
 
 `durable_clock.sleep(name=..., duration=...)` waits inside a workflow. A sleep up to
@@ -67,8 +86,10 @@ so it may arrive before the workflow reaches `wait()`. `durable_deferred.race_al
 
 `Workflow.with_compensation(compensation)`, used with `.pipe` on a step, runs
 `compensation(value, cause)` if the whole workflow later fails, with the value the step
-produced. Compensations run once, in reverse order, after the failure; a replay does not
-add them twice. Only top-level steps are compensated, not effects inside an activity. In
+produced. Compensations run in reverse order, after the failure, and like activities they
+run at least once: a replay does not add them twice, but a runner that loses the shard
+while they run leaves them to run again on the next owner, so make them safe to repeat
+(refund by the charge's idempotency key, not by amount). Only top-level steps are compensated, not effects inside an activity. In
 `orders.py`, the rejected order is refunded.
 
 `workflow.add_finalizer(f)` runs `f(exit)` when the execution completes, not each time a

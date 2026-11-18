@@ -157,7 +157,7 @@ layer, concurrency, retries and timeouts.
 - **Persistence**: key-value stores, persisted caches and durable at-least-once queues in memory, files, SQL or Redis. [Persistence →](https://pyfect.dev/docs/persistence)
 - **Rate limiting and circuit breakers**: per key, in memory or shared through Redis, and HTTP clients that obey rate limit headers. [Rate limiting →](https://pyfect.dev/docs/rate-limiting)
 - **Workers**: run code on threads or in child processes, by messages or typed RPC over a pool. [Workers →](https://pyfect.dev/docs/workers)
-- **Workflows**: durable steps that run once and replay, with durable sleeps, waits completed from outside and compensation. [Workflows →](https://pyfect.dev/docs/workflows)
+- **Workflows**: durable steps whose results are stored and replayed, with durable sleeps, waits completed from outside and compensation. [Workflows →](https://pyfect.dev/docs/workflows)
 - **Event log**: events in a local journal, replayed through handlers and synced with a server, optionally end-to-end encrypted. [Event log →](https://pyfect.dev/docs/eventlog)
 - **Cluster**: sharded stateful entities, cluster-wide singletons and cron jobs, and workflows that resume on another runner. [Cluster →](https://pyfect.dev/docs/cluster)
 
