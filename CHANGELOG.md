@@ -138,22 +138,6 @@
   activity whose result was not stored yet to run again on the next owner, as in Effect. The
   guide now says so and shows an idempotency key; `tests/test_doc_at_least_once.py` keeps the
   old claim out of the docs and docstrings.
-- Cluster: with SQL message storage, a workflow activity could restart in a loop after a
-  durable-clock wakeup. The workflow engine's guarded reset (`clear_replies` with
-  `expected_reply_id`) requeued the request but also reset the interrupt its last run had
-  consumed, so the interrupt was delivered again and the activity was interrupted and rerun.
-  The guarded reset now locks the request only when its current reply is the expected one,
-  deletes the interrupts that reply consumed, and keeps an interrupt received after it, as
-  Effect does since Effect-TS/effect#10629 (after 4.1.4).
-- Cluster: activities could rerun after a durable-clock wakeup on SQL storage. The workflow
-  engine's guarded reset (`clear_replies` with `expected_reply_id`) requeued the request, but
-  it also reset the interrupt that the activity's last run had consumed. That interrupt was
-  delivered again, so the next run was interrupted and the activity reran, sometimes several
-  times in a row. In the dogfood traces this caused 3 of one activity's 12 runs. The guarded
-  reset now locks the request only while its current reply is the expected one. It deletes
-  the interrupts that reply consumed and keeps any interrupt received after it, as Effect
-  does since Effect-TS/effect#10629 (after 4.1.4). Most of the other reruns came from
-  shard-lock flaps, which are at-least-once behaviour.
 - Cluster: activities could rerun after a durable-clock wakeup on SQL storage: a reset
   requeued interrupts the activity had already consumed, so its next run was interrupted.
   The reset now removes those interrupts and keeps any received after the activity's
@@ -191,7 +175,6 @@
   trace, and per-migration spans had no common parent. Each `Migrator` run is now wrapped in
   a `Migrator.run` span carrying the table name in `effect.sql.migrator.table`, as in
   Effect-TS/effect#10688 (after 4.1.4).
-
 - A schema whose aliases only reach each other (a JSON Schema `$ref` to itself) took
   seconds to fail, and up to a minute on Python 3.14; so did any deep recursion that ran
   past pyfect's fresh stacks. The `RecursionError` carried about 180 thousand frames (one

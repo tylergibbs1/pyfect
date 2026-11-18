@@ -119,6 +119,38 @@ def test_the_subheading_check_rejects_a_heading_doubled_within_a_section():
     assert _repeated_subheadings(doubled) == ["## Unreleased / ### Fixed"]
 
 
+_EFFECT_REF = re.compile(r"Effect-TS/effect#(\d+)")
+
+
+def _repeated_effect_refs(text: str) -> list[str]:
+    """Effect PRs cited by more than one entry of the Unreleased section. Each ported Effect fix
+    gets one entry, so a second is a copy, such as a union merge keeps when a branch edited
+    its entry in a later commit."""
+    section = text.split(f"{UNRELEASED}\n", 1)[1].split("\n## ", 1)[0] if UNRELEASED in text else ""
+    entries = re.split(r"\n(?=- |### )", section)
+    seen: set[str] = set()
+    repeated: list[str] = []
+    for entry in entries:
+        for ref in sorted(set(_EFFECT_REF.findall(entry))):
+            if ref in seen and ref not in repeated:
+                repeated.append(ref)
+            seen.add(ref)
+    return repeated
+
+
+def test_no_two_unreleased_entries_cite_the_same_effect_change():
+    assert _repeated_effect_refs(_text()) == []
+
+
+def test_the_effect_ref_check_rejects_a_copied_entry():
+    one = "## Unreleased\n\n### Fixed\n\n- a, as Effect-TS/effect#1 and Effect-TS/effect#1.\n"
+    assert _repeated_effect_refs(one) == []
+    released = "\n## 0.6.10 (2026-11-16)\n\n### Fixed\n\n- a, as Effect-TS/effect#1.\n"
+    assert _repeated_effect_refs(one + released) == []
+    copied = one + "\n- a again, as\n  Effect-TS/effect#1.\n"
+    assert _repeated_effect_refs(copied) == ["1"]
+
+
 def _git(repo: Path, *args: str) -> str:
     return subprocess.run(
         ["git", "-C", str(repo), *args], check=True, capture_output=True, text=True
