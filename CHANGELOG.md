@@ -60,6 +60,16 @@
 - `RpcGroup.annotations`, `annotate` and `annotate_merge` (Effect's group annotations): defaults
   for the group's RPCs, which their own annotations override.
 
+- `cluster.message_retention.make(entity=..., retention=...)`, Effect's
+  `MessageRetention.make`: a singleton that deletes a persisted entity's requests whose
+  final reply is older than `retention`, every `interval` (one minute), in batches of 1,000,
+  and logs a failure and tries again on the next interval. `MessageStorageService` gains
+  `delete_processed(entity_type=..., completed_before=..., limit=...)` on the memory, noop and
+  SQL storages (every dialect; migration `0006_retention_index` adds its index), as in Effect
+  4.1.4 (#10267). A custom `EncodedStorage` or `StorageBase` written before this gets it by
+  implementing `message_storage.DeletesProcessed`; until then `delete_processed` fails with a
+  `PersistenceError`.
+
 ### Fixed
 
 - A schema whose aliases only reach each other (a JSON Schema `$ref` to itself) took
@@ -153,6 +163,16 @@
   out, which replaced the connection and dropped every shard lock the runner kept, and the
   shards then churned until it caught up. Releases now take the connection one at a time and
   wait outside the deadline, as in Effect PR #10686.
+
+- Cluster: an `AckChunk` or `Interrupt` saved for a request that is no longer stored is
+  dropped instead of stored, on the memory and SQL storages, as in Effect 4.1.4 (#10267).
+  Writes to a request's replies (`AckChunk`, `clear_replies`) lock its row first, so they
+  can't deadlock with `delete_processed`, and a request save whose conflicting row is deleted
+  before it is read inserts again rather than report a save that stored nothing.
+
+- `sql_message_storage` on SQL Server: an index of the same name on another table no longer
+  stops the migrations creating the lookup indexes of the message tables, as in Effect 4.1.4
+  (#10267). Migration `0005_mssql_lookup_indexes` creates any that are missing.
 
 ### Performance
 
