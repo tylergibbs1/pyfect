@@ -18,6 +18,14 @@
   shards then churned until it caught up. Releases now take the connection one at a time and
   wait outside the deadline, as in Effect PR #10686.
 
+### Performance
+
+- `SqlEventLogServerEncrypted`: a write of many batches, and a compaction commit of many
+  staged batches, take a few statements instead of one or two per batch. On a remote
+  database each statement is a round trip, so a write of 500 batches to SQL Server took
+  about 1,000 statements and now takes a handful. What is stored, at which sequences, is
+  unchanged.
+
 ## 0.6.11 (2026-11-17)
 
 ### Fixed

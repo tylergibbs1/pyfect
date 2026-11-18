@@ -19,7 +19,14 @@ from pyfect.eventlog._server_encrypted.models import CompactionOptions, make_com
 from pyfect.eventlog._server_encrypted.storage import StorageService
 from pyfect.eventlog._sql_server_encrypted import upgrade
 from pyfect.eventlog._sql_server_encrypted.compaction import SqlCompaction
-from pyfect.eventlog._sql_server_encrypted.db import CHUNK, Db, Steps, StoreResources
+from pyfect.eventlog._sql_server_encrypted.db import (
+    CHUNK,
+    BatchRow,
+    Db,
+    Steps,
+    StoreResources,
+    batch_chunks,
+)
 from pyfect.eventlog._sql_server_encrypted.legacy import (
     UPGRADE_NOTES,
     LegacyMigration,
@@ -298,30 +305,41 @@ class _SqlStorage(StorageService):
             next_sequence = max(
                 row.next_sequence, (yield from db.max_last_sequence(tables.table)) + 1
             )
+            # A batch is new when one of its ids is: stored ids keep their
+            # first sequence. The store row lock keeps other writers out, so
+            # the ids read here stay the stored ones until the commit.
+            unique = list(
+                dict.fromkeys(entry_id for batch in batches for entry_id in batch.entry_ids)
+            )
+            known: set[bytes] = set()
+            for chunk in itertools.batched(unique, CHUNK, strict=False):
+                rows = yield from sql(
+                    "SELECT entry_id FROM {} WHERE {}",
+                    tables.ids_table,
+                    sql.in_("entry_id", list(chunk)),
+                )
+                known.update(column_bytes(row["entry_id"]) for row in rows)
+            new_ids: list[dict[str, object]] = []
+            new_rows: list[BatchRow] = []
             for batch in batches:
-                # Inserting the ids decides whether the batch is new. SQL
-                # Server's MERGE also requires unique source ids.
                 ids: dict[bytes, dict[str, object]] = {}
                 for i, entry_id in enumerate(batch.entry_ids):
-                    ids.setdefault(entry_id, {"entry_id": entry_id, "sequence": next_sequence + i})
-                inserted = 0
-                for chunk in itertools.batched(ids.values(), CHUNK, strict=False):
-                    # Stored ids keep their first sequence.
-                    inserted += yield from db.insert_new(tables.ids_table, chunk, ["entry_id"])
-                if inserted == 0:
+                    if entry_id not in known:
+                        ids.setdefault(
+                            entry_id, {"entry_id": entry_id, "sequence": next_sequence + i}
+                        )
+                if not ids:
                     continue
-                yield from sql(
-                    "INSERT INTO {} {}",
-                    tables.table,
-                    sql.insert(
-                        {
-                            "sequence": next_sequence,
-                            "last_sequence": next_sequence + len(batch.entry_ids) - 1,
-                            "iv": batch.iv,
-                            "entry_ids": b"".join(batch.entry_ids),
-                            "encrypted_batch": batch.encrypted_batch,
-                        }
-                    ),
+                known.update(ids)
+                new_ids.extend(ids.values())
+                new_rows.append(
+                    {
+                        "sequence": next_sequence,
+                        "last_sequence": next_sequence + len(batch.entry_ids) - 1,
+                        "iv": batch.iv,
+                        "entry_ids": b"".join(batch.entry_ids),
+                        "encrypted_batch": batch.encrypted_batch,
+                    }
                 )
                 stored.append(
                     EncryptedRemoteBatch(
@@ -332,6 +350,10 @@ class _SqlStorage(StorageService):
                     )
                 )
                 next_sequence += len(batch.entry_ids)
+            for chunk in itertools.batched(new_ids, CHUNK, strict=False):
+                yield from db.insert_new(tables.ids_table, chunk, ["entry_id"])
+            for chunk in batch_chunks(new_rows):
+                yield from sql("INSERT INTO {} {}", tables.table, sql.insert(chunk))
             if stored:
                 yield from sql(
                     "UPDATE {} SET next_sequence = {} WHERE scope = {}",

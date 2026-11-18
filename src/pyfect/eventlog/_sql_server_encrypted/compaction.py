@@ -59,8 +59,10 @@ from pyfect.eventlog.event_journal import StoreId
 from pyfect.eventlog.event_log_encryption import EncryptedBatch, EncryptedRemoteBatch
 from pyfect.persistence._columns import column_bytes, column_int
 from pyfect.scope import Scope, scoped
+from pyfect.sql.client import SqlClientService
 from pyfect.sql.connection import Row
 from pyfect.sql.error import SqlError
+from pyfect.sql.statement import Fragment
 from pyfect.stream import Stream, from_effect_drain, from_iterable
 from pyfect.stream import empty as stream_empty
 from pyfect.stream import unwrap as stream_unwrap
@@ -68,6 +70,12 @@ from pyfect.stream import unwrap as stream_unwrap
 type GetStore = Callable[[str, StoreId], Effect[StoreResources, Never, Scope]]
 
 _now: Effect[int] = Clock().map(now_millis_unsafe)
+
+
+def _by_position(sql: SqlClientService, values: Sequence[tuple[int, int]]) -> Fragment:
+    """The value of each ``batch_position``, as one ``CASE``."""
+    whens = sql.join(" ", False)([sql("WHEN {} THEN {}", p, v) for p, v in values])
+    return sql("CASE batch_position {} END", whens)
 
 
 def _not_found(stage_id: str) -> Effect[Never, CompactionNotFound]:
@@ -423,15 +431,21 @@ class SqlCompaction(StorageCompaction):
                         IllegalArgumentError("Expected one virtual sequence per staged batch")
                     )
                 )
-            for r, count, sequence in zip(staged, counts, virtual_sequences, strict=True):
+            placed = [
+                (column_int(r["batch_position"]), sequence, sequence + count - 1)
+                for r, count, sequence in zip(staged, counts, virtual_sequences, strict=True)
+            ]
+            # The rows come in position order, so a chunk's range holds only its rows.
+            for chunk in itertools.batched(placed, CHUNK, strict=False):
                 yield from sql(
                     "UPDATE {} SET sequence = {}, last_sequence = {} "
-                    "WHERE batch_set = {} AND batch_position = {}",
+                    "WHERE batch_set = {} AND batch_position BETWEEN {} AND {}",
                     snapshot_table,
-                    sequence,
-                    sequence + count - 1,
+                    _by_position(sql, [(p, first) for p, first, _ in chunk]),
+                    _by_position(sql, [(p, last) for p, _, last in chunk]),
                     stage_id,
-                    column_int(r["batch_position"]),
+                    chunk[0][0],
+                    chunk[-1][0],
                 )
             activation_id = new_id()
             yield from db.insert_activation(

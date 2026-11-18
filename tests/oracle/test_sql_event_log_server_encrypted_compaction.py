@@ -639,3 +639,58 @@ def test_finishes_the_prune_of_a_sweeper_that_died_in_the_middle_of_it(connect: 
         assert served(persisted) == [(written[1].sequence, SNAPSHOT_MARKER)]
 
     return _run(body)
+
+
+def count_statements_on(table: str, counted: list[str]) -> Any:
+    """Records each statement that names ``table`` or a table named after it."""
+
+    def transform(statement: Any, constructor: Any, *_: object) -> fx.Effect[Any]:
+        text = statement.compile()[0]
+        if constructor("{}", constructor.identifier(table)).compile()[0][:-1] in text:
+            counted.append(text)
+        return fx.succeed(statement)
+
+    return transform
+
+
+@testing.effect
+def test_writes_and_commits_in_statements_that_do_not_grow_with_the_batches(connect: Connect):
+    """Each round trip to a remote database costs about as much as writing a row, so
+    a write or a commit of many batches takes as many statements as one of two."""
+
+    def body():
+        sql = yield from connect()
+
+        def statements(count: int) -> Generator[Any, Any, tuple[int, int]]:
+            ns = yield from make_namespace(sql)
+            counted: list[str] = []
+            storage = yield from ns.storage()
+            compaction = compaction_of(storage)
+            batches = [make_batch(e) for e in make_ids(count)]
+
+            def run():
+                written = yield from storage.write(ns.public_key, store_id, batches)
+                writing = len(counted)
+                status = yield from compaction.status(ns.public_key, store_id)
+                begun = yield from compaction.begin(ns.public_key, store_id, through=status.head)
+                assert isinstance(begun, Server.BeginStarted), f"expected Started, got {begun}"
+                yield from compaction.stage_part(
+                    ns.public_key, store_id, begun.stage_id, 0, batches
+                )
+                staging = len(counted)
+                committed = yield from compaction.commit(
+                    ns.public_key, store_id, begun.stage_id, [batch.sequence for batch in written]
+                )
+                assert committed == "Committed"
+                assert writing > 0
+                return writing, len(counted) - staging
+
+            return (
+                yield from fx.gen(run).pipe(
+                    fx.provide_service(CurrentTransformer, count_statements_on(ns.table, counted))
+                )
+            )
+
+        assert (yield from statements(40)) == (yield from statements(2))
+
+    return _run(body)

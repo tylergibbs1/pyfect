@@ -67,6 +67,9 @@ def _mock_connection(fake: _mssql_fake.Fake) -> None:
             return [list(_STORE_ROW.items())]
         if query.startswith("SELECT MAX(last_sequence)"):
             return [[("last_sequence", None)]]
+        if query.startswith("SELECT entry_id"):
+            # The ids a write finds stored before it inserts.
+            return [[("entry_id", param.value)] for param in params if param.value in entry_ids]
         return [[("value", param.value)] for param in params]
 
     fake.respond = respond

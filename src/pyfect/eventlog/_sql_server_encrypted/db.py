@@ -9,9 +9,9 @@ transactions take the database write lock instead of row locks.
 from __future__ import annotations
 
 import uuid
-from collections.abc import Callable, Generator, Mapping, Sequence
+from collections.abc import Callable, Generator, Iterator, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Never
+from typing import Any, Never, TypedDict
 
 from pyfect._catch import catch_tag
 from pyfect._core import Effect
@@ -44,6 +44,36 @@ PRUNE_CHUNK_ROWS = 200
 
 CHUNK = 200
 """Keeps each statement within the dialects' bind parameter limits."""
+
+CHUNK_BYTES = 1 << 22
+"""Batch payload bytes per statement, well under MySQL's default 64 MiB packet."""
+
+
+class BatchRow(TypedDict):
+    """A row of a store's batch table."""
+
+    sequence: int
+    last_sequence: int
+    iv: bytes
+    entry_ids: bytes
+    encrypted_batch: bytes
+
+
+def batch_chunks(rows: Sequence[BatchRow]) -> Iterator[Sequence[BatchRow]]:
+    """Batch rows in statements of at most ``CHUNK`` rows and, unless one row
+    alone is larger, ``CHUNK_BYTES`` of ``encrypted_batch``."""
+    chunk: list[BatchRow] = []
+    size = 0
+    for row in rows:
+        payload = row["encrypted_batch"]
+        if chunk and (len(chunk) == CHUNK or size + len(payload) > CHUNK_BYTES):
+            yield chunk
+            chunk, size = [], 0
+        chunk.append(row)
+        size += len(payload)
+    if chunk:
+        yield chunk
+
 
 _STORE_COLUMNS = (
     "next_sequence, active_activation, active_batch_set, base_sequence, active_kept_count, "
