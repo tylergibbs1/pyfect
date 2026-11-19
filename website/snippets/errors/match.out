@@ -1,0 +1,8 @@
+got motd
+no motd
+crashed: ZeroDivisionError('division by zero')
+interrupted
+first word: hello
+no words
+parsed: 42
+not a number: 'forty-two'

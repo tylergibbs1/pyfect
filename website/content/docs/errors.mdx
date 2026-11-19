@@ -78,5 +78,21 @@ checks a failure by its error (see [Testing](/docs/testing#checking-failures)).
 
 </CodeOutput>
 
+## Matching with `match`
+
+Python's `match` takes apart an `Exit`, a `Cause` and its reasons, an `Option`, a `Result`
+and a `@dataclass` tagged error by position, and pyright narrows each case. A cause holds a
+list of reasons: `Fail(error)` for a typed error, `Die(defect)` for a defect and `Interrupt()`.
+Schema classes, `S.Class` and `S.TaggedError`, are built with keywords, so match them by
+keyword: `case Gone(id=gone)`.
+
+<CodeOutput>
+
+<include meta='title="match.py"'>../../snippets/errors/match.py</include>
+
+<include lang="text">../../snippets/errors/match.out</include>
+
+</CodeOutput>
+
 Reference: [`pyfect.errors`](/docs/reference/errors), [`pyfect.cause`](/docs/reference/cause),
 [`pyfect.exit`](/docs/reference/exit).

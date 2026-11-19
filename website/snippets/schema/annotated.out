@@ -1,0 +1,6 @@
+Expected a value with a length of at least 1
+  at ["sku"]
+Expected a value between 1 and 99
+  at ["quantity"]
+Expected a value greater than or equal to 0
+  at ["on_hand"]
