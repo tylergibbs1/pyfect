@@ -41,7 +41,7 @@ def _cases() -> Iterator[Any]:
 
 @pytest.mark.parametrize("found", list(_cases()))
 def test_parser_takes_near_linear_time(found: Case) -> None:
-    assert_near_linear(found.make, found.size, found.max_size)
+    assert_near_linear(found.make, found.size, found.max_size, factor=found.factor)
 
 
 @pytest.mark.parametrize(

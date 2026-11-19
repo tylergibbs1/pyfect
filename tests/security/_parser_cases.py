@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from itertools import cycle, islice
 from typing import Any, TypedDict, cast
 
-from _growth import MAX_SIZE, Make, Work
+from _growth import FACTOR, MAX_SIZE, Make, Work
 from _guards import Guard
 
 import pyfect as fx
@@ -107,6 +107,10 @@ class Case:
     fixed_elsewhere: str | None = None
     """Why the case still fails here: a lead fixed on another branch, flipped at merge."""
     guards: Guard | None = None
+    factor: int = FACTOR
+    """The step between the two sizes measured. A quadratic grows ``factor ** 2`` times over it
+    against a bound of ``factor ** 1.53`` times the guard margin: at 8 that is 64 against 36,
+    which a quadratic with a linear part in it can fall under, and at 16, 256 against 104."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -132,9 +136,10 @@ def case(
     max_size: int = MAX_SIZE,
     fixed_elsewhere: str | None = None,
     guards: Guard | None = None,
+    factor: int = FACTOR,
 ) -> Callable[[Make], Make]:
     def register(make: Make) -> Make:
-        CASES.append(Case(id, target, make, size, max_size, fixed_elsewhere, guards))
+        CASES.append(Case(id, target, make, size, max_size, fixed_elsewhere, guards, factor))
         return make
 
     return register
@@ -600,6 +605,7 @@ def _tar_with_global_records(n: int) -> bytes:
     "tar.decode: global PAX records before many entries (#24)",
     size=256,
     guards=Guard("dcafc1e1", "tar-global-records-split-per-entry"),
+    factor=16,  # at 8 the bug grew 38-40x (macOS), and at or under 36 once on CI's runner
 )
 def _tar_global_records(n: int) -> Work:
     return run_channel([_tar_with_global_records(n)], tar.decode())
