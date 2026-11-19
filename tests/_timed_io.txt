@@ -5,9 +5,6 @@ _connection_release.py 2  # deadline for the OS to close real sockets to a real 
 _leaked_fibers.py 6  # the background scheduler's timers are due on the real time.monotonic clock: the background thread gets 0.5 s to run what is queued and a file's timers due within 0.5 s get to fire before it is reported, and the report says when each is due; the TestClock never drives that scheduler
 _native_stacks.py 4  # the capture's deadline for the tools it runs against the real hung process, and the real-time window it ran in, which the stall watchdog leaves out of the stalls it reports; a capture is real time the TestClock never sees
 _stalls.py 17  # the stall watchdog measures how long the real process went without running (tick gaps, process CPU, GC passes, the test thread's samples and CPU for a timeout with no stall, and the host freezes a test's timeout leaves out, and a passed test's running time against its limit); a stall is real time the TestClock never sees
-cross_run/_hammer.py 2  # hang deadline joining real OS threads that each make their own runs; the TestClock belongs to one run and cannot bound other threads
-cross_run/cases_fibers.py 6  # settle deadlines for fibers and scopes ending on other OS threads in other runs; no single run's TestClock covers those threads
-cross_run/test_run_ownership.py 2  # times a quick run while another thread's run sleeps 2 s on its live clock; each run has its own clock, so no TestClock spans both
 fuzz/_harness.py 2  # re-arms the enclosing SIGALRM itimer minus the time a fuzz target ran; signal timers run on real time outside any effect run
 fuzz/server_target.py 2  # deadline for the live server to close a loopback connection after the fuzz client stops; the client is a plain blocking socket
 interleave/_harness.py 5  # optional PYFECT_INTERLEAVE_BUDGET wall-time box for schedule exploration, and its report; bounds the harness's own CPU, not effect time

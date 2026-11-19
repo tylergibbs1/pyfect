@@ -45,18 +45,26 @@ def _runtime() -> fx.ManagedRuntime[_Counter]:
 
 
 def test_a_quick_runtime_run_returns_while_another_threads_run_is_in_flight():
+    """The other run waits until the quick one has returned: a quick run that waited for it
+    would never return."""
     runtime = _runtime()
-    slow = threading.Thread(target=lambda: runtime.run_blocking(fx.sleep("2 seconds")))
-    slow.start()
-    time.sleep(0.2)
-    started = time.monotonic()
-    done, _ = _within(
-        DEADLINE, lambda: runtime.run_blocking(_Counter().flat_map(lambda r: r.get()))
+    gate = fx.Deferred[None]()
+    waiting = threading.Event()
+    slow = threading.Thread(
+        target=lambda: runtime.run_blocking(fx.sync(waiting.set).and_then(gate.wait())),
+        daemon=True,
     )
-    took = time.monotonic() - started
-    slow.join()
+    slow.start()
+    assert waiting.wait(DEADLINE), "the other run never started"
+    try:
+        done, _ = _within(
+            DEADLINE, lambda: runtime.run_blocking(_Counter().flat_map(lambda r: r.get()))
+        )
+        assert done, "the quick run waited for the other thread's run"
+    finally:
+        gate.done_unsafe(fx.Success(None))
+    slow.join(DEADLINE)
     runtime.dispose()
-    assert done and took < 1.0, f"the quick run took {took:.1f}s"
 
 
 def test_a_runtime_run_can_wait_for_another_threads_run_of_the_same_runtime():

@@ -12,11 +12,13 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from _timing import HANG_SECONDS
+
 import pyfect as fx
 from pyfect import layer
 from pyfect.batching import Entry
 
-from ._hammer import DEADLINE, THREADS, Case, expect, on_threads
+from ._hammer import THREADS, Case, expect, on_threads
 
 N = 300
 """Operations per thread, each in a run of its own."""
@@ -111,13 +113,13 @@ def _owned[T](make: fx.Effect[T, Any, fx.Scope], go: Callable[[T], list[str]]) -
 
     thread = threading.Thread(target=owner, name="cross-run-owner", daemon=True)
     thread.start()
-    if not ready.wait(DEADLINE):
+    if not ready.wait(HANG_SECONDS):
         return ["the owner run never made the shared value"]
     try:
         problems = go(made[0])
     finally:
         fx.run_blocking(stop.open())
-        thread.join(DEADLINE)
+        thread.join(HANG_SECONDS)
     return problems + (["the owner run hung closing its scope"] if thread.is_alive() else [])
 
 

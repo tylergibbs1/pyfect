@@ -14,6 +14,8 @@ import time
 from collections.abc import Callable
 from typing import Any
 
+from _timing import settled
+
 import pyfect as fx
 from pyfect.exit import Success
 
@@ -24,9 +26,6 @@ ROUNDS = 150
 
 FORKS = 300
 """Fibers each thread forks into a shared collection."""
-
-SETTLE = 20.0
-"""Seconds the fibers replaced in a collection get to finish interrupting."""
 
 
 def _child(rng: random.Random) -> fx.Effect[int]:
@@ -87,11 +86,12 @@ def _awaited_from_other_runs(observe: bool) -> Callable[[], list[str]]:
 
         problems = on_threads(work)
         if observe:
-            deadline = time.monotonic() + SETTLE
-            while time.monotonic() < deadline and any(
-                calls[r * THREADS + i] == 0 for r in range(ROUNDS) for i in range(1, THREADS)
-            ):
-                time.sleep(0.01)
+            settled(
+                lambda: all(
+                    calls[r * THREADS + i] for r in range(ROUNDS) for i in range(1, THREADS)
+                ),
+                poll=0.01,
+            )
             wrong = [n for r in range(ROUNDS) for n in calls[r * THREADS + 1 : (r + 1) * THREADS]]
             missed, twice = wrong.count(0), sum(1 for n in wrong if n > 1)
             problems += expect("observers never called", missed, 0)
@@ -209,16 +209,18 @@ def _keyed_survivors(
     """Runs fork fibers that wait forever under shared keys, each replacing the one there: once
     the replaced ones have ended, the fibers still running are exactly the current ones."""
     finish, forked = _fork_into(fork)
-    deadline = time.monotonic() + SETTLE
-    while True:
-        all_forked = all(len(fibers) == FORKS for fibers in forked)
-        alive = {f for fibers in forked for f in fibers if f.poll_unsafe() is None}
-        if (all_forked and len(alive) <= len(current())) or time.monotonic() > deadline:
-            break
-        time.sleep(0.01)
+
+    def alive() -> set[fx.Fiber[Any]]:
+        return {f for fibers in forked for f in fibers if f.poll_unsafe() is None}
+
+    settled(
+        lambda: all(len(fibers) == FORKS for fibers in forked) and len(alive()) <= len(current()),
+        poll=0.01,
+    )
+    alive_now = alive()
     kept = set(current())
-    problems = expect("fibers running that the collection lost", len(alive - kept), 0)
-    problems += expect("current fibers not running", len(kept - alive), 0)
+    problems = expect("fibers running that the collection lost", len(alive_now - kept), 0)
+    problems += expect("current fibers not running", len(kept - alive_now), 0)
     close()
     return problems + finish()
 
@@ -291,9 +293,7 @@ def _fork_in(scope: fx.scope.CloseableScope, ran: list[int], at: int) -> None:
 def _fork_scope(scope: fx.scope.CloseableScope, ran: list[int], at: int) -> None:
     """A child scope of a scope closing on another thread is closed with it, or at once."""
     child = fx.run_blocking(scope.fork())
-    deadline = time.monotonic() + SETTLE
-    while not child.is_closed and time.monotonic() < deadline:
-        time.sleep(0.0005)
+    settled(lambda: child.is_closed, poll=0.0005)
     ran[at] += child.is_closed
 
 

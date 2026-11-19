@@ -2,23 +2,21 @@
 
 Each thread makes its own runs (``fx.run_blocking``), as an app that calls into pyfect from a
 thread pool does, so no two of them share a scheduler. A ``Case`` returns what went wrong: an
-update lost, an item taken twice, a waiter never woken (a thread still running at the
-deadline), or an exception out of a thread.
+update lost, an item taken twice, a waiter never woken (a thread still running once a hang
+is certain), or an exception out of a thread.
 """
 
 from __future__ import annotations
 
 import threading
-import time
 import traceback
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from _timing import settled
+
 THREADS = 8
 """Threads per case: more than the cores of a CI runner, so threads are preempted mid-step."""
-
-DEADLINE = 60.0
-"""Seconds a case's threads get before the case counts as hung (a lost wake-up)."""
 
 
 @dataclass(frozen=True)
@@ -45,7 +43,7 @@ def barrier(parties: int = THREADS, action: Callable[[], None] | None = None) ->
 
 def on_threads(work: Callable[[int], None], threads: int = THREADS) -> list[str]:
     """``work(i)`` on ``threads`` threads released together; the problems: what each raised,
-    and the threads still running at the deadline."""
+    and the threads still running once a hang is certain (``_timing.settled``)."""
     start = barrier(threads)
     errors: list[str] = []
 
@@ -66,9 +64,7 @@ def on_threads(work: Callable[[int], None], threads: int = THREADS) -> list[str]
     ]
     for thread in pool:
         thread.start()
-    deadline = time.monotonic() + DEADLINE
-    for thread in pool:
-        thread.join(max(0.0, deadline - time.monotonic()))
+    settled(lambda: not any(thread.is_alive() for thread in pool))
     hung = [thread.name for thread in pool if thread.is_alive()]
     _barriers.clear()
     return errors + ([f"hung (a lost wake-up?): {', '.join(hung)}"] if hung else [])
