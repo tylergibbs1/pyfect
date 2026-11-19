@@ -41,9 +41,10 @@ def test_a_test_hung_in_c_reports_its_native_frames(
     out = _hang(pytester, monkeypatch)
     assert "native stacks from " in out, out
     stacks = out.split("native stacks from ", 1)[1]
-    # a C frame: gdb's "#3  0x... in poll ()", or py-spy's thread header and native frames
+    # a C frame: gdb's "#3  0x... in poll ()", or py-spy's "    poll (libc.so.6)"
     assert re.search(r"^#\d+ +0x[0-9a-f]+ in \S+", stacks, re.MULTILINE) or (
-        stacks.startswith("py-spy") and "Thread 0x" in stacks
+        stacks.startswith("py-spy")
+        and re.search(r"^\s+\w+ \(lib[\w.+-]*\.so[\d.]*\)$", stacks, re.MULTILINE)
     ), out
 
 
