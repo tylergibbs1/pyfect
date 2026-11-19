@@ -25,6 +25,7 @@ from types import FrameType
 from typing import Any
 
 import pytest
+from _native_stacks import capture
 
 _AGAIN = 1.0
 """Seconds at most between the alarm's raises, after the first."""
@@ -78,6 +79,8 @@ def pytest_runtest_call(item: pytest.Item) -> Generator[None, object, object]:
 
     def on_alarm(signum: int, frame: FrameType | None) -> None:
         nonlocal fired, stuck
+        if not fired:
+            capture(item)  # while the test is still stuck: the failure unwinds it
         signal.setitimer(signal.ITIMER_REAL, min(seconds, _AGAIN))
         loop = _running_loop()
         if fired or loop is not None:

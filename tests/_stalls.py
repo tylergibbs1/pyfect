@@ -61,6 +61,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from _native_stacks import froze
 from _threads import live_threads
 
 from pyfect.duration import Duration, seconds
@@ -428,7 +429,7 @@ class Watchdog:
                 self._seen.clear()
                 self._reported.clear()
                 self._stacks.clear()
-            if now - last - self.tick >= self.threshold:
+            if now - last - self.tick >= self.threshold and not froze(last, now):
                 self._record(self._process_stall(now - last, now_cpu - cpu))
             else:
                 self._steal.mark()
@@ -622,12 +623,12 @@ def _no_busy_thread(
 
 
 def _below_the_alarm(frames: tuple[Frame, ...]) -> tuple[Frame, ...]:
-    """A stack sampled while the hang alarm's handler ran (``pytest.fail`` in ``on_alarm``,
-    innermost), from the frame it interrupted."""
-    at = 0
-    while at < len(frames) and frames[at].file.endswith(("/_timeout.py", "/outcomes.py")):
-        at += 1
-    return frames[at:]
+    """A stack sampled while the hang alarm's handler ran (``on_alarm``, with what it calls:
+    ``pytest.fail``, the native-stack capture), from the frame it interrupted."""
+    for at, frame in enumerate(frames):
+        if frame.func == "on_alarm" and frame.file.endswith("/_timeout.py"):
+            return frames[at + 1 :]
+    return frames
 
 
 def _timed_out(call: pytest.CallInfo[None]) -> bool:

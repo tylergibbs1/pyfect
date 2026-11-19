@@ -43,6 +43,14 @@ waiting with `InterpreterPoolClosedError` and returns once every interpreter has
 waits for an abandoned call to return: no interpreter outlives its pool, and a call that never
 returns keeps the release waiting.
 
+## Memory on the free-threaded build
+
+On CPython 3.14t, creating many short-lived interpreters raises peak memory to a few GB, in CPython
+itself rather than in pyfect. Creating 1,000 interpreters, calling each one once and
+closing it, with no pyfect involved, took the process to 2.9 GB peak RSS (3.14.7t on macOS), where
+the GIL build stayed at 37 MB. The same churn through 250 short-lived pools reached 3.8 GB. Keep one
+long-lived pool, provided once near the top of the program, rather than a layer per task.
+
 ## What it measured
 
 [`benchmarks/interpreter_pool.py`](https://github.com/tylergibbs1/pyfect/blob/main/benchmarks/interpreter_pool.py)

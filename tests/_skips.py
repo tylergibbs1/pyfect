@@ -42,6 +42,11 @@ ALLOWED = (
     ),
     Allowed(re.compile(r"^skipped anyway$"), "a port of Effect's test of a skipped test"),
     Allowed(
+        re.compile(r"^needs gdb or py-spy$"),
+        "the Linux CI jobs install gdb, and there a missing tool fails the run",
+        lambda: sys.platform != "linux",
+    ),
+    Allowed(
         re.compile(r"^fumadocs-python is not installed"),
         "runs in docs.yml's site job, which installs website/",
     ),

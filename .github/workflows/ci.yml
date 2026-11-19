@@ -154,6 +154,9 @@ jobs:
         # a section main has already released.
         run: git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main
 
+      - name: Install gdb (a hung test's report carries native stacks, tests/_native_stacks.py)
+        run: command -v gdb >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq gdb; }
+
       - name: Warm up pwsh
         # The runner's disk is cold: pwsh's first start read its files at 3-6 MB/s and took
         # 6-35 s once the suite's containers had started (the PowerShell completion test
