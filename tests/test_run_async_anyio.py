@@ -3,9 +3,7 @@ cancelled scope gets a new ``CancelledError`` at every await until it leaves the
 a cancelled scope still interrupts the fiber, and waits for its finalizers, as a plain
 ``task.cancel()`` does (``tests/test_run_async_cancel.py``)."""
 
-import threading
 from collections.abc import Callable, Coroutine
-from concurrent.futures import Future
 from typing import Any
 
 import anyio
@@ -17,21 +15,6 @@ from pyfect import layer
 
 type Entry = Callable[[fx.Effect[None]], Coroutine[Any, Any, Any]]
 type Host = Callable[[Entry, fx.Effect[None]], Coroutine[Any, Any, str]]
-
-
-def _anyio_run[T](main: Callable[[], Coroutine[Any, Any, T]]) -> T:
-    """``anyio.run(main)`` on its asyncio backend, failing after 3 s. A wait spinning on anyio's
-    repeated cancels holds the loop, where the test timeout's alarm cannot stop it."""
-    result: Future[T] = Future()
-
-    def run() -> None:
-        try:
-            result.set_result(anyio.run(main, backend="asyncio"))
-        except BaseException as error:
-            result.set_exception(error)
-
-    threading.Thread(target=run, daemon=True).start()
-    return result.result(timeout=3)
 
 
 def _finalized(log: list[str]) -> fx.Effect[None]:
@@ -92,7 +75,7 @@ def test_leaving_a_cancelled_anyio_scope_waits_for_the_finalizers(entry: str, ho
             log.append(await cancel(run, _finalized(log)))
         return log
 
-    assert _anyio_run(main) == ["finalizer", outcome]
+    assert anyio.run(main, backend="asyncio") == ["finalizer", outcome]
 
 
 def test_an_anyio_coroutine_under_from_async_is_cancelled_when_the_fiber_is_interrupted() -> None:
@@ -116,7 +99,7 @@ def test_an_anyio_coroutine_under_from_async_is_cancelled_when_the_fiber_is_inte
     async def main() -> None:
         await fx.run_async(program)
 
-    _anyio_run(main)
+    anyio.run(main, backend="asyncio")
     assert log == ["coroutine cleaned up", "interrupt returned"]
 
 
@@ -131,7 +114,7 @@ def test_an_anyio_coroutine_raising_is_a_defect_or_an_unknown_error() -> None:
             await fx.run_async_exit(fx.try_async(broken)),
         )
 
-    died, failed = _anyio_run(main)
+    died, failed = anyio.run(main, backend="asyncio")
     assert isinstance(died, fx.Failure) and isinstance(failed, fx.Failure)
     [die] = died.cause.reasons
     assert isinstance(die, fx.cause.Die) and isinstance(die.defect, ConnectionError)
