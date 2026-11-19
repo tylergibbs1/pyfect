@@ -198,6 +198,8 @@ def profile() -> Generator[Report]:
         _active.append(state)
     report = Report()
     try:
+        # 3.13's free_tool_id leaves the last user's global events set
+        _monitoring.set_events(tool, 0)
         _monitoring.register_callback(tool, _monitoring.events.PY_START, state.started)
         _monitoring.register_callback(tool, _monitoring.events.PY_RETURN, state.returned)
         _monitoring.set_local_events(tool, _RUN, _EVENTS)

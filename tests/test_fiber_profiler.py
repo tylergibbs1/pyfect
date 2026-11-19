@@ -135,22 +135,28 @@ def test_one_profile_runs_at_a_time() -> None:
 
 
 _TOOLS = (sys.monitoring.PROFILER_ID, 3, 4)
+_EVENT_IDS = (sys.monitoring.events.PY_START, sys.monitoring.events.PY_RETURN)
 
 
-def _tools_are_released() -> bool:
-    """No tool, no events and no callbacks left on any id the profiler uses."""
+def _callback(tool: int, event: int) -> object:
+    """The tool's callback for the event, left as it was."""
+    callback = sys.monitoring.register_callback(tool, event, None)
+    sys.monitoring.register_callback(tool, event, callback)
+    return callback
+
+
+def _monitoring_state() -> list[tuple[object, ...]]:
+    """Each id the profiler may take: its tool, events and callbacks."""
     monitoring = sys.monitoring
-    callbacks = [
-        monitoring.register_callback(tool, event, None)
+    return [
+        (
+            monitoring.get_tool(tool),
+            monitoring.get_events(tool),
+            monitoring.get_local_events(tool, _RUN),
+            *(_callback(tool, event) for event in _EVENT_IDS),
+        )
         for tool in _TOOLS
-        for event in (monitoring.events.PY_START, monitoring.events.PY_RETURN)
     ]
-    return (
-        all(monitoring.get_tool(tool) is None for tool in _TOOLS)
-        and not any(monitoring.get_events(tool) for tool in _TOOLS)
-        and not any(monitoring.get_local_events(tool, _RUN) for tool in _TOOLS)
-        and callbacks == [None] * len(callbacks)
-    )
 
 
 def _ends_normally(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -178,7 +184,7 @@ def _busy(monkeypatch: pytest.MonkeyPatch) -> None:
     with fiber_profiler.profile():
         with pytest.raises(fiber_profiler.ProfilerBusyError), fiber_profiler.profile():
             pass
-        assert not _tools_are_released()
+        assert "pyfect.fiber_profiler" in [sys.monitoring.get_tool(tool) for tool in _TOOLS]
 
 
 def _setup_fails(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -210,6 +216,26 @@ def _setup_fails(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_every_way_out_of_a_profile_releases_the_tool(
     path: Callable[[pytest.MonkeyPatch], None], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    assert _tools_are_released()
+    before = _monitoring_state()
+    assert "pyfect.fiber_profiler" not in [tool for tool, *_ in before]
     path(monkeypatch)
-    assert _tools_are_released()
+    assert _monitoring_state() == before
+
+
+def test_a_profile_ignores_events_left_on_its_tool_id() -> None:
+    # 3.13's free_tool_id leaves a tool's global events set (Hypothesis's
+    # tracer frees id 3 that way), so a profile taking that id must not
+    # inherit them: here every function's start would count as a turn.
+    monitoring = sys.monitoring
+    tool = next(tool for tool in _TOOLS if monitoring.get_tool(tool) is None)
+    monitoring.use_tool_id(tool, "left behind")
+    monitoring.set_events(tool, monitoring.events.PY_START | monitoring.events.PY_RETURN)
+    monitoring.free_tool_id(tool)
+    try:
+        with fiber_profiler.profile() as report:
+            fiber_id = fx.run_blocking(_yields_five_times)
+        assert report.fibers[fiber_id].turns == 6
+    finally:
+        monitoring.use_tool_id(tool, "cleanup")
+        monitoring.set_events(tool, 0)
+        monitoring.free_tool_id(tool)

@@ -67,6 +67,8 @@ class _Calls:
     def stop(self) -> None:
         if self._tool is not None:
             sys.monitoring.set_events(self._tool, 0)
+            # 3.13's free_tool_id leaves the callback registered
+            sys.monitoring.register_callback(self._tool, sys.monitoring.events.PY_START, None)
             sys.monitoring.free_tool_id(self._tool)
             sys.monitoring.restart_events()
             self._tool = None
