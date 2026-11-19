@@ -118,3 +118,14 @@ def test_cli_prints_help_and_suggests_and_fails_on_a_mistyped_subcommand():
 
 def test_cli_prints_its_version():
     assert run_cli("--version").stdout.strip() == "todo v1.0.0"
+
+
+def test_rpc_service_calls_its_handlers_streams_and_catches_the_typed_error():
+    assert run_example("rpc_service.py").splitlines() == [
+        "created Todo(id=1, title='write docs', done=False)",
+        "created Todo(id=2, title='ship it', done=False)",
+        "completed Todo(id=1, title='write docs', done=True)",
+        "no todo 7",
+        "[x] write docs",
+        "[ ] ship it",
+    ]
