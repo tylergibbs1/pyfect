@@ -14,6 +14,64 @@
 - The RPC page shows a stream handler that reads a service
   (`stream.service(Store).flat_map(...)`), and points to `pyfect.rpc.test.make_client` as the
   way to try a group without a server.
+- The generated OpenRouter client's docstrings link to OpenRouter's docs: 45 operations said
+  "[Management key](/docs/guides/overview/auth/management-api-keys) required", copied from
+  OpenRouter's OpenAPI spec, and their API reference pages linked to that path on pyfect.dev,
+  a 404. `scripts/gen_ai_schemas.py` now makes a spec's links to a path absolute on the
+  provider's docs site and fails on any other relative link; `tests/test_docstring_links.py`
+  fails on a docstring link that isn't an absolute URL, and the site's link check now covers
+  the API reference's docstrings as well as the guides.
+
+### Fixed
+
+- `interpreter_pool.call` and `try_call` on a function that reads globals of the script you ran,
+  in a script without an `if __name__ == "__main__":` guard, hung forever with no output. CPython
+  finds such a function by re-running the script inside the subinterpreter (as
+  `<fake __main__>`), and the script's own `fx.run_blocking` ran the whole program again in
+  there. A pyfect run started during that re-run now dies at once, and the call dies with the
+  new `interpreter_pool.MainScriptRerunError`, which says to add the guard or move the function
+  into an importable module. The Subinterpreters guide said functions of `__main__` and lambdas
+  can't cross; it now says what does: a function or lambda reading no globals crosses as its
+  code, other functions by reference.
+
+
+- Schema: `S.NumberFromString`, `S.FiniteFromString` and the number leaves of
+  `S.to_codec_string_tree` encoded a negative zero as `"0"`, so it decoded back as positive
+  zero. They now write `"-0"`, and the string tree decodes `"-0"` to `-0.0` instead of the
+  integer `0` (Effect #10721).
+
+
+- AI / OpenRouter: a tool result whose `model_output` holds a file sent the file as a
+  `[image/png omitted]` placeholder. It is now sent as content items in order (text, then
+  `image_url`, `file` or `input_audio`), empty text dropped and the cache breakpoint on the
+  last item; output with only text is still sent as joined text (Effect #10741).
+
+
+- AI / Amazon Bedrock: a tool result's `model_output` was ignored, so Bedrock got the
+  application-only `result` instead of what the tool chose to show the model. It now sends the
+  model output as text (empty text for an empty one) (Effect #10703).
+
+
+- DateTime: a zoneless date string whose hyphens looked like an offset, such as
+  `"2024-1-15"`, was read in the machine's local time zone by `S.DateTimeUtcFromString`,
+  `make_zoned_from_string` and the other string inputs, instead of as UTC. A zone is now
+  only an offset sign, a zone word on its own or a bracketed zone after the first digit,
+  with comments removed; an ECMAScript date-only string is read as UTC as before
+  (Effect #10690).
+
+
+- HTTP router: `router.serve(app)` built the server without the app's services, so a request
+  handler read a `Reference` the app layer sets (or anything else the app provides the server
+  layer) at its default, and a layer the handler provides was built again instead of shared
+  through the app's memo map. The server is now built on top of the app's context, as
+  Effect's `HttpRouter.serve` does (Effect #10668).
+
+
+- Socket: a write on a connection a server accepted (TCP, TLS, Unix, the WebSocket server,
+  an ASGI WebSocket) made after the handler's reader scope closed waited forever for a reader
+  that could never connect again. It now fails with the reader's `SocketError`, and so does
+  a later reader. `from_web_socket` and `from_connection` take `disable_reconnects=True` for
+  such a single connection; by default writes still wait for the next reader (Effect #10730).
 
 ## 0.6.14 (2026-11-19)
 
