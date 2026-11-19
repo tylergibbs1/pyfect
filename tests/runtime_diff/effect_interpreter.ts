@@ -1,4 +1,4 @@
-// Effect 4.1.2's side of the runtime differential tester (tests/runtime_diff):
+// Effect 4.1.4's side of the runtime differential tester (tests/runtime_diff):
 //   node tests/runtime_diff/effect_interpreter.ts PROGRAMS.json > ANSWERS.json
 //   node tests/runtime_diff/effect_interpreter.ts --serve   (a program per stdin line, an answer per line)
 // PROGRAMS.json is a list of cases, {"program": ..., "budget": n}: a program in program.py's
@@ -14,10 +14,9 @@ const EFFECT = process.env.PYFECT_EFFECT_REF
 if (!EFFECT) throw new Error("set PYFECT_EFFECT_REF=$(uv run python tests/_effect_ref.py), the pinned Effect checkout")
 const R = `${EFFECT}/packages/effect/src/`
 
-// Effect 4.1.2's internal/effect.ts as pyfect runs it: each patch replaces text that must occur
-// exactly once, so a changed source fails loudly instead of comparing against the wrong runtime.
-// pyfect copies the 4.1.4 fixes the fuzzer can reach (docs/PARITY.md §4), so they are applied
-// here as Effect wrote them (`git show <commit>` in the Effect repo).
+// Effect's internal/effect.ts as pyfect runs it: each patch replaces text that must occur
+// exactly once, so a changed source stops the interpreter before it answers anything, naming
+// every patch to update, instead of comparing against the wrong runtime.
 type Patch = { why: string; from: string; to: string }
 const PATCHES: Array<Patch> = [
   {
@@ -28,120 +27,6 @@ const PATCHES: Array<Patch> = [
     why: "EXIT_WAIT",
     from: "return this.evaluate(flatMap(interruptChildren, () => exit) as any)",
     to: "this.interruptible = false; return this.evaluate(flatMap(interruptChildren, () => exit) as any)"
-  },
-  {
-    // Effect 4.1.4 #10367 (abe3084f6): interrupt race losers as soon as the race settles, not
-    // when the racing fiber exits (raceAll).
-    why: "#10367 raceAll",
-    from: `        resume(exit)
-        if (isWinner && options?.onWinner) {
-          options.onWinner({ fiber, index: i, parentFiber: parent })
-        }`,
-    to: `        resume(exit)
-        if (isWinner) {
-          interruptRaceLosers(fibers, parent)
-          options?.onWinner?.({ fiber, index: i, parentFiber: parent })
-        }`
-  },
-  {
-    // #10367, raceAllFirst, and the helper both use.
-    why: "#10367 raceAllFirst",
-    from: `          resume(exit)
-          if (isWinner && options?.onWinner) {
-            options.onWinner({ fiber, index, parentFiber: parent })
-          }
-        })
-      }
-    })
-  })
-`,
-    to: `          resume(exit)
-          if (isWinner) {
-            interruptRaceLosers(fibers, parent)
-            options?.onWinner?.({ fiber, index, parentFiber: parent })
-          }
-        })
-      }
-    })
-  })
-
-const interruptRaceLosers = (fibers: Set<Fiber.Fiber<any, any>>, parent: Fiber.Fiber<any, any>) => {
-  const annotations = fiberStackAnnotations(parent)
-  for (const fiber of fibers) {
-    fiber.interruptUnsafe(parent.id, annotations)
-  }
-}
-`
-  },
-  {
-    // Effect 4.1.4 #10463 (d9101fc1b): a run resumed after an automatic yield counts the resume
-    // as one op and takes the step it saved before asking the scheduler again.
-    why: "#10463 runLoop start",
-    from: `    let yielding = false
-    let current: Primitive | Yield = effect
-    this.currentOpCount = 0`,
-    to: `    let yielding = false
-    let resuming = this._autoYielded
-    this._autoYielded = false
-    let current: Primitive | Yield = effect
-    this.currentOpCount = resuming ? 1 : 0`
-  },
-  {
-    why: "#10463 runLoop yield",
-    from: `          if (
-            !yielding &&
-            !cache.preventYield &&
-            cache.scheduler.shouldYield(this as any)
-          ) {
-            yielding = true
-            const prev = current
-            current = flatMap(yieldNow, () => prev as any) as any
-          }
-          current = cache.tracerContext
-            ? cache.tracerContext(current as any, this)
-            : (current as any)[evaluate](this)`,
-    to: `          if (
-            !resuming &&
-            !yielding &&
-            !cache.preventYield &&
-            cache.scheduler.shouldYield(this as any)
-          ) {
-            yielding = true
-            current = this.yieldNow(current as Primitive, 0, true)
-          } else {
-            resuming = false
-            current = cache.tracerContext
-              ? cache.tracerContext(current as any, this)
-              : (current as any)[evaluate](this)
-          }`
-  },
-  {
-    why: "#10463 yieldNow",
-    from: `  children(): Set<Fiber.Fiber<any, any>> {`,
-    to: `  yieldNow(effect: Primitive, priority = 0, automatic = false): Yield {
-    let resumed = false
-    this.currentDispatcher.scheduleTask(() => {
-      if (resumed) return
-      this._autoYielded = automatic
-      this.evaluate(effect)
-    }, priority)
-    return this.yieldWith(() => {
-      resumed = true
-    })
-  }
-  children(): Set<Fiber.Fiber<any, any>> {`
-  },
-  {
-    why: "#10463 yieldNowWith",
-    from: `    let resumed = false
-    fiber.currentDispatcher.scheduleTask(() => {
-      if (resumed) return
-      fiber.evaluate(exitVoid as any)
-    }, this[args] ?? 0)
-    return fiber.yieldWith(() => {
-      resumed = true
-    })`,
-    to: `    return fiber.yieldNow(exitVoid as any, this[args] ?? 0)`
   }
 ]
 registerHooks({
@@ -149,10 +34,11 @@ registerHooks({
     const loaded = nextLoad(url, context)
     if (!url.endsWith("/packages/effect/src/internal/effect.ts")) return loaded
     let source = String(loaded.source)
-    for (const { why, from, to } of PATCHES) {
-      if (source.split(from).length !== 2) throw new Error(`internal/effect.ts changed: update the ${why} patch`)
-      source = source.replace(from, () => to)
+    const stale = PATCHES.filter(({ from }) => source.split(from).length !== 2).map(({ why }) => why)
+    if (stale.length > 0) {
+      throw new Error(`${url} changed: update the patches ${stale.join(", ")} in effect_interpreter.ts`)
     }
+    for (const { from, to } of PATCHES) source = source.replace(from, () => to)
     return { ...loaded, source }
   }
 })
@@ -486,7 +372,9 @@ const answer = async ({ program, budget }: Case): Promise<Json> => {
 }
 
 if (process.argv[2] === "--serve") {
-  // One case per line in, one answer per line out, for as long as stdin is open.
+  // A first line once Effect has loaded (oracle.py waits for it), then one case per line in,
+  // one answer per line out, for as long as stdin is open.
+  process.stdout.write("ready\n")
   for await (const line of createInterface({ input: process.stdin })) {
     process.stdout.write(JSON.stringify(await answer(JSON.parse(line))) + "\n")
   }

@@ -1,4 +1,4 @@
-"""pyfect's runtime answers the checked-in programs as Effect 4.1.2 does.
+"""pyfect's runtime answers the checked-in programs as the pinned Effect (4.1.4) does.
 
 ``corpus.json`` holds generated cases (program.py: a program and the
 ``MaxOpsBeforeYield`` it runs under) with what effect_interpreter.ts answered for
@@ -9,6 +9,8 @@ the fuzz workflow compares freshly generated programs against Node.
 """
 
 import re
+import shutil
+from pathlib import Path
 
 import pytest
 
@@ -52,6 +54,16 @@ def test_the_corpus_runs_every_node_and_mode_at_every_swept_budget():
         name: sorted(wanted - budgets) for name, budgets in swept.items() if wanted - budgets
     }
     assert missing == {}, "add the sweep to corpus.json (--sweep)"
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="needs node")
+def test_the_effect_interpreter_runs_on_the_pinned_effect(effect_checkout: Path):
+    """effect_interpreter.ts patches the pinned Effect's source as it loads it: a patch whose
+    text the pin no longer has stops the interpreter, so a new pin fails here, in every pytest
+    run, rather than in the fuzz job's run on main."""
+    case, effect = _CORPUS[0]
+    with oracle.EffectOracle() as node:
+        assert node.answer(case) == effect
 
 
 def test_the_effect_interpreter_handles_every_node():

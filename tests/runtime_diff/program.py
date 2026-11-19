@@ -1,7 +1,7 @@
 """The program language the runtime differential tester generates.
 
 A program is a tree of ``Expr`` nodes; ``interpret.py`` turns one into a pyfect
-effect and ``effect_interpreter.ts`` into an Effect 4.1.2 one. Every node has an
+effect and ``effect_interpreter.ts`` into an Effect 4.1.4 one. Every node has an
 ``id`` (unique in its program) that names the events it logs and the errors and
 defects it raises. Values are JSON: ints, lists and ``null``.
 

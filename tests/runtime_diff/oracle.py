@@ -26,7 +26,8 @@ UNLIMITED = 2**53 - 1
 
 
 class EffectOracle:
-    """A Node process answering programs one at a time (``--serve``)."""
+    """A Node process answering programs one at a time (``--serve``), started with Effect
+    loaded."""
 
     def __init__(self) -> None:
         effect = _effect_ref.checkout()
@@ -38,6 +39,10 @@ class EffectOracle:
             encoding="utf-8",
             env={**os.environ, _effect_ref.ENV: str(effect)},
         )
+        # Node says it is ready once Effect has loaded, so a source patch that no longer
+        # applies stops the run here, before any program is generated, with Node's error above.
+        if cast("IO[str]", self._node.stdout).readline() != "ready\n":
+            raise RuntimeError(f"the Effect interpreter did not start ({self._node.wait()})")
 
     def answer(self, case: Case) -> Json:
         stdin, stdout = cast("IO[str]", self._node.stdin), cast("IO[str]", self._node.stdout)
