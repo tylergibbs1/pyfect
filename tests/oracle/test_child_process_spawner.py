@@ -26,7 +26,6 @@ import shutil
 import signal
 import subprocess
 import sys
-import time
 import uuid
 from collections.abc import Callable
 from pathlib import Path as FsPath
@@ -34,6 +33,7 @@ from typing import Any, Never
 
 import pytest
 from _subprocess import SUBPROCESS_TIMEOUT
+from _timing import at_least
 
 import pyfect as fx
 from pyfect import file_system, path, process, redacted, sink, stream, testing
@@ -1506,16 +1506,6 @@ def _heartbeat_stopped(marker: str) -> fx.Effect[None]:
     return check()
 
 
-def _timed[A, E, R](eff: fx.Effect[A, E, R]) -> fx.Effect[float, E, R]:
-    @fx.fn
-    def run():
-        start = time.monotonic()
-        yield from eff
-        return time.monotonic() - start
-
-    return run()
-
-
 def _send(handle: ChildProcessHandle, line: str) -> fx.Effect[None, PlatformError]:
     return stream.make(line.encode()).run(handle.stdin)
 
@@ -1578,8 +1568,8 @@ def test_scope_release_drains_descendants_after_a_slow_leader_exits(
 ):
     """scope release drains descendants after a slow leader exits"""
     group = yield from _start_group(tmp, "exit-on-signal", delays=(1500, 2000))
-    seconds = yield from _timed(group.scope.close(fx.exit.succeed(None)))
-    assert seconds >= 1.5
+    with at_least(1.5, what="the scope's release"):
+        yield from group.scope.close(fx.exit.succeed(None))
     assert not (yield from group.handle.is_running)
     assert os.path.exists(group.marker), "scope release must wait for the descendant's exit marker"
     assert FsPath(group.marker).read_text() == "exited"
@@ -1611,10 +1601,10 @@ def test_kill_force_kills_descendants_that_ignore_the_kill_signal(
 def test_force_kill_after_escalation_does_not_depend_on_the_effect_clock(
     node_services: Services[Platform], tmp: str
 ):
-    """forceKillAfter escalation does not depend on the Effect clock"""
+    """forceKillAfter escalation does not depend on the Effect clock: the TestClock never
+    moves, so a SIGKILL timed by it would leave the release to the test's timeout"""
     group = yield from testing.with_live(_start_group(tmp, "ignore-signal", force_kill_after=0.2))
-    seconds = yield from _timed(group.scope.close(fx.exit.succeed(None)))
-    assert seconds < 2
+    yield from group.scope.close(fx.exit.succeed(None))
     yield from _heartbeat_stopped(group.marker)
 
 
@@ -1627,9 +1617,12 @@ def test_scope_release_returns_when_a_descendant_holds_the_inherited_pipe_withou
 
     @fx.fn
     def check():
-        seconds = yield from _timed(group.scope.close(fx.exit.succeed(None)))
+        # After the leader, the group gets its one second; then the release stops waiting,
+        # while the descendant (which exits by itself after 5 s) still runs.
+        with at_least(1, what="the scope's release"):
+            yield from group.scope.close(fx.exit.succeed(None))
+        assert _alive(group.descendant), "the release waited for the descendant to exit"
         assert not (yield from group.handle.is_running)
-        assert 1 <= seconds < 3
 
     yield from check().ensuring(fx.sync(lambda: _kill_pid(group.descendant)))
 
@@ -1649,7 +1642,8 @@ def test_scope_release_returns_when_stdout_is_unread_and_backpressured(
         )
         yield from fx.sleep("100 millis")
 
-    assert (yield from _timed(fx.scoped(run()))) < 2
+    # The child sleeps 30 s: a release that waited for it would outlast the test's timeout.
+    yield from fx.scoped(run())
 
 
 @testing.live
