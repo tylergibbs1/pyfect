@@ -47,7 +47,7 @@ BOUND = 24
 EXPONENT = math.log(BOUND, FACTOR)
 """The growth exponent ``BOUND`` allows, about 1.53, for steps of other factors."""
 GUARD_MARGIN = float(os.environ.get("PYFECT_GUARD_MARGIN", "1"))
-"""Bounds are this many times looser. ``scripts/check_regression_guards.py`` sets 1.5, so a
+"""Bounds are this many times looser. ``scripts/check_regression_guards.py`` sets 1.25, so a
 test caught its bug only if it would still have with a looser bound: big_decimal's digit run
 grew 27x against 24 on macOS and under 24 on CI's runner."""
 MIN_SECONDS = 0.002

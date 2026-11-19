@@ -38,7 +38,7 @@ def test_a_string_of_many_split_points_fails_in_near_linear_time(
         return lambda: decode(text)
 
     assert isinstance(decode("-" * 1000 + "\N{GRINNING FACE}"), fx.Failure)
-    assert_near_linear(sized, 10_000, 8 * 10_000)
+    assert_near_linear(sized, 16_000, 8 * 16_000)
 
 
 def test_matching_strings_still_split_as_before() -> None:

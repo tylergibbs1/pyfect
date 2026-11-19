@@ -65,9 +65,10 @@ def _collect() -> dict[Guard, list[str]]:
     return collector.guarded
 
 
-GUARD_MARGIN = "1.5"
+GUARD_MARGIN = "1.25"
 """A timing test catches its bug only if it fails with its bound this many times looser
-(``tests/_growth.py``): one that clears the bound only just is missed on another machine."""
+(``tests/_growth.py``). The guards CI's runner missed, or only just caught, measured 1.00 to
+1.09 times their bound, and one test's ratio moved 15% between two runs there."""
 
 type Verdict = Literal["caught", "MISSED", "error", "skipped", "patch no longer applies"]
 

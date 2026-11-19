@@ -515,7 +515,7 @@ def _xml_non_ascii_leading_comment(n: int) -> Work:
 @case(
     xml.decode_string,
     "xml.decode_string: text split by CDATA sections (#43)",
-    size=8000,
+    size=16_000,  # at 8000 the bug grew 34x (Linux), 31x on CI's runner
     guards=Guard("6e8ffaef", "xml-cdata-text-concatenated"),
 )
 def _xml_cdata_text(n: int) -> Work:
