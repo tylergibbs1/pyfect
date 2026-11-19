@@ -1,6 +1,8 @@
 # Changelog
 
-## 0.6.13 (2026-11-19)
+## 0.6.14 (2026-11-19)
+
+0.6.13 was tagged but never published: its release workflow could not start.
 
 ### Added
 
@@ -25,11 +27,6 @@
   cancels the waiter again at every await and the wait awaited even after the fiber was done.
   `from_async` and `try_async` cancel an anyio coroutine when the fiber is interrupted. Trio is
   not supported (`run_async` raises `RuntimeError("no running event loop")` there).
-- Schema: a schema class whose field annotation has no schema (`value: complex`) raises
-  `TypeError` where the class is defined, naming the field (`Unsupported.value: No schema for
-  the annotation ...`), instead of on first use. An annotation naming something not defined yet
-  (the class itself, a class further down) is still derived on first use, and its error names
-  the field too.
 - Schema: `S.Decimal`, a finite `decimal.Decimal` (Python-only; Effect's decimal stays
   `S.BigDecimal`), and the schema of a `decimal.Decimal` annotation, which had none. JSON
   writes it as its text (`"9.99"`, `"1E+2"`), which reads back to the same digits and exponent;

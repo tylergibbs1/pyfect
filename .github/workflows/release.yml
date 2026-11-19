@@ -19,6 +19,10 @@ jobs:
   # Publish only a commit that passes the whole of CI, its extras and the docs build.
   ci:
     uses: ./.github/workflows/ci.yml
+    # ci.yml's check job lists the run's artifacts; a called workflow can't widen its caller's token.
+    permissions:
+      contents: read
+      actions: read
 
   extras:
     uses: ./.github/workflows/extras.yml
