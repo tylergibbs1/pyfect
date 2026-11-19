@@ -84,6 +84,18 @@ def test_declare():
     decoding.fail("a", "Expected File")
 
 
+def test_number_string_schemas_preserve_signed_zeros():
+    """Transformations / number string schemas preserve signed zeros"""
+    for encode, decode in [
+        (S.encode_sync(S.NumberFromString), S.decode_sync(S.NumberFromString)),
+        (S.encode_sync(S.FiniteFromString), S.decode_sync(S.FiniteFromString)),
+    ]:
+        for value, text in [(0.0, "0"), (-0.0, "-0")]:
+            assert encode(value) == text
+            decoded = decode(text)
+            assert decoded == 0 and math.copysign(1.0, decoded) == math.copysign(1.0, value)
+
+
 def test_number_from_string():
     """Transformations / NumberFromString"""
     asserts = SchemaAsserts(S.NumberFromString)
