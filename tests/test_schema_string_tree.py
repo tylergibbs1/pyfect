@@ -1,6 +1,7 @@
 """``S.to_codec_string_tree``: a schema's values read from and written as a
 tree of strings."""
 
+import math
 from typing import NotRequired, TypedDict
 
 import pytest
@@ -65,3 +66,13 @@ def test_unknown_values_are_kept_as_any_string_tree():
     assert S.decode_unknown_sync(codec)({"a": ["b"]}) == {"a": ["b"]}
     with pytest.raises(S.SchemaError, match="StringTree"):
         S.decode_unknown_sync(codec)({"a": 1})
+
+
+def test_numbers_keep_a_negative_zero():
+    # Effect #10721: toCodec.test.ts's Serializers / toCodecStringTree number cases.
+    for codec in (S.to_codec_string_tree(S.Number), S.to_codec_string_tree(S.Finite)):
+        assert S.encode_sync(codec)(0.0) == "0"
+        assert S.encode_sync(codec)(-0.0) == "-0"
+        zero, negative = S.decode_sync(codec)("0"), S.decode_sync(codec)("-0")
+        assert zero == 0 and math.copysign(1.0, zero) == 1.0
+        assert negative == 0 and math.copysign(1.0, negative) == -1.0

@@ -113,6 +113,15 @@ def string() -> Getter[str, object]:
     return Transform(to_string)
 
 
+def number_text(value: float) -> str:
+    """``String(value)``, except ``"-0"`` for a negative zero: the text a
+    number is encoded as (Effect's ``numberFromString``), so it decodes
+    back with its sign."""
+    if value == 0 and math.copysign(1.0, value) < 0:
+        return "-0"
+    return js_string(value)
+
+
 def number() -> Getter[float, object]:
     """``Number(value)`` (Effect's ``SchemaGetter.Number``)."""
     return Transform(to_number)

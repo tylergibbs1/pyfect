@@ -24,7 +24,7 @@ from pyfect.schema import transformation as T
 from pyfect.schema._checks_number import is_finite
 from pyfect.schema._checks_string import is_string_big_int, is_string_finite
 from pyfect.schema._options import ParseOptions
-from pyfect.schema.getter._coerce import to_number, to_string
+from pyfect.schema.getter._coerce import number_text, to_number, to_string
 from pyfect.schema.issue import InvalidValue, Issue, reported
 
 type CodecLink = Callable[[tuple[ast.AST, ...]], ast.Link | None]
@@ -196,19 +196,20 @@ _SAFE_INTEGER = 2**53 - 1
 def _text_to_number(text: str) -> float:
     # An integral value within the safe integers is an ``int``, as
     # ``json.loads`` gives for one: ``S.Int`` takes only an ``int``.
+    # A negative zero stays a float: an ``int`` has no sign to keep.
     value = to_number(text)
-    if value.is_integer() and abs(value) <= _SAFE_INTEGER:
+    if value.is_integer() and abs(value) <= _SAFE_INTEGER and math.copysign(1.0, value) > 0:
         return int(value)
     return value
 
 
 FINITE_STRING = ast.append_checks(ast.string, (is_string_finite(),))
-FINITE_TO_STRING = link(FINITE_STRING, decode=_text_to_number, encode=js_number)
-"""A finite number as its text."""
+FINITE_TO_STRING = link(FINITE_STRING, decode=_text_to_number, encode=number_text)
+"""A finite number as its text (``"-0"`` for a negative zero)."""
 NUMBER_TO_STRING = link(
-    ast.Union((FINITE_STRING, NON_FINITE)), decode=_text_to_number, encode=js_number
+    ast.Union((FINITE_STRING, NON_FINITE)), decode=_text_to_number, encode=number_text
 )
-"""A number as its text, ``"NaN"`` / ``"Infinity"`` / ``"-Infinity"`` included."""
+"""A number as its text, ``"NaN"`` / ``"Infinity"`` / ``"-Infinity"`` / ``"-0"`` included."""
 
 
 def enum_to_string(node: ast.Enum) -> ast.AST:

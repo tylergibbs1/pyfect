@@ -29,6 +29,7 @@ from pyfect.schema._options import ParseOptions
 from pyfect.schema.getter import (
     JsonReplacer,
     JsonReviver,
+    Transform,
     big_int,
     camel_to_snake,
     decode_base64,
@@ -73,7 +74,7 @@ from pyfect.schema.getter import (
 from pyfect.schema.getter import (
     uncapitalize as uncapitalize_getter,
 )
-from pyfect.schema.getter._coerce import to_utc
+from pyfect.schema.getter._coerce import number_text, to_utc
 from pyfect.schema.issue import InvalidValue, Issue, reported
 from pyfect.schema.transformation._transformation import (
     Content,
@@ -133,8 +134,9 @@ def split_key_value(
     return Transformation(split, join)
 
 
-number_from_string: Transformation[float, str] = Transformation(number(), string())
-"""JavaScript's ``Number(text)`` and ``String(number)``."""
+number_from_string: Transformation[float, str] = Transformation(number(), Transform(number_text))
+"""JavaScript's ``Number(text)`` and ``String(number)``, except that a negative zero is
+written ``"-0"``."""
 
 big_int_from_string: Transformation[int, str] = Transformation(big_int(), string())
 """JavaScript's ``BigInt(text)`` and ``String(bigint)``."""

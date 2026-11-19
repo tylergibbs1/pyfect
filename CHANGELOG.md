@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Schema: `S.NumberFromString`, `S.FiniteFromString` and the number leaves of
+  `S.to_codec_string_tree` encoded a negative zero as `"0"`, so it decoded back as positive
+  zero. They now write `"-0"`, and the string tree decodes `"-0"` to `-0.0` instead of the
+  integer `0` (Effect #10721).
+
 ## 0.6.14 (2026-11-19)
 
 0.6.13 was tagged but never published: its release workflow could not start.
