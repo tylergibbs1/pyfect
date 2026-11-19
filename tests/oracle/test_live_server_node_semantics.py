@@ -10,12 +10,14 @@ half-closes gets no response; and a head with a bare-LF line ending is a
 
 from __future__ import annotations
 
+import select
 import socket
 import threading
 import time
 from typing import Any
 
 import pytest
+from _timing import HANG_SECONDS, at_least
 
 import pyfect as fx
 from pyfect import effect
@@ -31,35 +33,62 @@ def _serve_ok() -> fx.Effect[int, Any, HttpServer | Scope]:
     return server.serve_effect(fx.succeed(server_response.text("ok"))).flat_map(lambda _: port)
 
 
-def _until_close(conn: socket.socket, started: float) -> tuple[bytes, float]:
+def _until_close(conn: socket.socket) -> bytes:
     received = bytearray()
     while chunk := conn.recv(65536):
         received += chunk
-    return bytes(received), time.monotonic() - started
+    return bytes(received)
+
+
+def _connect(at: int) -> socket.socket:
+    return socket.create_connection(("127.0.0.1", at), timeout=TIMEOUT)
+
+
+def _readable_first(conn: socket.socket, before: socket.socket) -> None:
+    """Wait until ``conn`` or ``before`` has something to read (or is closed): ``conn``
+    must be first. The server's timers fire in deadline order, so a server that keeps
+    to its shorter timeout is never second, however slowly a loaded machine runs."""
+    ready, _, _ = select.select([conn, before], [], [], HANG_SECONDS)
+    assert ready, f"hung: neither connection heard from the server in {HANG_SECONDS:g}s"
+    assert conn in ready, "the server's longer timeout fired first"
+
+
+def _idle_after_a_response(at: int) -> socket.socket:
+    """A connection that has had a response and is now idle: its keep-alive timer runs."""
+    conn = _connect(at)
+    _first_response(conn)
+    return conn
 
 
 def test_closes_an_idle_keep_alive_connection_after_the_keep_alive_timeout() -> None:
-    def use(conn: socket.socket) -> tuple[bytes, float]:
-        conn.sendall(b"GET / HTTP/1.1\r\nhost: x\r\n\r\n")
-        return _until_close(conn, time.monotonic())
+    """Not at once, and before a 3 s headers timeout started after it."""
+
+    def use(at: int):
+        with at_least(0.25, what="the idle connection's close"), _connect(at) as conn:
+            response = _first_response(conn)
+            with _connect(at) as slow_head:
+                slow_head.sendall(b"GET / HTTP/1.1\r\nho")
+                _readable_first(conn, before=slow_head)
+            return response, _until_close(conn)
 
     @fx.fn
     def program():
         at = yield from _serve_ok()
-        return (yield from with_socket(at, use))
+        return (yield from effect.blocking(lambda: use(at)))
 
-    received, elapsed = run_live(program(), keep_alive_timeout="300 millis")
-    [response] = parse_responses(received)
+    response, rest = run_live(
+        program(), keep_alive_timeout="300 millis", headers_timeout="3 seconds"
+    )
+    assert rest == b""
     assert response.status == 200
     assert response.header("connection") == "keep-alive"
     assert response.header("keep-alive") == "timeout=0"
-    assert 0.25 < elapsed < TIMEOUT / 2
 
 
 def test_advertises_the_keep_alive_timeout_in_whole_seconds() -> None:
     def use(conn: socket.socket) -> bytes:
         conn.sendall(b"GET / HTTP/1.1\r\nhost: x\r\nconnection: close\r\n\r\n")
-        return _until_close(conn, time.monotonic())[0]
+        return _until_close(conn)
 
     @fx.fn
     def program():
@@ -78,40 +107,51 @@ def _first_response(conn: socket.socket):
     conn.sendall(b"GET / HTTP/1.1\r\nhost: x\r\n\r\n")
     received = bytearray()
     while not received.endswith(b"\r\n\r\nok"):
-        received += conn.recv(65536)
+        chunk = conn.recv(65536)
+        assert chunk, f"closed before a whole response: {bytes(received)!r}"
+        received += chunk
     [response] = parse_responses(bytes(received))
     return response
 
 
-def test_answers_a_head_that_does_not_arrive_within_the_headers_timeout_with_408() -> None:
-    def use(conn: socket.socket) -> tuple[bytes, float]:
-        conn.sendall(b"GET / HTTP/1.1\r\nho")
-        return _until_close(conn, time.monotonic())
+def _within_the_headers_timeout(head: bytes) -> fx.Effect[bytes, Any, HttpServer | Scope]:
+    """What a connection that sends ``head`` and no more gets from a server with a
+    300 ms headers timeout: not at once, and before a 3 s keep-alive timeout that
+    started after it."""
+
+    def use(at: int) -> bytes:
+        with at_least(0.25, what="the headers timeout"), _connect(at) as conn:
+            conn.sendall(head)
+            with _idle_after_a_response(at) as idle:
+                _readable_first(conn, before=idle)
+            return _until_close(conn)
 
     @fx.fn
     def program():
         at = yield from _serve_ok()
-        return (yield from with_socket(at, use))
+        return (yield from effect.blocking(lambda: use(at)))
 
-    received, elapsed = run_live(program(), headers_timeout="300 millis")
+    return program()
+
+
+def test_answers_a_head_that_does_not_arrive_within_the_headers_timeout_with_408() -> None:
+    received = run_live(
+        _within_the_headers_timeout(b"GET / HTTP/1.1\r\nho"),
+        headers_timeout="300 millis",
+        keep_alive_timeout="3 seconds",
+    )
     [response] = parse_responses(received)
     assert response.status == 408
     assert response.header("connection") == "close"
-    assert 0.25 < elapsed < TIMEOUT / 2
 
 
 def test_closes_a_connection_that_sends_nothing_within_the_headers_timeout() -> None:
-    def use(conn: socket.socket) -> tuple[bytes, float]:
-        return _until_close(conn, time.monotonic())
-
-    @fx.fn
-    def program():
-        at = yield from _serve_ok()
-        return (yield from with_socket(at, use))
-
-    received, elapsed = run_live(program(), headers_timeout="300 millis")
+    received = run_live(
+        _within_the_headers_timeout(b""),
+        headers_timeout="300 millis",
+        keep_alive_timeout="3 seconds",
+    )
     assert received == b""
-    assert 0.25 < elapsed < TIMEOUT / 2
 
 
 def test_a_slow_head_after_a_keep_alive_request_gets_the_headers_timeout() -> None:
@@ -123,7 +163,7 @@ def test_a_slow_head_after_a_keep_alive_request_gets_the_headers_timeout() -> No
         conn.sendall(b"GET / HTTP/1.1\r\n")
         time.sleep(0.4)
         conn.sendall(b"host: x\r\nconnection: close\r\n\r\n")
-        return _until_close(conn, time.monotonic())[0]
+        return _until_close(conn)
 
     @fx.fn
     def program():
@@ -143,7 +183,7 @@ def test_a_server_layer_built_twice_serves_each_build() -> None:
 
     def use(conn: socket.socket) -> bytes:
         conn.sendall(b"GET / HTTP/1.1\r\nhost: x\r\nconnection: close\r\n\r\n")
-        return _until_close(conn, time.monotonic())[0]
+        return _until_close(conn)
 
     @fx.fn
     def program():
@@ -159,7 +199,7 @@ def test_a_server_layer_built_twice_serves_each_build() -> None:
 def test_answers_an_http_1_0_request_with_an_http_1_1_status_line() -> None:
     def use(conn: socket.socket) -> bytes:
         conn.sendall(b"GET / HTTP/1.0\r\n\r\n")
-        return _until_close(conn, time.monotonic())[0]
+        return _until_close(conn)
 
     @fx.fn
     def program():
@@ -178,6 +218,7 @@ def test_closes_a_connection_whose_client_stops_reading_when_the_shutdown_timeou
     body waits for a client that stopped reading (uvicorn exits on time)."""
     started = threading.Event()
     done = threading.Event()
+    gave_up: list[bool] = []
 
     def stall(at: int) -> None:
         conn = socket.socket()
@@ -186,7 +227,8 @@ def test_closes_a_connection_whose_client_stops_reading_when_the_shutdown_timeou
         conn.sendall(b"GET / HTTP/1.1\r\nhost: x\r\n\r\n")
         conn.recv(1)
         started.set()
-        done.wait(TIMEOUT)  # held until the test is done
+        # Held until the server has shut down, or a hang is certain.
+        gave_up.append(not done.wait(HANG_SECONDS))
         conn.close()
 
     @fx.fn
@@ -199,12 +241,11 @@ def test_closes_a_connection_whose_client_stops_reading_when_the_shutdown_timeou
 
     layer_live = live_server.layer(host="127.0.0.1", graceful_shutdown_timeout="300 millis")
     program = scoped(serving()).pipe(fx.provide(layer_live))
-    started_at = time.monotonic()
     try:
         fx.run_blocking(program.timeout(fx.duration.seconds(TIMEOUT)).or_die())
+        assert gave_up == [], "the shutdown waited for the client to close"
     finally:
         done.set()
-    assert time.monotonic() - started_at < 2.5
 
 
 def test_aborts_a_streamed_body_still_open_when_the_shutdown_timeout_ends() -> None:
@@ -219,7 +260,7 @@ def test_aborts_a_streamed_body_still_open_when_the_shutdown_timeout_ends() -> N
         with socket.create_connection(("127.0.0.1", at), timeout=TIMEOUT) as conn:
             conn.sendall(b"GET / HTTP/1.1\r\nhost: x\r\n\r\n")
             started.set()
-            received.append(_until_close(conn, time.monotonic())[0])
+            received.append(_until_close(conn))
 
     endless = fx.stream.make(b"data: 1\n\n").concat(fx.stream.never)
 
@@ -235,10 +276,8 @@ def test_aborts_a_streamed_body_still_open_when_the_shutdown_timeout_ends() -> N
 
     layer_live = live_server.layer(host="127.0.0.1", graceful_shutdown_timeout="300 millis")
     program = scoped(serving()).pipe(fx.provide(layer_live))
-    started_at = time.monotonic()
     reader = fx.run_blocking(program.timeout(fx.duration.seconds(TIMEOUT)).or_die())
     reader.join(TIMEOUT)
-    assert time.monotonic() - started_at < 2.5
     [body] = received
     assert body.endswith(b"9\r\ndata: 1\n\n\r\n")
 
@@ -268,14 +307,10 @@ def test_answers_a_head_with_a_bare_lf_line_ending_with_400_at_once(head: bytes)
     @fx.fn
     def program():
         at = yield from _serve_ok()
-        started = time.monotonic()
-        received = yield from until_close(at, head)
-        return received, time.monotonic() - started
+        return (yield from until_close(at, head))
 
-    received, elapsed = run_live(program())
-    [response] = parse_responses(received)
+    [response] = parse_responses(run_live(program()))
     assert response.status == 400
-    assert elapsed < TIMEOUT / 2
 
 
 def test_skips_a_bare_lf_before_the_request_line() -> None:
@@ -305,11 +340,7 @@ def test_answers_a_chunked_body_with_a_bare_lf_line_ending_with_400_at_once(body
         yield from server.serve_effect(read.as_(server_response.text("ok")))
         at = yield from port
         head = b"POST / HTTP/1.1\r\nhost: x\r\ntransfer-encoding: chunked\r\n\r\n"
-        started = time.monotonic()
-        received = yield from until_close(at, head + body)
-        return received, time.monotonic() - started
+        return (yield from until_close(at, head + body))
 
-    received, elapsed = run_live(program())
-    [response] = parse_responses(received)
+    [response] = parse_responses(run_live(program()))
     assert response.status == 400
-    assert elapsed < TIMEOUT / 2

@@ -42,8 +42,7 @@ def _connect(at: int) -> socket.socket:
 
 def _read_until_close(conn: socket.socket) -> bytes:
     received = bytearray()
-    deadline = time.monotonic() + TIMEOUT
-    while time.monotonic() < deadline:
+    while True:
         try:
             chunk = conn.recv(65536)
         except ConnectionResetError:
