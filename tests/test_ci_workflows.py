@@ -590,3 +590,30 @@ def test_the_nightly_soak_runs_the_kill_suites_daily_and_never_retries():
     report = _job("soak-nightly.yml", "report")
     assert "needs: [images, cluster, soak]" in report
     assert "if: failure() || cancelled()" in report and "gh issue create" in report
+
+
+def _runs_on_a_push_to_main(text: str) -> bool:
+    triggers = text.split("\njobs:\n", 1)[0]
+    return re.search(r"(?m)^  push:\n    branches: \[main\]$", triggers) is not None
+
+
+def test_a_failed_run_on_main_opens_an_issue_for_every_push_workflow():
+    """No workflow but ci is a required check, so a red run on main is silent unless
+    main-alert.yml opens an issue for it (fuzz was red on main for 13 hours unseen). It must
+    follow every workflow a push to main runs, by name, and only runs of pushes to main."""
+    pushed = {
+        re.search(r"(?m)^name: (.+)$", text).group(1)  # pyright: ignore[reportOptionalMemberAccess]
+        for path in sorted(WORKFLOWS.glob("*.yml"))
+        if _runs_on_a_push_to_main(text := path.read_text(encoding="utf-8"))
+    }
+    assert "fuzz" in pushed
+    alert = (WORKFLOWS / "main-alert.yml").read_text(encoding="utf-8")
+    triggers = alert.split("\njobs:\n", 1)[0]
+    followed = re.search(r"(?m)^    workflows: \[(.*)\]$", triggers)
+    assert followed, "main-alert.yml follows no workflows"
+    assert {name.strip() for name in followed.group(1).split(",")} == pushed
+    assert re.search(r"(?m)^    types: \[completed\]$", triggers)
+    assert re.search(r"(?m)^    branches: \[main\]$", triggers)
+    assert "github.event.workflow_run.event == 'push'" in alert
+    for command in ("gh issue create", "gh issue comment", "gh issue close"):
+        assert command in alert, command
