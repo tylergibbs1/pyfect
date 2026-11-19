@@ -18,7 +18,8 @@ These start a new project in `app/`. `--python 3.14+gil` asks for the standard b
 `brew upgrade uv` for Homebrew's). A plain `--python 3.14` lets uv pick the free-threaded
 3.14t, where some libraries publish no wheels yet (`psycopg[binary]` is one), and it does
 whenever it finds one installed first. The pip commands name `python3.13` because a plain
-`python3` is often older: on macOS, `/usr/bin/python3` is Python 3.9. With a Python older than
+`python3` is often older: on macOS, `/usr/bin/python3` is Python 3.9. Any newer Python works
+too, so use `python3.14` if that is the one you have. With a Python older than
 3.13, pip finds no release it can install and says only:
 
 ```text
@@ -75,6 +76,10 @@ and effect generators never use it.
 typeCheckingMode = "strict"
 reportUnknownParameterType = false
 ```
+
+`uv init` made `pyproject.toml` for you; add these lines to it. The pip commands made no
+`pyproject.toml`, so create one in `app/` with just these lines. Without it, pyright runs in
+its default mode and misses the errors strict mode reports.
 
 ## Check it works
 
