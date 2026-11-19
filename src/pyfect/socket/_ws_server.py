@@ -58,7 +58,7 @@ class _WsIncoming:
         opened: Effect[WebSocketLike, Never, Scope] = acquire_release(
             succeed(ws), lambda w, _: sync(w.close)
         )
-        socket = from_web_socket(opened)
+        socket = from_web_socket(opened, disable_reconnects=True)
         return (
             handler(socket)
             .pipe(provide_service(WebSocket, ws))

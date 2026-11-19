@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Socket: a write on a connection a server accepted (TCP, TLS, Unix, the WebSocket server,
+  an ASGI WebSocket) made after the handler's reader scope closed waited forever for a reader
+  that could never connect again. It now fails with the reader's `SocketError`, and so does
+  a later reader. `from_web_socket` and `from_connection` take `disable_reconnects=True` for
+  such a single connection; by default writes still wait for the next reader (Effect #10730).
+
 ## 0.6.14 (2026-11-19)
 
 0.6.13 was tagged but never published: its release workflow could not start.

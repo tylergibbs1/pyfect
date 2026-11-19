@@ -21,7 +21,6 @@ from pyfect.channel import unwrap as unwrap_channel
 from pyfect.duration import Input as DurationInput
 from pyfect.effect import fail, gen, succeed, suspend, sync, void
 from pyfect.exit import Exit
-from pyfect.latch import Latch
 from pyfect.layer import Layer
 from pyfect.layer import effect as layer_effect
 from pyfect.scope import Scope, acquire_release, add_finalizer
@@ -55,6 +54,7 @@ from pyfect.socket._tls import (
     client_side,
     server_context,
 )
+from pyfect.socket._write_gate import WriteGate
 
 type Connect = Callable[[Connection], Coroutine[Any, Any, object]]
 
@@ -62,17 +62,17 @@ type Connect = Callable[[Connection], Coroutine[Any, Any, object]]
 class _Current:
     """The connection the current reader opened, which its writes use."""
 
-    __slots__ = ("connection", "latch")
+    __slots__ = ("connection", "gate")
 
-    def __init__(self) -> None:
+    def __init__(self, *, reconnects: bool) -> None:
         self.connection: Connection | None = None
-        self.latch = Latch(False)
+        self.gate = WriteGate(reconnects=reconnects)
 
     def write(self, chunk: Chunk | CloseEvent) -> Effect[None, SocketError]:
         def start() -> Effect[None, SocketError]:
             conn = self.connection
             if conn is None:
-                return self.latch.when_open(self.write(chunk))
+                return self.gate.when_connected(self.write(chunk))
             if isinstance(chunk, CloseEvent):
                 if chunk.code > 1000:
                     conn.fail(read_error(ConnectionError(f"closed with code {chunk.code}")))
@@ -86,7 +86,7 @@ class _Current:
         def start() -> Effect[None, SocketError]:
             conn = self.connection
             if conn is None:
-                return self.latch.when_open(self.write_all(chunks))
+                return self.gate.when_connected(self.write_all(chunks))
             return conn.write(tuple(map(encode_chunk, chunks)))
 
         return suspend(start)
@@ -118,14 +118,20 @@ def from_connection(
     open_timeout: DurationInput | None = None,
     chunk_size: float = DEFAULT_CHUNK_SIZE,
     target: str | None = None,
+    disable_reconnects: bool = False,
 ) -> SocketService:
     """A socket over the connections ``open`` makes. TLS upgrades take
     ``upgrade_side``; ``open_timeout`` bounds the opening; each pull gives at
     most ``chunk_size`` buffered chunks (``math.inf`` for all of them);
-    ``target`` (``host:port``, a path) is named when opening fails."""
+    ``target`` (``host:port``, a path) is named when opening fails.
+
+    Writes made with no reader connected wait for the next one, unless
+    ``disable_reconnects`` (for one connection that cannot be opened again,
+    as a server's): once its reader fails or its scope closes, writes and
+    later readers fail with the reader's error."""
     require_effect(open, "open")
     limit = _chunk_limit(chunk_size)
-    current = _Current()
+    current = _Current(reconnects=not disable_reconnects)
     opening = open
     if open_timeout is not None:
         timed_out = open_error(TimeoutError("Connection timed out"), "Timeout", target=target)
@@ -140,18 +146,22 @@ def from_connection(
             def run_release() -> None:
                 # Resume a pull parked in another fiber before detaching.
                 conn.fail(close_error(1006))
-                current.latch.close_unsafe()
                 current.connection = None
                 state["upgradable"] = False
+                current.gate.disconnected(conn.error or close_error(1006))
 
             return sync(run_release)
 
         yield from scope.add_finalizer(release)
+        if current.gate.terminal is not None:
+            return (yield from fail(current.gate.terminal))
         current.connection = conn
-        current.latch.open_unsafe()
+        current.gate.connected()
 
         def upgrade(options: TlsUpgradeOptions | None) -> Effect[None, SocketError]:
             def start() -> Effect[None, SocketError]:
+                if current.gate.terminal is not None:
+                    return fail(current.gate.terminal)
                 if not state["upgradable"]:
                     return fail(upgrade_error(RuntimeError("socket is already upgraded or closed")))
                 return _upgrade(conn, options or TlsUpgradeOptions(), upgrade_side).map(
@@ -170,7 +180,7 @@ def from_connection(
         return sync(run_end)
 
     writer = acquire_release(succeed(Writer(current.write, current.write_all)), end_writing)
-    return make(gen(reader), writer)
+    return make(current.gate.reader(gen(reader)), writer)
 
 
 def _upgrade(

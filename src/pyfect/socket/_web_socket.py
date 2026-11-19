@@ -31,7 +31,6 @@ from pyfect.context import Tag
 from pyfect.duration import Input as DurationInput
 from pyfect.effect import fail, gen, succeed, suspend, sync, void
 from pyfect.exit import Exit, Success
-from pyfect.latch import Latch
 from pyfect.layer import Layer
 from pyfect.layer import effect as layer_effect
 from pyfect.scope import Scope, acquire_release
@@ -55,6 +54,7 @@ from pyfect.socket._socket import (
     to_channel,
     unsupported_upgrade,
 )
+from pyfect.socket._write_gate import WriteGate
 
 DEFAULT_HIGH_WATER_MARK = 64 * 1024
 DEFAULT_OPEN_TIMEOUT: DurationInput = "10 seconds"
@@ -434,11 +434,11 @@ class _Current:
     """The WebSocket the current reader got, which its writes use; a write
     waits while ``write_limit`` bytes are unsent."""
 
-    __slots__ = ("latch", "write_limit", "ws")
+    __slots__ = ("gate", "write_limit", "ws")
 
-    def __init__(self, write_limit: int) -> None:
+    def __init__(self, write_limit: int, *, reconnects: bool) -> None:
         self.ws: WebSocketLike | None = None
-        self.latch = Latch(False)
+        self.gate = WriteGate(reconnects=reconnects)
         self.write_limit = write_limit
 
     def _drained(self, ws: WebSocketLike) -> Effect[None, SocketError]:
@@ -455,7 +455,7 @@ class _Current:
         def start() -> Effect[None, SocketError]:
             ws = self.ws
             if ws is None:
-                return self.latch.when_open(self.write(chunk))
+                return self.gate.when_connected(self.write(chunk))
             try:
                 if isinstance(chunk, CloseEvent):
                     ws.close(chunk.code, chunk.reason)
@@ -471,7 +471,7 @@ class _Current:
         def start() -> Effect[None, SocketError]:
             ws = self.ws
             if ws is None:
-                return self.latch.when_open(self.write_all(chunks))
+                return self.gate.when_connected(self.write_all(chunks))
             try:
                 for chunk in chunks:
                     ws.send(chunk)
@@ -487,14 +487,23 @@ def from_web_socket(
     *,
     open_timeout: DurationInput | None = None,
     high_water_mark: int | None = None,
+    disable_reconnects: bool = False,
 ) -> SocketService:
     """A socket over the WebSocket each acquisition of the reader gets from
     ``acquire``. The reader waits for it to open (``open_timeout``, ten
     seconds by default); a close fails pulls with a ``SocketCloseError``
     (code 1000 for a normal close). On a ``Drainable`` WebSocket a write
-    waits while ``high_water_mark`` (64 KiB by default) bytes are unsent."""
+    waits while ``high_water_mark`` (64 KiB by default) bytes are unsent.
+
+    Writes made with no reader connected wait for the next one, unless
+    ``disable_reconnects`` (for one connection that cannot be acquired
+    again, as a server's): once its reader fails or its scope closes, writes
+    and later readers fail with the reader's error."""
     require_effect(acquire, "acquire")
-    current = _Current(DEFAULT_HIGH_WATER_MARK if high_water_mark is None else high_water_mark)
+    current = _Current(
+        DEFAULT_HIGH_WATER_MARK if high_water_mark is None else high_water_mark,
+        reconnects=not disable_reconnects,
+    )
     timeout = DEFAULT_OPEN_TIMEOUT if open_timeout is None else open_timeout
 
     def reader():
@@ -506,24 +515,29 @@ def from_web_socket(
         def release(_: Exit[object, object]) -> Effect[None]:
             def run_release() -> None:
                 buffer.detach()
-                current.latch.close_unsafe()
                 current.ws = None
+                current.gate.disconnected(buffer.error or close_error(1006))
 
             return sync(run_release)
 
         yield from scope.add_finalizer(release)
+        # Released while acquiring: no open to wait for.
+        if current.gate.terminal is not None:
+            return (yield from fail(current.gate.terminal))
         if ws.ready_state >= CLOSING:
             return (yield from fail(buffer.error or close_error(1006)))
         if not buffer.open:
             yield from buffer.wait_open().timeout_or_else(
                 timeout, lambda: _open_timeout(buffer.target)
             )
+        if current.gate.terminal is not None:
+            return (yield from fail(current.gate.terminal))
         buffer.started()
         current.ws = ws
-        current.latch.open_unsafe()
+        current.gate.connected()
         return Reader(buffer.pull(), unsupported_upgrade)
 
-    return make(gen(reader), succeed(Writer(current.write, current.write_all)))
+    return make(current.gate.reader(gen(reader)), succeed(Writer(current.write, current.write_all)))
 
 
 def make_web_socket(
