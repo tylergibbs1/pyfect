@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- DateTime: a zoneless date string whose hyphens looked like an offset, such as
+  `"2024-1-15"`, was read in the machine's local time zone by `S.DateTimeUtcFromString`,
+  `make_zoned_from_string` and the other string inputs, instead of as UTC. A zone is now
+  only an offset sign, a zone word on its own or a bracketed zone after the first digit,
+  with comments removed; an ECMAScript date-only string is read as UTC as before
+  (Effect #10690).
+
 ## 0.6.14 (2026-11-19)
 
 0.6.13 was tagged but never published: its release workflow could not start.

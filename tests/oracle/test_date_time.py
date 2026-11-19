@@ -865,6 +865,24 @@ def test_treats_strings_with_lowercase_letters_in_comments_as_utc(monkeypatch: p
     assert _make("Tue, 27 Jan 2026 17:14:06 (xyz)") == "2026-01-27T17:14:06.000Z"
 
 
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("Tue, 27 Jan 2026 17:14:06 (xyz)", "2026-01-27T17:14:06.000Z"),
+        ("2024-1-15", "2024-01-15T00:00:00.000Z"),
+    ],
+)
+def test_reads_zoneless_strings_as_utc(text: str, expected: str, monkeypatch: pytest.MonkeyPatch):
+    """reads zoneless %s as UTC"""
+    monkeypatch.setenv("TZ", "America/New_York")
+    assert _make(text) == expected
+
+
+def test_preserves_a_gmt_offset_before_the_year():
+    """preserves a GMT offset before the year"""
+    assert _make("Jan 15 12:00 GMT-0500 2024") == "2024-01-15T17:00:00.000Z"
+
+
 def test_does_not_append_z_to_strings_ending_with_z():
     """does not append Z to strings ending with Z"""
     assert _make("2026-01-27T17:14:06.000Z") == "2026-01-27T17:14:06.000Z"

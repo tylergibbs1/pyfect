@@ -21,7 +21,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
-from pyfect._js import SPACE
+from pyfect._js import trim_end
 from pyfect.date_time._zones import zone_local
 
 _MS_PER_DAY = 86_400_000
@@ -476,33 +476,62 @@ _ZONE_WORDS = "|".join(name for name, (kind, _) in _KEYWORDS.items() if kind == 
 abbreviations), taken from the parser's own keywords so the checks below can't disagree
 with it."""
 
-_HAS_ZONE = re.compile(r"Z|GMT|[+-][0-9]{2}$|[+-][0-9]{2}:?[0-9]{2}$|\]$")
-_ENDS_IN_ZONE = re.compile(f"(?:{_ZONE_WORDS})$", re.IGNORECASE)
-"""A trailing zone word, in any case."""
-_ZONE_BEFORE_COMMENT = re.compile(
-    f"[{SPACE}](?:[+-][0-9]{{2}}(?::?[0-9]{{2}})?|{_ZONE_WORDS})"
-    f"[{SPACE}]*(?:\\([^()]*\\)[{SPACE}]*)?$",
-    re.IGNORECASE | re.ASCII,
+_DATE_ONLY = re.compile(r"(?:[+-][0-9]{6}|[0-9]{4})(?:-[0-9]{2}(?:-[0-9]{2})?)?")
+"""An ECMAScript date-only string, which ``parse`` already reads as UTC."""
+
+_OFFSET_SIGN = re.compile(
+    r"\+|(?<![a-z0-9])-|[ap]m-|[0-9]:[^0-9]*[0-9]+(?:\.[0-9]+)?-", re.IGNORECASE | re.ASCII
 )
-"""A whitespace-separated offset or zone word followed by whitespace and at most one
-non-nested comment, as in ``"... 17:14:06 -0500 (EST)"``. ``re.ASCII`` keeps the case
-folding to ASCII, as a JavaScript ``/i`` regex without ``u``; the space class is
-JavaScript's (``_js.SPACE``)."""
+"""A sign that starts an offset, not a date's hyphen (``2024-1-15``): a plus, a minus after
+neither a letter nor a digit, or a minus after ``am`` / ``pm`` or a time. ``re.ASCII`` keeps
+the digits and the case folding ASCII, as a JavaScript regex without ``u``."""
+
+_ZONE_WORD = re.compile(f"(?:^|[^a-z])(?:{_ZONE_WORDS})(?![a-z])", re.IGNORECASE | re.ASCII)
+"""A zone word on its own (Effect's ``z``, ``gmt``, ``ut``, ``utc`` and the US
+abbreviations), in any case."""
+
+_DIGIT = re.compile("[0-9]")
+
+
+def _without_comments(text: str) -> str:
+    """``text`` with each parenthesised comment, nested or not, replaced by a space."""
+    first = text.find("(")
+    if first == -1:
+        return text
+    kept = [text[:first], " "]
+    depth = 1
+    for char in text[first + 1 :]:
+        if char == "(":
+            if depth == 0:
+                kept.append(" ")
+            depth += 1
+        elif depth == 0:
+            kept.append(char)
+        elif char == ")":
+            depth -= 1
+    return "".join(kept)
 
 
 def _names_zone(text: str) -> bool:
-    """Effect's ``hasZone``: ``text`` already names a zone, so ``make`` adds no ``Z``."""
-    return any(
-        pattern.search(text) is not None
-        for pattern in (_HAS_ZONE, _ENDS_IN_ZONE, _ZONE_BEFORE_COMMENT)
-    )
+    """Effect's ``hasZone``: ``text`` already names a zone, so ``make`` adds no ``Z``.
+    Only what follows its first digit counts: words before it are ignored."""
+    bare = trim_end(_without_comments(text))
+    if bare.endswith("]"):
+        return True
+    first = _DIGIT.search(bare)
+    if first is None:
+        return False
+    date = bare[first.start() :]
+    return _OFFSET_SIGN.search(date) is not None or _ZONE_WORD.search(date) is not None
 
 
 def parse_input(text: str) -> int | None:
     """A ``DateTime.Input`` string, as Effect's ``DateTime.makeUnsafe``
     reads it: ``parse``, with a ``Z`` added when ``text`` names no zone,
     so a date-time without an offset is UTC rather than local time."""
-    return parse(text if _names_zone(text) else text + "Z")
+    if _names_zone(text) or _DATE_ONLY.fullmatch(text) is not None:
+        return parse(text)
+    return parse(text + "Z")
 
 
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
