@@ -1,4 +1,4 @@
-"""The tests/ plugin that adds native stacks to the report of a test the hang alarm failed."""
+"""The native stacks the hang alarm (tests/_timeout.py) adds to the report of a test it failed."""
 
 import os
 import re
@@ -25,9 +25,7 @@ def _hang(pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch) -> str:
     monkeypatch.setenv("PYTHONPATH", str(Path(__file__).parent))
     pytester.makepyfile(BLOCKED_IN_C)
     pytester.makeini("[pytest]\ntest_timeout = 0.5\n")
-    result = pytester.runpytest_subprocess(
-        "-p", "_timeout", "-p", "_native_stacks", timeout=SUBPROCESS_TIMEOUT
-    )
+    result = pytester.runpytest_subprocess("-p", "_timeout", timeout=SUBPROCESS_TIMEOUT)
     result.assert_outcomes(failed=1)
     out = result.stdout.str()
     assert "test hung: still running after 0.5s" in out, out
@@ -68,7 +66,3 @@ def test_a_tool_that_does_not_finish_is_given_up_on(
     assert native_stacks(os.getpid(), deadline=0.5) == (
         "native stacks: none captured; gdb: still running after 0.5 s"
     )
-
-
-def test_the_suite_loads_the_native_stacks_plugin(pytestconfig: pytest.Config) -> None:
-    assert pytestconfig.pluginmanager.has_plugin("_native_stacks")

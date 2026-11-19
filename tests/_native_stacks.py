@@ -1,12 +1,13 @@
-"""Adds every thread's native stack to the report of a test the hang alarm failed.
+"""Every thread's native stack, for the report of a test the hang alarm failed.
 
 A hang inside C (a subinterpreter call, a lock, a driver) shows up in Python's stacks only as
 the call that never returned. ``py-spy dump --native`` when it is installed, else ``gdb``,
-reads the C frames of the hung process. The alarm (``tests/_timeout.py``) takes them while the
-test is still stuck, before it raises the failure, as ``capture``: once the failure unwinds the
-test, the frames that hung are gone. The capture has a deadline and never raises, so it can't
-mask the failure and delays it by at most ``DEADLINE`` seconds; any problem is a line of the
-report instead of the stacks.
+reads the C frames of the hung process. The alarm (``tests/_timeout.py``) takes them with
+``capture`` while the test is still stuck, before it raises the failure, and adds them to the
+report: once the failure unwinds the test, the frames that hung are gone. The capture has a
+deadline and never raises, so it can't mask the failure and delays it by at most ``DEADLINE``
+seconds; any problem is a line of the report instead of the stacks. A plain helper, not a
+plugin: the plugins that use it import it before pytest could rewrite it.
 """
 
 import ctypes
@@ -120,12 +121,6 @@ def froze(since: float, until: float) -> bool:
         return any(start < until and end > since for start, end in _captures)
 
 
-@pytest.hookimpl(wrapper=True)
-def pytest_runtest_makereport(
-    item: pytest.Item, call: pytest.CallInfo[None]
-) -> Generator[None, pytest.TestReport, pytest.TestReport]:
-    report = yield
-    captured = item.stash.get(_CAPTURED, None)
-    if call.when == "call" and captured is not None:
-        report.sections.append(("native stacks", captured))
-    return report
+def captured(item: pytest.Item) -> str | None:
+    """What ``capture`` took for ``item``, if it ran."""
+    return item.stash.get(_CAPTURED, None)

@@ -25,7 +25,7 @@ from types import FrameType
 from typing import Any
 
 import pytest
-from _native_stacks import capture
+from _native_stacks import capture, captured
 
 _AGAIN = 1.0
 """Seconds at most between the alarm's raises, after the first."""
@@ -113,3 +113,15 @@ def suspended() -> Generator[None]:
     finally:
         if remaining:
             signal.setitimer(signal.ITIMER_REAL, remaining)
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_makereport(
+    item: pytest.Item, call: pytest.CallInfo[None]
+) -> Generator[None, pytest.TestReport, pytest.TestReport]:
+    """Adds the native stacks the alarm took while the test hung (``tests/_native_stacks.py``)."""
+    report = yield
+    stacks = captured(item)
+    if call.when == "call" and stacks is not None:
+        report.sections.append(("native stacks", stacks))
+    return report
