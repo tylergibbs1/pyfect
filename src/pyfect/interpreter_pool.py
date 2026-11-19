@@ -13,12 +13,16 @@ Provide the pool with ``layer(size)`` and call a function with ``call``::
 
     program.pipe(fx.provide(interpreter_pool.layer(size=4)))
 
-The function, its arguments and its result cross into another interpreter:
-they must be picklable (the function by reference, so a module-level
-function of an importable module, or one that reads no globals), and the
-function sees none of the caller's state. Each subinterpreter starts with
-the program's ``sys.path`` and imports the function's module, and what that
-imports, the first time it runs something from it.
+The function, its arguments and its result cross into another interpreter,
+and the function sees none of the caller's state. A function reading no
+globals and closing over nothing (a lambda too) crosses as its code; any
+other crosses by reference, so it must be a module-level function. Each
+subinterpreter starts with the program's ``sys.path`` and imports the
+function's module, and what that imports, the first time it runs something
+from it. For a function of the script you ran, that is the script itself,
+run again: without an ``if __name__ == "__main__":`` guard, its own
+``fx.run_*`` dies there, and the call dies with ``MainScriptRerunError``.
+Arguments and results must pickle.
 
 A raised exception comes back as a defect (``call``) or a failure
 (``try_call``): the exception itself when it pickles, else the
@@ -47,7 +51,9 @@ from typing import Any, Never, Protocol, cast, overload
 
 from pyfect import layer as layer_
 from pyfect._core import Effect, _Succeed
+from pyfect._fake_main import MainScriptRerunError
 from pyfect._os_wait import os_wait
+from pyfect._public import publish
 from pyfect.context import Tag
 from pyfect.effect import _failure_of, _unknown_error_in, die, sync
 from pyfect.errors import UnknownError
@@ -118,6 +124,26 @@ def _set_path(path: list[str]) -> None:
     import sys
 
     sys.path[:] = path
+
+
+def _main_rerun_refused() -> bool:
+    # Runs in the subinterpreter, as ``_do_call`` does: whether its re-run of the
+    # main script, to unpickle a function of it, started a pyfect run.
+    import sys
+
+    fake_main = sys.modules.get("pyfect._fake_main")
+    return fake_main is not None and fake_main.take_refused()
+
+
+def _main_rerun_error(fn: Callable[..., object]) -> MainScriptRerunError:
+    name = getattr(fn, "__qualname__", repr(fn))
+    script = getattr(sys.modules["__main__"], "__file__", "the main script")
+    return MainScriptRerunError(
+        f"{name} could not cross into a subinterpreter: it reads globals of the script you "
+        f"ran ({script}), so CPython re-ran the script there to find it, and the script's "
+        f"top-level code started a pyfect run. Put that code under "
+        f'`if __name__ == "__main__":`, or move {name} into an importable module.'
+    )
 
 
 type _Work = tuple[Callable[..., object], tuple[object, ...], Future[object]]
@@ -244,7 +270,12 @@ def _run(
         else:
             future.set_exception(failed)
     except BaseException as exc:  # the call could not cross (NotShareableError, pickling)
-        future.set_exception(exc)
+        if interpreter.call(_main_rerun_refused):
+            error = _main_rerun_error(fn)
+            error.__cause__ = exc
+            future.set_exception(error)
+        else:
+            future.set_exception(exc)
     else:
         future.set_result(value)
 
@@ -294,7 +325,9 @@ class InterpreterPoolService:
                 exc = future.exception()
                 if exc is None:
                     resume(_Succeed(cast("A", future.result())))
-                elif isinstance(exc, (InterpreterPoolClosedError, InterpreterStartError)):
+                elif isinstance(
+                    exc, (InterpreterPoolClosedError, InterpreterStartError, MainScriptRerunError)
+                ):
                     resume(die(exc))
                 else:
                     resume(_failure_of(catch, exc))
@@ -360,8 +393,11 @@ __all__ = [
     "InterpreterPoolService",
     "InterpreterStartError",
     "InterpretersUnavailableError",
+    "MainScriptRerunError",
     "UnknownError",
     "call",
     "layer",
     "try_call",
 ]
+
+publish(globals())

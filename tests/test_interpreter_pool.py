@@ -4,8 +4,11 @@ no interpreters to run work on)."""
 
 import importlib
 import operator
+import subprocess
 import sys
+import textwrap
 import threading
+from pathlib import Path
 from types import ModuleType
 from typing import Any
 
@@ -205,3 +208,110 @@ def test_the_layer_dies_where_concurrent_interpreters_is_missing(
 def test_a_pool_needs_at_least_one_interpreter() -> None:
     with pytest.raises(ValueError, match="at least one"):
         interpreter_pool.layer(0)
+
+
+# A script run as `python script.py`, its functions in `__main__`, written as the docs'
+# snippets are: top-level code, no `if __name__ == "__main__":` guard unless a test adds one.
+# It prints, per call, the exit's value or its reason's type and message.
+SCRIPT_HEAD = """
+import pyfect as fx
+from pyfect import interpreter_pool
+from pyfect.cause import Die
+from pyfect.exit import Success
+
+FACTOR = 2
+
+
+def double(x: int) -> int:
+    return x * FACTOR
+
+
+def triple(x: int) -> int:
+    return x * 3
+
+
+def show(eff):
+    ex = fx.run_blocking_exit(eff.pipe(fx.provide(interpreter_pool.layer(size=1))))
+    if isinstance(ex, Success):
+        print("value", ex.value)
+        return
+    [reason] = ex.cause.reasons
+    error = reason.defect if isinstance(reason, Die) else reason.error
+    print("die" if isinstance(reason, Die) else "fail", type(error).__name__, str(error))
+"""
+
+HANG_AFTER = 3.5
+"""Seconds a script may take: one runs in about 1 s, and the hang it detects never ends."""
+
+
+def _run_script(tmp_path: Path, body: str) -> list[str]:
+    script = tmp_path / "main_script.py"
+    script.write_text(SCRIPT_HEAD + textwrap.dedent(body))
+    try:
+        done = subprocess.run(
+            [sys.executable, str(script)],
+            capture_output=True,
+            text=True,
+            timeout=HANG_AFTER,
+            cwd=tmp_path,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as hung:
+        pytest.fail(f"the script hung for {HANG_AFTER} s; stderr: {hung.stderr!r}")
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert not done.stderr, done.stderr
+    return done.stdout.splitlines()
+
+
+@needs_interpreters
+def test_calling_a_function_of_an_unguarded_script_that_reads_globals_dies_at_once(
+    tmp_path: Path,
+) -> None:
+    # CPython finds `double` by re-running the script in the subinterpreter, which reaches the
+    # script's own run there: that run dies at once, and so does the call.
+    lines = _run_script(
+        tmp_path,
+        """
+        show(interpreter_pool.call(double, 21))
+        show(interpreter_pool.try_call(double, 21))
+        """,
+    )
+    assert len(lines) == 2
+    for line in lines:
+        assert line.startswith("die MainScriptRerunError "), line
+        assert 'if __name__ == "__main__":' in line
+        assert "importable module" in line
+        assert "double" in line
+
+
+@needs_interpreters
+def test_an_unguarded_script_can_call_a_lambda_or_a_function_reading_no_globals(
+    tmp_path: Path,
+) -> None:
+    lines = _run_script(
+        tmp_path,
+        """
+        show(interpreter_pool.call(triple, 7))
+        show(interpreter_pool.call(lambda x: x + 1, 41))
+        """,
+    )
+    assert lines == ["value 21", "value 42"]
+
+
+@needs_interpreters
+def test_a_guarded_script_can_call_its_own_function_reading_globals(tmp_path: Path) -> None:
+    lines = _run_script(
+        tmp_path,
+        """
+        if __name__ == "__main__":
+            show(interpreter_pool.call(double, 21))
+        """,
+    )
+    assert lines == ["value 42"]
+
+
+@needs_interpreters
+def test_a_lambda_reading_a_global_cannot_cross(tmp_path: Path) -> None:
+    lines = _run_script(tmp_path, "show(interpreter_pool.call(lambda x: x * FACTOR, 21))\n")
+    [line] = lines
+    assert line.startswith("die NotShareableError "), line
