@@ -12,6 +12,7 @@ test that left it and what it runs: as a warning, or with ``leaked_fibers = fail
 in that last test's teardown.
 """
 
+import threading
 import time
 from collections import Counter
 from collections.abc import Generator
@@ -46,6 +47,16 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         "A timer a test file's tests leave on the background scheduler: warn or fail.",
         default="warn",
     )
+
+
+def _drain() -> None:
+    """Let the background thread run what is queued there now: a fiber a run handed over
+    before it started sets its timers once it runs."""
+    if not BACKGROUND._started:  # pyright: ignore[reportPrivateUsage]
+        return
+    ran = threading.Event()
+    BACKGROUND.schedule(ran.set)
+    ran.wait(_SETTLE)
 
 
 def _pending() -> frozenset[_Entry]:
@@ -96,6 +107,7 @@ def _still_pending(left: dict[_Entry, str]) -> list[tuple[_Entry, str]]:
 
 @pytest.hookimpl(tryfirst=True)
 def pytest_runtest_setup(item: pytest.Item) -> None:
+    _drain()
     item.stash[_BEFORE] = _pending()
 
 
@@ -106,6 +118,7 @@ def pytest_runtest_teardown(item: pytest.Item, nextitem: pytest.Item | None) -> 
     if before is None:
         return
     left = item.config.stash.setdefault(_LEFT, {})
+    _drain()
     for entry in _pending() - before:
         left.setdefault(entry, item.nodeid)
     if nextitem is not None and nextitem.path == item.path:
