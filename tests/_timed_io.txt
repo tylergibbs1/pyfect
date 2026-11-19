@@ -8,9 +8,6 @@ _stalls.py 17  # the stall watchdog measures how long the real process went with
 cross_run/_hammer.py 2  # hang deadline joining real OS threads that each make their own runs; the TestClock belongs to one run and cannot bound other threads
 cross_run/cases_fibers.py 6  # settle deadlines for fibers and scopes ending on other OS threads in other runs; no single run's TestClock covers those threads
 cross_run/test_run_ownership.py 2  # times a quick run while another thread's run sleeps 2 s on its live clock; each run has its own clock, so no TestClock spans both
-fuzz/_harness.py 2  # re-arms the enclosing SIGALRM itimer minus the time a fuzz target ran; signal timers run on real time outside any effect run
-fuzz/server_target.py 2  # deadline for the live server to close a loopback connection after the fuzz client stops; the client is a plain blocking socket
-interleave/_harness.py 5  # optional PYFECT_INTERLEAVE_BUDGET wall-time box for schedule exploration, and its report; bounds the harness's own CPU, not effect time
 oracle/_docker.py 2  # deadline for a Docker container (SQL Server, MySQL, ClickHouse, libSQL, Redis) to serve; the server runs on real time in another process
 oracle/_interrupt_on_server.py 4  # deadlines for a statement to appear on, then vanish from, a real database server; the server runs on real time in another process
 oracle/_live_http.py 2  # deadline reading a live-server response on a blocking client socket in a plain thread; that socket is outside the TestClock

@@ -26,7 +26,6 @@ import itertools
 import os
 import random
 import threading
-import time
 import warnings
 from collections import Counter
 from collections.abc import Callable, Generator, Sequence
@@ -631,30 +630,43 @@ class Report:
     exhaustive: bool = False
     deviations: int = 0
     seeds: int = 0
-    seconds: float = 0.0
     seen: set[str] = field(default_factory=set[str], repr=False)
 
     def __str__(self) -> str:
         how = "exhaustive" if self.exhaustive else f"deviations<={self.deviations}"
         return (
             f"{self.scenario}: {self.distinct} distinct schedules in {self.runs} runs "
-            f"({how}, {self.seeds} seeded) in {self.seconds:.2f}s"
+            f"({how}, {self.seeds} seeded)"
         )
 
 
 class _Budget:
-    """Runs left (or, with ``PYFECT_INTERLEAVE_BUDGET``, time left); a
-    phase's share charges its parent."""
+    """Runs left (or, with ``PYFECT_INTERLEAVE_BUDGET``, until a timer of
+    that many seconds ends it); a phase's share charges its parent."""
 
     def __init__(self, runs: int, seconds: float | None, parent: _Budget | None = None) -> None:
         self._runs = runs
-        self._deadline = None if seconds is None else time.monotonic() + seconds
+        self._seconds = seconds
         self._parent = parent
+        self._shares: list[_Budget] = []
+        self._timer: threading.Timer | None = None
+        self._spent = threading.Event()
+        if seconds is not None:
+            self._timer = threading.Timer(seconds, self._spent.set)
+            self._timer.daemon = True
+            self._timer.start()
         self.used = 0
 
+    def close(self) -> None:
+        """Stop the timers of this budget and its shares."""
+        if self._timer is not None:
+            self._timer.cancel()
+        for share in self._shares:
+            share.close()
+
     def take(self) -> bool:
-        if self._deadline is not None:
-            return time.monotonic() < self._deadline
+        if self._seconds is not None:
+            return not self._spent.is_set() and (self._parent is None or self._parent.take())
         if self.used >= self._runs:
             return False
         self.used += 1
@@ -663,11 +675,13 @@ class _Budget:
         return True
 
     def share(self, fraction: float) -> _Budget:
-        """A budget for one phase: ``fraction`` of what is left."""
-        if self._deadline is None:
+        """A budget for one phase: ``fraction`` of what is left (of the time,
+        ``fraction`` of the whole, ending when this budget's time does)."""
+        if self._seconds is None:
             return _Budget(int((self._runs - self.used) * fraction), None, self)
-        left = max(self._deadline - time.monotonic(), 0.0)
-        return _Budget(0, left * fraction, self)
+        share = _Budget(0, self._seconds * fraction, self)
+        self._shares.append(share)
+        return share
 
 
 def _budget_seconds() -> float | None:
@@ -684,11 +698,12 @@ def explore(scenario: Scenario, *, runs: int | None = None) -> Report:
     seconds = _budget_seconds()
     budget = _Budget(scenario.runs if runs is None else runs, seconds)
     report = Report(scenario.name)
-    start = time.monotonic()
-    baseline = _bounded_dfs(scenario, budget.share(0.5), report)
-    if not report.exhaustive:
-        _seeded(scenario, budget.share(1.0), report, baseline)
-    report.seconds = time.monotonic() - start
+    try:
+        baseline = _bounded_dfs(scenario, budget.share(0.5), report)
+        if not report.exhaustive:
+            _seeded(scenario, budget.share(1.0), report, baseline)
+    finally:
+        budget.close()
     return report
 
 
