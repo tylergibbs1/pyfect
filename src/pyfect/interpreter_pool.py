@@ -53,6 +53,7 @@ from pyfect import layer as layer_
 from pyfect._core import Effect, _Succeed
 from pyfect._fake_main import MainScriptRerunError
 from pyfect._os_wait import os_wait
+from pyfect._public import publish
 from pyfect.context import Tag
 from pyfect.effect import _failure_of, _unknown_error_in, die, sync
 from pyfect.errors import UnknownError
@@ -398,3 +399,5 @@ __all__ = [
     "layer",
     "try_call",
 ]
+
+publish(globals())
