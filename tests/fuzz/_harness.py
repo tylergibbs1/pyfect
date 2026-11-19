@@ -10,7 +10,6 @@ Hypothesis in pytest (test_fuzz.py) and under Atheris (``python -m fuzz``).
 from __future__ import annotations
 
 import signal
-import time
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -114,7 +113,6 @@ def check(found: Target, data: bytes, limit: float = LIMIT) -> None:
 
     previous = signal.signal(signal.SIGALRM, on_alarm)
     outer, _ = signal.setitimer(signal.ITIMER_REAL, limit)
-    start = time.monotonic()
     try:
         found.run(data)
     except Crash:
@@ -124,10 +122,11 @@ def check(found: Target, data: bytes, limit: float = LIMIT) -> None:
             raise
         raise Crash(f"{found.name}: {type(error).__name__}: {error}") from error
     finally:
-        signal.setitimer(signal.ITIMER_REAL, 0)
+        left, _ = signal.setitimer(signal.ITIMER_REAL, 0)
         signal.signal(signal.SIGALRM, previous)
         if outer:
-            signal.setitimer(signal.ITIMER_REAL, max(outer - (time.monotonic() - start), 0.001))
+            # The enclosing timer loses what this run took: ``limit`` less what its own had left.
+            signal.setitimer(signal.ITIMER_REAL, max(outer - (limit - left), 0.001))
 
 
 def corpus(name: str) -> Iterator[Path]:

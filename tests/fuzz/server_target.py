@@ -112,12 +112,7 @@ def _exchange(data: bytes) -> bytes:
             conn.shutdown(socket.SHUT_WR)
         except OSError:
             pass
-        deadline = time.monotonic() + _TIMEOUT
         while True:
-            if time.monotonic() > deadline:
-                raise Crash(
-                    "the server kept the connection open after the client stopped"
-                ) from None
             try:
                 chunk = conn.recv(65536)
             except ConnectionResetError:
