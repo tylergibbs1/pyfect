@@ -50,6 +50,35 @@ def test_interrupts_it():
     fx.run_blocking(fx.Fiber.interrupt_all(fibers))
 """
 
+BLOCKS_THE_BACKGROUND_THREAD = """
+import threading
+
+from pyfect.scheduler import BACKGROUND
+
+stop = threading.Event()
+started = threading.Event()
+
+
+def block():
+    started.set()
+    stop.wait()
+
+
+def test_blocks_the_background_thread():
+    BACKGROUND.schedule(block)
+    assert started.wait(5)
+    BACKGROUND.schedule(lambda: None)  # queued behind it
+    BACKGROUND.schedule(lambda: None)
+"""
+
+UNBLOCKS_IT = """
+from test_a import stop
+
+
+def test_in_the_next_file():
+    stop.set()
+"""
+
 
 def _run(pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch, ini: str, **files: str):
     monkeypatch.setenv("PYTHONPATH", str(Path(__file__).parent))
@@ -96,3 +125,16 @@ def test_a_fiber_interrupted_within_its_file_is_not_named(
     pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     assert not _warnings(pytester, monkeypatch, test_a=INTERRUPTS_ITS_FIBER_WITHIN_THE_FILE)
+
+
+def test_a_background_thread_that_does_not_drain_is_named_instead_of_its_timers(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Its queued tasks may still set timers: a read now could miss them."""
+    summary = _warnings(
+        pytester, monkeypatch, test_a=BLOCKS_THE_BACKGROUND_THREAD, test_z=UNBLOCKS_IT
+    )
+    assert (
+        "LeakedFiberWarning: test_a.py::test_blocks_the_background_thread: at its teardown "
+        "the background scheduler did not drain within 0.5 s: a task still running, 2 more ready"
+    ) in summary, summary
