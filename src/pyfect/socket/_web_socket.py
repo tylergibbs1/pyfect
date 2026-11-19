@@ -265,6 +265,7 @@ class _Buffer:
         self.paused = self.pausable is not None and getattr(ws, "is_paused", False) is True
         self.chunks: list[Chunk] = []
         self.size = 0
+        self.overflowed = False
         self.error: SocketError | None = None
         # One object per listener, so removing it finds the one added.
         self.on_message: Listener = _Forward(self, _Buffer._on_message)
@@ -360,18 +361,31 @@ class _Buffer:
 
     def push(self, data: Chunk) -> None:
         with self.lock:
+            if self.overflowed:
+                return
             self.chunks.append(data)
             hwm = self.high_water_mark
             if hwm is not None:
-                self.size += _byte_length(data)
+                # An empty frame still costs a slot, so it counts as a byte.
+                self.size += _byte_length(data) or 1
             waiters = self.signal.arrived_locked()
             if hwm is not None and self.size >= hwm and self.pausable is not None:
                 self._pause()
             elif hwm is not None and self.size > hwm and self.pausable is None and not waiters:
+                self.overflowed = True
                 cause = RuntimeError(f"Socket highWaterMark of {hwm} bytes exceeded")
                 self._fail_locked(read_error(cause))
         for wake in waiters:
             wake()
+        if self.overflowed:
+            self._close_overflowed()
+
+    def _close_overflowed(self) -> None:
+        try:
+            self.ws.close(1008, "Inbound message buffer limit exceeded")
+        except Exception:
+            # A global WebSocket client only accepts 1000 and 3000-4999.
+            self.ws.close()
 
     def fail(self, error: SocketError) -> None:
         with self.lock:

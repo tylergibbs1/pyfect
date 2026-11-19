@@ -24,6 +24,11 @@
 
 ### Fixed
 
+- Socket: `from_web_socket` with a `high_water_mark` on a WebSocket without pause counted an
+  empty frame as zero bytes, kept buffering frames after the limit was exceeded and left the
+  connection open. Each frame now counts at least one byte, frames after the overflow are
+  discarded, and the WebSocket is closed with code 1008 (or without a code where the
+  transport rejects 1008) (Effect #10628).
 - `interpreter_pool.call` and `try_call` on a function that reads globals of the script you ran,
   in a script without an `if __name__ == "__main__":` guard, hung forever with no output. CPython
   finds such a function by re-running the script inside the subinterpreter (as
