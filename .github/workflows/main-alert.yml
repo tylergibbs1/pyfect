@@ -1,0 +1,65 @@
+name: main-alert
+
+# Only ci is a required check, so a red run of another workflow on main is silent: fuzz's
+# runtime-differential was red on main for 13 hours unseen. Each completed run of a push to
+# main opens (or comments on) one "main is red: <workflow>" issue naming the failed jobs and
+# the run, and closes it once that workflow's run of a later push to main passes.
+# tests/test_ci_workflows.py keeps `workflows` to every workflow a push to main runs.
+
+on:
+  workflow_run:
+    workflows: [audit, ci, docs, drivers, extras, fuzz]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: main-alert-${{ github.event.workflow_run.name }}
+  cancel-in-progress: false
+
+jobs:
+  report:
+    if: github.event.workflow_run.event == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      issues: write
+    steps:
+      - name: CPUs
+        run: |
+          nproc
+          lscpu | grep -E '^CPU\(s\)|Thread|Core|Model name'
+
+      - name: Open, comment on or close the workflow's issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          WORKFLOW: ${{ github.event.workflow_run.name }}
+          CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          RUN: ${{ github.event.workflow_run.html_url }}
+        run: |
+          title="main is red: $WORKFLOW"
+          number=$(gh issue list --state open --search "in:title \"$title\"" --json number,title \
+            --jq "map(select(.title == \"$title\")) | .[0].number // empty")
+          case "$CONCLUSION" in
+            success)
+              if [ -n "$number" ]; then
+                gh issue close "$number" --comment "Green again: $RUN"
+              fi
+              ;;
+            skipped|neutral) ;;
+            *)
+              jobs=$(gh api "repos/$GH_REPO/actions/runs/$RUN_ID/jobs" --paginate \
+                --jq '.jobs[] | select(.conclusion != "success" and .conclusion != "skipped") | "- \(.name) (\(.conclusion))"')
+              body=$(printf '%s\n\n%s\n' "$RUN" "${jobs:-- (no job failed: the run was $CONCLUSION)}")
+              if [ -n "$number" ]; then
+                gh issue comment "$number" --body "$body"
+              else
+                gh issue create --title "$title" --body "$body"
+              fi
+              ;;
+          esac
