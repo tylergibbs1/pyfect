@@ -308,6 +308,36 @@ def _register(
     return cast("Any", run)
 
 
+def test_does_not_scan_the_registration_context_once_per_tool(monkeypatch: pytest.MonkeyPatch):
+    """McpServer / registerToolkit / does not scan the registration context once per tool"""
+    first = T.make("first")
+    second = T.make("second")
+    handlers = (
+        first.handler(lambda _p, _: fx.void),
+        second.handler(lambda _p, _: fx.void),
+    )
+    scans = [0]
+    services = Context.map_unsafe
+
+    def counted(context: Context[Any]) -> Any:
+        scans[0] += 1
+        return services.__get__(context)
+
+    def scans_registering(*tools: T.AnyTool) -> int:
+        kit = K.make(*tools)
+        built = fx.run_sync(fx.scoped(K.make(first, second).to_layer(*handlers).build()))
+        server = fx.run_sync(M.make())
+        register = M.register_toolkit(kit).pipe(fx.provide_service(M.McpServer, server))
+        scans[0] = 0
+        with monkeypatch.context() as patch:
+            patch.setattr(Context, "map_unsafe", property(counted))
+            exit = fx.run_sync_exit(register.pipe(fx.provide_context(built)))
+        assert isinstance(exit, fx.Success)
+        return scans[0]
+
+    assert scans_registering(first, second) == scans_registering(first)
+
+
 class Value(TypedDict):
     value: str
 

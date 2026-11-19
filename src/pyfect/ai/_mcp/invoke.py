@@ -283,30 +283,49 @@ def run_middleware[A, E](
     return run.catch_cause(lambda cause: _rejected(cause, middleware))
 
 
+_REQUEST_TAGS: frozenset[type[Tag[Any]]] = frozenset(
+    {
+        McpRequestContext,
+        McpServerClient,
+        HttpServerRequest,
+        ParsedSearchParams,
+        RouteContext,
+        CurrentLogLevel,
+        Scope,
+        ParentSpan,
+        RequestOutbound,
+    }
+)
+
+
+@dataclass(frozen=True, slots=True)
+class _Prepared:
+    services: Context[Any]
+    local: tuple[AnyMiddlewareFn, ...]
+
+
+def _derive(context: Context[Any]) -> _Prepared:
+    services = Context(
+        {
+            tag: service
+            for tag, service in context.map_unsafe.items()
+            if tag not in _REQUEST_TAGS and not issubclass(tag, MiddlewareStack)
+        }
+    )
+    return _Prepared(services, middleware_of(context))
+
+
+def _prepare(context: Context[Any]) -> _Prepared:
+    # Derived once per context: every tool of a toolkit registers from one
+    # context holding all of its handlers.
+    return context.derived(_derive, _derive)
+
+
 def omit_request_services(context: Context[Any]) -> Context[Any]:
     """``context`` without what a request provides, or a middleware layer
     adds: a registration made during one request serves later ones with
     their own."""
-    request_tags: frozenset[type[Tag[Any]]] = frozenset(
-        {
-            McpRequestContext,
-            McpServerClient,
-            HttpServerRequest,
-            ParsedSearchParams,
-            RouteContext,
-            CurrentLogLevel,
-            Scope,
-            ParentSpan,
-            RequestOutbound,
-        }
-    )
-    return Context(
-        {
-            tag: service
-            for tag, service in context.map_unsafe.items()
-            if tag not in request_tags and not issubclass(tag, MiddlewareStack)
-        }
-    )
+    return _prepare(context).services
 
 
 def unwrap_rejected[A, E, R](
@@ -344,7 +363,8 @@ class Invoke:
     def make(services: Context[Any] | None, global_: list[AnyMiddlewareFn]) -> Invoke:
         if services is None:
             return Invoke(Context.empty(), (), global_)
-        return Invoke(omit_request_services(services), middleware_of(services), global_)
+        prepared = _prepare(services)
+        return Invoke(prepared.services, prepared.local, global_)
 
     def __call__[A, E, X](
         self,
