@@ -40,6 +40,12 @@
   writes it as its text (`"9.99"`, `"1E+2"`), which reads back to the same digits and exponent;
   the text read is ASCII digits with an optional sign, point and exponent, so `NaN`, spaces and
   underscores, which `decimal.Decimal()` would take, are refused.
+- `pyfect.fiber_profiler` (Python-only): `with fiber_profiler.profile() as report:` times every
+  fiber turn (a run of a fiber until it waits or yields) on every thread with `sys.monitoring`,
+  and reports CPU and wall time per fiber id and per span name as `FiberTime(cpu_ns, wall_ns,
+  turns)`, exclusive of fibers resumed inside a turn. It watches only `Fiber._run`'s start and
+  return, so the fiber loop is unchanged and nothing is set up while no profile runs.
+
 - Testing: `pyfect.testing.leave_out_host_freezes(source)` leaves the time the host froze the
   whole process for out of every test's timeout, up to the timeout again; `source` returns a
   `HostFreezes(total, settling)`. A timeout that left time out says so: "test timed out after
