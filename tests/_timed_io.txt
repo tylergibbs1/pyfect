@@ -17,9 +17,7 @@ oracle/_pg_close_while_reading.py 2  # deadline polling pg_stat_activity until a
 oracle/_pg_owner.py 2  # deadline for a PostgreSQL postmaster to exit after SIGQUIT before SIGKILL; the server is another process on real time
 oracle/_postgres.py 2  # deadline polling pg_stat_activity until a backend runs a statement; the PostgreSQL server runs on real time in another process
 oracle/_redis.py 2  # deadline for a redis-server process to accept connections; the server runs on real time in another process
-oracle/test_child_process_spawner.py 2  # measures scope close while real child processes and descendants exit or get killed after grace periods; OS processes run on real time
 oracle/test_clickhouse_driver.py 2  # deadline for an interrupted query to leave a real ClickHouse server's process list; the server runs on real time in another process
-oracle/test_completions.py 2  # deadline for an interactive bash subprocess to print its prompt; the shell runs on real time in another process
 oracle/test_json_schema_import_keys.py 1  # a CPU-time pair handing time.process_time to tests/_growth.py: a self-alias walk overflows across fresh-stack threads, whose CPU time thread_time misses
 oracle/test_libsql_driver.py 4  # waits for an interrupted statement to finish on a real libSQL server and times the next write lock; the server runs on real time
 oracle/test_mssql_client.py 10  # times cancels on a real SQL Server and bounds waits on a fake driver blocking real threads; neither runs on the TestClock

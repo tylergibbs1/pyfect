@@ -10,7 +10,6 @@ import shutil
 import subprocess
 import sys
 import tempfile
-import time
 from pathlib import Path
 
 import pytest
@@ -333,14 +332,12 @@ def _type_into(args: list[str], directory: str, keys: str) -> str:
     assert process.stdin is not None
     assert process.stdout is not None
     seen = b""
-    deadline = time.monotonic() + SUBPROCESS_TIMEOUT
-    while b"$ " not in seen and time.monotonic() < deadline:
-        ready, _, _ = select.select([process.stdout], [], [], 0.1)
-        if ready:
-            chunk = os.read(process.stdout.fileno(), 4096)
-            if not chunk:
-                break
-            seen += chunk
+    while b"$ " not in seen:
+        ready, _, _ = select.select([process.stdout], [], [], SUBPROCESS_TIMEOUT)
+        chunk = os.read(process.stdout.fileno(), 4096) if ready else b""
+        if not chunk:
+            break  # Bash ended, or went quiet: the output says what it printed.
+        seen += chunk
     try:
         rest, _ = process.communicate(keys.encode(), timeout=SUBPROCESS_TIMEOUT)
     except subprocess.TimeoutExpired:
