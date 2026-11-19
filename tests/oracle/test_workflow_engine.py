@@ -1347,3 +1347,34 @@ def test_layer_memory_interrupted_child_without_interrupting_its_sibling(recover
 
 def _js_bool(value: bool) -> str:
     return "true" if value else "false"
+
+
+@testing.effect
+def test_layer_memory_retains_finalizers_through_an_active_timer_wake():
+    """WorkflowEngine / layerMemory retains finalizers through an active timer wake"""
+    TimerWake = workflow.make("TimerWakeFinalizers", payload=EMPTY, idempotency_key=lambda _: "one")
+    started = fx.Latch(False)
+    woke = fx.Latch(False)
+    finalized: list[bool] = []
+
+    def handler(_p: Empty, _id: str):
+        def body():
+            yield from workflow.add_finalizer(lambda _: fx.sync(lambda: finalized.append(True)))
+            waiting = activity.make(name="waiting", execute=started.open().and_then(fx.never))
+            wake = started.wait().and_then(
+                durable_clock.sleep(name="wake", duration="20 millis", in_memory_threshold=0)
+            )
+            yield from fx.all(waiting, wake.and_then(woke.open()), concurrency="unbounded")
+
+        return fx.gen(body)
+
+    def program():
+        yield from TimerWake.execute({}, discard=True)
+        for _ in range(1000):
+            if woke.is_open():
+                break
+            yield from testing.adjust("1 millis")
+        assert woke.is_open(), "timer must resume the workflow"
+        assert finalized == [], "timer wake must not finalize the workflow"
+
+    yield from fx.gen(program).pipe(_with_engine(TimerWake.to_layer(handler)))

@@ -24,6 +24,11 @@
 
 ### Fixed
 
+- Cluster workflows: a durable clock or deferred waking a workflow while its run was still
+  active (one branch sleeping, another in an activity) closed the execution's scope. Its
+  `workflow.add_finalizer` finalizers ran early, the replay that should have continued never
+  started, and a later interrupt found nothing left to finalize. The wake now interrupts only
+  the workflow body, so the run reports `Suspended` and is replayed (Effect #10695).
 - `interpreter_pool.call` and `try_call` on a function that reads globals of the script you ran,
   in a script without an `if __name__ == "__main__":` guard, hung forever with no output. CPython
   finds such a function by re-running the script inside the subinterpreter (as

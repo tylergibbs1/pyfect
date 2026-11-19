@@ -997,14 +997,16 @@ class _Handlers:
                 return void
             return engine.close_runs(pending, abandoned=instance.abandoned)
 
-        body = into_result(
-            self.execute(workflow_payload(workflow, request.payload), execution_id).on_exit(
-                on_run_exit
-            )
-        ).on_exit(close)
-        return engine.deferred_state.track_run(instance, body).pipe(
+        # A deferred's wake interrupts only the body, so ``into_result`` still
+        # reports ``Suspended`` and the execution's finalizers stay registered.
+        run = self.execute(workflow_payload(workflow, request.payload), execution_id).on_exit(
+            on_run_exit
+        )
+        body = into_result(engine.deferred_state.track_run(instance, run)).on_exit(close)
+        return (
+            body.pipe(provide_service(WorkflowInstance, instance))
             # Request middleware and local callers may carry another entity's context.
-            provide_service(CurrentActivationScope, self.activation)
+            .pipe(provide_service(CurrentActivationScope, self.activation))
         )
 
     def activity(self, request: Request[ActivityPayload]) -> Effect[Any, Any, Any]:
