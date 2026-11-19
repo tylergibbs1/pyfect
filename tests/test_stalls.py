@@ -4,6 +4,7 @@ Each case runs a small test file under the plugin in a subprocess, with a short
 ``stall_threshold``, and reads the "stall" section of its failure.
 """
 
+import inspect
 import os
 import re
 import subprocess
@@ -151,12 +152,38 @@ def test_sleeps():
 """
 
 
+_IDS_FILE = "process-ids.txt"
+
+
+def _ids() -> str:
+    """This process's pid, parent, process group and session: whether a group with a stopped
+    member could be orphaned (the kernel then sends it SIGHUP and SIGCONT) depends on them."""
+    group = os.getpgid(0) if hasattr(os, "getpgid") else "-"
+    session = os.getsid(0) if hasattr(os, "getsid") else "-"
+    return f"pid {os.getpid()} ppid {os.getppid()} pgid {group} sid {session}"
+
+
+def _run_inner(pytester: pytest.Pytester, *args: str) -> pytest.RunResult:
+    """``runpytest_subprocess``, with the inner run writing its ids (``_ids``) as it starts:
+    a run killed mid-test can't say them later."""
+    pytester.makeconftest(
+        f"import os\n\n\n{inspect.getsource(_ids)}\n\ndef pytest_configure(config):\n"
+        f"    with open({_IDS_FILE!r}, 'w') as f:\n        f.write(_ids())\n"
+    )
+    return pytester.runpytest_subprocess(*args, timeout=SUBPROCESS_TIMEOUT)
+
+
 def _described(result: pytest.RunResult, *, passed: bool = False) -> str:
     """The run's stdout, exit status and stderr, after checking its one test passed or failed
     as expected. A run killed mid-test (three times on CI, in tests that SIGSTOP it) leaves stdout
     cut off after the file name, with no summary: only the status (minus the signal's number)
     and stderr say what happened."""
-    out = f"{result.stdout.str()}\n[exit {result.ret}; stderr]\n{result.stderr.str()}"
+    ids = Path(_IDS_FILE)  # pytester runs in its own directory
+    inner = ids.read_text() if ids.exists() else "not written"
+    out = (
+        f"{result.stdout.str()}\n[exit {result.ret}; inner {inner}; outer {_ids()}; stderr]\n"
+        f"{result.stderr.str()}"
+    )
     assert result.ret == (pytest.ExitCode.OK if passed else pytest.ExitCode.TESTS_FAILED), out
     result.assert_outcomes(passed=int(passed), failed=int(not passed))
     return out
@@ -167,8 +194,10 @@ def test_a_run_killed_mid_test_says_how_it_ended(pytester: pytest.Pytester) -> N
     pytester.makepyfile(
         "import os, signal\n\n\ndef test_killed():\n    os.kill(os.getpid(), signal.SIGKILL)\n"
     )
-    result = pytester.runpytest_subprocess(timeout=SUBPROCESS_TIMEOUT)
-    with pytest.raises(AssertionError, match=r"\[exit -9; stderr\]"):
+    result = _run_inner(pytester)
+    with pytest.raises(
+        AssertionError, match=r"\[exit -9; inner pid \d+ ppid \d+ pgid \d+ sid \d+;"
+    ):
         _described(result)
 
 
@@ -176,7 +205,7 @@ def _run(pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch, source: str
     monkeypatch.setenv("PYTHONPATH", str(Path(__file__).parent))
     pytester.makepyfile(source)
     pytester.makeini("[pytest]\nstall_threshold = 0.3\n")
-    result = pytester.runpytest_subprocess("-p", "_stalls", timeout=SUBPROCESS_TIMEOUT)
+    result = _run_inner(pytester, "-p", "_stalls")
     return _described(result)
 
 
@@ -335,9 +364,7 @@ def _hang(
     monkeypatch.setenv("PYTHONPATH", str(Path(__file__).parent))
     pytester.makepyfile(source)
     pytester.makeini(f"[pytest]\nstall_threshold = 0.3\ntest_timeout = {alarm}\n")
-    result = pytester.runpytest_subprocess(
-        "-p", "_timeout", "-p", "_stalls", timeout=SUBPROCESS_TIMEOUT
-    )
+    result = _run_inner(pytester, "-p", "_timeout", "-p", "_stalls")
     return _described(result)
 
 
@@ -751,7 +778,7 @@ def _limited(
     monkeypatch.setenv("PYTHONPATH", str(Path(__file__).parent))
     pytester.makepyfile(source)
     pytester.makeini("[pytest]\nstall_threshold = 0.3\n")
-    result = pytester.runpytest_subprocess("-p", "_stalls", timeout=SUBPROCESS_TIMEOUT)
+    result = _run_inner(pytester, "-p", "_stalls")
     return _described(result, passed=passed)
 
 
