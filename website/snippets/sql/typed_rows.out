@@ -1,0 +1,4 @@
+[User(id=1, name='Ada'), User(id=2, name='Linus')]
+Some(value=User(id=2, name='Linus'))
+None
+SchemaError

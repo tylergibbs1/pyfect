@@ -17,6 +17,9 @@ carries many at once, and a procedure can answer with a stream of values.
 adds a handler, which takes an `RpcRequest` with the decoded `payload` and gives the success
 value (or a `Stream` of them) or fails with the declared error. `Group.to_layer(handlers)` is
 their layer, and raises `ValueError` naming each procedure left without a handler.
+A stream handler that reads a service starts its stream from it:
+`stream.service(Store).flat_map(lambda todos: stream.from_iterable(t.title for t in todos.values()))`, as
+`titles` does under [Testing handlers](#testing-handlers).
 
 A group can list its tags, `class Users(RpcGroup[Literal["GetUser", "Users"]])`, so pyright
 checks its handlers as TypeScript checks Effect's `toLayer`: `to_layer` rejects them while a
@@ -73,6 +76,15 @@ with an `RpcClientError` saying the protocol is closed.
 <include lang="text">../../snippets/rpc/todos.out</include>
 
 </CodeOutput>
+
+A call can fail with the procedure's error or an `RpcClientError`, so `todos.py` runs with
+`fx.run_main`, which takes an effect that can still fail; `fx.run_blocking` needs those
+errors handled first. [Running effects](/docs/effects#running-effects) says which run
+function takes what.
+
+To try a group without a server, `pyfect.rpc.test.make_client(Group, layer=GroupLive)`
+calls its handlers in memory, with no network or serialization: see
+[Testing handlers](#testing-handlers).
 
 ### Over a WebSocket
 

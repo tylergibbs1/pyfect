@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+### Docs
+
+- The SQL page has a section on `pyfect.sql.schema` (`find_all`, `find_one`,
+  `find_one_option`, `find_non_empty`, `void`), which types a query by schemas: the request
+  is encoded and the rows are decoded, so a row of the wrong shape fails with a `SchemaError`.
+- The Effects page's table of run functions says which error type each takes and what
+  happens to a failure: `run_blocking`, `run_sync` and `run_async` need it to be `Never`,
+  `run_main` logs it and exits nonzero, and the `_exit` variants return it as an `Exit`. The
+  RPC and SQL pages link to it.
+- The RPC page shows a stream handler that reads a service
+  (`stream.service(Store).flat_map(...)`), and points to `pyfect.rpc.test.make_client` as the
+  way to try a group without a server.
+
 ## 0.6.14 (2026-11-19)
 
 0.6.13 was tagged but never published: its release workflow could not start.

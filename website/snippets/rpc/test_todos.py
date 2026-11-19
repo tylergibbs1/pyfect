@@ -17,6 +17,7 @@ class TodoNotFound(S.TaggedError):
 class Todos(RpcGroup):
     get_todo = make("GetTodo", payload=S.Int, success=Todo, error=TodoNotFound)
     countdown = make("Countdown", payload=S.Int, success=rpc_schema.Stream(S.Int, S.Never))
+    titles = make("Titles", success=rpc_schema.Stream(S.String, S.Never))
 
 
 class Store(fx.Tag[dict[int, Todo]]): ...
@@ -34,8 +35,18 @@ def countdown(request: RpcRequest[int]):
     return stream.iterate(request.payload, lambda n: n - 1).take(request.payload + 1)
 
 
+# A stream handler that reads a service: stream.service(Store) gives it once.
+def titles(_request: RpcRequest[None]):
+    return stream.service(Store).flat_map(
+        lambda todos: stream.from_iterable(t.title for t in todos.values())
+    )
+
+
 TodosLive = Todos.to_layer(
-    Todos.handlers().handle(Todos.get_todo)(get_todo).handle(Todos.countdown)(countdown)
+    Todos.handlers()
+    .handle(Todos.get_todo)(get_todo)
+    .handle(Todos.countdown)(countdown)
+    .handle(Todos.titles)(titles)
 )
 
 
@@ -75,3 +86,9 @@ def test_a_missing_todo_is_a_typed_error():
 def test_streams_the_countdown():
     client = yield from todos_client()
     assert (yield from client.countdown(2).run_collect()) == [2, 1, 0]
+
+
+@testing.effect
+def test_streams_titles_from_the_store():
+    client = yield from todos_client()
+    assert (yield from client.titles().run_collect()) == ["Test"]

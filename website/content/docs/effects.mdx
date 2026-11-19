@@ -43,18 +43,24 @@ annotation, or an annotated variable receiving the result, keeps the literal.
 
 ## Running effects
 
-| Function | Use it for |
-| --- | --- |
-| `run_blocking(eff)` | scripts and tests: no event loop needed, sleeps and forks work |
-| `run_sync(eff)` | an effect that finishes synchronously; anything else dies with `AsyncFiberError`, as Effect's `runSync` |
-| `run_blocking_exit(eff)` | the same, returning an `Exit` (`Success` or `Failure`) instead of raising |
-| `await run_async(eff)` | inside asyncio code |
-| `run_main(eff)` | a program's entry point: handles SIGINT/SIGTERM, logs failures, sets the exit code |
-| `ManagedRuntime.make(layer)` | building services once and running many effects with them (web servers) |
+Pick a run function by where the code runs and by whether the effect can still fail:
+
+| Function | Use it for | Error type it takes | What happens to a failure |
+| --- | --- | --- | --- |
+| `run_main(eff)` | a program's entry point: handles SIGINT/SIGTERM | any | is logged, and the process exits with a nonzero status |
+| `run_blocking(eff)` | scripts and tests: no event loop needed, sleeps and forks work | `Never` | must be handled before the call; a defect or interruption is raised |
+| `run_sync(eff)` | an effect that finishes synchronously; anything else dies with `AsyncFiberError`, as Effect's `runSync` | `Never` | must be handled before the call; a defect or interruption is raised |
+| `await run_async(eff)` | inside asyncio code | `Never` | must be handled before the call; a defect or interruption is raised |
+| `run_blocking_exit(eff)`, `run_sync_exit(eff)`, `await run_async_exit(eff)` | the same three, when you want the outcome as a value | any | is returned as an `Exit`: `Success(value)` or `Failure(cause)` |
 
 Every run function needs the service type to be `Never`, so a missing service is a type error at
-the call site. `run_sync`, `run_blocking` and `run_async` also need the error type to be `Never`; their `_exit`
-variants and `run_main` take an effect that can fail and hand you (or log) the failure.
+the call site. Passing an effect that can still fail to `run_blocking`, `run_sync` or
+`run_async` is a type error too, naming the leftover errors. Handle them first (with
+`catch_tag`, `catch_all` or `or_die`), or use `run_main` or an `_exit` variant.
+
+`ManagedRuntime.make(layer)` builds services once and runs many effects with them, as a web
+server does ([asyncio apps](/docs/asyncio-apps)). Its `run_*` methods take the same error types
+as the functions of the same name.
 
 An effect reads its caller's `contextvars`, as Effect's runs follow Node's `AsyncLocalStorage`:
 a request id set by a web request's handler before `await runtime.run_async(...)` is the one the
