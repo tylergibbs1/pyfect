@@ -227,7 +227,11 @@ def _user_group(
                     continue
                 result: W.ToolResultBlock = {
                     "toolUseId": part.id,
-                    "content": _tool_result_content(part.result),
+                    "content": _tool_result_content(
+                        part.result
+                        if part.model_output is None
+                        else Pr.tool_model_output_to_text(part.model_output)
+                    ),
                 }
                 if part.is_failure:
                     result["status"] = "error"
