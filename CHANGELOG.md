@@ -24,6 +24,11 @@
 
 ### Fixed
 
+- HTTP API docs: `scalar.layer` bundled Scalar 1.43.5, whose request examples add an
+  undeclared `Accept: */*` header and which ignores `customFetch`. It now bundles Scalar
+  1.81.0 (pinned by SHA-256 in `scripts/package_scalar.py`, with Scalar's MIT notice), gives a
+  document without servers the implicit root server `/`, and takes
+  `agent: {"disabled": True}` to hide Ask AI (Effect #10727).
 - `interpreter_pool.call` and `try_call` on a function that reads globals of the script you ran,
   in a script without an `if __name__ == "__main__":` guard, hung forever with no output. CPython
   finds such a function by re-running the script inside the subinterpreter (as

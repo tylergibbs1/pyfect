@@ -37,6 +37,11 @@ class ScalarAuthentication(TypedDict, total=False):
     preferredSecurityScheme: str | list[str | list[str]] | None
 
 
+class ScalarAgent(TypedDict, total=False):
+    disabled: bool
+    """``True`` hides Scalar's Ask AI controls."""
+
+
 class ScalarConfig(TypedDict, total=False):
     """Scalar's configuration, by Scalar's own option names. ``customFetch``
     is a JavaScript function expression, written into the page as code."""
@@ -46,6 +51,7 @@ class ScalarConfig(TypedDict, total=False):
     proxyUrl: str
     authentication: ScalarAuthentication
     customFetch: str
+    agent: ScalarAgent
     showSidebar: bool
     hideModels: bool
     hideTestRequestButton: bool
@@ -61,10 +67,18 @@ class ScalarConfig(TypedDict, total=False):
     showOperationId: bool
 
 
-def _page(api: HttpApi[Any], script: str, config: ScalarConfig | None) -> HttpServerResponse:
+def _page(
+    api: HttpApi[Any], script: str, config: ScalarConfig | None, *, bundled: bool
+) -> HttpServerResponse:
     from pyfect.http_api import openapi
 
     spec = openapi.from_api(api)
+    # The bundled Scalar has no page-origin fallback for a document without servers, so
+    # its copy gets OpenAPI's implicit root server; with layer_cdn the caller picks Scalar.
+    # Scalar's own servers option is not used: it overrides operation servers.
+    content: Any = (
+        spec if not bundled or spec.get("servers") else {**spec, "servers": [{"url": "/"}]}
+    )
     options: dict[str, Any] = dict(config or {})
     custom_fetch = options.pop("customFetch", None)
     scalar_config = {"_integration": "html", **options}
@@ -96,7 +110,7 @@ def _page(api: HttpApi[Any], script: str, config: ScalarConfig | None) -> HttpSe
     <script>
       window.Scalar.createApiReference(document.getElementById('api-reference-container'), {{
         ...{_html.escape_json(scalar_config)},
-        content: {_html.escape_json(spec)}{fetch}
+        content: {_html.escape_json(content)}{fetch}
       }})
     </script>
   </body>
@@ -104,11 +118,16 @@ def _page(api: HttpApi[Any], script: str, config: ScalarConfig | None) -> HttpSe
 
 
 def _serve(
-    api: HttpApi[Any], path: str, script: Effect[str], config: ScalarConfig | None
+    api: HttpApi[Any],
+    path: str,
+    script: Effect[str],
+    config: ScalarConfig | None,
+    *,
+    bundled: bool,
 ) -> Layer[Never, Never, HttpRouter]:
     def add(router: HttpRouterService) -> Effect[None]:
         def with_script(source: str) -> Effect[None]:
-            page = _html.memoize_success(lambda: _page(api, source, config))
+            page = _html.memoize_success(lambda: _page(api, source, config, bundled=bundled))
             return router.add("GET", path, sync(page))
 
         return script.flat_map(with_script)
@@ -121,7 +140,8 @@ def layer(
 ) -> Layer[Never, Never, HttpRouter]:
     """``GET path`` answering with the Scalar reference of ``api``, Scalar
     bundled in the page."""
-    return _serve(api, path, sync(lambda: f"<script>{_html.asset('scalar.js')}</script>"), scalar)
+    script = sync(lambda: f"<script>{_html.asset('scalar.js')}</script>")
+    return _serve(api, path, script, scalar, bundled=True)
 
 
 def layer_cdn(
@@ -137,7 +157,14 @@ def layer_cdn(
         f"{quote(version, safe="-_.!~*'()")}/dist/browser/standalone.min.js"
     )
     script = f'<script src="{_html.escape_attribute(source)}" crossorigin></script>'
-    return _serve(api, path, sync(lambda: script), scalar)
+    return _serve(api, path, sync(lambda: script), scalar, bundled=False)
 
 
-__all__ = ["ScalarAuthentication", "ScalarConfig", "ScalarThemeId", "layer", "layer_cdn"]
+__all__ = [
+    "ScalarAgent",
+    "ScalarAuthentication",
+    "ScalarConfig",
+    "ScalarThemeId",
+    "layer",
+    "layer_cdn",
+]
