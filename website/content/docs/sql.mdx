@@ -15,6 +15,10 @@ ClickHouse `pyfect.sql.clickhouse.layer` (see [ClickHouse](/docs/clickhouse)). E
 `SqlSyntaxError`, `LockTimeoutError`, ...), and `str(error)` shows the message and the driver's
 cause.
 
+The programs on this page run with `fx.run_main`, which takes an effect that can still fail
+with a `SqlError`. [Running effects](/docs/effects#running-effects) says which run function
+takes what.
+
 ## Safe statements
 
 Placeholders are `str.format` fields (`{}`, `{0}`, `{name}`), and their values are always
@@ -35,6 +39,25 @@ Helpers build the parts that change shape: `sql.insert` for one or many rows, `s
 for lists, `sql.update` for `SET` clauses, `sql.and_` / `sql.or_` for conditions and
 `sql.identifier` for an escaped name. `statement.compile()` shows the text and parameters
 the driver receives.
+
+## Rows decoded by a schema
+
+`pyfect.sql.schema` (Effect's `SqlSchema`) types a query by schemas. `find_all`,
+`find_one`, `find_one_option`, `find_non_empty` and `void` each take the request's schema,
+the row's schema (except `void`) and `execute`, the statement for an encoded request. They
+give the query as a function of the request: the request is encoded before `execute` runs,
+and the rows are decoded after, so a row of the wrong shape fails with a `SchemaError`.
+`find_one` and `find_non_empty` fail with `NoSuchElementException` when there are no rows;
+`find_one_option` gives `None`. A query that takes no input uses `request=S.Void` and is
+called with `None`, as in Effect.
+
+<CodeOutput>
+
+<include meta='title="typed_rows.py"'>../../snippets/sql/typed_rows.py</include>
+
+<include lang="text">../../snippets/sql/typed_rows.out</include>
+
+</CodeOutput>
 
 ## A resolver that batches lookups
 
