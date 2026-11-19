@@ -16,6 +16,7 @@ import json
 from typing import Any, TypedDict, cast
 
 import pytest
+from _copies import Copies
 from _growth import Work, assert_near_linear
 from _guards import guards
 from oracle._ai_http import MockHttp, sse_response
@@ -173,20 +174,10 @@ def test_openai_code_interpreter_code_is_not_copied_onto_each_delta() -> None:
     copies fast, timing sees it only at sizes a test cannot afford (on Linux 128 to 1024 deltas
     of 16 KiB grew 15 times, under the bound of 24). Folding 1000 deltas copies at most
     about the code's length in front of them."""
-    prefixes: list[int] = []
-
-    class Delta(str):
-        """Records the length of each string put in front of it with ``+``."""
-
-        __slots__ = ()
-
-        def __radd__(self, other: str) -> str:
-            prefixes.append(len(other))
-            return other + str(self)
-
-    events = _code_interpreter_events(1000, Delta("x"))
+    copies = Copies()
+    events = _code_interpreter_events(1000, copies.text("x"))
     assert _code_interpreter_calls(events) == ["x" * 1000]
-    assert sum(prefixes) <= 1000, f"{sum(prefixes)} characters copied in front of the deltas"
+    assert copies.characters <= 1000, f"{copies.characters} characters copied onto the deltas"
 
 
 class _Args(TypedDict):

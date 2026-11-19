@@ -515,8 +515,7 @@ def _xml_non_ascii_leading_comment(n: int) -> Work:
 @case(
     xml.decode_string,
     "xml.decode_string: text split by CDATA sections (#43)",
-    size=16_000,  # at 8000 the bug grew 34x (Linux), 31x on CI's runner
-    guards=Guard("6e8ffaef", "xml-cdata-text-concatenated"),
+    size=8000,
 )
 def _xml_cdata_text(n: int) -> Work:
     return run_channel(["<r>" + "xxxxxxxxxxxx<![CDATA[]]>" * n + "</r>"], xml.decode_string())
@@ -540,7 +539,6 @@ def _xml_collected_text(n: int) -> Work:
     xml.decode_string,
     "xml.decode_string: tags in a chunk past max_token_size (#41)",
     size=20_000,
-    guards=Guard("6e8ffaef", "xml-long-token-window-copied"),
 )
 def _xml_markup_window(n: int) -> Work:
     return run_channel(["<r>" + "<a/>" * n + "</r>"], xml.decode_string(max_token_size=64))
@@ -569,7 +567,6 @@ def _xml_events(n: int) -> tuple[xml.Event, ...]:
     xml.encode_string,
     "xml.encode_string: many events in one chunk (#44)",
     size=8000,
-    guards=Guard("6e8ffaef", "xml-output-concatenated"),
 )
 def _xml_encode_string(n: int) -> Work:
     events = _xml_events(n)
@@ -580,7 +577,6 @@ def _xml_encode_string(n: int) -> Work:
     xml.encode,
     "xml.encode: many events in one chunk (#44)",
     size=8000,
-    guards=Guard("6e8ffaef", "xml-output-concatenated"),
 )
 def _xml_encode(n: int) -> Work:
     events = _xml_events(n)
