@@ -43,7 +43,7 @@ ALLOWED = (
     Allowed(re.compile(r"^skipped anyway$"), "a port of Effect's test of a skipped test"),
     Allowed(
         re.compile(r"^needs gdb or py-spy$"),
-        "the Linux CI jobs install gdb, and there a missing tool fails the run",
+        "uv.lock installs py-spy on Linux, and there a missing tool fails the run",
         lambda: sys.platform != "linux",
     ),
     Allowed(

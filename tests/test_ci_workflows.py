@@ -310,6 +310,21 @@ def test_every_ci_job_has_a_time_budget():
             assert budget, f"{workflow}'s {job} has no timeout-minutes"
 
 
+def test_no_budgeted_job_waits_on_a_package_mirror():
+    """A job's tools come locked from PyPI (py-spy in uv.lock). Where one must come from apt (gdb,
+    for free-threaded Python, which py-spy can't read), the step has its own short budget and
+    can't fail the job: the mirrors once took 3 minutes of free-threaded's 4, and the job was
+    cancelled as its tests finished."""
+    for workflow in ("ci.yml", "extras.yml", "soak-nightly.yml"):
+        text = (WORKFLOWS / workflow).read_text(encoding="utf-8")
+        for step in re.split(r"(?m)^      - ", text)[1:]:
+            if "apt-get" not in step and "apt install" not in step:
+                continue
+            name = step.splitlines()[0]
+            assert re.search(r"(?m)^        timeout-minutes: 1$", step), f"{workflow}: {name}"
+            assert re.search(r"(?m)^        continue-on-error: true$", step), f"{workflow}: {name}"
+
+
 def test_a_release_needs_ci_its_extras_and_the_docs():
     release = (WORKFLOWS / "release.yml").read_text(encoding="utf-8")
     for job in ("ci", "extras", "docs"):

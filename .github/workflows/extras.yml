@@ -99,6 +99,10 @@ jobs:
       - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
 
       - name: Install gdb (a hung test's report carries native stacks, tests/_native_stacks.py)
+        # py-spy can't read a free-threaded process. The mirrors once took 3 minutes of the job's
+        # 4; past 1 the tests run without gdb, and a hang's report says so.
+        timeout-minutes: 1
+        continue-on-error: true
         run: command -v gdb >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq gdb; }
 
       - name: Install CPython 3.14t with pyfect and pytest
