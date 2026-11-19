@@ -184,6 +184,7 @@ from pyfect.schema._data import (
     Result,
     ResultSchema,
 )
+from pyfect.schema._decimal import Decimal
 from pyfect.schema._decimal_regexp import (
     BigDecimal,
     BigDecimalFromString,
@@ -525,6 +526,7 @@ __all__ = [
     "DateTimeUtcFromString",
     "DateTimeZoned",
     "DateTimeZonedFromString",
+    "Decimal",
     "Decode",
     "DecodeTo",
     "DecodeToSchema",
