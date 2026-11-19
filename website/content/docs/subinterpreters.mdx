@@ -3,6 +3,9 @@ title: Subinterpreters
 description: "interpreter_pool runs pure functions in Python 3.14's subinterpreters, each with its own GIL: parallel CPU work on the GIL build without separate processes."
 ---
 
+`concurrent.interpreters` is new in Python 3.14: on 3.13, building the layer dies with
+`InterpretersUnavailableError`.
+
 On the GIL build, Python code in `fx.blocking` takes turns with every other thread. Python 3.14's
 `concurrent.interpreters` runs code in subinterpreters: interpreters in the same process, each with
 its own GIL and its own modules, so pure-Python work in them runs on several cores at once without
@@ -21,18 +24,29 @@ starts on first need and closes when the layer is released) and call a function 
 ## What crosses
 
 A subinterpreter shares no objects with yours. The function, its arguments, its result and a
-raised exception are copied across with `pickle`:
+raised exception are copied across:
 
-- The function must be importable: a module-level function of a module on `sys.path`, which
-  the subinterpreter imports the first time it runs something from it. Each subinterpreter
-  starts with your program's `sys.path`. A function defined in the script you ran (`__main__`)
-  or a lambda can't cross. Keep these functions in a module that imports little: importing
-  `pyfect` there takes up to a second.
+- A function that reads no globals and closes over nothing, a lambda included, crosses as its
+  code, wherever it is defined. It may import what it needs inside its body.
+- Any other function crosses by reference: the subinterpreter imports its module, the first time
+  it runs something from it, and looks it up by name. Each subinterpreter starts with your
+  program's `sys.path`. Keep these functions in a module that imports little: importing `pyfect`
+  there takes up to a second. A lambda or a nested function that reads globals or captured
+  variables has no name to look up, so the call dies with `NotShareableError`.
 - Arguments and results must pickle. Objects the function changes are copies, so return what
   you need instead.
 - An exception comes back as itself when it pickles, with the
   `concurrent.interpreters.ExecutionFailed` that describes it (traceback included) as its
   `__cause__`. One that doesn't pickle comes back as that `ExecutionFailed`.
+
+<include meta='title="test_what_crosses.py"'>../../snippets/subinterpreters/test_what_crosses.py</include>
+
+A function that reads globals of the script you ran (`python app.py`, so its module is
+`__main__`) is found by running the whole script again inside the subinterpreter. With its
+top-level code under `if __name__ == "__main__":`, that re-run only defines the functions, and
+the call works. Without the guard, the re-run reaches the script's own `fx.run_blocking` (or any
+other run), which dies there at once; the call then dies with `MainScriptRerunError`, which says
+to add the guard or move the function into an importable module.
 
 ## Interruption
 
@@ -77,6 +91,3 @@ tenth of the round trip, so the pool only pays there for isolation. With a pure-
 spinning on a thread per core, either round trip waits on the OS for a core (3.14t, p95 21 ms
 for the pool, 29 ms for `fx.blocking`), and on the GIL build behind every busy thread for the
 GIL, hundreds of milliseconds.
-
-`concurrent.interpreters` is new in Python 3.14: on 3.13, building the layer dies with
-`InterpretersUnavailableError`.

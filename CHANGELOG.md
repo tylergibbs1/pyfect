@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- `interpreter_pool.call` and `try_call` on a function that reads globals of the script you ran,
+  in a script without an `if __name__ == "__main__":` guard, hung forever with no output. CPython
+  finds such a function by re-running the script inside the subinterpreter (as
+  `<fake __main__>`), and the script's own `fx.run_blocking` ran the whole program again in
+  there. A pyfect run started during that re-run now dies at once, and the call dies with the
+  new `interpreter_pool.MainScriptRerunError`, which says to add the guard or move the function
+  into an importable module. The Subinterpreters guide said functions of `__main__` and lambdas
+  can't cross; it now says what does: a function or lambda reading no globals crosses as its
+  code, other functions by reference.
+
 ## 0.6.14 (2026-11-19)
 
 0.6.13 was tagged but never published: its release workflow could not start.

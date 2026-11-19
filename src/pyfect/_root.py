@@ -7,6 +7,7 @@ import asyncio
 from typing import Any
 
 from pyfect._core import Effect
+from pyfect._fake_main import refuse_run
 from pyfect._fiber import Fiber, current_run_scheduler
 from pyfect.context import Context
 from pyfect.scheduler import AsyncioScheduler, CurrentScheduler, Scheduler
@@ -20,7 +21,9 @@ def new_root(
     uninterruptible: bool = False,
 ) -> Fiber[Any, Any]:
     """An unstarted fiber with no parent, of the run on ``run_scheduler``.
-    ``scheduler`` is provided as its ``CurrentScheduler``."""
+    ``scheduler`` is provided as its ``CurrentScheduler``. Raises
+    ``MainScriptRerunError`` in a subinterpreter's re-run of the main script."""
+    refuse_run()
     if scheduler is not None:
         context = context.add(CurrentScheduler, scheduler)
     return Fiber(run_scheduler, context, None, interruptible=not uninterruptible)
