@@ -88,14 +88,20 @@ type _Turn = list[Any]
 
 
 class _Thread:
-    """One thread's open turns and totals, merged when the profile ends."""
+    """One thread's open turns and totals, merged when the profile ends.
 
-    __slots__ = ("fibers", "spans", "stack")
+    Ending a profile cannot wait for a callback another thread is already in,
+    so a turn adds to the totals under ``lock`` unless ``closed``, which the
+    merge sets under it: the totals never change once merging starts."""
+
+    __slots__ = ("closed", "fibers", "lock", "spans", "stack")
 
     def __init__(self) -> None:
         self.stack: list[_Turn] = []
         self.fibers: dict[int, list[int]] = {}
         self.spans: dict[str | None, list[int]] = {}
+        self.lock = threading.Lock()
+        self.closed = False
 
 
 def _add(totals: dict[Any, list[int]], key: object, cpu: int, wall: int) -> None:
@@ -150,15 +156,22 @@ class _Profile:
             outer[4] += wall
         cpu -= turn[3]
         wall -= turn[4]
-        _add(state.fibers, fiber.id, cpu, wall)
         span = fiber.get_ref(ParentSpan)
         name = (
             None if span is None else span.span_id if isinstance(span, ExternalSpan) else span.name
         )
-        _add(state.spans, name, cpu, wall)
+        with state.lock:
+            if state.closed:
+                return  # the profile ended during this turn
+            _add(state.fibers, fiber.id, cpu, wall)
+            _add(state.spans, name, cpu, wall)
 
     def into(self, report: Report) -> None:
-        for state in self.threads:
+        with self.lock:
+            threads = list(self.threads)
+        for state in threads:
+            with state.lock:
+                state.closed = True
             _merge(report._fibers, state.fibers)
             _merge(report._spans, state.spans)
 
@@ -187,8 +200,9 @@ def _free_tool_id() -> int:
 @contextmanager
 def profile() -> Generator[Report]:
     """Time every fiber turn, on every thread, until the block ends; the
-    report it yields is filled in then. Raises ``ProfilerBusyError`` if a
-    profile is already running."""
+    report it yields is filled in then; a turn still running on another
+    thread when the block ends is not counted. Raises ``ProfilerBusyError``
+    if a profile is already running."""
     with _active_lock:
         if _active:
             raise ProfilerBusyError("a fiber profile is already running")

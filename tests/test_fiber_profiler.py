@@ -6,12 +6,14 @@ import sys
 import threading
 from collections.abc import Callable
 from types import CodeType
+from typing import Any
 
 import pytest
 
 import pyfect as fx
 from pyfect import fiber_profiler
 from pyfect._fiber import Fiber
+from pyfect.tracer import ExternalSpan
 
 _RUN = Fiber.__dict__["_run"].__code__
 
@@ -239,3 +241,61 @@ def test_a_profile_ignores_events_left_on_its_tool_id() -> None:
         monitoring.use_tool_id(tool, "cleanup")
         monitoring.set_events(tool, 0)
         monitoring.free_tool_id(tool)
+
+
+_WAIT = 2.0
+
+
+def test_a_profile_ends_cleanly_while_another_threads_turn_is_being_counted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Leaving the block disables the events but cannot wait for a callback another thread is
+    # already in. Here thread B's turn is counted after this thread has started merging B's
+    # totals: B parks in its turn's callback, this thread leaves the block and parks while
+    # merging B's first span, then B finishes counting its turn (a new span).
+    merger = threading.get_ident()
+    returned = fiber_profiler._Profile.returned.__code__  # pyright: ignore[reportPrivateUsage]
+    in_callback, merging, counted = threading.Event(), threading.Event(), threading.Event()
+    park_turn = threading.Event()
+    errors: list[BaseException] = []
+
+    class FirstSpan(str):
+        __slots__ = ()
+
+        def __hash__(self) -> int:
+            if threading.get_ident() == merger and in_callback.is_set() and not merging.is_set():
+                merging.set()
+                counted.wait(_WAIT)
+            return super().__hash__()
+
+    first = FirstSpan("first")
+    current_fiber = fiber_profiler.current_fiber
+
+    def parking_current_fiber() -> Fiber[Any, Any] | None:
+        if park_turn.is_set() and sys._getframe(1).f_code is returned:  # pyright: ignore[reportPrivateUsage]
+            park_turn.clear()
+            in_callback.set()
+            merging.wait(_WAIT)
+        return current_fiber()
+
+    monkeypatch.setattr(fiber_profiler, "current_fiber", parking_current_fiber)
+
+    def b() -> None:
+        try:
+            fx.run_blocking(fx.yield_now().with_parent_span(ExternalSpan(first, "trace")))
+            park_turn.set()
+            fx.run_blocking(fx.yield_now().with_parent_span(ExternalSpan("second", "trace")))
+        except BaseException as e:
+            errors.append(e)
+        finally:
+            counted.set()
+
+    thread = threading.Thread(target=b)
+    with fiber_profiler.profile() as report:
+        thread.start()
+        assert in_callback.wait(_WAIT)
+    thread.join(_WAIT)
+    assert errors == []
+    assert merging.is_set()
+    assert report.spans[first].turns == 1
+    assert "second" not in report.spans  # a turn still being counted when the block ends

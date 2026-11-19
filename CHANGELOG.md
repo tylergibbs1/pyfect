@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- `fiber_profiler.profile()` no longer raises `RuntimeError: dictionary changed size during
+  iteration` when its block ends while other threads run fibers. Ending a profile cannot wait
+  for a turn another thread is still counting, so each thread's totals now stop changing
+  before they are merged; a turn still running when the block ends is not counted.
+
 ## 0.6.14 (2026-11-19)
 
 0.6.13 was tagged but never published: its release workflow could not start.
