@@ -71,7 +71,7 @@ GUARD_MARGIN = "1.5"
 
 type Verdict = Literal["caught", "MISSED", "error", "skipped", "patch no longer applies"]
 
-_CAUGHT = ("AssertionError", "assert ", "Failed: test hung")
+_CAUGHT = ("AssertionError", "assert ", "Failed: test hung", "Failed: DID NOT RAISE")
 """Failures that are the test's own verdict."""
 
 

@@ -816,14 +816,12 @@ _amplified(
     "yaml.parse: a long hexadecimal key (#32)",
     lambda: yaml.parse(f"0x{'f' * _BIG}: 1"),
     lambda: yaml.parse(f"{'g' * _BIG}: 1"),
-    guards=Guard("12c66350", "yaml-long-integer-keys"),
 )
 _amplified(
     yaml.parse,
     "yaml.parse: a long decimal key (#32)",
     lambda: yaml.parse(f"{'7' * _BIG}: 1"),
     lambda: yaml.parse(f"{'g' * _BIG}: 1"),
-    guards=Guard("12c66350", "yaml-long-integer-keys"),
 )
 
 

@@ -9,7 +9,6 @@ from collections.abc import Callable
 
 import pytest
 from _growth import assert_near_linear
-from _guards import guards
 
 import pyfect as fx
 from pyfect import channel, schedule, testing
@@ -140,7 +139,6 @@ def test_split_lines_within_keeps_lines_at_the_limit():
     assert (yield from lines.run_collect()) == [("abcd",), ("x",)]
 
 
-@guards("a49c79aa", "split-lines-pending-concatenated")
 @pytest.mark.parametrize("within", [False, True])
 def test_split_lines_is_linear_in_tiny_pieces(within: bool):
     """A peer sending one character at a time must not make the unfinished
