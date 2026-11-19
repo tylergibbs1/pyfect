@@ -5,13 +5,15 @@ by a raise (a defect, as Effect makes anything thrown) or by Ctrl-C or
 asyncio cancellation (an interruption). The scope closes with that exit,
 running its finalizers as ``CloseableScope.close`` does. What is left to
 raise is what ``run.unwrap`` raises for the cause ``scoped`` would end
-with, except that a block's own exception always propagates: failed
-finalizers are added to it as the note ``run.unwrap`` adds.
+with, except that a block's own exception always propagates, unchanged but
+for a note holding the finalizers that failed.
 """
 
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Generator, Iterable
+from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, Never
 
 from pyfect._cause_election import finalizer_cause
@@ -57,10 +59,40 @@ async def fail_async(scope: CloseableScope, failure: Failure[Any]) -> Never:
 def _after_block(exc: BaseException | None, closed: Exit[None, Any]) -> None:
     if not isinstance(closed, Failure):
         return
-    cause = _ended(exit_of(exc), closed)
     if exc is None:
-        _raise(cause)
-    exc.add_note("Full cause:\n" + cause.pretty())
+        _raise(_ended(Success(None), closed))
+    exc.add_note(_failed_finalizers(exc, closed.cause))
+
+
+def _failed_finalizers(block: BaseException, finalizers: Cause[Any]) -> str:
+    """The note on ``block``, the exception propagating, for the finalizers
+    that failed after it. They ran while it was being handled, so it is their
+    errors' context; the note leaves it out, as the exception is already shown."""
+    with _context_hidden(block, finalizers.pretty_errors()):
+        return "Failed finalizers:\n" + finalizers.pretty()
+
+
+@contextmanager
+def _context_hidden(context: BaseException, errors: Iterable[BaseException]) -> Generator[None]:
+    """While inside, ``errors`` and their chains render without ``context``
+    as an implicit context; they are left as they were on leaving."""
+    hidden: list[BaseException] = []
+    seen: set[int] = {id(context)}
+    todo = list(errors)
+    while todo:
+        error = todo.pop()
+        if id(error) in seen:
+            continue
+        seen.add(id(error))
+        if error.__context__ is context and not error.__suppress_context__:
+            error.__suppress_context__ = True
+            hidden.append(error)
+        todo.extend(e for e in (error.__cause__, error.__context__) if e is not None)
+    try:
+        yield
+    finally:
+        for error in hidden:
+            error.__suppress_context__ = False
 
 
 def _ended(body: Exit[Any, Any], closed: Exit[None, Any]) -> Cause[Any]:

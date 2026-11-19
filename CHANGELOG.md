@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- `fx.managed` and `CloseableScope` blocks: when the block raises and a finalizer fails, the
+  note added to the block's exception holds only the failed finalizers, as documented, under
+  `Failed finalizers:`. It held the scope's whole cause, so it repeated the block's own error,
+  once more through each finalizer error's context (they run while it is being handled), and
+  an uncaught error printed the block's traceback three times. The exception and the scope's
+  cause are unchanged.
+
 ## 0.6.14 (2026-11-19)
 
 0.6.13 was tagged but never published: its release workflow could not start.
