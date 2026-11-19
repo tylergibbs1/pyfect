@@ -45,6 +45,12 @@
   and reports CPU and wall time per fiber id and per span name as `FiberTime(cpu_ns, wall_ns,
   turns)`, exclusive of fibers resumed inside a turn. It watches only `Fiber._run`'s start and
   return, so the fiber loop is unchanged and nothing is set up while no profile runs.
+- `fx.on_thread(eff)` (Python-only): runs `eff` as the root fiber of a run of its own on a new
+  thread, with the caller's services, and takes on its value, typed failure or defect.
+  Interrupting the caller interrupts it and waits for its finalizers. On free-threaded 3.14t
+  CPU-heavy effects under it use several cores (an effect of 100k `fx.sync` steps: 1.6x on 4
+  threads, 2.6x on 8; see the new "Parallel effects" guide and `benchmarks/parallel.py`); the
+  default single-thread runtime is unchanged.
 
 - Testing: `pyfect.testing.leave_out_host_freezes(source)` leaves the time the host froze the
   whole process for out of every test's timeout, up to the timeout again; `source` returns a

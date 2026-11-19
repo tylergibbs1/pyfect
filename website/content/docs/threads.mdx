@@ -25,7 +25,8 @@ take turns on one thread. What it speeds up is work pyfect hands to other thread
 `fx.blocking` and `fx.try_blocking` calls, the live sockets' event loop (one per process, on a
 thread of its own), DNS lookups and `ThreadWorker`s, each of which runs a runtime of its own. On
 the GIL build, Python code on those threads takes turns holding the GIL with the run's thread
-(waiting on I/O or in C code that releases the GIL doesn't); on 3.14t it runs at the same time.
+(waiting on I/O or in C code that releases the GIL doesn't); on 3.14t it runs at the same time. To run an effect itself in parallel, give it a run of its
+own on another thread with `fx.on_thread` (see [Parallel effects](/docs/parallel)).
 
 ## Sharing state between runs
 

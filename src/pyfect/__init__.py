@@ -77,6 +77,7 @@ from pyfect._iterables import (
     reduce,
     validate,
 )
+from pyfect._on_thread import on_thread
 from pyfect._public import publish
 from pyfect._reasons import HasReason
 from pyfect._root import NoRunError
@@ -655,6 +656,7 @@ __all__ = [
     "mutable_hash_map",
     "mutable_hash_set",
     "never",
+    "on_thread",
     "optic",
     "option",
     "partition",
