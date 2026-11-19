@@ -24,6 +24,10 @@
 
 ### Fixed
 
+- Queue: the take that drains an ended queue no longer loses its item. It woke the queue's
+  `await_done` waiters and takers in the same step, so one of them could interrupt the taking
+  fiber before the item reached it, and the item was gone from the queue too. Those wakes now
+  run in a task after the take (Effect #10737).
 - `interpreter_pool.call` and `try_call` on a function that reads globals of the script you ran,
   in a script without an `if __name__ == "__main__":` guard, hung forever with no output. CPython
   finds such a function by re-running the script inside the subinterpreter (as

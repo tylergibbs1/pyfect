@@ -712,26 +712,37 @@ class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
         ``releaseCapacity``)."""
         match self._state:
             case st.Open(offers=offers) | st.Closing(offers=offers):
-                if offers and self._capacity is not None:
+                if not offers:
+                    # A woken waiter can interrupt the fiber taking the last item:
+                    # the take delivers it first.
+                    self._finish_if_drained(soon=True)
+                    return
+                if self._capacity is not None:
                     st.admit(offers, self._items, self._capacity, self._lock, self._wake_offer)
                 self._finish_if_drained()
             case st.Done():
                 pass
 
-    def _finish_if_drained(self) -> None:
+    def _finish_if_drained(self, *, soon: bool = False) -> None:
         state = self._state
         if isinstance(state, st.Closing) and not self._items and not state.offers:
-            self._finish(state.cause)
+            self._finish(state.cause, soon=soon)
 
-    def _finish(self, cause: Cause[E]) -> None:
+    def _finish(self, cause: Cause[E], *, soon: bool = False) -> None:
+        """Finish with ``cause``, waking takers and awaiters now, or with
+        ``soon`` in a task (Effect's ``finalize`` with ``deferNotify``)."""
         match self._state:
             case (
                 st.Open(takers=takers, awaiters=awaiters)
                 | st.Closing(takers=takers, awaiters=awaiters)
             ):
                 self._state = st.Done(cause)
-                takers.notify_all()
-                awaiters.notify_all()
+                if soon:
+                    takers.notify_ready_soon(self._waker)
+                    awaiters.notify_ready_soon(self._waker)
+                else:
+                    takers.notify_all()
+                    awaiters.notify_all()
             case st.Done():
                 pass
 
