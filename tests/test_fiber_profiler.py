@@ -4,6 +4,8 @@ up while no profile runs (Python-only: Effect has no profiler of its own)."""
 
 import sys
 import threading
+from collections.abc import Callable
+from types import CodeType
 
 import pytest
 
@@ -130,3 +132,84 @@ def test_one_profile_runs_at_a_time() -> None:
         fiber_id = fx.run_blocking(_yields_five_times)
     assert report.fibers[fiber_id].turns == 6
     assert _nothing_is_set_up()
+
+
+_TOOLS = (sys.monitoring.PROFILER_ID, 3, 4)
+
+
+def _tools_are_released() -> bool:
+    """No tool, no events and no callbacks left on any id the profiler uses."""
+    monitoring = sys.monitoring
+    callbacks = [
+        monitoring.register_callback(tool, event, None)
+        for tool in _TOOLS
+        for event in (monitoring.events.PY_START, monitoring.events.PY_RETURN)
+    ]
+    return (
+        all(monitoring.get_tool(tool) is None for tool in _TOOLS)
+        and not any(monitoring.get_events(tool) for tool in _TOOLS)
+        and not any(monitoring.get_local_events(tool, _RUN) for tool in _TOOLS)
+        and callbacks == [None] * len(callbacks)
+    )
+
+
+def _ends_normally(monkeypatch: pytest.MonkeyPatch) -> None:
+    with fiber_profiler.profile():
+        fx.run_blocking(_yields_five_times)
+
+
+def _raises_inside(monkeypatch: pytest.MonkeyPatch) -> None:
+    with pytest.raises(ValueError), fiber_profiler.profile():
+        raise ValueError("boom")
+
+
+def _keyboard_interrupt_inside(monkeypatch: pytest.MonkeyPatch) -> None:
+    with pytest.raises(KeyboardInterrupt), fiber_profiler.profile():
+        raise KeyboardInterrupt
+
+
+def _fiber_interrupted_inside(monkeypatch: pytest.MonkeyPatch) -> None:
+    with fiber_profiler.profile():
+        exit_ = fx.run_blocking_exit(fx.interrupt())
+    assert exit_.has_interrupts
+
+
+def _busy(monkeypatch: pytest.MonkeyPatch) -> None:
+    with fiber_profiler.profile():
+        with pytest.raises(fiber_profiler.ProfilerBusyError), fiber_profiler.profile():
+            pass
+        assert not _tools_are_released()
+
+
+def _setup_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    enable = sys.monitoring.set_local_events
+
+    def fail_to_enable(tool: int, code: CodeType, events: int) -> None:
+        if events:
+            raise RuntimeError("enable failed")
+        enable(tool, code, events)
+
+    monkeypatch.setattr(sys.monitoring, "set_local_events", fail_to_enable)
+    with pytest.raises(RuntimeError, match="enable failed"), fiber_profiler.profile():
+        pass
+    monkeypatch.undo()
+    _ends_normally(monkeypatch)
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        _ends_normally,
+        _raises_inside,
+        _keyboard_interrupt_inside,
+        _fiber_interrupted_inside,
+        _busy,
+        _setup_fails,
+    ],
+)
+def test_every_way_out_of_a_profile_releases_the_tool(
+    path: Callable[[pytest.MonkeyPatch], None], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    assert _tools_are_released()
+    path(monkeypatch)
+    assert _tools_are_released()

@@ -196,20 +196,31 @@ def profile() -> Generator[Report]:
         _monitoring.use_tool_id(tool, "pyfect.fiber_profiler")
         state = _Profile(tool)
         _active.append(state)
-    _monitoring.register_callback(tool, _monitoring.events.PY_START, state.started)
-    _monitoring.register_callback(tool, _monitoring.events.PY_RETURN, state.returned)
-    _monitoring.set_local_events(tool, _RUN, _EVENTS)
     report = Report()
     try:
+        _monitoring.register_callback(tool, _monitoring.events.PY_START, state.started)
+        _monitoring.register_callback(tool, _monitoring.events.PY_RETURN, state.returned)
+        _monitoring.set_local_events(tool, _RUN, _EVENTS)
         yield report
     finally:
+        try:
+            _release(tool)
+        finally:
+            with _active_lock:
+                _active.clear()
+        state.into(report)
+
+
+def _release(tool: int) -> None:
+    """Disable the tool's events and drop its callbacks before freeing it:
+    3.13's ``free_tool_id`` leaves both behind, and no version clears local
+    events."""
+    try:
         _monitoring.set_local_events(tool, _RUN, 0)
         _monitoring.register_callback(tool, _monitoring.events.PY_START, None)
         _monitoring.register_callback(tool, _monitoring.events.PY_RETURN, None)
+    finally:
         _monitoring.free_tool_id(tool)
-        with _active_lock:
-            _active.clear()
-        state.into(report)
 
 
 __all__ = ["FiberTime", "ProfilerBusyError", "Report", "profile"]
