@@ -39,9 +39,9 @@ raised exception are copied across with `pickle`:
 Python can't stop a call that has started. Interrupting the fiber abandons it, as `fx.blocking`
 does: a call still waiting for a free interpreter is withdrawn and never runs, while a running
 one goes on until it returns and its result is dropped. Releasing the layer fails calls still
-waiting with `InterpreterPoolClosedError` and closes every idle interpreter before it returns; an
-abandoned call's interpreter closes when the call returns. The pool's threads are daemon threads,
-so an abandoned call doesn't hold the process open at exit.
+waiting with `InterpreterPoolClosedError` and returns once every interpreter has closed, so it
+waits for an abandoned call to return: no interpreter outlives its pool, and a call that never
+returns keeps the release waiting.
 
 ## What it measured
 

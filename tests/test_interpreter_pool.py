@@ -5,6 +5,7 @@ no interpreters to run work on)."""
 import importlib
 import operator
 import sys
+import threading
 from types import ModuleType
 from typing import Any
 
@@ -100,14 +101,14 @@ def test_interrupting_a_running_call_abandons_it_at_once() -> None:
         fiber = yield from interpreter_pool.call(_waits_then_returns, gate, 1).fork()
         yield from fx.sleep("50 millis")
         yield from fiber.interrupt()
-        return (yield from fiber.await_exit())
+        exit_ = yield from fiber.await_exit()
+        # the interrupt returned while the call still waits; releasing the layer waits for it
+        yield from fx.sync(lambda: gate.put(None))
+        return exit_
 
-    try:
-        ex = _run(program)
-        assert isinstance(ex, Success)
-        assert ex.value.has_interrupts
-    finally:
-        gate.put(None)  # lets the abandoned call return, so its worker exits
+    ex = _run(program)
+    assert isinstance(ex, Success)
+    assert ex.value.has_interrupts
 
 
 @needs_interpreters
@@ -128,12 +129,45 @@ def test_interrupting_a_queued_call_withdraws_it() -> None:
     assert marks.empty()
 
 
+def _interpreter_ids() -> set[int]:
+    return {interpreter.id for interpreter in _interpreters().list_all()}
+
+
 @needs_interpreters
 def test_releasing_the_layer_closes_every_idle_interpreter() -> None:
-    before = len(_interpreters().list_all())
-    calls = [interpreter_pool.call(operator.add, i, 1) for i in range(4)]
-    assert _run(fx.all(*calls, concurrency=4), size=4) == Success((1, 2, 3, 4))
-    assert len(_interpreters().list_all()) == before
+    before = _interpreter_ids()
+    created: set[int] = set()
+
+    @fx.gen
+    def program():
+        calls = [interpreter_pool.call(operator.add, i, 1) for i in range(4)]
+        sums = yield from fx.all(*calls, concurrency=4)
+        created.update(_interpreter_ids() - before)
+        return sums
+
+    assert _run(program, size=4) == Success((1, 2, 3, 4))
+    assert created
+    assert not created & _interpreter_ids()
+
+
+@needs_interpreters
+def test_releasing_the_layer_waits_for_an_abandoned_call_to_return() -> None:
+    gate = _interpreters().create_queue()
+    before = _interpreter_ids()
+    created: set[int] = set()
+
+    @fx.gen
+    def program():
+        fiber = yield from interpreter_pool.call(_waits_then_returns, gate, 1).fork()
+        yield from fx.sleep("50 millis")
+        created.update(_interpreter_ids() - before)
+        yield from fiber.interrupt()
+        # the abandoned call returns only after the run has started releasing the layer
+        threading.Timer(0.1, gate.put, (None,)).start()
+
+    assert isinstance(_run(program), Success)
+    assert created
+    assert not created & _interpreter_ids()
 
 
 @needs_interpreters

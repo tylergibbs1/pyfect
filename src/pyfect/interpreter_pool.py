@@ -25,10 +25,9 @@ A raised exception comes back as a defect (``call``) or a failure
 ``concurrent.interpreters.ExecutionFailed`` that summarises it. Python
 cannot stop a call that has started, so interrupting the fiber abandons it,
 as ``fx.blocking`` does: a call still queued is withdrawn, a running one
-goes on until it returns, then its worker closes its interpreter if the
-pool has closed. Workers are daemon threads, so abandoned calls do not hold
-the process open at exit; Python then warns about the subinterpreters left
-running.
+goes on until it returns. Releasing the layer waits for every interpreter
+to close, an abandoned call's once that call returns, so no interpreter
+outlives its pool.
 
 ``concurrent.interpreters`` is new in Python 3.14: on 3.13 building the
 layer dies with ``InterpretersUnavailableError``.
@@ -135,7 +134,6 @@ class _Workers:
         self._work: deque[_Work] = deque()
         self._idle = 0
         self._threads = 0
-        self._running = 0
         self._closed = False
         self._on_quiet: list[Callable[[], None]] = []
 
@@ -167,12 +165,12 @@ class _Workers:
 
     def close(self, on_quiet: Callable[[], None]) -> None:
         """Fail queued calls and let every worker close its interpreter once
-        its current call returns; ``on_quiet`` runs once every worker not in
-        a call has closed its interpreter."""
+        its current call returns, an abandoned one included; ``on_quiet`` runs
+        once every worker has closed its interpreter."""
         with self._lock:
             self._closed = True
             work, self._work = self._work, deque()
-            quiet = self._threads == self._running
+            quiet = self._threads == 0
             if not quiet:
                 self._on_quiet.append(on_quiet)
             self._lock.notify_all()
@@ -189,7 +187,6 @@ class _Workers:
                 self._idle -= 1
             if self._closed:
                 return None
-            self._running += 1
             return self._work.popleft()
 
     def _worker(self) -> None:
@@ -204,12 +201,8 @@ class _Workers:
             results = interpreters.create_queue()
             while (item := self._next()) is not None:
                 fn, args, future = item
-                try:
-                    if future.set_running_or_notify_cancel():
-                        _run(interpreters, interpreter, results, (fn, args, future))
-                finally:
-                    with self._lock:
-                        self._running -= 1
+                if future.set_running_or_notify_cancel():
+                    _run(interpreters, interpreter, results, (fn, args, future))
         except BaseException as exc:
             interpreter.close()
             self._exit(exc)
@@ -225,7 +218,7 @@ class _Workers:
             stranded: deque[_Work] = deque()
             if failed is not None and self._threads == 0:
                 stranded, self._work = self._work, deque()
-            quiet = self._threads == self._running
+            quiet = self._threads == 0
             on_quiet, self._on_quiet = (self._on_quiet, []) if quiet else ([], self._on_quiet)
         if failed is not None:
             for _, _, future in stranded:
@@ -319,7 +312,8 @@ class InterpreterPool(Tag[InterpreterPoolService]):
 
 def layer(size: int | None = None) -> Layer[InterpreterPool]:
     """A pool of up to ``size`` subinterpreters (one per CPU by default),
-    each started on first need; releasing the layer closes them. Dies with
+    each started on first need; releasing the layer closes them, waiting
+    for abandoned calls to return. Dies with
     ``InterpretersUnavailableError`` before Python 3.14."""
     if size is not None and size < 1:
         raise ValueError(f"an interpreter pool needs at least one interpreter, got {size}")

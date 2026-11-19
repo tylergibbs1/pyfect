@@ -45,8 +45,8 @@
   (`concurrent.interpreters`), each with its own GIL, provided by `interpreter_pool.layer(size)`.
   The result comes back as the effect's value; a raised exception as a defect (`call`) or an
   `UnknownError` / `catch=` failure (`try_call`), as itself when it pickles. Interrupting
-  withdraws a queued call and abandons a running one; releasing the layer closes the idle
-  interpreters. On the GIL build 8 calls of pure-Python work ran 7x as fast as one at a time
+  withdraws a queued call and abandons a running one; releasing the layer closes every
+  interpreter, waiting for abandoned calls to return. On the GIL build 8 calls of pure-Python work ran 7x as fast as one at a time
   (`fx.blocking`: 1x); see the new "Subinterpreters" guide and `benchmarks/interpreter_pool.py`.
   On 3.13 the layer dies with `InterpretersUnavailableError`.
 
