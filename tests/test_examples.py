@@ -118,3 +118,13 @@ def test_cli_prints_help_and_suggests_and_fails_on_a_mistyped_subcommand():
 
 def test_cli_prints_its_version():
     assert run_cli("--version").stdout.strip() == "todo v1.0.0"
+
+
+def test_sql_sqlite_binds_values_and_a_failed_transaction_leaves_the_table_unchanged():
+    assert run_example("sql_sqlite.py").splitlines() == [
+        "migrated [(1, 'create_items')]",
+        "('SELECT * FROM items WHERE name = ?', (\"Ada's jam\",))",
+        "before: ['apple=3', 'pear=1', \"Ada's jam=2\"]",
+        "order failed: OutOfStock(name='pear')",
+        "after:  ['apple=3', 'pear=1', \"Ada's jam=2\"]",
+    ]
