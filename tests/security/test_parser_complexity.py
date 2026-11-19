@@ -13,7 +13,7 @@ from collections.abc import Iterator
 from typing import Any
 
 import pytest
-from _growth import assert_near_linear, cpu_pair
+from _growth import GUARD_MARGIN, assert_near_linear, cpu_pair
 from _guards import Guard
 from _pyfect_modules import modules
 
@@ -49,7 +49,7 @@ def test_parser_takes_near_linear_time(found: Case) -> None:
 )
 def test_costly_input_costs_about_as_much_as_plain_input(found: Amplified) -> None:
     costly, plain = cpu_pair(found.costly, found.plain)
-    assert costly <= found.bound * max(plain, 0.001), (
+    assert costly <= found.bound * GUARD_MARGIN * max(plain, 0.001), (
         f"{costly * 1000:.1f} ms against {plain * 1000:.1f} ms for plain input"
     )
 

@@ -58,8 +58,8 @@ def _cookie_without_equals(n: int) -> Callable[[], object]:
 
 
 CASES: dict[str, tuple[Case, int]] = {
-    "Cookie header of segments without =": (_cookie_without_equals, 5_000),
-    "ASGI request with many lines of one header": (_repeated_header, 5_000),
+    "Cookie header of segments without =": (_cookie_without_equals, 20_000),
+    "ASGI request with many lines of one header": (_repeated_header, 20_000),
     "find-my-way path with %25 runs": (_percent_25_path, 20_000),
     "HttpApi parameters joined by a comma": (_comma_params, 100),
 }

@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import gc
 import math
+import os
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -45,6 +46,10 @@ BOUND = 24
 """Linear work grows 8 times, ``n log n`` about 10, ``n ** 1.5`` about 23, quadratic 64."""
 EXPONENT = math.log(BOUND, FACTOR)
 """The growth exponent ``BOUND`` allows, about 1.53, for steps of other factors."""
+GUARD_MARGIN = float(os.environ.get("PYFECT_GUARD_MARGIN", "1"))
+"""Bounds are this many times looser. ``scripts/check_regression_guards.py`` sets 1.5, so a
+test caught its bug only if it would still have with a looser bound: big_decimal's digit run
+grew 27x against 24 on macOS and under 24 on CI's runner."""
 MIN_SECONDS = 0.002
 MAX_SIZE = 1 << 22
 RUNS = 3
@@ -189,7 +194,8 @@ def growth(
     while size * 2 * factor <= max_size and cpu(make(size), clock=clock) < MIN_SECONDS:
         size *= 2
     small, large = _compare(make, size, factor, clock)
-    return Growth(size, small, large, factor, factor**EXPONENT if bound is None else bound)
+    limit = factor**EXPONENT if bound is None else bound
+    return Growth(size, small, large, factor, limit * GUARD_MARGIN)
 
 
 SPAN = 64

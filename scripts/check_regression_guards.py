@@ -2,10 +2,11 @@
 scripts/check_regression_guards.py [PATCH...]``.
 
 Each test marked with a guard (``tests/_guards.py``) runs against a copy of ``src`` with the
-guard's regression patch applied, and must fail there with an assertion or by hanging. A test
-that passes would pass against its own bug: a growth check sized too small to see the old
-cost, say. Any other exception (an import the patch broke) is an error. Too slow for every
-pull request (an injected quadratic runs until the hang alarm stops it), so it runs nightly
+guard's regression patch applied, and must fail there with an assertion or by hanging (a
+timing test with its bound ``GUARD_MARGIN`` times looser). A test that passes would pass
+against its own bug: a growth check sized too small to see the old cost, say. Any other
+exception (an import the patch broke) is an error. Too slow for every pull request (an injected
+quadratic runs until the hang alarm stops it), so it runs nightly
 (``.github/workflows/guards-nightly.yml``); that every patch still applies is checked on
 every pull request (``tests/test_regression_patches.py``).
 """
@@ -64,6 +65,10 @@ def _collect() -> dict[Guard, list[str]]:
     return collector.guarded
 
 
+GUARD_MARGIN = "1.5"
+"""A timing test catches its bug only if it fails with its bound this many times looser
+(``tests/_growth.py``): one that clears the bound only just is missed on another machine."""
+
 type Verdict = Literal["caught", "MISSED", "error", "skipped", "patch no longer applies"]
 
 _CAUGHT = ("AssertionError", "assert ", "Failed: test hung")
@@ -79,7 +84,7 @@ def _outcomes(report: Path) -> dict[str, tuple[Verdict, str]]:
         problem = failure if failure is not None else case.find("error")
         if problem is not None:
             message = (problem.get("message") or "").strip()
-            why = message.splitlines()[0][:120] if message else ""
+            why = message.splitlines()[0][:400] if message else ""
             caught = failure is not None and message.startswith(_CAUGHT)
             outcomes[name] = ("caught" if caught else "error", why)
         elif case.find("skipped") is not None:
@@ -99,7 +104,7 @@ def check(guard: Guard, nodeids: list[str]) -> dict[str, tuple[Verdict, str]]:
         )
         if applied.returncode != 0:
             return dict.fromkeys(nodeids, ("patch no longer applies", applied.stderr.strip()))
-        env = {**os.environ, "PYTHONPATH": str(copy / "src")}
+        env = {**os.environ, "PYTHONPATH": str(copy / "src"), "PYFECT_GUARD_MARGIN": GUARD_MARGIN}
         report = copy / "report.xml"
         subprocess.run(
             [

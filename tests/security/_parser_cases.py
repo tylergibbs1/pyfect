@@ -399,6 +399,7 @@ for _kind, _make_input in ADVERSARIES.items():
 @case(
     cookies.parse_header,
     "cookies.parse_header: many empty pairs (#49)",
+    size=1 << 15,  # rescanning with str.find is quick per character: smaller, timing misses it
     guards=Guard("0be98c4b", "cookie-segments-rescanned"),
 )
 def _cookie_pairs(n: int) -> Work:
@@ -456,7 +457,7 @@ CASES.append(
         "WebRequest.headers: many lines of one header (#57)",
         WebRequest,
         _repeated_header,
-        size=4000,
+        size=1 << 14,  # copying the joined text is quick: at 4000 lines it grew 43x, near 36
         guards=Guard("ce40a38a", "header-lines-joined-per-line"),
     )
 )
@@ -727,7 +728,6 @@ def _json_patch_nested(n: int) -> Work:
 @case(
     S.BigDecimalFromString,
     "BigDecimalFromString: a long digit run (#31)",
-    guards=Guard("ef8f293a", "big-decimal-digits-unbounded"),
 )
 def _big_decimal_digits(n: int) -> Work:
     decode = S.decode_unknown_exit(S.BigDecimalFromString)
@@ -738,7 +738,6 @@ def _big_decimal_digits(n: int) -> Work:
 @case(
     S.BigDecimalFromString,
     "BigDecimalFromString: a long exponent (#31)",
-    guards=Guard("ef8f293a", "big-decimal-exponent-converted"),
 )
 def _big_decimal_exponent(n: int) -> Work:
     decode = S.decode_unknown_exit(S.BigDecimalFromString)

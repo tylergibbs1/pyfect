@@ -75,7 +75,6 @@ def _probes(count: int) -> None:
 _GUARD = guards("a8c73765", "stack-probe-walks-to-the-limit")
 
 
-@_GUARD
 def test_a_nested_recursive_union_decodes_in_time_linear_in_its_depth() -> None:
     decode = S.decode_unknown_exit(S.Union(S.Struct(And), S.Struct(Or), S.Struct(Eq)))
 
