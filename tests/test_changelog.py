@@ -6,6 +6,7 @@ Merging branches that each add to the unreleased section can leave two copies of
 import re
 import shutil
 import subprocess
+import tomllib
 from collections import Counter
 from pathlib import Path
 
@@ -92,6 +93,51 @@ def test_patch_releases_only_fix_add_deprecate_or_document():
         "these patch sections need a minor release (docs/VERSIONING.md), "
         f"or the entries belong under Fixed / Added / Deprecated: {offenders}"
     )
+
+
+def _unreleased_headings(text: str) -> list[str]:
+    """The ``### `` headings under ``## Unreleased``."""
+    _, found, rest = f"\n{text}".partition(f"\n{UNRELEASED}\n")
+    if not found:
+        return []
+    section = rest.split("\n## ", 1)[0]
+    return [line[4:].strip() for line in section.splitlines() if line.startswith("### ")]
+
+
+def _too_early_for_a_minor(text: str, version: str) -> list[str]:
+    """Unreleased headings a patch release can't carry, while ``version`` (pyproject's) is
+    still in the newest released minor series: the next release would have to be a minor."""
+    released = [v for v, when in _sections(text) if when != "unreleased"]
+    major, minor, _ = (int(part) for part in version.split("."))
+    if not released or (major, minor) != released[0][:2]:
+        return []
+    return sorted(set(_unreleased_headings(text)) - PATCH_HEADINGS)
+
+
+def test_unreleased_minor_entries_wait_for_the_minor_version():
+    """#175 put a Changed entry on main while the version was 0.6.14, which made the next
+    release a minor one and blocked 0.6.x patches. Such entries stay on a -070 branch until
+    the release bumps pyproject to 0.7.0."""
+    version = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"][
+        "version"
+    ]
+    offenders = _too_early_for_a_minor(_text(), version)
+    assert not offenders, (
+        f"## Unreleased has {offenders} while pyproject is {version}: the next release would be "
+        "a minor one (docs/VERSIONING.md). Keep the change on a -0X0 branch until the minor "
+        "release bumps the version"
+    )
+
+
+def test_the_minor_entry_check_waits_for_the_version_bump():
+    text = (
+        "## Unreleased\n\n### Changed\n\n- a\n\n### Fixed\n\n- b\n\n"
+        "## 0.6.14 (2026-11-19)\n\n### Fixed\n\n- c\n"
+    )
+    assert _too_early_for_a_minor(text, "0.6.14") == ["Changed"]
+    assert _too_early_for_a_minor(text.replace("Changed", "Removed"), "0.6.15") == ["Removed"]
+    assert _too_early_for_a_minor(text, "0.7.0") == []
+    assert _too_early_for_a_minor(text.replace("### Changed", "### Added"), "0.6.14") == []
 
 
 def _repeated_subheadings(text: str) -> list[str]:
