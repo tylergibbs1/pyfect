@@ -24,7 +24,15 @@ from pathlib import Path
 from hypothesis import HealthCheck, Phase, given, seed, settings
 
 from .generate import SWEEP_BUDGETS, SWEEP_TIMES, cases, covering, probe, programs
-from .oracle import EffectOracle, case_from_json, case_json, difference, read_corpus, write_corpus
+from .oracle import (
+    PARITY_149,
+    EffectOracle,
+    case_from_json,
+    case_json,
+    difference,
+    read_corpus,
+    write_corpus,
+)
 from .program import Case, Expr, Json, to_json
 
 
@@ -63,6 +71,12 @@ def fresh(count: int, at: int, max_leaves: int) -> None:
             assert found is None, found
 
         compare()
+    _report_parity_149()
+
+
+def _report_parity_149() -> None:
+    """How many cases differed only as docs/PARITY.md's decided-result row allows."""
+    print(f"PARITY-149: {len(PARITY_149)} cases accepted", file=sys.stderr)
 
 
 def survey(count: int, at: int, max_leaves: int) -> int:
@@ -74,6 +88,7 @@ def survey(count: int, at: int, max_leaves: int) -> int:
                 found.append(different)
     for different in sorted(found, key=len):
         print(different, end="\n\n")
+    _report_parity_149()
     print(f"{len(found)} of {count} cases differ", file=sys.stderr)
     return 1 if found else 0
 
