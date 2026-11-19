@@ -83,6 +83,42 @@ convention of seconds, pass a `histogram` to `track_duration` with a function fr
 `Duration` to what it records, as in Effect
 (`fx.sleep("10 millis").track_duration(metric.histogram("checkout_seconds", boundaries=[1.0]), duration.to_seconds)`).
 
+## Profiling fibers
+
+`cProfile` sees the fiber loop calling steps, so the time of every fiber lands in the same few
+runtime functions. `pyfect.fiber_profiler` counts fibers instead. A fiber runs in turns, each on
+one thread, until it waits or yields, and `fiber_profiler.profile()` times every turn with that
+thread's CPU clock and the wall clock. When the block ends, its report has the time per fiber id
+(`report.fibers`) and per span name (`report.spans`, keyed by the fiber's innermost span when the
+turn ended, `None` outside every span), each a `FiberTime(cpu_ns, wall_ns, turns)`.
+
+<CodeOutput>
+
+<include meta='title="fiber_profile.py"'>../../snippets/observability/fiber_profile.py</include>
+
+<include lang="text">../../snippets/observability/fiber_profile.out</include>
+
+</CodeOutput>
+
+Times are exclusive: when a fiber's turn wakes another fiber on the same thread and that fiber
+runs at once, nested in the turn, its time is its own. The profiler watches only the start and
+return of `Fiber._run` through `sys.monitoring`, so it costs nothing while no profile runs and
+two callbacks a turn while one does, however many steps the turn takes. In
+[`benchmarks/fiber_profiler.py`](https://github.com/tylergibbs1/pyfect/blob/main/benchmarks/fiber_profiler.py)
+a turn costs about 1.1 to 2.8 µs more on CPython 3.13, 3.14 and 3.14t (two runs on a shared
+machine; the high end is 3.14t), and with the profiler imported but off every workload ran within
+noise of not importing it:
+
+| Workload | Turns | Off | On (range over 3.13, 3.14, 3.14t and two runs) |
+| --- | --- | --- | --- |
+| one fiber, 200k `map` steps | 199 | 97.8 ms | within noise |
+| 20k forks, each joined | 40k | 104.5 ms | +39% to +57% |
+| two fibers trading 100k values through queues | 200k | 1.41 s | +15% to +35% |
+
+So a program whose turns do real work hardly notices it, while one made of turns of a step or
+two, the second and third rows, pays for each. One profile runs at a time, across every
+thread; another raises `ProfilerBusyError`.
+
 ## Reporting errors
 
 An error reporter hands failures to an error tracker such as Sentry. `eff.with_error_reporting()`
