@@ -42,14 +42,15 @@ def _commands(pid: int) -> list[tuple[str, list[str], str]]:
 def _traceable() -> Generator[None]:
     """Lets a child attach to this process where Yama's ptrace_scope 1 allows tracing only
     descendants (Ubuntu's default): the tools run as children of the process they read."""
-    libc = ctypes.CDLL(None, use_errno=True) if sys.platform == "linux" else None
-    if libc is not None:
-        libc.prctl(_PR_SET_PTRACER, _PR_SET_PTRACER_ANY, 0, 0, 0)
+    if sys.platform != "linux":
+        yield
+        return
+    libc = ctypes.CDLL(None, use_errno=True)
+    libc.prctl(_PR_SET_PTRACER, _PR_SET_PTRACER_ANY, 0, 0, 0)
     try:
         yield
     finally:
-        if libc is not None:
-            libc.prctl(_PR_SET_PTRACER, 0, 0, 0, 0)
+        libc.prctl(_PR_SET_PTRACER, 0, 0, 0, 0)
 
 
 def _last_line(text: str) -> str:

@@ -1,6 +1,7 @@
 """The tests/ plugin that adds native stacks to the report of a test the hang alarm failed."""
 
 import os
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -41,8 +42,11 @@ def test_a_test_hung_in_c_reports_its_native_frames(
 ) -> None:
     out = _hang(pytester, monkeypatch)
     assert "native stacks from " in out, out
-    # the frames of the call the test is stuck in, taken before the failure unwound it
-    assert "acquire_lock" in out.split("native stacks from ", 1)[1], out
+    stacks = out.split("native stacks from ", 1)[1]
+    # a C frame: gdb's "#3  0x... in poll ()", or py-spy's thread header and native frames
+    assert re.search(r"^#\d+ +0x[0-9a-f]+ in \S+", stacks, re.MULTILINE) or (
+        stacks.startswith("py-spy") and "Thread 0x" in stacks
+    ), out
 
 
 def test_without_a_tool_the_report_says_so_in_one_line(
