@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Docs
+
+- The generated OpenRouter client's docstrings link to OpenRouter's docs: 45 operations said
+  "[Management key](/docs/guides/overview/auth/management-api-keys) required", copied from
+  OpenRouter's OpenAPI spec, and their API reference pages linked to that path on pyfect.dev,
+  a 404. `scripts/gen_ai_schemas.py` now makes a spec's links to a path absolute on the
+  provider's docs site and fails on any other relative link; `tests/test_docstring_links.py`
+  fails on a docstring link that isn't an absolute URL, and the site's link check now covers
+  the API reference's docstrings as well as the guides.
+
 ## 0.6.14 (2026-11-19)
 
 0.6.13 was tagged but never published: its release workflow could not start.

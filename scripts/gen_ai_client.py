@@ -23,6 +23,9 @@ class ClientShapeError(Exception):
     """The client has a shape this generator does not know."""
 
 
+_ORIGIN = re.compile(r"https://[a-z0-9.-]+")
+
+
 @dataclass(frozen=True)
 class ClientTarget:
     title: str
@@ -30,6 +33,13 @@ class ClientTarget:
     client_title: str
     """The API's name in Effect's client (``OpenAi`` where the title is
     ``OpenAI``)."""
+    docs_site: str
+    """The origin of the provider's docs (``https://openrouter.ai``): the spec's docs link to
+    its pages by path, which pyfect's API reference would resolve against pyfect.dev."""
+
+    def __post_init__(self) -> None:
+        if not _ORIGIN.fullmatch(self.docs_site):
+            raise ClientShapeError(f"docs_site {self.docs_site!r} is not an https origin")
 
     @property
     def client_name(self) -> str:
@@ -276,7 +286,7 @@ def signatures(source: str, target: ClientTarget) -> dict[str, Signature]:
         payload = re.search(r"readonly payload: typeof (\w+)\.Encoded", text)
         found[name.group(1)] = Signature(
             name.group(1),
-            "\n".join(doc).strip(),
+            _absolute_links(name.group(1), "\n".join(doc).strip(), target.docs_site),
             tuple(dict.fromkeys(_PATH_ARGUMENT.findall(text))),
             params.group(2) if params else None,
             params is not None and params.group(1) == "",
@@ -303,6 +313,25 @@ def signatures(source: str, target: ClientTarget) -> dict[str, Signature]:
             block.append(line)
     flush()
     return found
+
+
+_LINK_TARGET = re.compile(r"\]\(([^)\s]*)\)")
+_ABSOLUTE = re.compile(r"[a-z][a-z0-9+.-]*:", re.IGNORECASE)
+
+
+def _absolute_links(operation: str, doc: str, docs_site: str) -> str:
+    """``doc`` with each link to a path of the provider's site made absolute; any other
+    relative link is an error naming the operation."""
+
+    def absolute(match: re.Match[str]) -> str:
+        target = match.group(1)
+        if _ABSOLUTE.match(target):
+            return match.group(0)
+        if not target.startswith("/") or target.startswith("//"):
+            raise ClientShapeError(f"{operation}: a relative link {target!r} in its docs")
+        return f"]({docs_site}{target})"
+
+    return _LINK_TARGET.sub(absolute, doc)
 
 
 # --- emitting ---------------------------------------------------------------------------

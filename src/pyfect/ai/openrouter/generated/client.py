@@ -630,7 +630,7 @@ class OpenRouterClient(_c.GeneratedClient):
     @_t.overload
     def get_user_activity(self, *, params: _T.GetUserActivityParams | None = None, include_response: _t.Literal[True]) -> _Effect[tuple[_T.GetUserActivity200, _HttpClientResponse], _Errors]: ...
     def get_user_activity(self, *, params: _T.GetUserActivityParams | None = None, include_response: bool = False) -> _Effect[_t.Any, _Errors]:
-        """Returns user activity data grouped by endpoint for the last 30 (completed) UTC days. [Management key](/docs/guides/overview/auth/management-api-keys) required."""
+        """Returns user activity data grouped by endpoint for the last 30 (completed) UTC days. [Management key](https://openrouter.ai/docs/guides/overview/auth/management-api-keys) required."""
         return self._json(_GET_USER_ACTIVITY, "/activity", params, None, include_response)
 
     @_t.overload
@@ -638,7 +638,7 @@ class OpenRouterClient(_c.GeneratedClient):
     @_t.overload
     def get_analytics_meta(self, *, params: _T.GetAnalyticsMetaParams | None = None, include_response: _t.Literal[True]) -> _Effect[tuple[_T.GetAnalyticsMeta200, _HttpClientResponse], _Errors]: ...
     def get_analytics_meta(self, *, params: _T.GetAnalyticsMetaParams | None = None, include_response: bool = False) -> _Effect[_t.Any, _Errors]:
-        """Returns the available metrics, dimensions, filter operators, and granularities for the analytics query endpoint. [Management key](/docs/guides/overview/auth/management-api-keys) required."""
+        """Returns the available metrics, dimensions, filter operators, and granularities for the analytics query endpoint. [Management key](https://openrouter.ai/docs/guides/overview/auth/management-api-keys) required."""
         return self._json(_GET_ANALYTICS_META, "/analytics/meta", params, None, include_response)
 
     @_t.overload
@@ -646,7 +646,7 @@ class OpenRouterClient(_c.GeneratedClient):
     @_t.overload
     def query_analytics(self, *, payload: _T.QueryAnalyticsRequestJson, params: _T.QueryAnalyticsParams | None = None, include_response: _t.Literal[True]) -> _Effect[tuple[_T.QueryAnalytics200, _HttpClientResponse], _Errors]: ...
     def query_analytics(self, *, payload: _T.QueryAnalyticsRequestJson, params: _T.QueryAnalyticsParams | None = None, include_response: bool = False) -> _Effect[_t.Any, _Errors]:
-        """Execute an analytics query with specified metrics, dimensions, filters, and time range. [Management key](/docs/guides/overview/auth/management-api-keys) required."""
+        """Execute an analytics query with specified metrics, dimensions, filters, and time range. [Management key](https://openrouter.ai/docs/guides/overview/auth/management-api-keys) required."""
         return self._json(_QUERY_ANALYTICS, "/analytics/query", params, _c.json_body(payload), include_response)
 
     @_t.overload
@@ -694,7 +694,7 @@ class OpenRouterClient(_c.GeneratedClient):
     @_t.overload
     def list_byok_keys(self, *, params: _T.ListBYOKKeysParams | None = None, include_response: _t.Literal[True]) -> _Effect[tuple[_T.ListBYOKKeys200, _HttpClientResponse], _Errors]: ...
     def list_byok_keys(self, *, params: _T.ListBYOKKeysParams | None = None, include_response: bool = False) -> _Effect[_t.Any, _Errors]:
-        """List the bring-your-own-key (BYOK) provider credentials for the authenticated entity's default workspace. Use the `workspace_id` query parameter to scope the result to a different workspace, or the `provider` query parameter to filter by upstream provider. [Management key](/docs/guides/overview/auth/management-api-keys) required."""
+        """List the bring-your-own-key (BYOK) provider credentials for the authenticated entity's default workspace. Use the `workspace_id` query parameter to scope the result to a different workspace, or the `provider` query parameter to filter by upstream provider. [Management key](https://openrouter.ai/docs/guides/overview/auth/management-api-keys) required."""
         return self._json(_LIST_BYOK_KEYS, "/byok", params, None, include_response)
 
     @_t.overload
@@ -702,7 +702,7 @@ class OpenRouterClient(_c.GeneratedClient):
     @_t.overload
     def create_byok_key(self, *, payload: _T.CreateBYOKKeyRequestJson, params: _T.CreateBYOKKeyParams | None = None, include_response: _t.Literal[True]) -> _Effect[tuple[_T.CreateBYOKKey201, _HttpClientResponse], _Errors]: ...
     def create_byok_key(self, *, payload: _T.CreateBYOKKeyRequestJson, params: _T.CreateBYOKKeyParams | None = None, include_response: bool = False) -> _Effect[_t.Any, _Errors]:
-        """Create a new bring-your-own-key (BYOK) provider credential. The raw key is encrypted at rest and never returned in API responses. Defaults to the authenticated entity's default workspace; use the `workspace_id` body field to scope to a different workspace. Treat the raw key as write-only; it is never returned after creation. [Management key](/docs/guides/overview/auth/management-api-keys) required."""
+        """Create a new bring-your-own-key (BYOK) provider credential. The raw key is encrypted at rest and never returned in API responses. Defaults to the authenticated entity's default workspace; use the `workspace_id` body field to scope to a different workspace. Treat the raw key as write-only; it is never returned after creation. [Management key](https://openrouter.ai/docs/guides/overview/auth/management-api-keys) required."""
         return self._json(_CREATE_BYOK_KEY, "/byok", params, _c.json_body(payload), include_response)
 
     @_t.overload
@@ -710,7 +710,7 @@ class OpenRouterClient(_c.GeneratedClient):
     @_t.overload
     def get_byok_key(self, id: str, *, params: _T.GetBYOKKeyParams | None = None, include_response: _t.Literal[True]) -> _Effect[tuple[_T.GetBYOKKey200, _HttpClientResponse], _Errors]: ...
     def get_byok_key(self, id: str, *, params: _T.GetBYOKKeyParams | None = None, include_response: bool = False) -> _Effect[_t.Any, _Errors]:
-        """Get a single bring-your-own-key (BYOK) provider credential by its `id`. [Management key](/docs/guides/overview/auth/management-api-keys) required."""
+        """Get a single bring-your-own-key (BYOK) provider credential by its `id`. [Management key](https://openrouter.ai/docs/guides/overview/auth/management-api-keys) required."""
         return self._json(_GET_BYOK_KEY, f"/byok/{id}", params, None, include_response)
 
     @_t.overload
@@ -718,7 +718,7 @@ class OpenRouterClient(_c.GeneratedClient):
     @_t.overload
     def delete_byok_key(self, id: str, *, params: _T.DeleteBYOKKeyParams | None = None, include_response: _t.Literal[True]) -> _Effect[tuple[_T.DeleteBYOKKey200, _HttpClientResponse], _Errors]: ...
     def delete_byok_key(self, id: str, *, params: _T.DeleteBYOKKeyParams | None = None, include_response: bool = False) -> _Effect[_t.Any, _Errors]:
-        """Delete (soft-delete) a bring-your-own-key (BYOK) provider credential by its `id`. The encrypted key material is wiped and the record is marked as deleted. [Management key](/docs/guides/overview/auth/management-api-keys) required."""
+        """Delete (soft-delete) a bring-your-own-key (BYOK) provider credential by its `id`. The encrypted key material is wiped and the record is marked as deleted. [Management key](https://openrouter.ai/docs/guides/overview/auth/management-api-keys) required."""
         return self._json(_DELETE_BYOK_KEY, f"/byok/{id}", params, None, include_response)
 
     @_t.overload
@@ -726,7 +726,7 @@ class OpenRouterClient(_c.GeneratedClient):
     @_t.overload
     def update_byok_key(self, id: str, *, payload: _T.UpdateBYOKKeyRequestJson, params: _T.UpdateBYOKKeyParams | None = None, include_response: _t.Literal[True]) -> _Effect[tuple[_T.UpdateBYOKKey200, _HttpClientResponse], _Errors]: ...
     def update_byok_key(self, id: str, *, payload: _T.UpdateBYOKKeyRequestJson, params: _T.UpdateBYOKKeyParams | None = None, include_response: bool = False) -> _Effect[_t.Any, _Errors]:
-        """Update an existing bring-your-own-key (BYOK) provider credential by its `id`. Include the `key` field to rotate the raw provider API key in-place (the previous key material is overwritten). [Management key](/docs/guides/overview/auth/management-api-keys) required."""
+        """Update an existing bring-your-own-key (BYOK) provider credential by its `id`. Include the `key` field to rotate the raw provider API key in-place (the previous key material is overwritten). [Management key](https://openrouter.ai/docs/guides/overview/auth/management-api-keys) required."""
         return self._json(_UPDATE_BYOK_KEY, f"/byok/{id}", params, _c.json_body(payload), include_response)
 
     @_t.overload
@@ -772,7 +772,7 @@ class OpenRouterClient(_c.GeneratedClient):
     @_t.overload
     def get_credits(self, *, params: _T.GetCreditsParams | None = None, include_response: _t.Literal[True]) -> _Effect[tuple[_T.GetCredits200, _HttpClientResponse], _Errors]: ...
     def get_credits(self, *, params: _T.GetCreditsParams | None = None, include_response: bool = False) -> _Effect[_t.Any, _Errors]:
-        """Get total credits purchased and used for the authenticated user. [Management key](/docs/guides/overview/auth/management-api-keys) required."""
+        """Get total credits purchased and used for the authenticated user. [Management key](https://openrouter.ai/docs/guides/overview/auth/management-api-keys) required."""
         return self._json(_GET_CREDITS, "/credits", params, None, include_response)
 
     @_t.overload
@@ -939,7 +939,7 @@ class OpenRouterClient(_c.GeneratedClient):
     @_t.overload
     def submit_generation_feedback(self, *, payload: _T.SubmitGenerationFeedbackRequestJson, params: _T.SubmitGenerationFeedbackParams | None = None, include_response: _t.Literal[True]) -> _Effect[tuple[_T.SubmitGenerationFeedback200, _HttpClientResponse], _Errors]: ...
     def submit_generation_feedback(self, *, payload: _T.SubmitGenerationFeedbackRequestJson, params: _T.SubmitGenerationFeedbackParams | None = None, include_response: bool = False) -> _Effect[_t.Any, _Errors]:
-        """Submit structured feedback on a generation the authenticated user made. [Management key](/docs/guides/overview/auth/management-api-keys) required."""
+        """Submit structured feedback on a generation the authenticated user made. [Management key](https://openrouter.ai/docs/guides/overview/auth/management-api-keys) required."""
         return self._json(_SUBMIT_GENERATION_FEEDBACK, "/generation/feedback", params, _c.json_body(payload), include_response)
 
     @_t.overload
@@ -947,7 +947,7 @@ class OpenRouterClient(_c.GeneratedClient):
     @_t.overload
     def list_guardrails(self, *, params: _T.ListGuardrailsParams | None = None, include_response: _t.Literal[True]) -> _Effect[tuple[_T.ListGuardrails200, _HttpClientResponse], _Errors]: ...
     def list_guardrails(self, *, params: _T.ListGuardrailsParams | None = None, include_response: bool = False) -> _Effect[_t.Any, _Errors]:
-        """List all guardrails for the authenticated user. [Management key](/docs/guides/overview/auth/management-api-keys) required."""
+        """List all guardrails for the authenticated user. [Management key](https://openrouter.ai/docs/guides/overview/auth/management-api-keys) required."""
         return self._json(_LIST_GUARDRAILS, "/guardrails", params, None, include_response)
 
     @_t.overload
@@ -955,7 +955,7 @@ class OpenRouterClient(_c.GeneratedClient):
     @_t.overload
     def create_guardrail(self, *, payload: _T.CreateGuardrailRequestJson, params: _T.CreateGuardrailParams | None = None, include_response: _t.Literal[True]) -> _Effect[tuple[_T.CreateGuardrail201, _HttpClientResponse], _Errors]: ...
     def create_guardrail(self, *, payload: _T.CreateGuardrailRequestJson, params: _T.CreateGuardrailParams | None = None, include_response: bool = False) -> _Effect[_t.Any, _Errors]:
-        """Create a new guardrail for the authenticated user. [Management key](/docs/guides/overview/auth/management-api-keys) required."""
+        """Create a new guardrail for the authenticated user. [Management key](https://openrouter.ai/docs/guides/overview/auth/management-api-keys) required."""
         return self._json(_CREATE_GUARDRAIL, "/guardrails", params, _c.json_body(payload), include_response)
 
     @_t.overload
@@ -963,7 +963,7 @@ class OpenRouterClient(_c.GeneratedClient):
     @_t.overload
     def get_guardrail(self, id: str, *, params: _T.GetGuardrailParams | None = None, include_response: _t.Literal[True]) -> _Effect[tuple[_T.GetGuardrail200, _HttpClientResponse], _Errors]: ...
     def get_guardrail(self, id: str, *, params: _T.GetGuardrailParams | None = None, include_response: bool = False) -> _Effect[_t.Any, _Errors]:
-        """Get a single guardrail by ID. [Management key](/docs/guides/overview/auth/management-api-keys) required."""
+        """Get a single guardrail by ID. [Management key](https://openrouter.ai/docs/guides/overview/auth/management-api-keys) required."""
         return self._json(_GET_GUARDRAIL, f"/guardrails/{id}", params, None, include_response)
 
     @_t.overload
@@ -971,7 +971,7 @@ class OpenRouterClient(_c.GeneratedClient):
     @_t.overload
     def delete_guardrail(self, id: str, *, params: _T.DeleteGuardrailParams | None = None, include_response: _t.Literal[True]) -> _Effect[tuple[_T.DeleteGuardrail200, _HttpClientResponse], _Errors]: ...
     def delete_guardrail(self, id: str, *, params: _T.DeleteGuardrailParams | None = None, include_response: bool = False) -> _Effect[_t.Any, _Errors]:
-        """Delete an existing guardrail. [Management key](/docs/guides/overview/auth/management-api-keys) required."""
+        """Delete an existing guardrail. [Management key](https://openrouter.ai/docs/guides/overview/auth/management-api-keys) required."""
         return self._json(_DELETE_GUARDRAIL, f"/guardrails/{id}", params, None, include_response)
 
     @_t.overload
@@ -979,7 +979,7 @@ class OpenRouterClient(_c.GeneratedClient):
     @_t.overload
     def update_guardrail(self, id: str, *, payload: _T.UpdateGuardrailRequestJson, params: _T.UpdateGuardrailParams | None = None, include_response: _t.Literal[True]) -> _Effect[tuple[_T.UpdateGuardrail200, _HttpClientResponse], _Errors]: ...
     def update_guardrail(self, id: str, *, payload: _T.UpdateGuardrailRequestJson, params: _T.UpdateGuardrailParams | None = None, include_response: bool = False) -> _Effect[_t.Any, _Errors]:
-        """Update an existing guardrail. Collection fields use replace semantics: send the full desired set on every update. [Management key](/docs/guides/overview/auth/management-api-keys) required."""
+        """Update an existing guardrail. Collection fields use replace semantics: send the full desired set on every update. [Management key](https://openrouter.ai/docs/guides/overview/auth/management-api-keys) required."""
         return self._json(_UPDATE_GUARDRAIL, f"/guardrails/{id}", params, _c.json_body(payload), include_response)
 
     @_t.overload
@@ -987,7 +987,7 @@ class OpenRouterClient(_c.GeneratedClient):
     @_t.overload
     def list_guardrail_key_assignments(self, id: str, *, params: _T.ListGuardrailKeyAssignmentsParams | None = None, include_response: _t.Literal[True]) -> _Effect[tuple[_T.ListGuardrailKeyAssignments200, _HttpClientResponse], _Errors]: ...
     def list_guardrail_key_assignments(self, id: str, *, params: _T.ListGuardrailKeyAssignmentsParams | None = None, include_response: bool = False) -> _Effect[_t.Any, _Errors]:
-        """List all API key assignments for a specific guardrail. [Management key](/docs/guides/overview/auth/management-api-keys) required."""
+        """List all API key assignments for a specific guardrail. [Management key](https://openrouter.ai/docs/guides/overview/auth/management-api-keys) required."""
         return self._json(_LIST_GUARDRAIL_KEY_ASSIGNMENTS, f"/guardrails/{id}/assignments/keys", params, None, include_response)
 
     @_t.overload
@@ -995,7 +995,7 @@ class OpenRouterClient(_c.GeneratedClient):
     @_t.overload
     def bulk_assign_keys_to_guardrail(self, id: str, *, payload: _T.BulkAssignKeysToGuardrailRequestJson, params: _T.BulkAssignKeysToGuardrailParams | None = None, include_response: _t.Literal[True]) -> _Effect[tuple[_T.BulkAssignKeysToGuardrail200, _HttpClientResponse], _Errors]: ...
     def bulk_assign_keys_to_guardrail(self, id: str, *, payload: _T.BulkAssignKeysToGuardrailRequestJson, params: _T.BulkAssignKeysToGuardrailParams | None = None, include_response: bool = False) -> _Effect[_t.Any, _Errors]:
-        """Assign multiple API keys to a specific guardrail. A key may hold at most one guardrail; assigning replaces any existing assignment. [Management key](/docs/guides/overview/auth/management-api-keys) required."""
+        """Assign multiple API keys to a specific guardrail. A key may hold at most one guardrail; assigning replaces any existing assignment. [Management key](https://openrouter.ai/docs/guides/overview/auth/management-api-keys) required."""
         return self._json(_BULK_ASSIGN_KEYS_TO_GUARDRAIL, f"/guardrails/{id}/assignments/keys", params, _c.json_body(payload), include_response)
 
     @_t.overload
@@ -1003,7 +1003,7 @@ class OpenRouterClient(_c.GeneratedClient):
     @_t.overload
     def bulk_unassign_keys_from_guardrail(self, id: str, *, payload: _T.BulkUnassignKeysFromGuardrailRequestJson, params: _T.BulkUnassignKeysFromGuardrailParams | None = None, include_response: _t.Literal[True]) -> _Effect[tuple[_T.BulkUnassignKeysFromGuardrail200, _HttpClientResponse], _Errors]: ...
     def bulk_unassign_keys_from_guardrail(self, id: str, *, payload: _T.BulkUnassignKeysFromGuardrailRequestJson, params: _T.BulkUnassignKeysFromGuardrailParams | None = None, include_response: bool = False) -> _Effect[_t.Any, _Errors]:
-        """Unassign multiple API keys from a specific guardrail. [Management key](/docs/guides/overview/auth/management-api-keys) required."""
+        """Unassign multiple API keys from a specific guardrail. [Management key](https://openrouter.ai/docs/guides/overview/auth/management-api-keys) required."""
         return self._json(_BULK_UNASSIGN_KEYS_FROM_GUARDRAIL, f"/guardrails/{id}/assignments/keys/remove", params, _c.json_body(payload), include_response)
 
     @_t.overload
@@ -1011,7 +1011,7 @@ class OpenRouterClient(_c.GeneratedClient):
     @_t.overload
     def list_guardrail_member_assignments(self, id: str, *, params: _T.ListGuardrailMemberAssignmentsParams | None = None, include_response: _t.Literal[True]) -> _Effect[tuple[_T.ListGuardrailMemberAssignments200, _HttpClientResponse], _Errors]: ...
     def list_guardrail_member_assignments(self, id: str, *, params: _T.ListGuardrailMemberAssignmentsParams | None = None, include_response: bool = False) -> _Effect[_t.Any, _Errors]:
-        """List all organization member assignments for a specific guardrail. [Management key](/docs/guides/overview/auth/management-api-keys) required."""
+        """List all organization member assignments for a specific guardrail. [Management key](https://openrouter.ai/docs/guides/overview/auth/management-api-keys) required."""
         return self._json(_LIST_GUARDRAIL_MEMBER_ASSIGNMENTS, f"/guardrails/{id}/assignments/members", params, None, include_response)
 
     @_t.overload
@@ -1019,7 +1019,7 @@ class OpenRouterClient(_c.GeneratedClient):
     @_t.overload
     def bulk_assign_members_to_guardrail(self, id: str, *, payload: _T.BulkAssignMembersToGuardrailRequestJson, params: _T.BulkAssignMembersToGuardrailParams | None = None, include_response: _t.Literal[True]) -> _Effect[tuple[_T.BulkAssignMembersToGuardrail200, _HttpClientResponse], _Errors]: ...
     def bulk_assign_members_to_guardrail(self, id: str, *, payload: _T.BulkAssignMembersToGuardrailRequestJson, params: _T.BulkAssignMembersToGuardrailParams | None = None, include_response: bool = False) -> _Effect[_t.Any, _Errors]:
-        """Assign multiple organization members to a specific guardrail. [Management key](/docs/guides/overview/auth/management-api-keys) required."""
+        """Assign multiple organization members to a specific guardrail. [Management key](https://openrouter.ai/docs/guides/overview/auth/management-api-keys) required."""
         return self._json(_BULK_ASSIGN_MEMBERS_TO_GUARDRAIL, f"/guardrails/{id}/assignments/members", params, _c.json_body(payload), include_response)
 
     @_t.overload
@@ -1027,7 +1027,7 @@ class OpenRouterClient(_c.GeneratedClient):
     @_t.overload
     def bulk_unassign_members_from_guardrail(self, id: str, *, payload: _T.BulkUnassignMembersFromGuardrailRequestJson, params: _T.BulkUnassignMembersFromGuardrailParams | None = None, include_response: _t.Literal[True]) -> _Effect[tuple[_T.BulkUnassignMembersFromGuardrail200, _HttpClientResponse], _Errors]: ...
     def bulk_unassign_members_from_guardrail(self, id: str, *, payload: _T.BulkUnassignMembersFromGuardrailRequestJson, params: _T.BulkUnassignMembersFromGuardrailParams | None = None, include_response: bool = False) -> _Effect[_t.Any, _Errors]:
-        """Unassign multiple organization members from a specific guardrail. [Management key](/docs/guides/overview/auth/management-api-keys) required."""
+        """Unassign multiple organization members from a specific guardrail. [Management key](https://openrouter.ai/docs/guides/overview/auth/management-api-keys) required."""
         return self._json(_BULK_UNASSIGN_MEMBERS_FROM_GUARDRAIL, f"/guardrails/{id}/assignments/members/remove", params, _c.json_body(payload), include_response)
 
     @_t.overload
@@ -1035,7 +1035,7 @@ class OpenRouterClient(_c.GeneratedClient):
     @_t.overload
     def list_key_assignments(self, *, params: _T.ListKeyAssignmentsParams | None = None, include_response: _t.Literal[True]) -> _Effect[tuple[_T.ListKeyAssignments200, _HttpClientResponse], _Errors]: ...
     def list_key_assignments(self, *, params: _T.ListKeyAssignmentsParams | None = None, include_response: bool = False) -> _Effect[_t.Any, _Errors]:
-        """List all API key guardrail assignments for the authenticated user. [Management key](/docs/guides/overview/auth/management-api-keys) required."""
+        """List all API key guardrail assignments for the authenticated user. [Management key](https://openrouter.ai/docs/guides/overview/auth/management-api-keys) required."""
         return self._json(_LIST_KEY_ASSIGNMENTS, "/guardrails/assignments/keys", params, None, include_response)
 
     @_t.overload
@@ -1043,7 +1043,7 @@ class OpenRouterClient(_c.GeneratedClient):
     @_t.overload
     def list_member_assignments(self, *, params: _T.ListMemberAssignmentsParams | None = None, include_response: _t.Literal[True]) -> _Effect[tuple[_T.ListMemberAssignments200, _HttpClientResponse], _Errors]: ...
     def list_member_assignments(self, *, params: _T.ListMemberAssignmentsParams | None = None, include_response: bool = False) -> _Effect[_t.Any, _Errors]:
-        """List all organization member guardrail assignments for the authenticated user. [Management key](/docs/guides/overview/auth/management-api-keys) required."""
+        """List all organization member guardrail assignments for the authenticated user. [Management key](https://openrouter.ai/docs/guides/overview/auth/management-api-keys) required."""
         return self._json(_LIST_MEMBER_ASSIGNMENTS, "/guardrails/assignments/members", params, None, include_response)
 
     @_t.overload
@@ -1087,7 +1087,7 @@ class OpenRouterClient(_c.GeneratedClient):
     @_t.overload
     def list(self, *, params: _T.ListParams | None = None, include_response: _t.Literal[True]) -> _Effect[tuple[_T.List200, _HttpClientResponse], _Errors]: ...
     def list(self, *, params: _T.ListParams | None = None, include_response: bool = False) -> _Effect[_t.Any, _Errors]:
-        """List all API keys for the authenticated user. [Management key](/docs/guides/overview/auth/management-api-keys) required."""
+        """List all API keys for the authenticated user. [Management key](https://openrouter.ai/docs/guides/overview/auth/management-api-keys) required."""
         return self._json(_LIST, "/keys", params, None, include_response)
 
     @_t.overload
@@ -1095,7 +1095,7 @@ class OpenRouterClient(_c.GeneratedClient):
     @_t.overload
     def create_keys(self, *, payload: _T.CreateKeysRequestJson, params: _T.CreateKeysParams | None = None, include_response: _t.Literal[True]) -> _Effect[tuple[_T.CreateKeys201, _HttpClientResponse], _Errors]: ...
     def create_keys(self, *, payload: _T.CreateKeysRequestJson, params: _T.CreateKeysParams | None = None, include_response: bool = False) -> _Effect[_t.Any, _Errors]:
-        """Create a new API key for the authenticated user. The plaintext `key` is returned only in this response. Treat it as a write-only, sensitive value; it cannot be retrieved later. [Management key](/docs/guides/overview/auth/management-api-keys) required."""
+        """Create a new API key for the authenticated user. The plaintext `key` is returned only in this response. Treat it as a write-only, sensitive value; it cannot be retrieved later. [Management key](https://openrouter.ai/docs/guides/overview/auth/management-api-keys) required."""
         return self._json(_CREATE_KEYS, "/keys", params, _c.json_body(payload), include_response)
 
     @_t.overload
@@ -1103,7 +1103,7 @@ class OpenRouterClient(_c.GeneratedClient):
     @_t.overload
     def get_key(self, hash: str, *, params: _T.GetKeyParams | None = None, include_response: _t.Literal[True]) -> _Effect[tuple[_T.GetKey200, _HttpClientResponse], _Errors]: ...
     def get_key(self, hash: str, *, params: _T.GetKeyParams | None = None, include_response: bool = False) -> _Effect[_t.Any, _Errors]:
-        """Get a single API key by hash. [Management key](/docs/guides/overview/auth/management-api-keys) required."""
+        """Get a single API key by hash. [Management key](https://openrouter.ai/docs/guides/overview/auth/management-api-keys) required."""
         return self._json(_GET_KEY, f"/keys/{hash}", params, None, include_response)
 
     @_t.overload
@@ -1111,7 +1111,7 @@ class OpenRouterClient(_c.GeneratedClient):
     @_t.overload
     def delete_keys(self, hash: str, *, params: _T.DeleteKeysParams | None = None, include_response: _t.Literal[True]) -> _Effect[tuple[_T.DeleteKeys200, _HttpClientResponse], _Errors]: ...
     def delete_keys(self, hash: str, *, params: _T.DeleteKeysParams | None = None, include_response: bool = False) -> _Effect[_t.Any, _Errors]:
-        """Delete an existing API key. [Management key](/docs/guides/overview/auth/management-api-keys) required."""
+        """Delete an existing API key. [Management key](https://openrouter.ai/docs/guides/overview/auth/management-api-keys) required."""
         return self._json(_DELETE_KEYS, f"/keys/{hash}", params, None, include_response)
 
     @_t.overload
@@ -1119,7 +1119,7 @@ class OpenRouterClient(_c.GeneratedClient):
     @_t.overload
     def update_keys(self, hash: str, *, payload: _T.UpdateKeysRequestJson, params: _T.UpdateKeysParams | None = None, include_response: _t.Literal[True]) -> _Effect[tuple[_T.UpdateKeys200, _HttpClientResponse], _Errors]: ...
     def update_keys(self, hash: str, *, payload: _T.UpdateKeysRequestJson, params: _T.UpdateKeysParams | None = None, include_response: bool = False) -> _Effect[_t.Any, _Errors]:
-        """Update an existing API key. [Management key](/docs/guides/overview/auth/management-api-keys) required."""
+        """Update an existing API key. [Management key](https://openrouter.ai/docs/guides/overview/auth/management-api-keys) required."""
         return self._json(_UPDATE_KEYS, f"/keys/{hash}", params, _c.json_body(payload), include_response)
 
     @_t.overload
@@ -1179,7 +1179,7 @@ class OpenRouterClient(_c.GeneratedClient):
     @_t.overload
     def list_observability_destinations(self, *, params: _T.ListObservabilityDestinationsParams | None = None, include_response: _t.Literal[True]) -> _Effect[tuple[_T.ListObservabilityDestinations200, _HttpClientResponse], _Errors]: ...
     def list_observability_destinations(self, *, params: _T.ListObservabilityDestinationsParams | None = None, include_response: bool = False) -> _Effect[_t.Any, _Errors]:
-        """List the observability destinations configured for the authenticated entity's default workspace. Use the `workspace_id` query parameter to scope the result to a different workspace. Only destinations with stable release status are surfaced — destinations of other types are excluded. [Management key](/docs/guides/overview/auth/management-api-keys) required."""
+        """List the observability destinations configured for the authenticated entity's default workspace. Use the `workspace_id` query parameter to scope the result to a different workspace. Only destinations with stable release status are surfaced — destinations of other types are excluded. [Management key](https://openrouter.ai/docs/guides/overview/auth/management-api-keys) required."""
         return self._json(_LIST_OBSERVABILITY_DESTINATIONS, "/observability/destinations", params, None, include_response)
 
     @_t.overload
@@ -1187,7 +1187,7 @@ class OpenRouterClient(_c.GeneratedClient):
     @_t.overload
     def create_observability_destination(self, *, payload: _T.CreateObservabilityDestinationRequestJson, params: _T.CreateObservabilityDestinationParams | None = None, include_response: _t.Literal[True]) -> _Effect[tuple[_T.CreateObservabilityDestination201, _HttpClientResponse], _Errors]: ...
     def create_observability_destination(self, *, payload: _T.CreateObservabilityDestinationRequestJson, params: _T.CreateObservabilityDestinationParams | None = None, include_response: bool = False) -> _Effect[_t.Any, _Errors]:
-        """Create a new observability destination. A maximum of 5 destinations per type is allowed. Defaults to the authenticated entity's default workspace; use the `workspace_id` body field to scope to a different workspace. [Management key](/docs/guides/overview/auth/management-api-keys) required."""
+        """Create a new observability destination. A maximum of 5 destinations per type is allowed. Defaults to the authenticated entity's default workspace; use the `workspace_id` body field to scope to a different workspace. [Management key](https://openrouter.ai/docs/guides/overview/auth/management-api-keys) required."""
         return self._json(_CREATE_OBSERVABILITY_DESTINATION, "/observability/destinations", params, _c.json_body(payload), include_response)
 
     @_t.overload
@@ -1195,7 +1195,7 @@ class OpenRouterClient(_c.GeneratedClient):
     @_t.overload
     def get_observability_destination(self, id: str, *, params: _T.GetObservabilityDestinationParams | None = None, include_response: _t.Literal[True]) -> _Effect[tuple[_T.GetObservabilityDestination200, _HttpClientResponse], _Errors]: ...
     def get_observability_destination(self, id: str, *, params: _T.GetObservabilityDestinationParams | None = None, include_response: bool = False) -> _Effect[_t.Any, _Errors]:
-        """Fetch a single observability destination by its UUID. [Management key](/docs/guides/overview/auth/management-api-keys) required."""
+        """Fetch a single observability destination by its UUID. [Management key](https://openrouter.ai/docs/guides/overview/auth/management-api-keys) required."""
         return self._json(_GET_OBSERVABILITY_DESTINATION, f"/observability/destinations/{id}", params, None, include_response)
 
     @_t.overload
@@ -1203,7 +1203,7 @@ class OpenRouterClient(_c.GeneratedClient):
     @_t.overload
     def delete_observability_destination(self, id: str, *, params: _T.DeleteObservabilityDestinationParams | None = None, include_response: _t.Literal[True]) -> _Effect[tuple[_T.DeleteObservabilityDestination200, _HttpClientResponse], _Errors]: ...
     def delete_observability_destination(self, id: str, *, params: _T.DeleteObservabilityDestinationParams | None = None, include_response: bool = False) -> _Effect[_t.Any, _Errors]:
-        """Delete an existing observability destination. This performs a soft delete. [Management key](/docs/guides/overview/auth/management-api-keys) required."""
+        """Delete an existing observability destination. This performs a soft delete. [Management key](https://openrouter.ai/docs/guides/overview/auth/management-api-keys) required."""
         return self._json(_DELETE_OBSERVABILITY_DESTINATION, f"/observability/destinations/{id}", params, None, include_response)
 
     @_t.overload
@@ -1211,7 +1211,7 @@ class OpenRouterClient(_c.GeneratedClient):
     @_t.overload
     def update_observability_destination(self, id: str, *, payload: _T.UpdateObservabilityDestinationRequestJson, params: _T.UpdateObservabilityDestinationParams | None = None, include_response: _t.Literal[True]) -> _Effect[tuple[_T.UpdateObservabilityDestination200, _HttpClientResponse], _Errors]: ...
     def update_observability_destination(self, id: str, *, payload: _T.UpdateObservabilityDestinationRequestJson, params: _T.UpdateObservabilityDestinationParams | None = None, include_response: bool = False) -> _Effect[_t.Any, _Errors]:
-        """Update an existing observability destination. Only the fields provided in the request body are updated. [Management key](/docs/guides/overview/auth/management-api-keys) required."""
+        """Update an existing observability destination. Only the fields provided in the request body are updated. [Management key](https://openrouter.ai/docs/guides/overview/auth/management-api-keys) required."""
         return self._json(_UPDATE_OBSERVABILITY_DESTINATION, f"/observability/destinations/{id}", params, _c.json_body(payload), include_response)
 
     @_t.overload
@@ -1219,7 +1219,7 @@ class OpenRouterClient(_c.GeneratedClient):
     @_t.overload
     def list_organization_members(self, *, params: _T.ListOrganizationMembersParams | None = None, include_response: _t.Literal[True]) -> _Effect[tuple[_T.ListOrganizationMembers200, _HttpClientResponse], _Errors]: ...
     def list_organization_members(self, *, params: _T.ListOrganizationMembersParams | None = None, include_response: bool = False) -> _Effect[_t.Any, _Errors]:
-        """List all members of the organization associated with the authenticated management key. [Management key](/docs/guides/overview/auth/management-api-keys) required."""
+        """List all members of the organization associated with the authenticated management key. [Management key](https://openrouter.ai/docs/guides/overview/auth/management-api-keys) required."""
         return self._json(_LIST_ORGANIZATION_MEMBERS, "/organization/members", params, None, include_response)
 
     @_t.overload
@@ -1347,7 +1347,7 @@ class OpenRouterClient(_c.GeneratedClient):
     @_t.overload
     def list_workspaces(self, *, params: _T.ListWorkspacesParams | None = None, include_response: _t.Literal[True]) -> _Effect[tuple[_T.ListWorkspaces200, _HttpClientResponse], _Errors]: ...
     def list_workspaces(self, *, params: _T.ListWorkspacesParams | None = None, include_response: bool = False) -> _Effect[_t.Any, _Errors]:
-        """List all workspaces for the authenticated user. [Management key](/docs/guides/overview/auth/management-api-keys) required."""
+        """List all workspaces for the authenticated user. [Management key](https://openrouter.ai/docs/guides/overview/auth/management-api-keys) required."""
         return self._json(_LIST_WORKSPACES, "/workspaces", params, None, include_response)
 
     @_t.overload
@@ -1355,7 +1355,7 @@ class OpenRouterClient(_c.GeneratedClient):
     @_t.overload
     def create_workspace(self, *, payload: _T.CreateWorkspaceRequestJson, params: _T.CreateWorkspaceParams | None = None, include_response: _t.Literal[True]) -> _Effect[tuple[_T.CreateWorkspace201, _HttpClientResponse], _Errors]: ...
     def create_workspace(self, *, payload: _T.CreateWorkspaceRequestJson, params: _T.CreateWorkspaceParams | None = None, include_response: bool = False) -> _Effect[_t.Any, _Errors]:
-        """Create a new workspace for the authenticated user. [Management key](/docs/guides/overview/auth/management-api-keys) required."""
+        """Create a new workspace for the authenticated user. [Management key](https://openrouter.ai/docs/guides/overview/auth/management-api-keys) required."""
         return self._json(_CREATE_WORKSPACE, "/workspaces", params, _c.json_body(payload), include_response)
 
     @_t.overload
@@ -1363,7 +1363,7 @@ class OpenRouterClient(_c.GeneratedClient):
     @_t.overload
     def get_workspace(self, id: str, *, params: _T.GetWorkspaceParams | None = None, include_response: _t.Literal[True]) -> _Effect[tuple[_T.GetWorkspace200, _HttpClientResponse], _Errors]: ...
     def get_workspace(self, id: str, *, params: _T.GetWorkspaceParams | None = None, include_response: bool = False) -> _Effect[_t.Any, _Errors]:
-        """Get a single workspace by ID or slug. [Management key](/docs/guides/overview/auth/management-api-keys) required."""
+        """Get a single workspace by ID or slug. [Management key](https://openrouter.ai/docs/guides/overview/auth/management-api-keys) required."""
         return self._json(_GET_WORKSPACE, f"/workspaces/{id}", params, None, include_response)
 
     @_t.overload
@@ -1371,7 +1371,7 @@ class OpenRouterClient(_c.GeneratedClient):
     @_t.overload
     def delete_workspace(self, id: str, *, params: _T.DeleteWorkspaceParams | None = None, include_response: _t.Literal[True]) -> _Effect[tuple[_T.DeleteWorkspace200, _HttpClientResponse], _Errors]: ...
     def delete_workspace(self, id: str, *, params: _T.DeleteWorkspaceParams | None = None, include_response: bool = False) -> _Effect[_t.Any, _Errors]:
-        """Delete an existing workspace. The default workspace cannot be deleted. Workspaces with active API keys cannot be deleted; remove the keys first. [Management key](/docs/guides/overview/auth/management-api-keys) required."""
+        """Delete an existing workspace. The default workspace cannot be deleted. Workspaces with active API keys cannot be deleted; remove the keys first. [Management key](https://openrouter.ai/docs/guides/overview/auth/management-api-keys) required."""
         return self._json(_DELETE_WORKSPACE, f"/workspaces/{id}", params, None, include_response)
 
     @_t.overload
@@ -1379,7 +1379,7 @@ class OpenRouterClient(_c.GeneratedClient):
     @_t.overload
     def update_workspace(self, id: str, *, payload: _T.UpdateWorkspaceRequestJson, params: _T.UpdateWorkspaceParams | None = None, include_response: _t.Literal[True]) -> _Effect[tuple[_T.UpdateWorkspace200, _HttpClientResponse], _Errors]: ...
     def update_workspace(self, id: str, *, payload: _T.UpdateWorkspaceRequestJson, params: _T.UpdateWorkspaceParams | None = None, include_response: bool = False) -> _Effect[_t.Any, _Errors]:
-        """Update an existing workspace by ID or slug. [Management key](/docs/guides/overview/auth/management-api-keys) required."""
+        """Update an existing workspace by ID or slug. [Management key](https://openrouter.ai/docs/guides/overview/auth/management-api-keys) required."""
         return self._json(_UPDATE_WORKSPACE, f"/workspaces/{id}", params, _c.json_body(payload), include_response)
 
     @_t.overload
@@ -1387,7 +1387,7 @@ class OpenRouterClient(_c.GeneratedClient):
     @_t.overload
     def list_workspace_budgets(self, id: str, *, params: _T.ListWorkspaceBudgetsParams | None = None, include_response: _t.Literal[True]) -> _Effect[tuple[_T.ListWorkspaceBudgets200, _HttpClientResponse], _Errors]: ...
     def list_workspace_budgets(self, id: str, *, params: _T.ListWorkspaceBudgetsParams | None = None, include_response: bool = False) -> _Effect[_t.Any, _Errors]:
-        """List all budgets configured for a workspace. [Management key](/docs/guides/overview/auth/management-api-keys) required."""
+        """List all budgets configured for a workspace. [Management key](https://openrouter.ai/docs/guides/overview/auth/management-api-keys) required."""
         return self._json(_LIST_WORKSPACE_BUDGETS, f"/workspaces/{id}/budgets", params, None, include_response)
 
     @_t.overload
@@ -1395,7 +1395,7 @@ class OpenRouterClient(_c.GeneratedClient):
     @_t.overload
     def upsert_workspace_budget(self, id: str, interval: str, *, payload: _T.UpsertWorkspaceBudgetRequestJson, params: _T.UpsertWorkspaceBudgetParams | None = None, include_response: _t.Literal[True]) -> _Effect[tuple[_T.UpsertWorkspaceBudget200, _HttpClientResponse], _Errors]: ...
     def upsert_workspace_budget(self, id: str, interval: str, *, payload: _T.UpsertWorkspaceBudgetRequestJson, params: _T.UpsertWorkspaceBudgetParams | None = None, include_response: bool = False) -> _Effect[_t.Any, _Errors]:
-        """Create or update the budget for a given interval. Budget limits must strictly decrease as the interval narrows (lifetime > monthly > weekly > daily). [Management key](/docs/guides/overview/auth/management-api-keys) required."""
+        """Create or update the budget for a given interval. Budget limits must strictly decrease as the interval narrows (lifetime > monthly > weekly > daily). [Management key](https://openrouter.ai/docs/guides/overview/auth/management-api-keys) required."""
         return self._json(_UPSERT_WORKSPACE_BUDGET, f"/workspaces/{id}/budgets/{interval}", params, _c.json_body(payload), include_response)
 
     @_t.overload
@@ -1403,7 +1403,7 @@ class OpenRouterClient(_c.GeneratedClient):
     @_t.overload
     def delete_workspace_budget(self, id: str, interval: str, *, params: _T.DeleteWorkspaceBudgetParams | None = None, include_response: _t.Literal[True]) -> _Effect[tuple[_T.DeleteWorkspaceBudget200, _HttpClientResponse], _Errors]: ...
     def delete_workspace_budget(self, id: str, interval: str, *, params: _T.DeleteWorkspaceBudgetParams | None = None, include_response: bool = False) -> _Effect[_t.Any, _Errors]:
-        """Remove the budget for a given interval. [Management key](/docs/guides/overview/auth/management-api-keys) required."""
+        """Remove the budget for a given interval. [Management key](https://openrouter.ai/docs/guides/overview/auth/management-api-keys) required."""
         return self._json(_DELETE_WORKSPACE_BUDGET, f"/workspaces/{id}/budgets/{interval}", params, None, include_response)
 
     @_t.overload
@@ -1411,7 +1411,7 @@ class OpenRouterClient(_c.GeneratedClient):
     @_t.overload
     def list_workspace_members(self, id: str, *, params: _T.ListWorkspaceMembersParams | None = None, include_response: _t.Literal[True]) -> _Effect[tuple[_T.ListWorkspaceMembers200, _HttpClientResponse], _Errors]: ...
     def list_workspace_members(self, id: str, *, params: _T.ListWorkspaceMembersParams | None = None, include_response: bool = False) -> _Effect[_t.Any, _Errors]:
-        """List all members of a workspace. Returns paginated results. For the default workspace, returns all organization members (implicit membership). [Management key](/docs/guides/overview/auth/management-api-keys) required."""
+        """List all members of a workspace. Returns paginated results. For the default workspace, returns all organization members (implicit membership). [Management key](https://openrouter.ai/docs/guides/overview/auth/management-api-keys) required."""
         return self._json(_LIST_WORKSPACE_MEMBERS, f"/workspaces/{id}/members", params, None, include_response)
 
     @_t.overload
@@ -1419,7 +1419,7 @@ class OpenRouterClient(_c.GeneratedClient):
     @_t.overload
     def bulk_add_workspace_members(self, id: str, *, payload: _T.BulkAddWorkspaceMembersRequestJson, params: _T.BulkAddWorkspaceMembersParams | None = None, include_response: _t.Literal[True]) -> _Effect[tuple[_T.BulkAddWorkspaceMembers200, _HttpClientResponse], _Errors]: ...
     def bulk_add_workspace_members(self, id: str, *, payload: _T.BulkAddWorkspaceMembersRequestJson, params: _T.BulkAddWorkspaceMembersParams | None = None, include_response: bool = False) -> _Effect[_t.Any, _Errors]:
-        """Add multiple organization members to a workspace. Members are assigned the same role they hold in the organization. [Management key](/docs/guides/overview/auth/management-api-keys) required."""
+        """Add multiple organization members to a workspace. Members are assigned the same role they hold in the organization. [Management key](https://openrouter.ai/docs/guides/overview/auth/management-api-keys) required."""
         return self._json(_BULK_ADD_WORKSPACE_MEMBERS, f"/workspaces/{id}/members/add", params, _c.json_body(payload), include_response)
 
     @_t.overload
@@ -1427,7 +1427,7 @@ class OpenRouterClient(_c.GeneratedClient):
     @_t.overload
     def bulk_remove_workspace_members(self, id: str, *, payload: _T.BulkRemoveWorkspaceMembersRequestJson, params: _T.BulkRemoveWorkspaceMembersParams | None = None, include_response: _t.Literal[True]) -> _Effect[tuple[_T.BulkRemoveWorkspaceMembers200, _HttpClientResponse], _Errors]: ...
     def bulk_remove_workspace_members(self, id: str, *, payload: _T.BulkRemoveWorkspaceMembersRequestJson, params: _T.BulkRemoveWorkspaceMembersParams | None = None, include_response: bool = False) -> _Effect[_t.Any, _Errors]:
-        """Remove multiple members from a workspace. Members with active API keys in the workspace cannot be removed. SCIM-managed members cannot be removed; changes must be made in your identity provider. [Management key](/docs/guides/overview/auth/management-api-keys) required."""
+        """Remove multiple members from a workspace. Members with active API keys in the workspace cannot be removed. SCIM-managed members cannot be removed; changes must be made in your identity provider. [Management key](https://openrouter.ai/docs/guides/overview/auth/management-api-keys) required."""
         return self._json(_BULK_REMOVE_WORKSPACE_MEMBERS, f"/workspaces/{id}/members/remove", params, _c.json_body(payload), include_response)
 
 

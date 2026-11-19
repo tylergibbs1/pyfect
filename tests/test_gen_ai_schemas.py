@@ -34,7 +34,8 @@ def _script() -> Any:
 
 gen = _script()
 
-_SCHEMAS_ONLY = gen.Target("openai", "OpenAI", "FunctionToolCall")
+_SITE = "https://docs.example"
+_SCHEMAS_ONLY = gen.Target("openai", "OpenAI", "FunctionToolCall", docs_site=_SITE)
 _TYPES_IMPORT = "from pyfect.ai.openai.generated import types as _T\n"
 
 
@@ -218,7 +219,7 @@ export interface ThingClient {
 }
 """
 
-_THING = gen.Target("thing", "Thing", "Thing", "Thing")
+_THING = gen.Target("thing", "Thing", "Thing", "Thing", docs_site=_SITE)
 
 
 def test_client_operations():
@@ -232,6 +233,32 @@ def test_client_operations():
     assert 'return self._json(_GET_THING, f"/things/{id}", params, None, include_response)' in text
     assert '"""Gets a thing."""' in text
     compile(text, "client.py", "exec")
+
+
+def test_a_docs_link_to_a_path_points_at_the_providers_site():
+    """The spec links to its own site's pages by path; the API reference renders the
+    docstring on pyfect.dev, where that path is a 404."""
+    linked = _CLIENT.replace(
+        "Gets a thing.", "Gets a thing. [Key](/docs/keys) or [any](https://other.example/x)."
+    )
+    text = gen.generate(linked % "", _THING)["client.py"]
+    assert (
+        '"""Gets a thing. [Key](https://docs.example/docs/keys) or '
+        '[any](https://other.example/x)."""'
+    ) in text
+
+
+@pytest.mark.parametrize("link", ["docs/keys", "#keys", "//cdn.example/x"])
+def test_a_docs_link_relative_to_the_page_names_the_operation(link: str):
+    linked = _CLIENT.replace("Gets a thing.", f"Gets a [thing]({link}).")
+    with pytest.raises(gen.GenerateError, match=r"^getThing: a relative link"):
+        gen.generate(linked % "", _THING)
+
+
+@pytest.mark.parametrize("site", ["http://docs.example", "https://docs.example/", "docs.example"])
+def test_a_docs_site_is_an_https_origin(site: str):
+    with pytest.raises(gen.GenerateError, match="not an https origin"):
+        gen.generate(_CLIENT % "", gen.Target("thing", "Thing", "Thing", "Thing", docs_site=site))
 
 
 def test_unknown_client_operation_names_it():
@@ -395,7 +422,9 @@ def test_a_patch_matches_its_text_exactly_once(tmp_path: Path, source: str):
     generated = tmp_path / "packages" / "ai" / "openai" / "src" / "Generated.ts"
     generated.parent.mkdir(parents=True)
     generated.write_text(source)
-    target = gen.Target("openai", "OpenAI", "FunctionToolCall", patches=(("a", "b"),))
+    target = gen.Target(
+        "openai", "OpenAI", "FunctionToolCall", patches=(("a", "b"),), docs_site=_SITE
+    )
     with pytest.raises(gen.GenerateError, match="a patch matches"):
         target.read_source(tmp_path)
 
@@ -404,7 +433,11 @@ def test_a_key_required_in_types_decodes_when_absent_and_stays_required_to_read(
     """A patch release loosens decoding only: the exported TypedDict keeps the key required
     (reading it stays legal under pyright) and says why on its line."""
     target = gen.Target(
-        "openai", "OpenAI", "FunctionToolCall", required_in_types=(("Options", "max_tokens"),)
+        "openai",
+        "OpenAI",
+        "FunctionToolCall",
+        required_in_types=(("Options", "max_tokens"),),
+        docs_site=_SITE,
     )
     files = gen.generate(_STRUCT, target)
     line = next(x for x in files["types.py"].splitlines() if x.startswith("Options = "))
@@ -416,7 +449,11 @@ def test_a_key_required_in_types_decodes_when_absent_and_stays_required_to_read(
 
 def test_a_key_required_in_types_must_name_an_optional_key():
     target = gen.Target(
-        "openai", "OpenAI", "FunctionToolCall", required_in_types=(("Options", "name"),)
+        "openai",
+        "OpenAI",
+        "FunctionToolCall",
+        required_in_types=(("Options", "name"),),
+        docs_site=_SITE,
     )
     with pytest.raises(gen.GenerateError, match="names no optional key"):
         gen.generate(_STRUCT, target)
@@ -440,8 +477,20 @@ def test_a_target_pinned_to_a_release_reads_its_tag(tmp_path: Path) -> None:
     git(*identity, "commit", "-qm", "old")
     git(*identity, "tag", "effect@9.0.0")
     (tmp_path / path).write_text("new")
-    assert gen.Target("thing", "Thing", "Thing").read_source(tmp_path) == "new"
-    assert gen.Target("thing", "Thing", "Thing", release="9.0.0").read_source(tmp_path) == "old"
-    assert gen.Target("thing", "Thing", "Thing", release="9.0.1").read_source(tmp_path) == "new"
+    assert gen.Target("thing", "Thing", "Thing", docs_site=_SITE).read_source(tmp_path) == "new"
+    assert (
+        gen.Target("thing", "Thing", "Thing", docs_site=_SITE, release="9.0.0").read_source(
+            tmp_path
+        )
+        == "old"
+    )
+    assert (
+        gen.Target("thing", "Thing", "Thing", docs_site=_SITE, release="9.0.1").read_source(
+            tmp_path
+        )
+        == "new"
+    )
     with pytest.raises(gen.GenerateError, match=r"effect@8\.0\.0"):
-        gen.Target("thing", "Thing", "Thing", release="8.0.0").read_source(tmp_path)
+        gen.Target("thing", "Thing", "Thing", docs_site=_SITE, release="8.0.0").read_source(
+            tmp_path
+        )

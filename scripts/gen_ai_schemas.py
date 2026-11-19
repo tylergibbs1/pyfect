@@ -58,6 +58,9 @@ class Target:
     example: str
     """A schema the package docstring decodes."""
     client_title: str | None = None
+    docs_site: str = field(kw_only=True)
+    """The origin of the provider's docs, where the spec's links to a path point
+    (``gen_ai_client.ClientTarget.docs_site``)."""
     patches: tuple[tuple[str, str], ...] = ()
     """Replacements applied to the reference checkout's Generated.ts, each of a text that
     occurs once: a fix Effect made after the release the checkout is on."""
@@ -113,7 +116,9 @@ def _git_show(reference: Path, tag: str, path: str) -> str:
     return result.stdout
 
 
-OPENAI = Target("openai", "OpenAI", "FunctionToolCall", "OpenAi")
+OPENAI = Target(
+    "openai", "OpenAI", "FunctionToolCall", "OpenAi", docs_site="https://developers.openai.com"
+)
 # Effect fb998b526 (4.1.4, #10505): tool calls without an `id` and stream deltas without an
 # `index` decode. The rest of 4.1.4's regeneration changes the API, so it waits for a minor.
 _INDEX_DESCRIPTION = '{ "description": "Tool call index in the array" }'
@@ -157,6 +162,7 @@ OPENROUTER = Target(
     "OpenRouter",
     "ChatResult",
     "OpenRouter",
+    docs_site="https://openrouter.ai",
     patches=_OPENROUTER_PATCHES,
     required_in_types=(("ChatToolCall", "id"), ("ChatStreamToolCall", "index")),
     # 4.1.4's regeneration from a newer spec (#10521) renames or removes hundreds of exported
@@ -910,7 +916,9 @@ def generate(source: str, target: Target) -> dict[str, str]:
         try:
             files["client.py"] = gen_ai_client.generate_client(
                 source,
-                gen_ai_client.ClientTarget(target.title, package, target.client_title),
+                gen_ai_client.ClientTarget(
+                    target.title, package, target.client_title, target.docs_site
+                ),
                 set(type_names),
             )
         except gen_ai_client.ClientShapeError as error:
