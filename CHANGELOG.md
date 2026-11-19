@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.6.13 (2026-11-19)
 
 ### Added
 
@@ -25,11 +25,6 @@
   cancels the waiter again at every await and the wait awaited even after the fiber was done.
   `from_async` and `try_async` cancel an anyio coroutine when the fiber is interrupted. Trio is
   not supported (`run_async` raises `RuntimeError("no running event loop")` there).
-- Schema: a field's `Annotated` metadata carries checks. In a schema class or a TypedDict given
-  to `S.Struct`, `on_hand: Annotated[int, S.is_greater_than_or_equal_to(0)]` is `S.Int` with
-  that check, when constructing and when decoding; checks under a `type` alias or a `NewType`
-  run too, innermost first. Metadata that is not a check is still ignored, and an explicit
-  `S.field(schema)` still wins over the annotation. Before, such checks were silently dropped.
 - Schema: a schema class whose field annotation has no schema (`value: complex`) raises
   `TypeError` where the class is defined, naming the field (`Unsupported.value: No schema for
   the annotation ...`), instead of on first use. An annotation naming something not defined yet
@@ -57,10 +52,10 @@
   The result comes back as the effect's value; a raised exception as a defect (`call`) or an
   `UnknownError` / `catch=` failure (`try_call`), as itself when it pickles. Interrupting
   withdraws a queued call and abandons a running one; releasing the layer closes every
-  interpreter, waiting for abandoned calls to return. On the GIL build 8 calls of pure-Python work ran 7x as fast as one at a time
-  (`fx.blocking`: 1x); see the new "Subinterpreters" guide and `benchmarks/interpreter_pool.py`.
-  On 3.13 the layer dies with `InterpretersUnavailableError`.
-
+  interpreter, so it waits for an abandoned call to return. On the GIL build 8 calls of
+  pure-Python work ran 7x as fast as one at a time (`fx.blocking`: 1x); see the new
+  "Subinterpreters" guide and `benchmarks/interpreter_pool.py`. On 3.13 the layer dies with
+  `InterpretersUnavailableError`.
 - Testing: `pyfect.testing.leave_out_host_freezes(source)` leaves the time the host froze the
   whole process for out of every test's timeout, up to the timeout again; `source` returns a
   `HostFreezes(total, settling)`. A timeout that left time out says so: "test timed out after
