@@ -129,3 +129,13 @@ def test_rpc_service_calls_its_handlers_streams_and_catches_the_typed_error():
         "[x] write docs",
         "[ ] ship it",
     ]
+
+
+def test_sql_sqlite_binds_values_and_a_failed_transaction_leaves_the_table_unchanged():
+    assert run_example("sql_sqlite.py").splitlines() == [
+        "migrated [(1, 'create_items')]",
+        "('SELECT * FROM items WHERE name = ?', (\"Ada's jam\",))",
+        "before: ['apple=3', 'pear=1', \"Ada's jam=2\"]",
+        "order failed: OutOfStock(name='pear')",
+        "after:  ['apple=3', 'pear=1', \"Ada's jam=2\"]",
+    ]
