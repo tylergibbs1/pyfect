@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- AI / OpenRouter: a tool result whose `model_output` holds a file sent the file as a
+  `[image/png omitted]` placeholder. It is now sent as content items in order (text, then
+  `image_url`, `file` or `input_audio`), empty text dropped and the cache breakpoint on the
+  last item; output with only text is still sent as joined text (Effect #10741).
+
 ## 0.6.14 (2026-11-19)
 
 0.6.13 was tagged but never published: its release workflow could not start.

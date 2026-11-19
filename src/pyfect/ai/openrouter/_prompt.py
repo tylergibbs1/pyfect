@@ -97,8 +97,20 @@ def _invalid(description: str) -> PT.UnsupportedInput:
     return PT.unsupported(MODULE, "prepareMessages", InvalidUserInputError(description=description))
 
 
-def _file(part: Pr.FilePart) -> Block:
+def _content_item(part: Pr.TextPart | Pr.FilePart, fallback: object = None) -> Block:
+    """A text or file part as a content item, cached as it asks, else as
+    ``fallback`` (Effect's ``prepareContentItem``)."""
+    if isinstance(part, Pr.TextPart):
+        control = cache_control(part)
+        block = {"type": "text", "text": part.text}
+        return _with_cache(block, fallback if control is None else control)
+    return _file(part, fallback)
+
+
+def _file(part: Pr.FilePart, fallback: object = None) -> Block:
     control = cache_control(part)
+    if control is None:
+        control = fallback
     data = part.data
     media_type = part.media_type
     if media_type.startswith("image/"):
@@ -141,13 +153,7 @@ def _user(message: Pr.UserMessage) -> Block:
     )
     blocks: list[Block] = []
     for index, part in enumerate(parts):
-        if isinstance(part, Pr.TextPart):
-            control = cache_control(part)
-            if control is None and index == last_text:
-                control = message_control
-            blocks.append(_with_cache({"type": "text", "text": part.text}, control))
-        else:
-            blocks.append(_file(part))
+        blocks.append(_content_item(part, message_control if index == last_text else None))
     return {"role": "user", "content": blocks}
 
 
@@ -242,17 +248,31 @@ def _tool(message: Pr.ToolMessage) -> list[Block]:
     message_control = cache_control(message)
     messages: list[Block] = []
     for index, part in enumerate(results):
-        text = P.tool_result_text(part)
         control = cache_control(part)
         if control is None and index == len(results) - 1:
             control = message_control
-        content: object = (
-            [{"type": "text", "text": text, "cache_control": control}]
-            if control is not None and text
-            else text
-        )
+        content = _tool_content(part, control)
         messages.append({"role": "tool", "tool_call_id": part.id, "content": content})
     return messages
+
+
+def _tool_content(part: Pr.ToolResultPart, control: object) -> object:
+    """A model output with a file as its content items in order, empty text
+    dropped and the cache breakpoint on the last; otherwise text."""
+    output = part.model_output
+    if output is not None and any(isinstance(item, Pr.FilePart) for item in output):
+        items = [item for item in output if not isinstance(item, Pr.TextPart) or item.text]
+        last = len(items) - 1
+        return [
+            _content_item(item, control if index == last else None)
+            for index, item in enumerate(items)
+        ]
+    text = P.tool_result_text(part)
+    return (
+        [{"type": "text", "text": text, "cache_control": control}]
+        if control is not None and text
+        else text
+    )
 
 
 def prepare_messages(prompt: Pr.Prompt) -> list[Block]:

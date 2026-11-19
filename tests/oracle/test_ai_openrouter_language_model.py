@@ -294,30 +294,42 @@ _MODEL_OUTPUT_CASES = [
     pytest.param(
         [
             {"type": "text", "text": "Screenshot"},
+            {"type": "text", "text": ""},
+            {"type": "file", "mediaType": "image/png", "data": "iVBORw0KGgo="},
+        ],
+        {"openrouter": {"cacheControl": {"type": "ephemeral"}}},
+        [
+            {"type": "text", "text": "Screenshot"},
             {
-                "type": "file",
-                "mediaType": "image/png",
-                "fileName": "screenshot.png",
-                "data": "iVBORw0KGgo=",
+                "type": "image_url",
+                "image_url": {"url": "data:image/png;base64,iVBORw0KGgo="},
+                "cache_control": {"type": "ephemeral"},
             },
         ],
-        "Screenshot\n[image/png screenshot.png omitted]",
-        id="as text with file placeholders",
+        id="as ordered items with the breakpoint on the final image",
     ),
-    pytest.param([], "", id="as an empty string when it is empty"),
+    pytest.param(
+        [{"type": "text", "text": "First"}, {"type": "text", "text": "Second"}],
+        {},
+        "First\nSecond",
+        id="as joined text when it has only text",
+    ),
+    pytest.param([], {}, "", id="as an empty string when it is empty"),
 ]
 
 
-@pytest.mark.parametrize(("model_output", "content"), _MODEL_OUTPUT_CASES)
+@pytest.mark.parametrize(("model_output", "provider_options", "content"), _MODEL_OUTPUT_CASES)
 @testing.effect
-def test_tool_result_model_output(model_output: list[Any], content: str):
+def test_tool_result_model_output(model_output: list[Any], provider_options: Any, content: object):
     """OpenRouterLanguageModel / generateText / message preparation / sends tool result model
-    output as text with file placeholders / as an empty string when it is empty"""
+    output as ordered items with the breakpoint on the final image / as joined text when it
+    has only text / as an empty string when it is empty"""
     result = Pr.ToolResultPart(
         id="call_image",
         name="image_tool",
         result={"output": "APPLICATION_ONLY"},
         is_failure=False,
+        options=provider_options,
         model_output=tuple(S.decode_unknown_sync(S.Array(Pr.TOOL_MODEL_OUTPUT_PART))(model_output)),
     )
     messages = yield from _messages(
