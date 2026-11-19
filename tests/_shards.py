@@ -6,14 +6,21 @@ Files are packed by their recorded duration (``tests/shard_durations.json``, wri
 finishes at about the same time. A file longer than a shard's even share would leave its shard
 behind the others, so its tests are spread instead: each test goes to the shard its id
 hashes to. A file with no recorded duration goes to the shard its path hashes to. Either way
-every test lands in exactly one shard. ``--shard-manifest PATH`` writes
+every test lands in exactly one shard. ``--shard-manifest=PATH`` writes
 the collected test ids, which CI's ``check`` job compares with a full collection
 (``scripts/test_shards.py verify``), so no test is skipped or run twice.
+
+Every option takes its value after ``=``: pytest picks the rootdir and the initial conftests
+before a conftest plugin's options exist, so a value given as its own word reads as a test
+path. One that exists (a manifest the controller has written, which a replacement xdist worker
+then sees) moves the rootdir or skips tests/conftest.py, and the option is unrecognized.
 """
 
 import json
+import os
+import shlex
 import zlib
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -153,15 +160,33 @@ class _Timings:
         self.path.write_text(json.dumps(rounded, indent=1) + "\n", encoding="utf-8")
 
 
+_OPTIONS: Mapping[str, tuple[Callable[[str], object], str]] = {
+    "--shard": (parse_shard, "collect only shard K of N (--shard=K/N)"),
+    "--shard-manifest": (Path, "write the collected test ids here"),
+    "--shard-durations": (Path, "write each file's seconds here (JSON)"),
+    "--shard-recorded": (Path, "pack by these durations (JSON)"),
+}
+
+
 def pytest_addoption(parser: pytest.Parser) -> None:
     group = parser.getgroup("shards")
-    group.addoption("--shard", type=parse_shard, help="collect only shard K of N (K/N)")
-    group.addoption("--shard-manifest", type=Path, help="write the collected test ids here")
-    group.addoption("--shard-durations", type=Path, help="write each file's seconds here (JSON)")
-    group.addoption("--shard-recorded", type=Path, help="pack by these durations (JSON)")
+    for name, (parse, text) in _OPTIONS.items():
+        group.addoption(name, type=parse, help=f"{text}; the value goes after =")
+
+
+def _check_values_joined(args: Sequence[str]) -> None:
+    """Refuse ``--shard-manifest PATH``: see the module docstring."""
+    for arg in args:
+        if arg in _OPTIONS:
+            raise pytest.UsageError(
+                f"write {arg}=VALUE, not {arg} VALUE: pytest reads a separate VALUE as a test"
+                " path before this plugin's options exist (tests/_shards.py)"
+            )
 
 
 def pytest_configure(config: pytest.Config) -> None:
+    from_env = shlex.split(os.environ.get("PYTEST_ADDOPTS", ""))
+    _check_values_joined([*config.getini("addopts"), *from_env, *config.invocation_params.args])
     shard: Shard | None = config.getoption("shard")
     manifest: Path | None = config.getoption("shard_manifest")
     timings: Path | None = config.getoption("shard_durations")

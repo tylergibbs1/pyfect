@@ -65,14 +65,14 @@ def test_the_shards_run_every_test_once_and_the_check_says_so():
     assert f"name: test (${{{{ matrix.python }}}}, ${{{{ matrix.shard }}}}/{count})" in test
     run = re.search(r"(?ms)- name: Tests\n\s+run: \|\n(.*?)\n\n", test)
     assert run, "ci.yml's test job has no Tests step"
-    assert f"--shard ${{{{ matrix.shard }}}}/{count} " in run.group(1)
+    assert f"--shard=${{{{ matrix.shard }}}}/{count} " in run.group(1)
     for narrowing in (" -k ", " -m ", "--deselect", "--ignore", " -x", "--maxfail", "--lf"):
         assert narrowing not in run.group(1), f"the shards must run every test: {narrowing}"
-    assert "--shard-manifest .shards/shard-${{ matrix.shard }}.txt" in run.group(1)
+    assert "--shard-manifest=.shards/shard-${{ matrix.shard }}.txt" in run.group(1)
     assert "name: manifest-${{ matrix.python }}-${{ matrix.shard }}" in test
 
     collect = _job("ci.yml", "collect")
-    assert "--collect-only -p no:randomly --shard-manifest .shards/full.txt" in collect
+    assert "--collect-only -p no:randomly --shard-manifest=.shards/full.txt" in collect
     assert "name: manifest-${{ matrix.python }}-full" in collect
 
     check = _job("ci.yml", "check")

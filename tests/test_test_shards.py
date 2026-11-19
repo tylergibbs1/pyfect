@@ -3,6 +3,8 @@ shards together ran every test exactly once (scripts/test_shards.py verify)."""
 
 import importlib.util
 import json
+import re
+import shlex
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -66,11 +68,11 @@ def test_the_shards_together_collect_every_test_once(
         pytester.makepyfile(**{f"test_f{n}": "\n".join(f"def test_{t}(): pass" for t in range(n))})
     pytester.mkpydir("sub").joinpath("test_nested.py").write_text("def test_x(): pass\n")
 
-    def collect(*shard: str) -> list[str]:
-        manifest = pytester.path / f"manifest{''.join(shard).replace('/', 'of')}.txt"
+    def collect(shard: str = "") -> list[str]:
+        manifest = pytester.path / f"manifest{shard.replace('/', 'of')}.txt"
         result = pytester.runpytest_subprocess(
-            "-p", "_shards", "--collect-only", "--shard-manifest", str(manifest),
-            *(["--shard", *shard] if shard else []), timeout=SUBPROCESS_TIMEOUT,
+            "-p", "_shards", "--collect-only", f"--shard-manifest={manifest}",
+            *([f"--shard={shard}"] if shard else []), timeout=SUBPROCESS_TIMEOUT,
         )  # fmt: skip
         assert result.ret == 0, result.stdout.str()
         return manifest.read_text().splitlines()
@@ -91,12 +93,12 @@ def test_a_spread_files_tests_run_once_across_the_shards(
     recorded = pytester.path / "durations.json"
     recorded.write_text('{"test_big.py": 100.0, "test_small.py": 1.0}')
 
-    def collect(*shard: str) -> list[str]:
-        manifest = pytester.path / f"manifest{''.join(shard).replace('/', 'of')}.txt"
+    def collect(shard: str = "") -> list[str]:
+        manifest = pytester.path / f"manifest{shard.replace('/', 'of')}.txt"
         result = pytester.runpytest_subprocess(
-            "-p", "_shards", "--collect-only", "--shard-manifest", str(manifest),
-            "--shard-recorded", str(recorded),
-            *(["--shard", *shard] if shard else []), timeout=SUBPROCESS_TIMEOUT,
+            "-p", "_shards", "--collect-only", f"--shard-manifest={manifest}",
+            f"--shard-recorded={recorded}",
+            *([f"--shard={shard}"] if shard else []), timeout=SUBPROCESS_TIMEOUT,
         )  # fmt: skip
         assert result.ret == 0, result.stdout.str()
         return manifest.read_text().splitlines()
@@ -144,9 +146,93 @@ def test_a_parallel_shard_records_every_test_and_every_files_time(
     manifest = pytester.path / "manifest.txt"
     durations = pytester.path / "durations.json"
     result = pytester.runpytest_subprocess(
-        "-p", "_shards", "-n", "3", "--shard-manifest", str(manifest),
-        "--shard-durations", str(durations), timeout=SUBPROCESS_TIMEOUT,
+        "-p", "_shards", "-n", "3", f"--shard-manifest={manifest}",
+        f"--shard-durations={durations}", timeout=SUBPROCESS_TIMEOUT,
     )  # fmt: skip
     result.assert_outcomes(passed=sum(range(1, 7)))
     assert len(manifest.read_text().splitlines()) == sum(range(1, 7))
     assert sorted(json.loads(durations.read_text())) == [f"test_f{n}.py" for n in range(1, 7)]
+
+
+def _ci_shard_command(path: str) -> list[str]:
+    """The pytest arguments of ci.yml's test job, as the shard that runs ``path`` has them."""
+    text = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    match = re.search(r"uv run --no-sync pytest (.*-n auto (?:.*\\\n)*.*)", text)
+    assert match, "ci.yml's test job no longer runs `uv run --no-sync pytest ... -n auto`"
+    command = match.group(1).replace("\\\n", " ")
+    count = re.search(r"\$\{\{ matrix\.shard \}\}/(\d+)", command)
+    assert count, command
+    shard = shard_of(path, assign(load_durations(DURATIONS), int(count[1])), int(count[1]))
+    return shlex.split(command.replace("${{ matrix.shard }}", str(shard)))
+
+
+def test_a_worker_crash_in_a_ci_shard_names_the_test_and_the_rest_run(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """xdist replaces a crashed worker by starting pytest again with the same arguments; by
+    then the controller has written the shard's manifest, so a manifest path given as its own
+    word is an existing test path, tests/conftest.py is not loaded and every replacement died
+    with ``unrecognized arguments: --shard``."""
+    monkeypatch.setenv("PYTHONPATH", str(Path(__file__).parent))
+    pytester.makepyprojecttoml('[tool.pytest.ini_options]\ntestpaths = ["tests"]\n')
+    tests = pytester.mkdir("tests")
+    tests.joinpath("conftest.py").write_text('pytest_plugins = ["_shards"]\n')
+    tests.joinpath("test_crash.py").write_text(
+        "import os\n\ndef test_crash():\n    os._exit(1)\n\n"
+        + "".join(f"def test_ok{n}():\n    pass\n\n" for n in range(3))
+    )
+    pytester.mkdir(".shards")
+    args = _ci_shard_command("tests/test_crash.py")
+    args[args.index("auto")] = "2"
+
+    result = pytester.runpytest_subprocess(*args, "-p", "no:randomly", timeout=SUBPROCESS_TIMEOUT)
+
+    result.assert_outcomes(passed=3, failed=1)
+    result.stdout.fnmatch_lines(["*crashed while running 'tests/test_crash.py::test_crash'*"])
+
+
+@pytest.mark.parametrize("option", ["--shard", "--shard-manifest", "--shard-durations"])
+def test_an_option_value_given_as_its_own_word_is_refused(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch, option: str
+) -> None:
+    """An existing value read as a test path also moves the rootdir: a manifest outside the
+    project made pytest miss the project's configuration."""
+    monkeypatch.setenv("PYTHONPATH", str(Path(__file__).parent))
+    outside = pytester.mkdir("outside").joinpath("value")
+    outside.write_text("{}")
+    project = pytester.mkdir("project")
+    project.joinpath("pyproject.toml").write_text("[tool.pytest.ini_options]\n")
+    monkeypatch.chdir(project)
+    value = "1/1" if option == "--shard" else str(outside)
+
+    result = pytester.runpytest_subprocess(
+        "-p", "_shards", "--collect-only", option, value, timeout=SUBPROCESS_TIMEOUT
+    )  # fmt: skip
+
+    assert result.ret == pytest.ExitCode.USAGE_ERROR, result.stdout.str()
+    result.stderr.fnmatch_lines([f"*write {option}=VALUE, not {option} VALUE*"])
+
+
+def test_a_manifest_outside_the_project_keeps_its_rootdir(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("PYTHONPATH", str(Path(__file__).parent))
+    manifest = pytester.mkdir("outside").joinpath("manifest.txt")
+    manifest.write_text("stale\n")
+    project = pytester.mkdir("project")
+    project.joinpath("pyproject.toml").write_text(
+        '[tool.pytest.ini_options]\ntestpaths = ["tests"]\n'
+    )
+    project.joinpath("tests").mkdir()
+    project.joinpath("tests", "conftest.py").write_text('pytest_plugins = ["_shards"]\n')
+    project.joinpath("tests", "test_a.py").write_text("def test_a():\n    pass\n")
+    monkeypatch.chdir(project)
+
+    result = pytester.runpytest_subprocess(
+        "--collect-only", "--shard=1/1", f"--shard-manifest={manifest}",
+        timeout=SUBPROCESS_TIMEOUT,
+    )  # fmt: skip
+
+    assert result.ret == 0, result.stdout.str() + result.stderr.str()
+    result.stdout.fnmatch_lines([f"rootdir: {project}*"])
+    assert manifest.read_text() == "tests/test_a.py::test_a\n"

@@ -96,7 +96,7 @@ jobs:
         run: |
           mkdir -p .shards
           # Serial: collecting is one import pass; xdist workers would each collect every test.
-          uv run --no-sync pytest --collect-only -p no:randomly --shard-manifest .shards/full.txt > /dev/null
+          uv run --no-sync pytest --collect-only -p no:randomly --shard-manifest=.shards/full.txt > /dev/null
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -166,9 +166,9 @@ jobs:
           # One worker per CPU, in random order; the log's last lines give the seed
           # (-p randomly --randomly-seed=N repeats it). tests/_parallel.py keeps in-order files
           # and each database's tests on one worker.
-          uv run --no-sync pytest -q -rfEs -n auto --shard ${{ matrix.shard }}/5 \
-            --shard-manifest .shards/shard-${{ matrix.shard }}.txt \
-            --shard-durations .shards/durations-${{ matrix.shard }}.json
+          uv run --no-sync pytest -q -rfEs -n auto --shard=${{ matrix.shard }}/5 \
+            --shard-manifest=.shards/shard-${{ matrix.shard }}.txt \
+            --shard-durations=.shards/durations-${{ matrix.shard }}.json
 
       - name: Upload the shard's test ids (the check job compares them with a full collection)
         if: always()
