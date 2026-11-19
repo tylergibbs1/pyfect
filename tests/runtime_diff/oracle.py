@@ -26,7 +26,8 @@ UNLIMITED = 2**53 - 1
 
 
 class EffectOracle:
-    """A Node process answering programs one at a time (``--serve``)."""
+    """A Node process answering programs one at a time (``--serve``), started with Effect
+    loaded."""
 
     def __init__(self) -> None:
         effect = _effect_ref.checkout()
@@ -38,6 +39,10 @@ class EffectOracle:
             encoding="utf-8",
             env={**os.environ, _effect_ref.ENV: str(effect)},
         )
+        # Node says it is ready once Effect has loaded, so a source patch that no longer
+        # applies stops the run here, before any program is generated, with Node's error above.
+        if cast("IO[str]", self._node.stdout).readline() != "ready\n":
+            raise RuntimeError(f"the Effect interpreter did not start ({self._node.wait()})")
 
     def answer(self, case: Case) -> Json:
         stdin, stdout = cast("IO[str]", self._node.stdin), cast("IO[str]", self._node.stdout)
@@ -77,11 +82,48 @@ def case_from_json(row: dict[str, Json]) -> Case:
     return from_json(row["program"]), budget
 
 
+# The cases accepted through ``parity_149`` (as case_json), which the runs report.
+PARITY_149: set[str] = set()
+
+
+def parity_149(mine: Json, effect: Json) -> bool:
+    """Whether the answers differ only as docs/PARITY.md's "A decided result lost at a
+    step-budget pause" says they may: Effect can auto-yield holding a decided defect and an
+    interrupt drops it, while pyfect never pauses there. So Effect's cause has an interrupt
+    and no defect, pyfect's is the same with one or more defects added, and nothing else
+    differs."""
+    if not (isinstance(mine, dict) and isinstance(effect, dict)):
+        return False
+    mine_exit, effect_exit = mine.get("exit"), effect.get("exit")
+    if not (isinstance(mine_exit, dict) and isinstance(effect_exit, dict)):
+        return False
+    mine_cause, effect_cause = mine_exit.get("cause"), effect_exit.get("cause")
+    if not (isinstance(mine_cause, list) and isinstance(effect_cause, list)):
+        return False
+    if {**mine, "exit": None} != {**effect, "exit": None}:
+        return False
+
+    def died(reason: Json) -> bool:
+        return isinstance(reason, list) and reason[:1] == ["die"]
+
+    kept = [reason for reason in mine_cause if not died(reason)]
+    return (
+        ["interrupt"] in effect_cause
+        and not any(died(reason) for reason in effect_cause)
+        and len(kept) < len(mine_cause)
+        and kept == effect_cause
+    )
+
+
 def difference(case: Case, effect: Json) -> str | None:
-    """How pyfect's answer for ``case`` differs from Effect's, if it does."""
+    """How pyfect's answer for ``case`` differs from Effect's, if it does, apart from the
+    difference ``parity_149`` accepts (counted in ``PARITY_149``)."""
     program, budget = case
     mine = answer(program, budget)
     if mine == effect:
+        return None
+    if parity_149(mine, effect):
+        PARITY_149.add(json.dumps(case_json(case)))
         return None
     return (
         f"case:    {json.dumps(case_json(case))}\n"

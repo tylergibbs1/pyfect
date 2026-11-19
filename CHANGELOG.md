@@ -168,6 +168,10 @@
   handed to the background scheduler) stays in the background scheduler's heap until its
   deadline once cancelled, so an interrupted hour-long sleep held its entry for the hour.
   Cancelling it now removes it there too, as for every other timer.
+- `TestClock.sleep` takes the steps Effect 4.1.4's takes (Effect-TS/effect#10326): a suspend
+  around its acquire, not a generator. Under a tiny `MaxOpsBeforeYield` a fiber starved by
+  `adjust` stopped one step earlier than Effect's, outside the sleep's uninterruptible acquire,
+  so interrupting it ended it where Effect's waits.
 - Schema classes: constructing one with checks on cost twice what it costs with
   `disable_checks` (an `eventlog.Entry` took 3.5 us against 1.9 us). After parsing each
   field, the constructor collected the values and parsed them again as a whole. Each field is
