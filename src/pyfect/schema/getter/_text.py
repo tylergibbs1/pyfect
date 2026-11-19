@@ -7,10 +7,12 @@ import re
 from collections.abc import Mapping, Sequence
 from urllib.parse import quote, unquote
 
+from pyfect._js import to_well_formed
 from pyfect._js import trim as js_trim
 from pyfect.exit import Exit, Success
 from pyfect.exit import fail as fail_exit
 from pyfect.schema._options import ParseOptions
+from pyfect.schema.getter._binary import well_formed_encoder
 from pyfect.schema.getter._getter import Getter, Transform, TransformEffect
 from pyfect.schema.issue import InvalidValue, Issue, reported
 
@@ -129,8 +131,13 @@ _BAD_ESCAPE = re.compile(r"%(?![0-9A-Fa-f]{2})")
 
 def encode_uri_component() -> Getter[str, str]:
     """JavaScript's ``encodeURIComponent`` (Effect's ``encodeUriComponent``);
-    a lone surrogate raises, a defect."""
-    return Transform(lambda text: quote(text, safe=_URI_SAFE))
+    a lone surrogate is an ``InvalidValue``."""
+    return well_formed_encoder(_quote_component)
+
+
+def _quote_component(text: str) -> str:
+    # A surrogate pair (well formed) is its character's UTF-8, as in JavaScript.
+    return quote(to_well_formed(text), safe=_URI_SAFE)
 
 
 def decode_uri_component() -> Getter[str, str]:

@@ -51,6 +51,12 @@ def test_encodes_strings_and_bytes() -> None:
     assert base64.encode(bytes([72, 101, 108, 108, 111])) == "SGVsbG8="
 
 
+def test_encodes_unpaired_surrogates_as_the_utf8_replacement_character() -> None:
+    """encodes unpaired surrogates as the UTF-8 replacement character"""
+    assert base64.encode("\ud800") == "77+9"
+    assert base64.encode("\udc00") == "77+9"
+
+
 def test_decodes_bytes_and_utf_8_strings() -> None:
     """decodes bytes and UTF-8 strings"""
     assert ok(base64.decode("SGVs\r\nbG8=")) == bytes([72, 101, 108, 108, 111])

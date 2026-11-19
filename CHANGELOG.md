@@ -24,6 +24,10 @@
 
 ### Fixed
 
+- Schema: encoding a string with an unpaired surrogate through `S.StringFromBase64`,
+  `S.StringFromBase64Url` and `S.StringFromHex` silently wrote U+FFFD, and through
+  `S.StringFromUriComponent` raised (a defect). The encoding getters now fail with an
+  `InvalidValue`, "Expected a well-formed Unicode string" (Effect #10725).
 - `interpreter_pool.call` and `try_call` on a function that reads globals of the script you ran,
   in a script without an `if __name__ == "__main__":` guard, hung forever with no output. CPython
   finds such a function by re-running the script inside the subinterpreter (as

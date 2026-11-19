@@ -89,6 +89,24 @@ def test_big_int_rejects_invalid_strings_and_numbers_with_invalid_value():
         assert issue.input == Some(input)
 
 
+@pytest.mark.parametrize(
+    "getter",
+    [
+        G.encode_base64(),
+        G.encode_base64_url(),
+        G.encode_base64_url(padding=True),
+        G.encode_hex(),
+        G.encode_uri_component(),
+    ],
+)
+def test_text_encoding_getters_report_unpaired_surrogates_as_invalid_values(getter: AnyGetter):
+    """SchemaGetter / text encoding getters report unpaired surrogates as invalid values"""
+    text = "a\ud800b"
+    issue = _issue(getter, Some(text), {"report_input": True})
+    assert isinstance(issue, InvalidValue)
+    assert issue.input == Some(text)
+
+
 def test_forbidden_encoding():
     """SchemaGetter / forbiddenEncoding"""
     issue = _issue(G.forbidden_encoding, Some(1))
