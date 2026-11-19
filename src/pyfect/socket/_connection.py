@@ -279,6 +279,11 @@ class Connection(asyncio.Protocol):
 
     # --- either side ----------------------------------------------------------
 
+    @property
+    def error(self) -> SocketError | None:
+        """What ended the connection, once something did."""
+        return self._error
+
     def end(self, error: SocketError) -> None:
         """The read side ended normally: buffered bytes are still taken
         before ``error``."""

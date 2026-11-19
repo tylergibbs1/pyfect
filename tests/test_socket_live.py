@@ -14,9 +14,10 @@ from pyfect._core import Effect
 from pyfect.effect import gen, succeed, sync, void
 from pyfect.net.net_address import InetAddressV4
 from pyfect.redacted import Redacted
-from pyfect.scope import acquire_release, scoped
+from pyfect.scope import Scope, acquire_release, scoped
 from pyfect.socket import (
     SocketCloseError,
+    SocketError,
     SocketService,
     SocketUpgradeError,
     TlsUpgradeOptions,
@@ -98,6 +99,27 @@ def test_writes_after_the_peer_ends_its_stream():
     yield from writer.write_all([b"y"])
     peer.settimeout(5)
     assert peer.recv(1) == b"y"
+
+
+@testing.live(timeout="5 seconds")
+def test_a_write_after_an_accepted_connections_reader_is_released_fails():
+    # Effect #10730: an accepted connection cannot be opened again, so a write
+    # made after its reader's scope closed waited for a reader that never came.
+    conn, peer = adopted(lambda _: None)
+    yield from acquire_release(succeed(peer), lambda p, _: sync(p.close))
+    written: list[object] = []
+
+    def handler(sock: SocketService) -> Effect[None, object, Scope]:
+        @gen
+        def body():
+            yield from scoped(sock.reader)
+            writer = yield from sock.writer
+            written.append((yield from writer.write(b"late").flip()))
+
+        return scoped(body)
+
+    yield from _NetIncoming(conn).handle(handler)
+    assert isinstance(written[0], SocketError)
 
 
 @testing.live(timeout="5 seconds")

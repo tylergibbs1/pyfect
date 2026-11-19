@@ -154,7 +154,7 @@ class _NetIncoming:
         opened = acquire_release(
             succeed(self._conn), lambda c, _: sync(lambda: c.close(graceful=True))
         )
-        socket = from_connection(opened, upgrade_side=ServerSide())
+        socket = from_connection(opened, upgrade_side=ServerSide(), disable_reconnects=True)
         return handler(socket).as_void().catch_cause(report_unhandled)
 
     def release(self) -> None:

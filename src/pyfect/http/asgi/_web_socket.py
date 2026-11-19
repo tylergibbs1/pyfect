@@ -237,7 +237,8 @@ def _socket(ws: AsgiWebSocket, scope: Scope) -> SocketService:
         lambda: ws.accept(protocols[0] if protocols else None), on_error
     ).as_(ws)
     return from_web_socket(
-        acquire_release(accept, lambda opened, exit: sync(lambda: opened.close(close_code(exit))))
+        acquire_release(accept, lambda opened, exit: sync(lambda: opened.close(close_code(exit)))),
+        disable_reconnects=True,
     )
 
 

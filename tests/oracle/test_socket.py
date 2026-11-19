@@ -8,6 +8,7 @@ dispatches.
 from collections.abc import Callable
 from typing import Any
 
+from pyfect import scope as fx_scope
 from pyfect import stream, testing
 from pyfect.effect import fail, gen, never, succeed, suspend, sync, void
 from pyfect.exit import Failure, Success
@@ -176,6 +177,21 @@ class TestWebSocket:
 
     def send(self, data: bytes | str) -> None:
         pass
+
+
+@testing.effect
+def test_from_web_socket_fails_writes_once_terminal():
+    """fails writes on a terminal non-reconnectable socket"""
+    ws = TestWebSocket(Latch(False))
+    ws.ready_state = 1
+    scope = yield from fx_scope.make()
+    socket = from_web_socket(scope.close(Success(None)).as_(ws), disable_reconnects=True)
+    writer = yield from socket.writer
+
+    write = yield from writer.write("later").flip().fork(start_immediately=True)
+    error = yield from socket.reader.pipe(fx_scope.provide(scope)).flip()
+    assert isinstance(error, SocketError)
+    assert (yield from write.join()) is error
 
 
 @testing.effect
