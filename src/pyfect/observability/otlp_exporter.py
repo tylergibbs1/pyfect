@@ -50,7 +50,7 @@ from pyfect.http.request import HttpClientRequest
 from pyfect.http.response import HttpClientResponse
 from pyfect.latch import Latch
 from pyfect.layer import Layer
-from pyfect.logger import log_debug
+from pyfect.logger import log_warning
 from pyfect.result import Ok
 from pyfect.schedule import Metadata, forever
 from pyfect.scope import Scope, add_finalizer
@@ -300,7 +300,7 @@ def make(
                 return succeed(None)
             disabled_until = now_millis_unsafe(clock) + _DISABLED_MILLIS
             buffer = []
-            return log_debug("Disabling exporter for 60 seconds", cause)
+            return log_warning("Disabling exporter for 60 seconds", cause)
 
         run_export: Effect[None] = (
             suspend(export)

@@ -24,6 +24,8 @@
 
 ### Fixed
 
+- OTLP: when a failed export disables an exporter for 60 seconds, the message is now logged
+  as a warning, not at debug level, where the default log level hid it (Effect #10729).
 - `interpreter_pool.call` and `try_call` on a function that reads globals of the script you ran,
   in a script without an `if __name__ == "__main__":` guard, hung forever with no output. CPython
   finds such a function by re-running the script inside the subinterpreter (as
