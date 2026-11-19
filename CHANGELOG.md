@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- HTTP router: `router.serve(app)` built the server without the app's services, so a request
+  handler read a `Reference` the app layer sets (or anything else the app provides the server
+  layer) at its default, and a layer the handler provides was built again instead of shared
+  through the app's memo map. The server is now built on top of the app's context, as
+  Effect's `HttpRouter.serve` does (Effect #10668).
+
 ## 0.6.14 (2026-11-19)
 
 0.6.13 was tagged but never published: its release workflow could not start.
