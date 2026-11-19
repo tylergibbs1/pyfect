@@ -18,7 +18,7 @@ interrupted halfway. Finalizers run in reverse order of acquisition.
 
 <include meta='title="finalizers.py"'>../../snippets/resources/finalizers.py</include>
 
-## From plain Python code
+## `with` blocks in plain Python code
 
 `with` and `async with` stand in for `fx.scoped` in code outside pyfect. `fx.managed(eff)` runs
 a scoped effect on entering, binds its value, and closes its scope when the block ends; give it a
