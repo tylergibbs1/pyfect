@@ -83,8 +83,10 @@ Remove the `catch_tag` line and pyright stops you before the program runs:
 
 ```text
 error: Argument of type "Effect[str, UserNotFound, Never]" cannot be assigned to
-       parameter "eff" of type "Effect[A@run_blocking, Never, Never]"
-    Type "UserNotFound" is not assignable to type "Never"
+       parameter "eff" of type "Effect[A@run_blocking, Never, Never]" in function "run_blocking"
+    "Effect[str, UserNotFound, Never]" is not assignable to "Effect[str, Never, Never]"
+      Type parameter "E_co@Effect" is covariant, but "UserNotFound" is not a subtype of "Never"
+        Type "UserNotFound" is not assignable to type "Never" (reportArgumentType)
 ```
 
 That covers the errors an effect fails with, as `greet` does with `yield from UserNotFound(...)`.
@@ -116,18 +118,19 @@ layer, concurrency, retries and timeouts.
 
 ### Core runtime
 
-- **Typed errors**: expected failures live in the type, defects stay separate. [Errors →](https://pyfect.dev/docs/errors)
+- **Typed errors**: expected failures live in the type, defects stay separate; take results apart with `match`, or raise every error at once as an `ExceptionGroup` for `except*`. [Errors →](https://pyfect.dev/docs/errors)
 - **Services and layers**: dependency injection pyright checks, with memoized layers that release in order. [Services →](https://pyfect.dev/docs/services)
 - **Its own fiber runtime**: `run_blocking` with no event loop, or on asyncio; `blocking` moves calls to a thread. [Effects →](https://pyfect.dev/docs/effects)
 - **Structured concurrency**: children end with their parent, `all` and `for_each` take a limit, races clean up. [Concurrency →](https://pyfect.dev/docs/concurrency)
-- **Resources**: scopes, `acquire_release`, pools, `RcRef` and `RcMap` release exactly once, even on interruption. [Resources →](https://pyfect.dev/docs/resources)
+- **Resources**: scopes, `acquire_release`, pools, `RcRef` and `RcMap` release exactly once, even on interruption, and `with fx.managed(...)` holds one in plain Python code. [Resources →](https://pyfect.dev/docs/resources)
+- **Parallel work**: `fx.on_thread` runs an effect on a thread of its own, in parallel on free-threaded Python, and `interpreter_pool` runs pure functions in subinterpreters on several cores. [Parallel effects →](https://pyfect.dev/docs/parallel) · [Subinterpreters →](https://pyfect.dev/docs/subinterpreters)
 - **Retries and schedules**: exponential, jittered, cron and composed schedules for `retry` and `repeat`. [Schedules →](https://pyfect.dev/docs/schedules)
 - **Streams**: pull-based streams, sinks and channels with backpressure, plus NDJSON and SSE framers. [Streams →](https://pyfect.dev/docs/streams)
 - **Transactions**: software transactional memory with `TxRef`, queues, maps, locks and semaphores. [Transactions →](https://pyfect.dev/docs/transactions)
 
 ### Data
 
-- **Schema**: decode and encode with Effect's messages, compiled decoders, JSON Schema, Hypothesis, pydantic and msgspec. [Schema →](https://pyfect.dev/docs/schema)
+- **Schema**: decode and encode with Effect's messages, schemas from type annotations (checks in `Annotated` included), compiled decoders, JSON Schema, Hypothesis, pydantic and msgspec. [Schema →](https://pyfect.dev/docs/schema)
 - **Config**: typed settings from the environment, `.env` files or dicts, with secrets kept out of logs. [Config →](https://pyfect.dev/docs/config)
 - **Graphs**: directed and undirected graphs with walks, shortest paths, flows, matchings and Mermaid output. [Graphs →](https://pyfect.dev/docs/graph)
 - **Cryptography**: random ids, digests, encryption, signatures and JOSE tokens, as services. [Cryptography →](https://pyfect.dev/docs/crypto)
@@ -147,7 +150,7 @@ layer, concurrency, retries and timeouts.
 ### Testing and observability
 
 - **Deterministic tests**: a pytest plugin with a virtual clock, so a test of a 30-second retry takes no real time. [Testing →](https://pyfect.dev/docs/testing)
-- **Observability**: logging, spans and metrics, exported over OTLP or through the OpenTelemetry SDK. [Observability →](https://pyfect.dev/docs/observability)
+- **Observability**: logging, spans and metrics, exported over OTLP or through the OpenTelemetry SDK, and a profiler that times each fiber. [Observability →](https://pyfect.dev/docs/observability)
 
 <details>
 <summary><b>Storage and distributed systems</b>: SQL, models, persistence, rate limiting, workers, workflows, event log, cluster</summary>
