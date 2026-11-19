@@ -70,8 +70,9 @@ def test_a_long_big_int_varint_decodes_in_near_linear_time() -> None:
         return lambda: decode(frame)["n"] == value
 
     assert sized(1000)()
-    # The fixed reader is O(n log n): 8x for 8x the groups.
-    assert_near_linear(sized, 16_000, 8 * 16_000)
+    # Over a step of 16: the fixed reader (O(n log n)) grew 16x, the shifting one 193-204x
+    # against a bound of 104 with the guard margin. Over 8 it grew 58-60x, near that bound's 36.
+    assert_near_linear(sized, 4000, 16 * 32_000, factor=16)
 
 
 class _Row(TypedDict):

@@ -14,6 +14,7 @@ from collections.abc import Callable
 from typing import Any
 
 import pytest
+from _copies import Copies
 from _growth import assert_near_linear
 from _guards import guards
 
@@ -135,8 +136,6 @@ _GUARDS = {
     "split_lines, one long line": guards("fd125524", "split-lines-pending-concatenated"),
     "ndjson bytes, one long line": guards("fd125524", "ndjson-bytes-pending-concatenated"),
     "sse, one long line": guards("fd125524", "sse-pending-concatenated"),
-    "csv, one long field": guards("fd125524", "csv-field-concatenated"),
-    "csv, one long quoted field": guards("fd125524", "csv-field-concatenated"),
 }
 
 
@@ -146,6 +145,22 @@ _GUARDS = {
 )
 def test_a_splitter_takes_linear_time(name: str) -> None:
     assert_near_linear(_CASES[name], _SIZE, 4 * _SIZE, factor=4, bound=8)
+
+
+@guards("fd125524", "csv-field-concatenated")
+@pytest.mark.parametrize("field", ["x" * 4000, '"' + "x" * 4000 + '"'], ids=["plain", "quoted"])
+def test_a_csv_field_split_over_chunks_is_not_copied_for_each(field: str) -> None:
+    """Counted with ``_copies``: over a step of 4 a quadratic grows at most 16x, against a
+    bound of 12 with the guard margin, so timing missed the copy on CI's runner."""
+    copies = Copies()
+    data = field + "\n"
+    parser = CsvParser(",", float("inf"), True)
+    out: list[Any] = []
+    for piece in _pieces(data):
+        parser.feed(copies.text(piece), out)
+    parser.end(out)
+    assert out
+    assert copies.characters <= 2 * len(data)
 
 
 def test_multipart_header_values_are_joined_once() -> None:
