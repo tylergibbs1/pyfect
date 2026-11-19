@@ -32,7 +32,7 @@ def _before_314() -> bool:
 
 ALLOWED = (
     Allowed(
-        re.compile(r"t-strings|compression\.zstd"),
+        re.compile(r"t-strings|compression\.zstd|concurrent\.interpreters"),
         "needs Python 3.14; the 3.14 jobs run it",
         _before_314,
     ),

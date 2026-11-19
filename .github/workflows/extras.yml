@@ -125,6 +125,7 @@ jobs:
           tests/oracle/test_synchronous_resume.py
           tests/test_fiber_profiler.py
           tests/test_on_thread.py
+          tests/test_interpreter_pool.py
 
   soak-short:
     # Six minutes of tests/soak (soak.yml runs it for hours): leaks, stuck fibers, stalls,

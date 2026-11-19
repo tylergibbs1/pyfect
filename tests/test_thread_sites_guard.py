@@ -36,6 +36,7 @@ _SANCTIONED: dict[tuple[str, str], str] = {
     ("_on_thread.py", "Thread"): (
         "one per fx.on_thread call while its effect runs, bounded by the caller's concurrency"
     ),
+    ("interpreter_pool.py", "Thread"): "at most size per interpreter pool, one per subinterpreter",
     ("_blocking_watchdog.py", "Thread"): "one watchdog, started by PYFECT_WARN_BLOCKING",
     ("_stack.py", "ThreadPoolExecutor"): (
         "joined before it returns, nested at most MAX_FRESH_STACKS deep"

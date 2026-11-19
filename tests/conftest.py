@@ -25,6 +25,7 @@ pytest_plugins = [
     "_stalls",
     "_leaked_threads",
     "_leaked_fibers",
+    "_leaked_interpreters",
 ]
 
 # pytest imports readline before this file loads, and GNU readline (Linux) exports COLUMNS and

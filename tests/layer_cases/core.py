@@ -5,6 +5,8 @@ recorded)."""
 # pyright: reportUnknownLambdaType=false, reportUnknownMemberType=false
 # pyright: reportUnknownVariableType=false, reportUnknownArgumentType=false
 
+import operator
+import sys
 from datetime import UTC
 from typing import Any
 
@@ -16,6 +18,7 @@ from pyfect import (
     date_time,
     error_reporter,
     file_system,
+    interpreter_pool,
     logger,
     metric,
     path,
@@ -329,3 +332,11 @@ SKIPPED: dict[str, str] = {
     "pyfect.layer.from_build": "the layer primitive: the build function given is the state",
     "pyfect.layer.from_build_memo": "the layer primitive: the build function given is the state",
 }
+
+if sys.version_info >= (3, 14):
+    CASES["pyfect.interpreter_pool.layer"] = Case(
+        layer=lambda: interpreter_pool.layer(1),
+        use=lambda: interpreter_pool.call(operator.add, 1, 2).flat_map(lambda n: _expect(n, 3)),
+    )
+else:
+    SKIPPED["pyfect.interpreter_pool.layer"] = "needs Python 3.14's concurrent.interpreters"

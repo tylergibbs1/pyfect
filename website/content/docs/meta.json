@@ -38,6 +38,7 @@
     "persistence",
     "rate-limiting",
     "workers",
+    "subinterpreters",
     "workflows",
     "ai",
     "mcp",

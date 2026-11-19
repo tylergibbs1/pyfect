@@ -51,6 +51,15 @@
   CPU-heavy effects under it use several cores (an effect of 100k `fx.sync` steps: 1.6x on 4
   threads, 2.6x on 8; see the new "Parallel effects" guide and `benchmarks/parallel.py`); the
   default single-thread runtime is unchanged.
+- `pyfect.interpreter_pool` (Python-only, needs Python 3.14): `interpreter_pool.call(f, *args)`
+  and `try_call` run a pure function in one of a pool of subinterpreters
+  (`concurrent.interpreters`), each with its own GIL, provided by `interpreter_pool.layer(size)`.
+  The result comes back as the effect's value; a raised exception as a defect (`call`) or an
+  `UnknownError` / `catch=` failure (`try_call`), as itself when it pickles. Interrupting
+  withdraws a queued call and abandons a running one; releasing the layer closes every
+  interpreter, waiting for abandoned calls to return. On the GIL build 8 calls of pure-Python work ran 7x as fast as one at a time
+  (`fx.blocking`: 1x); see the new "Subinterpreters" guide and `benchmarks/interpreter_pool.py`.
+  On 3.13 the layer dies with `InterpretersUnavailableError`.
 
 - Testing: `pyfect.testing.leave_out_host_freezes(source)` leaves the time the host froze the
   whole process for out of every test's timeout, up to the timeout again; `source` returns a
