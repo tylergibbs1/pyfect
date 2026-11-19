@@ -336,9 +336,17 @@ def _field_schemas(cls: type, names: tuple[str, ...]) -> dict[str, AnyBottom]:
         schemas[name] = (
             cast("Codec[Any, Any, Any, Any]", explicit).__codec__()
             if explicit is not None
-            else schema_of(_annotation(cls, name))
+            else _derived(cls, name)
         )
     return schemas
+
+
+def _derived(cls: type, name: str) -> AnyBottom:
+    """The schema of field ``name``'s annotation; ``TypeError`` naming the field when none."""
+    try:
+        return schema_of(_annotation(cls, name))
+    except TypeError as error:
+        raise TypeError(f"{cls.__name__}.{name}: {error}") from None
 
 
 def _annotation(cls: type, name: str) -> object:
@@ -348,7 +356,7 @@ def _annotation(cls: type, name: str) -> object:
         __annotations__={name: inspect.get_annotations(owner)[name]},
         __globals__=vars(module) if module is not None else {},
     )
-    return get_type_hints(holder, localns=dict(vars(owner)))[name]
+    return get_type_hints(holder, localns=dict(vars(owner)), include_extras=True)[name]
 
 
 def _default_of(cls: type, name: str) -> Callable[[], object] | None:
