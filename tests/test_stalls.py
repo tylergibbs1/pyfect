@@ -151,13 +151,33 @@ def test_sleeps():
 """
 
 
+def _described(result: pytest.RunResult, *, passed: bool = False) -> str:
+    """The run's stdout, exit status and stderr, after checking its one test passed or failed
+    as expected. A run killed mid-test (three times on CI, in tests that SIGSTOP it) leaves stdout
+    cut off after the file name, with no summary: only the status (minus the signal's number)
+    and stderr say what happened."""
+    out = f"{result.stdout.str()}\n[exit {result.ret}; stderr]\n{result.stderr.str()}"
+    assert result.ret == (pytest.ExitCode.OK if passed else pytest.ExitCode.TESTS_FAILED), out
+    result.assert_outcomes(passed=int(passed), failed=int(not passed))
+    return out
+
+
+@pytest.mark.skipif(__import__("sys").platform == "win32", reason="SIGKILL is POSIX")
+def test_a_run_killed_mid_test_says_how_it_ended(pytester: pytest.Pytester) -> None:
+    pytester.makepyfile(
+        "import os, signal\n\n\ndef test_killed():\n    os.kill(os.getpid(), signal.SIGKILL)\n"
+    )
+    result = pytester.runpytest_subprocess(timeout=SUBPROCESS_TIMEOUT)
+    with pytest.raises(AssertionError, match=r"\[exit -9; stderr\]"):
+        _described(result)
+
+
 def _run(pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch, source: str) -> str:
     monkeypatch.setenv("PYTHONPATH", str(Path(__file__).parent))
     pytester.makepyfile(source)
     pytester.makeini("[pytest]\nstall_threshold = 0.3\n")
     result = pytester.runpytest_subprocess("-p", "_stalls", timeout=SUBPROCESS_TIMEOUT)
-    result.assert_outcomes(failed=1)
-    return result.stdout.str()
+    return _described(result)
 
 
 def test_a_blocking_call_in_a_fiber_step_is_named(
@@ -318,8 +338,7 @@ def _hang(
     result = pytester.runpytest_subprocess(
         "-p", "_timeout", "-p", "_stalls", timeout=SUBPROCESS_TIMEOUT
     )
-    result.assert_outcomes(failed=1)
-    return result.stdout.str()
+    return _described(result)
 
 
 def test_a_hang_with_no_stall_says_where_the_test_was_running(
@@ -726,12 +745,14 @@ def test_holds_the_gil():
 """
 
 
-def _limited(pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch, source: str) -> str:
+def _limited(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch, source: str, *, passed: bool = False
+) -> str:
     monkeypatch.setenv("PYTHONPATH", str(Path(__file__).parent))
     pytester.makepyfile(source)
     pytester.makeini("[pytest]\nstall_threshold = 0.3\n")
     result = pytester.runpytest_subprocess("-p", "_stalls", timeout=SUBPROCESS_TIMEOUT)
-    return result.stdout.str()
+    return _described(result, passed=passed)
 
 
 @pytest.mark.skipif(__import__("sys").platform == "win32", reason="SIGSTOP is POSIX")
@@ -741,8 +762,7 @@ def test_a_host_freeze_is_left_out_of_a_tests_timeout(
     """Frozen 1.5 s by the host, a test with 0.3 s of its own work stays within its 1 s
     limit. (On Linux in a container, run under ``docker run --init``: see
     ``test_a_frozen_process_is_named_a_host_stall``.)"""
-    out = _limited(pytester, monkeypatch, FROZEN_WITHIN_ITS_LIMIT)
-    assert "1 passed" in out, out
+    _limited(pytester, monkeypatch, FROZEN_WITHIN_ITS_LIMIT, passed=True)
 
 
 @pytest.mark.skipif(__import__("sys").platform == "win32", reason="SIGSTOP is POSIX")
@@ -750,7 +770,7 @@ def test_a_timeout_after_a_host_freeze_says_what_it_left_out(
     pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     out = _limited(pytester, monkeypatch, FROZEN_PAST_ITS_LIMIT)
-    assert "TestTimeoutError: test timed out after 1.0 s of running time (" in out
+    assert "TestTimeoutError: test timed out after 1.0 s of running time (" in out, out
     # About 1 s: a freeze is counted as the watchdog's gap less one tick, so never more.
     assert re.search(r"host froze the process (0\.[89]|1\.[0-9]) s, not counted\)", out), out
 
@@ -760,8 +780,8 @@ def test_a_deadlock_times_out_on_time(
 ) -> None:
     """Every fiber waiting is not the host freezing the process: nothing is left out."""
     out = _limited(pytester, monkeypatch, DEADLOCKED_FIBER)
-    assert "TestTimeoutError: test timed out after 1.0s; it was interrupted" in out
-    assert "not counted" not in out
+    assert "TestTimeoutError: test timed out after 1.0s; it was interrupted" in out, out
+    assert "not counted" not in out, out
 
 
 @pytest.mark.skipif(__import__("sys").platform == "win32", reason="libc sleep through ctypes")
@@ -771,8 +791,8 @@ def test_a_c_call_holding_the_gil_times_out_on_time(
     """A GIL-held sleep starves the watchdog and uses no CPU, as a freeze does, but its
     faulthandler dump comes on time: pyfect's own time, so nothing is left out."""
     out = _limited(pytester, monkeypatch, GIL_HELD_IN_A_STEP)
-    assert "TestTimeoutError: test timed out after 1.0s" in out
-    assert "not counted" not in out
+    assert "TestTimeoutError: test timed out after 1.0s" in out, out
+    assert "not counted" not in out, out
 
 
 BLOCKS_PAST_ITS_LIMIT = """
