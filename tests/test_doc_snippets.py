@@ -369,8 +369,32 @@ def test_cluster_snippet_with_slow_storage(path: Path, runs: Runs):
     done = runs["test_cluster_snippet_with_slow_storage", path].result()
     assert_ran(done)
     assert_sleeps_in_limit(name(path), done)
+    assert_little_disk_wait(name(path), done)
     expected = path.with_suffix(".out")
     assert done.stdout == (expected.read_text() if expected.exists() else "")
+
+
+DISK_WAIT_LIMIT = 1.0
+"""Seconds a cluster snippet may wait on its slowed commits. Runners' poll loops sleep for as
+long as the run lasts, so a run that waits on its disk sleeps longer the slower the disk is:
+cluster/runners.py waited 1.65 s (33 commits, its two runners' shard handoffs on one file),
+and on CI's disk ran past the 10 s storage poll and completed 58 s of sleep."""
+
+
+def assert_little_disk_wait(snippet: str, done: subprocess.CompletedProcess[str]) -> None:
+    from _slow_storage import COMMIT_DELAY, SLOWED_MARKER
+
+    found = [
+        int(line[len(SLOWED_MARKER) :])
+        for line in done.stderr.splitlines()
+        if line.startswith(SLOWED_MARKER)
+    ]
+    assert len(found) == 1, f"no {SLOWED_MARKER!r} line: the run did not exit through atexit"
+    waited = found[0] * COMMIT_DELAY
+    assert waited <= DISK_WAIT_LIMIT, (
+        f"{snippet} waited {waited:.2f} s on {found[0]} slowed commits, over "
+        f"{DISK_WAIT_LIMIT:g} s: its runtime, and so its runners' sleep, follows the disk"
+    )
 
 
 def test_slow_storage_slows_file_commits_only(tmp_path: Path):

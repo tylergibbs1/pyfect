@@ -10,13 +10,20 @@ out together. 10 ms commits kept that queue under the deadline, so the delay is 
 In-memory databases are not slowed: they never wait for a disk.
 """
 
+import atexit
 import sqlite3
 import sys
+import threading
 import time
 from pathlib import Path
 from typing import Any
 
 COMMIT_DELAY = 0.05
+SLOWED_MARKER = "slowed commits: "
+"""Printed to stderr at exit, before the number of commits that waited."""
+
+_slowed = [0]
+_slowed_lock = threading.Lock()
 
 _connect = sqlite3.connect
 
@@ -34,6 +41,8 @@ class SlowCommits(sqlite3.Connection):
         ends = sql.lstrip()[:6].upper() in ("COMMIT", "END")
         if not self.in_transaction and (ends or self.total_changes != changes):
             self.delayed += 1
+            with _slowed_lock:
+                _slowed[0] += 1
             time.sleep(COMMIT_DELAY)
         return cursor
 
@@ -49,8 +58,13 @@ def slow_connect(database: Any, *args: Any, **kwargs: Any) -> sqlite3.Connection
     return _connect(database, *args, **kwargs)
 
 
+def _report() -> None:
+    print(f"{SLOWED_MARKER}{_slowed[0]}", file=sys.stderr, flush=True)
+
+
 if __name__ == "__main__":
     sqlite3.connect = slow_connect
+    atexit.register(_report)
     sys.path.insert(0, str(Path(__file__).parent))  # -P leaves this directory off
     from _count_sleeps import main
 
