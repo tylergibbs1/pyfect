@@ -4,7 +4,9 @@ Each case runs a small test file under the plugin in a subprocess, with a short
 ``stall_threshold``, and reads the "stall" section of its failure.
 """
 
+import os
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -552,10 +554,101 @@ def test_a_busy_stall_ending_right_after_sampling_starts_is_named_from_its_sampl
 def test_a_tests_own_profiling_timer_survives_a_busy_stall(
     pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The watchdog never takes SIGPROF from a test using it: the stall is named
-    approximately, and the test's timer and handler stay its own."""
+    """The watchdog's samples use their own timer and signal: a test's profiling timer and
+    handler stay its own, and the stall is still named from CPU samples."""
     out = _outcomes(pytester, monkeypatch, OWN_PROFILING_TIMER, passed=1, warnings=1)
-    assert "approximate" in out, out
+    assert " in spin_on_purpose (" in out, out
+    assert "CPU samples" in out, out
+
+
+SAMPLED_WHILE_THREADS_COME_AND_GO = """
+import os
+import threading
+import time
+import zlib
+
+import _stalls
+
+_stalls._PROFILE_INTERVAL = 0.001  # a sample every millisecond of CPU
+stop = time.monotonic() + 1.5
+data = os.urandom(1 << 18)
+
+
+def without_the_gil():
+    while time.monotonic() < stop:
+        zlib.compress(data, 6)
+
+
+def come_and_go():
+    while time.monotonic() < stop:
+        threads = [threading.Thread(target=int) for _ in range(8)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+
+for target in (without_the_gil, come_and_go, come_and_go, come_and_go, come_and_go):
+    threading.Thread(target=target, daemon=True).start()
+
+
+def deep(n):
+    return 0 if n == 0 else 1 + deep(n - 1)
+
+
+samples = _stalls._CpuSamples()
+samples.start(f"0x{threading.get_ident():016x}")
+while time.monotonic() < stop:
+    deep(100)
+busiest = samples.busiest()
+samples.close()
+assert busiest is not None and busiest[0][0].func == "deep", busiest
+"""
+
+
+def _run_with_stalls(source: str) -> subprocess.CompletedProcess[str]:
+    env = {**os.environ, "PYTHONPATH": os.pathsep.join([str(Path(__file__).parent), *sys.path])}
+    return subprocess.run(
+        [sys.executable, "-c", source],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=SUBPROCESS_TIMEOUT,
+        check=False,
+    )
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="the CPU samples run only on Linux")
+def test_cpu_samples_survive_threads_that_come_and_go_and_run_without_the_gil() -> None:
+    """A sample read every thread's frames from whichever thread the signal landed on, often
+    one without the GIL, while the busy thread changed its frames and other threads came and
+    went: CPython segfaulted (CI, Python 3.13, a worker lost with an empty dump). Each sample
+    now reads only the sampled thread's own frames, there."""
+    done = _run_with_stalls(SAMPLED_WHILE_THREADS_COME_AND_GO)
+    assert done.returncode == 0, (done.returncode, done.stderr[-2000:])
+
+
+LATE_SAMPLE_SIGNAL = """
+import signal
+import threading
+
+import _stalls
+
+samples = _stalls._CpuSamples()
+samples.start(f"0x{threading.get_ident():016x}")
+samples.stop()
+signal.raise_signal(_stalls._SAMPLE_SIGNAL)  # one the timer raised just before it stopped
+samples.close()
+print("survived")
+"""
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="the CPU samples run only on Linux")
+def test_a_sample_signal_after_sampling_stopped_does_nothing() -> None:
+    """A signal the timer raised just before it stopped can arrive after the handler is put
+    back. SIGPROF's default action ended the process (an xdist worker lost with no dump)."""
+    done = _run_with_stalls(LATE_SAMPLE_SIGNAL)
+    assert (done.returncode, done.stdout.strip()) == (0, "survived"), done.stderr[-2000:]
 
 
 def test_an_on_time_dump_with_no_busy_thread_and_no_cpu_is_unexplained() -> None:

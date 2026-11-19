@@ -23,9 +23,9 @@ thread, ticking for the whole session and recording while a test runs, tells the
   cannot see. Fibers never block, so that is "pyfect blocked in <frame>" too. With the CPU
   busy it is "pyfect busy in <frame>": one long step, or identical steps in a loop. A sample
   taken holding the GIL finds a busy thread where it last released it, not where its CPU
-  goes, so while such a stall lasts (and only then) the busy thread is sampled by SIGPROF
-  (``_CpuSamples``); where that cannot be exact (off Linux) the frame is named "near", as
-  approximate.
+  goes, so while such a stall lasts (and only then) the busy thread is sampled by a timer on
+  its own CPU clock (``_CpuSamples``); where that cannot be exact (off Linux) the frame is
+  named "near", as approximate.
 
 A stall is added to the failure output of the test it happened in (a "stall" section), and
 a passing test that stalled gets a ``StallWarning``. A ``pyfect.testing`` test that passed
@@ -62,6 +62,7 @@ from typing import Any
 
 import pytest
 from _native_stacks import froze
+from _thread_cpu_timer import ThreadCpuTimer
 from _threads import live_threads
 
 from pyfect.duration import Duration, seconds
@@ -150,6 +151,19 @@ def _dump_threads(text: str) -> list[DumpedThread]:
     return threads
 
 
+def _samples(text: str) -> list[tuple[Frame, ...]]:
+    """The stacks of one thread's own dumps (``all_threads=False``) that have frames."""
+    stacks = (
+        tuple(
+            Frame(m["file"], int(m["line"]), m["func"])
+            for line in block.splitlines()
+            if (m := _DUMP_FRAME.match(line))
+        )
+        for block in _SAMPLE.split(text)[1:]
+    )
+    return [frames for frames in stacks if frames]
+
+
 class _Steal:
     """CPU steal over an interval, from ``/proc/stat`` (Linux)."""
 
@@ -206,10 +220,12 @@ class _Collections:
 
 
 _PROFILE_INTERVAL = 0.01
-"""Seconds of process CPU between samples while a busy stall is being profiled."""
-_EXACT = sys.platform == "linux" and hasattr(signal, "ITIMER_PROF")
-"""Linux raises SIGPROF from the timer tick on the thread using the CPU; macOS only at
-system call boundaries, so there it would be as biased as a sample taken with the GIL."""
+"""Seconds of the busy thread's CPU between samples while its stall is being profiled."""
+_EXACT = sys.platform == "linux"
+"""Linux runs a timer on one thread's CPU clock and signals that thread while it runs."""
+_SAMPLE_SIGNAL = signal.SIGURG
+"""Ignored by default, so one that comes after sampling stopped does nothing."""
+_SAMPLE = re.compile(r"^Stack \(most recent call first\):$", re.MULTILINE)
 
 
 class _CpuSamples:
@@ -217,15 +233,17 @@ class _CpuSamples:
 
     A sample taken by a Python thread needs the GIL, and while it holds it the busy thread is
     parked at a point that releases the GIL: every sample of a loop calling ``os.urandom``
-    lands on that call. ``ITIMER_PROF`` makes the kernel raise SIGPROF on the thread using
-    the CPU, and ``faulthandler``'s C handler dumps every stack there, without the GIL. A
-    profiling timer perturbs what it measures (interrupted system calls), so it runs only
-    during a busy stall, and never over a SIGPROF timer or handler someone else set."""
+    lands on that call. A timer on the busy thread's CPU clock signals that thread while it
+    runs (``_thread_cpu_timer``), and ``faulthandler``'s C handler there dumps its own stack,
+    without the GIL; never another thread's, which that thread may be changing. A timer
+    perturbs what it measures (interrupted system calls), so it runs only during a busy
+    stall, and never over a handler someone else set for its signal."""
 
     def __init__(self) -> None:
         self._file = tempfile.TemporaryFile("w+")  # noqa: SIM115
         self._lock = threading.Lock()
         self._ident: str | None = None
+        self._timer: ThreadCpuTimer | None = None
         self._read = 0
         self._counts: collections.Counter[str] = collections.Counter()
         self._stacks: dict[str, tuple[Frame, ...]] = {}
@@ -236,26 +254,30 @@ class _CpuSamples:
         return self._ident
 
     def start(self, ident: str) -> None:
-        """Samples ``ident`` until ``stop``, where that is exact and SIGPROF is free."""
+        """Samples ``ident`` until ``stop``, where that is exact and its signal is free."""
         with self._lock:
             if self._ident is not None or not _EXACT or self._file.closed:
                 return
-            if signal.getitimer(signal.ITIMER_PROF) != (0.0, 0.0):
+            if signal.getsignal(_SAMPLE_SIGNAL) is not signal.SIG_DFL:
                 return
-            if signal.getsignal(signal.SIGPROF) is not signal.SIG_DFL:
+            native = {t.ident: t.native_id for t in live_threads("")}.get(int(ident, 16))
+            if native is None:
                 return
-            faulthandler.register(signal.SIGPROF, file=self._file, all_threads=True)
-            signal.setitimer(signal.ITIMER_PROF, _PROFILE_INTERVAL, _PROFILE_INTERVAL)
+            faulthandler.register(_SAMPLE_SIGNAL, file=self._file, all_threads=False)
+            try:
+                self._timer = ThreadCpuTimer(native, _SAMPLE_SIGNAL, _PROFILE_INTERVAL)
+            except OSError:  # the thread ended since its stack was read
+                faulthandler.unregister(_SAMPLE_SIGNAL)
+                return
             self._ident = ident
 
     def stop(self) -> None:
         with self._lock:
-            if self._ident is None:
+            if self._timer is None:
                 return
-            # Cleared only while still ours: a test may have set its own since.
-            if signal.getitimer(signal.ITIMER_PROF)[1] == _PROFILE_INTERVAL:
-                signal.setitimer(signal.ITIMER_PROF, 0, 0)
-            faulthandler.unregister(signal.SIGPROF)  # puts back the handler it replaced
+            self._timer.cancel()
+            self._timer = None
+            faulthandler.unregister(_SAMPLE_SIGNAL)  # puts back the handler it replaced
             self._file.seek(0)
             self._file.truncate()
             self._ident, self._read = None, 0
@@ -270,11 +292,10 @@ class _CpuSamples:
                 return None
             data = os.pread(self._file.fileno(), 1 << 20, self._read)
             self._read += len(data)
-            for thread in _dump_threads(data.decode(errors="replace")):
-                if thread.ident == self._ident:
-                    key = str(thread.frames[0])
-                    self._counts[key] += 1
-                    self._stacks.setdefault(key, thread.frames)
+            for frames in _samples(data.decode(errors="replace")):
+                key = str(frames[0])
+                self._counts[key] += 1
+                self._stacks.setdefault(key, frames)
             if not self._counts:
                 return None
             key, count = self._counts.most_common(1)[0]
@@ -400,7 +421,7 @@ class Watchdog:
 
     def disarm(self) -> None:
         self._armed.clear()
-        self._stop_sampling()  # the test is over: no SIGPROF reaches the next one
+        self._stop_sampling()  # the test is over: no sample signal reaches the next one
 
     def _record(self, stall: str) -> None:
         with self._lock:
