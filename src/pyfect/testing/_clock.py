@@ -203,22 +203,22 @@ class TestClock:
         return self._monotonic_ns
 
     def sleep(self, duration: Duration) -> Effect[None]:
-        # Effect's TestClock sleep, op for op: a generator that acquires a
+        # Effect's TestClock sleep, op for op (4.1.4, #10326): a suspend that acquires a
         # sleeper, waits on its latch and always removes it.
-        def body() -> Generator[Effect[Any], Any]:
+        def body() -> Effect[None]:
             delta = nanos_or_infinite(duration)
             if delta <= 0:
-                return  # what ``end <= self._timestamp_ns`` decides, without the arithmetic
+                return _void()  # what ``end <= self._timestamp_ns`` decides, without the arithmetic
             end = _add_nanos(self._timestamp_ns, delta)
             if end <= self._timestamp_ns:
-                return
-            yield from acquire_use_release(
+                return _void()
+            return acquire_use_release(
                 _Sync(lambda: self._add_sleeper(end)),
                 lambda entry: self._warning_start.and_then(entry[0].wait()),
                 lambda entry, _: _Sync(entry[1].cancel),
             )
 
-        return _Gen(body)
+        return _Suspend(body)
 
     def _add_sleeper(self, end: float) -> tuple[Latch, TimerEntry[Callable[[], None]]]:
         # Run by ``sleep`` on its fiber.
