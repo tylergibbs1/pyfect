@@ -29,7 +29,7 @@ from pyfect.http.server_request import HttpServerRequest, ParsedSearchParams, Se
 from pyfect.http.server_response import HttpServerResponse
 from pyfect.http.web_handler import WebHandlerLayer, to_web_handler_layer_with
 from pyfect.layer import effect as layer_effect
-from pyfect.layer import effect_discard, merge, provide, provide_merge, succeed_context, unwrap
+from pyfect.layer import effect_discard, provide, provide_merge, succeed_context, unwrap
 from pyfect.layer import succeed as layer_succeed
 from pyfect.schema import Codec, ParseOptions, SchemaError, decode_unknown_effect
 from pyfect.scope import Scope
@@ -368,7 +368,9 @@ def serve(
             served: Layer[Any, Any, Any] = (
                 server.serve(app) if app_middleware is None else server.serve(app, app_middleware)
             )
-            return merge(served, succeed_context(ctx))
+            # The server is built with the app's services (and memo map), as Effect's
+            # ``Layer.provideMerge``.
+            return served.pipe(provide_merge(succeed_context(ctx)))
 
         return built.map(serving)
 

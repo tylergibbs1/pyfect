@@ -164,6 +164,30 @@ def _routed(app: fx.Layer[Any, Any, Any], program: fx.Effect[Any, Any, Any]) -> 
     return program.pipe(fx.provide(router.serve(app, disable_logger=True)))
 
 
+class _Greeting(fx.Reference[str]):
+    @classmethod
+    def default(cls) -> str:
+        return "default"
+
+
+def test_serves_requests_with_the_apps_context_and_memo_map() -> None:
+    """serves requests with the app's context and memo map"""
+    builds = [0]
+    built = layer.effect_discard(fx.sync(lambda: builds.__setitem__(0, builds[0] + 1)))
+    greet = _Greeting().map(server_response.text).pipe(fx.provide(built))
+    app = layer.merge(layer.succeed(_Greeting, "app"), built, router.add("GET", "/", greet))
+
+    @fx.fn
+    def program():
+        yield from router.serve(app).build()
+        client = yield from HttpClient()
+        response = yield from client.get("/")
+        return (yield from response.text)
+
+    assert run_live(program()) == "app"
+    assert builds[0] == 1
+
+
 def test_returns_400_for_malformed_json_within_max_body_size() -> None:
     """returns 400 for malformed JSON within MaxBodySize"""
     app = router.add(
