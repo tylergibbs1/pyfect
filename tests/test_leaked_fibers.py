@@ -88,8 +88,9 @@ def _run(pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch, ini: str, *
 
 
 def _warnings(pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch, **files: str) -> str:
-    """The run's warnings summary; every test in ``files`` passes."""
-    result = _run(pytester, monkeypatch, "", **files)
+    """The run's warnings summary, with leaks only warned about; every test in ``files``
+    passes."""
+    result = _run(pytester, monkeypatch, "leaked_fibers = warn", **files)
     result.assert_outcomes(passed=sum(source.count("def test_") for source in files.values()))
     out = result.stdout.str()
     return " ".join(out.split("warnings summary")[1].split()) if "warnings summary" in out else ""
@@ -105,10 +106,11 @@ def test_a_fiber_left_sleeping_past_its_file_is_named_with_the_test(
     ) in summary, summary
 
 
-def test_with_leaked_fibers_fail_the_files_last_test_errors(
+def test_a_fiber_left_sleeping_past_its_file_fails_the_file(
     pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    result = _run(pytester, monkeypatch, "leaked_fibers = fail", test_a=LEAVES_A_SLEEPING_FIBER)
+    """Enforced by default: the file's last test errors in its teardown; the tests passed."""
+    result = _run(pytester, monkeypatch, "", test_a=LEAVES_A_SLEEPING_FIBER)
     result.assert_outcomes(passed=2, errors=1)
     out = " ".join(result.stdout.str().split())
     assert "ERROR at teardown of test_after_it_in_the_file" in out, out

@@ -10,8 +10,8 @@ when a test's setup starts and, after its teardown, the new ones still pending. 
 read the background thread runs what is queued there, which may set timers; a thread that
 does not get through it in time is reported instead of the timers. Once the
 file's last test is torn down, each still pending after a short wait is reported, naming the
-test that left it and what it runs: as a warning, or with ``leaked_fibers = fail`` as an error
-in that last test's teardown.
+test that left it and what it runs: as an error in that last test's teardown, or with
+``leaked_fibers = warn`` as a warning.
 """
 
 import sys
@@ -54,7 +54,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     parser.addini(
         "leaked_fibers",
         "A timer a test file's tests leave on the background scheduler: warn or fail.",
-        default="warn",
+        default="fail",
     )
 
 
@@ -204,13 +204,12 @@ def pytest_runtest_makereport(
     leaked = item.stash.get(_LEAKED, None) if call.when == "teardown" else None
     if not leaked:
         return report
-    if item.config.getini("leaked_fibers") == "fail":
-        if report.passed:
-            report.outcome = "failed"
-            report.longrepr = "\n".join(leaked)
-    else:
+    if item.config.getini("leaked_fibers") == "warn":
         for leak in leaked:
             item.warn(LeakedFiberWarning(leak))
+    elif report.passed:
+        report.outcome = "failed"
+        report.longrepr = "\n".join(leaked)
     return report
 
 
