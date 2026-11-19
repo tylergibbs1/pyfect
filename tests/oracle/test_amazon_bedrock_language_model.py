@@ -277,6 +277,40 @@ def test_sends_tool_calls_and_results():
     ]
 
 
+@pytest.mark.parametrize(
+    ("model_output", "text"),
+    [((Pr.TextPart("Sunny"),), "Sunny"), ((), "")],
+    ids=["as text", "as empty text when it is empty"],
+)
+@testing.effect
+def test_sends_tool_result_model_output(model_output: tuple[Pr.TextPart, ...], text: str):
+    """AmazonBedrockLanguageModel / generateText / sends tool result model output %s"""
+    http = _replying(converse_response([{"text": "Done"}]))
+    prompt = Pr.make(
+        [
+            Pr.UserMessage([Pr.TextPart("Weather in SF?")]),
+            Pr.AssistantMessage([Pr.ToolCallPart("tooluse_1", "Weather", {"city": "SF"})]),
+            Pr.ToolMessage(
+                [
+                    Pr.ToolResultPart(
+                        "tooluse_1",
+                        "Weather",
+                        False,
+                        {"temperature": 20},
+                        model_output=model_output,
+                    )
+                ]
+            ),
+        ]
+    )
+    yield from _provided(
+        lm.generate_text(prompt, toolkit=toolkit, disable_tool_call_resolution=True), http
+    )
+    assert body_json(http.requests[0])["messages"][2]["content"] == [
+        {"toolResult": {"toolUseId": "tooluse_1", "content": [{"text": text}]}}
+    ]
+
+
 @testing.effect
 def test_round_trips_reasoning():
     """AmazonBedrockLanguageModel / generateText / round-trips reasoning blocks with their

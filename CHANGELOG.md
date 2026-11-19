@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- AI / Amazon Bedrock: a tool result's `model_output` was ignored, so Bedrock got the
+  application-only `result` instead of what the tool chose to show the model. It now sends the
+  model output as text (empty text for an empty one) (Effect #10703).
+
 ## 0.6.14 (2026-11-19)
 
 0.6.13 was tagged but never published: its release workflow could not start.
