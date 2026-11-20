@@ -104,6 +104,20 @@ generated client of every other OpenRouter operation.
 
 </CodeOutput>
 
+### OpenAI-compatible APIs
+
+`pyfect.ai.openai_compat` works with any server that speaks Chat Completions: give its URL as
+`client.layer(api_url=...)`. Cloudflare Workers AI's endpoint has two behaviours to know about.
+pyfect handles both as Effect 4.1.4 does:
+
+- **Digits can drop out of streamed text.** Workers AI streams a digit as a JSON number
+  (`"delta":{"content":1}`), not a string. That chunk fails the chunk schema and is skipped,
+  so `stream_text` can give "I have  apples" for "I have 3 apples", with no error. Ask
+  the model to write numbers as words, or use `generate_text`.
+- **A retired model fails with "Unknown error".** Workers AI answers HTTP 410 with its own
+  body, `{"errors":[{"message":...,"code":5028}]}`, which isn't OpenAI's error shape. The
+  reason is in that body: read `error.reason.http["body"]`.
+
 ### Workload identity
 
 A workload that has an identity token (a Kubernetes service account token, a cloud OIDC

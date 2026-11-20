@@ -4,6 +4,12 @@
 
 ### Docs
 
+- The AI page has a section on OpenAI-compatible APIs with two things to know about
+  Cloudflare Workers AI's endpoint, both as in Effect 4.1.4. It streams a digit as a JSON
+  number (`"delta":{"content":1}`), and that chunk fails the chunk schema and is skipped, so
+  digits drop out of streamed text without an error: prompt for words, or don't stream. A
+  retired model answers HTTP 410 with Cloudflare's `{"errors":[{"message":...,"code":5028}]}`
+  body, so the error reads "Unknown error" and the reason is in `reason.http["body"]`.
 - The SQL page has a section on `pyfect.sql.schema` (`find_all`, `find_one`,
   `find_one_option`, `find_non_empty`, `void`), which types a query by schemas: the request
   is encoded and the rows are decoded, so a row of the wrong shape fails with a `SchemaError`.
