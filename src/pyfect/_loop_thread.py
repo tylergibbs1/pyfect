@@ -31,8 +31,9 @@ type _AnyGenerator = AsyncGenerator[Any, Any]
 
 class LoopThread:
     """An asyncio loop running on a daemon thread named ``name`` until
-    ``stop``. ``submit`` runs a coroutine on it; at ``stop``, a coroutine
-    still running is cancelled, and every async generator the loop ran is
+    ``stop``. ``submit`` runs a coroutine on it, kept until it ends (as is
+    every task of the loop) even if its future is dropped; at ``stop``, a
+    coroutine still running is cancelled, and every async generator the loop ran is
     closed before the loop closes (``stopped`` is then done). A generator
     dropped after that is discarded without its close."""
 
@@ -48,6 +49,9 @@ class LoopThread:
 
     def __init__(self, name: str, *, exception_handler: ExceptionHandler | None = None) -> None:
         self.loop = asyncio.new_event_loop()
+        # asyncio holds tasks weakly: a coroutine whose future was dropped
+        # would be collected mid-flight, neither run to its end nor cancelled.
+        background.keep_tasks(self.loop)
         # Named for the loop: its workers (name resolution, say) outlive any one caller.
         self.loop.set_default_executor(ThreadPoolExecutor(thread_name_prefix=f"{name}-executor"))
         if exception_handler is not None:

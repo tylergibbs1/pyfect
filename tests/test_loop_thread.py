@@ -79,6 +79,38 @@ def test_a_generator_held_by_a_cancelled_coroutine_is_closed_before_the_loop_clo
     assert [r.getMessage() for r in caplog.records if r.levelno >= logging.ERROR] == []
 
 
+@pytest.mark.parametrize("start", ["submit", "run_coroutine_threadsafe"])
+def test_a_coroutine_whose_future_is_dropped_runs_until_stop_cancels_it(
+    start: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    """asyncio holds tasks weakly: with its future dropped, a task parked on
+    an event only it references is garbage, and a collection used to destroy
+    it pending (closing its coroutine with ``GeneratorExit``)."""
+    thread = LoopThread("test-loop")
+    waiting = threading.Event()
+    ended: list[str] = []
+
+    async def wait() -> None:
+        waiting.set()
+        try:
+            await asyncio.Event().wait()
+        except BaseException as error:
+            ended.append(type(error).__name__)
+            raise
+
+    if start == "submit":
+        thread.submit(wait)
+    else:
+        asyncio.run_coroutine_threadsafe(wait(), thread.loop)
+    assert waiting.wait(_SETTLED)
+    gc.collect()
+    assert ended == []
+    thread.stop()
+    thread.stopped.result(_SETTLED)
+    assert ended == ["CancelledError"]
+    assert [r.getMessage() for r in caplog.records if r.levelno >= logging.ERROR] == []
+
+
 def test_a_generator_still_open_at_stop_is_closed() -> None:
     thread = LoopThread("test-loop")
     cleaned: list[str] = []
