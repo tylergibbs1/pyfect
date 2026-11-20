@@ -50,6 +50,7 @@ from typing import (
 
 from pyfect import errors
 from pyfect._core import Effect
+from pyfect._pipe import pipe_one
 from pyfect.exit import Success
 from pyfect.option import Option
 from pyfect.schema import ast
@@ -533,8 +534,8 @@ class _SchemaClass:
         return cls.__codec__().check(first, *rest)
 
     @classmethod
-    def pipe[B](cls, f: Callable[[type[Self]], B], /) -> B:
-        return f(cls)
+    def pipe[B](cls, f: Callable[[type[Self]], B], /, *more: Never) -> B:
+        return pipe_one(cls, f, more)
 
 
 def new[**P, T: _SchemaClass](

@@ -25,7 +25,7 @@ from functools import partial
 from typing import TYPE_CHECKING, Any, Concatenate, Never, Unpack, cast, overload
 
 from pyfect._core import Effect, _FailCause, _Gen, _Locally, _Succeed, _Suspend
-from pyfect._effect_args import not_a_generator
+from pyfect._effect_args import mark_effect_function, not_a_generator
 from pyfect._stack_frame import CurrentStackFrame, StackFrame, call_site
 from pyfect.cause import die as die_cause
 from pyfect.context import Context
@@ -103,7 +103,7 @@ def _untraced(f: _Body, pipeables: tuple[Callable[..., Any], ...]) -> Callable[.
             result = apply(result, args, kwargs)
         return result
 
-    return wrapper
+    return mark_effect_function(wrapper)
 
 
 def _run_body(f: _AnyBody, api: str, result: object) -> Effect[Any, Any, Any]:
@@ -168,7 +168,7 @@ def _traced(
         located: Effect[Any, Any, Any] = _Locally(traced, enter_at(call_site(1)))
         return located
 
-    return wrapper
+    return mark_effect_function(wrapper)
 
 
 class _Traced:
@@ -803,7 +803,7 @@ def fn_untraced_eager(f: _Body, /, *pipeables: Callable[..., Any]) -> Callable[.
             effect = apply(effect, args, kwargs)
         return effect
 
-    return call
+    return mark_effect_function(call)
 
 
 __all__ = ["Pipe", "fn", "fn_untraced", "fn_untraced_eager"]

@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Literal, Never, Unpack, final, overload
 
+from pyfect._pipe import pipe_one
 from pyfect._tags import Tags
 from pyfect.context import Tag
 from pyfect.effect import Effect, fail, succeed
@@ -75,10 +76,10 @@ class HttpClientService[E, R = Never]:
         producing it) and giving the response, failing with ``E``."""
         return self._postprocess
 
-    def pipe[B](self, f: Callable[[HttpClientService[E, R]], B], /) -> B:
+    def pipe[B](self, f: Callable[[HttpClientService[E, R]], B], /, *more: Never) -> B:
         """``f(self)``: applies a curried combinator such as
         ``catch_tag`` or ``transform_response``."""
-        return f(self)
+        return pipe_one(self, f, more)
 
     def execute(self, request: HttpClientRequest) -> Effect[HttpClientResponse, E, R]:
         """Sends ``request`` through ``preprocess`` and ``postprocess``

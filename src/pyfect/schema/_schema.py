@@ -8,6 +8,7 @@ from dataclasses import dataclass, replace
 from typing import Any, Generic, Never, Protocol, Self, TypeIs, TypeVar, Unpack, cast
 
 from pyfect._core import Effect
+from pyfect._pipe import pipe_one
 from pyfect.exit import Success
 from pyfect.option import Option, Some
 from pyfect.schema._adapters import CONSTRUCTOR, OPTION, raise_schema_failure, schema_error_of
@@ -42,9 +43,9 @@ class Bottom(Generic[T_co, E_co, RD_co, RE_co]):
     def __codec__(self) -> Bottom[T_co, E_co, RD_co, RE_co]:
         return self
 
-    def pipe[B](self, f: Callable[[Self], B], /) -> B:
+    def pipe[B](self, f: Callable[[Self], B], /, *more: Never) -> B:
         """``f(self)``. One function per call, as ``Effect.pipe``."""
-        return f(self)
+        return pipe_one(self, f, more)
 
     def __get_pydantic_core_schema__(
         self: Bottom[Any, Any, Never, Never], source: object, handler: object

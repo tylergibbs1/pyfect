@@ -11,8 +11,9 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Any, Generic, Protocol, TypeIs, TypeVar, cast, runtime_checkable
+from typing import Any, Generic, Never, Protocol, TypeIs, TypeVar, cast, runtime_checkable
 
+from pyfect._pipe import pipe_one
 from pyfect.schema import ast
 from pyfect.schema._schema import Bottom, is_schema
 from pyfect.schema._struct import StructSchema
@@ -67,8 +68,8 @@ class Struct:
     def __variant_cache__(self, is_default: bool) -> dict[str, Any]:
         return self._caches[is_default]
 
-    def pipe[B](self, f: Callable[[Struct], B], /) -> B:
-        return f(self)
+    def pipe[B](self, f: Callable[[Struct], B], /, *more: Never) -> B:
+        return pipe_one(self, f, more)
 
 
 def is_struct(value: object) -> TypeIs[HasVariants]:

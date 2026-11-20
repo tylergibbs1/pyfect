@@ -9,8 +9,9 @@ anyway, it raises ``GraphError`` as Effect's does.
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Iterator, Sequence
-from typing import TYPE_CHECKING, Any, Self, cast
+from typing import TYPE_CHECKING, Any, Never, Self, cast
 
+from pyfect._pipe import pipe_one
 from pyfect.graph import (
     _all_pairs,
     _components,
@@ -88,8 +89,8 @@ class GraphView[N, E, K: Kind]:
 
     __repr__ = __str__
 
-    def pipe[B](self, f: Callable[[Self], B], /) -> B:
-        return f(self)
+    def pipe[B](self, f: Callable[[Self], B], /, *more: Never) -> B:
+        return pipe_one(self, f, more)
 
     def to_snapshot(self) -> Snapshot[N, E, K]:
         return cast("Snapshot[N, E, K]", _snapshot.to_snapshot(self._store))

@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any, Generic, Never, Self, TypeVar, overload
 
 from pyfect._core import Effect, _Suspend
 from pyfect._effect_args import wrong_argument
+from pyfect._pipe import pipe_one
 from pyfect.errors import Done
 
 if TYPE_CHECKING:
@@ -67,9 +68,9 @@ class Sink(Generic[A_co, In_contra, L_co, E_co, R_co]):
         build = self._build
         return _Suspend(lambda: build(upstream, scope))
 
-    def pipe[B](self, f: Callable[[Self], B], /) -> B:
+    def pipe[B](self, f: Callable[[Self], B], /, *more: Never) -> B:
         """Apply ``f`` to this sink (one step; see ``Effect.pipe``)."""
-        return f(self)
+        return pipe_one(self, f, more)
 
     # --- the value ---------------------------------------------------------
 

@@ -21,8 +21,9 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable
-from typing import Self
+from typing import Never, Self
 
+from pyfect._pipe import pipe_one
 from pyfect.glob import _compile, _match
 
 __all__ = ["Glob", "escape", "make", "match"]
@@ -46,8 +47,8 @@ class Glob:
         """Whether ``path`` (``/``-separated) matches."""
         return _match.match(self._compiled, path)
 
-    def pipe[B](self, f: Callable[[Self], B], /) -> B:
-        return f(self)
+    def pipe[B](self, f: Callable[[Self], B], /, *more: Never) -> B:
+        return pipe_one(self, f, more)
 
     def to_json(self) -> dict[str, object]:
         return {"_id": "Glob", "pattern": self.pattern, "dot": self.dot}

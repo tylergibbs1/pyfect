@@ -7,6 +7,7 @@ from dataclasses import dataclass, replace
 from typing import Any, Generic, Literal, Never, Self, TypeVar, cast, overload
 
 from pyfect._core import Effect
+from pyfect._pipe import pipe_one
 from pyfect.effect import succeed
 from pyfect.http.router._provided import Provided
 from pyfect.http.server_request import HttpServerRequest, ServerRequest
@@ -34,8 +35,8 @@ class Route(Generic[E_co, R_co]):
     uninterruptible: bool = False
     prefix: str | None = None
 
-    def pipe[B](self, f: Callable[[Self], B], /) -> B:
-        return f(self)
+    def pipe[B](self, f: Callable[[Self], B], /, *more: Never) -> B:
+        return pipe_one(self, f, more)
 
 
 type Handler[E, R] = (

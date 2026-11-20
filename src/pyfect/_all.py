@@ -9,12 +9,13 @@ typed errors (defects and interruptions still propagate).
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
-from typing import Any, Literal, Never, overload
+from collections.abc import Callable, Iterable, Mapping
+from typing import Any, Literal, Never, cast, overload
 
 from pyfect._concurrency import Concurrency, _as_is, for_each_into
 from pyfect._core import Effect, _Suspend
 from pyfect._effect_args import require_effects
+from pyfect._effect_base import EffectBase
 from pyfect.result import Result
 
 type Mode = Literal["default", "result"]
@@ -162,15 +163,113 @@ def all[RR = Never](
     discard: Literal[True],
     mode: Literal["result"],
 ) -> Effect[None, Never, RR]: ...
+@overload
+def all[K, A, EE = Never, RR = Never](
+    effects: Mapping[K, Effect[A, EE, RR]],
+    /,
+    *,
+    concurrency: Concurrency = None,
+    discard: Literal[False] = False,
+    mode: Literal["default"] = "default",
+) -> Effect[dict[K, A], EE, RR]: ...
+@overload
+def all[K, A, EE = Never, RR = Never](
+    effects: Mapping[K, Effect[A, EE, RR]],
+    /,
+    *,
+    concurrency: Concurrency = None,
+    discard: Literal[False] = False,
+    mode: Literal["result"],
+) -> Effect[dict[K, Result[A, EE]], Never, RR]: ...
+@overload
+def all[EE = Never, RR = Never](
+    effects: Mapping[Any, Effect[object, EE, RR]],
+    /,
+    *,
+    concurrency: Concurrency = None,
+    discard: Literal[True],
+    mode: Literal["default"] = "default",
+) -> Effect[None, EE, RR]: ...
+@overload
+def all[RR = Never](
+    effects: Mapping[Any, Effect[object, object, RR]],
+    /,
+    *,
+    concurrency: Concurrency = None,
+    discard: Literal[True],
+    mode: Literal["result"],
+) -> Effect[None, Never, RR]: ...
+@overload
+def all[A, EE = Never, RR = Never](
+    effects: Iterable[Effect[A, EE, RR]],
+    /,
+    *,
+    concurrency: Concurrency = None,
+    discard: Literal[False] = False,
+    mode: Literal["default"] = "default",
+) -> Effect[list[A], EE, RR]: ...
+@overload
+def all[A, EE = Never, RR = Never](
+    effects: Iterable[Effect[A, EE, RR]],
+    /,
+    *,
+    concurrency: Concurrency = None,
+    discard: Literal[False] = False,
+    mode: Literal["result"],
+) -> Effect[list[Result[A, EE]], Never, RR]: ...
+@overload
+def all[EE = Never, RR = Never](
+    effects: Iterable[Effect[object, EE, RR]],
+    /,
+    *,
+    concurrency: Concurrency = None,
+    discard: Literal[True],
+    mode: Literal["default"] = "default",
+) -> Effect[None, EE, RR]: ...
+@overload
+def all[RR = Never](
+    effects: Iterable[Effect[object, object, RR]],
+    /,
+    *,
+    concurrency: Concurrency = None,
+    discard: Literal[True],
+    mode: Literal["result"],
+) -> Effect[None, Never, RR]: ...
 def all(
-    *effects: Effect[Any, Any, Any],
+    *effects: Effect[Any, Any, Any] | Iterable[Effect[Any, Any, Any]] | Mapping[Any, Any],
     concurrency: Concurrency = None,
     discard: bool = False,
     mode: Mode = "default",
 ) -> Effect[Any, Any, Any]:
-    """Run effects and collect their results as a tuple, in order."""
-    require_effects(effects, "effects")
-    return for_each_into(effects, _step_for(mode), concurrency, None if discard else tuple)
+    """Run effects and collect their results as a tuple, in order. As Effect's
+    ``Effect.all``, the effects may also come as one iterable (a list of the
+    results, as Effect's array gives an array) or one mapping (a dict of them under
+    the same keys, as ``all_dict``)."""
+    items: tuple[object, ...] = effects
+    collect: Callable[[list[Any]], Any] = tuple
+    if len(effects) == 1 and not isinstance(effects[0], EffectBase):
+        (only,) = effects
+        if isinstance(only, Mapping):
+            shape = cast("Mapping[Any, Effect[Any, Any, Any]]", only)
+            return all_dict(shape, concurrency=concurrency, discard=discard, mode=mode)
+        if not isinstance(only, (str, bytes)):
+            items = tuple(only)
+            collect = _as_is  # the results list itself, as Effect gives an array
+    elif len(effects) > 1:
+        _reject_a_collection_among(effects)
+    require_effects(items, "effects")
+    checked = cast("tuple[Effect[Any, Any, Any], ...]", items)
+    return for_each_into(checked, _step_for(mode), concurrency, None if discard else collect)
+
+
+def _reject_a_collection_among(effects: tuple[object, ...]) -> None:
+    for i, value in enumerate(effects):
+        if isinstance(value, (list, tuple, Mapping)):
+            kind = type(cast("object", value)).__name__
+            raise TypeError(
+                f"effects[{i}] must be an Effect, got {kind}: {value!r} "
+                "(pass the effects as arguments, fx.all(a, b), or as one list, fx.all([a, b]))"
+            )
 
 
 @overload

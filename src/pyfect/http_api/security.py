@@ -8,8 +8,9 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
-from typing import Any, Literal, Self
+from typing import Any, Literal, Never, Self
 
+from pyfect._pipe import pipe_one
 from pyfect.context import Context, TagLike
 from pyfect.redacted import Redacted
 
@@ -33,8 +34,8 @@ class _Security:
     def annotate_merge(self, annotations: Context[Any]) -> Self:
         return replace(self, annotations=self.annotations.merge(annotations))
 
-    def pipe[B](self, f: Callable[[Self], B], /) -> B:
-        return f(self)
+    def pipe[B](self, f: Callable[[Self], B], /, *more: Never) -> B:
+        return pipe_one(self, f, more)
 
 
 @dataclass(frozen=True, slots=True)
