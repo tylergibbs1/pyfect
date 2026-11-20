@@ -200,7 +200,7 @@ def test_a_response_the_program_keeps_keeps_its_connection() -> None:
     def keep(response: HttpClientResponse) -> None:
         kept.append(response)
 
-    assert open_after(lambda client, url: client.get(f"{url}/").map(keep), times=2) == 2
+    assert open_after(lambda client, url: client.get(f"{url}/").map(keep), times=2, kept=2) == 2
 
 
 _NOT_CLIENT_COMBINATORS = frozenset(

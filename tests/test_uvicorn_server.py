@@ -19,6 +19,7 @@ import httpx
 import pytest
 import uvicorn
 from _subprocess import SUBPROCESS_TIMEOUT
+from _timing import PAST_ANY_TEST, wait_until
 
 import pyfect as fx
 from pyfect import effect, layer, stream, testing
@@ -174,14 +175,13 @@ def test_ctrl_c_under_run_main_ends_an_open_stream_quietly(tmp_path: Path) -> No
         assert proc.stdout is not None
         while (line := proc.stdout.readline()) and line != "ready\n":
             assert "Listening on" in line
-        started = time.monotonic()
         os.kill(proc.pid, signal.SIGINT)
         stdout, stderr = proc.communicate(timeout=SUBPROCESS_TIMEOUT)
     finally:
         proc.kill()
-    elapsed = time.monotonic() - started
+    # "True": the client read the body's last chunk, which only the program's shutdown
+    # sends; uvicorn's would cancel the endless body without it.
     assert (stdout, stderr) == ("True\n", "")
-    assert elapsed < 3
     assert proc.returncode == 130
 
 
@@ -203,9 +203,8 @@ def test_graceful_shutdown_cancels_requests_still_running_after_the_timeout() ->
 
     slow = effect.never.on_interrupt(effect.sync(lambda: interrupted.append(True)))
     routes = router.add("GET", "/slow", slow.as_(server_response.empty()))
-    started = time.monotonic()
+    # The request never ends: a shutdown that waited for it would never end either.
     _run(_serving(routes, program()), graceful_shutdown_timeout="200 millis")
-    assert time.monotonic() - started < 5
     assert interrupted == [True]
 
 
@@ -223,23 +222,22 @@ def test_disable_preemptive_shutdown_interrupts_requests_at_once() -> None:
             with socket.create_connection(("127.0.0.1", at), timeout=5) as conn:
                 conn.sendall(b"GET /slow HTTP/1.1\r\nhost: x\r\n\r\n")
                 # Held until the test is done, so no client abort ends the request.
-                done.wait(4)
+                done.wait()
 
         yield from effect.blocking(request).fork_daemon()
         yield from sleep("100 millis")
 
     slow = effect.never.on_interrupt(effect.sync(lambda: interrupted.append(True)))
     routes = router.add("GET", "/slow", slow.as_(server_response.empty()))
-    started = time.monotonic()
+    # Waiting out the timeout would outlast the test's time limit.
     try:
         _run(
             _serving(routes, program()),
-            graceful_shutdown_timeout="30 seconds",
+            graceful_shutdown_timeout=PAST_ANY_TEST,
             disable_preemptive_shutdown=True,
         )
     finally:
         done.set()
-    assert time.monotonic() - started < 3
     assert interrupted == [True]
 
 
@@ -256,9 +254,7 @@ def _uvicorn(app: Any) -> tuple[uvicorn.Server, threading.Thread, int]:
     server_ = uvicorn.Server(uvicorn.Config(app, log_config=None, lifespan="on"))
     thread = threading.Thread(target=lambda: server_.run(sockets=[sock]), daemon=True)
     thread.start()
-    deadline = time.monotonic() + 5
-    while not server_.started and time.monotonic() < deadline:
-        time.sleep(0.01)
+    wait_until(lambda: server_.started, what="uvicorn to start")
     return server_, thread, at
 
 
@@ -288,13 +284,10 @@ def test_shutdown_ends_a_streamed_response_still_open_after_the_timeout(
     routes = router.add(
         "GET", "/events", server_response.stream(body, content_type="text/event-stream")
     )
-    started = time.monotonic()
     with caplog.at_level(logging.WARNING):
         _run(_serving(routes, program()), graceful_shutdown_timeout="300 millis")
-        deadline = time.monotonic() + 2
-        while not received.endswith(b"0\r\n\r\n") and time.monotonic() < deadline:
-            time.sleep(0.01)
-    assert time.monotonic() - started < 2
+        # Only the end the shutdown writes ends the body: uvicorn's cancel would not.
+        wait_until(lambda: received.endswith(b"0\r\n\r\n"), what="the body's last chunk")
     assert received.endswith(b"data: 1\n\n\r\n0\r\n\r\n")
     assert [r.getMessage() for r in caplog.records if r.name.startswith("uvicorn")] == []
 
@@ -309,9 +302,8 @@ def test_shutdown_does_not_wait_for_a_response_the_client_left_unread() -> None:
         response = yield from client.get("/")
         return response.status
 
-    started = time.monotonic()
-    assert _run(_serving(routes, program()), graceful_shutdown_timeout="10 seconds") == 200
-    assert time.monotonic() - started < 5
+    # Waiting for the unread response would outlast the test's time limit.
+    assert _run(_serving(routes, program()), graceful_shutdown_timeout=PAST_ANY_TEST) == 200
 
 
 def test_uvicorn_runs_a_to_asgi_app_and_its_lifespan() -> None:

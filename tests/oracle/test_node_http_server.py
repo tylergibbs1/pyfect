@@ -44,6 +44,7 @@ from collections.abc import Callable
 from typing import Any, Never
 
 import pytest
+from _timing import PAST_ANY_TEST
 
 import pyfect as fx
 from pyfect import effect, layer, stream
@@ -428,13 +429,12 @@ def test_answers_keep_alive_requests_while_graceful_shutdown_drains_an_existing_
 
     @fx.fn
     def program():
-        layer_live = live_server.layer(host="127.0.0.1", graceful_shutdown_timeout="10 seconds")
+        # Waiting out the timeout would outlast the test's time limit.
+        layer_live = live_server.layer(host="127.0.0.1", graceful_shutdown_timeout=PAST_ANY_TEST)
         client = yield from scoped(serving()).pipe(fx.provide(layer_live))
         return (yield from client.join())
 
-    started_at = time.monotonic()
     first, second = fx.run_blocking(program().or_die())
-    assert time.monotonic() - started_at < 5
     [first_response] = parse_responses(first)
     assert first_response.status == 200
     assert first_response.header("connection") == "keep-alive"
@@ -471,12 +471,11 @@ def test_disposes_after_a_client_aborts_a_handler_awaiting_an_upstream_request()
             yield from fiber.await_exit()
 
         yield from abort()
-        yield from interrupted.wait().timeout("2 seconds")
+        # Before the shutdown: only the client's abort can interrupt the handler.
+        yield from interrupted.wait()
         return True
 
-    started_at = time.monotonic()
     assert run_live(_routed(app, program()), graceful_shutdown_timeout="100 millis")
-    assert time.monotonic() - started_at < 2
 
 
 def _upgrade_request(path: str = "/") -> bytes:
