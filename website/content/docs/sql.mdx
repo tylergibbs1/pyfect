@@ -132,10 +132,17 @@ first, then open the transaction to write it.
 
 ## Migrations
 
-A migration is an effect that uses `SqlClient`. `migrator.run` creates the
-`effect_sql_migrations` table if needed, runs the migrations newer than the last one
-recorded, and succeeds with the ids and names it ran. The new migrations run in one
-transaction, so if one fails none of them stay applied, and the error is a `MigrationError`.
+A migration is an effect that uses `SqlClient`. Each driver has its own migrator module, and
+that is the one to import: here it is `pyfect.sql.sqlite.migrator`, imported with
+`from pyfect.sql.sqlite import migrator`. Postgres has `pyfect.sql.pg.migrator`, MySQL
+`pyfect.sql.mysql.migrator`, and so on. Below, `migrator` always means the driver's module.
+The shared module `pyfect.sql.migrator` holds what every driver builds on (`from_record`,
+`MigrationError`, `make`), but it has no `run` or `layer`.
+
+`migrator.run` creates the `effect_sql_migrations` table if needed, runs the migrations newer
+than the last one recorded, and succeeds with the ids and names it ran. The new migrations run
+in one transaction, so if one fails none of them stay applied, and the error is a
+`MigrationError`.
 Two processes starting at once don't run them twice.
 
 <CodeOutput>
@@ -183,5 +190,6 @@ To read and write rows as classes, with repositories and batched resolvers made 
 see [Models](/docs/models).
 
 Reference: [`pyfect.sql`](/docs/reference/sql), [`pyfect.sql.sqlite`](/docs/reference/sql/sqlite),
-[`pyfect.sql.resolver`](/docs/reference/sql/resolver),
-[`pyfect.sql.migrator`](/docs/reference/sql/migrator).
+[`pyfect.sql.sqlite.migrator`](/docs/reference/sql/sqlite/migrator),
+[`pyfect.sql.migrator`](/docs/reference/sql/migrator) (shared by every driver's migrator),
+[`pyfect.sql.resolver`](/docs/reference/sql/resolver).

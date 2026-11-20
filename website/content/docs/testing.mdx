@@ -3,8 +3,10 @@ title: Testing
 description: "Deterministic tests with a virtual clock and a pytest plugin."
 ---
 
-pyfect ships a pytest plugin, registered when you install the package. Decorate a generator
-test with `@testing.effect` and write it like `@fx.gen`.
+pyfect ships a pytest plugin, registered when you install the package. pytest itself is not a
+dependency of `pyfect-dev`, so add it to your project first: `uv add --dev pytest`, or
+`pip install pytest`. Then decorate a generator test with `@testing.effect` and write it like
+`@fx.gen`.
 
 ## The test clock
 

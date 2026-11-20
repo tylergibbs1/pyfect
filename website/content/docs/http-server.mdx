@@ -165,10 +165,11 @@ sends must still take the reader, or it hangs on its first write. The client's s
 
 </CodeOutput>
 
-Two more rules, also Effect's:
+Three more rules, also Effect's:
 
-- Once the reader's scope closes, the socket is gone and a write waits forever: it does not
-  fail. Keep the reader's scope open for as long as the handler writes, as `shout` does.
+- Once the reader's scope closes, the connection is gone for good. A write made after that
+  fails with the `SocketError` the reader ended with, and so does taking the reader again.
+  Keep the reader's scope open for as long as the handler writes, as `shout` does.
 - `reader.pull` and `so.to_stream` fail with a `SocketError` when the socket closes, even with
   code 1000 (a normal close). `catch_if(so.is_clean_close, ...)` ends the stream instead.
 - While the reader is open, the server reads whether or not the handler pulls: it answers pings
@@ -181,6 +182,14 @@ so there a handler that only writes runs until the server shuts down. To end it 
 client closes whichever server runs it, race the writes against the reader with `race_first`
 (`race` waits for one side to succeed):
 `messages.run_for_each(writer.write).race_first(reader.pull.forever())`.
+
+A socket you build yourself with `pyfect.socket.from_web_socket(acquire)` works differently
+by default: each time its reader is taken, it runs `acquire` again for a new connection, so
+a write made while no reader is open waits for the next reader instead of failing. That suits
+a client that reconnects. When `acquire` can only ever give one connection, such as one a
+server has already accepted, pass `disable_reconnects=True`, as pyfect's own servers do. Then,
+once the reader fails or its scope closes, writes and later readers fail with the reader's
+error rather than waiting for a reader that can never come (Effect #10730).
 
 ## Security defaults
 
