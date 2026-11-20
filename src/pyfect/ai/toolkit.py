@@ -101,13 +101,13 @@ def map_handler_contexts(
 ) -> Context[Any]:
     """``context`` with ``f`` applied to the context each of ``toolkit``'s
     handlers kept from where its layer was built."""
-    out = context
+    services = dict(context.map_unsafe)
     for tool in toolkit.tools.values():
         tag = _handler_tag(tool.id)
-        found, registered = out.lookup(tag)
-        if found:
-            out = out.add(tag, replace(registered, context=f(registered.context)))
-    return out
+        registered = services.get(tag)
+        if registered is not None:
+            services[tag] = replace(registered, context=f(registered.context))
+    return Context(services)
 
 
 def _handler_tag(tool_id: str) -> type[Tag[_Registered]]:
