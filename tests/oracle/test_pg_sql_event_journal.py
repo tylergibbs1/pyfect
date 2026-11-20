@@ -9,7 +9,6 @@ the session, so each test uses its own tables, as Effect's do.
 
 import itertools
 import os
-import time
 from collections.abc import Callable, Generator
 from typing import Any
 
@@ -76,10 +75,9 @@ def _backend_pid(client: SqlClientService) -> fx.Effect[int, Any]:
 def _wait_until_blocked_by(
     client: SqlClientService, holder: int, count: int, fiber: fx.Fiber[Any, Any] | None = None
 ) -> Generator[fx.Effect[Any, Any, Any], Any]:
-    """Fails unless, within ten seconds, ``count`` backends are blocked by
-    ``holder`` directly or behind one that is, or ``fiber`` succeeds."""
-    deadline = time.monotonic() + 10
-    while time.monotonic() < deadline:
+    """Waits until ``count`` backends are blocked by ``holder`` directly or behind one that
+    is, or ``fiber`` succeeds (or the test's time limit)."""
+    while True:
         exit_ = fiber.poll_unsafe() if fiber is not None else None
         if exit_ is not None:
             yield from fx.from_exit(exit_)
@@ -96,9 +94,6 @@ def _wait_until_blocked_by(
         if int(rows[0]["blocked"]) >= count:  # type: ignore[arg-type]
             return None
         yield from fx.sleep("20 millis")
-    yield from fx.die(
-        RuntimeError(f"Expected {count} backends blocked by {holder} within 10 seconds")
-    )
 
 
 @testing.live

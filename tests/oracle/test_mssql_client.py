@@ -14,13 +14,14 @@ is ported as the ``(pyfect)`` "param types".
 """
 
 import threading
-import time
 from collections.abc import Callable, Generator
 from typing import Any, TypedDict
 
 import pytest
 
 pytest.importorskip("pytds")
+
+from _timing import wait_until
 
 import pyfect as fx
 from pyfect import schema as S
@@ -60,16 +61,6 @@ def _on_server(server: MssqlServer, body: Body, **fields: Any) -> fx.Effect[Any,
 
 def _mocked(body: Body) -> fx.Effect[Any, Any]:
     return fx.scoped(fx.gen(body)).pipe(fx.provide(reactivity_layer))
-
-
-def _bounded[A, E, R](effect: fx.Effect[A, E, R]) -> fx.Effect[A, Any, R]:
-    return effect.timeout("2 seconds")
-
-
-def _until(done: Callable[[], bool]) -> None:
-    deadline = time.monotonic() + 2
-    while not done() and time.monotonic() < deadline:
-        time.sleep(0.001)
 
 
 _answer = Parameter[int]("answer", TYPES.Int)
@@ -352,9 +343,11 @@ def test_cancels_an_in_flight_request_when_interrupted(monkeypatch: pytest.Monke
         client = yield from mssql.make(mssql.MssqlClientConfig(server="localhost"))
         fake.complete_requests = False
         fiber = yield from client("WAITFOR DELAY '00:01:00'").fork()
-        yield from fx.blocking(lambda: fake.pending_started.wait(2))
+        yield from fx.blocking(
+            lambda: wait_until(fake.pending_started.is_set, what="the request to start")
+        )
         calls_before_interrupt = fake.cancel_calls
-        yield from _bounded(fiber.interrupt())
+        yield from fiber.interrupt()
         assert fake.cancel_calls == calls_before_interrupt + 1
 
     yield from _mocked(body)
@@ -378,14 +371,12 @@ def test_reuses_the_transaction_connection_with_a_single_connection_pool(
     _mssql_fake.install(monkeypatch)
 
     def body():
-        client = yield from _bounded(
-            mssql.make(
-                mssql.MssqlClientConfig(
-                    server="localhost",
-                    min_connections=0,
-                    max_connections=1,
-                    transform_result_names=str.upper,
-                )
+        client = yield from mssql.make(
+            mssql.MssqlClientConfig(
+                server="localhost",
+                min_connections=0,
+                max_connections=1,
+                transform_result_names=str.upper,
             )
         )
 
@@ -397,7 +388,7 @@ def test_reuses_the_transaction_connection_with_a_single_connection_pool(
                 result = yield from client.call(_get_answer.compile())
                 assert result == procedure.Result(procedure.Outputs({"answer": 42}), [])
 
-        yield from _bounded(client.with_transaction(fx.gen(inside)))
+        yield from client.with_transaction(fx.gen(inside))
 
     yield from _mocked(body)
 
@@ -410,22 +401,20 @@ def test_fails_stored_procedures_and_untransformed_statements_from_a_fiber_that_
     fake = _mssql_fake.install(monkeypatch)
 
     def body():
-        client = yield from _bounded(mssql.make(_single_connection()))
+        client = yield from mssql.make(_single_connection())
         go = fx.Deferred[None]()
-        stale = yield from _bounded(
-            client.with_transaction(
-                go.wait()
-                .and_then(
-                    fx.all(
-                        client.call(_get_answer.compile()).flip(),
-                        client.without_transforms()("SELECT 'stale'").flip(),
-                    )
+        stale = yield from client.with_transaction(
+            go.wait()
+            .and_then(
+                fx.all(
+                    client.call(_get_answer.compile()).flip(),
+                    client.without_transforms()("SELECT 'stale'").flip(),
                 )
-                .fork_daemon()
             )
+            .fork_daemon()
         )
         yield from go.succeed(None)
-        for error in (yield from _bounded(stale.join())):
+        for error in (yield from stale.join()):
             assert isinstance(error, SqlError)
             assert error.reason.message == "SqlClient: the transaction has already ended"
         queries = [query for connection in fake.connections for query in connection.queries]
@@ -442,16 +431,20 @@ def test_handles_a_late_error_after_an_ended_connection_is_discarded_and_recover
     fake = _mssql_fake.install(monkeypatch)
 
     def body():
-        client = yield from _bounded(mssql.make(_single_connection()))
+        client = yield from mssql.make(_single_connection())
         connection = fake.connections[0]
         # A dropped socket: the driver ends the connection, and reports its
         # error only after the pool closed it. Wait for the cleanup, not time.
         connection.closed = True
         connection.end()
-        yield from _bounded(fx.blocking(lambda: connection.closed_signal.wait(2)))
+        yield from fx.blocking(
+            lambda: wait_until(
+                connection.closed_signal.is_set, what="the pool to close the connection"
+            )
+        )
         connection.end()
         assert fake.emission_error is None
-        rows = yield from _bounded(client.unsafe("SELECT recovered"))
+        rows = yield from client.unsafe("SELECT recovered")
         assert rows == [{"value": 42}]
 
     yield from _mocked(body)
@@ -465,20 +458,24 @@ def test_replaces_a_connection_that_ends_without_error_after_query_cancellation(
     fake = _mssql_fake.install(monkeypatch)
 
     def body():
-        client = yield from _bounded(mssql.make(_single_connection()))
+        client = yield from mssql.make(_single_connection())
         connection = fake.connections[0]
         query = yield from client.unsafe("SELECT pending").fork_scoped()
-        yield from _bounded(fx.blocking(lambda: fake.pending_started.wait(2)))
+        yield from fx.blocking(
+            lambda: wait_until(fake.pending_started.is_set, what="the request to start")
+        )
         fake.acknowledge_cancel = False
         interrupted = yield from query.interrupt().fork_scoped()
-        yield from _bounded(fx.blocking(lambda: _until(lambda: connection.cancellations == 1)))
+        yield from fx.blocking(
+            lambda: wait_until(lambda: connection.cancellations == 1, what="the cancel")
+        )
         assert connection.cancellations == 1
         # Interruption waits for the server to acknowledge the cancel.
         assert interrupted.poll_unsafe() is None
         # The cancel timed out: the connection ends, without an error.
         connection.close()
-        yield from _bounded(interrupted.join())
-        rows = yield from _bounded(client.unsafe("SELECT recovered"))
+        yield from interrupted.join()
+        rows = yield from client.unsafe("SELECT recovered")
         assert rows == [{"value": 42}]
         assert len(fake.connections) == 2
         assert "SELECT recovered" not in connection.queries
@@ -495,21 +492,25 @@ def test_handles_an_error_immediately_after_the_connect_callback(
     fake = _mssql_fake.install(monkeypatch)
 
     def body():
-        client = yield from _bounded(mssql.make(_single_connection()))
+        client = yield from mssql.make(_single_connection())
         original = fake.connections[0]
         yield from fx.yield_now()
         # Retire the healthy connection through a driver error, then end the
         # next connection of this pool as it is made.
         fake.error_after_connect = True
         original.end()
-        yield from _bounded(fx.blocking(lambda: original.closed_signal.wait(2)))
-        yield from _bounded(client.unsafe("SELECT during_race").result())
+        yield from fx.blocking(
+            lambda: wait_until(
+                original.closed_signal.is_set, what="the pool to close the connection"
+            )
+        )
+        yield from client.unsafe("SELECT during_race").result()
         assert fake.emission_error is None, "the driver's error emission must not raise"
 
         failed = fake.connections[1]
         assert failed.closed
         assert "SELECT during_race" not in failed.queries
-        rows = yield from _bounded(client.unsafe("SELECT recovered"))
+        rows = yield from client.unsafe("SELECT recovered")
         assert rows == [{"value": 42}]
         assert "SELECT recovered" not in failed.queries
         assert any("SELECT recovered" in c.queries for c in fake.connections[2:])
@@ -658,12 +659,12 @@ def test_interrupting_a_statement_cancels_it_on_the_server(mssql_server: MssqlSe
 
     def body():
         client = yield from mssql.MssqlClient()
-        started = time.monotonic()
         result = yield from client("WAITFOR DELAY '00:00:30'").timeout("500 millis").result()
         assert isinstance(result, fx.Err)
+        # The one connection is free again only once the cancel ended the WAITFOR: waiting
+        # it out would outlast the test's 5 s limit.
         rows = yield from client("SELECT @@SPID AS spid")
         assert len(rows) == 1
-        assert time.monotonic() - started < 5
 
     yield from _on_server(mssql_server, body, max_connections=1)
 
@@ -817,12 +818,12 @@ def test_an_interrupt_after_the_request_ended_does_not_cancel_the_next(
     def body():
         client = yield from mssql.MssqlClient()
         held = yield from client("SELECT 'held' AS v").fork()
-        yield from fx.blocking(lambda: finished.wait(5))
+        yield from fx.blocking(lambda: wait_until(finished.is_set, what="the held statement"))
         yield from held.interrupt().fork()
-        yield from fx.blocking(lambda: cancelled.wait(5))
+        yield from fx.blocking(lambda: wait_until(cancelled.is_set, what="the cancel"))
         release.set()
-        yield from _bounded(held.await_exit())
-        rows = yield from _bounded(client("SELECT 1 AS v"))
+        yield from held.await_exit()
+        rows = yield from client("SELECT 1 AS v")
         assert rows == [{"v": 1}]
 
     yield from _on_server(mssql_server, body, max_connections=1)
@@ -852,13 +853,6 @@ def _mocked_config(**fields: Any) -> mssql.MssqlClientConfig:
 
 def _build_client(**fields: Any) -> fx.Effect[Any, Any]:
     return fx.scoped(mssql.make(_mocked_config(**fields))).pipe(fx.provide(reactivity_layer))
-
-
-def _wait_for(condition: Callable[[], bool]) -> None:
-    deadline = time.monotonic() + 5
-    while not condition():
-        assert time.monotonic() < deadline
-        time.sleep(0.005)
 
 
 @pytest.mark.parametrize(
@@ -908,14 +902,17 @@ def test_interrupting_a_connection_while_it_opens_returns_at_once(
         yield from fiber.interrupt()
         return (yield from fiber.await_exit())
 
-    started = time.monotonic()
     try:
         ex = fx.run_blocking(body)
-        assert time.monotonic() - started < 5
+        # The run ended while the driver was still connecting: nothing waited for it.
+        assert fake.connections == []
         assert isinstance(ex, fx.Failure) and ex.cause.has_interrupts
     finally:
         fake.hold_connect.set()
-    _wait_for(lambda: len(fake.connections) == 1 and fake.connections[0].closed)
+    wait_until(
+        lambda: len(fake.connections) == 1 and fake.connections[0].closed,
+        what="the late connection to be closed",
+    )
 
 
 def test_a_connection_check_that_times_out_does_not_wait_for_the_open(
@@ -925,14 +922,17 @@ def test_a_connection_check_that_times_out_does_not_wait_for_the_open(
     connecting, as Effect's ``timeoutOrElse`` does"""
     fake = _mssql_fake.install(monkeypatch)
     fake.hold_connect = threading.Event()
-    started = time.monotonic()
     try:
         ex = fx.run_blocking_exit(_build_client(connect_timeout="50 millis"))
-        assert time.monotonic() - started < 5
+        # The run ended while the driver was still connecting: nothing waited for it.
+        assert fake.connections == []
     finally:
         fake.hold_connect.set()
     assert isinstance(ex, fx.Failure)
     error = ex.cause.find_error()
     assert isinstance(error, fx.Ok) and isinstance(error.value, SqlError)
     assert error.value.reason.message == "MssqlClient: Connection timeout"
-    _wait_for(lambda: len(fake.connections) == 1 and fake.connections[0].closed)
+    wait_until(
+        lambda: len(fake.connections) == 1 and fake.connections[0].closed,
+        what="the late connection to be closed",
+    )

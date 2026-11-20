@@ -14,11 +14,11 @@ when the kill connection cannot be created" makes the driver's kill connection f
 as Effect's mock makes ``createConnection`` throw.
 """
 
-import time
 from collections.abc import Callable, Generator
 from typing import Any
 
 import pytest
+from _timing import PAST_ANY_TEST
 
 pytest.importorskip("asyncmy")
 
@@ -235,25 +235,21 @@ def test_kills_a_streams_statement_when_interrupted_before_the_first_row(
         for budget in _BUDGETS:
 
             def in_transaction(budget: int = budget):
+                # Waiting the SLEEP out would outlast the test's time limit: only a kill
+                # ends it in time.
                 consumer = yield from (
-                    sql("SELECT SLEEP(5) AS slept")
+                    sql(f"SELECT SLEEP({PAST_ANY_TEST.to_seconds():g}) AS slept")
                     .stream.run_drain()
                     .pipe(fx.provide_service(MaxOpsBeforeYield, budget))
                     .fork()
                 )
                 yield from fx.sleep("100 millis")
-                started = time.monotonic()
                 yield from consumer.interrupt()
                 yield from consumer.await_exit()
-                rows = yield from sql("SELECT 2 AS value")
-                return rows, time.monotonic() - started
+                return (yield from sql("SELECT 2 AS value"))
 
-            rows, elapsed = yield from sql.with_transaction(fx.gen(in_transaction)).timeout(
-                "10 seconds"
-            )
+            rows = yield from sql.with_transaction(fx.gen(in_transaction)).timeout("10 seconds")
             assert rows == [{"value": 2}], f"budget {budget}"
-            # The streamed statement was killed rather than waited for.
-            assert elapsed < 4, f"budget {budget}: {elapsed}"
 
     yield from _single_connection(mysql_server, body)
 

@@ -13,13 +13,13 @@ as data): pyfect's records them with ``INSERT ... SELECT``.
 
 from __future__ import annotations
 
-import time
 import uuid
 from collections.abc import Callable, Generator
 from datetime import UTC, date, datetime
 from typing import Any
 
 import pytest
+from _timing import wait_until
 
 import pyfect as fx
 from pyfect import case, redacted, stream
@@ -168,20 +168,15 @@ def test_interrupting_a_query_kills_it_on_the_server(clickhouse_server: Clickhou
 
     def body():
         sql = yield from clickhouse.ClickhouseClient()
-        endless = sql("SELECT sum(number) FROM numbers(100000000000)")
+        # system.numbers never ends: only a kill takes the query off the server.
+        endless = sql("SELECT count() FROM system.numbers")
         fiber = yield from sql.with_query_id(endless, query_id).fork()
-        for _ in range(100):
-            if _running(query_id):
-                break
+        while not _running(query_id):
             yield from fx.sleep("50 millis")
-        assert _running(query_id)
         yield from fiber.interrupt()
 
     _on_server(clickhouse_server, body)
-    deadline = time.monotonic() + 10
-    while _running(query_id) and time.monotonic() < deadline:
-        time.sleep(0.1)
-    assert not _running(query_id)
+    wait_until(lambda: not _running(query_id), what="the query to leave the server", poll=0.1)
 
 
 def test_commands_and_inserts(clickhouse_server: ClickhouseServer):
