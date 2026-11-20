@@ -73,7 +73,10 @@ def test_a_long_big_int_varint_decodes_in_near_linear_time() -> None:
     assert sized(1000)()
     # Over a step of 16: the fixed reader (O(n log n)) grew 16x, the shifting one 193-204x
     # against a bound of 104 with the guard margin. Over 8 it grew 58-60x, near that bound's 36.
-    assert_near_linear(sized, 4000, GUARD_FACTOR * 8000, factor=GUARD_FACTOR)
+    # The span a flagged comparison is judged again over ends at max_size: twice the larger
+    # size, 256k groups (3 s against the bug). Ending at 128k it started at 2k groups, where
+    # the decode's fixed cost hid the shifting one's growth on CI's runner.
+    assert_near_linear(sized, 4000, 2 * GUARD_FACTOR * 8000, factor=GUARD_FACTOR)
 
 
 class _Row(TypedDict):
