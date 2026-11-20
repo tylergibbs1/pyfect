@@ -80,6 +80,22 @@ makes the values UTC as well.
 
 </CodeOutput>
 
+## Records
+
+An anonymous record, `ROW(1, 'a')` or `(a, b)`, comes back as a tuple of its fields, each
+read as a column of its type would be: `SELECT ROW(1, 'a', NULL)` gives `(1, "a", None)`, and
+records nest inside records and arrays. To read the field types, the client asks PostgreSQL
+for the statement's results in binary. A field whose type has no binary loader reads as
+UTF-8 text, so enums and `citext` give strings, while a binary layout such as `point` fails
+with a `SqlError` naming the type's OID: cast that field to `text`, or register a binary
+loader for it in `types` (a psycopg `AdaptersMap`). A named composite type
+(`CREATE TYPE pair AS (...)`) is not anonymous and still reads as its text, `"(1,a)"`.
+
+Binary results apply to the whole statement, so a statement keeps text results when another
+of its columns would read differently in binary: a type with no binary loader (`regclass`),
+`float4` (whose binary value is the exact float, `1.100000023841858` for `1.1`), or a type
+`types` gives only a text loader. Its records then read as strings, every field a `str`.
+
 ## Errors and traces
 
 A failed statement is a `SqlError` whose `reason` comes from the SQLSTATE, as in Effect's

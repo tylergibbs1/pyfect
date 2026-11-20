@@ -4,7 +4,7 @@ throwaway local PostgreSQL (``_postgres.pg_server``; skipped without one).
 Each Effect ``it.layer`` block is a client built per test here: ``PgClient``
 for ``layer``, ``make_client`` for the ``makeClient`` layers, with the
 block's options. Effect's ``Date`` and ``Uint8Array`` are ``datetime`` and
-``bytes``.
+``bytes``, and a record's array of fields is a tuple.
 
 Adapted: "PgClient.makeClient surfaces transport creation failures"
 connects to a port nothing listens on (libpq opens its own socket; there is
@@ -366,6 +366,21 @@ def test_reads_scalar_enums_as_strings_without_registering_their_oids(pg_server:
             assert rows == [{"capability": "use_key", "bound": "gérer", "nullable": None}]
 
         yield from sql.with_transaction(fx.gen(transaction))
+
+    yield from _with_pool(pg_server, body)
+
+
+@testing.effect
+def test_reads_anonymous_records_and_record_arrays(pg_server: PgServer):
+    """reads anonymous records and record arrays"""
+
+    def body():
+        sql = yield from pg.PgClient()
+        rows = yield from sql(
+            "SELECT ROW(1, 'a', NULL::int4, ROW(true, ARRAY[1, 2])) AS record, "
+            "ARRAY[ROW(1, 'a'), ROW(2, 'b')] AS records"
+        )
+        assert rows == [{"record": (1, "a", None, (True, [1, 2])), "records": [(1, "a"), (2, "b")]}]
 
     yield from _with_pool(pg_server, body)
 

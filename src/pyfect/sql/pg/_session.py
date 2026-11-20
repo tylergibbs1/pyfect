@@ -4,7 +4,8 @@ runs on the psycopg loop (``_loop``); fibers reach them through
 
 Statements are sent with the extended query protocol, so a text holding
 several statements fails as PostgreSQL's prepared statements do, and use
-PostgreSQL's own ``$1`` placeholders (psycopg's raw cursors).
+PostgreSQL's own ``$1`` placeholders (psycopg's raw cursors). A statement
+whose result has an anonymous record runs in binary (``_records``).
 
 While anyone listens, a pump task reads notifications with
 ``notifies()``; a statement stops the pump first (psycopg keeps the
@@ -31,14 +32,19 @@ from typing import TYPE_CHECKING, Any, LiteralString, cast
 
 import psycopg
 from psycopg import AsyncRawCursor, pq
+from psycopg.generators import fetch_many, send
 from psycopg.rows import dict_row, tuple_row
 
 from pyfect._digits import parse_digits
 from pyfect._js import text_encode
 from pyfect._subscriber_queue import FellBehind
+from pyfect.sql.pg import _records
 
 if TYPE_CHECKING:
+    from psycopg._queries import PostgresQuery
+    from psycopg.abc import Params, PQGen, Query
     from psycopg.adapt import AdaptersMap
+    from psycopg.pq.abc import PGconn, PGresult
 
 _CANCEL_TIMEOUT = 5.0
 _DRAIN_TIMEOUT = 5.0
@@ -55,6 +61,7 @@ def _forget_prepared(conn: psycopg.AsyncConnection[Any], error: psycopg.Error) -
     names the statement; ``0A000`` does not, so it forgets them all (psycopg
     then deallocates them after the next statement that succeeds)."""
     # psycopg exposes no eviction; its cache maps each query to its name.
+    cast("_Connection", conn).result_formats.clear()
     manager: Any = conn._prepared
     names: dict[Any, bytes] = manager._names
     if error.sqlstate == "0A000":
@@ -76,15 +83,82 @@ def _text(sql: str) -> LiteralString:
     return cast("LiteralString", sql)
 
 
+class _Connection(psycopg.AsyncConnection[Any]):
+    """A connection that remembers its statements' result formats."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.result_formats = _records.ResultFormats()
+
+
 class _ExtendedCursor(AsyncRawCursor[Any]):
     """A raw cursor that always uses the extended query protocol, as
     PostgreSQL's prepared statements do (psycopg sends a statement without
-    parameters as a simple query, which runs several statements)."""
+    parameters as a simple query, which runs several statements), and asks
+    for binary results when the statement returns records."""
 
     def _execute_send(
         self, query: Any, *, force_extended: bool = False, binary: bool | None = None
     ) -> None:
         super()._execute_send(query, force_extended=True, binary=binary)
+
+    def _maybe_prepare_gen(
+        self, pgq: PostgresQuery, *, prepare: bool | None = None, binary: bool | None = None
+    ) -> PQGen[None]:
+        if binary is None and (yield from self._records_gen(pgq)):
+            binary = True
+        yield from super()._maybe_prepare_gen(pgq, prepare=prepare, binary=binary)
+
+    def _stream_send_gen(
+        self, query: Query, params: Params | None = None, *, binary: bool | None = None, size: int
+    ) -> PQGen[None]:
+        if binary is None:
+            yield from self._start_query(query)
+            if (yield from self._records_gen(self._convert_query(query, params))):
+                binary = True
+        yield from super()._stream_send_gen(query, params, binary=binary, size=size)
+
+    def _records_gen(self, pgq: PostgresQuery) -> PQGen[bool]:
+        """Whether ``pgq`` should run in binary (``_records.wants_binary``):
+        the first time, PostgreSQL describes it as an unnamed statement. A
+        statement that does not parse fails here, as it would when run."""
+        formats = cast("_Connection", self._conn).result_formats
+        key = (pgq.query, tuple(pgq.types))
+        binary = formats.get(key)
+        if binary is not None:
+            return binary
+        described = yield from _describe_gen(self._pgconn, pgq, self._encoding)
+        oids = [described.ftype(i) for i in range(described.nfields)]
+        binary = _records.wants_binary(self.adapters, oids)
+        formats.put(key, binary)
+        return binary
+
+
+def _describe_gen(pgconn: PGconn, pgq: PostgresQuery, encoding: str) -> PQGen[PGresult]:
+    """PostgreSQL's description of ``pgq`` parsed as the unnamed statement,
+    which the statement's own run parses again. Parse and describe go in one
+    pipeline, under one ``Sync``, so a pooler that moves the session between
+    transactions cannot move it between the two."""
+    pgconn.enter_pipeline_mode()
+    try:
+        pgconn.send_prepare(b"", pgq.query, param_types=pgq.types)
+        pgconn.send_describe_prepared(b"")
+        pgconn.pipeline_sync()
+        yield from send(pgconn)
+        parsed = yield from fetch_many(pgconn)
+        described = yield from fetch_many(pgconn)
+        yield from fetch_many(pgconn)  # the Sync's
+    except BaseException:
+        # Results still pending (a lost connection) keep the pipeline open;
+        # the error that stopped it is the one to report.
+        with contextlib.suppress(psycopg.Error):
+            pgconn.exit_pipeline_mode()
+        raise
+    pgconn.exit_pipeline_mode()
+    for result in (*parsed, *described):
+        if result.status == pq.ExecStatus.FATAL_ERROR:
+            raise psycopg.errors.error_from_result(result, encoding=encoding)
+    return described[0]
 
 
 @dataclass(frozen=True, slots=True)
@@ -207,7 +281,7 @@ class Session:
         kwargs: dict[str, Any] = dict(params)
         if password is not None:
             kwargs["password"] = password
-        conn = await psycopg.AsyncConnection.connect(
+        conn = await _Connection.connect(
             autocommit=True,
             prepare_threshold=None if cache == 0 else 5,
             context=types,
@@ -216,6 +290,7 @@ class Session:
         )
         if cache > 0:
             conn.prepared_max = cache
+        _records.install(conn.adapters)
         return Session(conn, cache > 0)
 
     def _on_notice(self, diagnostic: psycopg.errors.Diagnostic) -> None:

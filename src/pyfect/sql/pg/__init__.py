@@ -22,8 +22,9 @@ statement cancels it in PostgreSQL::
 Values are adapted by psycopg (Effect's ``PgTypes``): ``bytea`` reads as
 ``bytes``, ``numeric`` as ``Decimal``, ``int8`` as ``int``, timestamps as
 ``datetime``, ``json`` / ``jsonb`` parsed, enums and unknown types as
-``str``; ``config.types`` takes a psycopg ``AdaptersMap`` for more, and
-psycopg's wrappers (``Jsonb``, ``Int4``, ...) type a parameter.
+``str``, an anonymous record (``ROW(1, 'a')``) as a tuple of its typed fields;
+``config.types`` takes a psycopg ``AdaptersMap`` for more, and psycopg's
+wrappers (``Jsonb``, ``Int4``, ...) type a parameter.
 """
 
 from pyfect._extras import missing_extra
