@@ -13,6 +13,8 @@ import pytest
 import pyfect as fx
 from pyfect import fiber_profiler
 from pyfect._fiber import Fiber
+from pyfect.exit import Failure
+from pyfect.result import Ok
 from pyfect.tracer import ExternalSpan
 
 _RUN = Fiber.__dict__["_run"].__code__
@@ -51,6 +53,32 @@ def test_a_fiber_has_a_turn_per_run_until_it_waits_or_yields() -> None:
     with fiber_profiler.profile() as report:
         fiber_id = fx.run_blocking(_yields_five_times)
     assert report.fibers[fiber_id].turns == 6
+
+
+def test_profiled_pairs_the_report_with_the_effects_value() -> None:
+    @fx.gen
+    def program():
+        child = yield from _yields_five_times.fork()
+        return (yield from child.join())
+
+    report, child_id = fx.run_blocking(fiber_profiler.profiled(program))
+    assert report.fibers[child_id].turns == 6
+
+
+def test_profiled_counts_every_turn_of_the_effect_on_its_own_fiber() -> None:
+    with fiber_profiler.profile() as outside:
+        alone = fx.run_blocking(_yields_five_times)
+    report, fiber_id = fx.run_blocking(fiber_profiler.profiled(_yields_five_times))
+    assert report.fibers[fiber_id].turns == outside.fibers[alone].turns == 6
+
+
+def test_profiled_effects_run_again_with_a_fresh_report() -> None:
+    profiled = fiber_profiler.profiled(_yields_five_times)
+    first, first_id = fx.run_blocking(profiled)
+    second, second_id = fx.run_blocking(profiled)
+    assert first is not second
+    assert list(first.fibers) == [first_id]
+    assert list(second.fibers) == [second_id]
 
 
 def test_turns_outside_a_profile_are_not_counted() -> None:
@@ -204,6 +232,46 @@ def _setup_fails(monkeypatch: pytest.MonkeyPatch) -> None:
     _ends_normally(monkeypatch)
 
 
+def _profiled_ends_normally(monkeypatch: pytest.MonkeyPatch) -> None:
+    fx.run_blocking(fiber_profiler.profiled(_yields_five_times))
+
+
+def _profiled_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    exit_ = fx.run_blocking_exit(fiber_profiler.profiled(fx.fail("boom")))
+    assert isinstance(exit_, Failure)
+    assert exit_.cause.find_error() == Ok("boom")
+
+
+def _profiled_dies(monkeypatch: pytest.MonkeyPatch) -> None:
+    exit_ = fx.run_blocking_exit(fiber_profiler.profiled(fx.die(ValueError("boom"))))
+    assert isinstance(exit_, Failure)
+    assert isinstance(exit_.cause.squash(), ValueError)
+
+
+def _profiled_interrupted(monkeypatch: pytest.MonkeyPatch) -> None:
+    exit_ = fx.run_blocking_exit(fiber_profiler.profiled(fx.interrupt()))
+    assert exit_.has_interrupts
+
+
+def _profiled_interrupted_from_outside(monkeypatch: pytest.MonkeyPatch) -> None:
+    @fx.gen
+    def program():
+        fiber = yield from fiber_profiler.profiled(fx.never).fork()
+        yield from fx.yield_now()
+        yield from fiber.interrupt()
+        return (yield from fiber.await_exit())
+
+    assert fx.run_blocking(program).has_interrupts
+
+
+def _profiled_busy(monkeypatch: pytest.MonkeyPatch) -> None:
+    with fiber_profiler.profile():
+        exit_ = fx.run_blocking_exit(fiber_profiler.profiled(fx.void))
+        assert isinstance(exit_, Failure)
+        assert isinstance(exit_.cause.squash(), fiber_profiler.ProfilerBusyError)
+        assert "pyfect.fiber_profiler" in [sys.monitoring.get_tool(tool) for tool in _TOOLS]
+
+
 @pytest.mark.parametrize(
     "path",
     [
@@ -213,6 +281,12 @@ def _setup_fails(monkeypatch: pytest.MonkeyPatch) -> None:
         _fiber_interrupted_inside,
         _busy,
         _setup_fails,
+        _profiled_ends_normally,
+        _profiled_fails,
+        _profiled_dies,
+        _profiled_interrupted,
+        _profiled_interrupted_from_outside,
+        _profiled_busy,
     ],
 )
 def test_every_way_out_of_a_profile_releases_the_tool(

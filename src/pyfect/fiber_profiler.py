@@ -18,6 +18,8 @@ number of steps in it::
     for fiber_id, t in report.fibers.items():
         print(fiber_id, t.cpu_ns, t.wall_ns, t.turns)
 
+Inside an effect, ``report, value = yield from fiber_profiler.profiled(program)``.
+
 Times are exclusive: a fiber that resumes another in its own turn (a wake
 made on the run's thread runs the woken fiber at once) does not count the
 other's turn. A turn's span is the fiber's innermost span when the turn
@@ -36,7 +38,11 @@ from dataclasses import dataclass
 from types import CodeType
 from typing import Any
 
+from pyfect._core import Effect
+from pyfect._effect_args import require_effect
 from pyfect._fiber import Fiber, current_fiber
+from pyfect.effect import sync, yield_now
+from pyfect.scope import acquire_use_release
 from pyfect.tracer import ExternalSpan, ParentSpan
 
 _monitoring = sys.monitoring
@@ -197,12 +203,25 @@ def _free_tool_id() -> int:
     raise ProfilerBusyError("every sys.monitoring tool id the fiber profiler can use is taken")
 
 
-@contextmanager
-def profile() -> Generator[Report]:
-    """Time every fiber turn, on every thread, until the block ends; the
-    report it yields is filled in then; a turn still running on another
-    thread when the block ends is not counted. Raises ``ProfilerBusyError``
-    if a profile is already running."""
+class _Session:
+    """A running profile: started by ``_start``, its report filled in by ``stop``."""
+
+    __slots__ = ("report", "state")
+
+    def __init__(self, state: _Profile) -> None:
+        self.state = state
+        self.report = Report()
+
+    def stop(self) -> None:
+        try:
+            _release(self.state.tool)
+        finally:
+            with _active_lock:
+                _active.clear()
+        self.state.into(self.report)
+
+
+def _start() -> _Session:
     with _active_lock:
         if _active:
             raise ProfilerBusyError("a fiber profile is already running")
@@ -210,21 +229,45 @@ def profile() -> Generator[Report]:
         _monitoring.use_tool_id(tool, "pyfect.fiber_profiler")
         state = _Profile(tool)
         _active.append(state)
-    report = Report()
+    session = _Session(state)
     try:
         # 3.13's free_tool_id leaves the last user's global events set
         _monitoring.set_events(tool, 0)
         _monitoring.register_callback(tool, _monitoring.events.PY_START, state.started)
         _monitoring.register_callback(tool, _monitoring.events.PY_RETURN, state.returned)
         _monitoring.set_local_events(tool, _RUN, _EVENTS)
-        yield report
+    except BaseException:
+        session.stop()
+        raise
+    return session
+
+
+@contextmanager
+def profile() -> Generator[Report]:
+    """Time every fiber turn, on every thread, until the block ends; the
+    report it yields is filled in then; a turn still running on another
+    thread when the block ends is not counted. Raises ``ProfilerBusyError``
+    if a profile is already running."""
+    session = _start()
+    try:
+        yield session.report
     finally:
-        try:
-            _release(tool)
-        finally:
-            with _active_lock:
-                _active.clear()
-        state.into(report)
+        session.stop()
+
+
+def profiled[A, E, R](eff: Effect[A, E, R]) -> Effect[tuple[Report, A], E, R]:
+    """``profile()`` around ``eff``, pairing its value with the complete report (as
+    ``fx.timed`` pairs it with a duration). Every turn of ``eff`` counts, on its
+    own fiber too, and so does every other fiber's turn, on every thread, while it
+    runs. A profile already running makes it die with ``ProfilerBusyError``; a
+    failure or interruption ends the profile and drops the report."""
+    require_effect(eff, "eff")
+
+    # The yields end the turns that start and stop the profile, which it cannot count.
+    def use(session: _Session) -> Effect[tuple[Report, A], E, R]:
+        return yield_now().and_then(eff).flat_map(lambda a: yield_now().as_((session.report, a)))
+
+    return acquire_use_release(sync(_start), use, lambda session, _: sync(session.stop))
 
 
 def _release(tool: int) -> None:
@@ -239,4 +282,4 @@ def _release(tool: int) -> None:
         _monitoring.free_tool_id(tool)
 
 
-__all__ = ["FiberTime", "ProfilerBusyError", "Report", "profile"]
+__all__ = ["FiberTime", "ProfilerBusyError", "Report", "profile", "profiled"]

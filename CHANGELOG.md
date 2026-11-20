@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+### Added
+
+- Schema: order checks for `S.Decimal` that pyright accepts, as `S.BigDecimal` has
+  (Effect's `isGreaterThanBigDecimal` and the rest): `S.is_greater_than_decimal`,
+  `is_greater_than_or_equal_to_decimal`, `is_less_than_decimal`,
+  `is_less_than_or_equal_to_decimal` and `is_between_decimal` take `decimal.Decimal` bounds and
+  compare exactly. The number checks (`S.is_greater_than(0)`) are `Filter[float]`, so pyright
+  rejected them on `S.Decimal`. And `S.DecimalFromString` (Effect's `BigDecimalFromString`)
+  reads a `Decimal` from the text JSON writes, so a CLI takes one with
+  `Argument.string("amount").with_schema(S.DecimalFromString)`.
+- Schema: a schema in a field's `Annotated` metadata is the field's schema, in schema classes
+  and in a `Struct` of a TypedDict: `amount: Annotated[int, S.Int.check(S.is_greater_than(0))]`
+  rejects `-1`, and `total: Annotated[float, S.FiniteFromString]` decodes text, as a pydantic
+  model reads it. It was ignored, so the field had its type's plain schema. The checks beside it
+  refine it; with several schemas the last one wins, and `S.field(schema)` still wins over the
+  annotation. Pyright cannot see metadata, so `S.field` stays the form it checks.
+- `fiber_profiler.profiled(eff)` profiles an effect from inside another one, pairing its
+  value with the complete report as `fx.timed` pairs it with a duration:
+  `report, value = yield from fiber_profiler.profiled(program)`. It counts every turn of
+  `eff`, on its own fiber too, and every other fiber's while it runs, as `profile()` does for a
+  block. A profile already running makes it die with `ProfilerBusyError`; a failure or an
+  interruption ends the profile and drops the report.
+
 ### Docs
 
 - The SQL page has a section on `pyfect.sql.schema` (`find_all`, `find_one`,
