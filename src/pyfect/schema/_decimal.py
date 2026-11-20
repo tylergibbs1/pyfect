@@ -18,12 +18,22 @@ from pyfect.schema import transformation as T
 from pyfect.schema._arbitrary_constraint import ArbitraryConstraint
 from pyfect.schema._arrays import Tuple
 from pyfect.schema._checks_number import is_between
+from pyfect.schema._checks_order import (
+    Between,
+    Bound,
+    make_is_between,
+    make_is_greater_than,
+    make_is_greater_than_or_equal_to,
+    make_is_less_than,
+    make_is_less_than_or_equal_to,
+)
 from pyfect.schema._codec_links import link
 from pyfect.schema._declare import declare
 from pyfect.schema._literals import Literals
 from pyfect.schema._options import ParseOptions
-from pyfect.schema._primitives import Int
+from pyfect.schema._primitives import Int, String
 from pyfect.schema._schema import Bottom
+from pyfect.schema._transform import DecodeToSchema, decode_to
 from pyfect.schema._value_codecs import string_codec
 from pyfect.schema.issue import InvalidValue, Issue, reported
 
@@ -89,3 +99,17 @@ Decimal: Bottom[decimal.Decimal] = declare(
     to_formatter=_formatter,
 )
 """A finite ``decimal.Decimal`` (Python-only), written in JSON as its text."""
+DecimalFromString: DecodeToSchema[decimal.Decimal, str] = String.annotate(
+    expected="a string that will be decoded as a Decimal"
+).pipe(decode_to(Decimal, _decimal_from_string))
+"""A ``Decimal`` read from its text, as JSON writes it (Effect's ``BigDecimalFromString``)."""
+
+is_greater_than_decimal: Bound[decimal.Decimal] = make_is_greater_than(formatter=str)
+is_greater_than_or_equal_to_decimal: Bound[decimal.Decimal] = make_is_greater_than_or_equal_to(
+    formatter=str
+)
+is_less_than_decimal: Bound[decimal.Decimal] = make_is_less_than(formatter=str)
+is_less_than_or_equal_to_decimal: Bound[decimal.Decimal] = make_is_less_than_or_equal_to(
+    formatter=str
+)
+is_between_decimal: Between[decimal.Decimal] = make_is_between(formatter=str)

@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Added
+
+- Schema: order checks for `S.Decimal` that pyright accepts, as `S.BigDecimal` has
+  (Effect's `isGreaterThanBigDecimal` and the rest): `S.is_greater_than_decimal`,
+  `is_greater_than_or_equal_to_decimal`, `is_less_than_decimal`,
+  `is_less_than_or_equal_to_decimal` and `is_between_decimal` take `decimal.Decimal` bounds and
+  compare exactly. The number checks (`S.is_greater_than(0)`) are `Filter[float]`, so pyright
+  rejected them on `S.Decimal`. And `S.DecimalFromString` (Effect's `BigDecimalFromString`)
+  reads a `Decimal` from the text JSON writes, so a CLI takes one with
+  `Argument.string("amount").with_schema(S.DecimalFromString)`.
+
 ### Docs
 
 - The SQL page has a section on `pyfect.sql.schema` (`find_all`, `find_one`,
