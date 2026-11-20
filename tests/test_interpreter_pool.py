@@ -315,3 +315,76 @@ def test_a_lambda_reading_a_global_cannot_cross(tmp_path: Path) -> None:
     lines = _run_script(tmp_path, "show(interpreter_pool.call(lambda x: x * FACTOR, 21))\n")
     [line] = lines
     assert line.startswith("die NotShareableError "), line
+
+
+@needs_interpreters
+def test_an_observer_of_a_new_interpreter_cannot_end_it_under_the_pool(tmp_path: Path) -> None:
+    # concurrent.interpreters keeps one Interpreter object per id, and create() ends the
+    # interpreter when the references those objects hold drop to zero. list_all() on another
+    # thread, between create()'s making the interpreter and taking its own reference, makes that
+    # object first, and create() hands it back without a reference of its own. When the
+    # observer's copy is dropped (CI: the program's list_all() while a worker started), its
+    # __del__ -> _decref ended the interpreter under the idle worker: the next call and the
+    # release hung. The script makes that drop at a known moment instead of racing for it.
+    lines = _run_script(
+        tmp_path,
+        """
+        import operator
+        from concurrent import interpreters
+
+        import _interpreters
+
+        real_create = _interpreters.create
+        listed = []
+
+
+        def create_while_listed(*args, **kwargs):
+            new = real_create(*args, **kwargs)
+            listed.extend(found for found in interpreters.list_all() if found.id == new)
+            return new
+
+
+        _interpreters.create = create_while_listed
+
+
+        @fx.gen
+        def program():
+            first = yield from interpreter_pool.call(operator.add, 1, 2)
+            [observed] = listed
+            observed._decref()  # what its __del__ does once the observer drops it
+            second = yield from interpreter_pool.call(operator.add, 3, 4)
+            return first, second
+
+
+        show(program)
+        print("left", len(interpreters.list_all()) - 1)
+        """,
+    )
+    assert lines == ["value (3, 7)", "left 0"]
+
+
+@needs_interpreters
+def test_a_worker_that_cannot_close_its_interpreter_fails_the_release(tmp_path: Path) -> None:
+    # Something else closed the pool's interpreter: the worker's own close() raises, and the
+    # release dies with that error instead of waiting forever for the worker it lost.
+    lines = _run_script(
+        tmp_path,
+        """
+        import operator
+        from concurrent import interpreters
+
+
+        @fx.gen
+        def program():
+            yield from interpreter_pool.call(operator.add, 1, 2)
+            main = interpreters.get_main().id
+            for interpreter in interpreters.list_all():
+                if interpreter.id != main:
+                    interpreter.close()
+
+
+        show(program)
+        """,
+    )
+    [line] = lines
+    assert line.startswith("die InterpreterNotFoundError "), line
