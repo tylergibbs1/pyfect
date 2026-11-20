@@ -764,6 +764,42 @@ def test_frozen_with_no_dump():
 """
 )
 
+FROZEN_AFTER_THE_CLOCKS = """
+import os
+import subprocess
+import threading
+import time
+
+import _stalls
+import pyfect as fx
+import pyfect.testing as it
+
+_stalls._DumpTimer.take = lambda self, *, stalled: None  # only the SIGCONT shows the freeze
+mark = _stalls._Steal.mark
+freeze = threading.Event()
+
+
+def freeze_after_the_clocks(steal):
+    \"\"\"Where a tick that saw no stall marks the CPU steal, after reading its clocks, once
+    asked: the host freezes the process, so the freeze is the next tick's stall.\"\"\"
+    mark(steal)
+    if freeze.is_set():
+        freeze.clear()
+        script = f"kill -STOP {os.getpid()}; sleep 1; kill -CONT {os.getpid()}"
+        subprocess.Popen(["sh", "-c", script])
+        time.sleep(0.3)  # the stop lands here
+        time.sleep(0.05)  # from the resume: the SIGCONT's byte is written before this tick ends
+
+
+_stalls._Steal.mark = freeze_after_the_clocks
+
+
+@it.live(timeout="1 second")
+def test_frozen_after_the_clocks():
+    freeze.set()
+    yield from fx.sleep("3 seconds")  # 2 s of the test's own time: past its limit
+"""
+
 DEADLOCKED_FIBER = """
 import pyfect as fx
 import pyfect.testing as it
@@ -907,6 +943,17 @@ def test_a_freeze_whose_dump_is_not_in_time_is_left_out(
     assert ": host: process frozen, resumed by SIGCONT (" in out, out
     assert "TestTimeoutError: test timed out after 1.0 s of running time (" in out, out
     assert re.search(r"host froze the process (0\.[89]|1\.[0-9]) s, not counted\)", out), out
+
+
+@pytest.mark.skipif(__import__("sys").platform == "win32", reason="SIGSTOP is POSIX")
+def test_a_sigcont_read_at_a_tick_with_no_stall_proves_the_next_ticks(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Frozen just after a tick read its clocks, the watchdog resumed in a tick that saw no
+    stall, which dropped the SIGCONT as in no stall; the next tick's stall then had none."""
+    out = _limited(pytester, monkeypatch, FROZEN_AFTER_THE_CLOCKS)
+    assert ": host: process frozen, resumed by SIGCONT (" in out, out
+    assert "TestTimeoutError: test timed out after 1.0 s of running time (" in out, out
 
 
 def test_a_deadlock_times_out_on_time(

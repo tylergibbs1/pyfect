@@ -266,7 +266,7 @@ class _Continues:
             return False
         deadline = time.monotonic() + wait
         while True:
-            if self._drained():
+            if self.drained():
                 return True
             if _pending_for_the_process(signal.SIGCONT):
                 self._owed += 1
@@ -276,14 +276,11 @@ class _Continues:
                 return False
             select.select([self._read], [], [], left)
 
-    def forget(self) -> None:
-        """Drops what came since the last look: it was in no stall."""
-        if self.available:
-            self._drained()
-
-    def _drained(self) -> bool:
-        """Whether the pipe held a SIGCONT not already counted; it holds every signal with a
-        Python handler."""
+    def drained(self) -> bool:
+        """Whether the pipe held a SIGCONT not already counted, emptying it; it holds every
+        signal with a Python handler."""
+        if not self.available:
+            return False
         data = b""
         try:
             while chunk := os.read(self._read, 4096):
@@ -673,6 +670,10 @@ class Watchdog:
             if self._dumps is not None:
                 self._dumps.arm()
             self._stop.wait(self.tick)
+            # Before the clocks: a SIGCONT read here came before ``now``, so in this gap. Read
+            # after them, one that ends a freeze starting just after them would be dropped by
+            # a tick that saw no stall, and missing from the next tick's.
+            continued = self._continues.drained()
             # Wall time first: a dump written between the two reads still counts as in the gap.
             now_wall, now, now_cpu = time.time(), time.monotonic(), time.process_time()
             if generation != self._generation:
@@ -688,12 +689,12 @@ class Watchdog:
             if stalled:
                 if dump is None and unclaimed is not None and unclaimed.at >= last_wall:
                     dump = unclaimed
-                self._record(self._process_stall(now - last, now_cpu - cpu, dump))
+                stall = self._process_stall(now - last, now_cpu - cpu, dump, continued=continued)
+                self._record(stall)
                 unclaimed = None
             else:
                 self._steal.mark()
                 self._collections.take_longest()
-                self._continues.forget()
                 unclaimed = dump
             last_wall, last, cpu = now_wall, now, now_cpu
             if self._armed.is_set():
@@ -703,7 +704,7 @@ class Watchdog:
                 self._ticks += 1
                 self._ticked.notify_all()
 
-    def _process_stall(self, gap: float, cpu: float, dump: _Dump | None) -> str:
+    def _process_stall(self, gap: float, cpu: float, dump: _Dump | None, *, continued: bool) -> str:
         """Names a stall of the whole process: no Python thread ran for ``gap`` seconds."""
         head = f"process stalled {gap:.1f} s"
         collected, generation = self._collections.take_longest()
@@ -727,7 +728,7 @@ class Watchdog:
             )
             return f"{head}: host: process frozen, the dump {late} ({numbers})"
         # A freeze uses no CPU: only then is a SIGCONT whose handler is slow worth a wait.
-        if self._continues.came(wait=2 * self.tick if cpu < gap / 2 else 0.0):
+        if continued or self._continues.came(wait=2 * self.tick if cpu < gap / 2 else 0.0):
             with self._lock:
                 self._frozen += gap - self.tick
             return f"{head}: host: process frozen, resumed by SIGCONT ({numbers})"
