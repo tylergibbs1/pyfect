@@ -82,7 +82,6 @@ from pyfect._public import publish
 from pyfect._reasons import HasReason
 from pyfect._root import NoRunError
 from pyfect._url import Url
-from pyfect._version import VERSION as _VERSION
 from pyfect.batching import Request, RequestResolver, request, request_unsafe
 from pyfect.cache import Cache, ScopedCache
 from pyfect.cause import Cause, EmptyCauseError, Interrupted, UnhandledError
@@ -419,11 +418,19 @@ if _typing.TYPE_CHECKING:
     )
 
 
-if not _typing.TYPE_CHECKING:  # pyright would accept any ``fx.<name>`` through it
+if _typing.TYPE_CHECKING:
+    __version__: str
+    """The installed distribution's version. Read on first use, so importing pyfect from a
+    source tree with no installed metadata still works."""
+else:  # pyright would accept any ``fx.<name>`` through ``__getattr__``
 
-    def __getattr__(name: str) -> _ModuleType:
+    def __getattr__(name: str) -> _typing.Any:
         if name in _SUBMODULES:
             return _importlib.import_module(f"pyfect.{name}")
+        if name == "__version__":
+            from pyfect._version import VERSION
+
+            return VERSION
         raise AttributeError(f"module 'pyfect' has no attribute {name!r}")
 
 
@@ -440,8 +447,6 @@ else:
             return _context_effect(*tags)
 
     context.__class__ = _ContextModule
-
-__version__: _typing.Final = _VERSION
 
 __all__ = [
     "AsyncioRequiredError",
