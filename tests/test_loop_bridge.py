@@ -241,17 +241,27 @@ def test_a_value_handed_over_but_not_taken_is_released_once(bridge: OwnedLoopBri
         loop.call_soon(lambda: loop.call_soon(handed.set))
         return "made"
 
+    def hand_over_then_interrupt(fiber: fx.Fiber[str, Failed]) -> None:
+        # One step on the scheduler's thread, so the fiber cannot take the value
+        # between the loop handing it over and the interrupt.
+        go.set()
+        handed.wait(10)
+        fiber.interrupt_as_unsafe(None)
+
     @fx.gen
     def program():
         fiber = yield from bridge.run(make, _catch, waits_for="work", release=releases).fork(
             start_immediately=True
         )
-        # Holds the scheduler, so the fiber cannot take the value before the interrupt.
-        yield from fx.sync(lambda: handed.wait(10))
-        yield from fx.sync(lambda: fiber.interrupt_as_unsafe(None))
+        yield from fx.sync(lambda: hand_over_then_interrupt(fiber))
         return (yield from fiber.await_exit())
 
-    assert _interrupted(fx.run_blocking(program))
+    go = _held(bridge)
+    try:
+        exit = fx.run_blocking(program)
+    finally:
+        go.set()
+    assert _interrupted(exit)
     fx.run_blocking(bridge.close())
     assert releases.released == ["made"]
 
