@@ -3,7 +3,7 @@
 from typing import Any, TypedDict
 
 import pytest
-from _growth import Make, Work, assert_near_linear
+from _growth import GUARD_FACTOR, Make, Work, assert_near_linear
 from _guards import guards
 
 import pyfect as fx
@@ -54,7 +54,8 @@ def test_a_long_number_varint_fails_after_the_longest_finite_double() -> None:
     not grow with the run: reading it all is linear, which a linear bound would allow."""
     sized = _with_run(S.Struct(_Number), {"n": 1})
     assert isinstance(sized(148)(), fx.Failure)
-    assert_near_linear(sized, 16_000, 8 * 16_000, bound=4)
+    # Over GUARD_FACTOR: reading it all grows 16x, against a bound of 6 with the guard margin.
+    assert_near_linear(sized, 16_000, GUARD_FACTOR * 16_000, factor=GUARD_FACTOR, bound=4)
 
 
 @guards("7a2157a0", "schema-binary-big-varint-shifted")
@@ -72,7 +73,7 @@ def test_a_long_big_int_varint_decodes_in_near_linear_time() -> None:
     assert sized(1000)()
     # Over a step of 16: the fixed reader (O(n log n)) grew 16x, the shifting one 193-204x
     # against a bound of 104 with the guard margin. Over 8 it grew 58-60x, near that bound's 36.
-    assert_near_linear(sized, 4000, 16 * 32_000, factor=16)
+    assert_near_linear(sized, 4000, GUARD_FACTOR * 8000, factor=GUARD_FACTOR)
 
 
 class _Row(TypedDict):

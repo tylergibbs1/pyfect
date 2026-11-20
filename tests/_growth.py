@@ -50,6 +50,11 @@ GUARD_MARGIN = float(os.environ.get("PYFECT_GUARD_MARGIN", "1"))
 """Bounds are this many times looser. ``scripts/check_regression_guards.py`` sets 1.5, so a
 test caught its bug only if it would still have with a looser bound: big_decimal's digit run
 grew 27x against 24 on macOS and under 24 on CI's runner."""
+GUARD_FACTOR = 16
+"""The step a timing test that guards a regression (``tests/_guards.py``) measures over. Over
+``FACTOR`` a quadratic grows at most 64 times against a bound of 36 with the guard margin, and
+one with a linear part in it fell under that on CI's runner; over 16 it grows 256 times against
+104. A count (``tests/_copies.py``) is better still where one fits: it does not depend on load."""
 MIN_SECONDS = 0.002
 MAX_SIZE = 1 << 22
 RUNS = 3
