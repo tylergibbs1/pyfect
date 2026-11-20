@@ -359,6 +359,59 @@ def test_can_serialize_workflow_defects():
 # --- scopes, activities and shutdown -----------------------------------------------------
 
 
+@testing.effect
+def test_compensates_once_on_cancellation_after_an_active_timer_wake():
+    """compensates once on cancellation after an active timer wake"""
+    wf = workflow.make("TimerWakeFinalizers", payload=W.EMPTY, idempotency_key=lambda _: "one")
+    started = fx.Latch(False)
+    woke_attempt = [0]
+    registered: list[int] = []
+    finalized: list[int] = []
+    compensations = [0]
+
+    def handler(_: Any, __: str):
+        @fx.gen
+        def body():
+            attempt = len(registered) + 1
+            registered.append(attempt)
+            yield from workflow.add_finalizer(lambda _: fx.sync(lambda: finalized.append(attempt)))
+
+            def compensate(_value: object, _cause: object) -> fx.Effect[None]:
+                return fx.sync(lambda: compensations.__setitem__(0, compensations[0] + 1))
+
+            yield from wf.with_compensation(fx.void, compensate)
+            waiting = activity.make(name="waiting", execute=started.open().and_then(fx.never))
+            wake = (
+                started.wait()
+                .and_then(
+                    durable_clock.sleep(name="wake", duration="20 millis", in_memory_threshold=0)
+                )
+                .tap(lambda _: fx.sync(lambda: woke_attempt.__setitem__(0, attempt)))
+            )
+            yield from fx.all(waiting, wake, concurrency="unbounded", discard=True)
+
+        return body
+
+    layer = wf.to_layer(handler).pipe(fx.layer.provide_merge(W.make_test_workflow_engine()))
+
+    @fx.gen
+    def run():
+        execution_id = yield from wf.execute({}, discard=True)
+        yield from poll_storage_until(lambda: woke_attempt[0] > 0, "timer must resume the workflow")
+        assert woke_attempt[0] > 1, "timer must wake a replay"
+        assert finalized == [], "timer wake must not finalize the workflow"
+        engine = yield from WorkflowEngine()
+        yield from engine.interrupt_unsafe(wf, execution_id)
+        result = yield from poll_until(wf, execution_id, Complete)
+        assert isinstance(result.exit, fx.Failure) and result.exit.cause.has_interrupts
+        assert compensations[0] == 1
+        assert sorted(finalized) == sorted(registered), (
+            "cancellation must finalize every registered attempt"
+        )
+
+    yield from run.pipe(fx.provide(layer))
+
+
 @pytest.mark.parametrize("complete", [True, False], ids=["completion", "teardown"])
 @testing.effect
 def test_releases_all_workflow_scopes_after_multiple_suspensions(complete: bool):
