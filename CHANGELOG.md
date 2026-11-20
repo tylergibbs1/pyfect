@@ -100,6 +100,26 @@
   `agent: {"disabled": True}` to hide Ask AI (Effect #10727).
 - OTLP: when a failed export disables an exporter for 60 seconds, the message is now logged
   as a warning, not at debug level, where the default log level hid it (Effect #10729).
+- `interpreter_pool`: a subinterpreter could be ended under its worker by any other thread that
+  listed it (`concurrent.interpreters.list_all()`, as a test or a leak check does).
+  `concurrent.interpreters.create()` ends an interpreter when the references its shared
+  `Interpreter` objects hold drop to zero, and a listing made while a worker was starting could
+  leave the worker holding no reference: when the listing's copy was dropped, CPython ended the
+  interpreter, so the next call and releasing the layer hung forever (on the free-threaded build
+  it could also crash the process). The pool now makes its interpreters without that count and
+  ends each only with its own `close()`. A worker that fails in itself (its interpreter will not
+  close, because something else closed it) no longer dies silently: a call it was running fails
+  with the error, and releasing the layer dies with it instead of waiting forever.
+- `fiber_profiler.profile()` no longer raises `RuntimeError: dictionary changed size during
+  iteration` when its block ends while other threads run fibers. Ending a profile cannot wait
+  for a turn another thread is still counting, so each thread's totals now stop changing
+  before they are merged; a turn still running when the block ends is not counted.
+- `fx.managed` and `CloseableScope` blocks: when the block raises and a finalizer fails, the
+  note added to the block's exception holds only the failed finalizers, as documented, under
+  `Failed finalizers:`. It held the scope's whole cause, so it repeated the block's own error,
+  once more through each finalizer error's context (they run while it is being handled), and
+  an uncaught error printed the block's traceback three times. The exception and the scope's
+  cause are unchanged.
 
 ## 0.6.14 (2026-11-19)
 
