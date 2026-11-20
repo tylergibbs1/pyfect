@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from typing import Any, ClassVar, Final, Generic, Literal, Never, Self, TypeVar, cast
 
 from pyfect._core import Effect
+from pyfect._pipe import pipe_one
 from pyfect.exit import Exit, Failure, Success
 from pyfect.option import Option, Some
 from pyfect.schema._options import ParseOptions
@@ -53,8 +54,8 @@ class Getter(ABC, Generic[T_co, E_contra, R_co]):
     def apply(self, value: object, options: ParseOptions) -> ParseResult:
         """The output for ``value`` (``MISSING`` when there is none)."""
 
-    def pipe[B](self, f: Callable[[Self], B], /) -> B:
-        return f(self)
+    def pipe[B](self, f: Callable[[Self], B], /, *more: Never) -> B:
+        return pipe_one(self, f, more)
 
     def compose[T2, R2 = Never](
         self, other: Getter[T2, T_co, R2], /

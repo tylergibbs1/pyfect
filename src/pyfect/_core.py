@@ -50,6 +50,7 @@ from pyfect._effect_resources import ResourceMethods, _call_user, _run_finalizer
 from pyfect._effect_services import ServiceMethods
 from pyfect._effect_timing import TimingMethods
 from pyfect._effect_tracing import TracingMethods
+from pyfect._pipe import pipe_one
 from pyfect.result import Err, Ok
 
 if TYPE_CHECKING:
@@ -97,11 +98,11 @@ class Effect(
             "or with `yield from effect` inside an effect generator>"
         )
 
-    def pipe[B](self, f: Callable[[Self], B], /) -> B:
+    def pipe[B](self, f: Callable[[Self], B], /, *more: Never) -> B:
         """Apply ``f`` to this effect. One step per call, on purpose:
         pyright only narrows types correctly for a single step, so chain
         ``.pipe(a).pipe(b)`` rather than passing several functions."""
-        return f(self)
+        return pipe_one(self, f, more)
 
     # --- sequencing -------------------------------------------------------
 

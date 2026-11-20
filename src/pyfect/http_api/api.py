@@ -22,6 +22,7 @@ from typing import (
     overload,
 )
 
+from pyfect._pipe import pipe_one
 from pyfect.context import Context, Tag, TagLike
 from pyfect.http.headers import Pattern
 from pyfect.http_api import schema as api_schema
@@ -94,8 +95,8 @@ class HttpApi(Generic[G_co]):
     def annotate_merge(self, annotations: Context[Any]) -> Self:
         return replace(self, annotations=self.annotations.merge(annotations))
 
-    def pipe[B](self, f: Callable[[Self], B], /) -> B:
-        return f(self)
+    def pipe[B](self, f: Callable[[Self], B], /, *more: Never) -> B:
+        return pipe_one(self, f, more)
 
 
 type AnyApi = HttpApi[Any]

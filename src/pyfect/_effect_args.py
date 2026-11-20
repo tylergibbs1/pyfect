@@ -12,10 +12,15 @@ that way. The run loop never checks again.
 
 from __future__ import annotations
 
+import inspect
 import types
-from collections.abc import Iterable
+import weakref
+from collections.abc import Callable, Iterable
+from typing import Any
 
 from pyfect._effect_base import EffectBase
+
+_effect_functions: weakref.WeakSet[Callable[..., Any]] = weakref.WeakSet()
 
 
 def require_effect(value: object, name: str) -> None:
@@ -45,10 +50,54 @@ def require_effects(values: Iterable[object], name: str) -> None:
             raise TypeError(_message(value, f"{name}[{i}]"))
 
 
+def mark_effect_function[F: Callable[..., Any]](f: F) -> F:
+    """``f``, remembered as a function returning an effect (``fx.fn``'s), so passing it
+    uncalled where an effect belongs says to call it."""
+    _effect_functions.add(f)
+    return f
+
+
 def _message(value: object, name: str) -> str:
-    return wrong_argument(
-        value, name, "an Effect", "to run a function, pass fx.sync(f) or fx.suspend(f)"
-    )
+    message = f"{name} must be an Effect, got {type(value).__name__}: {value!r}"
+    hint = _hint(value)
+    return f"{message} ({hint})" if hint else message
+
+
+def _hint(value: object) -> str | None:
+    """What to write instead of ``value``, when it is close to an effect."""
+    if isinstance(value, types.GeneratorType):
+        code = value.gi_code
+        return (
+            f"{code.co_name}() made a generator, not an effect: decorate {code.co_name} "
+            "with @fx.gen, or with @fx.fn when it takes arguments"
+        )
+    if not callable(value):
+        return _stream_hint(value)
+    name = getattr(value, "__name__", "f")
+    if getattr(value, "__func__", value) in _effect_functions:
+        call = f"{name}()" if _takes_no_arguments(value) else f"{name}(...)"
+        return f"{name} is an @fx.fn function: call it to get its effect, {call}"
+    if inspect.isgeneratorfunction(value):
+        return (
+            f"{name} is a generator function: decorate it with @fx.gen, "
+            "or with @fx.fn when it takes arguments"
+        )
+    return "to run a function, pass fx.sync(f) or fx.suspend(f)"
+
+
+def _stream_hint(value: object) -> str | None:
+    from pyfect.stream._stream import Stream  # only once a call has failed
+
+    if isinstance(value, Stream):
+        return "a Stream is not an Effect: stream.run_collect() is an effect giving its items"
+    return None
+
+
+def _takes_no_arguments(f: Callable[..., Any]) -> bool:
+    try:
+        return not inspect.signature(f).parameters
+    except ValueError:
+        return False
 
 
 def wrong_argument(value: object, name: str, expected: str, hint_for_callable: str) -> str:

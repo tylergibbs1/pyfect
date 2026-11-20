@@ -17,6 +17,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any, Generic, Never, TypeVar, cast, overload
 
+from pyfect._pipe import pipe_one
 from pyfect.schema import ast
 from pyfect.schema._checks_size import is_unique
 from pyfect.schema._schema import Bottom, Codec
@@ -44,9 +45,11 @@ class OptionalKey(Generic[A_co, I_co, RD_co, RE_co]):
 
     schema: Codec[A_co, I_co, RD_co, RE_co]
 
-    def pipe[B2](self, f: Callable[[OptionalKey[A_co, I_co, RD_co, RE_co]], B2], /) -> B2:
+    def pipe[B2](
+        self, f: Callable[[OptionalKey[A_co, I_co, RD_co, RE_co]], B2], /, *more: Never
+    ) -> B2:
         """``f(self)``: ``S.optional_key(s).pipe(S.decode_to(...))``."""
-        return f(self)
+        return pipe_one(self, f, more)
 
 
 def optional_key[A, I, RD, RE](

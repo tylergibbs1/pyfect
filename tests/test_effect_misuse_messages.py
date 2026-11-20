@@ -14,6 +14,7 @@ import inspect
 import re
 import traceback
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -163,3 +164,26 @@ def test_the_effects_page_quotes_python_s_message_for_calling_or_awaiting_it(
     with pytest.raises(TypeError) as awaited:
         asyncio.run(wait())
     assert str(awaited.value) in _messages(name)
+
+
+_PIPEABLES: dict[str, object] = {
+    "effect": fx.succeed(1),
+    "layer": fx.layer.empty,
+    "duration": fx.duration.seconds(1),
+    "schedule": fx.schedule.forever,
+    "context": fx.Context.empty(),
+}
+
+
+@pytest.mark.parametrize("subject", list(_PIPEABLES.values()), ids=list(_PIPEABLES))
+def test_pipe_given_several_functions_says_to_chain_them(subject: Any):
+    with pytest.raises(TypeError) as raised:
+        subject.pipe(_identity, _identity, _identity)
+    assert str(raised.value) == (
+        ".pipe takes one function, got 3: chain them, .pipe(f).pipe(g). One per call is on "
+        "purpose: pyright loses type narrowing after the first step of a multi-step pipe"
+    )
+
+
+def _identity(x: object) -> object:
+    return x

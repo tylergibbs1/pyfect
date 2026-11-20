@@ -31,6 +31,7 @@ from typing import TYPE_CHECKING, Final, Literal, Never, TypedDict, cast, final
 from pyfect import _js
 from pyfect._duration_iso import format_iso_nanos, parse_iso_nanos
 from pyfect._js import SPACE, int_text, js_number
+from pyfect._pipe import pipe_one
 
 _E3: Final = 1_000
 _E6: Final = 1_000_000
@@ -210,8 +211,8 @@ class Duration:
             return on_negative_infinity()
         return on_infinity()
 
-    def pipe[B](self, f: Callable[[Duration], B], /) -> B:
-        return f(self)
+    def pipe[B](self, f: Callable[[Duration], B], /, *more: Never) -> B:
+        return pipe_one(self, f, more)
 
     # --- predicates --------------------------------------------------------------------
 

@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any, Generic, Never, Self, TypeIs, TypeVar, ca
 
 from pyfect._core import Effect, Step, _FailCause, _MatchCause, _Succeed
 from pyfect._effect_args import wrong_argument
+from pyfect._pipe import pipe_one
 from pyfect.cause import fail as fail_cause
 from pyfect.errors import Done
 from pyfect.exit import Success
@@ -57,9 +58,9 @@ class ChannelBase(
         on the fiber's stack, not Python's."""
         return _Build(self._build, upstream, scope)
 
-    def pipe[B](self, f: Callable[[Self], B], /) -> B:
+    def pipe[B](self, f: Callable[[Self], B], /, *more: Never) -> B:
         """Apply ``f`` to this channel (one step; see ``Effect.pipe``)."""
-        return f(self)
+        return pipe_one(self, f, more)
 
 
 type AnyChannel = ChannelBase[Any, Any, Any, Any, Any, Any, Any]

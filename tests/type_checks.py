@@ -990,6 +990,39 @@ def check_structural() -> None:
     fx.all(num, mode="validate")  # pyright: ignore[reportCallIssue, reportArgumentType]
 
 
+def check_all_shapes(nums: list[fx.Effect[int, NotFound, Port]]) -> None:
+    # Effect.all's array and struct forms: one iterable gives a tuple, one mapping a dict.
+    num = fx.succeed(1)
+    nf = fx.fail(NotFound("k"))
+    assert_type(fx.all(nums), fx.Effect[tuple[int, ...], NotFound, Port])
+    assert_type(fx.all([num, nf]), fx.Effect[tuple[int, ...], NotFound, Never])
+    assert_type(fx.all((num, num), concurrency=2), fx.Effect[tuple[int, ...], Never, Never])
+    assert_type(
+        fx.all(nums, mode="result"), fx.Effect[tuple[fx.Result[int, NotFound], ...], Never, Port]
+    )
+    assert_type(fx.all(nums, discard=True), fx.Effect[None, NotFound, Port])
+    assert_type(fx.all(nums, discard=True, mode="result"), fx.Effect[None, Never, Port])
+    assert_type(fx.all({"a": num, "b": nf}), fx.Effect[dict[str, int], NotFound, Never])
+    assert_type(
+        fx.all({"a": nums[0]}, mode="result"),
+        fx.Effect[dict[str, fx.Result[int, NotFound]], Never, Port],
+    )
+    assert_type(fx.all({"a": nums[0]}, discard=True), fx.Effect[None, NotFound, Port])
+    assert_type(fx.all({"a": num}, discard=True, mode="result"), fx.Effect[None, Never, Never])
+    # One effect is still one effect, not an iterable of them.
+    assert_type(fx.all(num), fx.Effect[tuple[int], Never, Never])
+    assert_type(fx.all(*nums), fx.Effect[tuple[int, ...], NotFound, Port])
+    fx.all([1, 2])  # pyright: ignore[reportArgumentType, reportCallIssue]
+    fx.all({"a": 1})  # pyright: ignore[reportArgumentType, reportCallIssue]
+    fx.all([num], num)  # pyright: ignore[reportArgumentType, reportCallIssue]
+
+
+def check_pipe_takes_one_function() -> None:
+    # A second function is a type error; at run time it says to chain `.pipe(f).pipe(g)`.
+    fx.succeed(1).pipe(lambda e: e, lambda e: e)  # pyright: ignore[reportArgumentType, reportUnknownLambdaType]
+    fx.layer.empty.pipe(lambda e: e, lambda e: e)  # pyright: ignore[reportArgumentType, reportUnknownLambdaType]
+
+
 def check_context_managers(
     cm: AbstractContextManager[int], acm: AbstractAsyncContextManager[str]
 ) -> None:

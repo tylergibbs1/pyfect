@@ -19,6 +19,7 @@ from dataclasses import dataclass, field, replace
 from functools import cache
 from typing import TYPE_CHECKING, Any, Generic, Literal, Never, Protocol, Self, TypeVar, overload
 
+from pyfect._pipe import pipe_one
 from pyfect.context import Context, TagLike
 from pyfect.http.method import has_body
 from pyfect.http.router import prefix_path
@@ -168,8 +169,8 @@ class HttpApiEndpoint(Generic[P_co, Q_co, B_co, CB_co, H_co, S, CS_co, E, M_co, 
     def annotate_merge(self, annotations: Context[Any]) -> Self:
         return replace(self, annotations=self.annotations.merge(annotations))
 
-    def pipe[A](self, f: Callable[[Self], A], /) -> A:
-        return f(self)
+    def pipe[A](self, f: Callable[[Self], A], /, *more: Never) -> A:
+        return pipe_one(self, f, more)
 
 
 type AnyEndpoint = HttpApiEndpoint[Any, Any, Any, Any, Any, Any, Any, Any, Any, Any]

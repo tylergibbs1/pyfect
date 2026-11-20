@@ -13,7 +13,9 @@ equal, and hash alike, when their values are::
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Final, Generic, Self, TypeVar, final
+from typing import Final, Generic, Never, Self, TypeVar, final
+
+from pyfect._pipe import pipe_one
 
 A_co = TypeVar("A_co", covariant=True)
 
@@ -44,9 +46,9 @@ class Redacted(Generic[A_co]):
     def __format__(self, spec: str) -> str:
         return format(repr(self), spec)
 
-    def pipe[B](self, f: Callable[[Self], B], /) -> B:
+    def pipe[B](self, f: Callable[[Self], B], /, *more: Never) -> B:
         """``f(self)``: ``secret.pipe(redacted.value)``."""
-        return f(self)
+        return pipe_one(self, f, more)
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Redacted):

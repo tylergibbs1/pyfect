@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from typing import Any, Generic, Never, Self, TypeIs, TypeVar, cast
 
 from pyfect._core import Effect
+from pyfect._pipe import pipe_one
 from pyfect.option import Option, Some
 from pyfect.schema._options import ParseOptions
 from pyfect.schema.ast import MISSING, ParseResult, call, map_value, to_effect
@@ -68,8 +69,8 @@ class Transformation(Generic[T, E, RD_co, RE_co]):
         """The transformation the other way."""
         return Transformation(self.encode, self.decode, self.decode_content, self.content)
 
-    def pipe[B](self, f: Callable[[Self], B], /) -> B:
-        return f(self)
+    def pipe[B](self, f: Callable[[Self], B], /, *more: Never) -> B:
+        return pipe_one(self, f, more)
 
     def compose[T2, RD2 = Never, RE2 = Never](
         self, other: Transformation[T2, T, RD2, RE2], /
@@ -109,8 +110,8 @@ class Middleware(Generic[T, E, RD_co, RE_co]):
     def flip(self) -> Middleware[E, T, RE_co, RD_co]:
         return Middleware(self.encode, self.decode)
 
-    def pipe[B](self, f: Callable[[Self], B], /) -> B:
-        return f(self)
+    def pipe[B](self, f: Callable[[Self], B], /, *more: Never) -> B:
+        return pipe_one(self, f, more)
 
     def decode_result(self, result: ParseResult, options: ParseOptions) -> ParseResult:
         source = cast("_Parse[E, Any]", to_effect(map_value(result, _option)))

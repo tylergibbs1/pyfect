@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any, Generic, Never, Self, TypeVar, final, ove
 
 from pyfect._core import Effect, _FailCause, _Succeed, _Suspend
 from pyfect._effect_args import require_effect
+from pyfect._pipe import pipe_one
 from pyfect.clock import clock_with, sleep
 from pyfect.context import Reference
 from pyfect.duration import Duration, from_input_unsafe, millis, zero
@@ -228,9 +229,9 @@ class Schedule(Generic[Out_co, In_contra, E_co, R_co]):
 
         return jittered(self)
 
-    def pipe[B](self, f: Callable[[Self], B], /) -> B:
+    def pipe[B](self, f: Callable[[Self], B], /, *more: Never) -> B:
         """Apply ``f`` to this schedule (one step per call, as ``Effect.pipe``)."""
-        return f(self)
+        return pipe_one(self, f, more)
 
     def passthrough[I](self: Schedule[Out_co, I, E_co, R_co]) -> Schedule[I, I, E_co, R_co]:
         """Keep the decisions, but output each input instead."""

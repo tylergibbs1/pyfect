@@ -24,6 +24,12 @@
   `eff`, on its own fiber too, and every other fiber's while it runs, as `profile()` does for a
   block. A profile already running makes it die with `ProfilerBusyError`; a failure or an
   interruption ends the profile and drops the report.
+- `fx.all` takes one list, tuple or other iterable of effects (`fx.all([a, b])`, giving a
+  tuple of their values in order) or one mapping of them (`fx.all({"a": a, "b": b})`, giving a
+  dict under the same keys, as `fx.all_dict`), the shapes Effect's `Effect.all` takes. Both
+  keep `concurrency`, `discard` and `mode`; they used to fail with `effects[0] must be an
+  Effect, got list`. Writing the effects as arguments, `fx.all(a, b)`, still keeps each value's
+  own type in the tuple.
 
 ### Docs
 
@@ -56,6 +62,18 @@
 
 ### Fixed
 
+- Running something that is close to an effect says what to write instead (every parameter
+  that takes an effect, `fx.run_*` included). An `@fx.fn` function passed uncalled used to get
+  "to run a function, pass fx.sync(f) or fx.suspend(f)", which led the wrong way; it now gets
+  `greet is an @fx.fn function: call it to get its effect, greet(...)`. A generator function
+  says to decorate it with `@fx.gen` (or `@fx.fn` when it takes arguments), a generator object
+  says the same of its function, and a `Stream` points to `stream.run_collect()`.
+- `.pipe(f, g)` on an effect, a layer, a stream, a schema or anything else with `.pipe` said
+  only `pipe() takes 2 positional arguments but 3 were given`. It now says `.pipe` takes one
+  function on purpose (pyright loses type narrowing after a multi-step pipe's first step) and
+  to chain `.pipe(f).pipe(g)`. pyright still rejects the call.
+- `fx.all([a], b)`, a list among other effects, says to pass the effects either as arguments
+  or as one list.
 - `interpreter_pool.call` and `try_call` on a function that reads globals of the script you ran,
   in a script without an `if __name__ == "__main__":` guard, hung forever with no output. CPython
   finds such a function by re-running the script inside the subinterpreter (as

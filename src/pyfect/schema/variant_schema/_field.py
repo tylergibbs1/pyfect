@@ -5,8 +5,9 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Any, Generic, TypeIs, TypeVar
+from typing import Any, Generic, Never, TypeIs, TypeVar
 
+from pyfect._pipe import pipe_one
 from pyfect.schema._schema import Codec
 
 A_co = TypeVar("A_co", covariant=True)
@@ -22,9 +23,9 @@ class Field(Generic[A_co]):
 
     schemas: Mapping[str, AnyCodec]
 
-    def pipe[B](self, f: Callable[[Field[A_co]], B], /) -> B:
+    def pipe[B](self, f: Callable[[Field[A_co]], B], /, *more: Never) -> B:
         """``f(self)``: ``S.Int.pipe(model.field_only(["select"]))`` and so on."""
-        return f(self)
+        return pipe_one(self, f, more)
 
 
 def is_field(value: object) -> TypeIs[Field[Any]]:

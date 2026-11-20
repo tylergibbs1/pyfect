@@ -44,6 +44,7 @@ from typing import (
 
 from pyfect._fiber import Fiber
 from pyfect._futures import settle
+from pyfect._pipe import pipe_one
 from pyfect._root import new_root
 from pyfect.context import Context
 from pyfect.exit import Exit, Success
@@ -182,8 +183,10 @@ class StandardSchemaV1(Generic[T_co, E_co, RD_co, RE_co]):
     def __codec__(self) -> Bottom[T_co, E_co, RD_co, RE_co]:
         return self.__wrapped__.__codec__()
 
-    def pipe[B](self, f: Callable[[StandardSchemaV1[T_co, E_co, RD_co, RE_co]], B], /) -> B:
-        return f(self)
+    def pipe[B](
+        self, f: Callable[[StandardSchemaV1[T_co, E_co, RD_co, RE_co]], B], /, *more: Never
+    ) -> B:
+        return pipe_one(self, f, more)
 
     def __getattr__(self, name: str) -> Any:
         schema = self.__wrapped__

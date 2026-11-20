@@ -22,10 +22,11 @@ from __future__ import annotations
 import base64
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, ClassVar, Literal, Self, cast
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, Never, Self, cast
 
 from pyfect import schema as S
 from pyfect._json_value import JsonValue
+from pyfect._pipe import pipe_one
 from pyfect._url import Url
 from pyfect._wire_codec import Const, Key, key, wire_codec
 from pyfect.exit import Success
@@ -60,8 +61,8 @@ class _Wire:
     def __codec__(cls) -> S.Bottom[Self, Mapping[str, object]]:
         return cls.__dict__["_wire"]
 
-    def pipe[B](self, f: Callable[[Self], B], /) -> B:
-        return f(self)
+    def pipe[B](self, f: Callable[[Self], B], /, *more: Never) -> B:
+        return pipe_one(self, f, more)
 
 
 def _define(cls: type[_Wire], identifier: str, *specs: Key | Const) -> None:
@@ -428,8 +429,8 @@ class Prompt:
     def __codec__(cls) -> S.Bottom[Prompt, Mapping[str, object]]:
         return _PROMPT
 
-    def pipe[B](self, f: Callable[[Self], B], /) -> B:
-        return f(self)
+    def pipe[B](self, f: Callable[[Self], B], /, *more: Never) -> B:
+        return pipe_one(self, f, more)
 
     def concat(self, input: RawInput) -> Prompt:
         """This prompt's messages, then ``input``'s."""

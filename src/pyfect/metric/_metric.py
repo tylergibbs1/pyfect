@@ -13,9 +13,10 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Mapping
-from typing import TYPE_CHECKING, Any, Final, Generic, Self, TypeVar, final
+from typing import TYPE_CHECKING, Any, Final, Generic, Never, Self, TypeVar, final
 
 from pyfect._core import Effect
+from pyfect._pipe import pipe_one
 from pyfect.context import Context
 from pyfect.exit import Success
 from pyfect.metric._refs import (
@@ -111,8 +112,8 @@ class Metric(ABC, Generic[In_contra, State_co]):
         contextual attributes and the metric's own."""
         return _Transform(self, _pass_input, _adding(attributes))
 
-    def pipe[B](self, f: Callable[[Self], B], /) -> B:
-        return f(self)
+    def pipe[B](self, f: Callable[[Self], B], /, *more: Never) -> B:
+        return pipe_one(self, f, more)
 
 
 def register_unsafe[S](

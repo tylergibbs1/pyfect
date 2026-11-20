@@ -9,7 +9,9 @@ runs with `run_blocking` (no event loop) or on asyncio with `run_async`.
 ## Running effects concurrently
 
 `fx.for_each` and `fx.all` take a `concurrency` limit (a number or `"unbounded"`; sequential by
-default). The first failure interrupts the others.
+default). The first failure interrupts the others. `fx.all(a, b)` gives a tuple keeping each
+value's type; as in Effect, it also takes one list (`fx.all(effects)`, a tuple of values) or one
+dict (`fx.all({"user": a, "posts": b})`, a dict under the same keys).
 
 <include meta='title="for_each.py"'>../../snippets/concurrency/for_each.py</include>
 

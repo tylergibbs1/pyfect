@@ -13,6 +13,7 @@ from collections.abc import Callable, Iterable
 from typing import TYPE_CHECKING, Any, Generic, Never, Self, TypeVar, cast
 
 from pyfect._effect_args import wrong_argument
+from pyfect._pipe import pipe_one
 
 if TYPE_CHECKING:
     from pyfect.channel import Channel
@@ -43,9 +44,9 @@ class StreamBase(Generic[A_co, E_co, R_co]):
         """The channel this stream is made of (Effect's ``stream.channel``)."""
         return self._channel
 
-    def pipe[B](self, f: Callable[[Self], B], /) -> B:
+    def pipe[B](self, f: Callable[[Self], B], /, *more: Never) -> B:
         """Apply ``f`` to this stream (one step; see ``Effect.pipe``)."""
-        return f(self)
+        return pipe_one(self, f, more)
 
 
 type AnyStream = StreamBase[Any, Any, Any]

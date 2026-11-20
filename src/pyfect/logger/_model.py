@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any, Generic, NamedTuple, Never, Self, TypeVar, overload
 
+from pyfect._pipe import pipe_one
 from pyfect._unsubscripted import Unsubscripted
 from pyfect.cause import Cause
 from pyfect.logger._level import LogLevel
@@ -159,5 +160,5 @@ class Logger(Generic[O_co]):
     def __repr__(self) -> str:
         return f"Logger({self._log!r})"
 
-    def pipe[B](self, f: Callable[[Self], B], /) -> B:
-        return f(self)
+    def pipe[B](self, f: Callable[[Self], B], /, *more: Never) -> B:
+        return pipe_one(self, f, more)

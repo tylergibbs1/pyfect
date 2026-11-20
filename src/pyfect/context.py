@@ -44,6 +44,7 @@ from typing import (
 )
 
 from pyfect._core import Effect, Step, _FailCause, _Succeed
+from pyfect._pipe import pipe_one
 from pyfect.cause import Cause, Die
 from pyfect.option import Option, Some
 
@@ -270,8 +271,8 @@ class Context(Generic[R_contra]):
             return _Omit(frozenset((cls,)))
         return _Omit(frozenset(), (cls, service.value))
 
-    def pipe[B](self, f: Callable[[Self], B], /) -> B:
-        return f(self)
+    def pipe[B](self, f: Callable[[Self], B], /, *more: Never) -> B:
+        return pipe_one(self, f, more)
 
     def lookup(self, tag: type[Tag[Any]]) -> tuple[bool, Any]:
         if tag in self._services:

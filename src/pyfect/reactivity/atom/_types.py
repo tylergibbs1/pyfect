@@ -16,6 +16,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Final, Generic, Literal, Never, Protocol, Self, TypeVar, cast
 
 from pyfect._js import same_value
+from pyfect._pipe import pipe_one
 from pyfect.duration import Duration
 from pyfect.duration import Input as DurationInput
 from pyfect.option import Option
@@ -73,8 +74,8 @@ class Atom(Generic[A_co]):
         name = "Atom" if self.label is None else f"Atom({self.label[0]!r})"
         return f"<{name} kept_alive={self.kept_alive} lazy={self.lazy}>"
 
-    def pipe[B](self, f: Callable[[Self], B], /) -> B:
-        return f(self)
+    def pipe[B](self, f: Callable[[Self], B], /, *more: Never) -> B:
+        return pipe_one(self, f, more)
 
     def _with(self, **changes: object) -> Self:
         changed = copy.copy(self)

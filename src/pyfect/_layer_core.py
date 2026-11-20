@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Any, Generic, Never, Self, TypeVar, Unpack, ov
 from pyfect._binding_doc import BindingDoc
 from pyfect._core import Effect, _FailCause, _Locally, _Succeed, _Suspend, _WithFiber
 from pyfect._effect_args import require_effect, wrong_argument
+from pyfect._pipe import pipe_one
 from pyfect.cause import Cause
 from pyfect.cause import fail as fail_cause
 from pyfect.context import Context, Tag, TagLike
@@ -176,8 +177,8 @@ class Layer(Generic[ROut_contra, E_co, RIn_co]):
     def __init__(self, build: Builder) -> None:
         self._build = build
 
-    def pipe[B](self, f: Callable[[Self], B], /) -> B:
-        return f(self)
+    def pipe[B](self, f: Callable[[Self], B], /, *more: Never) -> B:
+        return pipe_one(self, f, more)
 
     # --- building ---------------------------------------------------------------
 
