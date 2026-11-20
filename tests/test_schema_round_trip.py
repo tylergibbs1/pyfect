@@ -5,6 +5,7 @@ the schema's own codec and its canonical JSON codec."""
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from typing import Any, Never, NotRequired, TypedDict, cast
 
 import pytest
@@ -87,6 +88,19 @@ _CHECKED: dict[str, S.Bottom[Any, Any]] = {
     "is_less_than_big_decimal": S.BigDecimal.check(S.is_less_than_big_decimal(bd.make(1, 30))),
     "is_less_than_or_equal_to_big_decimal": S.BigDecimal.check(
         S.is_less_than_or_equal_to_big_decimal(bd.make(-7, -3))
+    ),
+    "is_between_decimal": S.Decimal.check(
+        S.is_between_decimal(
+            minimum=Decimal("-1.5"), maximum=Decimal("12.36"), exclusive_minimum=True
+        )
+    ),
+    "is_greater_than_decimal": S.Decimal.check(S.is_greater_than_decimal(Decimal("0.5"))),
+    "is_greater_than_or_equal_to_decimal": S.Decimal.check(
+        S.is_greater_than_or_equal_to_decimal(Decimal(-5))
+    ),
+    "is_less_than_decimal": S.Decimal.check(S.is_less_than_decimal(Decimal("1E+30"))),
+    "is_less_than_or_equal_to_decimal": S.Decimal.check(
+        S.is_less_than_or_equal_to_decimal(Decimal("-0.007"))
     ),
     "is_between_code_points": S.String.check(S.is_between_code_points(1, 3)),
     "is_between_date": S.DateTimeUtc.check(

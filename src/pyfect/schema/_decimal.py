@@ -9,8 +9,10 @@ from __future__ import annotations
 
 import decimal
 import re
+from collections.abc import Mapping
 from typing import TypeIs
 
+from pyfect import big_decimal as bd
 from pyfect.exit import Exit, Success
 from pyfect.exit import fail as fail_exit
 from pyfect.schema import ast
@@ -19,6 +21,7 @@ from pyfect.schema._arbitrary_constraint import ArbitraryConstraint
 from pyfect.schema._arrays import Tuple
 from pyfect.schema._checks_number import is_between
 from pyfect.schema._checks_order import (
+    Annotate,
     Between,
     Bound,
     make_is_between,
@@ -81,10 +84,53 @@ def _to_parts(value: decimal.Decimal) -> tuple[int, int, int]:
     return sign, int("".join(map(str, digits))), int(exponent)
 
 
-def _arbitrary(_: tuple[ast.AST, ...], __: ArbitraryConstraint) -> ast.Link:
+def _arbitrary(_: tuple[ast.AST, ...], constraint: ArbitraryConstraint) -> ast.Link:
     """Sign, coefficient and exponent: an exact decimal, unlike text drawn
-    at random, which rarely is one."""
-    return link(_PARTS, decode=_from_parts, encode=_to_parts)
+    at random, which rarely is one. Within the order checks' bounds, a
+    ``BigDecimal`` built within them (not filtered for them)."""
+    if constraint.minimum is None and constraint.maximum is None:
+        return link(_PARTS, decode=_from_parts, encode=_to_parts)
+    return link(_bounded_big_decimal(constraint), decode=_from_big, encode=_to_big)
+
+
+def _to_big(value: decimal.Decimal) -> bd.BigDecimal:
+    sign, digits, exponent = value.as_tuple()
+    coefficient = int("".join(map(str, digits)))
+    return bd.make(-coefficient if sign else coefficient, -int(exponent))
+
+
+def _from_big(value: bd.BigDecimal) -> decimal.Decimal:
+    digits = tuple(map(int, str(abs(value.value))))
+    return decimal.Decimal((int(value.value < 0), digits, -value.scale))
+
+
+def _bounded_big_decimal(constraint: ArbitraryConstraint) -> ast.AST:
+    # ``_decimal_regexp`` reaches ``_derive``, which imports this module.
+    from pyfect.schema._decimal_regexp import (
+        BigDecimal,
+        is_greater_than_big_decimal,
+        is_greater_than_or_equal_to_big_decimal,
+        is_less_than_big_decimal,
+        is_less_than_or_equal_to_big_decimal,
+    )
+
+    low, high = constraint.minimum, constraint.maximum
+    checks: list[ast.Check[bd.BigDecimal]] = []
+    if isinstance(low, decimal.Decimal):
+        above = (
+            is_greater_than_big_decimal
+            if constraint.exclusive_minimum
+            else is_greater_than_or_equal_to_big_decimal
+        )
+        checks.append(above(_to_big(low)))
+    if isinstance(high, decimal.Decimal):
+        below = (
+            is_less_than_big_decimal
+            if constraint.exclusive_maximum
+            else is_less_than_or_equal_to_big_decimal
+        )
+        checks.append(below(_to_big(high)))
+    return BigDecimal.check(*checks).ast if checks else BigDecimal.ast
 
 
 def _formatter(_: tuple[object, ...]) -> object:
@@ -104,12 +150,46 @@ DecimalFromString: DecodeToSchema[decimal.Decimal, str] = String.annotate(
 ).pipe(decode_to(Decimal, _decimal_from_string))
 """A ``Decimal`` read from its text, as JSON writes it (Effect's ``BigDecimalFromString``)."""
 
-is_greater_than_decimal: Bound[decimal.Decimal] = make_is_greater_than(formatter=str)
+
+def _bounded(constraint: ArbitraryConstraint) -> Mapping[str, object]:
+    """The bounds ``to_strategy`` builds ``Decimal`` values within."""
+    return {"arbitrary_constraint": constraint}
+
+
+def _above(exclusive: bool) -> Annotate[decimal.Decimal]:
+    return lambda bound: _bounded(ArbitraryConstraint(minimum=bound, exclusive_minimum=exclusive))
+
+
+def _below(exclusive: bool) -> Annotate[decimal.Decimal]:
+    return lambda bound: _bounded(ArbitraryConstraint(maximum=bound, exclusive_maximum=exclusive))
+
+
+def _within(
+    minimum: decimal.Decimal,
+    maximum: decimal.Decimal,
+    exclusive_minimum: bool,
+    exclusive_maximum: bool,
+) -> Mapping[str, object]:
+    return _bounded(
+        ArbitraryConstraint(
+            minimum=minimum,
+            exclusive_minimum=exclusive_minimum,
+            maximum=maximum,
+            exclusive_maximum=exclusive_maximum,
+        )
+    )
+
+
+is_greater_than_decimal: Bound[decimal.Decimal] = make_is_greater_than(
+    formatter=str, annotate=_above(True)
+)
 is_greater_than_or_equal_to_decimal: Bound[decimal.Decimal] = make_is_greater_than_or_equal_to(
-    formatter=str
+    formatter=str, annotate=_above(False)
 )
-is_less_than_decimal: Bound[decimal.Decimal] = make_is_less_than(formatter=str)
+is_less_than_decimal: Bound[decimal.Decimal] = make_is_less_than(
+    formatter=str, annotate=_below(True)
+)
 is_less_than_or_equal_to_decimal: Bound[decimal.Decimal] = make_is_less_than_or_equal_to(
-    formatter=str
+    formatter=str, annotate=_below(False)
 )
-is_between_decimal: Between[decimal.Decimal] = make_is_between(formatter=str)
+is_between_decimal: Between[decimal.Decimal] = make_is_between(formatter=str, annotate=_within)
