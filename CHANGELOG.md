@@ -24,6 +24,12 @@
   `eff`, on its own fiber too, and every other fiber's while it runs, as `profile()` does for a
   block. A profile already running makes it die with `ProfilerBusyError`; a failure or an
   interruption ends the profile and drops the report.
+- `fx.all` takes one list, tuple or other iterable of effects (`fx.all([a, b])`, giving a
+  `list` of their values in order, as Effect's array input gives an array) or one mapping of
+  them (`fx.all({"a": a, "b": b})`, giving a dict under the same keys, as `fx.all_dict`), the
+  shapes Effect's `Effect.all` takes. Both keep `concurrency`, `discard` and `mode`; they used
+  to fail with `effects[0] must be an Effect, got list`. Writing the effects as arguments,
+  `fx.all(a, b)`, still gives a tuple keeping each value's own type.
 
 ### Docs
 
@@ -53,6 +59,12 @@
   pytest. The Services page says what a tag's `key=` is for, the Resources page explains its
   "Without a scope" example, and the Effects page's run table names the functions the `_exit`
   variants mirror.
+- The AI page has a section on OpenAI-compatible APIs with two things to know about
+  Cloudflare Workers AI's endpoint, both as in Effect 4.1.4. It streams a digit as a JSON
+  number (`"delta":{"content":1}`), and that chunk fails the chunk schema and is skipped, so
+  digits drop out of streamed text without an error: prompt for words, or don't stream. A
+  retired model answers HTTP 410 with Cloudflare's `{"errors":[{"message":...,"code":5028}]}`
+  body, so the error reads "Unknown error" and the reason is in `reason.http["body"]`.
 
 ### Fixed
 
@@ -159,6 +171,34 @@
   other table gets; they now go through it too, and
   `tests/test_table_creation_retries.py` fails on any `CREATE` in the storage that no retry
   covers.
+- Running something that is close to an effect says what to write instead (every parameter
+  that takes an effect, `fx.run_*` included). An `@fx.fn` function passed uncalled used to get
+  "to run a function, pass fx.sync(f) or fx.suspend(f)", which led the wrong way; it now gets
+  `greet is an @fx.fn function: call it to get its effect, greet(...)`. A generator function
+  says to decorate it with `@fx.gen` (or `@fx.fn` when it takes arguments), a generator object
+  says the same of its function, and a `Stream` points to `stream.run_collect()`.
+- `.pipe(f, g)` on an effect, a layer, a stream, a schema or anything else with `.pipe` said
+  only `pipe() takes 2 positional arguments but 3 were given`. It now says `.pipe` takes one
+  function on purpose (pyright loses type narrowing after a multi-step pipe's first step) and
+  to chain `.pipe(f).pipe(g)`. pyright still rejects the call.
+- `fx.all([a], b)`, a list among other effects, says to pass the effects either as arguments
+  or as one list.
+- A check in a field's `Annotated` metadata that can't run on the value (`count:
+  Annotated[int, S.is_min_length(1)]`, a length check on an int) raised `RuntimeError:
+  Constructor adapter can only throw schema issues` when constructing (`Sync adapter can only
+  throw schema errors` when decoding), naming neither the field nor the check. It now raises a
+  `TypeError` naming both, chained from what the check raised: `Bin.count: the check
+  is_min_length (a value with a length of at least 1) raised on 3: TypeError: object of type
+  'int' has no len(). Give the field a check that fits its type`. Effect has no schema error
+  for a filter that throws, and pyright can't see a check inside `Annotated`. Defining the
+  class still succeeds, as a default, a union member or an optional field may never meet the
+  check. `S.Struct` over a TypedDict names the key the same way (`Line['quantity']: ...`).
+- `S.Struct` over a TypedDict with a key whose annotation has no schema (`at: datetime`) said
+  only `No schema for the annotation <class 'datetime.datetime'>: give the field its schema`.
+  It now names the struct and the key and shows the fix, as `S.Class` names the field:
+  `Event['at']: No schema for the annotation <class 'datetime.datetime'>: give the field its
+  schema, S.Struct(Event, at=...)`. A key of a nested TypedDict shows the path
+  (`Calendar['first']: Event['at']: ...`).
 
 ## 0.6.14 (2026-11-19)
 
