@@ -263,17 +263,16 @@ class _Continues:
         one whose handler has not written yet."""
         if not self.available:
             return False
-        deadline = time.monotonic() + wait
-        while True:
+        for waited in (False, True):
             if self.drained():
                 return True
             if _pending_for_the_process(signal.SIGCONT):
                 self._owed += 1
                 return True
-            left = deadline - time.monotonic()
-            if left <= 0:
-                return False
-            select.select([self._read], [], [], left)
+            if waited or wait <= 0:
+                break
+            select.select([self._read], [], [], wait)  # until a signal's byte, or ``wait``
+        return False
 
     def drained(self) -> bool:
         """Whether the pipe held a SIGCONT not already counted, emptying it; it holds every
