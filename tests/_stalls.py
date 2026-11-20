@@ -15,7 +15,9 @@ thread, ticking for the whole session and recording while a test runs, tells the
   in <frame>" (a busy thread, a fiber's first). When the dump was written tells them
   apart: faulthandler's watchdog needs no GIL, so a dump written on time means the process
   was running (a C call holding the GIL, which also uses no CPU, is pyfect), and only one
-  written late, or not yet, with next to no CPU used is the host freezing the process.
+  written late against its own arming's due, or still unwritten when the next arming
+  replaced it, proves the host froze the process (``_DumpTimer``). Anything else counts as
+  running time.
 - Each tick also samples every thread's stack, as a faulthandler dump (text: holding
   frames would keep what a finished step handled alive). A thread inside ``Fiber._run``
   whose stack has not moved for the threshold, while the process used next to no CPU, is a
@@ -57,6 +59,7 @@ import time
 from collections import deque
 from collections.abc import Generator
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from typing import Any
 
@@ -306,13 +309,123 @@ class _CpuSamples:
         self._file.close()
 
 
+class _Timing(Enum):
+    """When faulthandler's C thread wrote a dump, against the due time of its own arming."""
+
+    ON_TIME = "on time"
+    """It ran at its due time: the process was running."""
+    LATE = "late"
+    """It ran over a tick after it: the host froze the process."""
+    MISSED = "missed"
+    """It had not run over a tick after it, when the next arming cancelled it: the host froze
+    the process. (A freeze that ends just before a re-arm lets the re-arm cancel it first.)"""
+    EARLY = "early"
+    """It reads over a tick before it (the wall clock was set back): no evidence either way."""
+
+    @property
+    def frozen(self) -> bool:
+        """Proof that the host froze the process: faulthandler's C thread needs no GIL, so
+        nothing in the process keeps it from running."""
+        return self in (_Timing.LATE, _Timing.MISSED)
+
+
+@dataclass(frozen=True, slots=True)
+class _Dump:
+    """What one arming of faulthandler's dump timer saw."""
+
+    threads: list[DumpedThread]
+    at: float
+    """Wall time it was written (the file's mtime), or cancelled unwritten."""
+    late: float
+    """Seconds after its arming's due time."""
+    timing: _Timing
+
+
+@dataclass(slots=True)
+class _Arming:
+    due: float
+    """Wall time its dump is due. Noted before arming: a freeze between the two then makes
+    the dump read late; noted after, it would read on time."""
+    replaced: float | None = None
+    """Wall time, noted before the re-arm that cancelled it."""
+    read: bool = False
+    """Its dump was read, or its miss reported."""
+
+
+class _DumpTimer:
+    """``faulthandler.dump_traceback_later``, re-armed each tick, and each dump judged against
+    the due time of the arming that wrote it.
+
+    Two armings can have written the file since the last read: the one this tick made, and
+    the one it replaced, if the watchdog was starved after its last read and before its
+    re-arm. The replaced one wrote before the re-arm returned; the new one cannot write until
+    a threshold after it. So a dump written before half a threshold after the re-arm is the
+    replaced arming's."""
+
+    def __init__(self, threshold: float, tick: float) -> None:
+        self._threshold = threshold
+        self._tick = tick
+        # Open for the session: faulthandler writes to its descriptor from a C thread.
+        self._file = tempfile.TemporaryFile("w+")  # noqa: SIM115
+        self._current = _Arming(time.time() + threshold)
+        self._replaced: _Arming | None = None
+        self._split = 0.0
+        """Dumps written before it (wall time) are the replaced arming's."""
+
+    def arm(self) -> None:
+        now = time.time()
+        arming = _Arming(now + self._threshold)
+        faulthandler.dump_traceback_later(self._threshold, file=self._file)
+        self._current.replaced = now
+        self._replaced, self._current = self._current, arming
+        self._split = time.time() + self._threshold / 2
+
+    def take(self, *, stalled: bool) -> _Dump | None:
+        """What the armings saw since the last take: a dump, or one that missed its due time.
+        After a stall whose current arming is past due, waits up to a tick for its dump: when
+        a freeze ends, faulthandler's C thread and this one wake together."""
+        fd = self._file.fileno()
+        current, replaced = self._current, self._replaced
+        if stalled:
+            deadline = time.time() + self._tick
+            while not os.fstat(fd).st_size and current.due < time.time() < deadline:
+                time.sleep(self._tick / 20)
+        written = os.fstat(fd)
+        self._file.seek(0)
+        text = self._file.read()
+        self._file.seek(0)
+        self._file.truncate()
+        if written.st_size:
+            at = written.st_mtime
+            arming = replaced if replaced is not None and at < self._split else current
+            arming.read = True
+            late = at - arming.due
+            timing = (
+                _Timing.LATE
+                if late > self._tick
+                else _Timing.EARLY
+                if late < -self._tick
+                else _Timing.ON_TIME
+            )
+            return _Dump(_dump_threads(text), at, late, timing)
+        if replaced is None or replaced.read or replaced.replaced is None:
+            return None
+        replaced.read = True
+        late = replaced.replaced - replaced.due
+        return _Dump([], replaced.replaced, late, _Timing.MISSED) if late > self._tick else None
+
+    def close(self) -> None:
+        faulthandler.cancel_dump_traceback_later()
+        self._file.close()
+
+
 class Watchdog:
     """The watchdog thread and the stalls it saw in the current test."""
 
     def __init__(self, threshold: float, *, dump: bool) -> None:
         self.threshold = threshold
         self.tick = threshold / 4
-        self.dump = dump
+        self._dumps = _DumpTimer(threshold, self.tick) if dump else None
         self.stalls: list[str] = []
         self._armed = threading.Event()
         self._ticked = threading.Condition()
@@ -321,12 +434,8 @@ class Watchdog:
         self._last = time.monotonic()
         self._frozen = 0.0
         """Seconds the host froze the whole process for, over the session."""
-        self._dump_due = 0.0
-        """When (wall time) the armed faulthandler dump is due."""
         self._stop = threading.Event()
         self._lock = threading.Lock()
-        # Open for the session: faulthandler writes to its descriptor from a C thread.
-        self._file = tempfile.TemporaryFile("w+")  # noqa: SIM115
         self._sample = tempfile.TemporaryFile("w+")  # noqa: SIM115
         self._cpu = _CpuSamples()
         self._steal = _Steal()
@@ -347,6 +456,12 @@ class Watchdog:
         and its report leave some from before it."""
         self._thread = threading.Thread(target=self._watch, name="stall-watchdog", daemon=True)
 
+    @property
+    def dump(self) -> bool:
+        """Whether faulthandler's dump is armed: without it a freeze and a GIL-held call
+        look alike."""
+        return self._dumps is not None
+
     def start(self) -> None:
         gc.callbacks.append(self._collections)
         self._thread.start()
@@ -355,9 +470,8 @@ class Watchdog:
         self._stop.set()
         self._thread.join()
         gc.callbacks.remove(self._collections)
-        if self.dump:
-            faulthandler.cancel_dump_traceback_later()
-        self._file.close()
+        if self._dumps is not None:
+            self._dumps.close()
         self._sample.close()
         self._cpu.close()
 
@@ -431,17 +545,17 @@ class Watchdog:
     def _watch(self) -> None:
         """Ticks for the whole session, so a stall at the very start of a test is seen too;
         only an armed watchdog records what it sees."""
-        last, cpu = time.monotonic(), time.process_time()
+        last_wall, last, cpu = time.time(), time.monotonic(), time.process_time()
         generation = -1
+        # A dump read at a tick that saw no stall: one starved between its tick and the read
+        # belongs to the next tick's stall.
+        unclaimed: _Dump | None = None
         while not self._stop.is_set():
-            if self.dump:
-                # Noted before arming: a freeze between the two would otherwise put the due
-                # time after it, and the dump the C watchdog writes at resume would read as
-                # on time.
-                self._dump_due = time.time() + self.threshold
-                faulthandler.dump_traceback_later(self.threshold, file=self._file)
+            if self._dumps is not None:
+                self._dumps.arm()
             self._stop.wait(self.tick)
-            now, now_cpu = time.monotonic(), time.process_time()
+            # Wall time first: a dump written between the two reads still counts as in the gap.
+            now_wall, now, now_cpu = time.time(), time.monotonic(), time.process_time()
             if generation != self._generation:
                 # A new test: the sampled stall's index points into the last one's stalls.
                 self._cpu.stop()
@@ -450,14 +564,18 @@ class Watchdog:
                 self._seen.clear()
                 self._reported.clear()
                 self._stacks.clear()
-            if now - last - self.tick >= self.threshold and not froze(last, now):
-                self._record(self._process_stall(now - last, now_cpu - cpu))
+            stalled = now - last - self.tick >= self.threshold and not froze(last, now)
+            dump = None if self._dumps is None else self._dumps.take(stalled=stalled)
+            if stalled:
+                if dump is None and unclaimed is not None and unclaimed.at >= last_wall:
+                    dump = unclaimed
+                self._record(self._process_stall(now - last, now_cpu - cpu, dump))
+                unclaimed = None
             else:
                 self._steal.mark()
                 self._collections.take_longest()
-                if self.dump:
-                    self._take_dump()  # a dump of no stall
-            last, cpu = now, now_cpu
+                unclaimed = dump
+            last_wall, last, cpu = now_wall, now, now_cpu
             if self._armed.is_set():
                 self._sample_fibers(now)
             with self._ticked:
@@ -465,39 +583,30 @@ class Watchdog:
                 self._ticks += 1
                 self._ticked.notify_all()
 
-    def _take_dump(self) -> tuple[list[DumpedThread], float | None]:
-        """The dump's threads, and how late after it was due it was written (``None``: not
-        written)."""
-        written = os.fstat(self._file.fileno())
-        self._file.seek(0)
-        text = self._file.read()
-        self._file.seek(0)
-        self._file.truncate()
-        late = written.st_mtime - self._dump_due if written.st_size else None
-        return _dump_threads(text), late
-
-    def _process_stall(self, gap: float, cpu: float) -> str:
+    def _process_stall(self, gap: float, cpu: float, dump: _Dump | None) -> str:
         """Names a stall of the whole process: no Python thread ran for ``gap`` seconds."""
         head = f"process stalled {gap:.1f} s"
         collected, generation = self._collections.take_longest()
-        threads, late = self._take_dump() if self.dump else ([], None)
         steal, load = self._steal.since_last(), _load()
         numbers = f"{steal}, {load}, process CPU {cpu:.1f} s"
         if collected >= self.threshold / 2:
             took = f"generation {generation}, {collected:.1f} s"
             return f"{head}: pyfect blocked in garbage collection ({took})"
+        threads = [] if dump is None else dump.threads
         busy = [t for t in threads if not t.current and not t.frames[0].idle]
         fibers = [t for t in busy if t.in_fiber_step]
-        # Never much before its due time: a dump that reads so is no evidence either way.
-        on_time = late is not None and -self.tick <= late <= self.tick
+        on_time = dump is not None and dump.timing is _Timing.ON_TIME
         if (fibers or busy) and (on_time or cpu >= gap / 2):
             frames = (fibers or busy)[0].frames
             return f"{head}: pyfect blocked in {frames[0]} ({numbers})\n" + _stack(frames)
-        named = _no_busy_thread(gap, cpu, late, on_time=on_time, dump=self.dump)
-        if named.startswith("host: process frozen"):
+        if dump is not None and dump.timing.frozen:
             with self._lock:
                 self._frozen += gap - self.tick
-        return f"{head}: {named} ({numbers})"
+            late = f"{dump.late:.1f} s late" + (
+                ", unwritten" if dump.timing is _Timing.MISSED else ""
+            )
+            return f"{head}: host: process frozen, the dump {late} ({numbers})"
+        return f"{head}: {_not_frozen(gap, cpu, dump, dumps=self.dump)} ({numbers})"
 
     def frozen_seconds(self) -> float:
         """Seconds the host froze the whole process for so far."""
@@ -624,23 +733,21 @@ def _sampled_head(
     return head, _stack(stack)
 
 
-def _no_busy_thread(
-    gap: float, cpu: float, late: float | None, *, on_time: bool, dump: bool
-) -> str:
-    """Names a stall the dump shows no pyfect frame for: the host froze the process (the
-    C watchdog was frozen too, so it wrote late or not yet), or something unknown."""
-    if on_time and cpu >= gap / 2:
-        return "in-process: the dump came on time, but no Python thread was busy"
-    if on_time:
-        # Nothing in the process explains a stall with no busy thread and no CPU used.
-        return "unexplained: the dump came on time, but no thread was busy and no CPU used"
-    if not dump:
+def _not_frozen(gap: float, cpu: float, dump: _Dump | None, *, dumps: bool) -> str:
+    """Names a stall the dump shows no pyfect frame for and no freeze: its time counts as
+    running, since nothing proves the host froze the process."""
+    if not dumps:
         return "host or a C call holding the GIL: no dump to tell"
-    if late is not None:
-        return f"host: process frozen, the dump {late:.1f} s late"
-    if cpu < gap / 2:
-        return "host: process frozen, no dump written yet"
-    return "in-process: no stack captured"
+    if dump is None:
+        if cpu >= gap / 2:
+            return "in-process: no stack captured"
+        return "unexplained: no dump came due, so nothing shows the host froze the process"
+    if cpu >= gap / 2:
+        return "in-process: the dump shows no Python thread busy"
+    if dump.timing is _Timing.EARLY:
+        return f"unexplained: the dump reads {-dump.late:.1f} s before its due time"
+    # Nothing in the process explains a stall with no busy thread and no CPU used.
+    return "unexplained: the dump came on time, but no thread was busy and no CPU used"
 
 
 def _below_the_alarm(frames: tuple[Frame, ...]) -> tuple[Frame, ...]:

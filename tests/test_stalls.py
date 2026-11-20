@@ -15,8 +15,10 @@ import pytest
 from _stalls import (
     DumpedThread,
     Frame,
+    _Dump,  # pyright: ignore[reportPrivateUsage]
     _dump_threads,  # pyright: ignore[reportPrivateUsage]
-    _no_busy_thread,  # pyright: ignore[reportPrivateUsage]
+    _not_frozen,  # pyright: ignore[reportPrivateUsage]
+    _Timing,  # pyright: ignore[reportPrivateUsage]
 )
 from _subprocess import SUBPROCESS_TIMEOUT
 
@@ -700,8 +702,8 @@ def test_a_sample_signal_after_sampling_stopped_does_nothing() -> None:
 def test_an_on_time_dump_with_no_busy_thread_and_no_cpu_is_unexplained() -> None:
     """Nothing in the process explains such a stall, so it is neither called in-process nor
     counted as a host freeze."""
-    named = _no_busy_thread(1.1, 0.0, 0.0, on_time=True, dump=True)
-    assert named.startswith("unexplained: ")
+    dump = _Dump([], 0.0, 0.0, _Timing.ON_TIME)
+    assert _not_frozen(1.1, 0.0, dump, dumps=True).startswith("unexplained: ")
 
 
 def _freeze_script(freeze: float) -> str:
@@ -772,6 +774,80 @@ def test_holds_the_gil():
 """
 
 
+STARVED_BEFORE_REARMING = """
+import ctypes
+import threading
+
+import _stalls
+import pyfect as fx
+import pyfect.testing as it
+
+starve, parked, holding = threading.Event(), threading.Event(), threading.Event()
+sample_fibers = _stalls.Watchdog._sample_fibers
+
+
+def park_after_sampling(watchdog, now):
+    \"\"\"The watchdog's sample of the fibers, after which, once asked, it waits for the test
+    thread to take the GIL: starved after this tick's dump was read, before its re-arm.\"\"\"
+    sample_fibers(watchdog, now)
+    if starve.is_set():
+        starve.clear()
+        parked.set()
+        holding.wait(timeout=5)
+
+
+_stalls.Watchdog._sample_fibers = park_after_sampling
+
+
+def sleep_on_purpose():
+    starve.set()
+    parked.wait(timeout=5)
+    holding.set()
+    ctypes.PyDLL(None).sleep(2)  # the GIL held 2 s, no CPU used: the watchdog starved
+
+
+@it.live(timeout="1 second")
+def test_starves_the_watchdog():
+    yield from fx.sync(sleep_on_purpose)
+    yield from fx.never
+"""
+
+FROZEN_BEFORE_REARMING = """
+import os
+import subprocess
+import threading
+import time
+
+import _stalls
+import pyfect as fx
+import pyfect.testing as it
+
+sample_fibers = _stalls.Watchdog._sample_fibers
+freeze = threading.Event()
+
+
+def freeze_after_sampling(watchdog, now):
+    \"\"\"The watchdog's sample of the fibers, after which, once, the host freezes the process:
+    where ``STARVED_BEFORE_REARMING`` starves it.\"\"\"
+    sample_fibers(watchdog, now)
+    if freeze.is_set():
+        freeze.clear()
+        script = f"kill -STOP {os.getpid()}; sleep 1; kill -CONT {os.getpid()}"
+        subprocess.Popen(["sh", "-c", script])
+        time.sleep(0.3)  # the stop lands here
+        time.sleep(0.05)  # from the resume: the C watchdog writes before its timer is re-armed
+
+
+_stalls.Watchdog._sample_fibers = freeze_after_sampling
+
+
+@it.live(timeout="1 second")
+def test_frozen_before_rearming():
+    freeze.set()
+    yield from fx.sleep("3 seconds")  # 2 s of the test's own time: past its limit
+"""
+
+
 def _limited(
     pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch, source: str, *, passed: bool = False
 ) -> str:
@@ -820,6 +896,36 @@ def test_a_c_call_holding_the_gil_times_out_on_time(
     out = _limited(pytester, monkeypatch, GIL_HELD_IN_A_STEP)
     assert "TestTimeoutError: test timed out after 1.0s" in out, out
     assert "not counted" not in out, out
+
+
+@pytest.mark.skipif(__import__("sys").platform == "win32", reason="libc sleep through ctypes")
+@pytest.mark.skipif(
+    not getattr(__import__("sys"), "_is_gil_enabled", lambda: True)(),
+    reason="free-threaded: no GIL to hold, so the watchdog keeps running",
+)
+def test_a_watchdog_starved_before_it_rearms_counts_the_time(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#263's CI: starved by a GIL-held call after reading one tick's dump and before
+    re-arming, the watchdog judged the dump the old arming wrote on time against the new
+    arming's due: "the dump -2.1 s late", a host freeze, and 1 s left out of the timeout."""
+    out = _limited(pytester, monkeypatch, STARVED_BEFORE_REARMING)
+    assert "TestTimeoutError: test timed out after 1.0s" in out, out
+    assert "pyfect blocked in sleep_on_purpose (" in out, out
+    assert ": host" not in out, out
+    assert "not counted" not in out, out
+
+
+@pytest.mark.skipif(__import__("sys").platform == "win32", reason="SIGSTOP is POSIX")
+def test_a_freeze_before_the_watchdog_rearms_is_left_out(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Where ``test_a_watchdog_starved_before_it_rearms_counts_the_time`` starves the
+    watchdog, a SIGSTOP freezes the C watchdog too: its dump comes late, a host freeze."""
+    out = _limited(pytester, monkeypatch, FROZEN_BEFORE_REARMING)
+    assert ": host: process frozen, the dump " in out, out
+    assert "TestTimeoutError: test timed out after 1.0 s of running time (" in out, out
+    assert re.search(r"host froze the process (0\.[89]|1\.[0-9]) s, not counted\)", out), out
 
 
 BLOCKS_PAST_ITS_LIMIT = """
