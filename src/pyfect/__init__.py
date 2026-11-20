@@ -82,6 +82,7 @@ from pyfect._public import publish
 from pyfect._reasons import HasReason
 from pyfect._root import NoRunError
 from pyfect._url import Url
+from pyfect._version import VERSION as _VERSION
 from pyfect.batching import Request, RequestResolver, request, request_unsafe
 from pyfect.cache import Cache, ScopedCache
 from pyfect.cause import Cause, EmptyCauseError, Interrupted, UnhandledError
@@ -439,6 +440,8 @@ else:
             return _context_effect(*tags)
 
     context.__class__ = _ContextModule
+
+__version__: _typing.Final = _VERSION
 
 __all__ = [
     "AsyncioRequiredError",

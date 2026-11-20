@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Added
+
+- `pyfect.__version__` is the installed version (`0.6.16`, say), where Python users look first.
+  It reads the same value the OTLP exporters report.
+
 ### Docs
 
 - `examples/http_api.py` says it needs the `httpx` extra (`uv add "pyfect-dev[httpx]"`), and
