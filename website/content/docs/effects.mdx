@@ -51,7 +51,7 @@ Pick a run function by where the code runs and by whether the effect can still f
 | `run_blocking(eff)` | scripts and tests: no event loop needed, sleeps and forks work | `Never` | must be handled before the call; a defect or interruption is raised |
 | `run_sync(eff)` | an effect that finishes synchronously; anything else dies with `AsyncFiberError`, as Effect's `runSync` | `Never` | must be handled before the call; a defect or interruption is raised |
 | `await run_async(eff)` | inside asyncio code | `Never` | must be handled before the call; a defect or interruption is raised |
-| `run_blocking_exit(eff)`, `run_sync_exit(eff)`, `await run_async_exit(eff)` | the same three, when you want the outcome as a value | any | is returned as an `Exit`: `Success(value)` or `Failure(cause)` |
+| `run_blocking_exit(eff)`, `run_sync_exit(eff)`, `await run_async_exit(eff)` | the same as `run_blocking`, `run_sync` and `run_async`, when you want the outcome as a value | any | is returned as an `Exit`: `Success(value)` or `Failure(cause)` |
 
 Every run function needs the service type to be `Never`, so a missing service is a type error at
 the call site. Passing an effect that can still fail to `run_blocking`, `run_sync` or

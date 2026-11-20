@@ -45,7 +45,7 @@ A function that reads globals of the script you ran (`python app.py`, so its mod
 `__main__`) is found by running the whole script again inside the subinterpreter. With its
 top-level code under `if __name__ == "__main__":`, that re-run only defines the functions, and
 the call works. Without the guard, the re-run reaches the script's own `fx.run_blocking` (or any
-other run), which dies there at once; the call then dies with `MainScriptRerunError`, which says
+other run), which dies there at once; the call then dies with `interpreter_pool.MainScriptRerunError`, which says
 to add the guard or move the function into an importable module.
 
 ## Interruption

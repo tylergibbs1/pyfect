@@ -16,7 +16,16 @@ interrupted halfway. Finalizers run in reverse order of acquisition.
 
 ## Without a scope
 
+Cleanup that belongs to a single effect doesn't need a scope: attach it to that effect. The
+snippet shows three ways. `ensuring` runs a finalizer however the effect ends. `on_exit` does
+the same and also gets the `Exit`, so it can tell success from failure.
+`fx.acquire_use_release(acquire, use, release)` acquires a resource, runs `use` with it, and
+releases it as soon as `use` ends, so the resource never outlives that one call.
+
 <include meta='title="finalizers.py"'>../../snippets/resources/finalizers.py</include>
+
+Use `acquire_release` and a scope instead when a resource must stay open across several
+steps, or be shared, such as a connection a layer provides.
 
 ## `with` blocks in plain Python code
 
