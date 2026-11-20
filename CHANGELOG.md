@@ -24,6 +24,16 @@
 
 ### Fixed
 
+- `interpreter_pool`: a subinterpreter could be ended under its worker by any other thread that
+  listed it (`concurrent.interpreters.list_all()`, as a test or a leak check does).
+  `concurrent.interpreters.create()` ends an interpreter when the references its shared
+  `Interpreter` objects hold drop to zero, and a listing made while a worker was starting could
+  leave the worker holding no reference: when the listing's copy was dropped, CPython ended the
+  interpreter, so the next call and releasing the layer hung forever (on the free-threaded build
+  it could also crash the process). The pool now makes its interpreters without that count and
+  ends each only with its own `close()`. A worker that fails in itself (its interpreter will not
+  close, because something else closed it) no longer dies silently: a call it was running fails
+  with the error, and releasing the layer dies with it instead of waiting forever.
 - `interpreter_pool.call` and `try_call` on a function that reads globals of the script you ran,
   in a script without an `if __name__ == "__main__":` guard, hung forever with no output. CPython
   finds such a function by re-running the script inside the subinterpreter (as

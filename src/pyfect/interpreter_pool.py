@@ -31,7 +31,7 @@ cannot stop a call that has started, so interrupting the fiber abandons it,
 as ``fx.blocking`` does: a call still queued is withdrawn, a running one
 goes on until it returns. Releasing the layer waits for every interpreter
 to close, an abandoned call's once that call returns, so no interpreter
-outlives its pool.
+outlives its pool; it dies if one would not close (something else closed it).
 
 ``concurrent.interpreters`` is new in Python 3.14: on 3.13 building the
 layer dies with ``InterpretersUnavailableError``.
@@ -41,21 +41,25 @@ layer dies with ``InterpretersUnavailableError``.
 from __future__ import annotations
 
 import importlib
+import operator
 import os
 import sys
 import threading
 from collections import deque
 from collections.abc import Callable
 from concurrent.futures import Future
+from dataclasses import dataclass
+from functools import reduce
 from typing import Any, Never, Protocol, cast, overload
 
+from pyfect import cause as cause_
 from pyfect import layer as layer_
 from pyfect._core import Effect, _Succeed
 from pyfect._fake_main import MainScriptRerunError
 from pyfect._os_wait import os_wait
 from pyfect._public import publish
 from pyfect.context import Tag
-from pyfect.effect import _failure_of, _unknown_error_in, die, sync
+from pyfect.effect import _failure_of, _unknown_error_in, die, fail_cause, sync
 from pyfect.errors import UnknownError
 from pyfect.exit import Exit
 from pyfect.layer import Layer
@@ -95,6 +99,48 @@ class _Interpreters(Protocol):
     def create_queue(self) -> _Queue: ...
 
 
+class _OwnedInterpreter:
+    """A subinterpreter only its ``close()`` ends.
+
+    ``concurrent.interpreters.create()`` ends an interpreter once the
+    references its ``Interpreter`` objects hold drop to zero, and it shares
+    one object per id with anyone who lists the interpreter: a
+    ``list_all()`` on another thread could end the pool's interpreter under
+    its worker. This one is made without that count and touches no
+    ``Interpreter`` object."""
+
+    __slots__ = ("_failed", "_id", "_low")
+
+    def __init__(self, low: Any, failed: Callable[[object], Exception]) -> None:
+        self._low = low
+        self._failed = failed
+        self._id: object = low.create()
+
+    def call(self, callable: Callable[..., object], /, *args: object) -> object:
+        result, excinfo = self._low.call(self._id, callable, args, restrict=True)
+        if excinfo is not None:
+            raise self._failed(excinfo)
+        return result
+
+    def close(self) -> None:
+        self._low.destroy(self._id, restrict=True)
+
+
+class _OwnedInterpreters:
+    """``concurrent.interpreters`` with ``_OwnedInterpreter``s."""
+
+    def __init__(self, module: Any) -> None:
+        self._module = module
+        self._low = importlib.import_module("_interpreters")
+        self.ExecutionFailed: type[Exception] = module.ExecutionFailed
+
+    def create(self) -> _Interpreter:
+        return _OwnedInterpreter(self._low, self.ExecutionFailed)
+
+    def create_queue(self) -> _Queue:
+        return self._module.create_queue()
+
+
 def _load() -> _Interpreters:
     try:
         module = importlib.import_module("concurrent.interpreters")
@@ -102,7 +148,7 @@ def _load() -> _Interpreters:
         raise InterpretersUnavailableError(
             "interpreter_pool needs concurrent.interpreters, new in Python 3.14"
         ) from None
-    return cast("_Interpreters", module)
+    return _OwnedInterpreters(module)
 
 
 def _do_call(results: Any, fn: Any, args: Any) -> Any:
@@ -147,6 +193,18 @@ def _main_rerun_error(fn: Callable[..., object]) -> MainScriptRerunError:
 
 
 type _Work = tuple[Callable[..., object], tuple[object, ...], Future[object]]
+type _OnQuiet = Callable[[tuple[BaseException, ...]], None]
+"""Runs once every worker has ended, with what failed in the workers themselves."""
+
+
+@dataclass(slots=True)
+class _WorkerEnd:
+    """How a worker ended: ``unstarted`` when it had no interpreter to run
+    calls on, ``defect`` when it failed itself (its interpreter would not
+    close)."""
+
+    unstarted: BaseException | None = None
+    defect: BaseException | None = None
 
 
 class _Workers:
@@ -161,7 +219,8 @@ class _Workers:
         self._idle = 0
         self._threads = 0
         self._closed = False
-        self._on_quiet: list[Callable[[], None]] = []
+        self._on_quiet: list[_OnQuiet] = []
+        self._defects: list[BaseException] = []
 
     def submit(self, fn: Callable[..., object], args: tuple[object, ...]) -> Future[object]:
         future: Future[object] = Future()
@@ -189,21 +248,22 @@ class _Workers:
                     break
         future.cancel()
 
-    def close(self, on_quiet: Callable[[], None]) -> None:
+    def close(self, on_quiet: _OnQuiet) -> None:
         """Fail queued calls and let every worker close its interpreter once
         its current call returns, an abandoned one included; ``on_quiet`` runs
-        once every worker has closed its interpreter."""
+        once every worker has ended."""
         with self._lock:
             self._closed = True
             work, self._work = self._work, deque()
             quiet = self._threads == 0
             if not quiet:
                 self._on_quiet.append(on_quiet)
+            defects = tuple(self._defects)
             self._lock.notify_all()
         for _, _, future in work:
             future.set_exception(InterpreterPoolClosedError("the interpreter pool closed"))
         if quiet:
-            on_quiet()
+            on_quiet(defects)
 
     def _next(self) -> _Work | None:
         with self._lock:
@@ -216,68 +276,92 @@ class _Workers:
             return self._work.popleft()
 
     def _worker(self) -> None:
-        interpreters = self._interpreters
+        # Whatever happens in the thread, _exit runs: a release waits on it.
+        end = _WorkerEnd()
         try:
-            interpreter = interpreters.create()
+            self._serve(end)
         except BaseException as exc:
-            self._exit(exc)
+            end.defect = exc
+        self._exit(end)
+
+    def _serve(self, end: _WorkerEnd) -> None:
+        try:
+            interpreter = self._interpreters.create()
+        except BaseException as exc:
+            end.unstarted = exc
             return
+        try:
+            self._run_calls(interpreter, end)
+        finally:
+            interpreter.close()
+
+    def _run_calls(self, interpreter: _Interpreter, end: _WorkerEnd) -> None:
+        interpreters = self._interpreters
         try:
             interpreter.call(_set_path, list(sys.path))
             results = interpreters.create_queue()
-            while (item := self._next()) is not None:
-                fn, args, future = item
-                if future.set_running_or_notify_cancel():
-                    _run(interpreters, interpreter, results, (fn, args, future))
         except BaseException as exc:
-            interpreter.close()
-            self._exit(exc)
+            end.unstarted = exc
             return
-        interpreter.close()
-        self._exit(None)
+        while (item := self._next()) is not None:
+            if item[2].set_running_or_notify_cancel():
+                _run(interpreters, interpreter, results, item)
 
-    def _exit(self, failed: BaseException | None) -> None:
-        """A worker is done. One that could not start an interpreter fails
-        the queued calls when no other worker is left to run them."""
+    def _exit(self, end: _WorkerEnd) -> None:
+        """A worker is done. One that failed fails the queued calls when no
+        other worker is left to run them; its own defect goes to the
+        release."""
+        failed = end.unstarted if end.unstarted is not None else end.defect
         with self._lock:
             self._threads -= 1
+            if end.defect is not None:
+                self._defects.append(end.defect)
             stranded: deque[_Work] = deque()
             if failed is not None and self._threads == 0:
                 stranded, self._work = self._work, deque()
             quiet = self._threads == 0
             on_quiet, self._on_quiet = (self._on_quiet, []) if quiet else ([], self._on_quiet)
-        if failed is not None:
-            for _, _, future in stranded:
-                if future.set_running_or_notify_cancel():
-                    error = InterpreterStartError("could not start a subinterpreter")
-                    error.__cause__ = failed
-                    future.set_exception(error)
+            defects = tuple(self._defects)
+        for _, _, future in stranded:
+            if future.set_running_or_notify_cancel():
+                error = InterpreterStartError("could not start a subinterpreter")
+                error.__cause__ = failed
+                future.set_exception(error)
         for f in on_quiet:
-            f()
+            f(defects)
 
 
 def _run(
     interpreters: _Interpreters, interpreter: _Interpreter, results: _Queue, work: _Work
 ) -> None:
+    """Settle ``work``'s future, whatever its call returns or raises."""
     fn, args, future = work
     try:
-        value = interpreter.call(_do_call, results, fn, args)
+        value = _call_in(interpreters, interpreter, results, fn, args)
+    except BaseException as exc:
+        future.set_exception(exc)
+    else:
+        future.set_result(value)
+
+
+def _call_in(
+    interpreters: _Interpreters,
+    interpreter: _Interpreter,
+    results: _Queue,
+    fn: Callable[..., object],
+    args: tuple[object, ...],
+) -> object:
+    try:
+        return interpreter.call(_do_call, results, fn, args)
     except interpreters.ExecutionFailed as failed:
         original = results.get()
         if isinstance(original, BaseException):
-            original.__cause__ = failed
-            future.set_exception(original)
-        else:
-            future.set_exception(failed)
+            raise original from failed
+        raise
     except BaseException as exc:  # the call could not cross (NotShareableError, pickling)
         if interpreter.call(_main_rerun_refused):
-            error = _main_rerun_error(fn)
-            error.__cause__ = exc
-            future.set_exception(error)
-        else:
-            future.set_exception(exc)
-    else:
-        future.set_result(value)
+            raise _main_rerun_error(fn) from exc
+        raise
 
 
 class InterpreterPoolService:
@@ -357,7 +441,13 @@ def layer(size: int | None = None) -> Layer[InterpreterPool]:
 
     def release(pool: InterpreterPoolService, _: Exit[Any, Any]) -> Effect[None]:
         def register(resume: Callable[[Effect[None]], None]) -> None:
-            pool._workers.close(lambda: resume(_VOID))
+            def quiet(defects: tuple[BaseException, ...]) -> None:
+                if defects:
+                    resume(fail_cause(reduce(operator.add, map(cause_.die, defects))))
+                else:
+                    resume(_VOID)
+
+            pool._workers.close(quiet)
 
         return os_wait(register, waits_for="work")
 
