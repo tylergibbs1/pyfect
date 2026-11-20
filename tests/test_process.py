@@ -579,8 +579,8 @@ def test_concurrent_force_kills_wait_side_by_side(
     # Side by side, every wait has begun before the first ends in a SIGKILL; kills waiting in
     # turn (or a few at a time, on a pool's threads) send a SIGTERM after a SIGKILL.
     pids = {int(h.pid) for h in handles}
-    terms = [at for at, (pid, sig) in enumerate(sent) if sig == signal.SIGTERM]
-    kills = [at for at, (pid, sig) in enumerate(sent) if sig == signal.SIGKILL]
+    terms = [at for at, (_, sig) in enumerate(sent) if sig == signal.SIGTERM]
+    kills = [at for at, (_, sig) in enumerate(sent) if sig == signal.SIGKILL]
     assert {pid for pid, sig in sent if sig == signal.SIGTERM} == pids
     assert {pid for pid, sig in sent if sig == signal.SIGKILL} == pids
     assert max(terms) < min(kills), [sig.name for _, sig in sent]

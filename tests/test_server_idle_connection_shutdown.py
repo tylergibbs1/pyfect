@@ -6,7 +6,7 @@ hypercorn's shutdown that long (dogfood turnstile #2)."""
 
 from __future__ import annotations
 
-import asyncio
+import asyncio.constants
 import datetime as dt
 import socket
 import ssl

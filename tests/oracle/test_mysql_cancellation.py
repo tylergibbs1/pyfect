@@ -238,7 +238,7 @@ def test_kills_a_streams_statement_when_interrupted_before_the_first_row(
                 # Waiting the SLEEP out would outlast the test's time limit: only a kill
                 # ends it in time.
                 consumer = yield from (
-                    sql(f"SELECT SLEEP({PAST_ANY_TEST.to_seconds():g}) AS slept")
+                    sql.unsafe(f"SELECT SLEEP({PAST_ANY_TEST.to_seconds():g}) AS slept")
                     .stream.run_drain()
                     .pipe(fx.provide_service(MaxOpsBeforeYield, budget))
                     .fork()
