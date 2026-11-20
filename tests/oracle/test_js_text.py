@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
@@ -14,22 +15,26 @@ from hypothesis import strategies as st
 
 from pyfect import _json_text
 from pyfect import schema as S
+from pyfect.encoding import base64, base64_url, hex
 from pyfect.option import Some
 
 _LONE_SURROGATE = "a\ud800b"
 
 
 @pytest.mark.parametrize(
-    ("name", "expected"),
+    ("encode", "expected"),
     [
-        ("StringFromBase64", "Ye+/vWI="),
-        ("StringFromBase64Url", "Ye-_vWI"),
-        ("StringFromHex", "61efbfbd62"),
+        (base64.encode, "Ye+/vWI="),
+        (base64_url.encode, "Ye-_vWI"),
+        (hex.encode, "61efbfbd62"),
     ],
 )
-def test_a_lone_surrogate_is_encoded_as_text_encoder_writes_it(name: str, expected: str):
-    """``TextEncoder`` writes U+FFFD for a lone surrogate (F07)."""
-    assert S.encode_sync(getattr(S, name))(_LONE_SURROGATE) == expected
+def test_a_lone_surrogate_is_encoded_as_text_encoder_writes_it(
+    encode: Callable[[str], str], expected: str
+):
+    """``TextEncoder`` writes U+FFFD for a lone surrogate (F07). The ``StringFrom*``
+    schemas reject one instead (Effect #10725)."""
+    assert encode(_LONE_SURROGATE) == expected
 
 
 def test_an_int_past_4300_digits_is_written_in_full_in_an_error():

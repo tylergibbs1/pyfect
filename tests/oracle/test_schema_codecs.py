@@ -17,6 +17,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import UTC, datetime
 
+import pytest
+
 from pyfect import byte_size
 from pyfect import effect as fx
 from pyfect import schema as S
@@ -74,6 +76,23 @@ def test_string_from_hex():
     asserts.encoding().succeed("g", "67")
 
 
+@pytest.mark.parametrize(
+    "schema",
+    [S.StringFromBase64, S.StringFromBase64Url, S.StringFromHex, S.StringFromUriComponent],
+    ids=["StringFromBase64", "StringFromBase64Url", "StringFromHex", "StringFromUriComponent"],
+)
+def test_preserves_well_formed_strings_and_rejects_unpaired_surrogates(
+    schema: S.Codec[str, str],
+):
+    """%s preserves well-formed strings and rejects unpaired surrogates"""
+    asserts = SchemaAsserts(schema)
+    for text in ("a\ud800b", "a\udc00b"):
+        asserts.encoding().fail(text, "Expected a well-formed Unicode string")
+        assert S.is_(schema)(text)
+    text = "😀\ufffd"
+    assert S.decode_sync(schema)(S.encode_sync(schema)(text)) == text
+
+
 def test_string_from_uri_component():
     """StringFromUriComponent"""
     asserts = SchemaAsserts(S.StringFromUriComponent)
@@ -83,6 +102,7 @@ def test_string_from_uri_component():
     decoding.succeed("hello%20world", "hello world")
     decoding.succeed("hello", "hello")
     decoding.fail("%ZZ", "Expected a valid URI component")
+    decoding.succeed("\ud800", "\ud800")
     encoding = asserts.encoding()
     encoding.succeed('{"a":1}', "%7B%22a%22%3A1%7D")
     encoding.succeed("hello world", "hello%20world")

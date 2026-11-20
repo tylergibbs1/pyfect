@@ -8,11 +8,12 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from pyfect import _binary_codecs as codecs
+from pyfect._js import is_well_formed
 from pyfect.exit import Exit, Success
 from pyfect.exit import fail as fail_exit
 from pyfect.result import Ok, Result
 from pyfect.schema._options import ParseOptions
-from pyfect.schema.getter._getter import Getter, Transform, TransformEffect
+from pyfect.schema.getter._getter import Getter, TransformEffect
 from pyfect.schema.issue import InvalidValue, Issue, reported
 
 
@@ -47,17 +48,33 @@ def hex_encode(value: bytes | str) -> str:
     return codecs.hex_encode(value)
 
 
+def well_formed_encoder[E: bytes | str](encode: Callable[[E], str]) -> Getter[str, E]:
+    """``encode``, failing with an ``InvalidValue`` for a string with an
+    unpaired surrogate, which has no UTF-8 of its own (Effect's
+    ``encodeWithWellFormedString``)."""
+
+    def run(value: E, options: ParseOptions) -> Exit[str, Issue]:
+        if isinstance(value, str) and not is_well_formed(value):
+            expected = {"expected": "a well-formed Unicode string"}
+            return fail_exit(InvalidValue(expected, reported(value, options)))
+        return Success(encode(value))
+
+    return TransformEffect(run)
+
+
 def encode_base64() -> Getter[str, bytes | str]:
-    return Transform(base64_encode)
+    """Fails for a string with an unpaired surrogate."""
+    return well_formed_encoder(base64_encode)
 
 
 def encode_base64_url(*, padding: bool = False) -> Getter[str, bytes | str]:
-    """Unpadded unless ``padding``."""
-    return Transform(lambda value: base64_url_encode(value, padding=padding))
+    """Unpadded unless ``padding``. Fails for a string with an unpaired surrogate."""
+    return well_formed_encoder(lambda value: base64_url_encode(value, padding=padding))
 
 
 def encode_hex() -> Getter[str, bytes | str]:
-    return Transform(hex_encode)
+    """Fails for a string with an unpaired surrogate."""
+    return well_formed_encoder(hex_encode)
 
 
 def _decoder[T](

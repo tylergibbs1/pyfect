@@ -36,6 +36,19 @@ def js_sort_key(text: str) -> bytes:
     return text.encode("utf-16-be", "surrogatepass")
 
 
+def is_well_formed(text: str) -> bool:
+    """``String.prototype.isWellFormed``: no lone surrogate (a surrogate
+    pair is one character)."""
+    try:
+        text.encode()
+    except UnicodeEncodeError:
+        try:
+            text.encode("utf-16-le", "surrogatepass").decode("utf-16-le")
+        except UnicodeDecodeError:
+            return False
+    return True
+
+
 def to_well_formed(text: str) -> str:
     """``String.prototype.toWellFormed``: a surrogate pair becomes its
     character and a lone surrogate U+FFFD."""
