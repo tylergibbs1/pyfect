@@ -85,15 +85,47 @@ def cpu(work: Work, runs: int = RUNS, *, clock: Clock = time.thread_time) -> flo
     return _least((work,), runs, clock)[0]
 
 
-def cpu_pair(
-    first: Work, second: Work, runs: int = RUNS, *, clock: Clock = time.thread_time
-) -> tuple[float, float]:
-    """The least CPU time of each of two pieces of work, run in turn, so a stretch in
-    which the machine runs slower (a lower clock speed, a busy neighbour sharing its cache)
-    falls on both instead of inflating their ratio. The order flips each round (a b, b a,
-    a b), so a speed that alternates between runs does not slow every run of one side."""
-    a, b = _least((first, second), runs, clock)
-    return a, b
+PAIR_SAMPLE_SECONDS = 0.05
+"""A ``cpu_pair`` sample lasts at least this long: quicker work runs back to back until it
+does. CI's loaded runner measured each of three single runs of a 2.4 ms parse at 5.4 ms or more
+against 2.4 ms for one of the other side's, and in a 4-CPU container under ``pytest -n 4`` a
+0.2 ms parse's least of three single runs reached 3 ms."""
+
+
+def cpu_pair(first: Work, second: Work, *, clock: Clock = time.thread_time) -> tuple[float, float]:
+    """The CPU time of one run of each of two pieces of work: the least of ``RUNS`` samples
+    each, taken in turn, so a stretch in which the machine runs slower (a lower clock speed, a
+    busy neighbour sharing its cache) falls on both instead of inflating their ratio. The order
+    flips each round (a b, b a, a b), so a speed that alternates between runs does not slow
+    every run of one side. A sample is the average run of ``PAIR_SAMPLE_SECONDS`` of runs back
+    to back (one run of slower work), so quick work is never judged on a few runs a neighbour
+    happened to slow; a first run quicker than that only sizes the samples."""
+    times: tuple[list[float], list[float]] = ([], [])
+    counts = [1, 1]
+    works = (first, second)
+    enabled = gc.isenabled()
+    gc.collect(YOUNG)
+    gc.disable()
+    try:
+        order = [0, 1]
+        while len(times[0]) < RUNS or len(times[1]) < RUNS:
+            for index in order:
+                work, count = works[index], counts[index]
+                if len(times[index]) == RUNS:
+                    continue
+                start = clock()
+                for _ in range(count):
+                    work()
+                seconds = clock() - start
+                if count > 1 or seconds >= PAIR_SAMPLE_SECONDS:
+                    times[index].append(seconds / count)
+                else:
+                    counts[index] = math.ceil(PAIR_SAMPLE_SECONDS / max(seconds, 1e-6))
+            order.reverse()  # a b, b a, a b: each side runs both first and second
+    finally:
+        if enabled:
+            gc.enable()
+    return min(times[0]), min(times[1])
 
 
 def _least(works: tuple[Work, ...], runs: int, clock: Clock) -> list[float]:
