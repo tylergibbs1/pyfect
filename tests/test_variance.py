@@ -35,6 +35,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import types
 import typing
 from collections.abc import Callable, Iterator
@@ -441,9 +442,10 @@ def render_probe(
 
 
 def _pyright_errors(text: str) -> list[tuple[int, dict[str, typing.Any]]]:
-    scratch = PROBE.with_name("_variance_measure.py")
-    scratch.write_text(text)
-    try:
+    # Outside tests/, which guards running alongside read file by file
+    with tempfile.TemporaryDirectory() as scratch_dir:
+        scratch = Path(scratch_dir) / "variance_measure.py"
+        scratch.write_text(text)
         run = subprocess.run(
             [sys.executable, "-m", "pyright", "--outputjson", str(scratch)],
             capture_output=True,
@@ -451,8 +453,6 @@ def _pyright_errors(text: str) -> list[tuple[int, dict[str, typing.Any]]]:
             check=False,
             cwd=ROOT,
         )
-    finally:
-        scratch.unlink()
     diagnostics: list[dict[str, typing.Any]] = json.loads(run.stdout)["generalDiagnostics"]
     return [(d["range"]["start"]["line"], d) for d in diagnostics if d["severity"] == "error"]
 

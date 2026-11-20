@@ -14,7 +14,6 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-PROBE = Path(__file__).with_name("_fn_pyright_probe.py")
 
 SOURCE = """\
 import pyfect as fx
@@ -31,18 +30,17 @@ def no_yield_body():
 """
 
 
-def test_a_wrong_fn_body_is_explained_against_the_body_parameter() -> None:
-    PROBE.write_text(SOURCE)
-    try:
-        run = subprocess.run(
-            [sys.executable, "-m", "pyright", "--outputjson", str(PROBE)],
-            capture_output=True,
-            text=True,
-            check=False,
-            cwd=ROOT,
-        )
-    finally:
-        PROBE.unlink()
+def test_a_wrong_fn_body_is_explained_against_the_body_parameter(tmp_path: Path) -> None:
+    # Outside tests/, which guards running alongside read file by file
+    probe = tmp_path / "fn_pyright_probe.py"
+    probe.write_text(SOURCE)
+    run = subprocess.run(
+        [sys.executable, "-m", "pyright", "--outputjson", str(probe)],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=ROOT,
+    )
     diagnostics = json.loads(run.stdout)["generalDiagnostics"]
     argument = [d["message"] for d in diagnostics if d.get("rule") == "reportArgumentType"]
     assert len(argument) == 2, diagnostics
