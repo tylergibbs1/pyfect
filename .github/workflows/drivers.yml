@@ -66,7 +66,7 @@ jobs:
             tests: tests/test_mssql_*.py tests/oracle/test_mssql_*.py
           - extra: redis
             packages: redis
-            tests: tests/test_redis_*.py tests/oracle/test_redis*.py
+            tests: tests/oracle/test_redis*.py
         include:
           # The newest release on the newest Python, the oldest allowed on the oldest.
           - resolution: highest

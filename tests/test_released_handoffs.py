@@ -17,8 +17,7 @@ SRC = _source.SRC
 
 ALLOWED = {
     "_loop_thread.py": "LoopThread.submit, which its owners call through Lifetime.submit",
-    "socket/_loop.py": "one loop per process, never stopped",
-    "http/_asgi_listener.py": "one loop per process (or the program's), never stopped",
+    "_loop_bridge.py": "LoopBridge.spawn, which checks an owned bridge's Lifetime first",
 }
 
 

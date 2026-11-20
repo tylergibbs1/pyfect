@@ -15,8 +15,7 @@ from typing import Any, Never, NotRequired, Protocol, TypedDict
 
 from pyfect._core import Effect, _WithFiber
 from pyfect._fiber import Fiber
-from pyfect._loop_thread import LoopThread
-from pyfect._os_wait import Resume, WaitsFor, os_wait
+from pyfect._loop_bridge import LoopBridge, wait
 from pyfect._owned_fd import OwnedFd
 from pyfect._root import run_loop
 from pyfect.context import Context
@@ -159,37 +158,12 @@ def _wake(waiter: asyncio.Future[None]) -> None:
         waiter.set_result(None)
 
 
-class _Shared:
-    lock = threading.Lock()
-    loop: asyncio.AbstractEventLoop | None = None
-
-
-def _loop_thread() -> asyncio.AbstractEventLoop:
-    """The loop servers outside an asyncio program run on: one per process,
-    on a daemon thread, started on first use and never stopped. Fibers run
-    on it, and a fiber forked from a request can outlive its server (held
-    by a layer released later), so stopping the loop with the server would
-    strand it: interrupting it would wait for ever (DOGFOOD pulse #5)."""
-    with _Shared.lock:
-        if _Shared.loop is None:
-            _Shared.loop = LoopThread("pyfect-asgi").loop
-        return _Shared.loop
-
-
-def _wait[A](future: Future[A], waits_for: WaitsFor) -> Effect[A, BaseException]:
-    """Wait for ``future`` (done on any thread) without blocking."""
-
-    def register(resume: Resume[A, BaseException]) -> None:
-        def done(finished: Future[A]) -> None:
-            if finished.cancelled():
-                resume(fail(asyncio.CancelledError()))
-                return
-            error = finished.exception()
-            resume(succeed(finished.result()) if error is None else fail(error))
-
-        future.add_done_callback(done)
-
-    return os_wait(register, waits_for=waits_for)
+_ASGI = LoopBridge("pyfect-asgi")
+"""The loop servers outside an asyncio program run on: one per process,
+on a daemon thread, started on first use and never stopped. Fibers run
+on it, and a fiber forked from a request can outlive its server (held
+by a layer released later), so stopping the loop with the server would
+strand it: interrupting it would wait for ever (DOGFOOD pulse #5)."""
 
 
 class Running:
@@ -198,16 +172,16 @@ class Running:
     def __init__(
         self,
         server: Engine,
-        loop: asyncio.AbstractEventLoop,
+        bridge: LoopBridge,
         graceful: Duration,
     ) -> None:
         self.server = server
         self.graceful = graceful
-        self.loop = loop
+        self._bridge = bridge
         self.served: Future[None] | None = None
 
     def submit[A](self, make: Callable[[], Coroutine[Any, Any, A]]) -> Future[A]:
-        return asyncio.run_coroutine_threadsafe(make(), self.loop)
+        return self._bridge.spawn(make)
 
     def start(self, listening: OwnedFd[socket.socket]) -> Effect[None, BaseException]:
         self.served = self.submit(lambda: _serve_on(self.server, listening))
@@ -221,7 +195,7 @@ class Running:
                 served.result()
                 raise RuntimeError("the server stopped while starting")
 
-        return _wait(self.submit(started), "work")
+        return wait(self.submit(started), waits_for="work")
 
     def stop(self) -> Effect[None]:
         """Stop accepting and give the engine ``graceful`` seconds and the
@@ -239,7 +213,7 @@ class Running:
             served = self.served
             assert served is not None
             return (
-                _wait(served, "event")
+                wait(served, waits_for="event")
                 .ignore()
                 .timeout_or_else(within, lambda: sync(served.cancel).as_(None))
             )
@@ -258,12 +232,12 @@ class Running:
             async def end() -> None:
                 handler.end_responses()
 
-            return _wait(self.submit(end), "work").ignore()
+            return wait(self.submit(end), waits_for="work").ignore()
 
         def body() -> Effect[None]:
             self.server.should_exit = True
             assert self.served is not None
-            served = _wait(self.served, "event").ignore()
+            served = wait(self.served, waits_for="event").ignore()
             return (
                 served.timeout_option(self.graceful)
                 .and_then(requests.close(exit))
@@ -341,8 +315,8 @@ def make_listener(
 
         def start() -> Effect[Running, SocketServerError]:
             current = run_loop()
-            loop = current or _loop_thread()
-            running = Running(engine(dispatch), loop, graceful=graceful(options))
+            bridge = _ASGI if current is None else LoopBridge.of(current)
+            running = Running(engine(dispatch), bridge, graceful=graceful(options))
             return (
                 running.start(listening)
                 .as_(running)

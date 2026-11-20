@@ -21,11 +21,9 @@ Interrupting ``subscribe`` or ``reserve`` while its connection is opening
 from __future__ import annotations
 
 import asyncio
-import threading
 from collections.abc import Awaitable, Callable, Coroutine, Generator, Mapping
-from concurrent.futures import Future
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Never, cast
 
 from pyfect._extras import missing_extra
 
@@ -35,13 +33,12 @@ except ImportError as error:  # pragma: no cover - depends on the environment
     raise missing_extra("pyfect.persistence.redis_py", "redis", error) from error
 
 from pyfect._core import Effect
-from pyfect._loop_thread import LoopThread
-from pyfect._os_wait import WaitsFor, os_wait
-from pyfect._released import Lifetime
+from pyfect._loop_bridge import OwnedLoopBridge
+from pyfect._os_wait import WaitsFor
 from pyfect.config import Config, ConfigError
 from pyfect.config._config import unwrap
 from pyfect.context import Context, Tag
-from pyfect.effect import fail, gen, succeed, sync
+from pyfect.effect import fail, gen, sync
 from pyfect.layer import Layer, effect_context
 from pyfect.persistence.redis import (
     OpenConnection,
@@ -89,51 +86,14 @@ def _command_waits_for(command: str, args: tuple[str, ...]) -> WaitsFor:
     return "work"
 
 
-class _Handoff[A]:
-    """Hands ``make()``'s result to one fiber, or releases it once the fiber
-    has given up (its wait was cancelled): whichever comes second, the
-    result reaching the loop or the fiber giving up, releases it."""
-
-    __slots__ = ("_abandoned", "_lock", "_make", "_release", "_result")
-
-    def __init__(
-        self,
-        make: Callable[[], Coroutine[Any, Any, A]],
-        release: Callable[[A], Coroutine[Any, Any, object]],
-    ) -> None:
-        self._make = make
-        self._release = release
-        self._lock = threading.Lock()
-        self._abandoned = False
-        self._result: list[A] = []
-
-    async def make(self) -> A:
-        result = await self._make()
-        with self._lock:
-            if not self._abandoned:
-                self._result.append(result)
-                return result
-        await self._release(result)
-        return result
-
-    def abandon(self, lifetime: Lifetime, thread: LoopThread) -> None:
-        with self._lock:
-            self._abandoned = True
-            left, self._result = self._result, []
-        if left:
-            release, result = self._release, left[0]
-            lifetime.submit(lambda: thread.submit(lambda: release(result)))
-
-
 class _Loop:
     """An asyncio loop on a thread of its own; a call once it stopped
     fails with a ``RedisError`` saying the client is closed."""
 
-    __slots__ = ("_lifetime", "_thread")
+    __slots__ = ("_bridge",)
 
     def __init__(self) -> None:
-        self._thread = LoopThread("pyfect-redis")
-        self._lifetime = Lifetime("Redis client")
+        self._bridge = OwnedLoopBridge("pyfect-redis", "Redis client")
 
     def run[A](
         self,
@@ -145,44 +105,15 @@ class _Loop:
         """Run ``make()`` on the loop; interrupting cancels it. ``waits_for``
         says whether ``make()`` is work or waits for an event that may never
         come (``pyfect._os_wait``). ``release`` closes a result that owns
-        something (``None``: it owns nothing, or something else owns it): an
-        interrupt can land once the loop decided the result, before the fiber
-        took it, and that result is released on the loop."""
-
-        def register(resume: Callable[[Effect[A, RedisError]], None]) -> Callable[[], object]:
-            handoff = None if release is None else _Handoff(make, release)
-            start = make if handoff is None else handoff.make
-            future: Future[A] = self._lifetime.submit(lambda: self._thread.submit(start))
-
-            def done(finished: Future[A]) -> None:
-                if finished.cancelled():
-                    resume(fail(RedisError(cause=asyncio.CancelledError())))
-                    return
-                error = finished.exception()
-                if error is None:
-                    resume(succeed(finished.result()))
-                else:
-                    resume(fail(RedisError(cause=_with_code(error))))
-
-            future.add_done_callback(done)
-            if handoff is None:
-                return future.cancel
-
-            def cancel() -> None:
-                # The fiber gave up the wait, so it never takes the result.
-                future.cancel()
-                handoff.abandon(self._lifetime, self._thread)
-
-            return cancel
-
-        return os_wait(register, waits_for=waits_for)
+        something (``None``: it owns nothing, or something else owns it)."""
+        return self._bridge.run(make, _failed, waits_for=waits_for, release=release)
 
     def stop(self) -> Effect[None]:
-        def stop() -> None:
-            self._lifetime.close()
-            self._thread.stop()
+        return self._bridge.close()
 
-        return sync(stop)
+
+def _failed(error: BaseException) -> Effect[Never, RedisError]:
+    return fail(RedisError(cause=_with_code(error)))
 
 
 @dataclass(frozen=True, slots=True)

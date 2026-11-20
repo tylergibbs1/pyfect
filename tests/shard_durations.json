@@ -1071,7 +1071,6 @@
  "tests/test_sql_mysql_url_options.py": 0.02,
  "tests/test_sql_pg_config.py": 0.0,
  "tests/test_sql_pg_error.py": 0.01,
- "tests/test_sql_pg_loop.py": 0.1,
  "tests/test_sql_placeholder_binding.py": 0.01,
  "tests/test_sql_sqlite_file_uri.py": 0.01,
  "tests/test_sql_sqlite_layer_config.py": 0.01,

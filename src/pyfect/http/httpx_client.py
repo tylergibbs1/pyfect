@@ -17,20 +17,17 @@ pulled as httpx sends it. httpx applies no timeout by default here, as
 
 from __future__ import annotations
 
-import asyncio
 import contextlib
 import socket
 from collections.abc import AsyncIterator, Callable, Coroutine, Iterator, Sequence
-from concurrent.futures import Future
 from http.cookiejar import CookieJar, DefaultCookiePolicy
 from typing import TYPE_CHECKING, Any, Never
 
 from pyfect import _background as background
 from pyfect._fiber import Fiber
 from pyfect._js import text_encode
-from pyfect._loop_thread import LoopThread
-from pyfect._os_wait import WaitsFor, os_wait
-from pyfect._released import Lifetime
+from pyfect._loop_bridge import OwnedLoopBridge
+from pyfect._os_wait import WaitsFor
 from pyfect.context import Reference
 from pyfect.effect import Effect, fail, succeed, suspend, sync
 from pyfect.errors import Done
@@ -133,32 +130,6 @@ def _form_content(form: _body.FormData) -> dict[str, Any]:
     return {"files": files}
 
 
-def _future[A](
-    signal: AbortSignal | None, start: Callable[[], Future[A]], *, waits_for: WaitsFor
-) -> Effect[A, BaseException]:
-    """Wait for the future ``start()`` gives; interrupting (or aborting
-    ``signal``) cancels it. A body's next chunk is an ``"event"``: the
-    server may hold it back indefinitely, so the test clock must not wait
-    for it."""
-
-    def register(resume: Callable[[Effect[A, BaseException]], None]) -> Callable[[], bool]:
-        future = start()
-        remove = (lambda: None) if signal is None else signal.on_abort(future.cancel)
-
-        def done(finished: Future[A]) -> None:
-            remove()
-            if finished.cancelled():
-                resume(fail(asyncio.CancelledError()))
-                return
-            error = finished.exception()
-            resume(succeed(finished.result()) if error is None else fail(error))
-
-        future.add_done_callback(done)
-        return future.cancel
-
-    return os_wait(register, waits_for=waits_for)
-
-
 class _Backend:
     """An ``httpx.AsyncClient`` on an asyncio loop running on a thread of
     its own."""
@@ -173,14 +144,12 @@ class _Backend:
         from pyfect.http._httpcore_backend import close_cancelled_connections
 
         close_cancelled_connections(self.client)
-        self._thread = LoopThread("pyfect-httpx")
-        self.loop = self._thread.loop
-        self._lifetime = Lifetime("HTTP client")
+        self._bridge = OwnedLoopBridge("pyfect-httpx", "HTTP client")
 
     def _close_response(self, response: httpx.Response) -> None:
         # Run to its end, even if it starts while the client shuts down: the loop
         # thread waits for it before its loop closes.
-        background.start(response.aclose(), self.loop)
+        self._bridge.start(response.aclose)
 
     async def _shutdown(self) -> None:
         # Responses close before the pool does; one dropped while the pool closes
@@ -188,38 +157,31 @@ class _Backend:
         await background.settle()
         await self.client.aclose()
 
-    def submit[A](self, make: Callable[[], Coroutine[Any, Any, A]]) -> Future[A]:
-        """Run ``make()`` on the loop; once the client is closed, a future
-        failed with ``Released``."""
-        return self._lifetime.submit(lambda: self._thread.submit(make))
+    def run[A](
+        self,
+        make: Callable[[], Coroutine[Any, Any, A]],
+        *,
+        waits_for: WaitsFor,
+        signal: AbortSignal | None = None,
+    ) -> Effect[A, BaseException]:
+        """Run ``make()`` on the loop; interrupting (or aborting ``signal``)
+        cancels it. Once the client is closed, it fails with ``Released``. A
+        body's next chunk is an ``"event"``: the server may hold it back
+        indefinitely, so the test clock must not wait for it."""
+        return self._bridge.run(
+            make,
+            fail,
+            waits_for=waits_for,
+            aborted_by=None if signal is None else signal.on_abort,
+        )
 
     def _close_reader(self, reader: StreamAsyncIterator[bytes]) -> None:
-        background.start(reader.aclose(), self.loop)
-
-    def _call_soon(self, f: Callable[[], object]) -> None:
-        """Run ``f`` on the loop; once the backend has closed (and with it
-        every response), there is nothing left to do."""
-        try:
-            self.loop.call_soon_threadsafe(f)
-        except RuntimeError:
-            if not self.loop.is_closed():
-                raise
+        self._bridge.start(reader.aclose)
 
     def close(self) -> Effect[None]:
         """Close the httpx client, then stop the loop and wait until it has
         closed (with it every response body httpx left open)."""
-
-        def shutdown() -> Future[None]:
-            future = self.submit(self._shutdown)
-            self._lifetime.close()
-            return future
-
-        def stop() -> Future[None]:
-            self._thread.stop()
-            return self._thread.stopped
-
-        closing = _future(None, shutdown, waits_for="work").ignore()
-        return closing.and_then(_future(None, stop, waits_for="work").ignore())
+        return self._bridge.close(self._shutdown)
 
     def _content(
         self, request: HttpClientRequest, fiber: Fiber[Any, Any], failures: list[object]
@@ -257,9 +219,7 @@ class _Backend:
             # Once the body is done the listener goes: it holds the request's context,
             # which reaches the response, so it would keep an unread response (and the
             # finalizer that aborts it) alive.
-            done.append(
-                signal.on_abort(lambda: self._call_soon(lambda: self._close_reader(body_reader)))
-            )
+            done.append(signal.on_abort(lambda: self._close_reader(body_reader)))
         headers = request.headers
         if isinstance(request.body, _body.FormData):
             headers = headers.remove("content-type")
@@ -284,7 +244,7 @@ class _Backend:
             )
             # Tied to the signal as soon as it exists: an interrupt that wins
             # against its arrival (a lost race) drops it unseen, and aborts.
-            signal.on_abort(lambda: self._call_soon(lambda: self._close_response(response)))
+            signal.on_abort(lambda: self._close_response(response))
             return response
 
         def on_error(error: BaseException) -> Effect[Never, HttpClientError]:
@@ -295,7 +255,7 @@ class _Backend:
             return fail(HttpClientError(TransportError(request, error)))
 
         return (
-            _future(signal, lambda: self.submit(send), waits_for="work")
+            self.run(send, waits_for="work", signal=signal)
             .catch_all(on_error)
             .map(lambda response: self._response(request, response))
         )
@@ -313,7 +273,7 @@ class _Backend:
         elif request.method != "HEAD" and response.status_code not in _NO_BODY_STATUSES:
             body = self._body(response)
         else:
-            self._call_soon(lambda: self._close_response(response))
+            self._close_response(response)
         return HttpClientResponse(
             request,
             response.status_code,
@@ -343,7 +303,7 @@ class _Backend:
         def run(
             make: Callable[[], Coroutine[Any, Any, Any]], waits_for: WaitsFor
         ) -> Effect[Any, BaseException]:
-            return _future(None, lambda: self.submit(make), waits_for=waits_for)
+            return self.run(make, waits_for=waits_for)
 
         def read() -> Effect[tuple[bytes, ...], SocketError]:
             async def chunk() -> bytes:
@@ -410,10 +370,8 @@ class _Backend:
         def end_or_fail(error: BaseException) -> Effect[Never, BaseException | Done]:
             return fail(Done() if isinstance(error, StopAsyncIteration) else error)
 
-        pull = _future(None, lambda: self.submit(next_chunk), waits_for="event").catch_all(
-            end_or_fail
-        )
-        closing = _future(None, lambda: self.submit(response.aclose), waits_for="work").ignore()
+        pull = self.run(next_chunk, waits_for="event").catch_all(end_or_fail)
+        closing = self.run(response.aclose, waits_for="work").ignore()
         return from_effect_repeat(pull).ensuring(closing)
 
 

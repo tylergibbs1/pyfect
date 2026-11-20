@@ -19,7 +19,7 @@ from pyfect.socket import _loop
 
 
 def _closed_registrations() -> list[int]:
-    loop = _loop._Shared.loop  # pyright: ignore[reportPrivateUsage]
+    loop = _loop.started_loop()
     if loop is None:
         return []
     found: list[int] = []

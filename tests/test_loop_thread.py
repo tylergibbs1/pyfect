@@ -12,6 +12,7 @@ from collections.abc import AsyncGenerator
 
 import pytest
 
+from pyfect import _background as background
 from pyfect._loop_thread import LoopThread
 
 _SETTLED = 5.0
@@ -127,3 +128,23 @@ def test_a_coroutine_still_running_at_stop_is_cancelled() -> None:
     thread.stop()
     thread.stopped.result(_SETTLED)
     assert waiting.cancelled()
+
+
+def test_a_close_started_as_the_loop_stops_runs_to_its_end() -> None:
+    """A close (a ``pyfect._background`` task) started after the stop request,
+    before the loop has settled, still ends before the loop closes."""
+    thread = LoopThread("test-loop")
+    closed: list[str] = []
+
+    async def aclose() -> None:
+        await asyncio.shield(thread._stop)  # pyright: ignore[reportPrivateUsage]
+        await asyncio.sleep(0)
+        closed.append("closed")
+
+    async def stop_then_close() -> None:
+        thread.stop()
+        thread.loop.call_soon(lambda: background.start(aclose(), thread.loop))
+
+    thread.submit(stop_then_close).result(_SETTLED)
+    thread.stopped.result(_SETTLED)
+    assert closed == ["closed"]

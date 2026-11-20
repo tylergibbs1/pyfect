@@ -48,11 +48,10 @@ _SANCTIONED: dict[tuple[str, str], str] = {
     ("workers/_thread.py", "Thread"): "one per thread worker the program starts",
     ("workers/_process.py", "Thread"): "one reader per worker process",
     ("workers/_frames.py", "Thread"): "one writer per worker's socket",
-    ("http/_asgi_listener.py", "LoopThread"): "one per process",
-    ("socket/_loop.py", "LoopThread"): "one per process",
-    ("sql/_loop.py", "LoopThread"): "one per process",
-    ("http/httpx_client.py", "LoopThread"): "one per HTTP client",
-    ("persistence/redis_py.py", "LoopThread"): "one per Redis client",
+    ("_loop_bridge.py", "LoopThread"): (
+        "one per LoopBridge: one per process for the sockets, SQL and the ASGI listener, one per"
+        " HTTP or Redis client"
+    ),
     ("sql/sqlite/_worker.py", "ThreadPoolExecutor"): "one per connection, bounded by the pool",
     ("sql/mssql/_worker.py", "ThreadPoolExecutor"): "one per connection, bounded by the pool",
     ("sql/libsql/_local.py", "ThreadPoolExecutor"): "one per connection, bounded by the pool",
