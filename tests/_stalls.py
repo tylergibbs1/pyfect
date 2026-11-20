@@ -12,13 +12,12 @@ thread, ticking for the whole session and recording while a test runs, tells the
 - A tick that comes ``stall_threshold`` late is a process stall. With the dump, the time
   ``gc.callbacks`` saw collecting, the process's CPU time over the gap and, on Linux, the
   CPU steal of ``/proc/stat`` and ``/proc/loadavg``, it is named "host" or "pyfect blocked
-  in <frame>" (a busy thread, a fiber's first). When the dump was written tells them
-  apart: faulthandler's watchdog needs no GIL, so a dump written on time means the process
-  was running (a C call holding the GIL, which also uses no CPU, is pyfect), and only one
-  written late against its own arming's due, or still unwritten when the next arming
-  replaced it, proves the host froze the process (``_DumpTimer``). So does a SIGCONT in the
-  gap, the end of every SIGSTOP, however late the dump (``_Continues``). Anything else
-  counts as running time.
+  in <frame>" (a busy thread, a fiber's first). faulthandler's watchdog needs no GIL, so a
+  dump written on time means the process was running (a C call holding the GIL, which also
+  uses no CPU, is pyfect) and names where (``_DumpTimer``). Only a SIGCONT in the gap, the
+  end of every SIGSTOP, proves the host froze the process (``_Continues``): on a loaded
+  machine faulthandler's thread writes seconds late with the process running, so a late
+  dump proves nothing. Anything else counts as running time.
 - Each tick also samples every thread's stack, as a faulthandler dump (text: holding
   frames would keep what a finished step handled alive). A thread inside ``Fiber._run``
   whose stack has not moved for the threshold, while the process used next to no CPU, is a
@@ -424,18 +423,11 @@ class _Timing(Enum):
     ON_TIME = "on time"
     """It ran at its due time: the process was running."""
     LATE = "late"
-    """It ran over a tick after it: the host froze the process."""
+    """It ran over a tick after it: frozen, or starved of CPU (2 s, on a loaded runner)."""
     MISSED = "missed"
-    """It had not run over a tick after it, when the next arming cancelled it: the host froze
-    the process. (A freeze that ends just before a re-arm lets the re-arm cancel it first.)"""
+    """It had not run over a tick after it, when the next arming cancelled it."""
     EARLY = "early"
-    """It reads over a tick before it (the wall clock was set back): no evidence either way."""
-
-    @property
-    def frozen(self) -> bool:
-        """Proof that the host froze the process: faulthandler's C thread needs no GIL, so
-        nothing in the process keeps it from running."""
-        return self in (_Timing.LATE, _Timing.MISSED)
+    """It reads over a tick before it (the wall clock was set back)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -573,8 +565,7 @@ class Watchdog:
 
     @property
     def dump(self) -> bool:
-        """Whether faulthandler's dump is armed: without it a freeze and a GIL-held call
-        look alike."""
+        """Whether faulthandler's dump is armed: it names a GIL-held call."""
         return self._dumps is not None
 
     def start(self) -> None:
@@ -720,13 +711,6 @@ class Watchdog:
         if (fibers or busy) and (on_time or cpu >= gap / 2):
             frames = (fibers or busy)[0].frames
             return f"{head}: pyfect blocked in {frames[0]} ({numbers})\n" + _stack(frames)
-        if dump is not None and dump.timing.frozen:
-            with self._lock:
-                self._frozen += gap - self.tick
-            late = f"{dump.late:.1f} s late" + (
-                ", unwritten" if dump.timing is _Timing.MISSED else ""
-            )
-            return f"{head}: host: process frozen, the dump {late} ({numbers})"
         # A freeze uses no CPU: only then is a SIGCONT whose handler is slow worth a wait.
         if continued or self._continues.came(wait=2 * self.tick if cpu < gap / 2 else 0.0):
             with self._lock:
@@ -870,8 +854,15 @@ def _not_frozen(gap: float, cpu: float, dump: _Dump | None, *, dumps: bool) -> s
         return "unexplained: no dump came due, so nothing shows the host froze the process"
     if cpu >= gap / 2:
         return "in-process: the dump shows no Python thread busy"
-    if dump.timing is _Timing.EARLY:
-        return f"unexplained: the dump reads {-dump.late:.1f} s before its due time"
+    if dump.timing is not _Timing.ON_TIME:
+        when = (
+            f"reads {-dump.late:.1f} s before its due time"
+            if dump.timing is _Timing.EARLY
+            else f"{dump.late:.1f} s late"
+            + (", unwritten" if dump.timing is _Timing.MISSED else "")
+            + ", but no SIGCONT, so nothing shows the host froze the process"
+        )
+        return f"unexplained: the dump {when}"
     # Nothing in the process explains a stall with no busy thread and no CPU used.
     return "unexplained: the dump came on time, but no thread was busy and no CPU used"
 
@@ -928,8 +919,7 @@ def pytest_configure(config: pytest.Config) -> None:
     watchdog = Watchdog(threshold, dump=faulthandler_timeout <= 0)
     watchdog.start()
     config.stash[_WATCHDOG] = watchdog
-    # Without the dump or SIGCONT a freeze and a GIL-held call look alike.
-    if watchdog.dump or watchdog.continues:
+    if watchdog.continues:  # without SIGCONT nothing proves a freeze
         leave_out_host_freezes(watchdog.host_freezes)
 
 
