@@ -21,6 +21,15 @@
   provider's docs site and fails on any other relative link; `tests/test_docstring_links.py`
   fails on a docstring link that isn't an absolute URL, and the site's link check now covers
   the API reference's docstrings as well as the guides.
+- Fixes from a newcomer's read of the guides. The HTTP server page no longer says a WebSocket
+  write after the reader's scope closes waits forever (since Effect #10730 it fails with the
+  reader's `SocketError`), counts its three rules right, and explains
+  `from_web_socket(..., disable_reconnects=True)`. The SQL page says `migrator.run` and
+  `migrator.layer` come from each driver's migrator (`pyfect.sql.sqlite.migrator`,
+  `pyfect.sql.pg.migrator`, ...), not `pyfect.sql.migrator`. The Testing page says to install
+  pytest. The Services page says what a tag's `key=` is for, the Resources page explains its
+  "Without a scope" example, and the Effects page's run table names the functions the `_exit`
+  variants mirror.
 
 ### Fixed
 
