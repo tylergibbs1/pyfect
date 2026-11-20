@@ -4621,6 +4621,31 @@ def check_schema_decimal(unknown: object) -> None:
     assert_type(S.decode_unknown_sync(S.Decimal)(unknown), decimal.Decimal)
 
 
+def check_schema_decimal_checks(unknown: object) -> None:
+    """``S.Decimal`` takes the ``_decimal`` order checks, not the number ones, and
+    ``S.DecimalFromString`` reads one from text, as a CLI argument does."""
+    import decimal
+
+    from pyfect import schema as S
+    from pyfect.cli import Argument
+
+    zero = decimal.Decimal(0)
+    positive = S.Decimal.check(S.is_greater_than_decimal(zero))
+    assert_type(positive, S.Bottom[decimal.Decimal])
+    assert_type(S.is_between_decimal(minimum=zero, maximum=zero), S.Filter[decimal.Decimal])
+    S.Decimal.check(
+        S.is_greater_than_or_equal_to_decimal(zero),
+        S.is_less_than_decimal(zero),
+        S.is_less_than_or_equal_to_decimal(zero),
+    )
+    S.Decimal.check(S.is_greater_than(0))  # pyright: ignore[reportArgumentType]
+    S.is_greater_than_decimal(0.5)  # pyright: ignore[reportArgumentType]
+    assert_type(S.decode_unknown_sync(S.DecimalFromString)(unknown), decimal.Decimal)
+    assert_type(S.encode_sync(S.DecimalFromString)(zero), str)
+    amount = Argument.string("amount").with_schema(S.DecimalFromString)
+    assert_type(amount, Argument[decimal.Decimal])
+
+
 class _NotFound(fx.schema.TaggedError):
     id: int
 
