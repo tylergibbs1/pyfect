@@ -5,6 +5,7 @@ so ``Struct`` checks it when the struct is made, and rejects only a schema it
 can tell is wrong."""
 
 from collections.abc import Sequence
+from datetime import datetime
 from typing import Literal, NotRequired, TypedDict
 
 import pytest
@@ -87,3 +88,36 @@ class Tagged(TypedDict):
 def test_tagged_structs_are_checked_too():
     with pytest.raises(TypeError, match=r"Tagged\['side'\] is float"):
         S.TaggedStruct(Tagged, side=S.String)
+
+
+class Event(TypedDict):
+    name: str
+    at: datetime
+
+
+class Calendar(TypedDict):
+    title: str
+    first: Event
+
+
+def test_a_key_with_no_schema_names_the_struct_and_the_key():
+    # As `S.Class` names `Event.at`; the subscript form is the one the wrong-schema error uses.
+    with pytest.raises(TypeError) as raised:
+        S.Struct(Event)
+    assert str(raised.value) == (
+        "Event['at']: No schema for the annotation <class 'datetime.datetime'>: "
+        "give the field its schema, S.Struct(Event, at=...)"
+    )
+
+
+def test_a_key_with_no_schema_in_a_nested_struct_names_the_path():
+    with pytest.raises(TypeError) as raised:
+        S.Struct(Calendar)
+    assert str(raised.value) == (
+        "Calendar['first']: Event['at']: No schema for the annotation "
+        "<class 'datetime.datetime'>: give the field its schema, S.Struct(Event, at=...)"
+    )
+
+
+def test_the_key_given_its_schema_is_accepted():
+    assert S.Struct(Event, at=S.DateTimeUtc).fields["at"] is S.DateTimeUtc

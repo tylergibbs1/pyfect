@@ -37,6 +37,7 @@ from pyfect.redacted import Redacted as _Redacted
 from pyfect.schema import ast
 from pyfect.schema._arrays import Array, List, Tuple
 from pyfect.schema._assignable import assignable
+from pyfect.schema._check_guard import guard_check
 from pyfect.schema._codecs import URL, Bytes
 from pyfect.schema._collections import FrozenSet
 from pyfect.schema._data import Redacted
@@ -87,47 +88,57 @@ _OF_ONE: dict[object, Callable[[AnyBottom], AnyBottom]] = {
 """The schemas of the one-argument generic forms (``list[X]``, ...)."""
 
 
-def schema_of(annotation: object, expanding: frozenset[object] = frozenset()) -> AnyBottom:
+def schema_of(
+    annotation: object, expanding: frozenset[object] = frozenset(), field: str | None = None
+) -> AnyBottom:
     """The schema ``annotation`` stands for; ``TypeError`` when none does.
     ``expanding`` holds the type aliases this annotation sits inside: one
-    that refers to itself has no derived schema."""
+    that refers to itself has no derived schema. ``field`` (``Bin.count``)
+    is named by a check in ``Annotated`` metadata that raises."""
     aliases, annotation = _unwrap(annotation)
     for alias in aliases:
         if alias in expanding:
             raise TypeError(f"The type alias {alias!r} refers to itself: give the field its schema")
     inner = expanding.union(aliases)
     if get_origin(annotation) is typing.Annotated:
-        return _of_annotated(get_args(annotation), inner)
+        return _of_annotated(get_args(annotation), inner, field)
     simple = _SIMPLE.get(annotation) if _hashable(annotation) else None
-    found = simple or _of_form(annotation, inner) or _of_class(annotation)
+    found = simple or _of_form(annotation, inner, field) or _of_class(annotation)
     if found is None:
         raise TypeError(f"No schema for the annotation {annotation!r}: give the field its schema")
     return found
 
 
-def _of_annotated(args: tuple[object, ...], expanding: frozenset[object]) -> AnyBottom:
+def _of_annotated(
+    args: tuple[object, ...], expanding: frozenset[object], field: str | None
+) -> AnyBottom:
     """``Annotated[T, ...]``: the last schema among the metadata (as pydantic reads
     ``Annotated[float, S.FiniteFromString]``), else ``T``'s, with the checks among the
-    metadata."""
+    metadata. pyright can't see that a check there fits the type, so one that raises names
+    the field (``guard_check``)."""
     schemas = [m for m in args[1:] if hasattr(m, "__codec__")]
     schema = (
         cast("Codec[Any, Any, Any, Any]", schemas[-1]).__codec__()
         if schemas
-        else schema_of(args[0], expanding)
+        else schema_of(args[0], expanding, field)
     )
     checks = [
-        cast("ast.Check[Any]", m) for m in args[1:] if isinstance(m, (ast.Filter, ast.FilterGroup))
+        guard_check(cast("ast.Check[Any]", m), field)
+        for m in args[1:]
+        if isinstance(m, (ast.Filter, ast.FilterGroup))
     ]
     return schema.check(checks[0], *checks[1:]) if checks else schema
 
 
-def _of_form(annotation: object, expanding: frozenset[object]) -> AnyBottom | None:
+def _of_form(
+    annotation: object, expanding: frozenset[object], field: str | None
+) -> AnyBottom | None:
     """The schema of a generic form (``Literal[...]``, ``X | Y``, ...)."""
     origin = get_origin(annotation)
     args = get_args(annotation)
 
     def of(arg: object) -> AnyBottom:
-        return schema_of(arg, expanding)
+        return schema_of(arg, expanding, field)
 
     if origin is typing.Literal:
         return Literal(args[0]) if len(args) == 1 else Literals(*args)
@@ -248,8 +259,29 @@ def typed_dict_fields(
     # With ``Annotated``, whose metadata carries checks.
     annotated = typed_dict_hints(typed_dict, include_extras=True)
     return {
-        name: overrides[name] if name in overrides else schema_of(annotated[name]) for name in hints
+        name: overrides[name]
+        if name in overrides
+        else _key_schema(typed_dict, name, annotated[name])
+        for name in hints
     }
+
+
+class _KeyWithoutSchema(TypeError):
+    """A key's annotation has no schema; the message already names the key and the fix,
+    so a struct holding this one only adds its own key in front."""
+
+
+def _key_schema(typed_dict: type[Mapping[str, object]], name: str, annotation: object) -> AnyBottom:
+    """``annotation``'s schema, or a ``TypeError`` naming the struct and the key, as
+    ``S.Class`` names ``Event.at``."""
+    struct = typed_dict_name(typed_dict)
+    try:
+        return schema_of(annotation, field=f"{struct}[{name!r}]")
+    except _KeyWithoutSchema as error:
+        raise _KeyWithoutSchema(f"{struct}[{name!r}]: {error}") from None
+    except TypeError as error:
+        fix = f", S.Struct({struct}, {name}=...)" if name.isidentifier() else ""
+        raise _KeyWithoutSchema(f"{struct}[{name!r}]: {error}{fix}") from None
 
 
 def _require_fits(

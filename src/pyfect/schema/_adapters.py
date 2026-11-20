@@ -4,7 +4,8 @@ interruption) is never turned into ``None``, ``False`` or ``Err``.
 
 As in Effect, that raises a ``RuntimeError`` naming the adapter
 (``"Sync adapter can only throw schema errors"``), chained from the cause's
-first defect (else its squashed error), with the whole cause as a note.
+first defect (else its squashed error), with the whole cause as a note. A field's check that
+raised (``_check_guard``) is raised as it is: it already names the field and the check.
 """
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ from __future__ import annotations
 from typing import Never
 
 from pyfect.cause import Cause, Die, Fail
+from pyfect.schema._check_guard import CheckRaisedError
 from pyfect.schema._error import SchemaError
 
 SYNC = "Sync adapter can only throw schema errors"
@@ -29,9 +31,11 @@ def schema_error_of(cause: Cause[SchemaError], adapter: str) -> SchemaError:
     errors = [r.error for r in cause.reasons if isinstance(r, Fail)]
     if errors and len(errors) == len(cause.reasons):
         return errors[0]
+    defects = [r.defect for r in cause.reasons if isinstance(r, Die)]
+    if defects and isinstance(defects[0], CheckRaisedError):
+        raise defects[0]
     error = RuntimeError(adapter)
     error.add_note("Cause:\n" + cause.pretty())
-    defects = [r.defect for r in cause.reasons if isinstance(r, Die)]
     chained = defects[0] if defects and isinstance(defects[0], BaseException) else cause.raisable()
     raise error from chained
 
