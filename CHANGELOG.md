@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+### Added
+
+- `pyfect.__version__` is the installed version (`0.6.16`, say), where Python users look first.
+  It reads the same value the OTLP exporters report.
+
+### Fixed
+
+- A coroutine run on one of pyfect's loop threads (the httpx client's, Redis's, the sockets',
+  SQL's, the ASGI listener's) is kept until it ends even when nothing keeps its future. asyncio
+  holds tasks weakly, so a garbage collection could destroy one still waiting ("Task was
+  destroyed but it is pending"), closing it half done instead of running it to its end or
+  cancelling it at stop: a Redis connection released after an interrupt could be lost that way.
+- `socket.from_socket` no longer leaks a file descriptor when the fiber opening it is interrupted
+  before the socket loop adopts it. The duplicate the loop watches was made on the fiber, so
+  nothing closed it once the adoption was cancelled; the loop now makes it as it adopts. And
+  interrupting a socket opening on the loop waits until the loop has stopped it, so the scope's
+  finalizers no longer close the caller's socket while the loop is still taking it over.
+
 ### Docs
 
 - `examples/http_api.py` says it needs the `httpx` extra (`uv add "pyfect-dev[httpx]"`), and
@@ -11,14 +29,6 @@
 - The subinterpreters page says that without an `if __name__ == "__main__":` guard, everything a
   script does before its run happens again in the subinterpreter (a file written twice), as
   CPython re-runs the script to find the function.
-
-### Fixed
-
-- A coroutine run on one of pyfect's loop threads (the httpx client's, Redis's, the sockets',
-  SQL's, the ASGI listener's) is kept until it ends even when nothing keeps its future. asyncio
-  holds tasks weakly, so a garbage collection could destroy one still waiting ("Task was
-  destroyed but it is pending"), closing it half done instead of running it to its end or
-  cancelling it at stop: a Redis connection released after an interrupt could be lost that way.
 
 ## 0.6.15 (2026-11-20)
 
