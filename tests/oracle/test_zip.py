@@ -12,11 +12,14 @@ Adapted, with the reason:
   replaces ``CompressionStream``.
 - "inflates deflate streams as zlib does" is the port of Effect's inflater test, on
   ``zlib`` itself (``docs/PARITY.md`` section 4); ``tests/oracle/test_archive_node.py``
-  compares corrupt streams with what Effect's inflater did under Node.
+  compares corrupt streams with what Effect's inflater did under Node. It splits the
+  archive into pieces of 1, 7 and 4093 bytes in turn rather than 7 bytes throughout, which
+  is 65,000 pulls, and adds a stream in fixed Huffman codes.
 """
 
 from __future__ import annotations
 
+import itertools
 import struct
 import zlib
 from collections.abc import Callable, Sequence
@@ -48,13 +51,27 @@ def encode(items: Sequence[Any]) -> fx.Effect[bytes, Any]:
     return source.pipe_through_channel(Zip.encode()).run_bytes()
 
 
-def entries(data: bytes, chunk_size: int) -> stream.Stream[Entry[ZipError], ZipError]:
-    chunks = [data[i : i + chunk_size] for i in range(0, len(data), chunk_size)]
+def split(data: bytes, chunk_size: int | Sequence[int]) -> list[bytes]:
+    """``data`` in chunks of ``chunk_size``, or of each of its sizes in turn."""
+    sizes = itertools.cycle((chunk_size,) if isinstance(chunk_size, int) else chunk_size)
+    chunks: list[bytes] = []
+    start = 0
+    while start < len(data):
+        end = start + next(sizes)
+        chunks.append(data[start:end])
+        start = end
+    return chunks
+
+
+def entries(
+    data: bytes, chunk_size: int | Sequence[int]
+) -> stream.Stream[Entry[ZipError], ZipError]:
+    chunks = split(data, chunk_size)
     return stream.from_iterable(chunks, chunk_size=1).pipe_through_channel(Zip.decode())
 
 
 def decode(
-    data: bytes, chunk_size: int = 4096
+    data: bytes, chunk_size: int | Sequence[int] = 4096
 ) -> fx.Effect[list[tuple[Zip.Header, bytes]], ZipError]:
     def read(entry: Entry[ZipError]) -> fx.Effect[tuple[Zip.Header, bytes], ZipError]:
         return entry.body.run_bytes().map(lambda body: (entry.header, body))
@@ -101,9 +118,15 @@ def le(value: int, length: int) -> bytes:
 END_RECORD = le(0x06054B50, 4) + bytes(18)
 
 
-def deflate_raw(content: bytes) -> bytes:
-    compressor = zlib.compressobj(wbits=-15)
+def deflate_raw(content: bytes, strategy: int = zlib.Z_DEFAULT_STRATEGY) -> bytes:
+    compressor = zlib.compressobj(wbits=-15, strategy=strategy)
     return compressor.compress(content) + compressor.flush()
+
+
+def first_block_type(data: bytes) -> int:
+    """A deflate stream's first block type, from its first header bits (RFC 1951
+    3.2.3): 0 stored, 1 fixed and 2 dynamic Huffman codes."""
+    return (data[0] >> 1) & 3
 
 
 def bits(fields: Sequence[tuple[int, ...]]) -> bytes:
@@ -527,8 +550,18 @@ def test_inflates_deflate_streams_as_zlib_does() -> Any:
             bytes(random() & 63 for _ in range(size)),
             bytes(block[i % len(block)] for i in range(size)),
         ]
-    archive = b"".join(deflated_entry("f", content) for content in contents) + END_RECORD
-    for chunk_size in (7, len(archive)):
+    streams = [deflate_raw(content) for content in contents]
+    # Copies in fixed codes, which zlib picks only for short streams on its own
+    contents.append(block[:4096] * 4)
+    streams.append(deflate_raw(contents[-1], zlib.Z_FIXED))
+    assert {first_block_type(data) for data in streams} == {0, 1, 2}
+    parts = (deflated_entry("f", c, d) for c, d in zip(contents, streams, strict=True))
+    archive = b"".join(parts) + END_RECORD
+    # Pieces of 1 and 7 bytes split the streams in about 300 places. Effect's 7-byte
+    # pieces throughout are 65,000 pulls, past the 5 s timeout on a slow CI runner
+    sizes = (1, 7, 4093)
+    assert len(split(archive, sizes)) < 400
+    for chunk_size in (sizes, len(archive)):
         assert [body for _, body in (yield from decode(archive, chunk_size))] == contents
 
 
