@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Docs
+
+- The subinterpreters page says that without an `if __name__ == "__main__":` guard, everything a
+  script does before its run happens again in the subinterpreter (a file written twice), as
+  CPython re-runs the script to find the function.
+
 ## 0.6.15 (2026-11-20)
 
 ### Added
