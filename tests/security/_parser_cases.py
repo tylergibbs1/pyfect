@@ -788,40 +788,56 @@ _BIG = 1 << 20
 def _amplified(
     target: object,
     id: str,
-    costly: Callable[[], object],
-    plain: Callable[[], object],
+    parse: Callable[[str], object],
+    costly: str,
+    plain: str,
     *,
     guards: Guard | None = None,
 ) -> None:
-    AMPLIFIED.append(Amplified(id, target, ignoring(costly), ignoring(plain), guards=guards))
+    """``parse`` of ``costly`` against ``parse`` of ``plain``. The texts are built here, once,
+    so the work measured is the parse: building a megabyte string faults in fresh pages, at a
+    cost a loaded machine varies more than the parse's."""
+    AMPLIFIED.append(
+        Amplified(
+            id,
+            target,
+            ignoring(lambda: parse(costly)),
+            ignoring(lambda: parse(plain)),
+            guards=guards,
+        )
+    )
 
 
 _decode_big_decimal = S.decode_unknown_exit(S.BigDecimalFromString)
 _amplified(
     S.BigDecimalFromString,
     "BigDecimalFromString: a long digit run, hashed (#31)",
-    lambda: hash(_decode_big_decimal("7" * _BIG)),
-    lambda: hash(_decode_big_decimal("a" * _BIG)),
+    lambda text: hash(_decode_big_decimal(text)),
+    "7" * _BIG,
+    "a" * _BIG,
     guards=Guard("ef8f293a", "big-decimal-digits-unbounded"),
 )
 _amplified(
     S.BigDecimalFromString,
     "BigDecimalFromString: a long exponent (#31)",
-    lambda: _decode_big_decimal("1e" + "7" * _BIG),
-    lambda: _decode_big_decimal("a" * _BIG),
+    _decode_big_decimal,
+    "1e" + "7" * _BIG,
+    "a" * _BIG,
     guards=Guard("ef8f293a", "big-decimal-exponent-converted"),
 )
 _amplified(
     yaml.parse,
     "yaml.parse: a long hexadecimal key (#32)",
-    lambda: yaml.parse(f"0x{'f' * _BIG}: 1"),
-    lambda: yaml.parse(f"{'g' * _BIG}: 1"),
+    yaml.parse,
+    f"0x{'f' * _BIG}: 1",
+    f"{'g' * _BIG}: 1",
 )
 _amplified(
     yaml.parse,
     "yaml.parse: a long decimal key (#32)",
-    lambda: yaml.parse(f"{'7' * _BIG}: 1"),
-    lambda: yaml.parse(f"{'g' * _BIG}: 1"),
+    yaml.parse,
+    f"{'7' * _BIG}: 1",
+    f"{'g' * _BIG}: 1",
 )
 
 

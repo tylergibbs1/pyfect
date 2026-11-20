@@ -14,6 +14,7 @@ import ast
 import functools
 import gc
 import math
+import random
 import re
 import subprocess
 import sys
@@ -25,6 +26,7 @@ import _source
 import pytest
 from _growth import (
     MIN_SECONDS,
+    PAIR_SAMPLE_SECONDS,
     RUNS,
     SAMPLE_SECONDS,
     SAMPLES,
@@ -472,6 +474,57 @@ def test_a_slow_stretch_falls_on_both_sides_of_a_comparison(
     clock.reads_left = slow
     first, second = cpu_pair(costly, plain, clock=clock)
     assert first / second == pytest.approx(1.2)
+
+
+class _NoisyClock:
+    """A thread clock under which a third of the runs, at random, take ``factor`` times as
+    long: a neighbour that shares the core now and then."""
+
+    def __init__(self, seed: int, factor: float) -> None:
+        self.now, self.random, self.factor = 0.0, random.Random(seed), factor
+
+    def __call__(self) -> float:
+        return self.now
+
+    def work(self, seconds: float):
+        def run() -> None:
+            self.now += seconds * (self.factor if self.random.random() < 1 / 3 else 1)
+
+        return run
+
+
+@pytest.mark.parametrize("seed", range(5))
+def test_quick_work_is_judged_on_many_runs_not_on_a_few_a_neighbour_slowed(seed: int) -> None:
+    """Judged on three single runs a side, one of every 27 comparisons of equal 2.4 ms work
+    finds one side 2.5 times the other (CI's 5.4 ms against 2.4 ms), most of a hundred
+    comparisons at least once; averaged over ``PAIR_SAMPLE_SECONDS`` of runs, the slow third
+    falls on both sides alike."""
+    clock = _NoisyClock(seed, factor=2.5)
+    ratios = [
+        first / second
+        for first, second in (
+            cpu_pair(clock.work(0.0024), clock.work(0.0024), clock=clock) for _ in range(100)
+        )
+    ]
+    assert max(*ratios, 1 / min(ratios)) < 2  # the bound of tests/security/_parser_cases.py
+
+
+def test_each_pair_sample_lasts_at_least_pair_sample_seconds() -> None:
+    clock = _NoisyClock(0, factor=1)
+    calls = [0, 0]
+
+    def counted(side: int, seconds: float) -> Work:
+        run = clock.work(seconds)
+
+        def work() -> None:
+            calls[side] += 1
+            run()
+
+        return work
+
+    assert cpu_pair(counted(0, 0.001), counted(1, 0.2), clock=clock) == pytest.approx((0.001, 0.2))
+    sized = math.ceil(PAIR_SAMPLE_SECONDS / 0.001)
+    assert calls == [1 + RUNS * sized, RUNS]  # one run sizes the quick side's samples
 
 
 class _StretchClock:
