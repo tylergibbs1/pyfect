@@ -14,13 +14,13 @@ per session), so a listener still reserves one session of two.
 """
 # pyright: reportPrivateUsage=false
 
-import time
 import warnings
 from collections.abc import Callable, Generator
 from datetime import UTC, datetime
 from typing import Any
 
 import pytest
+from _timing import PAST_ANY_TEST
 
 pytest.importorskip("psycopg")
 
@@ -803,13 +803,12 @@ def test_an_idle_listener_does_not_hold_the_test_clock(pg_server: PgServer):
     def body():
         sql = yield from pg.PgClient()
         yield from sql.listen("idle_listen")
-        started = time.monotonic()
         yield from testing.adjust("10 seconds")
-        assert time.monotonic() - started < 0.5
 
+    # Waiting for the listener, warned or not, would outlast the test's time limit.
     with warnings.catch_warnings():
         warnings.simplefilter("error", testing.BusyFiberWarning)
-        testing.run_test(_with_listen(pg_server, body))
+        testing.run_test(_with_listen(pg_server, body), warning_delay=PAST_ANY_TEST)
 
 
 @testing.live

@@ -28,6 +28,7 @@ from typing import Any, Literal, Never
 
 import _ports
 import pytest
+from _timing import PAST_ANY_TEST
 
 pytest.importorskip("redis")
 
@@ -529,12 +530,17 @@ def test_fails_the_initial_connection_by_default() -> None:
     assert isinstance(error, RedisError)
 
 
-def _with_redis(body: Callable[[], Generator[Any, Any]], *, live: bool = False) -> None:
+def _with_redis(
+    body: Callable[[], Generator[Any, Any]],
+    *,
+    live: bool = False,
+    warning_delay: fx.duration.Input = "1 second",
+) -> None:
     effect: fx.Effect[Any, Any, Any] = fx.gen(body)
     if live:
         effect = testing.with_live(effect)
     run: fx.Effect[Any, Any, Any] = fx.scoped(effect).pipe(fx.provide(_redis_layer()))
-    testing.run_test(run)
+    testing.run_test(run, warning_delay=warning_delay)
 
 
 def test_uses_the_redis_py_protocol_default() -> None:
@@ -589,13 +595,12 @@ def test_an_idle_subscription_does_not_hold_the_test_clock() -> None:
     def body():
         redis = yield from Redis()
         yield from redis.subscribe("effect-test")
-        started = time.monotonic()
         yield from testing.adjust("10 seconds")
-        assert time.monotonic() - started < 0.5
 
+    # Waiting for the subscription, warned or not, would outlast the test's time limit.
     with warnings.catch_warnings():
         warnings.simplefilter("error", testing.BusyFiberWarning)
-        _with_redis(body)
+        _with_redis(body, warning_delay=PAST_ANY_TEST)
 
 
 def test_a_blocking_read_does_not_hold_the_test_clock() -> None:
@@ -613,10 +618,9 @@ def test_a_blocking_read_does_not_hold_the_test_clock() -> None:
         yield from redis.send("CLIENT", "LIST").repeat(
             until=lambda clients: "cmd=xread" in str(clients)
         )
-        started = time.monotonic()
         yield from testing.adjust("10 seconds")
-        assert time.monotonic() - started < 0.5
 
+    # Waiting for the read, warned or not, would outlast the test's time limit.
     with warnings.catch_warnings():
         warnings.simplefilter("error", testing.BusyFiberWarning)
-        _with_redis(body)
+        _with_redis(body, warning_delay=PAST_ANY_TEST)

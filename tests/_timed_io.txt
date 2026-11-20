@@ -18,11 +18,9 @@ oracle/test_mssql_client.py 10  # times cancels on a real SQL Server and bounds 
 oracle/test_mysql_cancellation.py 2  # times an interrupt killing a SLEEP(5) on a real MySQL server; the server runs on real time in another process
 oracle/test_mysql_interrupt_on_server.py 8  # times row locks, KILL QUERY and early stream ends on a real MySQL server; the server runs on real time in another process
 oracle/test_node_http_server.py 4  # times live-server graceful shutdown with real client sockets on plain threads; those sockets are outside the TestClock
-oracle/test_pg_client.py 2  # checks adjust returns promptly in wall time while a LISTEN waits on a real PostgreSQL socket; the TestClock is the thing timed
 oracle/test_pg_pool.py 4  # deadlines for a real TCP proxy thread (CancelGate) to accept or deliver PostgreSQL connections; it runs outside any TestClock
 oracle/test_pg_reaping.py 2  # deadline for a throwaway PostgreSQL server and its directory to be reaped after its owner dies; separate OS processes
 oracle/test_pg_sql_event_journal.py 2  # deadline polling a real PostgreSQL server until backends block on a lock; the server runs on real time in another process
-oracle/test_redis_py.py 4  # checks adjust returns promptly in wall time while a subscription or XREAD waits on a real Redis socket; the TestClock is what is timed
 oracle/test_sql_event_log_server_encrypted_storage.py 2  # deadline polling a real database until a connection blocks on a lock; the server runs on real time in another process
 security/test_stack_probe_cost.py 1  # growth check handing time.process_time to tests/_growth.py: the deep decode runs on other threads, whose CPU time thread_time misses and the TestClock does not measure
 soak/_health.py 1  # soak recorder default clock: latency of real HTTPS, HTTP client and SQLite operations; real I/O cannot run on the TestClock
@@ -34,16 +32,12 @@ test_base_exceptions.py 3  # bounds a real SIGINT reaching the main thread block
 test_blocking_pool.py 4  # times a subprocess exit with stuck blocking work, and real pool threads exiting on their idle timer; OS threads and processes
 test_fibers.py 2  # deadline for a fiber finishing on another real OS thread inside an observer race; the TestClock does not drive that thread
 test_file_system_watch.py 2  # times interrupting the file watcher's own OS thread until it stops; that thread blocks on OS notifications in real time
-test_httpx_test_clock.py 2  # checks adjust returns promptly in wall time while an httpx body waits on a real trickling server; the TestClock is what is timed
 test_interpreter_pool.py 2  # times a script's start-up in its own process to set how long its calls may take: each call imports pyfect again in a new subinterpreter, real time in another process the TestClock does not drive
 test_live_server_request_parsing.py 4  # times live-server request timeouts seen by a blocking client socket in a plain thread, outside the TestClock
 test_managed_runtime.py 2  # deadline for a disposer on a real OS thread to begin closing the runtime; the TestClock does not drive that thread
 test_process.py 2  # times concurrent force kills of real sh child processes after 500 ms; OS processes run on real time
 test_schema_recursive_union_cost.py 3  # growth checks handing time.process_time to tests/_growth.py: deep decodes can run on other threads, whose CPU time thread_time misses and the TestClock does not measure
 test_server_idle_connection_shutdown.py 6  # times real HTTP server adapters stopping with an idle or stalled real client socket; engines and sockets run on real time
-test_test_clock.py 6  # checks adjust and run_test finish promptly in wall time, as busy-fiber waits and warning_delay are real time; the TestClock is under test
-test_test_clock_thread_work.py 2  # checks adjust does not wait out a 3 s blocking thread in wall time; thread work is real time and the TestClock is under test
-test_testing_harness.py 4  # times a pytester run hitting pyfect_timeout and a stall_timeout; harness timeouts run on real time, the TestClock is not in charge
 test_uvicorn_server.py 14  # times uvicorn shutdown in a subprocess and thread with real client sockets, and its start; uvicorn runs on real time
 test_web_socket_early_events.py 2  # deadline for a websockets client loop thread to close against a real sync server; those threads run on real time
 test_workers.py 4  # times closing a real worker subprocess and waits for its pid to be reaped; OS processes run on real time
