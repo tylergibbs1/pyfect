@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Added
+
+- Schema: a schema in a field's `Annotated` metadata is the field's schema, in schema classes
+  and in a `Struct` of a TypedDict: `amount: Annotated[int, S.Int.check(S.is_greater_than(0))]`
+  rejects `-1`, and `total: Annotated[float, S.FiniteFromString]` decodes text, as a pydantic
+  model reads it. It was ignored, so the field had its type's plain schema. The checks beside it
+  refine it; with several schemas the last one wins, and `S.field(schema)` still wins over the
+  annotation. Pyright cannot see metadata, so `S.field` stays the form it checks.
+
 ### Docs
 
 - The SQL page has a section on `pyfect.sql.schema` (`find_all`, `find_one`,

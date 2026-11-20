@@ -28,14 +28,31 @@ made.
 
 A check can also live in the annotation: `Annotated[int, S.is_between(minimum=1, maximum=99)]`
 is an `S.Int` with that check, in a TypedDict, a schema class, a container (`list[...]`) or a
-`type` alias. The checks run when decoding and when constructing a class. Metadata that is not
-a check is ignored, and a keyword argument or `S.field(schema)` replaces the annotation's schema.
+`type` alias. The checks run when decoding and when constructing a class. Metadata that is
+neither a check nor a schema is ignored, and a keyword argument or `S.field(schema)` replaces
+the annotation's schema.
 
 <CodeOutput>
 
 <include meta='title="annotated.py"'>../../snippets/schema/annotated.py</include>
 
 <include lang="text">../../snippets/schema/annotated.out</include>
+
+</CodeOutput>
+
+The metadata can carry the schema itself: `Annotated[int, S.Int.check(S.is_greater_than(0))]`,
+or a codec such as `Annotated[float, S.FiniteFromString]`, as a pydantic model reads it. That
+schema is used in place of the one the type would give, so the type needs no schema of its own,
+and the checks beside it refine it. With several schemas in the metadata the last one wins, and
+a keyword argument or `S.field(schema)` still wins over the whole annotation. Pyright cannot see
+metadata, so it does not check that the schema decodes to the annotation's type; `S.field`
+is the form it checks.
+
+<CodeOutput>
+
+<include meta='title="annotated_schema.py"'>../../snippets/schema/annotated_schema.py</include>
+
+<include lang="text">../../snippets/schema/annotated_schema.out</include>
 
 </CodeOutput>
 

@@ -8,11 +8,11 @@ classes: ``str`` String, ``int`` Int, ``float`` Number, ``bool`` Boolean,
 HashMap, ``Redacted[X]`` Redacted, ``duration.Duration``
 Duration, ``bytes`` Bytes, ``ZoneInfo`` TimeZoneNamed, ``timezone``
 TimeZoneOffset, ``Url`` URL, ``JsonValue`` Json, ``decimal.Decimal`` Decimal,
-a schema class itself; ``Annotated[T, ...]`` is
-``T``'s schema with the checks among its metadata (``S.is_greater_than(0)``,
-...; other metadata is ignored), a ``NewType`` stands for ``T``, a ``type``
-alias for its value. Anything else raises ``TypeError``: give such a field
-its schema explicitly.
+a schema class itself; ``Annotated[T, ...]`` is the last schema among its
+metadata, else ``T``'s, with the checks among the metadata
+(``S.is_greater_than(0)``, ...; other metadata is ignored), a ``NewType``
+stands for ``T``, a ``type`` alias for its value. Anything else raises
+``TypeError``: give such a field its schema explicitly.
 """
 
 from __future__ import annotations
@@ -106,8 +106,15 @@ def schema_of(annotation: object, expanding: frozenset[object] = frozenset()) ->
 
 
 def _of_annotated(args: tuple[object, ...], expanding: frozenset[object]) -> AnyBottom:
-    """``Annotated[T, ...]``: ``T``'s schema with the checks among the metadata."""
-    schema = schema_of(args[0], expanding)
+    """``Annotated[T, ...]``: the last schema among the metadata (as pydantic reads
+    ``Annotated[float, S.FiniteFromString]``), else ``T``'s, with the checks among the
+    metadata."""
+    schemas = [m for m in args[1:] if hasattr(m, "__codec__")]
+    schema = (
+        cast("Codec[Any, Any, Any, Any]", schemas[-1]).__codec__()
+        if schemas
+        else schema_of(args[0], expanding)
+    )
     checks = [
         cast("ast.Check[Any]", m) for m in args[1:] if isinstance(m, (ast.Filter, ast.FilterGroup))
     ]
