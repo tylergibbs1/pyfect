@@ -1,0 +1,7 @@
+{'amount': 2, 'total': '9.5', 'note': ''}
+Expected a value greater than 0
+  at ["amount"]
+Expected a value with a length of at most 10
+  at ["note"]
+Expected a value greater than 0
+  at ["amount"]
