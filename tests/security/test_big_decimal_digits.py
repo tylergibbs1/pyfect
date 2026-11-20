@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+from _guards import guards
+
 from pyfect import big_decimal
 from pyfect import schema as S
 from pyfect.exit import Failure
 
 
+@guards("ef8f293a", "big-decimal-digits-unbounded")
 def test_digits_up_to_the_limit_read_and_past_it_do_not() -> None:
     limit = big_decimal.MAX_DIGITS
     assert big_decimal.from_string("7" * limit) is not None

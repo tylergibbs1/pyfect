@@ -10,7 +10,7 @@ from collections.abc import Callable
 from typing import TypedDict
 
 import pytest
-from _growth import assert_near_linear
+from _growth import GUARD_FACTOR, assert_near_linear
 from _guards import guards
 
 from pyfect import schema as S
@@ -58,8 +58,8 @@ def _cookie_without_equals(n: int) -> Callable[[], object]:
 
 
 CASES: dict[str, tuple[Case, int]] = {
-    "Cookie header of segments without =": (_cookie_without_equals, 5_000),
-    "ASGI request with many lines of one header": (_repeated_header, 5_000),
+    "Cookie header of segments without =": (_cookie_without_equals, 20_000),
+    "ASGI request with many lines of one header": (_repeated_header, 20_000),
     "find-my-way path with %25 runs": (_percent_25_path, 20_000),
     "HttpApi parameters joined by a comma": (_comma_params, 100),
 }
@@ -84,7 +84,10 @@ _GUARDS = {
 )
 def test_peer_input_is_parsed_in_linear_time(name: str) -> None:
     make, size = CASES[name]
-    assert_near_linear(make, size, 8 * size, bound=16)
+    # Exponent 4/3 over GUARD_FACTOR, up to the same largest size as over 8 before.
+    assert_near_linear(
+        make, size // 2, 8 * size, factor=GUARD_FACTOR, bound=GUARD_FACTOR ** (4 / 3)
+    )
 
 
 def test_comma_joined_parameters_still_match() -> None:

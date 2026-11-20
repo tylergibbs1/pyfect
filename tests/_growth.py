@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import gc
 import math
+import os
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -45,6 +46,15 @@ BOUND = 24
 """Linear work grows 8 times, ``n log n`` about 10, ``n ** 1.5`` about 23, quadratic 64."""
 EXPONENT = math.log(BOUND, FACTOR)
 """The growth exponent ``BOUND`` allows, about 1.53, for steps of other factors."""
+GUARD_MARGIN = float(os.environ.get("PYFECT_GUARD_MARGIN", "1"))
+"""Bounds are this many times looser. ``scripts/check_regression_guards.py`` sets 1.5, so a
+test caught its bug only if it would still have with a looser bound: big_decimal's digit run
+grew 27x against 24 on macOS and under 24 on CI's runner."""
+GUARD_FACTOR = 16
+"""The step a timing test that guards a regression (``tests/_guards.py``) measures over. Over
+``FACTOR`` a quadratic grows at most 64 times against a bound of 36 with the guard margin, and
+one with a linear part in it fell under that on CI's runner; over 16 it grows 256 times against
+104. A count (``tests/_copies.py``) is better still where one fits: it does not depend on load."""
 MIN_SECONDS = 0.002
 MAX_SIZE = 1 << 22
 RUNS = 3
@@ -185,16 +195,21 @@ def growth(
     ``factor`` times it stays within ``max_size``) and at ``factor`` times that size.
     ``bound`` is ``factor ** EXPONENT`` unless given. However quick one run is, the work
     repeats until a sample lasts ``SAMPLE_SECONDS``, so every comparison is judged, on a fast
-    machine as on a slow one."""
+    machine as on a slow one. Nothing is measured past ``max_size``: the work may be refused
+    there."""
+    if size * factor > max_size:
+        raise ValueError(f"size {size} times {factor} is past max_size {max_size}")
     while size * 2 * factor <= max_size and cpu(make(size), clock=clock) < MIN_SECONDS:
         size *= 2
     small, large = _compare(make, size, factor, clock)
-    return Growth(size, small, large, factor, factor**EXPONENT if bound is None else bound)
+    limit = factor**EXPONENT if bound is None else bound
+    return Growth(size, small, large, factor, limit * GUARD_MARGIN)
 
 
 SPAN = 64
 """The size ratio over which a flagged comparison is judged again; it ends at twice the larger
-size, as far as the first comparison's own doubling went. A step in the cost per unit of up
+size (as far as the first comparison's own doubling went) or at ``max_size``, past which
+the work may be refused at once. A step in the cost per unit of up
 to ``SPAN ** (exponent - 1)`` passes: 8.6 times at the default exponent (1.53, 8 times at
 1.5), where CI measured steps of 2.8 and 3.8 (exponent 1.25 and 1.32 over the span), while
 quadratic work shows 2."""
@@ -214,7 +229,7 @@ def superlinear(
     found = growth(make, size, max_size, factor=factor, bound=bound, clock=clock)
     if not found.superlinear:
         return None
-    largest = found.size * factor * 2
+    largest = min(found.size * factor * 2, max_size)
     smallest = max(1, largest // SPAN)
     span = largest // smallest
     allowed = span ** math.log(found.bound, factor)

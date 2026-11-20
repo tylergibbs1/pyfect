@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from itertools import cycle, islice
 from typing import Any, TypedDict, cast
 
-from _growth import MAX_SIZE, Make, Work
+from _growth import FACTOR, GUARD_FACTOR, MAX_SIZE, Make, Work
 from _guards import Guard
 
 import pyfect as fx
@@ -107,6 +107,11 @@ class Case:
     fixed_elsewhere: str | None = None
     """Why the case still fails here: a lead fixed on another branch, flipped at merge."""
     guards: Guard | None = None
+
+    @property
+    def factor(self) -> int:
+        """The step between the two sizes measured: ``GUARD_FACTOR`` for a case that guards."""
+        return FACTOR if self.guards is None else GUARD_FACTOR
 
 
 @dataclass(frozen=True, slots=True)
@@ -399,6 +404,7 @@ for _kind, _make_input in ADVERSARIES.items():
 @case(
     cookies.parse_header,
     "cookies.parse_header: many empty pairs (#49)",
+    size=1 << 15,  # rescanning with str.find is quick per character: smaller, timing misses it
     guards=Guard("0be98c4b", "cookie-segments-rescanned"),
 )
 def _cookie_pairs(n: int) -> Work:
@@ -456,7 +462,7 @@ CASES.append(
         "WebRequest.headers: many lines of one header (#57)",
         WebRequest,
         _repeated_header,
-        size=4000,
+        size=1 << 14,  # copying the joined text is quick: at 4000 lines it grew 43x, near 36
         guards=Guard("ce40a38a", "header-lines-joined-per-line"),
     )
 )
@@ -515,7 +521,6 @@ def _xml_non_ascii_leading_comment(n: int) -> Work:
     xml.decode_string,
     "xml.decode_string: text split by CDATA sections (#43)",
     size=8000,
-    guards=Guard("6e8ffaef", "xml-cdata-text-concatenated"),
 )
 def _xml_cdata_text(n: int) -> Work:
     return run_channel(["<r>" + "xxxxxxxxxxxx<![CDATA[]]>" * n + "</r>"], xml.decode_string())
@@ -539,7 +544,6 @@ def _xml_collected_text(n: int) -> Work:
     xml.decode_string,
     "xml.decode_string: tags in a chunk past max_token_size (#41)",
     size=20_000,
-    guards=Guard("6e8ffaef", "xml-long-token-window-copied"),
 )
 def _xml_markup_window(n: int) -> Work:
     return run_channel(["<r>" + "<a/>" * n + "</r>"], xml.decode_string(max_token_size=64))
@@ -568,7 +572,6 @@ def _xml_events(n: int) -> tuple[xml.Event, ...]:
     xml.encode_string,
     "xml.encode_string: many events in one chunk (#44)",
     size=8000,
-    guards=Guard("6e8ffaef", "xml-output-concatenated"),
 )
 def _xml_encode_string(n: int) -> Work:
     events = _xml_events(n)
@@ -579,7 +582,6 @@ def _xml_encode_string(n: int) -> Work:
     xml.encode,
     "xml.encode: many events in one chunk (#44)",
     size=8000,
-    guards=Guard("6e8ffaef", "xml-output-concatenated"),
 )
 def _xml_encode(n: int) -> Work:
     events = _xml_events(n)
@@ -717,8 +719,7 @@ def _json_patch_appends(n: int) -> Work:
 @case(
     json_patch.apply,
     "json_patch.apply: many keys added to a nested object (#59)",
-    guards=Guard("f906697a", "json-patch-copies-per-operation"),
-)
+)  # guarded by the appends above, which hang against the bug
 def _json_patch_nested(n: int) -> Work:
     patch: Any = [{"op": "add", "path": f"/a/b/k{i}", "value": i} for i in range(n)]
     return lambda: json_patch.apply(patch, {"a": {"b": {}}})
@@ -727,7 +728,6 @@ def _json_patch_nested(n: int) -> Work:
 @case(
     S.BigDecimalFromString,
     "BigDecimalFromString: a long digit run (#31)",
-    guards=Guard("ef8f293a", "big-decimal-digits-unbounded"),
 )
 def _big_decimal_digits(n: int) -> Work:
     decode = S.decode_unknown_exit(S.BigDecimalFromString)
@@ -738,7 +738,6 @@ def _big_decimal_digits(n: int) -> Work:
 @case(
     S.BigDecimalFromString,
     "BigDecimalFromString: a long exponent (#31)",
-    guards=Guard("ef8f293a", "big-decimal-exponent-converted"),
 )
 def _big_decimal_exponent(n: int) -> Work:
     decode = S.decode_unknown_exit(S.BigDecimalFromString)
@@ -817,14 +816,12 @@ _amplified(
     "yaml.parse: a long hexadecimal key (#32)",
     lambda: yaml.parse(f"0x{'f' * _BIG}: 1"),
     lambda: yaml.parse(f"{'g' * _BIG}: 1"),
-    guards=Guard("12c66350", "yaml-long-integer-keys"),
 )
 _amplified(
     yaml.parse,
     "yaml.parse: a long decimal key (#32)",
     lambda: yaml.parse(f"{'7' * _BIG}: 1"),
     lambda: yaml.parse(f"{'g' * _BIG}: 1"),
-    guards=Guard("12c66350", "yaml-long-integer-keys"),
 )
 
 

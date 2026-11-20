@@ -5,6 +5,7 @@ replays them; these tests name the behaviour each fix restored."""
 from __future__ import annotations
 
 import pytest
+from _guards import guards
 
 import pyfect as fx
 from pyfect import cron, semver_range
@@ -164,6 +165,7 @@ def test_an_iso_duration_past_4300_digits_is_read_and_written_in_full() -> None:
     assert duration.from_iso(iso) == found
 
 
+@guards("12c66350", "yaml-long-integer-keys")
 def test_yaml_and_json_integers_past_their_digit_limits_are_refused() -> None:
     """0.6.5 read them in full, at superlinear cost; a parse error names the limit."""
     from pyfect import _json_text

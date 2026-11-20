@@ -14,7 +14,8 @@ from collections.abc import Callable
 from typing import Any
 
 import pytest
-from _growth import assert_near_linear
+from _copies import Copies
+from _growth import GUARD_FACTOR, assert_near_linear
 from _guards import guards
 
 from pyfect import schema as S
@@ -130,13 +131,7 @@ _CASES: dict[str, Run] = {
 
 
 _GUARDS = {
-    "rpc ndjson, one long line": guards("fd125524", "rpc-ndjson-pending-concatenated"),
     "clickhouse rows, one long row": guards("fd125524", "clickhouse-rows-rescanned"),
-    "split_lines, one long line": guards("fd125524", "split-lines-pending-concatenated"),
-    "ndjson bytes, one long line": guards("fd125524", "ndjson-bytes-pending-concatenated"),
-    "sse, one long line": guards("fd125524", "sse-pending-concatenated"),
-    "csv, one long field": guards("fd125524", "csv-field-concatenated"),
-    "csv, one long quoted field": guards("fd125524", "csv-field-concatenated"),
 }
 
 
@@ -145,7 +140,93 @@ _GUARDS = {
     [pytest.param(name, marks=[_GUARDS[name]] if name in _GUARDS else []) for name in _CASES],
 )
 def test_a_splitter_takes_linear_time(name: str) -> None:
-    assert_near_linear(_CASES[name], _SIZE, 4 * _SIZE, factor=4, bound=8)
+    # Over GUARD_FACTOR at exponent 1.5: over a step of 4 a quadratic grows at most 16x,
+    # against a bound of 12 with the guard margin, and the clickhouse guard fell near it.
+    assert_near_linear(
+        _CASES[name], _SIZE // 4, 4 * _SIZE, factor=GUARD_FACTOR, bound=GUARD_FACTOR**1.5
+    )
+
+
+_LONG = 4000
+"""Characters in the one long line, row or field the counted tests split into chunks."""
+
+
+def _counted_rpc_ndjson(copies: Copies) -> int:
+    line = '"' + "x" * _LONG + '"\n'
+    parser = make_ndjson(max_buffer_size="unbounded").make_unsafe()
+    for piece in _pieces(line):
+        parser.decode(copies.text(piece))
+    return len(line)
+
+
+def _counted_lines(copies: Copies) -> int:
+    data = "x" * _LONG + "\n"
+    splitter = _LineSplitter()
+    for piece in _pieces(data):
+        splitter.split((copies.text(piece),))
+    splitter.flush()
+    return len(data)
+
+
+def _counted_byte_lines(copies: Copies) -> int:
+    data = b" " * _LONG + b"\n"
+    lines = _ByteLines(True, float("inf"))
+    out: list[Any] = []
+    for piece in _pieces(data):
+        lines.step((copies.data(piece),), out)
+    return len(data)
+
+
+def _counted_sse(copies: Copies) -> int:
+    data = "data: " + "x" * _LONG + "\n\n"
+    events: list[object] = []
+    parser = sse.make_parser(events.append, max_event_size=1 << 40)
+    for piece in _pieces(data):
+        parser.feed(copies.text(piece))
+    assert events
+    return len(data)
+
+
+def _counted_csv(field: str) -> Callable[[Copies], int]:
+    def feed(copies: Copies) -> int:
+        data = field + "\n"
+        parser = CsvParser(",", float("inf"), True)
+        out: list[Any] = []
+        for piece in _pieces(data):
+            parser.feed(copies.text(piece), out)
+        parser.end(out)
+        assert out
+        return len(data)
+
+    return feed
+
+
+_RPC_NDJSON = guards("fd125524", "rpc-ndjson-pending-concatenated")
+_SPLIT_LINES = guards("fd125524", "split-lines-pending-concatenated")
+_NDJSON_BYTES = guards("fd125524", "ndjson-bytes-pending-concatenated")
+_SSE = guards("fd125524", "sse-pending-concatenated")
+_CSV = guards("fd125524", "csv-field-concatenated")
+
+
+@pytest.mark.parametrize(
+    "feed",
+    [
+        pytest.param(_counted_rpc_ndjson, marks=_RPC_NDJSON, id="rpc ndjson"),
+        pytest.param(_counted_lines, marks=_SPLIT_LINES, id="split_lines"),
+        pytest.param(_counted_byte_lines, marks=_NDJSON_BYTES, id="ndjson bytes"),
+        pytest.param(_counted_sse, marks=_SSE, id="sse"),
+        pytest.param(_counted_csv("x" * _LONG), marks=_CSV, id="csv field"),
+        pytest.param(_counted_csv('"' + "x" * _LONG + '"'), marks=_CSV, id="csv quoted"),
+    ],
+)
+def test_a_long_line_split_over_chunks_is_not_copied_for_each(
+    feed: Callable[[Copies], int],
+) -> None:
+    """Counted with ``_copies``: the pending part was copied in front of each chunk's piece.
+    Copies do not depend on load, which timing them did."""
+    copies = Copies()
+    length = feed(copies)
+    assert copies.characters <= 2 * length
 
 
 def test_multipart_header_values_are_joined_once() -> None:

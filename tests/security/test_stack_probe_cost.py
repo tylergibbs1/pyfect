@@ -75,7 +75,6 @@ def _probes(count: int) -> None:
 _GUARD = guards("a8c73765", "stack-probe-walks-to-the-limit")
 
 
-@_GUARD
 def test_a_nested_recursive_union_decodes_in_time_linear_in_its_depth() -> None:
     decode = S.decode_unknown_exit(S.Union(S.Struct(And), S.Struct(Or), S.Struct(Eq)))
 
@@ -88,8 +87,8 @@ def test_a_nested_recursive_union_decodes_in_time_linear_in_its_depth() -> None:
     assert_near_linear(sized, 16, max_size=4096, clock=time.process_time)
 
 
-@_GUARD
 def test_a_probe_at_every_level_costs_time_linear_in_the_depth() -> None:
+    # The patch is guarded by the frames counted below, which do not depend on load.
     def sized(depth: int) -> Work:
         return lambda: _at_depth(depth, lambda: _probes(depth))
 

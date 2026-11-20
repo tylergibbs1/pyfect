@@ -16,6 +16,7 @@ import json
 from typing import Any, TypedDict, cast
 
 import pytest
+from _copies import Copies
 from _growth import Work, assert_near_linear
 from _guards import guards
 from oracle._ai_http import MockHttp, sse_response
@@ -146,22 +147,37 @@ def _openai_stub(events: list[dict[str, Any]]) -> Any:
 _CODE = K.make(openai_tool.CodeInterpreter(container={"type": "auto"}))
 
 
-@guards("36d23724", "openai-code-concatenated")
+def _code_interpreter_calls(events: list[dict[str, Any]]) -> list[Any]:
+    program = (
+        lm.stream_text(prompt="x", toolkit=_CODE, disable_tool_call_resolution=True)
+        .run_collect()
+        .pipe(fx.provide(openai_model.model("gpt-4o-mini").layer))
+        .pipe(fx.provide(_openai_stub(events)))
+    )
+    parts: list[Any] = fx.run_blocking(program)
+    return [part.params["code"] for part in parts if isinstance(part, R.ToolCallPart)]
+
+
 def test_openai_code_interpreter_code_is_folded_in_linear_time() -> None:
     """#34: the code of a code interpreter call arrives as deltas."""
+    assert _code_interpreter_calls(_code_interpreter_events(3, "x")) == ["xxx"]
+    assert_near_linear(
+        lambda n: lambda: _code_interpreter_calls(_code_interpreter_events(n, _DELTA * 4)),
+        128,
+        8 * 128,
+    )
 
-    def run(n: int, piece: str = _DELTA * 4) -> list[Any]:
-        program = (
-            lm.stream_text(prompt="x", toolkit=_CODE, disable_tool_call_resolution=True)
-            .run_collect()
-            .pipe(fx.provide(openai_model.model("gpt-4o-mini").layer))
-            .pipe(fx.provide(_openai_stub(_code_interpreter_events(n, piece))))
-        )
-        return fx.run_blocking(program)
 
-    calls = [p for p in run(3, "x") if isinstance(p, R.ToolCallPart)]
-    assert [call.params["code"] for call in calls] == ["xxx"]
-    assert_near_linear(lambda n: lambda: run(n), 128, 8 * 128)
+@guards("36d23724", "openai-code-concatenated")
+def test_openai_code_interpreter_code_is_not_copied_onto_each_delta() -> None:
+    """#34, counted: copying the code so far onto each delta is quadratic, but where memory
+    copies fast, timing sees it only at sizes a test cannot afford (on Linux 128 to 1024 deltas
+    of 16 KiB grew 15 times, under the bound of 24). Folding 1000 deltas copies at most
+    about the code's length in front of them."""
+    copies = Copies()
+    events = _code_interpreter_events(1000, copies.text("x"))
+    assert _code_interpreter_calls(events) == ["x" * 1000]
+    assert copies.characters <= 1000, f"{copies.characters} characters copied onto the deltas"
 
 
 class _Args(TypedDict):

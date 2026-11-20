@@ -245,6 +245,20 @@ def test_quadratic_work_still_fails(window: float | None) -> None:
         assert_near_linear(make, _BASE, _no_doubling(_BASE), clock=clock)
 
 
+def test_quadratic_work_refused_past_max_size_still_fails() -> None:
+    """The span a flagged comparison is judged again over stays within ``max_size``: past
+    the URL host limit a long host is refused at once, and a span to twice the larger size
+    measured that refusal and passed the quadratic punycode encoder over a step of 16."""
+    clock = _QuietWindowClock()
+    limit = _BASE * 16
+
+    def make(n: int) -> Work:
+        return clock.work(_RUN * (n / _BASE) ** 2 if n <= limit else _RUN / 100)
+
+    with pytest.raises(AssertionError, match="superlinear"):
+        assert_near_linear(make, _BASE, limit, factor=16, clock=clock)
+
+
 @pytest.mark.parametrize("window", _WINDOWS)
 def test_linear_work_passes(window: float | None) -> None:
     clock = _QuietWindowClock(window)
