@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Added
+
+- `fiber_profiler.profiled(eff)` profiles an effect from inside another one, pairing its
+  value with the complete report as `fx.timed` pairs it with a duration:
+  `report, value = yield from fiber_profiler.profiled(program)`. It counts every turn of
+  `eff`, on its own fiber too, and every other fiber's while it runs, as `profile()` does for a
+  block. A profile already running makes it die with `ProfilerBusyError`; a failure or an
+  interruption ends the profile and drops the report.
+
 ### Docs
 
 - The SQL page has a section on `pyfect.sql.schema` (`find_all`, `find_one`,

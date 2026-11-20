@@ -4621,6 +4621,22 @@ def check_schema_decimal(unknown: object) -> None:
     assert_type(S.decode_unknown_sync(S.Decimal)(unknown), decimal.Decimal)
 
 
+def check_fiber_profiler_profiled(failing: fx.Effect[int, ValueError]) -> None:
+    """``profiled`` pairs the effect's value with the report and keeps its error
+    and requirements."""
+    from pyfect import fiber_profiler
+
+    assert_type(
+        fiber_profiler.profiled(failing),
+        fx.Effect[tuple[fiber_profiler.Report, int], ValueError, Never],
+    )
+    assert_type(
+        fx.succeed(1).pipe(fiber_profiler.profiled),
+        fx.Effect[tuple[fiber_profiler.Report, int], Never, Never],
+    )
+    fiber_profiler.profiled(1)  # pyright: ignore[reportArgumentType]
+
+
 class _NotFound(fx.schema.TaggedError):
     id: int
 

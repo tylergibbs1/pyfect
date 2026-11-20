@@ -100,6 +100,19 @@ turn ended, `None` outside every span), each a `FiberTime(cpu_ns, wall_ns, turns
 
 </CodeOutput>
 
+Inside an effect, `fiber_profiler.profiled(eff)` does the same around `eff` and pairs its value
+with the report, as `fx.timed` pairs it with a duration. Every turn of `eff` counts, on its own
+fiber too, and so does every other fiber's while it runs. If `eff` fails or is interrupted, the
+profile ends and the report is dropped.
+
+<CodeOutput>
+
+<include meta='title="fiber_profiled.py"'>../../snippets/observability/fiber_profiled.py</include>
+
+<include lang="text">../../snippets/observability/fiber_profiled.out</include>
+
+</CodeOutput>
+
 Times are exclusive: when a fiber's turn wakes another fiber on the same thread and that fiber
 runs at once, nested in the turn, its time is its own. The profiler watches only the start and
 return of `Fiber._run` through `sys.monitoring`, so it costs nothing while no profile runs and
@@ -117,7 +130,7 @@ noise of not importing it:
 
 So a program whose turns do real work hardly notices it, while one made of turns of a step or
 two, the second and third rows, pays for each. One profile runs at a time, across every
-thread; another raises `ProfilerBusyError`.
+thread; another raises `ProfilerBusyError` (in `profiled`, a defect).
 
 ## Reporting errors
 
