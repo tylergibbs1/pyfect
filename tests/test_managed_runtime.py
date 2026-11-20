@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import Never, Self
 
 import pytest
+from _timing import wait_until
 
 import pyfect as fx
 from pyfect import layer
@@ -446,9 +447,10 @@ def test_dispose_waits_for_a_run_it_meets_while_the_run_starts(
 
     def start_root_after_disposal_began(fiber: fx.Fiber[object, object], eff: object, **kw: bool):
         disposer.start()
-        deadline = time.monotonic() + 2
-        while runtime._fiber_scope._closed is None and time.monotonic() < deadline:  # pyright: ignore[reportPrivateUsage]
-            time.sleep(0.001)
+        wait_until(
+            lambda: runtime._fiber_scope._closed is not None,  # pyright: ignore[reportPrivateUsage]
+            what="the disposal to close the fiber scope",
+        )
         time.sleep(0.05)  # let an unawaiting disposal reach the release
         real_start_root(fiber, eff, **kw)  # pyright: ignore[reportArgumentType]
 

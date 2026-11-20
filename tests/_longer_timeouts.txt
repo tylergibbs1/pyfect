@@ -212,7 +212,7 @@ test_worker_messages_are_copied.py::test_a_backend_copies_or_shares_a_message_as
 test_workers.py::test_a_handler_that_raises_in_the_worker_ends_the_worker 20 seconds  # process backend starts a child Python interpreter importing pyfect and waits for its exit; that runs on its clock, not ours
 test_workers.py::test_a_message_that_cannot_be_pickled_fails_the_send 20 seconds  # starts a child Python interpreter importing pyfect and waits for its echo over a pipe; that process runs on its own clock
 test_workers.py::test_a_process_that_exits_before_it_is_ready_fails_the_run_with_its_code 20 seconds  # waits for a child Python process to exit with code 3 and be reaped; the OS process runs on real time
-test_workers.py::test_a_worker_that_does_not_exit_when_closed_is_killed 20 seconds  # 0.2 s CLOSE_TIMEOUT must fire while a child Python sleeps 60 s, then polls up to 5 s with time.sleep for the OS reap
+test_workers.py::test_a_worker_that_does_not_exit_when_closed_is_killed 20 seconds  # 0.2 s CLOSE_TIMEOUT must fire while a child Python sleeps 60 s, then waits for the OS to reap it
 test_workers.py::test_closing_the_run_ends_a_process_workers_program 20 seconds  # starts a child Python interpreter importing pyfect and closes it (5 s live CLOSE_TIMEOUT); that process runs on its own clock
 test_workers.py::test_closing_the_run_ends_a_thread_workers_program 20 seconds  # blocks on threading.Event.wait(5) for the worker thread's program to end; that wait is real time, not the TestClock
 test_workers.py::test_messages_sent_before_the_worker_is_ready_are_delivered_in_order 20 seconds  # process backend starts a child Python interpreter importing pyfect; its startup and pipe I/O run on its clock, not ours

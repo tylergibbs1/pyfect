@@ -2,9 +2,10 @@
 so sleeps are instant and ordering is deterministic."""
 
 import threading
-import time
 from collections.abc import Callable
 from typing import Never
+
+from _timing import wait_until
 
 import pyfect as fx
 from pyfect import testing
@@ -315,9 +316,7 @@ def test_a_join_from_another_thread_sees_an_exit_landing_as_it_registers():
 
         def append(self, item: object) -> None:
             release.set()
-            deadline = time.monotonic() + 5
-            while fiber.poll_unsafe() is None and time.monotonic() < deadline:
-                time.sleep(0.001)
+            wait_until(lambda: fiber.poll_unsafe() is not None, what="the fiber to finish")
             super().append(item)
 
     fiber._observers = FinishingAsAppended(fiber._observers)  # pyright: ignore[reportPrivateUsage, reportAttributeAccessIssue]

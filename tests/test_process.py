@@ -8,6 +8,7 @@ import errno
 import os
 import signal
 import time
+from collections.abc import Callable
 from typing import Any, Literal
 
 import pytest
@@ -551,18 +552,38 @@ def test_pipes_waiting_on_children_do_not_hold_up_another_pipeline(
 
 
 @testing.live
-def test_concurrent_force_kills_wait_side_by_side(process_services: Services[Platform]):
+def test_concurrent_force_kills_wait_side_by_side(
+    process_services: Services[Platform], monkeypatch: pytest.MonkeyPatch
+):
     handles = yield from fx.for_each(
         range(_MANY),
         lambda _: make("sh", ["-c", "trap '' TERM; echo ready; sleep 30"]),
         concurrency="unbounded",
     )
     yield from fx.for_each(handles, lambda h: h.stdout.run_head(), concurrency="unbounded")
-    start = time.monotonic()
+    sent: list[tuple[int, signal.Signals]] = []
+
+    def recorded(send: Callable[[int, int], None]) -> Callable[[int, int], None]:
+        def send_and_record(pid: int, sig: int) -> None:
+            if sig in (signal.SIGTERM, signal.SIGKILL):
+                sent.append((pid, signal.Signals(sig)))
+            send(pid, sig)
+
+        return send_and_record
+
+    monkeypatch.setattr(os, "kill", recorded(os.kill))
+    monkeypatch.setattr(os, "killpg", recorded(os.killpg))
     yield from fx.for_each(
         handles, lambda h: h.kill(force_kill_after="500 millis"), concurrency="unbounded"
     )
-    assert time.monotonic() - start < 1.5
+    # Side by side, every wait has begun before the first ends in a SIGKILL; kills waiting in
+    # turn (or a few at a time, on a pool's threads) send a SIGTERM after a SIGKILL.
+    pids = {int(h.pid) for h in handles}
+    terms = [at for at, (pid, sig) in enumerate(sent) if sig == signal.SIGTERM]
+    kills = [at for at, (pid, sig) in enumerate(sent) if sig == signal.SIGKILL]
+    assert {pid for pid, sig in sent if sig == signal.SIGTERM} == pids
+    assert {pid for pid, sig in sent if sig == signal.SIGKILL} == pids
+    assert max(terms) < min(kills), [sig.name for _, sig in sent]
 
 
 def test_descriptors_below_3_are_skipped_as_parse_fd_name_skips_them():

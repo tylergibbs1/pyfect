@@ -10,6 +10,7 @@ import threading
 import time
 
 from _subprocess import SUBPROCESS_TIMEOUT
+from _timing import wait_until
 
 import pyfect as fx
 from pyfect import duration
@@ -28,7 +29,7 @@ _ABANDONS_STUCK_WORK = textwrap.dedent(
 
 
 def test_a_process_exits_promptly_with_blocking_work_abandoned() -> None:
-    started = time.monotonic()
+    # The work never ends: a process that waited for it would outlast the test's time limit.
     done = subprocess.run(
         [sys.executable, "-c", _ABANDONS_STUCK_WORK],
         capture_output=True,
@@ -38,7 +39,6 @@ def test_a_process_exits_promptly_with_blocking_work_abandoned() -> None:
     )
     assert done.returncode == 0, done.stderr
     assert done.stdout.strip() == "Failure"
-    assert time.monotonic() - started < 15
 
 
 def test_blocking_threads_are_daemons() -> None:
@@ -53,10 +53,7 @@ def test_idle_threads_exit() -> None:
     futures = [pool.submit(lambda: time.sleep(0.01)) for _ in range(4)]
     for future in futures:
         future.result(timeout=5)
-    deadline = time.monotonic() + 5
-    while pool.threads and time.monotonic() < deadline:
-        time.sleep(0.01)
-    assert pool.threads == 0
+    wait_until(lambda: pool.threads == 0, what="the idle threads to exit")
 
 
 def test_work_beyond_the_idle_threads_starts_a_thread_each() -> None:

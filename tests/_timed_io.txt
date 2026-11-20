@@ -25,12 +25,4 @@ soak/_health.py 1  # soak recorder default clock: latency of real HTTPS, HTTP cl
 soak/_sampler.py 5  # soak sampler on a plain thread: elapsed wall time, process CPU and stall checks of a long real-I/O run; outside any TestClock
 soak/_soak.py 6  # soak run duration and shutdown deadline for live fibers of real servers and sockets; the soak measures the real process over time
 soak/_workload.py 2  # times each soak operation against a real HTTPS server, client and SQLite; real I/O latency is the measurement
-test_base_exceptions.py 3  # bounds a real SIGINT reaching the main thread blocked in select; OS signals and select run on real time
-test_blocking_pool.py 4  # times a subprocess exit with stuck blocking work, and real pool threads exiting on their idle timer; OS threads and processes
-test_fibers.py 2  # deadline for a fiber finishing on another real OS thread inside an observer race; the TestClock does not drive that thread
-test_file_system_watch.py 2  # times interrupting the file watcher's own OS thread until it stops; that thread blocks on OS notifications in real time
-test_interpreter_pool.py 2  # times a script's start-up in its own process to set how long its calls may take: each call imports pyfect again in a new subinterpreter, real time in another process the TestClock does not drive
-test_managed_runtime.py 2  # deadline for a disposer on a real OS thread to begin closing the runtime; the TestClock does not drive that thread
-test_process.py 2  # times concurrent force kills of real sh child processes after 500 ms; OS processes run on real time
 test_schema_recursive_union_cost.py 3  # growth checks handing time.process_time to tests/_growth.py: deep decodes can run on other threads, whose CPU time thread_time misses and the TestClock does not measure
-test_workers.py 4  # times closing a real worker subprocess and waits for its pid to be reaped; OS processes run on real time
