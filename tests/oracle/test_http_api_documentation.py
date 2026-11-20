@@ -8,7 +8,7 @@ count the calls of the function each module answers with.
 import asyncio
 import json
 from collections.abc import Callable
-from typing import Any
+from typing import Any, cast
 from urllib.parse import quote
 
 import pytest
@@ -124,6 +124,21 @@ def test_builder_retries_openapi_path_generation_after_a_defect() -> None:
         openapi.Transform, _counting(transforms, fail_first=True)
     )
     _retries(builder.layer(api, openapi_path="/openapi.json"), "/openapi.json", transforms)
+
+
+def test_bundles_a_scalar_renderer_with_custom_fetch_support() -> None:
+    """HttpApiScalar / bundles a Scalar renderer with customFetch support"""
+    html = _render(scalar.layer(HttpApi.make("Docs")))
+    assert "customFetch" in html, "Expected the bundled Scalar script to contain customFetch"
+
+
+def test_gives_the_bundled_scalar_the_implicit_root_server() -> None:
+    # The bundled Scalar has no page-origin fallback for a document without servers.
+    api = HttpApi.make("Docs")
+    bundled = cast("dict[str, object]", _extract_spec(_render(scalar.layer(api))))
+    cdn = cast("dict[str, object]", _extract_spec(_render(scalar.layer_cdn(api))))
+    assert bundled["servers"] == [{"url": "/"}]
+    assert "servers" not in cdn
 
 
 def test_scalar_defers_and_memoizes_successful_openapi_responses(
