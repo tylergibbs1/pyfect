@@ -25,11 +25,11 @@
   block. A profile already running makes it die with `ProfilerBusyError`; a failure or an
   interruption ends the profile and drops the report.
 - `fx.all` takes one list, tuple or other iterable of effects (`fx.all([a, b])`, giving a
-  tuple of their values in order) or one mapping of them (`fx.all({"a": a, "b": b})`, giving a
-  dict under the same keys, as `fx.all_dict`), the shapes Effect's `Effect.all` takes. Both
-  keep `concurrency`, `discard` and `mode`; they used to fail with `effects[0] must be an
-  Effect, got list`. Writing the effects as arguments, `fx.all(a, b)`, still keeps each value's
-  own type in the tuple.
+  `list` of their values in order, as Effect's array input gives an array) or one mapping of
+  them (`fx.all({"a": a, "b": b})`, giving a dict under the same keys, as `fx.all_dict`), the
+  shapes Effect's `Effect.all` takes. Both keep `concurrency`, `discard` and `mode`; they used
+  to fail with `effects[0] must be an Effect, got list`. Writing the effects as arguments,
+  `fx.all(a, b)`, still gives a tuple keeping each value's own type.
 
 ### Docs
 

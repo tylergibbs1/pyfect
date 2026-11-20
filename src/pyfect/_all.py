@@ -207,7 +207,7 @@ def all[A, EE = Never, RR = Never](
     concurrency: Concurrency = None,
     discard: Literal[False] = False,
     mode: Literal["default"] = "default",
-) -> Effect[tuple[A, ...], EE, RR]: ...
+) -> Effect[list[A], EE, RR]: ...
 @overload
 def all[A, EE = Never, RR = Never](
     effects: Iterable[Effect[A, EE, RR]],
@@ -216,7 +216,7 @@ def all[A, EE = Never, RR = Never](
     concurrency: Concurrency = None,
     discard: Literal[False] = False,
     mode: Literal["result"],
-) -> Effect[tuple[Result[A, EE], ...], Never, RR]: ...
+) -> Effect[list[Result[A, EE]], Never, RR]: ...
 @overload
 def all[EE = Never, RR = Never](
     effects: Iterable[Effect[object, EE, RR]],
@@ -242,9 +242,11 @@ def all(
     mode: Mode = "default",
 ) -> Effect[Any, Any, Any]:
     """Run effects and collect their results as a tuple, in order. As Effect's
-    ``Effect.all``, the effects may also come as one iterable (a tuple of the
-    results) or one mapping (a dict of them under the same keys, as ``all_dict``)."""
+    ``Effect.all``, the effects may also come as one iterable (a list of the
+    results, as Effect's array gives an array) or one mapping (a dict of them under
+    the same keys, as ``all_dict``)."""
     items: tuple[object, ...] = effects
+    collect: Callable[[list[Any]], Any] = tuple
     if len(effects) == 1 and not isinstance(effects[0], EffectBase):
         (only,) = effects
         if isinstance(only, Mapping):
@@ -252,11 +254,12 @@ def all(
             return all_dict(shape, concurrency=concurrency, discard=discard, mode=mode)
         if not isinstance(only, (str, bytes)):
             items = tuple(only)
+            collect = _as_is  # the results list itself, as Effect gives an array
     elif len(effects) > 1:
         _reject_a_collection_among(effects)
     require_effects(items, "effects")
     checked = cast("tuple[Effect[Any, Any, Any], ...]", items)
-    return for_each_into(checked, _step_for(mode), concurrency, None if discard else tuple)
+    return for_each_into(checked, _step_for(mode), concurrency, None if discard else collect)
 
 
 def _reject_a_collection_among(effects: tuple[object, ...]) -> None:

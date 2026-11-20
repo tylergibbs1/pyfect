@@ -991,15 +991,14 @@ def check_structural() -> None:
 
 
 def check_all_shapes(nums: list[fx.Effect[int, NotFound, Port]]) -> None:
-    # Effect.all's array and struct forms: one iterable gives a tuple, one mapping a dict.
+    # Effect.all's array and struct forms: one iterable gives a list (Effect's array), one
+    # mapping a dict; the effects as arguments still give a tuple.
     num = fx.succeed(1)
     nf = fx.fail(NotFound("k"))
-    assert_type(fx.all(nums), fx.Effect[tuple[int, ...], NotFound, Port])
-    assert_type(fx.all([num, nf]), fx.Effect[tuple[int, ...], NotFound, Never])
-    assert_type(fx.all((num, num), concurrency=2), fx.Effect[tuple[int, ...], Never, Never])
-    assert_type(
-        fx.all(nums, mode="result"), fx.Effect[tuple[fx.Result[int, NotFound], ...], Never, Port]
-    )
+    assert_type(fx.all(nums), fx.Effect[list[int], NotFound, Port])
+    assert_type(fx.all([num, nf]), fx.Effect[list[int], NotFound, Never])
+    assert_type(fx.all((num, num), concurrency=2), fx.Effect[list[int], Never, Never])
+    assert_type(fx.all(nums, mode="result"), fx.Effect[list[fx.Result[int, NotFound]], Never, Port])
     assert_type(fx.all(nums, discard=True), fx.Effect[None, NotFound, Port])
     assert_type(fx.all(nums, discard=True, mode="result"), fx.Effect[None, Never, Port])
     assert_type(fx.all({"a": num, "b": nf}), fx.Effect[dict[str, int], NotFound, Never])

@@ -1,8 +1,9 @@
 """`fx.all` takes what Effect's `Effect.all` takes: the effects as arguments, one iterable of
 them (a list, a tuple, a generator), or one mapping of them (Effect's struct).
 
-An iterable gives a tuple of values in order, as `fx.all(*effects)` does; a mapping gives a
-dict under the same keys, as `fx.all_dict(mapping)` does. Types are pinned in
+An iterable gives a list of values in order, as Effect's array input gives an array; a mapping
+gives a dict under the same keys, as `fx.all_dict(mapping)` does. The effects as arguments,
+`fx.all(a, b)`, still give a tuple. Types are pinned in
 `tests/type_checks.py`.
 """
 
@@ -14,24 +15,35 @@ import pyfect as fx
 from pyfect.result import Err, Ok
 
 
-def test_a_list_gives_a_tuple_in_order():
-    assert fx.run_sync(fx.all([fx.succeed(1), fx.succeed(2)])) == (1, 2)
+def test_a_list_gives_a_list_in_order():
+    assert fx.run_sync(fx.all([fx.succeed(1), fx.succeed(2)])) == [1, 2]
 
 
-def test_a_tuple_gives_a_tuple_in_order():
-    assert fx.run_sync(fx.all((fx.succeed(1), fx.succeed("a")))) == (1, "a")
+def test_a_tuple_gives_a_list_in_order():
+    assert fx.run_sync(fx.all((fx.succeed(1), fx.succeed("a")))) == [1, "a"]
+
+
+def test_the_effects_as_arguments_still_give_a_tuple():
+    assert fx.run_sync(fx.all(fx.succeed(1), fx.succeed(2))) == (1, 2)
+
+
+def test_each_run_gives_a_new_list():
+    program = fx.all([fx.succeed(1)])
+    first = fx.run_sync(program)
+    first.append(2)
+    assert fx.run_sync(program) == [1]
 
 
 def test_a_generator_is_read_once_when_called():
     effects = (fx.succeed(n) for n in range(3))
     program = fx.all(effects)
-    assert fx.run_sync(program) == (0, 1, 2)
-    assert fx.run_sync(program) == (0, 1, 2)
+    assert fx.run_sync(program) == [0, 1, 2]
+    assert fx.run_sync(program) == [0, 1, 2]
 
 
-def test_an_empty_list_gives_an_empty_tuple():
+def test_an_empty_list_gives_an_empty_list():
     empty: list[fx.Effect[int]] = []
-    assert fx.run_sync(fx.all(empty)) == ()
+    assert fx.run_sync(fx.all(empty)) == []
 
 
 def test_a_dict_gives_a_dict_under_the_same_keys():
@@ -42,7 +54,7 @@ def test_a_dict_gives_a_dict_under_the_same_keys():
 def test_the_options_apply_to_a_list():
     failing: fx.Effect[int, str] = fx.fail("no")
     program = fx.all([fx.succeed(1), failing], mode="result", concurrency=2)
-    assert fx.run_sync(program) == (Ok(1), Err("no"))
+    assert fx.run_sync(program) == [Ok(1), Err("no")]
     assert fx.run_sync(fx.all([fx.succeed(1)], discard=True)) is None
 
 
