@@ -16,6 +16,12 @@
   destroyed but it is pending"), closing it half done instead of running it to its end or
   cancelling it at stop: a Redis connection released after an interrupt could be lost that way.
 
+- `socket.from_socket` no longer leaks a file descriptor when the fiber opening it is interrupted
+  before the socket loop adopts it. The duplicate the loop watches was made on the fiber, so
+  nothing closed it once the adoption was cancelled; the loop now makes it as it adopts. And
+  interrupting a socket opening on the loop waits until the loop has stopped it, so the scope's
+  finalizers no longer close the caller's socket while the loop is still taking it over.
+
 ## 0.6.15 (2026-11-20)
 
 ### Added

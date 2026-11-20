@@ -310,19 +310,16 @@ def _adopt(sock: socket.socket) -> Effect[Connection, SocketError, Scope]:
     """The loop takes a duplicate of ``sock`` and ``sock`` closes with the scope: the caller
     closing ``sock`` early closes only its own descriptor, never one the loop watches."""
 
-    def body():
-        yield from add_finalizer(lambda _: sync(sock.close))
+    async def connect(conn: Connection) -> object:
+        # Made here, on the loop: an adoption cancelled before it starts makes none.
+        watched = sock.dup()
         try:
-            watched = sock.dup()
-        except OSError as cause:
-            return (yield from fail(open_error(cause)))
-
-        async def connect(conn: Connection) -> object:
             return await get_loop().connect_accepted_socket(lambda: conn, watched)
+        except BaseException:
+            watched.close()
+            raise
 
-        return (yield from connecting(connect).tap_error(lambda _: sync(watched.close)))
-
-    return gen(body)
+    return add_finalizer(lambda _: sync(sock.close)).and_then(connecting(connect))
 
 
 def from_socket(

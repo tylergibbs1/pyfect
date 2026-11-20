@@ -14,7 +14,7 @@ from typing import Any
 from pyfect._core import Effect
 from pyfect._loop_thread import LoopThread
 from pyfect._os_wait import Resume, os_wait
-from pyfect.effect import fail, succeed
+from pyfect.effect import fail, succeed, suspend, sync
 
 
 class _Shared:
@@ -43,24 +43,50 @@ def call_soon(f: Callable[[], object]) -> None:
 
 
 def run[A](make: Callable[[], Coroutine[Any, Any, A]]) -> Effect[A, BaseException]:
-    """Run the coroutine ``make()`` on the loop and wait for its result;
-    interrupting cancels it."""
+    """Run the coroutine ``make()`` on the loop and wait for its result.
+    Interrupting cancels it and waits until it has ended, so whatever it
+    was doing to a socket is over before the fiber goes on (its scope's
+    finalizers close what it opened)."""
 
-    def register(resume: Resume[A, BaseException]) -> Callable[[], None]:
-        future: Future[A] = asyncio.run_coroutine_threadsafe(make(), get_loop())
+    def start() -> Effect[A, BaseException]:
+        loop = get_loop()
+        ended: Future[A] = Future()
+        tasks: list[asyncio.Task[A]] = []
 
+        def end(task: asyncio.Task[A]) -> None:
+            if task.cancelled():
+                ended.set_exception(asyncio.CancelledError())
+            elif (error := task.exception()) is not None:
+                ended.set_exception(error)
+            else:
+                ended.set_result(task.result())
+
+        def begin() -> None:
+            task = loop.create_task(make())
+            task.add_done_callback(end)
+            tasks.append(task)
+
+        def cancel() -> None:
+            # Calls run in order, so ``begin`` has run by now.
+            tasks[0].cancel()
+
+        def stop() -> None:
+            loop.call_soon_threadsafe(cancel)
+
+        loop.call_soon_threadsafe(begin)
+        return _wait(ended).on_interrupt(sync(stop).and_then(_wait(ended).ignore()))
+
+    return suspend(start)
+
+
+def _wait[A](future: Future[A]) -> Effect[A, BaseException]:
+    """``future``'s outcome, once the loop sets it."""
+
+    def register(resume: Resume[A, BaseException]) -> None:
         def done(finished: Future[A]) -> None:
-            if finished.cancelled():
-                resume(fail(asyncio.CancelledError()))
-                return
             error = finished.exception()
             resume(succeed(finished.result()) if error is None else fail(error))
 
         future.add_done_callback(done)
-
-        def cancel() -> None:
-            future.cancel()
-
-        return cancel
 
     return os_wait(register, waits_for="work")
