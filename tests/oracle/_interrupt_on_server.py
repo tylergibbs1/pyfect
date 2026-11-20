@@ -18,10 +18,9 @@ MySQL 8.4: about 5 s into a ``SLEEP``, and not within 20 s for a busy ``SELECT``
 
 
 def until_running(on_server: Callable[[], object]) -> Generator[Any, Any]:
-    """Wait until the statement ``on_server`` looks for has reached the server."""
-    deadline = time.monotonic() + 15
+    """Wait until the statement ``on_server`` looks for has reached the server (one that never
+    does fails the test at its time limit)."""
     while not (yield from fx.blocking(on_server)):
-        assert time.monotonic() < deadline, "the statement never reached the server"
         yield from fx.sleep("20 millis")
 
 

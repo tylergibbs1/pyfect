@@ -30,19 +30,15 @@ from pyfect.sql._loop import get_loop
 from pyfect.sql.error import SqlError
 
 _LOCK = 4242
-_SETTLE = 30.0
 
 
 def _until(watcher: psycopg.Connection[Any], sql: LiteralString, pid: int) -> fx.Effect[None]:
     """Poll until ``sql`` finds a row for ``pid``, sleeping between polls so
-    the fibers the test waits on keep running."""
-    deadline = time.monotonic() + _SETTLE
+    the fibers the test waits on keep running (the test's subprocess timeout ends a hang)."""
 
     def check() -> fx.Effect[None]:
         if watcher.execute(sql, (pid,)).fetchone() is not None:
             return fx.void
-        if time.monotonic() >= deadline:
-            return fx.die(TimeoutError(sql))
         return fx.sleep("10 millis").and_then(fx.suspend(check))
 
     return fx.suspend(check)

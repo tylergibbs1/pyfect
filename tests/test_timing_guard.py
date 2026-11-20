@@ -37,7 +37,7 @@ _TESTS_THE_HELPER = frozenset({"test_growth_checks.py"})
 
 _CLOCKS = frozenset(
     f"{name}{suffix}"
-    for name in ("perf_counter", "monotonic", "thread_time", "process_time")
+    for name in ("perf_counter", "monotonic", "thread_time", "process_time", "time")
     for suffix in ("", "_ns")
 )
 
@@ -84,10 +84,10 @@ def test_the_guard_sees_every_way_to_read_the_clock() -> None:
     source = (
         "import time\nfrom time import perf_counter, sleep\n"
         "a = time.monotonic()\nb = time.perf_counter_ns()\nc = perf_counter()\n"
-        "d = time.thread_time()\ntime.sleep(1)\nclock.monotonic()\n"
+        "d = time.thread_time()\ntime.sleep(1)\nclock.monotonic()\ne = time.time_ns()\n"
     )
     # The import of perf_counter counts once, the call through it not again.
-    assert _clock_reads(ast.walk(_source.parse(source))) == 4
+    assert _clock_reads(ast.walk(_source.parse(source))) == 5
 
 
 def _timings(scope: ast.AST) -> dict[str, int]:

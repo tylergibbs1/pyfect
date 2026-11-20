@@ -218,9 +218,8 @@ def test_an_interrupted_remote_statement_finishes_on_the_server(libsql_server: L
     yield from fx.sleep("200 millis")
     yield from fiber.interrupt()
     yield from fiber.await_exit()
-    deadline = time.monotonic() + 30
+    # A statement that never finishes fails the test at its time limit.
     while not (yield from sql("SELECT n FROM interrupted_finishes")):
-        assert time.monotonic() < deadline, "the statement did not finish on the server"
         yield from fx.sleep("100 millis")
     yield from sql("DROP TABLE interrupted_finishes")
 

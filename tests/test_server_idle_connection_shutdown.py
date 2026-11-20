@@ -6,6 +6,7 @@ hypercorn's shutdown that long (dogfood turnstile #2)."""
 
 from __future__ import annotations
 
+import asyncio.constants
 import datetime as dt
 import socket
 import ssl
@@ -16,6 +17,7 @@ from typing import Any, Literal
 
 import httpx
 import pytest
+from _timing import PAST_ANY_TEST, wait_until
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
@@ -31,15 +33,22 @@ from pyfect.http import (
     server_response,
     uvicorn_server,
 )
-from pyfect.http.live_server._listener import ABORT_GRACE_PERIOD
 from pyfect.net.net_address import InetAddressV4
 from pyfect.scope import scoped
 from pyfect.socket import server as socket_server
 
 GRACEFUL_SECONDS = 2.0
-SLACK_SECONDS = 1.0
-"""Beyond what Effect takes: scheduling on a busy runner, and uvicorn polls its connections
-every 0.1 s."""
+
+_PAST = PAST_ANY_TEST.to_seconds()
+"""A timeout in seconds, for the engines' configs, that the test never lives to see."""
+
+
+@pytest.fixture(autouse=True)
+def _slow_paths_past_the_test(monkeypatch: pytest.MonkeyPatch) -> None:
+    """asyncio's TLS waits (60 s for a handshake, 30 s for the client's ``close_notify``) past
+    the test's time limit: a shutdown or close that waits for them fails as hung."""
+    monkeypatch.setattr(asyncio.constants, "SSL_HANDSHAKE_TIMEOUT", _PAST)
+    monkeypatch.setattr(asyncio.constants, "SSL_SHUTDOWN_TIMEOUT", _PAST)
 
 
 @dataclass(frozen=True)
@@ -86,31 +95,41 @@ type Http = Literal["h1", "h2"]
 def _server(
     adapter: Adapter, pem: Pem | None, graceful: float = GRACEFUL_SECONDS
 ) -> fx.Layer[Any, Any, Any]:
+    """The adapter's server, with every timeout that would close an idle or stalled connection
+    by itself (keep-alive, TLS handshake) past the test's time limit."""
     timeout = f"{graceful} seconds"
     host = "127.0.0.1"
     match adapter:
         case "hypercorn":
-            config = {} if pem is None else {"certfile": pem.cert_path, "keyfile": pem.key_path}
+            config: dict[str, Any] = {"keep_alive_timeout": _PAST, "ssl_handshake_timeout": _PAST}
+            if pem is not None:
+                config |= {"certfile": pem.cert_path, "keyfile": pem.key_path}
             return hypercorn_server.layer(
                 host=host, graceful_shutdown_timeout=timeout, config=config
             )
         case "uvicorn":
-            config = (
-                {} if pem is None else {"ssl_certfile": pem.cert_path, "ssl_keyfile": pem.key_path}
-            )
+            config = {"timeout_keep_alive": _PAST}
+            if pem is not None:
+                config |= {"ssl_certfile": pem.cert_path, "ssl_keyfile": pem.key_path}
             return uvicorn_server.layer(host=host, graceful_shutdown_timeout=timeout, config=config)
         case "live":
             if pem is None:
-                return live_server.layer(host=host, graceful_shutdown_timeout=timeout)
+                return live_server.layer(
+                    host=host, graceful_shutdown_timeout=timeout, keep_alive_timeout=PAST_ANY_TEST
+                )
             made = live_server.make_tls(
-                host=host, graceful_shutdown_timeout=timeout, cert=pem.cert, key=pem.key
+                host=host,
+                graceful_shutdown_timeout=timeout,
+                keep_alive_timeout=PAST_ANY_TEST,
+                cert=pem.cert,
+                key=pem.key,
+                handshake_timeout=PAST_ANY_TEST,
             )
             return layer.merge(layer.effect(server.HttpServer, made), live_server.layer_services)
 
 
-def _shutdown_seconds(adapter: Adapter, http: Http, pem: Pem | None) -> float:
-    """Serve one request on a connection the client then keeps open, and time how long the
-    server takes to stop."""
+def _shut_down(adapter: Adapter, http: Http, pem: Pem | None, graceful: float) -> None:
+    """Serve one request on a connection the client then keeps open, and stop the server."""
     ports: list[int] = []
     stop, stopped, ready = threading.Event(), threading.Event(), threading.Event()
 
@@ -124,7 +143,9 @@ def _shutdown_seconds(adapter: Adapter, http: Http, pem: Pem | None) -> float:
 
     routes = router.add("GET", "/", server_response.text("ok"))
     app = router.serve(routes, disable_logger=True, disable_listen_log=True)
-    program = scoped(serving().pipe(fx.provide(app))).pipe(fx.provide(_server(adapter, pem)))
+    program = scoped(serving().pipe(fx.provide(app))).pipe(
+        fx.provide(_server(adapter, pem, graceful))
+    )
 
     def run() -> None:
         fx.run_blocking(program.or_die())
@@ -142,10 +163,8 @@ def _shutdown_seconds(adapter: Adapter, http: Http, pem: Pem | None) -> float:
             "HTTP/1.1" if http == "h1" else "HTTP/2",
             "ok",
         )
-        started = time.monotonic()
         stop.set()
-        assert stopped.wait(60), "the server did not stop"
-        return time.monotonic() - started
+        wait_until(stopped.is_set, what="the server to stop")
 
 
 def _cases() -> list[Any]:
@@ -158,17 +177,17 @@ def _cases() -> list[Any]:
     return cases
 
 
-EFFECT_SECONDS: dict[Http, float] = {"h1": 0.0, "h2": GRACEFUL_SECONDS}
-"""What ``NodeHttpServer`` (``node:http2``'s secure server allowing HTTP/1.1) takes: it
-closes idle HTTP/1.1 connections at once and waits for HTTP/2 sessions up to the timeout."""
+GRACEFUL: dict[Http, float] = {"h1": PAST_ANY_TEST.to_seconds(), "h2": GRACEFUL_SECONDS}
+"""What ``NodeHttpServer`` (``node:http2``'s secure server allowing HTTP/1.1) does: it closes
+idle HTTP/1.1 connections at once, so waiting for the timeout fails as hung, and waits for
+HTTP/2 sessions up to the timeout, so that one ends within the test."""
 
 
 @pytest.mark.parametrize(("adapter", "http", "tls"), _cases())
 def test_an_idle_keep_alive_connection_does_not_hold_the_shutdown(
     adapter: Adapter, http: Http, tls: bool, pem: Pem
 ) -> None:
-    took = _shutdown_seconds(adapter, http, pem if tls else None)
-    assert took <= EFFECT_SECONDS[http] + SLACK_SECONDS, f"shutdown took {took:.2f}s"
+    _shut_down(adapter, http, pem if tls else None, GRACEFUL[http])
 
 
 type Stall = Literal["silent", "partial-hello"]
@@ -177,13 +196,9 @@ STALLS: dict[Stall, bytes] = {"silent": b"", "partial-hello": b"\x16\x03\x01\x02
 """What a client that never finishes its TLS handshake sends: nothing, or the start of a
 ClientHello."""
 
-STALL_SLACK_SECONDS = 2.0
-"""As ``SLACK_SECONDS``, doubled: the stall held shutdown for the handshake timeout (10 or 60
-seconds), so a looser bound still catches it and stays clear of a loaded runner."""
 
-
-def _stalled_shutdown_seconds(adapter: Adapter, stall: Stall, pem: Pem, graceful: float) -> float:
-    """Time how long the server takes to stop while a client sits in its TLS handshake."""
+def _stalled_shut_down(adapter: Adapter, stall: Stall, pem: Pem, graceful: float) -> None:
+    """Stop the server while a client sits in its TLS handshake."""
     ports: list[int] = []
     stop, stopped, ready = threading.Event(), threading.Event(), threading.Event()
 
@@ -209,10 +224,8 @@ def _stalled_shutdown_seconds(adapter: Adapter, stall: Stall, pem: Pem, graceful
     with socket.create_connection(("127.0.0.1", ports[0])) as client:
         client.sendall(STALLS[stall])
         time.sleep(0.1)  # let the server accept it
-        started = time.monotonic()
         stop.set()
-        assert stopped.wait(20), "the server did not stop"
-        return time.monotonic() - started
+        wait_until(stopped.is_set, what="the server to stop")
 
 
 @pytest.mark.parametrize("stall", list(STALLS))
@@ -221,12 +234,9 @@ def test_a_stalled_tls_handshake_does_not_hold_the_shutdown(
     adapter: Adapter, stall: Stall, pem: Pem
 ) -> None:
     """``NodeHttpServer`` over https stops within ``gracefulShutdownTimeout`` while a client
-    never finishes its handshake. The bound: the graceful timeout, then the abort grace
-    period every adapter gives requests interrupted at its end."""
-    graceful = 1.0
-    took = _stalled_shutdown_seconds(adapter, stall, pem, graceful)
-    bound = graceful + ABORT_GRACE_PERIOD.to_seconds() + STALL_SLACK_SECONDS
-    assert took <= bound, f"shutdown took {took:.2f}s"
+    never finishes its handshake: the stall held it for the handshake timeout (10 or 60 s),
+    past the test's time limit."""
+    _stalled_shut_down(adapter, stall, pem, graceful=1.0)
 
 
 type SocketServerKind = Literal["web-socket-tls", "web-socket", "tls"]
@@ -237,10 +247,12 @@ def _socket_server(kind: SocketServerKind, pem: Pem) -> fx.Effect[Any, Any, Any]
         case "web-socket-tls":
             context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
             context.load_cert_chain(pem.cert_path, pem.key_path)
-            return socket_server.make_web_socket(0, "127.0.0.1", ssl=context)
+            return socket_server.make_web_socket(0, "127.0.0.1", ssl=context, open_timeout=_PAST)
         case "web-socket":
-            return socket_server.make_web_socket(0, "127.0.0.1")
+            # websockets' open timeout is 10 s by default, its TLS handshake's too.
+            return socket_server.make_web_socket(0, "127.0.0.1", open_timeout=_PAST)
         case "tls":
+            # make_tls waits 120 s for a handshake: past the test's time limit already.
             return socket_server.make_tls(cert=pem.cert, key=pem.key, host="127.0.0.1")
 
 
@@ -271,11 +283,9 @@ def test_a_connection_still_opening_does_not_hold_a_socket_servers_close(
     with socket.create_connection(("127.0.0.1", ports[0])) as client:
         client.sendall(STALLS[stall])
         time.sleep(0.1)  # let the server accept it
-        started = time.monotonic()
         stop.set()
-        assert stopped.wait(20), "the server did not stop"
-        took = time.monotonic() - started
-    assert took <= ABORT_GRACE_PERIOD.to_seconds() + STALL_SLACK_SECONDS, f"close took {took:.2f}s"
+        # The stall held the close for the handshake timeout, past the test's time limit.
+        wait_until(stopped.is_set, what="the socket server to close")
 
 
 def test_every_server_adapter_is_covered() -> None:

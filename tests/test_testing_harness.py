@@ -6,6 +6,7 @@ import threading
 import time
 
 import pytest
+from _timing import PAST_ANY_TEST
 
 import pyfect as fx
 from pyfect import layer, testing
@@ -123,11 +124,10 @@ def test_the_ini_timeout_is_the_default(pytester: pytest.Pytester) -> None:
             yield from fx.sleep("5 seconds")
         """
     )
-    started = time.monotonic()
     result = pytester.runpytest()
+    # A test that ran its 5 s sleep out would pass, not time out after 0.05 s.
     result.assert_outcomes(failed=1)
     result.stdout.fnmatch_lines(["*test timed out after 0.05s*"])
-    assert time.monotonic() - started < 3
 
 
 @pytest.mark.parametrize(
@@ -218,10 +218,9 @@ def test_a_test_that_finishes_after_its_timeout_fails_saying_it_finished() -> No
 
 
 def test_the_not_advancing_warning_does_not_delay_a_stall() -> None:
-    started = time.monotonic()
+    # A stall that waited for the warning would outlast the test's time limit.
     with pytest.raises(testing.StalledError):
-        testing.run_test(fx.sleep("1 second"), stall_timeout=0.05, warning_delay="10 seconds")
-    assert time.monotonic() - started < 1
+        testing.run_test(fx.sleep("1 second"), stall_timeout=0.05, warning_delay=PAST_ANY_TEST)
 
 
 def test_blocking_work_longer_than_the_stall_timeout_is_not_a_stall() -> None:

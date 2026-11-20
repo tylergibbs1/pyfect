@@ -7,12 +7,12 @@ costs nothing. A woken fiber that never suspends makes adjust give up after
 ``warning_delay`` with a ``BusyFiberWarning``."""
 
 import math
-import time
 import warnings
 from collections.abc import Generator
 from contextlib import contextmanager
 
 import pytest
+from _timing import PAST_ANY_TEST
 
 import pyfect as fx
 from pyfect import testing
@@ -55,10 +55,9 @@ def test_adjust_sees_a_woken_fiber_that_finished_while_adjust_paused(budget: int
         yield from testing.adjust("1 second").pipe(fx.provide_service(fx.MaxOpsBeforeYield, budget))
         yield from sleeper.join()
 
-    started = time.monotonic()
+    # Waiting at all would outlast the test's time limit, with or without a warning.
     with _no_busy_warning():
-        testing.run_test(program, warning_delay="1 second")
-    assert time.monotonic() - started < 0.5
+        testing.run_test(program, warning_delay=PAST_ANY_TEST)
 
 
 def test_adjust_does_not_wait_for_a_busy_fiber_it_did_not_wake():
@@ -71,10 +70,9 @@ def test_adjust_does_not_wait_for_a_busy_fiber_it_did_not_wake():
         yield from busy.interrupt()
         return woke
 
-    started = time.monotonic()
+    # Waiting for the busy fiber would outlast the test's time limit: it never suspends.
     with _no_busy_warning():
-        assert testing.run_test(program, warning_delay="1 second") == "woke"
-    assert time.monotonic() - started < 0.5
+        assert testing.run_test(program, warning_delay=PAST_ANY_TEST) == "woke"
 
 
 def test_adjust_warns_and_moves_on_when_a_woken_fiber_never_suspends():
@@ -87,10 +85,9 @@ def test_adjust_warns_and_moves_on_when_a_woken_fiber_never_suspends():
         yield from busy.interrupt()
         return result
 
-    started = time.monotonic()
+    # Moving on is finishing at all: the busy fiber never suspends.
     with pytest.warns(testing.BusyFiberWarning, match="still running without suspending"):
         assert testing.run_test(program, warning_delay="50 millis") == "later"
-    assert time.monotonic() - started < 1
 
 
 @testing.effect

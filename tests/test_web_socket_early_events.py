@@ -11,11 +11,11 @@ from __future__ import annotations
 
 import ast
 import threading
-import time
 
 import _ports
 import _source
 import pytest
+from _timing import wait_until
 
 import pyfect as fx
 from pyfect.scope import scoped
@@ -49,10 +49,7 @@ def _settled(url: str, options: WebSocketClientOptions) -> WebSocketLike:
     """A client connected to ``url`` that has closed, and whose loop has
     dispatched every event, before anything listens to it."""
     ws = WsWebSocket.connect(url, options)
-    deadline = time.monotonic() + 10
-    while ws.ready_state != _CLOSED:
-        assert time.monotonic() < deadline, "the WebSocket did not close"
-        time.sleep(0.001)
+    wait_until(lambda: ws.ready_state == _CLOSED, what="the WebSocket to close")
     # The close event is dispatched in the loop step that closed it.
     dispatched = threading.Event()
     call_soon(dispatched.set)

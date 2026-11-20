@@ -12,12 +12,12 @@ import signal
 import subprocess
 import sys
 import tempfile
-import time
 from collections.abc import Generator, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
+from _timing import settled
 
 from . import _pg_owner, _postgres
 
@@ -112,13 +112,8 @@ def _running(data_dir: Path) -> bool:
     return _pg_owner._postmaster(data_dir) is not None  # pyright: ignore[reportPrivateUsage]
 
 
-def _gone_within(data_dir: Path, seconds: float) -> bool:
-    deadline = time.monotonic() + seconds
-    while time.monotonic() < deadline:
-        if not _running(data_dir) and not data_dir.parent.exists():
-            return True
-        time.sleep(0.05)
-    return False
+def _gone(data_dir: Path) -> bool:
+    return settled(lambda: not _running(data_dir) and not data_dir.parent.exists(), poll=0.05)
 
 
 @pytest.mark.parametrize("sig", [signal.SIGTERM, signal.SIGINT, signal.SIGKILL])
@@ -128,7 +123,7 @@ def test_a_server_stops_when_its_owner_dies(tempdir: Path, sig: signal.Signals) 
         assert _running(data_dir)
         child.send_signal(sig)
         child.wait(10)
-    assert _gone_within(data_dir, 10)
+    assert _gone(data_dir)
 
 
 def test_starting_a_server_reaps_one_whose_owner_and_watchdog_died(tempdir: Path) -> None:
@@ -141,9 +136,9 @@ def test_starting_a_server_reaps_one_whose_owner_and_watchdog_died(tempdir: Path
     assert _running(data_dir)
 
     with _start_child(tempdir) as (survivor, survivor_dir, _):
-        assert _gone_within(data_dir, 10)
+        assert _gone(data_dir)
         assert _running(survivor_dir)
         assert _pg_owner.reap(tempdir) == []
         survivor.terminate()
         survivor.wait(10)
-    assert _gone_within(survivor_dir, 10)
+    assert _gone(survivor_dir)

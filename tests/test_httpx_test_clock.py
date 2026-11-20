@@ -3,12 +3,12 @@
 per adjust and warn)."""
 
 import threading
-import time
 from collections.abc import Iterator
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
 import pytest
+from _timing import PAST_ANY_TEST
 
 import pyfect as fx
 from pyfect import testing
@@ -31,7 +31,7 @@ class _Trickle(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(b"5\r\nfirst\r\n")
         self.wfile.flush()
-        type(self).release.wait(10)
+        type(self).release.wait()
         self.wfile.write(b"0\r\n\r\n")
         self.close_connection = True
 
@@ -49,7 +49,7 @@ def trickle_server() -> Iterator[str]:
 
 
 @pytest.mark.filterwarnings("error::pyfect.testing.BusyFiberWarning")
-@testing.effect(warning_delay="500 millis")
+@testing.effect(warning_delay=PAST_ANY_TEST)
 def test_an_idle_streaming_body_is_not_test_clock_work(trickle_server: str):
     pytest.importorskip("httpx")
     from pyfect.http import httpx_client
@@ -63,11 +63,10 @@ def test_an_idle_streaming_body_is_not_test_clock_work(trickle_server: str):
         return c.get(trickle_server).flat_map(body).pipe(fx.provide(httpx_client.layer))
 
     reading = yield from fx.scoped(read()).fork()
-    started = time.monotonic()
+    # Waiting for the body, warned or not, would outlast the test's time limit.
     for _ in range(3):
         yield from testing.adjust("1 second")
-    elapsed = time.monotonic() - started
+    assert reading.poll_unsafe() is None, "adjust waited for the body to end"
     _Trickle.release.set()
     yield from reading.join()
     assert chunks[0] == b"first"
-    assert elapsed < 0.5, f"adjust waited {elapsed:.2f}s for an idle body"

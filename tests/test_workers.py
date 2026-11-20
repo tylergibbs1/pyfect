@@ -6,12 +6,12 @@ from __future__ import annotations
 
 import os
 import threading
-import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 import pytest
+from _timing import wait_until
 
 import pyfect as fx
 from pyfect import effect, layer, testing
@@ -263,22 +263,18 @@ def test_a_worker_that_does_not_exit_when_closed_is_killed(
         while not pid_file.exists() or not pid_file.read_text():
             yield from fx.sleep("50 millis")
 
-    started = time.monotonic()
+    # A close that waited for the 60 s sleep would outlast the test's time limit.
     yield from scoped(body)
-    assert time.monotonic() - started < 5
     pid = int(pid_file.read_text())
-    assert _gone(pid)
+    wait_until(lambda: _gone(pid), what=f"worker {pid} to be reaped", poll=0.05)
 
 
 def _gone(pid: int) -> bool:
-    """Whether ``pid`` has exited and been reaped, within a few seconds."""
-    deadline = time.monotonic() + 5
-    while time.monotonic() < deadline:
-        try:
-            os.kill(pid, 0)
-        except ProcessLookupError:
-            return True
-        time.sleep(0.05)
+    """Whether ``pid`` has exited and been reaped."""
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return True
     return False
 
 

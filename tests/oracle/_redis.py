@@ -17,12 +17,12 @@ import shutil
 import socket
 import subprocess
 import tempfile
-import time
 from dataclasses import dataclass
 from pathlib import Path
 
 import _container_images
 import _ports
+from _timing import settled
 
 from . import _docker as _containers
 from ._shared_server import SharedServer
@@ -132,11 +132,9 @@ def _start() -> RedisServer:
         stderr=subprocess.DEVNULL,
     )
     atexit.register(_stop, process, root)
-    deadline = time.monotonic() + 10
-    while not _ready(port):
-        if process.poll() is not None or time.monotonic() > deadline:
-            raise RuntimeError("redis-server did not start")
-        time.sleep(0.02)
+    settled(lambda: process.poll() is not None or _ready(port), poll=0.02)
+    if not _ready(port):
+        raise RuntimeError("redis-server did not start")
     return RedisServer("127.0.0.1", port)
 
 

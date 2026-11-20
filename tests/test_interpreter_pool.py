@@ -10,7 +10,6 @@ import subprocess
 import sys
 import textwrap
 import threading
-import time
 from pathlib import Path
 from types import ModuleType
 from typing import IO, Any
@@ -283,7 +282,6 @@ def _run_script(tmp_path: Path, body: str) -> list[str]:
     script.write_text(SCRIPT_HEAD + textwrap.dedent(body))
     lines: list[str] = []
     started = threading.Event()
-    begin = time.monotonic()
     with (tmp_path / "stderr.txt").open("w+") as stderr:
         process = subprocess.Popen(
             [sys.executable, str(script)],
@@ -307,12 +305,11 @@ def _run_script(tmp_path: Path, body: str) -> list[str]:
         if not started.wait(STARTUP_LIMIT):
             hung = f"did not start in {STARTUP_LIMIT} s"
         else:
-            limit = min(CALLS_PER_STARTUP * (time.monotonic() - begin), CALLS_LIMIT)
             try:
-                process.wait(limit)
+                process.wait(CALLS_LIMIT)
                 hung = None
             except subprocess.TimeoutExpired:
-                hung = f"hung for {limit:.1f} s after it started"
+                hung = f"hung for {CALLS_LIMIT:g} s after it started"
         if hung is not None:
             process.send_signal(signal.SIGUSR1)
             with contextlib.suppress(subprocess.TimeoutExpired):

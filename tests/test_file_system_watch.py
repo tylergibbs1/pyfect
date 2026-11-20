@@ -147,21 +147,20 @@ def test_a_file_in_a_new_directory_is_created_even_if_only_its_write_was_seen(
 
 def test_the_watcher_runs_on_its_own_thread_and_interrupting_stops_it(tmp_path: Path):
     @fx.fn
-    def program() -> Generator[fx.Effect[Any, Any, Any], Any, tuple[int, float]]:
+    def program() -> Generator[fx.Effect[Any, Any, Any], Any, int]:
         fs = yield from FileSystem()
         ready = yield from fx.Latch.make()
         fiber = yield from fs.watch(str(tmp_path), on_ready=_opener(ready)).run_drain().fork()
         yield from ready.wait()
         watching = len(_watcher_threads())
-        started = time.monotonic()
+        # The thread waits for events that never come: only the stop ends it.
         yield from fiber.interrupt()
-        return watching, time.monotonic() - started
+        return watching
 
     before = len(_watcher_threads())
-    watching, took = fx.run_blocking(program().pipe(fx.provide(file_system.layer)).or_die())
+    watching = fx.run_blocking(program().pipe(fx.provide(file_system.layer)).or_die())
     assert watching == before + 1
     assert len(_watcher_threads()) == before
-    assert took < 1
 
 
 def test_a_stream_that_ends_stops_its_watcher(tmp_path: Path):

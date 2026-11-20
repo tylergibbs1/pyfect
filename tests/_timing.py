@@ -7,7 +7,7 @@ through ``tests/_growth.py``, and timing a test checks (a timeout firing, a retr
 spacing) goes through the ``TestClock``. ``at_least`` checks real I/O took at least so
 long (a server waiting out its own timer); it has no upper bound to give, as load only
 ever slows a block down. Check that something real happens promptly by ordering it
-before a later event instead.
+before a later event instead, or by setting the slow path's timeout to ``PAST_ANY_TEST``.
 """
 
 from __future__ import annotations
@@ -15,6 +15,13 @@ from __future__ import annotations
 import time
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
+
+from pyfect import duration
+
+PAST_ANY_TEST = duration.minutes(10)
+"""A timeout no test lives to see, ten times the 60 s per-test alarm (``tests/_timeout.py``).
+A test that checks something real happens promptly sets the slow path's timeout to this, so
+taking that path fails the test as hung and nothing is timed."""
 
 HANG_SECONDS = 30.0
 """How long ``wait_until`` polls before it calls a wait a hang, well under the 60 s

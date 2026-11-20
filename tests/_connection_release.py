@@ -18,11 +18,12 @@ import gc
 import os
 import socket
 import threading
-import time
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
+
+from _timing import settled
 
 import pyfect as fx
 from pyfect import layer
@@ -118,12 +119,10 @@ def local_ends_connected_to(server: object) -> set[object]:
     return {local for local, peer in _connections() if peer == server}
 
 
-def _settled(server: _Address, timeout: float = 2.0) -> int:
-    """Sockets still connected to ``server``, once closing has settled."""
-    deadline = time.monotonic() + timeout
-    while (left := connected_to(server)) and time.monotonic() < deadline:
-        time.sleep(0.01)
-    return left
+def _settled(server: _Address, kept: int) -> int:
+    """Sockets still connected to ``server``, once no more than ``kept`` are (or a hang)."""
+    settled(lambda: connected_to(server) <= kept, poll=0.01)
+    return connected_to(server)
 
 
 _SERVICES = layer.merge(
@@ -131,8 +130,9 @@ _SERVICES = layer.merge(
 )
 
 
-def open_after(send: Send, *, times: int = 5) -> int:
-    """The sockets left open after ``times`` runs of ``send``."""
+def open_after(send: Send, *, times: int = 5, kept: int = 0) -> int:
+    """The sockets left open after ``times`` runs of ``send``, once the client has closed all
+    but the ``kept`` ones the program holds."""
 
     @fx.gen
     def program():
@@ -141,7 +141,7 @@ def open_after(send: Send, *, times: int = 5) -> int:
             yield from send(client, url).ignore()
         # Leave the run the last send's fibers resumed this one in.
         yield from fx.yield_now()
-        return _settled(server)
+        return _settled(server, kept)
 
     with _server() as server, _without_cycle_collection():
         url = f"http://{server[0]}:{server[1]}"

@@ -22,7 +22,6 @@ import socket
 import subprocess
 import tempfile
 import threading
-import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -294,8 +293,8 @@ def wait_until_active(
     (blocked on an advisory lock, with ``advisory_lock``)."""
 
     def body():
-        started = time.monotonic()
-        while time.monotonic() - started < 10:
+        # A backend that never runs it fails the test at its time limit.
+        while True:
             result = yield from observer.query(
                 "SELECT count(*)::int4 AS active FROM pg_stat_activity"
                 " WHERE pid = $1 AND state = 'active'"
@@ -305,7 +304,6 @@ def wait_until_active(
             if result.rows[0]["active"] == 1:
                 return
             yield from fx.sleep("10 millis")
-        raise AssertionError(f"PostgreSQL backend {pid} did not become active within 10 seconds")
 
     return fx.gen(body)
 

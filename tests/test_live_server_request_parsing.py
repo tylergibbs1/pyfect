@@ -5,11 +5,11 @@ forever: requests sent as raw bytes over a loopback socket."""
 from __future__ import annotations
 
 import socket
-import time
 from typing import Any
 
 import pytest
-from oracle._live_http import TIMEOUT, parse_responses, port, run_live, until_close, with_socket
+from _timing import PAST_ANY_TEST, at_least
+from oracle._live_http import parse_responses, port, run_live, until_close, with_socket
 
 import pyfect as fx
 from pyfect import effect
@@ -161,16 +161,15 @@ def test_well_formed_trailers_end_the_body() -> None:
 # --- request timeout (finding 13) ------------------------------------------------
 
 
-def _held(head: bytes, **options: Any) -> float:
-    """Seconds until the server closes a connection that sent ``head`` and
-    then nothing (the app answers without reading the body)."""
+def _held(head: bytes, **options: Any) -> None:
+    """The server closes a connection that sent ``head`` and then nothing (the app answers
+    without reading the body), and not before the request timeout."""
 
-    def use(conn: socket.socket) -> float:
-        started = time.monotonic()
-        conn.sendall(head)
-        while conn.recv(65536):
-            pass
-        return time.monotonic() - started
+    def use(conn: socket.socket) -> None:
+        with at_least(0.2, what="closing at the request timeout"):
+            conn.sendall(head)
+            while conn.recv(65536):
+                pass
 
     def program() -> Any:
         at = yield from port
@@ -178,26 +177,23 @@ def _held(head: bytes, **options: Any) -> float:
 
     app = router.add("*", "*", effect.succeed(server_response.empty(status=404)))
     served = effect.gen(program).pipe(fx.provide(router.serve(app, disable_logger=True)))
-    return run_live(served, **options)
+    run_live(served, **options)
 
 
 @pytest.mark.parametrize("framing", [b"Content-Length: 1\r\n", b"Transfer-Encoding: chunked\r\n"])
 def test_a_body_that_never_arrives_is_cut_off_at_the_request_timeout(framing: bytes) -> None:
     head = b"POST /x HTTP/1.1\r\nHost: a\r\n" + framing + b"\r\n"
-    elapsed = _held(
-        head, request_timeout="300 millis", keep_alive_timeout=fx.duration.seconds(TIMEOUT)
-    )
-    assert 0.2 < elapsed < TIMEOUT / 2
+    _held(head, request_timeout="300 millis", keep_alive_timeout=PAST_ANY_TEST)
 
 
 def test_a_body_read_by_the_app_is_cut_off_at_the_request_timeout() -> None:
-    def use(conn: socket.socket) -> tuple[bytes, float]:
-        started = time.monotonic()
-        conn.sendall(b"POST /x HTTP/1.1\r\nHost: a\r\nContent-Length: 10\r\n\r\nab")
+    def use(conn: socket.socket) -> bytes:
         received = bytearray()
-        while chunk := conn.recv(65536):
-            received += chunk
-        return bytes(received), time.monotonic() - started
+        with at_least(0.2, what="closing at the request timeout"):
+            conn.sendall(b"POST /x HTTP/1.1\r\nHost: a\r\nContent-Length: 10\r\n\r\nab")
+            while chunk := conn.recv(65536):
+                received += chunk
+        return bytes(received)
 
     def program() -> Any:
         at = yield from port
@@ -205,8 +201,7 @@ def test_a_body_read_by_the_app_is_cut_off_at_the_request_timeout() -> None:
 
     app = router.add("POST", "/x", HttpServerRequest().flat_map(_read_body))
     served = effect.gen(program).pipe(fx.provide(router.serve(app, disable_logger=True)))
-    received, elapsed = run_live(served, request_timeout="300 millis")
-    assert 0.2 < elapsed < TIMEOUT / 2
+    received = run_live(served, request_timeout="300 millis", keep_alive_timeout=PAST_ANY_TEST)
     assert [r.status for r in parse_responses(received)] in ([], [400], [408])
 
 

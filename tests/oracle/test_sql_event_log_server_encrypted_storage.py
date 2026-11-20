@@ -11,7 +11,6 @@ the suite's name (``pg``, ``mysql2``, ``mssql``).
 
 import itertools
 import os
-import time
 import uuid
 from collections.abc import Callable, Generator, Sequence
 from typing import Any
@@ -111,13 +110,9 @@ def _await_lock_wait(sql: SqlClientService) -> Generator[Any, Any]:
             "WHERE wait_event_type = 'Lock' AND datname = current_database()"
         ),
     )
-    deadline = time.monotonic() + 5
-    while time.monotonic() < deadline:
-        rows = yield from waiting
-        if rows[0]["n"] != 0:
-            return
+    # A writer that never waits on the lock fails the test at its time limit.
+    while (yield from waiting)[0]["n"] == 0:
         yield from fx.sleep("10 millis")
-    yield from fx.die(RuntimeError("the competing writer never waited on a lock"))
 
 
 def competing_writes(

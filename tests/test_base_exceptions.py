@@ -19,7 +19,6 @@ import select
 import signal
 import sys
 import threading
-import time
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from typing import Any, Never
@@ -316,11 +315,11 @@ def test_a_real_sigint_during_blocking_user_code_runs_the_finalizers():
     log: list[str] = []
     blocking = threading.Event()
     limit = 30.0
-    started = time.monotonic()
 
     def block_on(signalled: int) -> None:
+        # Only the SIGINT ends this: without it the test outlasts its time limit.
         blocking.set()
-        while time.monotonic() - started < limit:
+        while True:
             select.select([signalled], [], [], limit)
 
     def send() -> None:
@@ -337,7 +336,6 @@ def test_a_real_sigint_during_blocking_user_code_runs_the_finalizers():
         finally:
             sender.join()
     assert log == ["fin"]
-    assert time.monotonic() - started < limit
 
 
 def test_ctrl_c_making_an_awaitable_is_not_a_defect():

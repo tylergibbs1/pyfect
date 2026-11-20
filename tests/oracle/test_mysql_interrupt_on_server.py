@@ -9,6 +9,7 @@ from collections.abc import Callable
 from typing import Any
 
 import pytest
+from _timing import PAST_ANY_TEST
 
 pytest.importorskip("asyncmy")
 
@@ -122,9 +123,7 @@ def test_another_connection_gets_the_row_lock_soon_after_an_interrupt(mysql_serv
             yield from sql("SELECT SLEEP(30)")
 
         fiber = yield from sql.with_transaction(fx.gen(holder)).fork()
-        deadline = time.monotonic() + 10
         while (yield from fx.blocking(lambda: _take_lock_at_once(table))):
-            assert time.monotonic() < deadline, "the transaction never took the lock"
             yield from fx.sleep("20 millis")
         yield from fx.sleep("200 millis")
         yield from fiber.interrupt()
@@ -144,9 +143,8 @@ def test_taking_part_of_a_slow_stream_ends_it_on_the_server(mysql_server: MysqlS
     def body():
         sql = yield from mysql.MysqlClient()
         first = yield from sql("SELECT CONNECTION_ID() AS id")
-        started = time.monotonic()
-        yield from sql.unsafe(source).stream.take(1).run_collect().timeout("20 seconds")
-        assert time.monotonic() - started < 10
+        # The rows left take hours to send: waiting for them fails the test at its limit.
+        yield from sql.unsafe(source).stream.take(1).run_collect()
         yield from gone_soon(lambda: _running(marker))
         # Only the statement ended: the connection serves the next one.
         assert (yield from sql("SELECT 1 AS x").timeout("5 seconds")) == [{"x": 1}]
@@ -189,16 +187,16 @@ def test_an_interrupted_statement_keeps_its_connection(
     """asql_mysql_interrupt_kills_connection: as @effect/sql-mysql2 4.1.2's
     ``ActiveStatement.cancel``, an interrupt sends ``KILL QUERY`` over a one-off connection
     and waits for the statement to settle, so the pooled connection serves the next one."""
-    sql_text, marker = _marked("SELECT SLEEP(30) AS {}")
+    # Waiting the SLEEP out would outlast the test's time limit: only the kill ends it in time.
+    sql_text, marker = _marked(f"SELECT SLEEP({PAST_ANY_TEST.to_seconds():g}) AS {{}}")
 
     def body():
         sql = yield from mysql.MysqlClient()
         [before] = yield from sql("SELECT CONNECTION_ID() AS id")
         fiber = yield from sql.unsafe(sql_text).fork()
         yield from until_running(lambda: _running(marker))
-        started = time.monotonic()
         yield from fiber.interrupt()
-        assert time.monotonic() - started < 5
+        # The interrupt returned only once the statement had left the server.
         assert _running(marker) == []
         [after] = yield from sql("SELECT CONNECTION_ID() AS id").timeout("5 seconds")
         assert after["id"] == before["id"]

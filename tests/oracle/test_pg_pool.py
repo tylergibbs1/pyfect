@@ -34,7 +34,6 @@ when the pool opens the session, just after the statement's span.
 # pyright: reportPrivateUsage=false
 
 import threading
-import time
 from collections.abc import Generator
 from typing import Any
 
@@ -84,9 +83,7 @@ def _connect(server: PgServer) -> fx.Effect[PgConnection, SqlError, Scope]:
 
 def _wait_for(event: threading.Event) -> fx.Effect[None]:
     def body() -> Generator[Any, Any]:
-        deadline = time.monotonic() + 5
         while not event.is_set():
-            assert time.monotonic() < deadline, "timed out waiting for the cancel gate"
             yield from fx.sleep("10 millis")
 
     return fx.gen(body)
@@ -681,9 +678,7 @@ def _accepted(gate: CancelGate, count: int) -> fx.Effect[None]:
     """Wait until ``gate`` took ``count`` connections."""
 
     def body() -> Generator[Any, Any]:
-        deadline = time.monotonic() + 5
         while gate.accepted < count:
-            assert time.monotonic() < deadline, "timed out waiting for a connect"
             yield from fx.sleep("1 millis")
 
     return fx.gen(body)
