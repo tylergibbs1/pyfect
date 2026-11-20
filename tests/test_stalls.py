@@ -746,6 +746,24 @@ def test_frozen_and_slow():
 """
 )
 
+FROZEN_WITH_NO_DUMP_IN_TIME = (
+    _freeze_script(1.0)
+    + """
+import _stalls
+
+# As on a loaded runner, where faulthandler's C thread wrote after the watchdog had judged:
+# no dump is ever read, so only the freeze's own SIGCONT shows it.
+_stalls._DumpTimer.take = lambda self, *, stalled: None
+
+
+@it.live(timeout="1 second")
+def test_frozen_with_no_dump():
+    freezer = freeze_soon()
+    yield from fx.sleep("3 seconds")  # 2 s of the test's own time: past its limit
+    freezer.wait(timeout=5)
+"""
+)
+
 DEADLOCKED_FIBER = """
 import pyfect as fx
 import pyfect.testing as it
@@ -875,6 +893,19 @@ def test_a_timeout_after_a_host_freeze_says_what_it_left_out(
     out = _limited(pytester, monkeypatch, FROZEN_PAST_ITS_LIMIT)
     assert "TestTimeoutError: test timed out after 1.0 s of running time (" in out, out
     # About 1 s: a freeze is counted as the watchdog's gap less one tick, so never more.
+    assert re.search(r"host froze the process (0\.[89]|1\.[0-9]) s, not counted\)", out), out
+
+
+@pytest.mark.skipif(__import__("sys").platform == "win32", reason="SIGSTOP is POSIX")
+def test_a_freeze_whose_dump_is_not_in_time_is_left_out(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """CI on a loaded runner (load 5.00): faulthandler's dump came after the watchdog judged
+    the stall, which then read "unexplained: no dump came due" and counted the 1 s freeze.
+    The SIGCONT that ended it proves the freeze without the dump."""
+    out = _limited(pytester, monkeypatch, FROZEN_WITH_NO_DUMP_IN_TIME)
+    assert ": host: process frozen, resumed by SIGCONT (" in out, out
+    assert "TestTimeoutError: test timed out after 1.0 s of running time (" in out, out
     assert re.search(r"host froze the process (0\.[89]|1\.[0-9]) s, not counted\)", out), out
 
 

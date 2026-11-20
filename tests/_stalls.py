@@ -16,8 +16,9 @@ thread, ticking for the whole session and recording while a test runs, tells the
   apart: faulthandler's watchdog needs no GIL, so a dump written on time means the process
   was running (a C call holding the GIL, which also uses no CPU, is pyfect), and only one
   written late against its own arming's due, or still unwritten when the next arming
-  replaced it, proves the host froze the process (``_DumpTimer``). Anything else counts as
-  running time.
+  replaced it, proves the host froze the process (``_DumpTimer``). So does a SIGCONT in the
+  gap, the end of every SIGSTOP, however late the dump (``_Continues``). Anything else
+  counts as running time.
 - Each tick also samples every thread's stack, as a faulthandler dump (text: holding
   frames would keep what a finished step handled alive). A thread inside ``Fiber._run``
   whose stack has not moved for the threshold, while the process used next to no CPU, is a
@@ -51,6 +52,7 @@ import gc
 import inspect
 import os
 import re
+import select
 import signal
 import sys
 import tempfile
@@ -61,6 +63,7 @@ from collections.abc import Generator
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
+from types import FrameType
 from typing import Any
 
 import pytest
@@ -199,6 +202,115 @@ def _load() -> str:
         return "load " + Path("/proc/loadavg").read_text().split()[0]
     except OSError:
         return "load n/a"
+
+
+def _on_continue(signum: int, frame: FrameType | None) -> None:
+    """SIGCONT's Python handler: without one, CPython's C handler (which writes the wakeup
+    byte) is not installed, and the kernel does not even queue a SIGCONT."""
+
+
+def _pending_for_the_process(signum: int) -> bool:
+    """Whether ``signum`` is pending for the whole process, not yet taken by a thread
+    (``ShdPnd`` of ``/proc/self/status``; ``False`` off Linux)."""
+    try:
+        status = Path("/proc/self/status").read_text()
+    except OSError:
+        return False
+    match = re.search(r"^ShdPnd:\s*([0-9a-f]+)$", status, re.MULTILINE)
+    return match is not None and bool(int(match[1], 16) >> (signum - 1) & 1)
+
+
+class _Continues:
+    """Whether a SIGCONT came since the last look: every SIGSTOP freeze ends with one, so a
+    stall it came in is the host freezing the process, whenever faulthandler's dump was
+    written. CPython's C handler writes the signal's number to the wakeup pipe
+    (``signal.set_wakeup_fd``) on whichever thread the kernel hands it, without the GIL.
+
+    The kernel resumes the threads and queues the SIGCONT together, so a thread back from a
+    freeze finds it pending for the process (Linux shows that) or taken by a thread whose
+    handler is about to write it. ``available`` is false off POSIX, off the main thread, and
+    where someone else's wakeup fd or SIGCONT handler is set: there a freeze counts."""
+
+    def __init__(self) -> None:
+        self._read = self._write = -1
+        self._owed = 0
+        """SIGCONTs counted while pending, whose byte the pipe has yet to get."""
+        if (
+            not hasattr(signal, "SIGCONT")
+            or threading.current_thread() is not threading.main_thread()
+        ):
+            return
+        if signal.getsignal(signal.SIGCONT) is not signal.SIG_DFL:
+            return
+        read, write = os.pipe()
+        os.set_blocking(read, False)
+        os.set_blocking(write, False)
+        if signal.set_wakeup_fd(write) != -1:
+            signal.set_wakeup_fd(signal.set_wakeup_fd(-1))  # someone else's: put it back
+            os.close(read)
+            os.close(write)
+            return
+        signal.signal(signal.SIGCONT, _on_continue)
+        self._read, self._write = read, write
+        # A child forked without exec would write its own SIGCONTs into this pipe.
+        os.register_at_fork(after_in_child=self._unhook)
+
+    @property
+    def available(self) -> bool:
+        return self._read != -1
+
+    def came(self, *, wait: float) -> bool:
+        """Whether a SIGCONT came since the last look, waiting up to ``wait`` seconds for
+        one whose handler has not written yet."""
+        if not self.available:
+            return False
+        deadline = time.monotonic() + wait
+        while True:
+            if self._drained():
+                return True
+            if _pending_for_the_process(signal.SIGCONT):
+                self._owed += 1
+                return True
+            left = deadline - time.monotonic()
+            if left <= 0:
+                return False
+            select.select([self._read], [], [], left)
+
+    def forget(self) -> None:
+        """Drops what came since the last look: it was in no stall."""
+        if self.available:
+            self._drained()
+
+    def _drained(self) -> bool:
+        """Whether the pipe held a SIGCONT not already counted; it holds every signal with a
+        Python handler."""
+        data = b""
+        try:
+            while chunk := os.read(self._read, 4096):
+                data += chunk
+        except BlockingIOError:
+            pass
+        came = data.count(bytes([signal.SIGCONT]))
+        paid = min(came, self._owed)
+        self._owed -= paid
+        return came > paid
+
+    def close(self) -> None:
+        if self.available:
+            self._unhook()
+            os.close(self._read)
+            os.close(self._write)
+            self._read = self._write = -1
+
+    def _unhook(self) -> None:
+        """Puts SIGCONT's handler and the wakeup fd back, where they are still this one's."""
+        if self._write == -1:
+            return
+        if signal.getsignal(signal.SIGCONT) is _on_continue:
+            signal.signal(signal.SIGCONT, signal.SIG_DFL)
+        current = signal.set_wakeup_fd(-1)
+        if current != self._write:  # someone else's since: leave it set
+            signal.set_wakeup_fd(current)
 
 
 class _Collections:
@@ -426,6 +538,7 @@ class Watchdog:
         self.threshold = threshold
         self.tick = threshold / 4
         self._dumps = _DumpTimer(threshold, self.tick) if dump else None
+        self._continues = _Continues()
         self.stalls: list[str] = []
         self._armed = threading.Event()
         self._ticked = threading.Condition()
@@ -457,6 +570,11 @@ class Watchdog:
         self._thread = threading.Thread(target=self._watch, name="stall-watchdog", daemon=True)
 
     @property
+    def continues(self) -> bool:
+        """Whether a SIGCONT is seen: it proves a SIGSTOP freeze, whatever the dump shows."""
+        return self._continues.available
+
+    @property
     def dump(self) -> bool:
         """Whether faulthandler's dump is armed: without it a freeze and a GIL-held call
         look alike."""
@@ -472,6 +590,7 @@ class Watchdog:
         gc.callbacks.remove(self._collections)
         if self._dumps is not None:
             self._dumps.close()
+        self._continues.close()
         self._sample.close()
         self._cpu.close()
 
@@ -574,6 +693,7 @@ class Watchdog:
             else:
                 self._steal.mark()
                 self._collections.take_longest()
+                self._continues.forget()
                 unclaimed = dump
             last_wall, last, cpu = now_wall, now, now_cpu
             if self._armed.is_set():
@@ -606,6 +726,11 @@ class Watchdog:
                 ", unwritten" if dump.timing is _Timing.MISSED else ""
             )
             return f"{head}: host: process frozen, the dump {late} ({numbers})"
+        # A freeze uses no CPU: only then is a SIGCONT whose handler is slow worth a wait.
+        if self._continues.came(wait=2 * self.tick if cpu < gap / 2 else 0.0):
+            with self._lock:
+                self._frozen += gap - self.tick
+            return f"{head}: host: process frozen, resumed by SIGCONT ({numbers})"
         return f"{head}: {_not_frozen(gap, cpu, dump, dumps=self.dump)} ({numbers})"
 
     def frozen_seconds(self) -> float:
@@ -802,7 +927,8 @@ def pytest_configure(config: pytest.Config) -> None:
     watchdog = Watchdog(threshold, dump=faulthandler_timeout <= 0)
     watchdog.start()
     config.stash[_WATCHDOG] = watchdog
-    if watchdog.dump:  # without the dump a freeze and a GIL-held call look alike
+    # Without the dump or SIGCONT a freeze and a GIL-held call look alike.
+    if watchdog.dump or watchdog.continues:
         leave_out_host_freezes(watchdog.host_freezes)
 
 
