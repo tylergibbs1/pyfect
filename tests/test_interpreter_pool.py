@@ -2,15 +2,18 @@
 back as an ``Exit``, interruption abandoning the call (Python-only: Effect has
 no interpreters to run work on)."""
 
+import contextlib
 import importlib
 import operator
+import signal
 import subprocess
 import sys
 import textwrap
 import threading
+import time
 from pathlib import Path
 from types import ModuleType
-from typing import Any
+from typing import IO, Any
 
 import pytest
 
@@ -212,7 +215,8 @@ def test_a_pool_needs_at_least_one_interpreter() -> None:
 
 # A script run as `python script.py`, its functions in `__main__`, written as the docs'
 # snippets are: top-level code, no `if __name__ == "__main__":` guard unless a test adds one.
-# It prints, per call, the exit's value or its reason's type and message.
+# It prints `started` once its imports are done, then, per call, the exit's value or its
+# reason's type and message.
 SCRIPT_HEAD = """
 import pyfect as fx
 from pyfect import interpreter_pool
@@ -230,37 +234,101 @@ def triple(x: int) -> int:
     return x * 3
 
 
-def show(eff):
-    ex = fx.run_blocking_exit(eff.pipe(fx.provide(interpreter_pool.layer(size=1))))
+def report(ex):
     if isinstance(ex, Success):
-        print("value", ex.value)
+        print("value", ex.value, flush=True)
         return
     [reason] = ex.cause.reasons
     error = reason.defect if isinstance(reason, Die) else reason.error
-    print("die" if isinstance(reason, Die) else "fail", type(error).__name__, str(error))
+    kind = "die" if isinstance(reason, Die) else "fail"
+    print(kind, type(error).__name__, str(error), flush=True)
+
+
+def show(eff):
+    report(fx.run_blocking_exit(eff.pipe(fx.provide(interpreter_pool.layer(size=1)))))
+
+
+if __name__ == "__main__":
+    import faulthandler
+    import signal
+
+    faulthandler.register(signal.SIGUSR1, all_threads=True)
+    print("started", flush=True)
 """
 
-HANG_AFTER = 3.5
-"""Seconds a script may take: one runs in about 1 s, and the hang it detects never ends."""
+STARTUP_LIMIT = 30.0
+"""Seconds a script may take to print `started`: importing pyfect is not what these tests time."""
+
+CALLS_LIMIT = 25.0
+"""Seconds the calls get at most, so a hung script, start-up and stacks included, fails before
+the 60 s per-test alarm, which would kill the test without the script's output."""
+
+CALLS_PER_STARTUP = 10
+"""How many of the script's own start-ups its calls may take after `started`. A call starts a
+subinterpreter that imports Python and pyfect again (an unguarded script's re-run there imports
+it all), so a call costs about what a start-up does and slows with the machine as start-up does
+(3.14t, four scripts at once on a loaded machine: two calls in fresh interpreters took at most
+6.3 start-ups). The hang this detects, a program run again and again in nested
+subinterpreters, never ends."""
+
+
+STACKS_GRACE = 2.0
+"""Seconds a hung script has to print its stacks before it is killed."""
 
 
 def _run_script(tmp_path: Path, body: str) -> list[str]:
+    """The script's stdout after `started`. One that never ends prints its threads' stacks on
+    SIGUSR1 (faulthandler), and the test fails with all it printed."""
     script = tmp_path / "main_script.py"
     script.write_text(SCRIPT_HEAD + textwrap.dedent(body))
-    try:
-        done = subprocess.run(
+    lines: list[str] = []
+    started = threading.Event()
+    begin = time.monotonic()
+    with (tmp_path / "stderr.txt").open("w+") as stderr:
+        process = subprocess.Popen(
             [sys.executable, str(script)],
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=stderr,
             text=True,
-            timeout=HANG_AFTER,
             cwd=tmp_path,
-            check=False,
         )
-    except subprocess.TimeoutExpired as hung:
-        pytest.fail(f"the script hung for {HANG_AFTER} s; stderr: {hung.stderr!r}")
-    assert done.returncode == 0, done.stdout + done.stderr
-    assert not done.stderr, done.stderr
-    return done.stdout.splitlines()
+
+        def read(stdout: IO[str]) -> None:
+            for line in stdout:
+                if line == "started\n" and not started.is_set():
+                    started.set()
+                else:
+                    lines.append(line.removesuffix("\n"))
+            started.set()
+
+        assert process.stdout is not None
+        reader = threading.Thread(target=read, args=(process.stdout,))
+        reader.start()
+        if not started.wait(STARTUP_LIMIT):
+            hung = f"did not start in {STARTUP_LIMIT} s"
+        else:
+            limit = min(CALLS_PER_STARTUP * (time.monotonic() - begin), CALLS_LIMIT)
+            try:
+                process.wait(limit)
+                hung = None
+            except subprocess.TimeoutExpired:
+                hung = f"hung for {limit:.1f} s after it started"
+        if hung is not None:
+            process.send_signal(signal.SIGUSR1)
+            with contextlib.suppress(subprocess.TimeoutExpired):
+                process.wait(STACKS_GRACE)
+            process.kill()
+        process.wait()
+        reader.join()
+        process.stdout.close()
+        stderr.seek(0)
+        errors = stderr.read()
+    output = f"stdout: {lines!r}\nstderr: {errors}"
+    if hung is not None:
+        pytest.fail(f"the script {hung}\n{output}")
+    assert process.returncode == 0, output
+    assert not errors, output
+    return lines
 
 
 @needs_interpreters
@@ -269,13 +337,21 @@ def test_calling_a_function_of_an_unguarded_script_that_reads_globals_dies_at_on
 ) -> None:
     # CPython finds `double` by re-running the script in the subinterpreter, which reaches the
     # script's own run there: that run dies at once, and so does the call.
+    # Both calls go to one interpreter, so the script's re-run there imports pyfect only once.
     lines = _run_script(
         tmp_path,
         """
-        show(interpreter_pool.call(double, 21))
-        show(interpreter_pool.try_call(double, 21))
+        @fx.gen
+        def program():
+            report((yield from interpreter_pool.call(double, 21).exit()))
+            report((yield from interpreter_pool.try_call(double, 21).exit()))
+
+
+        show(program)
         """,
     )
+    assert lines[-1] == "value None"
+    lines = lines[:-1]
     assert len(lines) == 2
     for line in lines:
         assert line.startswith("die MainScriptRerunError "), line

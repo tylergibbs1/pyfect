@@ -35,6 +35,7 @@ test_blocking_pool.py 4  # times a subprocess exit with stuck blocking work, and
 test_fibers.py 2  # deadline for a fiber finishing on another real OS thread inside an observer race; the TestClock does not drive that thread
 test_file_system_watch.py 2  # times interrupting the file watcher's own OS thread until it stops; that thread blocks on OS notifications in real time
 test_httpx_test_clock.py 2  # checks adjust returns promptly in wall time while an httpx body waits on a real trickling server; the TestClock is what is timed
+test_interpreter_pool.py 2  # times a script's start-up in its own process to set how long its calls may take: each call imports pyfect again in a new subinterpreter, real time in another process the TestClock does not drive
 test_live_server_request_parsing.py 4  # times live-server request timeouts seen by a blocking client socket in a plain thread, outside the TestClock
 test_managed_runtime.py 2  # deadline for a disposer on a real OS thread to begin closing the runtime; the TestClock does not drive that thread
 test_process.py 2  # times concurrent force kills of real sh child processes after 500 ms; OS processes run on real time
