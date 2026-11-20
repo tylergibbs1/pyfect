@@ -130,7 +130,7 @@ layer, concurrency, retries and timeouts.
 
 ### Data
 
-- **Schema**: decode and encode with Effect's messages, schemas from type annotations (checks in `Annotated` included), compiled decoders, JSON Schema, Hypothesis, pydantic and msgspec. [Schema →](https://pyfect.dev/docs/schema)
+- **Schema**: decode and encode with Effect's messages, schemas from type annotations (a schema or checks in `Annotated` included), compiled decoders, JSON Schema, Hypothesis, pydantic and msgspec. [Schema →](https://pyfect.dev/docs/schema)
 - **Config**: typed settings from the environment, `.env` files or dicts, with secrets kept out of logs. [Config →](https://pyfect.dev/docs/config)
 - **Graphs**: directed and undirected graphs with walks, shortest paths, flows, matchings and Mermaid output. [Graphs →](https://pyfect.dev/docs/graph)
 - **Cryptography**: random ids, digests, encryption, signatures and JOSE tokens, as services. [Cryptography →](https://pyfect.dev/docs/crypto)
