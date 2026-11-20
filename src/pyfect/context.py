@@ -204,11 +204,11 @@ class Context(Generic[R_contra]):
     ``Context(mapping)`` is Effect's ``makeUnsafe``: an untyped context.
     Build typed ones with ``make`` and ``add``."""
 
-    __slots__ = ("_derived", "_services")
+    __slots__ = ("_derivations", "_services")
 
     def __init__(self, services: Mapping[type[Tag[Any]], Any] | None = None) -> None:
         self._services: dict[type[Tag[Any]], Any] = dict(services or {})
-        self._derived: dict[object, Any] | None = None
+        self._derivations: dict[object, Any] | None = None
 
     if TYPE_CHECKING:
         # The tags seen covariantly, for ``omit`` (see ``_Holding``).
@@ -325,13 +325,13 @@ class Context(Generic[R_contra]):
     def tags(self) -> tuple[type[Tag[Any]], ...]:
         return tuple(self._services)
 
-    def derived[A](self, key: object, derive: Callable[[Context[Any]], A], /) -> A:
+    def _derived[A](self, key: object, derive: Callable[[Context[Any]], A], /) -> A:
         """``derive(self)``, computed once per context and ``key`` and kept
         with the context: a context never changes, so neither does what is
         derived from it. ``key`` names the derivation (the function itself)."""
-        derived = self._derived
+        derived = self._derivations
         if derived is None:
-            derived = self._derived = {}
+            derived = self._derivations = {}
         if key in derived:
             return derived[key]
         return derived.setdefault(key, derive(self))
