@@ -318,7 +318,7 @@ def _derive(context: Context[Any]) -> _Prepared:
 def _prepare(context: Context[Any]) -> _Prepared:
     # Derived once per context: every tool of a toolkit registers from one
     # context holding all of its handlers.
-    return context.derived(_derive, _derive)
+    return context._derived(_derive, _derive)  # pyright: ignore[reportPrivateUsage]
 
 
 def omit_request_services(context: Context[Any]) -> Context[Any]:
