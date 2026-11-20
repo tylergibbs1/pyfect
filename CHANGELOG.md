@@ -72,6 +72,34 @@
   that could never connect again. It now fails with the reader's `SocketError`, and so does
   a later reader. `from_web_socket` and `from_connection` take `disable_reconnects=True` for
   such a single connection; by default writes still wait for the next reader (Effect #10730).
+- Queue: the take that drains an ended queue no longer loses its item. It woke the queue's
+  `await_done` waiters and takers in the same step, so one of them could interrupt the taking
+  fiber before the item reached it, and the item was gone from the queue too. Those wakes now
+  run in a task after the take (Effect #10737).
+- Cluster workflows: a durable clock or deferred waking a workflow while its run was still
+  active (one branch sleeping, another in an activity) closed the execution's scope. Its
+  `workflow.add_finalizer` finalizers ran early, the replay that should have continued never
+  started, and a later interrupt found nothing left to finalize. The wake now interrupts only
+  the workflow body, so the run reports `Suspended` and is replayed (Effect #10695).
+- Socket: `from_web_socket` with a `high_water_mark` on a WebSocket without pause counted an
+  empty frame as zero bytes, kept buffering frames after the limit was exceeded and left the
+  connection open. Each frame now counts at least one byte, frames after the overflow are
+  discarded, and the WebSocket is closed with code 1008 (or without a code where the
+  transport rejects 1008) (Effect #10628).
+- Schema: encoding a string with an unpaired surrogate through `S.StringFromBase64`,
+  `S.StringFromBase64Url` and `S.StringFromHex` silently wrote U+FFFD, and through
+  `S.StringFromUriComponent` raised (a defect). The encoding getters now fail with an
+  `InvalidValue`, "Expected a well-formed Unicode string" (Effect #10725).
+- MCP server: registering a toolkit scanned the registration context once per tool and copied
+  it once per handler, so registration time grew with the square of the tool count. Each
+  context is now prepared once (Effect #10751).
+- HTTP API docs: `scalar.layer` bundled Scalar 1.43.5, whose request examples add an
+  undeclared `Accept: */*` header and which ignores `customFetch`. It now bundles Scalar
+  1.81.0 (pinned by SHA-256 in `scripts/package_scalar.py`, with Scalar's MIT notice), gives a
+  document without servers the implicit root server `/`, and takes
+  `agent: {"disabled": True}` to hide Ask AI (Effect #10727).
+- OTLP: when a failed export disables an exporter for 60 seconds, the message is now logged
+  as a warning, not at debug level, where the default log level hid it (Effect #10729).
 
 ## 0.6.14 (2026-11-19)
 
