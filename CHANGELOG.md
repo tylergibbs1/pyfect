@@ -4,6 +4,10 @@
 
 ### Docs
 
+- `examples/http_api.py` says it needs the `httpx` extra (`uv add "pyfect-dev[httpx]"`), and
+  uvicorn the `server` extra: run from a fresh project, it failed with
+  `ModuleNotFoundError: No module named 'httpx'`. A test keeps every example that imports an
+  extra's library naming that extra.
 - The subinterpreters page says that without an `if __name__ == "__main__":` guard, everything a
   script does before its run happens again in the subinterpreter (a file written twice), as
   CPython re-runs the script to find the function.

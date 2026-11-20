@@ -1,11 +1,14 @@
 """The examples run to completion (pyright already type-checks them)."""
 
+import ast
 import subprocess
 import sys
 
 import _source
 import pytest
 from _subprocess import SUBPROCESS_TIMEOUT
+
+from pyfect._extras import LIBRARIES
 
 EXAMPLES = _source.ROOT / "examples"
 
@@ -26,6 +29,31 @@ def run_example(name: str) -> str:
 @pytest.mark.parametrize("name", [p.name for p in _source.files(EXAMPLES, recursive=False)])
 def test_example_runs(name: str):
     run_example(name)
+
+
+@pytest.mark.parametrize("name", [p.name for p in _source.files(EXAMPLES, recursive=False)])
+def test_an_example_that_imports_an_extra_says_how_to_install_it(name: str):
+    # Run from a fresh project, an example importing httpx fails with "No module named
+    # 'httpx'" unless its docstring says which extra brings it.
+    path = EXAMPLES / name
+    imported = {
+        alias.name.partition(".")[0]
+        for node in _source.walk(path)
+        if isinstance(node, ast.Import)
+        for alias in node.names
+    } | {
+        node.module.partition(".")[0]
+        for node in _source.walk(path)
+        if isinstance(node, ast.ImportFrom) and node.module and node.level == 0
+    }
+    docstring = ast.get_docstring(_source.tree(path)) or ""
+    for library in sorted(imported):
+        extras = [extra for extra, libraries in LIBRARIES.items() if library in libraries]
+        if extras:
+            assert any(f'"pyfect-dev[{extra}]"' in docstring for extra in extras), (
+                f"{name} imports {library}: its docstring should say "
+                f'uv add "pyfect-dev[{extras[0]}]"'
+            )
 
 
 def test_fastapi_style_opens_once_serves_and_closes():

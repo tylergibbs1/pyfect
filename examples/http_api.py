@@ -5,11 +5,14 @@ The endpoints' schemas type both sides: a handler gets the decoded params
 and payload and must return a ``User`` or fail with ``UserNotFound``; the
 client's ``get_user`` takes exactly ``params={"id": ...}`` and gives a
 ``User`` or fails with ``UserNotFound``. ``app`` is a plain ASGI
-application, so any ASGI server runs it::
+application, so any ASGI server runs it (uvicorn comes with the ``server``
+extra, ``uv add "pyfect-dev[server]"``)::
 
     uv run uvicorn examples.http_api:app
 
-Here the client talks to it in memory through httpx's ASGI transport.
+Here the client talks to it in memory through httpx's ASGI transport, which
+needs the ``httpx`` extra outside this repository: ``uv add "pyfect-dev[httpx]"``
+(with pip: ``pip install "pyfect-dev[httpx]"``).
 
 Run with: uv run examples/http_api.py
 """
