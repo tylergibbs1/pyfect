@@ -177,6 +177,34 @@ _QUEUE_TAKES: dict[str, Callable[[fx.Queue[int], list[Any]], fx.Effect[Any]]] = 
 }
 
 
+def _ended_queue_case(take: Callable[[fx.Queue[int], list[Any]], fx.Effect[Any]]) -> _Case:
+    """The last take of an ended queue wakes its awaiters, and the first of
+    them interrupts the taker (Effect #10737): the claim's own wake-ups
+    must not reach the taker before its item does."""
+    takers: list[fx.Fiber[Any, Any]] = []
+
+    @fx.gen
+    def made():
+        q = yield from fx.Queue[int, fx.Done].bounded(1)
+        yield from q.offer(1)
+        yield from q.end()
+        interrupt_taker = fx.suspend(lambda: takers[-1].interrupt() if takers else fx.void)
+        yield from q.await_done().ignore().and_then(interrupt_taker).fork(start_immediately=True)
+        return q
+
+    def op(q: fx.Queue[int], seen: list[Any]) -> fx.Effect[Any]:
+        return fx.with_fiber(lambda fiber: fx.sync(lambda: takers.append(fiber))).and_then(
+            take(q, seen)
+        )
+
+    def check(q: fx.Queue[int], seen: list[Any]) -> fx.Effect[str | None]:
+        return q.clear().map(
+            lambda left: None if [*seen, *left] == [1] else f"saw {seen}, left {list(left)}"
+        )
+
+    return _Case(lambda: made, op, check)
+
+
 def _pubsub_case(
     *,
     parked: bool,
@@ -497,6 +525,7 @@ def _pool_case() -> _Case:
 _CASES: dict[str, _Case] = {
     **{f"queue.{n} (item there)": _queue_case(t, parked=False) for n, t in _QUEUE_TAKES.items()},
     **{f"queue.{n} (parked)": _queue_case(t, parked=True) for n, t in _QUEUE_TAKES.items()},
+    **{f"queue.{n} (ended, awaited)": _ended_queue_case(t) for n, t in _QUEUE_TAKES.items()},
     "queue.poll": _queue_case(
         lambda q, seen: q.poll().map(lambda o: o is not None and seen.append(o.value)),
         parked=False,

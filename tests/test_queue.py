@@ -93,6 +93,23 @@ def test_end_on_an_empty_queue_is_done_at_once():
     assert isinstance(taken, fx.Failure)
 
 
+def test_the_final_take_delivers_before_a_closing_queue_notifies_its_awaiters():
+    # Effect #10737: the awaiter woken by the last take interrupts the taker.
+    @fx.gen
+    def program():
+        q = yield from fx.Queue[int, fx.Done].bounded(1)
+        worker = yield from q.take().fork(start_immediately=True)
+        awaiter = yield from (
+            q.await_done().and_then(worker.interrupt()).fork(start_immediately=True)
+        )
+        yield from q.offer(41)
+        yield from q.end()
+        yield from awaiter.join()
+        return (yield from worker.await_exit())
+
+    assert run(program) == fx.Success(41)
+
+
 def test_interrupting_the_last_parked_offer_of_a_closing_queue_finishes_it():
     @fx.gen
     def program():
