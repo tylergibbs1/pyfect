@@ -12,17 +12,17 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pyfect as fx
-from pyfect import cause, layer, testing
+from pyfect import cause, layer, logger, testing
 from pyfect._version import VERSION
 from pyfect.clock import now_nanos
 from pyfect.context import Context
 from pyfect.http.client import HttpClient
 from pyfect.layer import Layer
-from pyfect.logger import LogLevel, Options
+from pyfect.logger import Logger, LogLevel, Options
 from pyfect.observability import otlp_exporter, otlp_logger, otlp_serialization
 from pyfect.tracer import DisablePropagation, ExternalSpan
 
-from ._otlp import Collector, client_layer, collector
+from ._otlp import Collector, client_layer, collector, with_status
 
 
 def _test_layer(seen_client: Any) -> Layer[otlp_exporter.Flusher]:
@@ -44,6 +44,34 @@ def _log_record(seen: Collector, index: int = 0) -> dict[str, Any]:
 
 def _flush() -> fx.Effect[None, Any, Any]:
     return otlp_exporter.Flusher().flat_map(lambda flusher: flusher.flush)
+
+
+@testing.effect
+def test_warns_once_when_a_rejected_batch_disables_log_export():
+    """warns once when a rejected batch disables log export"""
+    seen, http = with_status(400)
+    warnings: list[Options] = []
+
+    def observe(options: Options) -> None:
+        if options.log_level == LogLevel.WARN:
+            warnings.append(options)
+
+    observer = Logger.make(observe)
+
+    @fx.gen
+    def program():
+        yield from fx.log_info("first batch")
+        yield from _flush()
+        assert len(warnings) == 1
+        yield from testing.adjust("60 seconds")
+        yield from _flush()
+        assert len(seen.requests) == 1
+
+    yield from (
+        program.pipe(fx.provide(logger.layer([observer], merge_with_existing=True))).pipe(
+            fx.provide(_test_layer(http))
+        )
+    )
 
 
 @testing.effect
