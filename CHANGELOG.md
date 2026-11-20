@@ -56,6 +56,22 @@
 
 ### Fixed
 
+- A check in a field's `Annotated` metadata that can't run on the value (`count:
+  Annotated[int, S.is_min_length(1)]`, a length check on an int) raised `RuntimeError:
+  Constructor adapter can only throw schema issues` when constructing (`Sync adapter can only
+  throw schema errors` when decoding), naming neither the field nor the check. It now raises a
+  `TypeError` naming both, chained from what the check raised: `Bin.count: the check
+  is_min_length (a value with a length of at least 1) raised on 3: TypeError: object of type
+  'int' has no len(). Give the field a check that fits its type`. Effect has no schema error
+  for a filter that throws, and pyright can't see a check inside `Annotated`. Defining the
+  class still succeeds, as a default, a union member or an optional field may never meet the
+  check. `S.Struct` over a TypedDict names the key the same way (`Line['quantity']: ...`).
+- `S.Struct` over a TypedDict with a key whose annotation has no schema (`at: datetime`) said
+  only `No schema for the annotation <class 'datetime.datetime'>: give the field its schema`.
+  It now names the struct and the key and shows the fix, as `S.Class` names the field:
+  `Event['at']: No schema for the annotation <class 'datetime.datetime'>: give the field its
+  schema, S.Struct(Event, at=...)`. A key of a nested TypedDict shows the path
+  (`Calendar['first']: Event['at']: ...`).
 - `interpreter_pool.call` and `try_call` on a function that reads globals of the script you ran,
   in a script without an `if __name__ == "__main__":` guard, hung forever with no output. CPython
   finds such a function by re-running the script inside the subinterpreter (as

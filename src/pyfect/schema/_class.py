@@ -344,7 +344,7 @@ def _field_schemas(cls: type, names: tuple[str, ...]) -> dict[str, AnyBottom]:
 def _derived(cls: type, name: str) -> AnyBottom:
     """The schema of field ``name``'s annotation; ``TypeError`` naming the field when none."""
     try:
-        return schema_of(_annotation(cls, name))
+        return schema_of(_annotation(cls, name), field=f"{cls.__name__}.{name}")
     except TypeError as error:
         raise TypeError(f"{cls.__name__}.{name}: {error}") from None
 
