@@ -210,56 +210,41 @@ def create_alias_tables(sql: SqlClientService, prefix: str) -> Effect[None, SqlE
 def create_065_tables(
     sql: SqlClientService, prefix: str, remote_id_table: str
 ) -> Effect[None, SqlError]:
-    remote_ids = sql.identifier(remote_id_table)
     bindings_table = f"{prefix}_session_auth_bindings"
-    bindings = sql.identifier(bindings_table)
     types = types_for(sql)
 
     def body():
-        if sql.dialect == "pg":
-            yield from sql(
-                "CREATE TABLE IF NOT EXISTS {} (remote_id BYTEA PRIMARY KEY)", remote_ids
-            )
-            yield from sql(
-                "CREATE TABLE IF NOT EXISTS {} (public_key TEXT PRIMARY KEY, "
-                "signing_public_key BYTEA NOT NULL)",
-                bindings,
-            )
-        elif sql.dialect == "mssql":
-            yield from sql(
-                "IF OBJECT_ID({}, N'U') IS NULL "
-                "CREATE TABLE {} (remote_id VARBINARY(16) PRIMARY KEY)",
-                remote_id_table,
-                remote_ids,
-            )
-            yield from sql(
-                "IF OBJECT_ID({}, N'U') IS NULL CREATE TABLE {} ("
-                "public_key {} NOT NULL, "
-                "public_key_length AS DATALENGTH(public_key) PERSISTED NOT NULL, "
-                "signing_public_key VARBINARY(32) NOT NULL, "
-                "PRIMARY KEY (public_key, public_key_length))",
+        yield from create_table(
+            sql, remote_id_table, sql("remote_id {} PRIMARY KEY", types.entry_id)
+        )
+        if sql.dialect == "mssql":
+            yield from create_table(
+                sql,
                 bindings_table,
-                bindings,
-                sql.literal(MSSQL_PAIR_KEY),
+                sql(
+                    "public_key {} NOT NULL, "
+                    "public_key_length AS DATALENGTH(public_key) PERSISTED NOT NULL, "
+                    "signing_public_key VARBINARY(32) NOT NULL, "
+                    "PRIMARY KEY (public_key, public_key_length)",
+                    sql.literal(MSSQL_PAIR_KEY),
+                ),
             )
             yield from mssql_exact_primary_key(sql, bindings_table, "public_key", MSSQL_PAIR_KEY)
         elif sql.dialect == "mysql":
-            yield from sql(
-                "CREATE TABLE IF NOT EXISTS {} (remote_id BINARY(16) PRIMARY KEY)", remote_ids
-            )
-            yield from sql(
-                "CREATE TABLE IF NOT EXISTS {} (public_key {} PRIMARY KEY, "
-                "signing_public_key BINARY(32) NOT NULL)",
-                bindings,
-                sql.literal(MYSQL_KEY),
+            yield from create_table(
+                sql,
+                bindings_table,
+                sql(
+                    "public_key {} PRIMARY KEY, signing_public_key BINARY(32) NOT NULL",
+                    sql.literal(MYSQL_KEY),
+                ),
             )
             yield from mysql_exact_columns(sql, bindings_table, {"public_key": MYSQL_KEY})
         else:
-            yield from sql("CREATE TABLE IF NOT EXISTS {} (remote_id BLOB PRIMARY KEY)", remote_ids)
-            yield from sql(
-                "CREATE TABLE IF NOT EXISTS {} (public_key TEXT PRIMARY KEY, "
-                "signing_public_key BLOB NOT NULL)",
-                bindings,
+            yield from create_table(
+                sql,
+                bindings_table,
+                sql("public_key TEXT PRIMARY KEY, signing_public_key {} NOT NULL", types.bytes),
             )
         # One row per store, keyed by the scope hash its tables are named after.
         yield from create_table(

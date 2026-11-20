@@ -24,6 +24,14 @@
 
 ### Fixed
 
+- The SQL encrypted event log server storage could fail to start on SQL Server with "There is
+  already an object named '<prefix>_remote_id'" when another instance opened the same database
+  at the same moment: both found the remote id table missing and the second create failed. Its
+  remote id and session auth bindings tables were the only ones created without the retry every
+  other table gets; they now go through it too, and
+  `tests/test_table_creation_retries.py` fails on any `CREATE` in the storage that no retry
+  covers.
+
 - `interpreter_pool.call` and `try_call` on a function that reads globals of the script you ran,
   in a script without an `if __name__ == "__main__":` guard, hung forever with no output. CPython
   finds such a function by re-running the script inside the subinterpreter (as
