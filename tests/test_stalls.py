@@ -236,13 +236,13 @@ def test_a_c_call_holding_the_gil_is_named_from_the_faulthandler_dump(
 def test_a_frozen_process_is_named_a_host_stall(
     pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The host froze every thread, faulthandler's C watchdog too, so its dump is written
-    late, once the process runs again. On Linux in a container, run this under an init
+    """The host froze every thread, and the SIGCONT that resumed them says so. On Linux in a
+    container, run this under an init
     process (``docker run --init``): as PID 1 the test process ignores a SIGSTOP sent from
     inside its own namespace, and never freezes."""
     out = _run(pytester, monkeypatch, FROZEN_PROCESS)
     assert "process stalled 1." in out
-    assert ": host: process frozen, " in out  # the dump late, or not yet at resume
+    assert ": host: process frozen, resumed by SIGCONT (" in out, out
     assert "pyfect blocked" not in out
 
 
@@ -746,6 +746,91 @@ def test_frozen_and_slow():
 """
 )
 
+FROZEN_WITH_NO_DUMP_IN_TIME = (
+    _freeze_script(1.0)
+    + """
+import _stalls
+
+# As on a loaded runner, where faulthandler's C thread wrote after the watchdog had judged:
+# no dump is ever read, so only the freeze's own SIGCONT shows it.
+_stalls._DumpTimer.take = lambda self, *, stalled: None
+
+
+@it.live(timeout="1 second")
+def test_frozen_with_no_dump():
+    freezer = freeze_soon()
+    yield from fx.sleep("3 seconds")  # 2 s of the test's own time: past its limit
+    freezer.wait(timeout=5)
+"""
+)
+
+LATE_DUMP_WITHOUT_A_FREEZE = """
+import ctypes
+import time
+
+import _stalls
+import pyfect as fx
+import pyfect.testing as it
+
+take = _stalls._DumpTimer.take
+
+
+def unwritten_when_stalled(self, *, stalled):
+    \"\"\"As in a Linux container under load: faulthandler's thread had not written 1.8 s
+    after its due time, with the process running a GIL-held sleep.\"\"\"
+    dump = take(self, stalled=stalled)
+    return _stalls._Dump([], time.time(), 1.8, _stalls._Timing.MISSED) if stalled else dump
+
+
+_stalls._DumpTimer.take = unwritten_when_stalled
+
+
+def sleep_on_purpose():
+    ctypes.PyDLL(None).sleep(2)  # the GIL held 2 s, no CPU used: looks frozen, is not
+
+
+@it.live(timeout="1 second")
+def test_holds_the_gil_with_a_late_dump():
+    yield from fx.sync(sleep_on_purpose)  # the timeout passes during it
+    yield from fx.never  # so it is due as soon as the step ends
+"""
+
+FROZEN_AFTER_THE_CLOCKS = """
+import os
+import subprocess
+import threading
+import time
+
+import _stalls
+import pyfect as fx
+import pyfect.testing as it
+
+_stalls._DumpTimer.take = lambda self, *, stalled: None  # only the SIGCONT shows the freeze
+mark = _stalls._Steal.mark
+freeze = threading.Event()
+
+
+def freeze_after_the_clocks(steal):
+    \"\"\"Where a tick that saw no stall marks the CPU steal, after reading its clocks, once
+    asked: the host freezes the process, so the freeze is the next tick's stall.\"\"\"
+    mark(steal)
+    if freeze.is_set():
+        freeze.clear()
+        script = f"kill -STOP {os.getpid()}; sleep 1; kill -CONT {os.getpid()}"
+        subprocess.Popen(["sh", "-c", script])
+        time.sleep(0.3)  # the stop lands here
+        time.sleep(0.05)  # from the resume: the SIGCONT's byte is written before this tick ends
+
+
+_stalls._Steal.mark = freeze_after_the_clocks
+
+
+@it.live(timeout="1 second")
+def test_frozen_after_the_clocks():
+    freeze.set()
+    yield from fx.sleep("3 seconds")  # 2 s of the test's own time: past its limit
+"""
+
 DEADLOCKED_FIBER = """
 import pyfect as fx
 import pyfect.testing as it
@@ -878,6 +963,30 @@ def test_a_timeout_after_a_host_freeze_says_what_it_left_out(
     assert re.search(r"host froze the process (0\.[89]|1\.[0-9]) s, not counted\)", out), out
 
 
+@pytest.mark.skipif(__import__("sys").platform == "win32", reason="SIGSTOP is POSIX")
+def test_a_freeze_whose_dump_is_not_in_time_is_left_out(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """CI on a loaded runner (load 5.00): faulthandler's dump came after the watchdog judged
+    the stall, which then read "unexplained: no dump came due" and counted the 1 s freeze.
+    The SIGCONT that ended it proves the freeze without the dump."""
+    out = _limited(pytester, monkeypatch, FROZEN_WITH_NO_DUMP_IN_TIME)
+    assert ": host: process frozen, resumed by SIGCONT (" in out, out
+    assert "TestTimeoutError: test timed out after 1.0 s of running time (" in out, out
+    assert re.search(r"host froze the process (0\.[89]|1\.[0-9]) s, not counted\)", out), out
+
+
+@pytest.mark.skipif(__import__("sys").platform == "win32", reason="SIGSTOP is POSIX")
+def test_a_sigcont_read_at_a_tick_with_no_stall_proves_the_next_ticks(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Frozen just after a tick read its clocks, the watchdog resumed in a tick that saw no
+    stall, which dropped the SIGCONT as in no stall; the next tick's stall then had none."""
+    out = _limited(pytester, monkeypatch, FROZEN_AFTER_THE_CLOCKS)
+    assert ": host: process frozen, resumed by SIGCONT (" in out, out
+    assert "TestTimeoutError: test timed out after 1.0 s of running time (" in out, out
+
+
 def test_a_deadlock_times_out_on_time(
     pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -916,14 +1025,33 @@ def test_a_watchdog_starved_before_it_rearms_counts_the_time(
     assert "not counted" not in out, out
 
 
+@pytest.mark.skipif(__import__("sys").platform == "win32", reason="libc sleep through ctypes")
+@pytest.mark.skipif(
+    not getattr(__import__("sys"), "_is_gil_enabled", lambda: True)(),
+    reason="free-threaded: no GIL to hold, so the watchdog keeps running",
+)
+def test_a_late_dump_with_no_sigcont_counts_the_time(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Under load in a Linux container, faulthandler's dump was still unwritten 1.8 s past
+    due during a GIL-held sleep, with no freeze: "host: process frozen, the dump 1.8 s late,
+    unwritten", and 1 s left out of test_a_c_call_holding_the_gil_times_out_on_time's
+    timeout. A late dump proves no freeze; only a SIGCONT does."""
+    out = _limited(pytester, monkeypatch, LATE_DUMP_WITHOUT_A_FREEZE)
+    assert "TestTimeoutError: test timed out after 1.0s" in out, out
+    assert "unexplained: the dump 1.8 s late, unwritten, but no SIGCONT, so " in out, out
+    assert ": host" not in out, out
+    assert "not counted" not in out, out
+
+
 @pytest.mark.skipif(__import__("sys").platform == "win32", reason="SIGSTOP is POSIX")
 def test_a_freeze_before_the_watchdog_rearms_is_left_out(
     pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Where ``test_a_watchdog_starved_before_it_rearms_counts_the_time`` starves the
-    watchdog, a SIGSTOP freezes the C watchdog too: its dump comes late, a host freeze."""
+    watchdog, a SIGSTOP freezes it: the SIGCONT that ends the freeze leaves it out."""
     out = _limited(pytester, monkeypatch, FROZEN_BEFORE_REARMING)
-    assert ": host: process frozen, the dump " in out, out
+    assert ": host: process frozen, resumed by SIGCONT (" in out, out
     assert "TestTimeoutError: test timed out after 1.0 s of running time (" in out, out
     assert re.search(r"host froze the process (0\.[89]|1\.[0-9]) s, not counted\)", out), out
 
