@@ -97,17 +97,25 @@ def test_failed_finalizers_after_a_clean_block_raise_their_merged_cause() -> Non
     assert expected.cause.pretty_errors() == (release_b, release_a)
 
 
-def test_a_failed_finalizer_after_a_raise_is_a_note_on_the_raise() -> None:
+def test_failed_finalizers_after_a_raise_are_the_note_on_the_raise() -> None:
+    # The block's exception is what propagates, so the note holds only the failed finalizers:
+    # not the block's error, which the finalizers' errors carry as their context because
+    # they were raised while it was being handled.
     _, resource = recorder()
-    error = Boom("block")
-    with pytest.raises(Boom) as raised, CloseableScope() as scope:
-        fx.run_blocking(resource("a", fail_release=ValueError("release")).pipe(provide(scope)))
+    error = Boom("the block's own error")
+    release_a, release_b = ValueError("release a"), RuntimeError("release b")
+    both = resource("a", fail_release=release_a).zip(resource("b", fail_release=release_b))
+    with pytest.raises(Boom) as raised, managed(both):
         raise error
     assert raised.value is error
-    note = "\n".join(error.__notes__)
-    assert note.startswith("Full cause:")
-    assert "block" in note
-    assert "release" in note
+    [note] = error.__notes__
+    assert "the block's own error" not in note
+    assert note.startswith("Failed finalizers:\n")
+    assert "RuntimeError: release b" in note
+    assert "ValueError: release a" in note
+    # The finalizers' errors are left as they were raised.
+    assert release_b.__context__ is error
+    assert not release_b.__suppress_context__
 
 
 def test_ctrl_c_in_the_block_closes_the_scope_as_interrupted() -> None:
