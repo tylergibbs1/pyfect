@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- A coroutine run on one of pyfect's loop threads (the httpx client's, Redis's, the sockets',
+  SQL's, the ASGI listener's) is kept until it ends even when nothing keeps its future. asyncio
+  holds tasks weakly, so a garbage collection could destroy one still waiting ("Task was
+  destroyed but it is pending"), closing it half done instead of running it to its end or
+  cancelling it at stop: a Redis connection released after an interrupt could be lost that way.
+
 ## 0.6.15 (2026-11-20)
 
 ### Added

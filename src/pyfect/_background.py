@@ -18,6 +18,19 @@ from collections.abc import Coroutine
 from typing import Any
 
 _running: set[asyncio.Task[Any]] = set()
+_kept: set[asyncio.Task[Any]] = set()
+
+
+def keep_tasks(loop: asyncio.AbstractEventLoop) -> None:
+    """Make ``loop`` keep each task it creates until the task ends."""
+
+    def create(loop: asyncio.AbstractEventLoop, coroutine: Any, **kwargs: Any) -> asyncio.Task[Any]:
+        task: asyncio.Task[Any] = asyncio.Task(coroutine, loop=loop, **kwargs)
+        _kept.add(task)
+        task.add_done_callback(_kept.discard)
+        return task
+
+    loop.set_task_factory(create)
 
 
 def start[A](coroutine: Coroutine[Any, Any, A], loop: asyncio.AbstractEventLoop) -> asyncio.Task[A]:
@@ -42,4 +55,4 @@ async def settle() -> None:
         await asyncio.gather(*tasks, return_exceptions=True)
 
 
-__all__ = ["running", "settle", "start"]
+__all__ = ["keep_tasks", "running", "settle", "start"]
