@@ -6,7 +6,7 @@ guard's regression patch applied, and must fail there with an assertion or by ha
 timing test with its bound ``GUARD_MARGIN`` times looser). A test that passes would pass
 against its own bug: a growth check sized too small to see the old cost, say. Any other
 exception (an import the patch broke) is an error. Each test runs in a process of its own,
-killed past ``DEADLINE`` and limited to ``MEMORY`` (``run_guarded``): an injected bug may
+killed past ``DEADLINE`` or once it holds ``MEMORY`` (``run_guarded``): an injected bug may
 hold quadratic memory or spin where the hang alarm can't stop it, and either counts as caught.
 Too slow for every pull request (an injected quadratic runs until the hang alarm stops it),
 so it runs nightly
@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import argparse
 import os
-import resource
 import shutil
 import signal
 import subprocess
@@ -78,9 +77,8 @@ GUARD_MARGIN = "1.5"
 
 type Verdict = Literal["caught", "MISSED", "error", "skipped", "patch no longer applies"]
 
-_CAUGHT = ("AssertionError", "assert ", "Failed: test hung", "Failed: DID NOT RAISE", "MemoryError")
-"""Failures that are the test's own verdict. A ``MemoryError`` is the bug's memory passing
-``MEMORY``."""
+_CAUGHT = ("AssertionError", "assert ", "Failed: test hung", "Failed: DID NOT RAISE")
+"""Failures that are the test's own verdict."""
 
 DEADLINE = 180.0
 """Seconds one guarded test's process may run before it is killed and its bug counted as
@@ -88,9 +86,14 @@ caught: three times the hang alarm (``test_timeout``), which leaves its native-s
 and pytest's start-up room. The alarm can't stop a bug spinning inside one C call."""
 
 MEMORY = 4 << 30
-"""Bytes of address space one guarded test's process may map (Linux enforces it; macOS
-refuses the limit). A guard's process maps about 0.4 GB, its tests' peaks under 1 GB more;
-json-patch's copies mapped 16 GB in seconds against its bug and took the runner down."""
+"""Resident bytes one guarded test's process may hold before it is killed and its bug counted
+as caught. A guard's process holds about 0.2 GB, its tests' peaks under 1 GB more;
+json-patch's copies held 16 GB within ten seconds against its bug and took the runner down.
+Resident, not mapped: the fresh-stack walk maps 300 threads' stacks and touches little."""
+
+_WATCH = 0.2
+"""Seconds between reads of the test's resident memory: at the 2 GB a second json-patch's
+copies grew, the process is killed within about 0.4 GB of ``MEMORY``."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -119,16 +122,19 @@ def _outcomes(report: Path) -> dict[str, tuple[Verdict, str]]:
     return outcomes
 
 
-def _limit_memory(memory: int) -> None:
-    if sys.platform == "linux":
-        resource.setrlimit(resource.RLIMIT_AS, (memory, memory))
+def _resident(pid: int) -> int:
+    """Bytes ``pid`` holds in memory, 0 once it is gone."""
+    found = subprocess.run(
+        ["ps", "-o", "rss=", "-p", str(pid)], capture_output=True, text=True, check=False
+    )
+    return int(found.stdout.strip() or 0) * 1024
 
 
 def run_guarded(
     nodeid: str, *, cwd: Path, src: Path, deadline: float = DEADLINE, memory: int = MEMORY
 ) -> Outcome:
     """``nodeid``'s verdict against the source at ``src``, run in a process of its own (with
-    any it starts) killed past ``deadline`` seconds and limited to ``memory`` bytes."""
+    any it starts) killed past ``deadline`` seconds or once it holds ``memory`` bytes."""
     with tempfile.TemporaryDirectory(prefix="guard-report-") as reports:
         report = Path(reports) / "report.xml"
         env = {**os.environ, "PYTHONPATH": str(src), "PYFECT_GUARD_MARGIN": GUARD_MARGIN}
@@ -144,15 +150,18 @@ def run_guarded(
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             process_group=0,
-            preexec_fn=lambda: _limit_memory(memory),  # noqa: PLW1509 - the script starts no threads
         ) as process:
-            try:
-                code = process.wait(deadline)
-            except subprocess.TimeoutExpired:
-                os.killpg(process.pid, signal.SIGKILL)
-                process.wait()
-                why = f"killed: still running after {deadline:g}s"
-                return Outcome("caught", why, time.monotonic() - start)
+            killed = None
+            while (code := process.poll()) is None:
+                if time.monotonic() - start > deadline:
+                    killed = f"killed: still running after {deadline:g}s"
+                elif (held := _resident(process.pid)) > memory:
+                    killed = f"killed: held {held / 2**30:.1f} GB, over {memory / 2**30:g} GB"
+                if killed:
+                    os.killpg(process.pid, signal.SIGKILL)
+                    process.wait()
+                    return Outcome("caught", killed, time.monotonic() - start)
+                time.sleep(_WATCH)
         seconds = time.monotonic() - start
         found = _outcomes(report).get(nodeid) if report.exists() else None
         verdict, why = found or ("error", f"did not run (exit code {code})")

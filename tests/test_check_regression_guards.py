@@ -3,16 +3,14 @@
 An injected bug once held memory quadratic in its input (json-patch's copies): the guard's
 test reached 16 GB in seconds, before the hang alarm's 60 s, and the nightly runner lost
 contact with GitHub. A bug that spins inside one C call never lets the alarm run at all.
-So each test runs in a process of its own with a hard deadline and, on Linux, a cap on its
-address space; past either it counts as caught, as a hang does.
+So each test runs in a process of its own, killed past a hard deadline or once it holds too
+much memory; either counts as caught, as a hang does.
 """
 
 import importlib.util
 import sys
 from pathlib import Path
 from types import ModuleType
-
-import pytest
 
 _SCRIPT = Path(__file__).resolve().parent.parent / "scripts" / "check_regression_guards.py"
 
@@ -54,7 +52,7 @@ def test_spins_where_no_alarm_reaches():
 def test_holds_ever_more_memory():
     held = []
     while True:
-        held.append(bytearray(64 << 20))
+        held.append(b"x" * (64 << 20))
 """
 
 
@@ -79,8 +77,8 @@ def test_a_test_past_its_deadline_is_killed_and_caught(tmp_path: Path) -> None:
     assert (verdict, why) == ("caught", "killed: still running after 5s")
 
 
-@pytest.mark.skipif(sys.platform != "linux", reason="only Linux enforces RLIMIT_AS")
-def test_a_test_past_its_memory_is_caught(tmp_path: Path) -> None:
+def test_a_test_past_its_memory_is_killed_and_caught(tmp_path: Path) -> None:
     verdict, why = _run(tmp_path, "test_holds_ever_more_memory", memory=1 << 30, deadline=60)
     assert verdict == "caught", why
-    assert why.startswith("MemoryError"), why
+    assert why.startswith("killed: held "), why
+    assert why.endswith(", over 1 GB"), why
