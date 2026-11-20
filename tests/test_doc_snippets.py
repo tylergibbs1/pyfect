@@ -18,10 +18,12 @@ in "Output" tabs. The file must equal what running the snippet prints; regenerat
     UPDATE_SNIPPET_OUTPUT=1 uv run pytest tests/test_doc_snippets.py
 """
 
+import ast
 import os
 import re
 import subprocess
 import sys
+from collections import Counter
 from collections.abc import Iterator
 from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
@@ -30,6 +32,7 @@ import _source
 import pytest
 from _count_sleeps import MARKER
 from _inventory import parse
+from _snippet_forks import Forks
 
 from pyfect.duration import from_input_unsafe
 
@@ -205,6 +208,20 @@ def assert_sleeps_in_limit(snippet: str, done: subprocess.CompletedProcess[str])
         )
 
 
+def shared_imports(paths: list[Path]) -> list[str]:
+    """The modules at least two of `paths` import by name, which the fork server preloads."""
+    counts: Counter[str] = Counter()
+    for path in paths:
+        modules: set[str] = set()
+        for node in ast.walk(_source.tree(path)):
+            if isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
+                modules.add(node.module)
+            elif isinstance(node, ast.Import):
+                modules.update(alias.name for alias in node.names)
+        counts.update(modules)
+    return sorted(module for module, count in counts.items() if count >= 2)
+
+
 # A run of a snippet, by the name of the test that checks it and the snippet.
 Runs = dict[tuple[str, Path], Future[subprocess.CompletedProcess[str]]]
 
@@ -215,8 +232,17 @@ def assert_ran(done: subprocess.CompletedProcess[str]) -> None:
     assert done.returncode == 0, f"stdout:\n{done.stdout}\nstderr:\n{done.stderr}"
 
 
-def run_with_server(path: Path) -> subprocess.CompletedProcess[str]:
-    return run(*snippet_args(path), env=snippet_env(path))
+def run_snippet(
+    forks: Forks, *args: str, env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
+    """A run as `run` makes it, in a fork of an interpreter that has imported pyfect; one under
+    pytest starts its own, to import pyfect after pytest is configured (`_count_sleeps.py`)."""
+    under_pytest = args[1:3] == ("-m", "pytest")
+    return run(*args, env=env) if under_pytest else forks.run(*args, env=env)
+
+
+def run_with_server(forks: Forks, path: Path) -> subprocess.CompletedProcess[str]:
+    return run_snippet(forks, *snippet_args(path), env=snippet_env(path))
 
 
 def snippet_threads(cpus: int, workers: int) -> int:
@@ -267,12 +293,13 @@ def runs(request: pytest.FixtureRequest) -> Iterator[Runs]:
     """The runs of this session's snippets, all started at once in the order their tests run,
     so a test waits only for the few runs ahead of it.
 
-    A run is mostly an interpreter importing pyfect, so one after another they took minutes.
-    They run side by side on this process's share of the CPUs (the other xdist workers have
-    the rest), one left free: some snippets time their own wake-ups (threads/lag.py), and a
-    CPU taken by another run would make them late, as it would other workers' tests. Snippets of a
-    database server share it, so they run one at a time, alongside the others; one that
-    finds no server skips its test.
+    A run was mostly an interpreter importing pyfect, so each forks one that has imported it
+    (`_snippet_forks.py`). They run side by side on this process's share of the CPUs (the
+    other xdist workers have the rest), one left free: some snippets time their own wake-ups
+    (threads/lag.py), and a CPU taken by another run would make them late, as it would other
+    workers' tests. Snippets of a database server share it, so they run one at a time,
+    alongside the others and those of the other servers (a server's start is mostly waiting on
+    its container); one that finds no server skips its test.
     """
     keys = [
         (item.originalname, path)
@@ -289,21 +316,24 @@ def runs(request: pytest.FixtureRequest) -> Iterator[Runs]:
     ]
     workers = int(os.environ.get("PYTEST_XDIST_WORKER_COUNT", "1"))
     pool = ThreadPoolExecutor(max_workers=snippet_threads(os.process_cpu_count() or 1, workers))
-    servers = ThreadPoolExecutor(max_workers=1)
+    servers = {server: ThreadPoolExecutor(max_workers=1) for server in SERVERS}
+    forks = Forks(ROOT, shared_imports(sorted({path for _, path in keys})))
     try:
         yield {
-            (test, path): pool.submit(run, "-c", SLOW_DRAIN, str(path))
+            (test, path): pool.submit(run_snippet, forks, "-c", SLOW_DRAIN, str(path))
             if test == "test_cluster_snippet_with_a_slow_drain"
-            else pool.submit(run, str(SLOW_STORAGE), str(path))
+            else pool.submit(run_snippet, forks, str(SLOW_STORAGE), str(path))
             if test == "test_cluster_snippet_with_slow_storage"
-            else servers.submit(run_with_server, path)
-            if any(path.is_relative_to(server) for server in SERVERS)
-            else pool.submit(run, *snippet_args(path))
+            else servers[server].submit(run_with_server, forks, path)
+            if (server := next((s for s in SERVERS if path.is_relative_to(s)), None))
+            else pool.submit(run_snippet, forks, *snippet_args(path))
             for test, path in keys
         }
     finally:
         pool.shutdown(cancel_futures=True)
-        servers.shutdown(cancel_futures=True)
+        for executor in servers.values():
+            executor.shutdown(cancel_futures=True)
+        forks.close()
 
 
 @pytest.mark.parametrize("path", SCRIPTS, ids=name)

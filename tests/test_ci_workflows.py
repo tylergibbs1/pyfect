@@ -177,6 +177,66 @@ def test_the_docs_build_check_passes_only_if_every_docs_job_did():
     assert build.count("= success ]") == len(others)
 
 
+def _triggers(workflow: str) -> list[str]:
+    """The lines of a workflow's `on:` block, without comments."""
+    text = (WORKFLOWS / workflow).read_text(encoding="utf-8")
+    block = re.search(r"(?ms)^on:\n(.*?)^\S", text)
+    assert block, workflow
+    return [ln for ln in block.group(1).splitlines() if ln.strip() and ln.split()[0] != "#"]
+
+
+def test_pyright_checks_the_snippets_once_in_ci():
+    """ci.yml's types job checks every file pyproject.toml includes, website/snippets too, on
+    the same events docs.yml runs on; the snippets job ran pyright over them a second time."""
+    pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    include = re.search(r"(?m)^include = (\[.*\])$", pyproject)
+    assert include and "website/snippets" in json.loads(include.group(1))
+    assert re.search(
+        r'(?m)^        run: uv run --no-sync pyright --threads "\$\(nproc\)"$',
+        _job("ci.yml", "types"),
+    )
+    assert _triggers("docs.yml") == _triggers("ci.yml")
+    pyright_runs = re.compile(r"(?m)^[^#\n]*\bpyright\b")
+    for path in sorted(WORKFLOWS.glob("*.yml")):
+        runs = pyright_runs.findall(path.read_text(encoding="utf-8"))
+        assert len(runs) == (1 if path.name == "ci.yml" else 0), (path.name, runs)
+
+
+def _budget_problems(job: str) -> list[str]:
+    """The job's last step fails it once it has taken over 80% of its timeout, from the
+    `JOB_START` its first step records."""
+    timeout = re.search(r"(?m)^    timeout-minutes: (\d+)$", job)
+    steps = re.split(r"(?m)^      - ", job)
+    problems: list[str] = []
+    if 'echo "JOB_START=$(date +%s)" >> "$GITHUB_ENV"' not in steps[1]:
+        problems.append("the first step does not record JOB_START")
+    budget = re.search(r"(?m)^          TIMEOUT_MINUTES: (\d+)$", steps[-1])
+    if not (timeout and budget and budget.group(1) == timeout.group(1)):
+        problems.append("the last step's TIMEOUT_MINUTES is not the job's timeout-minutes")
+    if "[ $(( took * 100 )) -le $(( budget * 80 )) ]" not in steps[-1]:
+        problems.append("the last step does not fail above 80% of the budget")
+    return problems
+
+
+def test_the_snippets_job_fails_above_80_percent_of_its_budget():
+    """Run 44735422935 took 195 s and was cancelled at the 180 s timeout, the snippets job's
+    usual 102-161 s having crept up unnoticed. Now it fails, with its time, before that."""
+    assert _budget_problems(_job("docs.yml", "snippets")) == []
+
+
+def test_the_budget_guard_sees_a_stale_timeout_and_a_missing_start():
+    job = _job("docs.yml", "snippets")
+    assert _budget_problems(job.replace("timeout-minutes: 3", "timeout-minutes: 4")) == [
+        "the last step's TIMEOUT_MINUTES is not the job's timeout-minutes"
+    ]
+    assert _budget_problems(job.replace('echo "JOB_START', 'echo "START')) == [
+        "the first step does not record JOB_START"
+    ]
+    assert _budget_problems(job.replace("budget * 80", "budget * 95")) == [
+        "the last step does not fail above 80% of the budget"
+    ]
+
+
 def test_only_a_pull_request_may_skip_the_site_build():
     """The merge queue, pushes and releases build the site; a pull request whose diff touches
     nothing the site reads may skip it, and `build` passes a skipped site only then."""
@@ -509,6 +569,7 @@ def test_the_server_tests_load_the_cached_images_and_never_pull():
         ("ci.yml", "images", ["test"]),
         ("drivers.yml", "images", ["driver"]),
         ("soak-nightly.yml", "images", ["cluster"]),
+        ("docs.yml", "images", ["snippets"]),
     ):
         assert save in _job(workflow, saver), f"{workflow}'s {saver} job saves no images"
         for runner in runners:
