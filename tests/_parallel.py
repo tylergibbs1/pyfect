@@ -8,6 +8,8 @@
   as vitest runs them) keeps its order under pytest-randomly and runs on one worker.
 - The tests that use a database container (``_mysql``, ``_mssql``, ``_clickhouse``, ``_libsql``)
   run on one worker per database, so a runner starts each container once, not once per worker.
+- A worker that dies fails the test it was running, once, and its replacement runs the rest
+  of its work: the run ends instead of waiting for ever.
 
 The last two are this plugin's scheduler, not ``xdist_group`` marks: xdist 3.8 groups by
 rewriting ``item._nodeid``, which pytest 9.2 no longer reads (pytest-dev/pytest-xdist#1407), so
@@ -95,6 +97,38 @@ def pytest_xdist_make_scheduler(config: pytest.Config, log: Any) -> object | Non
     class _Scheduling(LoadScopeScheduling):
         def _split_scope(self, nodeid: str) -> str:
             return scope_of(nodeid, text(nodeid.partition("::")[0]))
+
+        def remove_node(self, node: Any) -> str | None:
+            """xdist's, but the test a dead worker was running is not run again: it would only
+            kill the next worker too."""
+            workload: dict[str, dict[str, bool]] = self.assigned_work.pop(node)
+            crashed = next(
+                (test for unit in workload.values() for test, done in unit.items() if not done),
+                None,
+            )
+            if crashed is None:
+                return None
+            for unit in workload.values():
+                if crashed in unit:
+                    unit[crashed] = True
+            self.workqueue.update(
+                (scope, unit) for scope, unit in workload.items() if not all(unit.values())
+            )
+            for other in self.assigned_work:
+                self._reschedule(other)
+            return crashed
+
+        def _reschedule(self, node: Any) -> None:
+            """Hands ``node`` work until it holds over two tests, and stops it once none is
+            left. xdist's gives one unit per call, and a worker runs a test only once it holds
+            the next one or a stop: a replacement worker given a single test of a dead one's
+            work waited for ever."""
+            if node.shutting_down:
+                return
+            while self.workqueue and self._pending_of(self.assigned_work[node]) <= 2:
+                self._assign_work_unit(node)
+            if not self.workqueue:
+                node.shutdown()
 
     return _Scheduling(config, log)
 

@@ -8,6 +8,7 @@ import _parallel
 import _source
 import pytest
 import test_doc_snippets
+from _subprocess import SUBPROCESS_TIMEOUT
 
 
 @pytest.fixture(autouse=True)
@@ -112,6 +113,33 @@ def test_a_quiet_random_parallel_run_prints_the_seed_that_repeats_it(pytester: p
     )
     assert result.ret == pytest.ExitCode.OK
     result.stdout.fnmatch_lines(["random order: repeat it with -p randomly --randomly-seed=1234"])
+
+
+_CRASHES_FIRST = """
+import os
+import signal
+
+
+def test_0_crashes():
+    os.kill(os.getpid(), signal.SIGKILL)  # no traceback, as CI's subinterpreter crash left
+
+
+{rest}
+"""
+
+
+def test_a_worker_that_dies_ends_the_run_with_its_test_failed(pytester: pytest.Pytester):
+    # CI (3.14, shard 4/5): a worker died while it still held a queued test after the others
+    # had been told to stop. Its replacement got one test of the work put back and waited for
+    # a second, or for a stop, before it would run it (a worker needs the next test to tear the
+    # last one down), so the shard hung until the job's limit. The crashed test is not run
+    # again: on a worker of its own it would only die again.
+    pytester.makepyfile(test_crash=_CRASHES_FIRST.format(rest=_independent(3)))
+    result = pytester.runpytest_subprocess(
+        "-p", "_parallel", "-p", "no:randomly", "-n", "2", timeout=SUBPROCESS_TIMEOUT
+    )
+    result.assert_outcomes(passed=3, failed=1)
+    result.stdout.fnmatch_lines(["*worker 'gw?' crashed while running*test_0_crashes*"])
 
 
 def test_the_snippet_runs_are_scheduled_together() -> None:
