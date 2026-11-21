@@ -42,7 +42,9 @@ def _functions() -> Iterator[tuple[str, Callable[..., object]]]:
 
 
 def _written_in_pyfect(function: Callable[..., object]) -> bool:
-    return function.__module__ == "pyfect" or function.__module__.startswith("pyfect.")
+    # The 3.14.0 wrapper copies the builtin's `__module__`, which is None.
+    module: object = getattr(function, "__module__", None)
+    return isinstance(module, str) and (module == "pyfect" or module.startswith("pyfect."))
 
 
 def _widening(function: Callable[..., object]) -> Iterator[str]:
