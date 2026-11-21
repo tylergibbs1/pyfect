@@ -764,7 +764,7 @@ def test_the_nightly_flake_hunt_reruns_the_suite_as_ci_runs_it_and_tolerates_not
     assert [path for path in paths if path and not (ROOT / path).exists()] == []
 
     for job in (suite, threaded):
-        assert "python3 scripts/flakes.py rounds" in job and '--minutes "$MINUTES"' in job
+        assert "scripts/flakes.py rounds" in job and '--minutes "$MINUTES"' in job
         budget = re.search(r"(?m)^    timeout-minutes: (\d+)$", job)
         assert budget and int(budget.group(1)) >= 50 + 15, "the longest rounds, setup and one more"
     report = _job("flakes-nightly.yml", "report")

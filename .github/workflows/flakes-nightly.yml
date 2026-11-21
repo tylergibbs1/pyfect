@@ -156,8 +156,9 @@ jobs:
           "$RUNNER_TEMP/ft/bin/python" -c "import platform, sys; print(sys.version); assert platform.python_version() + 't' == '$PYTHON'; assert not sys._is_gil_enabled(), 'GIL enabled'"
 
       - name: Rounds
+        # On the free-threaded build too: a GIL build stops at start-up when PYTHON_GIL=0.
         run: >
-          python3 scripts/flakes.py rounds
+          "$RUNNER_TEMP/ft/bin/python" scripts/flakes.py rounds
           --job "free-threaded-${{ matrix.python }}-${{ matrix.copy }}" --minutes "$MINUTES" --hogs "$HOGS"
           --out ".flakes/free-threaded-${{ matrix.python }}-${{ matrix.copy }}" --
           "$RUNNER_TEMP/ft/bin/python" -m pytest -q -rfEs -n auto -p no:cacheprovider
