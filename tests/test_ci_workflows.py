@@ -51,7 +51,8 @@ def test_one_pyright_run_checks_every_python():
     pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
     version = re.search(r'(?m)^pythonVersion = "(3\.\d+)"$', pyproject)
     assert version, "pyproject.toml pins pyright's pythonVersion"
-    assert f'python: "{version.group(1)}"' in _job("ci.yml", "types")
+    synced = re.search(r'(?m)^          python: "(3\.\d+)\.\d+"$', _job("ci.yml", "types"))
+    assert synced and synced.group(1) == version.group(1), "the types job syncs pythonVersion"
 
 
 def test_the_shards_run_every_test_once_and_the_check_says_so():
@@ -263,7 +264,7 @@ def test_extras_gate_benchmarks_and_free_threaded():
     assert "gate.py" in job
     # The comparison with the branch base needs the history to find it.
     assert "python compare.py\n" in job and "fetch-depth: 0" in job
-    assert "3.14t" in _job("extras.yml", "free-threaded")
+    assert re.search(r"--python 3\.14\.\d+t ", _job("extras.yml", "free-threaded"))
 
 
 def test_the_extras_check_waits_for_every_extra_that_runs():
@@ -403,23 +404,96 @@ def test_the_local_python_request_names_the_gil_build():
 
 def test_the_check_runs_on_every_python_pyproject_lists():
     """CI once ran only the Python uv picked (3.14, from .python-version), so a 3.13-only
-    failure could pass it."""
+    failure could pass it. Branch protection requires `check (3.13)` and `check (3.14)`, so the
+    check job is named by the minor version whatever patch its matrix runs."""
     pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
     listed = re.findall(r'"Programming Language :: Python :: (3\.\d+)"', pyproject)
     minimum = re.search(r'requires-python = ">=(3\.\d+)"', pyproject)
     assert minimum and listed and listed[0] == minimum.group(1), "classifiers start at the minimum"
+    pythons = _ci_pythons()
+    assert [python.rpartition(".")[0] for python in pythons] == listed
     for name in ("collect", "test", "check"):
         job = _job("ci.yml", name)
-        matrix = re.search(r"(?m)^\s+python: \[(.*)\]$", job)
+        matrix = re.search(r"(?m)^        python: \[(.*)\]$", job)
         assert matrix, f"ci.yml's {name} job has no python matrix"
-        assert re.findall(r'"(3\.\d+)"', matrix.group(1)) == listed, name
+        assert re.findall(r'"([^"]+)"', matrix.group(1)) == pythons, name
     for name in ("collect", "test"):
         job = _job("ci.yml", name)
         assert "UV_PYTHON: ${{ matrix.python }}" in job
         assert "python: ${{ matrix.python }}" in job
+    check = _job("ci.yml", "check")
+    assert check.startswith("    # ") and "\n    name: check (${{ matrix.minor }})\n" in check
+    minors = re.findall(r'(?m)^          - python: "([^"]+)"\n            minor: "([^"]+)"$', check)
+    assert minors == [(python, python.rpartition(".")[0]) for python in pythons], minors
     setup = (ROOT / ".github" / "actions" / "check-setup" / "action.yml").read_text("utf-8")
     assert "PYTHON: ${{ inputs.python }}" in setup
     assert 'uv sync --locked --python "$PYTHON"' in setup
+    assert "assert '$PYTHON' in (v, v.rpartition('.')[0]), v" in setup, "checks the patch it got"
+
+
+def _ci_pythons() -> list[str]:
+    """ci.yml's test matrix: one exact CPython patch per Python pyproject lists."""
+    matrix = re.search(r"(?m)^        python: \[(.*)\]$", _job("ci.yml", "test"))
+    assert matrix, "ci.yml's test job has no python matrix"
+    return re.findall(r'"([^"]+)"', matrix.group(1))
+
+
+# Every way a workflow or action names a Python: `--python X`, `uv python install X`, a
+# `UV_PYTHON` or `python:` value, and a `python:` matrix list.
+_PYTHON_REQUESTS = (
+    r"--python (\S+)",
+    r"uv python install (?:-q )?(\S+)",
+    r"UV_PYTHON: (\S+)",
+    r"(?m)^\s+(?:- )?python: (?!\[)(\S+)$",
+)
+
+
+def _python_requests(text: str) -> list[str]:
+    found = [m.strip("\"';") for pattern in _PYTHON_REQUESTS for m in re.findall(pattern, text)]
+    for matrix in re.findall(r"(?m)^\s+python: \[(.*)\]$", text):
+        found += re.findall(r'"([^"]+)"', matrix)
+    # An expression, a variable or an interpreter's path names no version itself.
+    return [python for python in found if "$" not in python and "/" not in python]
+
+
+def test_every_workflow_names_an_exact_cpython_patch():
+    """A request for "3.14" takes whichever 3.14 the runner has: ci.yml's ran 3.14.4 while
+    3.14.10 was out, and a failure only 3.14.0 has (an `inspect.signature` that 3.14.4 no longer
+    reached) went unseen until the nightly ran 3.14.0. Every workflow names exact patches, and
+    its newest of each minor version is ci.yml's, so a newer patch is one change everywhere; an
+    older patch (the nightly's 3.14.0) is there on purpose."""
+    ci = {python.rpartition(".")[0]: python for python in _ci_pythons()}
+    files = [
+        *sorted(WORKFLOWS.glob("*.yml")),
+        ROOT / ".github" / "actions" / "check-setup" / "action.yml",
+    ]
+    for path in files:
+        newest: dict[str, tuple[int, ...]] = {}
+        for python in _python_requests(path.read_text(encoding="utf-8")):
+            exact = re.fullmatch(r"(3\.\d+)\.(\d+)t?", python)
+            assert exact, f"{path.name} asks for Python {python!r}, not an exact patch"
+            assert exact.group(1) in ci, f"{path.name}: {python} is no Python ci.yml runs"
+            patch = tuple(int(n) for n in python.removesuffix("t").split("."))
+            newest[exact.group(1)] = max(newest.get(exact.group(1), patch), patch)
+        for minor, patch in newest.items():
+            assert ".".join(map(str, patch)) == ci[minor], f"{path.name}'s newest {minor}"
+    # The nightly hunts flakes on the patches the pull requests run, and on 3.14.0.
+    nightly = _python_requests(_job("flakes-nightly.yml", "suite"))
+    assert set(ci.values()) <= set(nightly), (nightly, ci)
+
+
+def test_the_python_request_finder_sees_every_form():
+    found = _python_requests(
+        "        run: uv sync --locked --python 3.13 --group fuzz\n"
+        "          uv python install -q 3.14t; fi\n"
+        '      UV_PYTHON: "3.14"\n'
+        '          python: "3.13"\n'
+        '            python: "3.14"\n'
+        '        python: ["3.13", "3.14t"]\n'
+        "      UV_PYTHON: ${{ matrix.python }}\n"
+        '        uv sync --locked --python "$PYTHON"\n'
+    )
+    assert sorted(found) == ["3.13", "3.13", "3.13", "3.14", "3.14", "3.14t", "3.14t"]
 
 
 def test_workflows_pin_one_effect_commit():

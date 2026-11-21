@@ -70,9 +70,9 @@ jobs:
         include:
           # The newest release on the newest Python, the oldest allowed on the oldest.
           - resolution: highest
-            python: "3.14"
+            python: "3.14.10"
           - resolution: lowest-direct
-            python: "3.13"
+            python: "3.13.18"
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:

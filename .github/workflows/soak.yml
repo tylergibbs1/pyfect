@@ -28,7 +28,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python: ["3.13", "3.14", "3.14t"]
+        python: ["3.13.18", "3.14.10", "3.14.10t"]
     runs-on: ubuntu-latest
     # A job may run six hours: the soak, its warm-up and shutdown, and the setup fit in this.
     timeout-minutes: 350
@@ -57,7 +57,7 @@ jobs:
         working-directory: tests
         run: |
           # Extensions not marked free-threading safe would turn the GIL back on.
-          if [ "${{ matrix.python }}" = "3.14t" ]; then export PYTHON_GIL=0; fi
+          if [ "${{ matrix.python }}" = "3.14.10t" ]; then export PYTHON_GIL=0; fi
           "$RUNNER_TEMP/soak/bin/python" -m soak run \
             --duration "$DURATION" --rate "$RATE" --interval 30s \
             --out "$GITHUB_WORKSPACE/.soak/soak-${{ matrix.python }}.jsonl"

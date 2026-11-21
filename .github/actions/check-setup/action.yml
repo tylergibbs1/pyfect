@@ -54,7 +54,7 @@ runs:
         # The interpreter the run uses, by its patch: a request for 3.14 takes whichever 3.14 uv finds.
         uv run --no-sync python -c "import platform, sys; print(sys.executable, sys.version); v = platform.python_version(); assert '$PYTHON' in (v, v.rpartition('.')[0]), v; assert sys._is_gil_enabled(), 'free-threaded'"
         # tests/test_free_threaded.py runs programs on the free-threaded build.
-        if [ "$TESTS" = true ]; then uv python install -q 3.14t; fi
+        if [ "$TESTS" = true ]; then uv python install -q 3.14.10t; fi
 
     - name: Save the environment
       if: steps.venv.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main' && github.event_name == 'push'

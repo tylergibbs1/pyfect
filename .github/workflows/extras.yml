@@ -46,11 +46,11 @@ jobs:
 
       - name: Benchmark gate
         working-directory: benchmarks
-        run: uv run --python 3.13 python gate.py
+        run: uv run --python 3.13.18 python gate.py
 
       - name: Compare with the branch base
         working-directory: benchmarks
-        run: uv run --python 3.13 python compare.py
+        run: uv run --python 3.13.18 python compare.py
 
   base-install:
     # What `uv add pyfect-dev` gives a user: no extras, no pytest.
@@ -73,7 +73,7 @@ jobs:
 
       - name: Install with no extras and run a program
         run: |
-          uv venv -q --python 3.13 "$RUNNER_TEMP/base"
+          uv venv -q --python 3.13.18 "$RUNNER_TEMP/base"
           uv pip install -q --python "$RUNNER_TEMP/base/bin/python" .
           cd "$RUNNER_TEMP"
           "$RUNNER_TEMP/base/bin/python" -I -c "import pyfect as fx; import pyfect.testing; assert fx.run_sync(fx.succeed(1)) == 1"
@@ -107,8 +107,8 @@ jobs:
 
       - name: Install CPython 3.14t with pyfect and pytest
         run: |
-          uv python install 3.14t
-          uv venv -q --python 3.14t "$RUNNER_TEMP/ft"
+          uv python install 3.14.10t
+          uv venv -q --python 3.14.10t "$RUNNER_TEMP/ft"
           uv pip install -q --python "$RUNNER_TEMP/ft/bin/python" . pytest pytest-xdist
           "$RUNNER_TEMP/ft/bin/python" -c "import sys; assert not sys._is_gil_enabled(), 'GIL enabled'"
 
@@ -125,7 +125,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python: ["3.14", "3.14t"]
+        python: ["3.14.10", "3.14.10t"]
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
@@ -144,7 +144,7 @@ jobs:
       - name: Soak for six minutes
         working-directory: tests
         run: |
-          if [ "${{ matrix.python }}" = "3.14t" ]; then export PYTHON_GIL=0; fi
+          if [ "${{ matrix.python }}" = "3.14.10t" ]; then export PYTHON_GIL=0; fi
           "$RUNNER_TEMP/soak/bin/python" -m soak run --duration 6m --interval 3s \
             --warmup 90s --no-latency --out "$GITHUB_WORKSPACE/.soak/soak-short.jsonl"
 

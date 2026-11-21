@@ -50,7 +50,7 @@ jobs:
     # The rounds stop starting at MINUTES; the last one and the setup fit in the rest.
     timeout-minutes: 125
     env:
-      UV_PYTHON: "3.14"
+      UV_PYTHON: "3.14.10"
       EFFECT_COMMIT: 289a53f7b1fc40049219c6e69022db2fb859c356 # Effect 4.1.4; tests/_effect_ref.py checks local checkouts against it
       PYFECT_EFFECT_REF: ${{ github.workspace }}/.effect
       # A test skipped for a missing server fails the round (tests/_skips.py).
@@ -71,7 +71,7 @@ jobs:
 
       - uses: ./.github/actions/check-setup
         with:
-          python: "3.14"
+          python: "3.14.10"
 
       - name: Cluster and workflow rounds
         run: |
@@ -110,8 +110,8 @@ jobs:
 
       - name: Install
         run: |
-          uv python install 3.14
-          uv venv -q --python 3.14 "$RUNNER_TEMP/soak"
+          uv python install 3.14.10
+          uv venv -q --python 3.14.10 "$RUNNER_TEMP/soak"
           uv pip install -q --python "$RUNNER_TEMP/soak/bin/python" '.[httpx,websockets,crypto]'
 
       - name: Soak

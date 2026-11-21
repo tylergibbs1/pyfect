@@ -25,6 +25,10 @@ _SCHEMA_OF = re.compile(r"\b(?:Codec|Schema|Decoder|Bottom)\[\s*(\w+)\s*[,\]]")
 
 
 def _functions() -> Iterator[tuple[str, Callable[..., object]]]:
+    """Each module's own functions, and the methods pyfect wrote on its classes.
+    A method a stdlib decorator generated is left out: ``warnings.deprecated``
+    gives a generic class an ``__init_subclass__`` wrapping a builtin that has no
+    signature on 3.14.0 (later patches make it a classmethod, not a function)."""
     for module in modules():
         for name, value in vars(module).items():
             if getattr(value, "__module__", None) != module.__name__:
@@ -33,8 +37,12 @@ def _functions() -> Iterator[tuple[str, Callable[..., object]]]:
                 yield f"{module.__name__}.{name}", value
             elif inspect.isclass(value):
                 for member_name, member in vars(value).items():
-                    if inspect.isfunction(member):
+                    if inspect.isfunction(member) and _written_in_pyfect(member):
                         yield f"{module.__name__}.{name}.{member_name}", member
+
+
+def _written_in_pyfect(function: Callable[..., object]) -> bool:
+    return function.__module__ == "pyfect" or function.__module__.startswith("pyfect.")
 
 
 def _widening(function: Callable[..., object]) -> Iterator[str]:

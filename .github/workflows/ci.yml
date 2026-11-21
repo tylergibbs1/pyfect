@@ -24,6 +24,10 @@ concurrency:
 # and the shards together ran exactly the tests `collect` found. The tests read the Effect 4.1.4
 # checkout; server-backed tests start their databases themselves.
 #
+# Each Python is an exact CPython patch, the newest 3.13's and 3.14's (python-build-standalone's
+# releases), the same as every other workflow's and flakes-nightly.yml's newest: a runner's own
+# 3.14 lagged six patches behind.
+#
 # One commit gets one run: a pull request is checked by its pull_request run, and a push runs
 # only on main. A branch push would check the same commit a second time, and cancelling either
 # copy leaves a failed required check on a commit main may move to. Each job's timeout is its
@@ -64,7 +68,7 @@ jobs:
 
       - uses: ./.github/actions/check-setup
         with:
-          python: "3.13"
+          python: "3.13.18"
           tests: "false"
 
       - name: Types
@@ -76,7 +80,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python: ["3.13", "3.14"]
+        python: ["3.13.18", "3.14.10"]
     runs-on: ubuntu-latest
     timeout-minutes: 3
     env:
@@ -126,7 +130,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python: ["3.13", "3.14"]
+        python: ["3.13.18", "3.14.10"]
         shard: [1, 2, 3, 4, 5]
     runs-on: ubuntu-latest
     timeout-minutes: 14
@@ -187,13 +191,21 @@ jobs:
           if-no-files-found: warn
 
   check:
+    # Branch protection requires `check (3.13)` and `check (3.14)`: the name carries the minor
+    # version, so a new patch in the matrix leaves the required checks as they are.
+    name: check (${{ matrix.minor }})
     needs: [lint, types, collect, images, test]
     # Runs when a job failed too: a skipped required check would count as passed.
     if: always()
     strategy:
       fail-fast: false
       matrix:
-        python: ["3.13", "3.14"]
+        python: ["3.13.18", "3.14.10"]
+        include:
+          - python: "3.13.18"
+            minor: "3.13"
+          - python: "3.14.10"
+            minor: "3.14"
     runs-on: ubuntu-latest
     timeout-minutes: 2
     permissions:
