@@ -150,7 +150,7 @@ def test_only_a_release_changes_the_changelog():
         _git("show", "origin/main:CHANGELOG.md"),
         _text(),
         _pyproject_version(),
-        [fragment.name for fragment in release.read_fragments(ROOT)],
+        release.read_changes(ROOT).names(),
     )
     assert problems == [], (
         "CHANGELOG.md changes only in a release commit (scripts/release.py X.Y.Z). "
@@ -181,7 +181,14 @@ def test_the_release_check_rejects_any_other_edit():
 
 
 def test_every_file_in_changes_is_a_fragment():
-    release.read_fragments(ROOT)
+    release.read_changes(ROOT)
+
+
+def test_a_none_fragment_is_a_note_that_a_change_needs_no_entry():
+    note = release.parse_fragment("refactor.none.md", "- only moves code\n")
+    assert note == release.NoEntry("refactor.none.md", "- only moves code\n")
+    with pytest.raises(release.ReleaseError, match=re.escape("starts with '- '")):
+        release.parse_fragment("refactor.none.md", "only moves code\n")
 
 
 @pytest.mark.parametrize(
@@ -213,6 +220,7 @@ def _waiting_for_a_minor(fragments: list[str], version: Version, newest: Version
     if version[:2] != newest[:2]:
         return []
     sections = [release.parse_fragment(name, "- a\n") for name in fragments]
+    assert all(isinstance(fragment, release.Fragment) for fragment in sections)
     return release.too_early_for_a_minor(sections, Version(*newest[:2], newest.patch + 1))
 
 
@@ -222,7 +230,7 @@ def test_minor_fragments_wait_for_the_minor_version():
     the 0.7.0 release commit carries them."""
     version = _pyproject_version()
     offenders = _waiting_for_a_minor(
-        [fragment.name for fragment in release.read_fragments(ROOT)],
+        release.read_changes(ROOT).names(),
         version,
         release.released_versions(_text())[0],
     )
@@ -258,7 +266,7 @@ def _repeated_effect_refs(bodies: list[str]) -> list[str]:
 
 
 def test_no_two_fragments_cite_the_same_effect_change():
-    assert _repeated_effect_refs([f.body for f in release.read_fragments(ROOT)]) == []
+    assert _repeated_effect_refs([f.body for f in release.read_changes(ROOT).entries]) == []
 
 
 def test_the_effect_ref_check_rejects_a_copied_entry():
@@ -336,11 +344,24 @@ def test_a_patch_release_with_a_changed_fragment_fails(tmp_path: Path):
     )
 
 
+def test_a_release_deletes_the_notes_without_an_entry(tmp_path: Path):
+    old = "# Changelog\n\n## 0.6.12 (2026-11-18)\n\n### Fixed\n\n- old\n"
+    repo = _repo(tmp_path, old, {"a.fixed.md": "- a\n", "r.none.md": "- a refactor\n"})
+    released = release.release(repo, Version(0, 6, 13), date(2026, 11, 19))
+    assert [fragment.name for fragment in released] == ["a.fixed.md"]
+    assert (repo / "CHANGELOG.md").read_text() == (
+        "# Changelog\n\n## 0.6.13 (2026-11-19)\n\n### Fixed\n\n- a\n\n"
+        + old[len("# Changelog\n\n") :]
+    )
+    assert list((repo / "changes").iterdir()) == []
+
+
 @pytest.mark.parametrize(
     ("version", "fragments", "message"),
     [
         ("0.6.12", {"a.fixed.md": "- a\n"}, "not after the newest release, 0.6.12"),
         ("0.6.13", {}, "nothing to release"),
+        ("0.6.13", {"r.none.md": "- a refactor\n"}, "nothing to release"),
     ],
 )
 def test_a_release_refuses_an_old_version_or_no_fragments(

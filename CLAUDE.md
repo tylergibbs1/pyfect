@@ -83,7 +83,9 @@ could rely on, removals and stricter types wait for the next minor release
 
 A changelog entry is a file, `changes/<slug>.<section>.md` (section: added, changed,
 deprecated, removed, fixed, performance or docs), holding the entry's Markdown from `- `.
-Branches never edit CHANGELOG.md. A release is `uv run python scripts/release.py X.Y.Z`: it
+Branches never edit CHANGELOG.md. A branch that changes `src/` adds one, or
+`changes/<slug>.none.md` giving the reason it needs none, which a release deletes (CI's lint job
+runs `scripts/changelog_fragment.py`). A release is `uv run python scripts/release.py X.Y.Z`: it
 moves the fragments under `## X.Y.Z (date)`, sets pyproject's version and runs `uv lock`.
 If main gains fragments before the release PR lands, reset those three files to main's and
 run it again.

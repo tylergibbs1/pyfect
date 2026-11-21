@@ -45,6 +45,15 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
+          # Every commit and tree, without old file contents: the fragment check below finds
+          # HEAD's merge-base with main and the commits since.
+          fetch-depth: 0
+          filter: blob:none
+
+      - name: A change to src/ adds a changelog fragment
+        # changes/<slug>.<section>.md, or <slug>.none.md for a change no user sees. On main
+        # HEAD is its own merge-base, so this checks pull requests and merge trains.
+        run: python3 scripts/changelog_fragment.py
 
       - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:

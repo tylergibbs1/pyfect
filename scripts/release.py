@@ -5,7 +5,9 @@
 
 A fragment is one changelog entry, ``changes/<slug>.<section>.md``, its body the entry's
 Markdown starting with ``- ``. Branches add fragments and never edit CHANGELOG.md, so a release
-merged in the meantime can't move their entries into the version it shipped.
+merged in the meantime can't move their entries into the version it shipped. A change no user
+can see adds ``changes/<slug>.none.md`` instead, its body the reason; a release deletes it
+without an entry (scripts/changelog_fragment.py wants one or the other for a change to src/).
 """
 
 import argparse
@@ -30,7 +32,10 @@ PATCH_SECTIONS: frozenset[Section] = frozenset(
 """What a patch release may carry (docs/VERSIONING.md); the rest wait for a minor one."""
 TITLES: dict[Section, str] = {section: section.capitalize() for section in SECTIONS}
 
-_NAME = re.compile(rf"([a-z0-9]+(?:[-_][a-z0-9]+)*)\.({'|'.join(SECTIONS)})\.md")
+NO_ENTRY = "none"
+"""The section name of a note that a change needs no entry."""
+
+_NAME = re.compile(rf"([a-z0-9]+(?:[-_][a-z0-9]+)*)\.({'|'.join((*SECTIONS, NO_ENTRY))})\.md")
 _HEADER = "# Changelog\n\n"
 _VERSION_HEADING = re.compile(r"^## (\d+)\.(\d+)\.(\d+) \(\d{4}-\d{2}-\d{2}\)$", re.MULTILINE)
 _PYPROJECT_VERSION = re.compile(r'^version = "[^"]*"$', re.MULTILINE)
@@ -65,14 +70,35 @@ class Fragment:
     body: str
 
 
-def parse_fragment(name: str, body: str) -> Fragment:
-    """One file of changes/, checked: a name ``<slug>.<section>.md`` and one entry, a ``- ``
-    line and its continuation lines indented by two spaces, ending in one newline."""
+@dataclass(frozen=True)
+class NoEntry:
+    """``changes/<slug>.none.md``: why a change needs no entry. A release deletes it."""
+
+    name: str
+    reason: str
+
+
+@dataclass(frozen=True)
+class Changes:
+    """The files of changes/: the entries, in the order a release lists them, and the notes."""
+
+    entries: tuple[Fragment, ...]
+    notes: tuple[NoEntry, ...]
+
+    def names(self) -> list[str]:
+        return sorted([f.name for f in self.entries] + [n.name for n in self.notes])
+
+
+def parse_fragment(name: str, body: str) -> Fragment | NoEntry:
+    """One file of changes/, checked: a name ``<slug>.<section>.md`` (or ``<slug>.none.md``)
+    and one entry (or reason), a ``- `` line and its continuation lines indented by two spaces,
+    ending in one newline."""
     match = _NAME.fullmatch(name)
     if match is None:
         raise ReleaseError(
             f"{CHANGES}/{name}: name it <slug>.<section>.md, the slug lowercase letters, digits,"
-            f" '-' and '_', the section one of {', '.join(SECTIONS)}"
+            f" '-' and '_', the section one of {', '.join(SECTIONS)}, or {NO_ENTRY} for a"
+            " change that needs no entry"
         )
     lines = body.split("\n")
     if not body.startswith("- ") or lines[-1] != "" or lines[-2].strip() == "":
@@ -83,15 +109,21 @@ def parse_fragment(name: str, body: str) -> Fragment:
             f"{CHANGES}/{name}: one entry per fragment, its later lines indented by two spaces:"
             f" {stray[0]!r}"
         )
+    if match[2] == NO_ENTRY:
+        return NoEntry(name, body)
     return Fragment(name, match[1], cast("Section", match[2]), body)
 
 
-def read_fragments(root: Path) -> list[Fragment]:
-    """The fragments in ``root``/changes/, in the order a release lists them."""
+def read_changes(root: Path) -> Changes:
+    """The files in ``root``/changes/, each checked."""
     directory = root / CHANGES
     files = sorted(directory.iterdir()) if directory.is_dir() else []
-    fragments = [parse_fragment(path.name, path.read_text(encoding="utf-8")) for path in files]
-    return sorted(fragments, key=lambda f: (SECTIONS.index(f.section), f.slug))
+    parsed = [parse_fragment(path.name, path.read_text(encoding="utf-8")) for path in files]
+    entries = [f for f in parsed if isinstance(f, Fragment)]
+    return Changes(
+        tuple(sorted(entries, key=lambda f: (SECTIONS.index(f.section), f.slug))),
+        tuple(f for f in parsed if isinstance(f, NoEntry)),
+    )
 
 
 def render(version: Version, day: date, fragments: Iterable[Fragment]) -> str:
@@ -119,9 +151,10 @@ def too_early_for_a_minor(fragments: Iterable[Fragment], version: Version) -> li
     return [f.name for f in fragments if f.section not in PATCH_SECTIONS]
 
 
-def release(root: Path, version: Version, day: date) -> list[Fragment]:
+def release(root: Path, version: Version, day: date) -> tuple[Fragment, ...]:
     """Write ``version``'s section from the fragments into CHANGELOG.md, delete them and set
-    pyproject's version. Returns the fragments it released."""
+    pyproject's version; delete the notes of changes that need none. Returns the fragments it
+    released."""
     changelog_path = root / "CHANGELOG.md"
     pyproject_path = root / "pyproject.toml"
     changelog = changelog_path.read_text(encoding="utf-8")
@@ -130,7 +163,8 @@ def release(root: Path, version: Version, day: date) -> list[Fragment]:
     released = released_versions(changelog)
     if released and version <= released[0]:
         raise ReleaseError(f"{version} is not after the newest release, {released[0]}")
-    fragments = read_fragments(root)
+    changes = read_changes(root)
+    fragments = changes.entries
     if not fragments:
         raise ReleaseError(f"{CHANGES}/ holds no fragments: there is nothing to release")
     early = too_early_for_a_minor(fragments, version)
@@ -146,8 +180,8 @@ def release(root: Path, version: Version, day: date) -> list[Fragment]:
     section = render(version, day, fragments)
     changelog_path.write_text(_HEADER + section + changelog[len(_HEADER) :], encoding="utf-8")
     pyproject_path.write_text(updated, encoding="utf-8")
-    for fragment in fragments:
-        (root / CHANGES / fragment.name).unlink()
+    for name in changes.names():
+        (root / CHANGES / name).unlink()
     return fragments
 
 

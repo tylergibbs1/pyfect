@@ -45,6 +45,14 @@ def test_ci_runs_the_check_in_claude_md():
         assert _effect_ref.ENV in job, "the oracle tests need Effect's checkout"
 
 
+def test_the_lint_job_checks_a_source_change_adds_a_fragment():
+    """scripts/changelog_fragment.py finds HEAD's merge-base with main, so the checkout needs
+    every commit; a shallow one fails the check instead of passing it."""
+    lint = _job("ci.yml", "lint")
+    assert "run: python3 scripts/changelog_fragment.py\n" in lint
+    assert "fetch-depth: 0\n" in lint and "filter: blob:none\n" in lint
+
+
 def test_one_pyright_run_checks_every_python():
     """Pyright analyses for pyproject's pythonVersion whatever runs it; the types job syncs that
     Python."""

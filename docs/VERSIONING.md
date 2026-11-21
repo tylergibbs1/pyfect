@@ -31,6 +31,10 @@ An entry is a file of its own, `changes/<slug>.<section>.md`, where the section 
 entry's Markdown, starting with `- ` and with later lines indented two spaces. A branch adds
 fragments and never edits CHANGELOG.md, so a release merged meanwhile can't take its entry.
 
+A branch that changes `src/` adds a fragment. A change no user can see (a refactor, comments,
+internal types) adds `changes/<slug>.none.md` instead, its body `- ` and the reason; a release
+deletes it without an entry.
+
 `uv run python scripts/release.py 0.6.19` cuts a release: the fragments become
 `## 0.6.19 (date)` in CHANGELOG.md, in the order Added, Changed, Deprecated, Removed, Fixed,
 Performance, Docs, and are deleted; pyproject's version is set and `uv lock` run. It refuses a
@@ -48,5 +52,9 @@ patch version while a `changed` or `removed` fragment waits.
 - a `changed` or `removed` fragment is on main while pyproject's version is in the newest
   released minor series: the next release would have to be a minor one, so the change waits
   on a `-0X0` branch.
+
+CI's lint job runs `scripts/changelog_fragment.py`, which fails if the commits since HEAD's
+merge-base with main change a file under `src/` and none of them adds a file to `changes/`. A
+fragment that a release commit in the same range moved into CHANGELOG.md still counts.
 
 Releases up to 0.5.5 were made before this policy and are not checked.
