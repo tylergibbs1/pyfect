@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.6.20 (2026-11-21)
+
+### Added
+
+- `pyfect.ai.budget` caps what a whole agent run spends: input, output and total tokens, model
+  requests, tool calls, and cost through a price function. `effect.pipe(budget.limit(limits))`
+  gives the run a budget that every `LanguageModel` request and tool call under it draws from,
+  forked fibers, parallel tool calls and sub-agents with models of their own included, and a
+  nested limit draws from the ones around it too. Each request reserves its worst case (the
+  prompt's estimated tokens plus `max_output_tokens`) before it is sent and settles to the
+  response's `usage`, giving back the rest; a tool call is counted before its handler runs. A
+  call that doesn't fit fails with `BudgetExceeded` before the provider or handler is called,
+  and its concurrent siblings are interrupted. In other agent frameworks these limits
+  overshoot when calls run in parallel or nest (8 parallel delegations under a limit of 9 tool
+  calls made 16). Effect has no counterpart; the AI budgets page shows it.
+- `pyfect.testing.explore` runs an effect many ways to find races and crash bugs.
+  `explore.schedules(effect, check)` runs it under up to `runs` distinct fiber schedules
+  (every one with few deviations from first-come order, then random ones from `seed`), with
+  `interrupts=True` an interrupt landing at each step, and raises `ScheduleFailure` naming the
+  schedule (`replay=` reruns it), the seed and the interrupt point. `explore.activity_crashes`
+  stops a workflow after each activity ran, before and after the engine stored its result,
+  resumes it and runs the check ("the payment ran once"), on the memory engine or a cluster
+  engine such as `single_runner.layer` on SQLite. It is the engine of `tests/interleave`, which
+  no longer patches `Fiber._finish`: it counts fibers through `FiberRuntimeMetrics`.
+
+### Fixed
+
+- `interpreter_pool` with the `PYFECT_WARN_BLOCKING` watchdog no longer corrupts memory on
+  Python 3.14 before 3.14.8. There `sys._current_frames()` also made frame objects for the
+  pool's subinterpreters, from the wrong interpreter's allocator (python/cpython#158364), and
+  the process died with `free(): invalid pointer` or `double free or corruption`. The watchdog
+  now skips its sample while a pool's subinterpreter runs code.
+
 ## 0.6.19 (2026-11-21)
 
 ### Added
