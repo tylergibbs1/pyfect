@@ -22,7 +22,8 @@ export function InstallCommand({ uv, pip }: { uv: string; pip: string }) {
     <figure data-code-figure="" data-not-typeset="">
       <div className="overflow-x-auto">
         <Tabs value={installer} className="gap-0" onValueChange={(value) => setInstaller(value as keyof typeof tabs)}>
-          <div className="flex items-center gap-2 border-b border-border/50 px-3 py-1">
+          {/* as tall as the tabs (h-9) before they arrive, so the icon never moves down */}
+          <div className="box-content flex h-9 items-center gap-2 border-b border-border/50 px-3 py-1">
             <div className="flex size-4 items-center justify-center rounded-[1px] bg-foreground opacity-70">
               <SquareTerminal className="size-3 text-code" />
             </div>

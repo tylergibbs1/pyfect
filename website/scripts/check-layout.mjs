@@ -133,9 +133,11 @@ try {
         // a shorter settle: the sweep is thousands of loads
         const found = await streamedFailures(browser, width, offset, paths, { jobs: JOBS, all: RAW, settle: 400 });
         console.log(`${width}px, pauses +${offset} B: ${paths.length} pages, ${found.length} with a shift`);
+        for (const line of found) console.log(`  ${line}`);
         failures.push(...found);
       }
     }
+    console.log(`swept ${paths.length} pages at ${WIDTHS.join(', ')}px, pauses moved by ${SWEEP_OFFSETS.join(', ')} B`);
   }
   for (const width of SWEEP ? [] : WIDTHS) {
     const context = await browser.newContext({ viewport: { width, height: 900 } });
@@ -224,4 +226,4 @@ if (failures.length > 0) {
   console.error(`Layout differs between pages:\n${failures.join('\n')}`);
   process.exit(1);
 }
-console.log(`layout ok: ${Object.keys(PAGES).length} page types at ${WIDTHS.join(', ')}px`);
+if (!SWEEP) console.log(`layout ok: ${Object.keys(PAGES).length} page types at ${WIDTHS.join(', ')}px`);
