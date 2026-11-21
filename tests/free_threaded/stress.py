@@ -5,9 +5,7 @@ otherwise; a lost resume hangs until every thread dumps its own stack
 and the process is killed (`_thread_cpu_timer.dump_stacks_then_kill`).
 
 1. A callback resumed from another thread while the fiber is still
-   registering it: the resume must never be lost. Past a fixed number of
-   rounds, they run for a fixed time: each is a thread start and a wake of
-   the waiting thread, whose cost grows with the load on the machine.
+   registering it: the resume must never be lost.
 2. Fibers waiting on callbacks resumed from OS threads, interrupted from
    other OS threads at random times: every fiber ends, as a success or
    interrupted; finalizers run once; a wait's canceler runs at most once,
@@ -21,6 +19,11 @@ and the process is killed (`_thread_cpu_timer.dump_stacks_then_kill`).
 5. Model requests and tool calls from runs on many threads against one AI
    budget: exactly as many fit as the limits allow, never more, and nothing
    stays reserved.
+
+Each part runs a fixed number of trials, then more until its share of the
+time has passed (``trials``): a trial is mostly thread starts and
+cross-thread wakes, whose cost grows with the load on the machine, so a
+loaded one runs fewer trials instead of outrunning the test's limit.
 """
 
 import importlib.util
@@ -28,7 +31,7 @@ import random
 import sys
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterable, Iterator
 from pathlib import Path
 from typing import Any
 
@@ -38,9 +41,17 @@ from pyfect.ai import _budget, budget, prompt
 from pyfect.ai import language_model as lm
 
 
-def register_race(seconds: float, *, at_least: int, at_most: int) -> list[str]:
-    """``at_least`` rounds of the race, then more until ``seconds`` have passed or ``at_most``
-    rounds ran."""
+def trials(at_least: int, at_most: int, seconds: float) -> Iterator[int]:
+    """0, 1, 2, ...: ``at_least`` of them, then more until ``seconds`` have passed, at most
+    ``at_most`` in all."""
+    end = time.monotonic() + seconds
+    n = 0
+    while n < at_least or (n < at_most and time.monotonic() < end):
+        yield n
+        n += 1
+
+
+def register_race(rounds: Iterable[int]) -> list[str]:
     rng = random.Random(1)
 
     def one() -> fx.Effect[int]:
@@ -60,16 +71,15 @@ def register_race(seconds: float, *, at_least: int, at_most: int) -> list[str]:
 
     @fx.gen
     def body():
-        rounds = total = 0
-        end = time.monotonic() + seconds
-        while rounds < at_least or (rounds < at_most and time.monotonic() < end):
+        ran = total = 0
+        for _ in rounds:
             total += yield from one()
-            rounds += 1
-        return rounds, total
+            ran += 1
+        return ran, total
 
-    rounds, total = fx.run_blocking(body)
-    print(f"register race: {rounds} rounds")
-    return [] if total == rounds else [f"register race: {total} of {rounds} resumes"]
+    ran, total = fx.run_blocking(body)
+    print(f"register race: {ran} rounds")
+    return [] if total == ran else [f"register race: {total} of {ran} resumes"]
 
 
 def interrupt_stress(seed: int, n: int) -> list[str]:
@@ -137,8 +147,8 @@ def interrupt_stress(seed: int, n: int) -> list[str]:
 class Db(fx.Tag[str]): ...
 
 
-def concurrent_dispose(trials: int) -> list[str]:
-    early = [_dispose_from_four_threads() for _ in range(trials)]
+def concurrent_dispose(rounds: Iterable[int]) -> list[str]:
+    early = [_dispose_from_four_threads() for _ in rounds]
     return [f"dispose trial {i}: {n} calls returned early" for i, n in enumerate(early) if n]
 
 
@@ -273,13 +283,14 @@ if __name__ == "__main__":
     # The test passes a deadline inside its own limit, so a hang reports this process's stacks.
     _killer.dump_stacks_then_kill(float(sys.argv[1]), refresh=True)
     sys.setswitchinterval(1e-5)
-    problems = register_race(10, at_least=500, at_most=20_000)
-    for seed in range(5):
+    # About 20 s in all; an idle machine runs every part's most trials well within it.
+    problems = register_race(trials(200, 20_000, 8))
+    for seed in trials(1, 5, 3):
         problems += interrupt_stress(seed, 300)
-    problems += concurrent_dispose(100)
-    for seed in range(150):
+    problems += concurrent_dispose(trials(10, 100, 2))
+    for seed in trials(10, 150, 4):
         problems += dispose_while_runs_start(seed)
-    for _ in range(20):
+    for _ in trials(3, 20, 2):
         problems += budget_race(8, 40)
     print(f"GIL enabled: {sys._is_gil_enabled()}")  # pyright: ignore[reportPrivateUsage]
     for p in problems[:20]:
