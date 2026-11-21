@@ -115,13 +115,14 @@ def test_a_snippet_waits_for_its_servers_start_outside_its_alarm(
     pytester.makepyfile(WAITS_FOR_A_SLOW_SERVER)
     pytester.makeini("[pytest]\ntest_timeout = 0.5\n")
     result = pytester.runpytest_subprocess(
-        "-p", "_timeout", "-p", "no:randomly", "-rf", timeout=SUBPROCESS_TIMEOUT
+        "-p", "_timeout", "-p", "no:randomly", timeout=SUBPROCESS_TIMEOUT
     )
     result.assert_outcomes(passed=1, failed=2)
     result.stdout.fnmatch_lines(
         [
-            "FAILED *::test_a_slow_run_still_fails_as_hung",
-            "FAILED *::test_a_start_on_another_thread_leaves_this_tests_alarm_running",
+            "*_ test_a_slow_run_still_fails_as_hung _*",
+            "E *Failed: test hung: still running after 0.5s",
+            "*_ test_a_start_on_another_thread_leaves_this_tests_alarm_running _*",
+            "E *Failed: test hung: still running after 0.5s",
         ]
     )
-    assert result.stdout.str().count("Failed: test hung: still running after 0.5s") == 2
