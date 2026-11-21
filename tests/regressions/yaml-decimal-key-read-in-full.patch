@@ -1,0 +1,13 @@
+--- a/src/pyfect/encoding/yaml.py
++++ b/src/pyfect/encoding/yaml.py
+@@ -259,6 +259,10 @@ def _radix_int(sign: int, digits: str, radix: int) -> int:
+     """The integer ``digits`` in ``radix``; ``ValueError`` past ``MAX_INTEGER_DIGITS``
+     significant digits, as an int that long costs superlinear time to convert and to
+     print, and a key is printed while parsing."""
++    if radix == 10:
++        from pyfect._digits import to_int
++
++        return sign * to_int(digits)
+     significant = digits.lstrip("0")
+     if len(significant) > MAX_INTEGER_DIGITS:
+         raise ValueError(f"YAML integer has more than {MAX_INTEGER_DIGITS} digits")

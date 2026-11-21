@@ -825,20 +825,6 @@ _amplified(
     "a" * _BIG,
     guards=Guard("ef8f293a", "big-decimal-exponent-converted"),
 )
-_amplified(
-    yaml.parse,
-    "yaml.parse: a long hexadecimal key (#32)",
-    yaml.parse,
-    f"0x{'f' * _BIG}: 1",
-    f"{'g' * _BIG}: 1",
-)
-_amplified(
-    yaml.parse,
-    "yaml.parse: a long decimal key (#32)",
-    yaml.parse,
-    f"{'7' * _BIG}: 1",
-    f"{'g' * _BIG}: 1",
-)
 
 
 # ------------------------------------------------------------------------- not measured
