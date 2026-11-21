@@ -13,6 +13,19 @@
   runs the unfinished calls again and puts their results in place; with a toolkit behind
   `tool_ledger.guard`, a resumed turn runs no tool twice. Other frameworks leave a tool call
   without a result after a cancel (LangGraph #5672, #6726; OpenAI Agents SDK #5642, #1061).
+## Unreleased
+
+### Added
+
+- `pyfect.testing.explore` runs an effect many ways to find races and crash bugs.
+  `explore.schedules(effect, check)` runs it under up to `runs` distinct fiber schedules
+  (every one with few deviations from first-come order, then random ones from `seed`), with
+  `interrupts=True` an interrupt landing at each step, and raises `ScheduleFailure` naming the
+  schedule (`replay=` reruns it), the seed and the interrupt point. `explore.activity_crashes`
+  stops a workflow after each activity ran, before and after the engine stored its result,
+  resumes it and runs the check ("the payment ran once"), on the memory engine or a cluster
+  engine such as `single_runner.layer` on SQLite. It is the engine of `tests/interleave`, which
+  no longer patches `Fiber._finish`: it counts fibers through `FiberRuntimeMetrics`.
 
 ## 0.6.18 (2026-11-21)
 
@@ -29,15 +42,6 @@
   `layer_memory`, or `layer_sql()` on SQLite, PostgreSQL, MySQL or SQL Server. A toolkit not
   passed through `guard` behaves as before. Other frameworks run the tool again in this case
   (PydanticAI #10926: "2 payments").
-- `pyfect.testing.explore` runs an effect many ways to find races and crash bugs.
-  `explore.schedules(effect, check)` runs it under up to `runs` distinct fiber schedules
-  (every one with few deviations from first-come order, then random ones from `seed`), with
-  `interrupts=True` an interrupt landing at each step, and raises `ScheduleFailure` naming the
-  schedule (`replay=` reruns it), the seed and the interrupt point. `explore.activity_crashes`
-  stops a workflow after each activity ran, before and after the engine stored its result,
-  resumes it and runs the check ("the payment ran once"), on the memory engine or a cluster
-  engine such as `single_runner.layer` on SQLite. It is the engine of `tests/interleave`, which
-  no longer patches `Fiber._finish`: it counts fibers through `FiberRuntimeMetrics`.
 
 ## 0.6.17 (2026-11-21)
 
