@@ -103,12 +103,15 @@ class PoolWaiters:
             waiter.resume = None
             del self._line[waiter]
 
-    def leave(self, waiter: Waiter) -> bool:
-        """Take ``waiter`` out of line; whether it was in it."""
+    def leave(self, waiter: Waiter, scheduler: Scheduler, available: Callable[[], bool]) -> None:
+        """Take ``waiter`` out of line, waking the next one asleep while ``available()``
+        holds. Only a woken waiter is still in line (``cancel`` takes a sleeping one out),
+        and a newcomer that came meanwhile slept behind it, so the wake goes on whether it
+        leaves with an item or without one."""
         if waiter not in self._line:
-            return False
+            return
         del self._line[waiter]
-        return True
+        self.wake(scheduler, 1, available)
 
     @property
     def sleeping(self) -> int:
