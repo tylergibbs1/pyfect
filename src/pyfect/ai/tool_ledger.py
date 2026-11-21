@@ -35,6 +35,7 @@ from typing import Any, Literal, LiteralString, Never, cast, overload
 import pyfect as fx
 from pyfect import schema as S
 from pyfect._core import Effect, _call_user
+from pyfect._effect_args import require_effect
 from pyfect._json_text import parse as parse_json
 from pyfect._json_text import stringify
 from pyfect.ai.response import ToolResultFailure
@@ -519,6 +520,7 @@ def guard[N: LiteralString, RP, HE, R, EE, RR](
 def guard(toolkit: Effect[Any, Any, Any], *, on_unknown: OnUnknown) -> Effect[Any, Any, Any]:
     """``toolkit`` with its calls recorded in the ``ToolLedger`` (see the module
     docstring). Pass it as ``toolkit=`` where the toolkit would go."""
+    require_effect(toolkit, "toolkit")
 
     def wrap(kit: WithHandler[Any, Any, Any, Any], ledger: ToolLedgerService) -> _Guarded:
         return _Guarded(kit.tools, kit.services, kit, ledger, on_unknown)
