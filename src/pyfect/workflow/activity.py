@@ -54,7 +54,7 @@ from pyfect.schema import Unknown as UnknownSchema
 from pyfect.schema._data import DefectCodec
 from pyfect.scope import Scope
 from pyfect.tracer import annotate_current_span
-from pyfect.workflow._activity_hook import ActivityHook
+from pyfect.workflow._activity_hook import ActivityHook, RunningActivity
 from pyfect.workflow._crypto import make_hash_digest
 from pyfect.workflow._result import Suspended
 from pyfect.workflow._services import WorkflowEngine, WorkflowInstance
@@ -155,7 +155,8 @@ class Activity(
         self._exit_schema_partial: ExitSchema[A_co, E_co, Any, Any, Never, Never] = ExitOf(
             success_json, error_json, cast("DefectCodec[Never, Never]", UnknownSchema)
         )
-        without_interrupt = _retry_on_interrupt(name, interrupt_retry_policy, execute)
+        inside = execute.pipe(provide_service(RunningActivity, True))
+        without_interrupt = _retry_on_interrupt(name, interrupt_retry_policy, inside)
         self._execute: Effect[A_co, E_co, R_co | Scope | WorkflowEngine | WorkflowInstance] = (
             without_interrupt
         )

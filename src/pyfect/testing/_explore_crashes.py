@@ -10,7 +10,7 @@ activities whose results were stored give them back, the rest run.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Generator
+from collections.abc import Callable, Generator, Iterable
 from dataclasses import dataclass
 from typing import Any, Never, cast
 
@@ -150,6 +150,7 @@ def activity_crashes[P, A, E, R, ER = Never, RL = Never](
     *,
     layer: Layer[R | WorkflowEngine, ER, RL],
     check: Callable[[Exit[A, E]], Effect[str | None, Never, R]],
+    at: Iterable[int] | None = None,
 ) -> Effect[CrashReport, CrashFailure | ER, RL]:
     """Run ``workflow`` with ``payload`` once without a crash, then once per
     crash point: after each activity it executes ran (before the engine
@@ -157,24 +158,34 @@ def activity_crashes[P, A, E, R, ER = Never, RL = Never](
     ``check`` gets the workflow's exit and returns what went wrong, or
     ``None``; the first problem fails with ``CrashFailure``.
 
+    ``at`` names the crash points' activities instead (numbered from 1, in
+    the order the run executes them), to split a long sweep into parts: the
+    run without a crash is then not made.
+
     ``layer`` provides the engine with the workflow registered (memory, or
     a cluster engine such as ``single_runner.layer`` on SQLite) and what
     ``check`` reads; it is built afresh for every run."""
     require_layer(layer, "layer")
 
     def body() -> Generator[Effect[Any, Any, Any], Any, CrashReport]:
-        dry = _Crash(None, stored=False)
-        problem = yield from _attempt(workflow, payload, layer, check, dry)
-        if problem is not None:
-            return (yield from fail(CrashFailure(None, problem)))
+        executed: list[str] | None = None
+        indices = at
+        if indices is None:
+            dry = _Crash(None, stored=False)
+            problem = yield from _attempt(workflow, payload, layer, check, dry)
+            if problem is not None:
+                return (yield from fail(CrashFailure(None, problem)))
+            executed = dry.executed
+            indices = range(1, len(executed) + 1)
         points: list[CrashPoint] = []
-        for index in range(1, len(dry.executed) + 1):
+        for index in indices:
             for stored in (False, True):
                 crash = _Crash(index, stored)
                 problem = yield from _attempt(workflow, payload, layer, check, crash)
                 point = crash.fired
                 if point is None:
-                    point = CrashPoint(index, dry.executed[index - 1], stored)
+                    name = "?" if executed is None else executed[index - 1]
+                    point = CrashPoint(index, name, stored)
                     problem = f"the run executed fewer than {index} activities this time"
                 points.append(point)
                 if problem is not None:

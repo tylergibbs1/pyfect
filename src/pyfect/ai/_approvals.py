@@ -22,6 +22,7 @@ from pyfect.ai import ai_error as E
 from pyfect.ai import prompt as P
 from pyfect.ai import response as R
 from pyfect.ai import toolkit as K
+from pyfect.ai._handler_hook import handle_call
 from pyfect.ai.tool import AnyTool, NeedsApprovalContext
 
 if TYPE_CHECKING:
@@ -211,7 +212,7 @@ def _run_approved(
             )
         )
 
-    handled = kit.handle(call.name, call.params, approval.tool_call_id)
+    handled = handle_call(kit, call.name, call.params, approval.tool_call_id)
     return handled.flat_map(lambda stream: stream.run_collect()).flat_map(final)
 
 
