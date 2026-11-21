@@ -1,6 +1,8 @@
 # Changelog
 
-## 0.6.20 (2026-11-21)
+## 0.6.21 (2026-11-21)
+
+0.6.20 was tagged but never published: flaky tests failed in its release run, so it did not reach PyPI. 0.6.21 carries its changes.
 
 ### Added
 
