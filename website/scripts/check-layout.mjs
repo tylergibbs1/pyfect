@@ -64,7 +64,12 @@ function recordShifts() {
         value: entry.value,
         sources: entry.sources.map((s) => {
           const n = s.node;
-          return n instanceof Element ? `${n.tagName.toLowerCase()}.${n.className}`.slice(0, 80) : String(n);
+          const name = (el) => `${el.tagName.toLowerCase()}.${el.className}`.slice(0, 80);
+          const moved = `${Math.round(s.previousRect.y)}->${Math.round(s.currentRect.y)}`;
+          if (n instanceof Element) return `${name(n)} y ${moved}`;
+          // a text node: the element holding it and the start of its text
+          const text = (n?.textContent ?? '').trim().slice(0, 40);
+          return `text "${text}" in ${n?.parentElement ? name(n.parentElement) : '?'} y ${moved}`;
         }),
       });
     }

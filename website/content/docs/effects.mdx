@@ -4,7 +4,7 @@ description: "Build effects, compose them with generators, and run them."
 ---
 
 An `Effect[A, E, R]` describes a computation. Building one runs nothing; a **run function**
-(`run_blocking`, `run_async`, `run_main`) executes it on a fiber.
+executes it on a fiber: `run_blocking`, `run_async` or `run_main`.
 
 <include meta='title="values.py"'>../../snippets/effects/values.py</include>
 
