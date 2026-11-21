@@ -36,7 +36,8 @@ import pyfect._fiber as fiber_module
 from pyfect import pubsub, stream
 from pyfect import scope as fx_scope
 from pyfect._wake_tracking import WakeTracker
-from pyfect.ai import tool_ledger
+from pyfect.ai import _budget, language_model, prompt, tool_ledger
+from pyfect.ai import budget as ai_budget
 from pyfect.duration import Duration
 from pyfect.encoding import tar
 from pyfect.encoding import zip as encoding_zip
@@ -287,6 +288,39 @@ def _tool_ledger_case() -> _Case:
         return ledger.lookup("c1").map(verdict).or_die()
 
     return _Case(lambda: fx.sync(tool_ledger.memory), op, check)
+
+
+def _budget_case(claim: str) -> _Case:
+    """A tool call is spent as it is claimed, so it reaches the claim's continuation; a
+    request's reservation is held, and whatever ends it gives it back."""
+    limits = ai_budget.Limits(
+        requests=1,
+        tool_calls=1,
+        total_tokens=10,
+        max_output_tokens=5,
+        estimate_input_tokens=lambda _: 2,
+    )
+    options = language_model.ProviderOptions(prompt.make("hi"))
+
+    def op(shared: ai_budget.Budget, seen: list[Any]) -> fx.Effect[Any, Any]:
+        if claim == "tool call":
+            taken = _budget.tool_call().map(lambda _: seen.append(1))
+        else:
+            request = _budget.metered_request(options, lambda: fx.succeed([]))
+            taken = request.map(lambda _: seen.append(1))
+        return taken.pipe(ai_budget.provide(shared))
+
+    def check(shared: ai_budget.Budget, seen: list[Any]) -> fx.Effect[str | None]:
+        def problem(spent: ai_budget.Spent, held: ai_budget.Spent) -> str | None:
+            counted = spent.tool_calls if claim == "tool call" else spent.requests
+            kept = counted == len(seen) if claim == "tool call" else counted >= len(seen)
+            return (
+                None if kept and held == ai_budget.Spent() else f"{spent}, held {held}, saw {seen}"
+            )
+
+        return shared.spent().zip(shared.held()).map(lambda both: problem(*both))
+
+    return _Case(lambda: ai_budget.make(limits), op, check)
 
 
 def _synchronized_ref_case() -> _Case:
@@ -566,6 +600,8 @@ _CASES: dict[str, _Case] = {
     "ref.update": _ref_case(),
     "synchronized_ref.update": _synchronized_ref_case(),
     "tool_ledger.begin (memory)": _tool_ledger_case(),
+    "ai budget tool call": _budget_case("tool call"),
+    "ai budget request reservation": _budget_case("request"),
     "semaphore.take (free)": _semaphore_case(parked=False),
     "semaphore.take (woken)": _semaphore_case(parked=True),
     "semaphore.take_scoped (free)": _semaphore_take_scoped_case(parked=False),

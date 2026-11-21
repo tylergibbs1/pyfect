@@ -56,6 +56,7 @@ from pyfect.ai import ag_ui as ai_ag_ui
 from pyfect.ai import ag_ui_schema as ai_ag_ui_schema
 from pyfect.ai import ag_ui_server as ai_ag_ui_server
 from pyfect.ai import ai_error as ai_error_module
+from pyfect.ai import budget as ai_budget
 from pyfect.ai import chat as ai_chat
 from pyfect.ai import decision as ai_decision
 from pyfect.ai import decision_model as ai_dm
@@ -7819,6 +7820,29 @@ def check_ai_toolkit() -> None:
         lm.generate_object("hi", schema=S.Struct(AiWeather)),
         fx.Effect[lm.GenerateObjectResponse[Never, Never, AiWeather], AiError, lm.LanguageModel],
     )
+    # A budget adds BudgetExceeded to the errors and keeps the rest; catch_tag removes it.
+    limited = text.pipe(ai_budget.limit(ai_budget.Limits(tool_calls=9)))
+    assert_type(
+        limited,
+        fx.Effect[
+            lm.GenerateTextResponse[Literal["Weather", "Clock"], AiResults],
+            AiError | str | ai_budget.BudgetExceeded,
+            lm.LanguageModel | AiDb | ai_toolkit.Handlers[Literal["Weather", "Clock"]],
+        ],
+    )
+    assert_type(
+        fx.succeed(1).pipe(ai_budget.limit(ai_budget.Limits(requests=1))),
+        fx.Effect[int, ai_budget.BudgetExceeded],
+    )
+    assert_type(
+        fx.succeed(1)
+        .pipe(ai_budget.limit(ai_budget.Limits(requests=1)))
+        .pipe(fx.catch_tag(ai_budget.BudgetExceeded, lambda e: fx.succeed(len(e.resource)))),
+        fx.Effect[int],
+    )
+    assert_type(ai_budget.make(ai_budget.Limits()), fx.Effect[ai_budget.Budget])
+    ai_budget.Limits(requests="9")  # pyright: ignore[reportArgumentType]
+    ai_budget.Cost(1.5, lambda tokens: tokens.input * 0.1)  # pyright: ignore[reportArgumentType]
     # allow_empty=True wraps the value in an Option; a widened bool gives either, as in Effect.
     allow_empty: bool = "hi".startswith("h")
     assert_type(

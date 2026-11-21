@@ -43,6 +43,7 @@
     "ai",
     "ai-tool-ledger",
     "ai-interrupt-safe-chat",
+    "ai-budgets",
     "mcp",
     "models",
     "graphql",
