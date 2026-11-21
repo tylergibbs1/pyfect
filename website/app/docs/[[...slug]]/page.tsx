@@ -47,7 +47,7 @@ export default async function Page(props: PageProps<'/docs/[[...slug]]'>) {
   );
 }
 
-const FRAME_PARSED = 'docs-frame-parsed';
+const ARTICLE_PARSED = 'docs-article-parsed';
 
 function DocsPage({
   page,
@@ -69,7 +69,9 @@ function DocsPage({
     // These pages are large and the browser paints them while it is still parsing them.
     // - The header's and the title row's buttons are right-aligned, so each is placed by the
     //   ones after it: a paint between two of them showed them moving when the rest arrived.
-    //   So nothing renders until the title row is parsed (the `expect` link below).
+    //   And a paragraph painted half-parsed rewraps when its next words arrive (a "(" that
+    //   ended a line moved down with the code after it). So nothing renders until the whole
+    //   article is parsed (the `expect` link below); the rail after it may still stream in.
     // - At xl a grid, not flex: the rail's column exists before the rail is parsed. A flex
     //   column first filled the rail's place too, so the article jumped sideways when the
     //   rail arrived.
@@ -113,9 +115,8 @@ function DocsPage({
                 {summary}
               </p>
             ) : null}
-            {/* React hoists the link into <head>: rendering waits until this span is parsed. */}
-            <link rel="expect" href={`#${FRAME_PARSED}`} blocking="render" />
-            <span id={FRAME_PARSED} hidden />
+            {/* React hoists the link into <head>: rendering waits until the article's end. */}
+            <link rel="expect" href={`#${ARTICLE_PARSED}`} blocking="render" />
           </div>
           {toc.length > 0 ? (
             <div data-docs-toc-box="" className="xl:hidden">
@@ -123,6 +124,7 @@ function DocsPage({
             </div>
           ) : null}
           <div className="typeset w-full flex-1 pb-16 *:data-[slot=alert]:first:mt-0 sm:pb-0">{children}</div>
+          <span id={ARTICLE_PARSED} hidden />
           <div className="hidden h-16 w-full items-center gap-2 px-4 sm:flex sm:px-0">
             {neighbours.previous ? (
               <Button variant="secondary" size="sm" asChild className="shadow-none">
