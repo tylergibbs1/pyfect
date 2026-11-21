@@ -17,6 +17,9 @@ import sys
 seed = sys.argv[sys.argv.index("-p") + 2].removeprefix("--randomly-seed=")
 print("seed", seed)
 if sys.argv[1] == "fail":
+    print("= short test summary info =")
+    print("FAILED test_inner.py::test_inner - assert False")
+    print("= short test summary info =")
     print("FAILED tests/test_pool.py::test_grows[ttl] - AssertionError: the pool never grew")
     print("ERROR tests/test_db.py::test_query - TimeoutError")
     sys.exit(1)
@@ -44,6 +47,8 @@ def _round(tmp_path: Path, job: str, outcome: str) -> Path:
 
 
 def test_a_round_records_its_seed_and_the_tests_that_failed(tmp_path: Path):
+    """An inner pytest run's summary (pytester, in a failed test's captured output) is not the
+    suite's: only the last summary names the suite's failures."""
     out = _round(tmp_path, "suite-3.14.10-2", "fail")
     (record,) = [json.loads(line) for line in (out / "rounds.jsonl").read_text().splitlines()]
     log = (out / "round-1.log").read_text()

@@ -55,9 +55,12 @@ class Round:
 
 
 def failed_tests(log: Sequence[str]) -> list[str]:
-    """The test ids in pytest's short test summary: ``FAILED id - message`` or ``ERROR id``."""
+    """The test ids in pytest's short test summary: ``FAILED id - message`` or ``ERROR id``.
+    Only the last summary counts: a failed test's captured output can hold the summary of an
+    inner pytest run (pytester), whose tests are not the suite's."""
+    headers = [n for n, line in enumerate(log) if "short test summary info" in line]
     found: list[str] = []
-    for line in log:
+    for line in log[headers[-1] + 1 :] if headers else ():
         for outcome in _OUTCOMES:
             if line.startswith(outcome):
                 test = line.removeprefix(outcome).split(" - ", 1)[0].strip()
