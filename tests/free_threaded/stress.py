@@ -5,7 +5,9 @@ otherwise; a lost resume hangs until every thread dumps its own stack
 and the process is killed (`_thread_cpu_timer.dump_stacks_then_kill`).
 
 1. A callback resumed from another thread while the fiber is still
-   registering it: the resume must never be lost.
+   registering it: the resume must never be lost. Past a fixed number of
+   rounds, they run for a fixed time: each is a thread start and a wake of
+   the waiting thread, whose cost grows with the load on the machine.
 2. Fibers waiting on callbacks resumed from OS threads, interrupted from
    other OS threads at random times: every fiber ends, as a success or
    interrupted; finalizers run once; a wait's canceler runs at most once,
@@ -36,7 +38,9 @@ from pyfect.ai import _budget, budget, prompt
 from pyfect.ai import language_model as lm
 
 
-def register_race(n: int) -> list[str]:
+def register_race(seconds: float, *, at_least: int, at_most: int) -> list[str]:
+    """``at_least`` rounds of the race, then more until ``seconds`` have passed or ``at_most``
+    rounds ran."""
     rng = random.Random(1)
 
     def one() -> fx.Effect[int]:
@@ -56,13 +60,16 @@ def register_race(n: int) -> list[str]:
 
     @fx.gen
     def body():
-        total = 0
-        for _ in range(n):
+        rounds = total = 0
+        end = time.monotonic() + seconds
+        while rounds < at_least or (rounds < at_most and time.monotonic() < end):
             total += yield from one()
-        return total
+            rounds += 1
+        return rounds, total
 
-    total = fx.run_blocking(body)
-    return [] if total == n else [f"register race: {total} of {n} resumes"]
+    rounds, total = fx.run_blocking(body)
+    print(f"register race: {rounds} rounds")
+    return [] if total == rounds else [f"register race: {total} of {rounds} resumes"]
 
 
 def interrupt_stress(seed: int, n: int) -> list[str]:
@@ -263,9 +270,10 @@ if __name__ == "__main__":
     assert _spec is not None and _spec.loader is not None
     _killer = importlib.util.module_from_spec(_spec)
     _spec.loader.exec_module(_killer)
-    _killer.dump_stacks_then_kill(120, refresh=True)
+    # The test passes a deadline inside its own limit, so a hang reports this process's stacks.
+    _killer.dump_stacks_then_kill(float(sys.argv[1]), refresh=True)
     sys.setswitchinterval(1e-5)
-    problems = register_race(20_000)
+    problems = register_race(10, at_least=500, at_most=20_000)
     for seed in range(5):
         problems += interrupt_stress(seed, 300)
     problems += concurrent_dispose(100)

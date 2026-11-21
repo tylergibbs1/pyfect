@@ -20,6 +20,12 @@ ROOT = Path(__file__).parent.parent
 STRESS = Path(__file__).parent / "free_threaded" / "stress.py"
 
 
+def _stress_deadline(config: pytest.Config) -> str:
+    """Seconds the stress may run before it dumps its stacks and is killed: within the test's
+    own limit, so a hang fails with the stress's stacks, not only this process's."""
+    return f"{float(config.getini('test_timeout')) * 0.75:g}"
+
+
 def _free_threaded_python() -> str | None:
     uv = shutil.which("uv")
     if uv is None:
@@ -34,7 +40,9 @@ def _free_threaded_python() -> str | None:
     return path if found.returncode == 0 and path else None
 
 
-def test_the_cross_thread_stress_passes_without_the_gil(tmp_path: Path):
+def test_the_cross_thread_stress_passes_without_the_gil(
+    tmp_path: Path, pytestconfig: pytest.Config
+):
     python = _free_threaded_python()
     if python is None:
         if os.environ.get("PYFECT_REQUIRE_FREE_THREADED"):
@@ -48,7 +56,7 @@ def test_the_cross_thread_stress_passes_without_the_gil(tmp_path: Path):
     path = os.pathsep.join([str(ROOT / "src"), str(tmp_path)])
     env = {**os.environ, "PYTHONPATH": path, "PYTHON_GIL": "0", "PYTHONDONTWRITEBYTECODE": "1"}
     done = subprocess.run(
-        [python, "-B", str(STRESS)],
+        [python, "-B", str(STRESS), _stress_deadline(pytestconfig)],
         capture_output=True,
         text=True,
         env=env,
@@ -91,10 +99,10 @@ def test_adjust_warns_in_the_callers_context(tmp_path: Path, which: str):
     assert done.returncode == 0, done.stdout + done.stderr[-4000:]
 
 
-def test_the_stress_also_passes_here():
+def test_the_stress_also_passes_here(pytestconfig: pytest.Config):
     """The same invariants on this interpreter (normally with the GIL)."""
     done = subprocess.run(
-        [sys.executable, "-B", str(STRESS)],
+        [sys.executable, "-B", str(STRESS), _stress_deadline(pytestconfig)],
         capture_output=True,
         text=True,
         timeout=300,
