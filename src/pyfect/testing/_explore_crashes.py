@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from typing import Any, Never, cast
 
 from pyfect._core import Effect
+from pyfect._layer_core import require_layer
 from pyfect.deferred import Deferred
 from pyfect.effect import fail, gen, provide_service, yield_now
 from pyfect.errors import TaggedError
@@ -159,6 +160,7 @@ def activity_crashes[P, A, E, R, ER = Never, RL = Never](
     ``layer`` provides the engine with the workflow registered (memory, or
     a cluster engine such as ``single_runner.layer`` on SQLite) and what
     ``check`` reads; it is built afresh for every run."""
+    require_layer(layer, "layer")
 
     def body() -> Generator[Effect[Any, Any, Any], Any, CrashReport]:
         dry = _Crash(None, stored=False)
