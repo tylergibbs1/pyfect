@@ -33,6 +33,10 @@ class ContainerFailed(Exception):
     missing Docker (``require_docker``)."""
 
 
+class ContainerStopped(ContainerFailed):
+    """A started container that exited before it served."""
+
+
 def docker(*args: str, timeout: float = 60) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["docker", *args], capture_output=True, text=True, check=False, timeout=timeout
@@ -119,15 +123,22 @@ def running(container: str) -> bool:
 
 
 def wait_ready(
-    name: str, container: str, waiting: Callable[[], str | None], timeout: float, poll: float
+    name: str,
+    container: str,
+    waiting: Callable[[], str | None],
+    timeout: float,
+    poll: float,
+    *,
+    since: float | None = None,
 ) -> None:
     """Until ``waiting()`` returns ``None``; until then it says what the server still lacks.
-    ``ContainerFailed`` (with the ``diagnosis``) when the container stops, at once, or when
-    ``timeout`` seconds pass."""
-    deadline = time.monotonic() + timeout
+    ``ContainerStopped`` (with the ``diagnosis``) when the container stops, at once;
+    ``ContainerFailed`` when ``timeout`` seconds have passed since ``since`` (a
+    ``time.monotonic()``; by default now)."""
+    deadline = (time.monotonic() if since is None else since) + timeout
     while (missing := waiting()) is not None:
         if not running(container):
-            raise ContainerFailed(
+            raise ContainerStopped(
                 f"the {name} container stopped ({missing}): {diagnosis(container)}"
             )
         if time.monotonic() > deadline:
@@ -156,6 +167,7 @@ __all__ = [
     "OWNER",
     "PLACEHOLDER_IMAGE",
     "ContainerFailed",
+    "ContainerStopped",
     "alive",
     "diagnosis",
     "docker",

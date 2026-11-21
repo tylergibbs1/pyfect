@@ -2,9 +2,12 @@
 picks the image for the machine, waits until the server has finished starting, and removes the
 containers a crashed run left."""
 
+import math
+import os
 import platform
 import shutil
 import subprocess
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -89,9 +92,10 @@ def test_is_ready_only_once_the_server_has_finished_starting(monkeypatch: pytest
     # statements waited behind them.
     server = _Starting((1, 4), (0, 2), (0, 0))
     monkeypatch.setattr(_mssql, "_login", server.login)
+    monkeypatch.setattr(_mssql, "_STARTUP_TIMEOUT", math.inf)
     monkeypatch.setattr(_docker, "running", _always_running)
     monkeypatch.setattr(_docker.time, "sleep", _no_wait)
-    _mssql._wait_ready(_mssql.MssqlServer("127.0.0.1", 1433, "container"))  # pyright: ignore[reportPrivateUsage]
+    _mssql._wait_ready(_mssql.MssqlServer("127.0.0.1", 1433, "container"), 0.0)  # pyright: ignore[reportPrivateUsage]
     assert (server.logins, server.closed, server.states) == (3, 3, [])
 
 
@@ -129,3 +133,100 @@ def test_reaps_containers_of_processes_that_are_gone():
         assert left.stdout.strip() == ""
     finally:
         subprocess.run(["docker", "rm", "-f", container], capture_output=True, check=False)
+
+
+_FAKE_DOCKER = """#!/bin/sh
+# Containers fake-mssql-1, -2, ... in the order of their runs; those from $READY_FROM on run.
+here=$(dirname "$0")
+container=$(eval echo \\${$#})
+n=${container##*-}
+case "$1" in
+  run)
+    runs=$(($(cat "$here/runs" 2>/dev/null || echo 0) + 1))
+    echo "$runs" > "$here/runs"
+    echo "fake-mssql-$runs" ;;
+  port) echo "127.0.0.1:$((40000 + ${2##*-}))" ;;
+  inspect)
+    case "$3" in
+      *Running*) if [ "$n" -ge "$READY_FROM" ]; then echo true; else echo false; fi ;;
+      *) echo "status=exited exit_code=255 oom_killed=false" ;;
+    esac ;;
+  logs) echo "ERROR: CoInitializeSecurity failure. (HRESULT 0x800706b5)" ;;
+  rm) shift; echo "$@" >> "$here/removed" ;;
+esac
+"""
+
+
+class _FakeDocker:
+    """A ``docker`` on PATH whose first containers exit at once, as SQL Server 2022's did in
+    CI run 44897877038 (``CoInitializeSecurity failure``), and whose later ones serve."""
+
+    def __init__(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, ready_from: int) -> None:
+        self.dir = tmp_path
+        script = tmp_path / "docker"
+        script.write_text(_FAKE_DOCKER)
+        script.chmod(0o755)
+        monkeypatch.setenv("PATH", f"{tmp_path}{os.pathsep}{os.environ['PATH']}")
+        monkeypatch.setenv("READY_FROM", str(ready_from))
+        monkeypatch.setenv("PYFECT_MSSQL_IMAGE", "example/mssql:fake")
+        self.ready_port = 40000 + ready_from
+        self.at_exit: list[tuple[object, ...]] = []
+        monkeypatch.setattr(_mssql.atexit, "register", self.register_at_exit)
+        monkeypatch.setattr(_mssql, "_login", self.login)
+        monkeypatch.setattr(_docker.time, "sleep", _no_wait)
+        _mssql.SERVER.forget(monkeypatch)
+
+    def register_at_exit(self, *call: object) -> None:
+        self.at_exit.append(call)
+
+    def login(self, _host: str, port: int, *_args: object, **_kwargs: object) -> Any:
+        if port != self.ready_port:
+            raise TimeoutError
+        return _Starting((0, 0))
+
+    def runs(self) -> int:
+        return int((self.dir / "runs").read_text())
+
+    def removed(self) -> list[str]:
+        removed = self.dir / "removed"
+        return removed.read_text().split() if removed.exists() else []
+
+
+def test_replaces_a_container_that_exits_before_it_serves(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    fake = _FakeDocker(tmp_path, monkeypatch, ready_from=3)
+    with pytest.warns(_mssql.ContainerRestarted, match="CoInitializeSecurity") as restarts:
+        server = _mssql.server()
+    assert (server.container, fake.runs(), len(restarts)) == ("fake-mssql-3", 3, 2)
+    assert [r for r in fake.removed() if r.startswith("fake")] == ["fake-mssql-1", "fake-mssql-2"]
+    assert [call[1] for call in fake.at_exit] == ["fake-mssql-1", "fake-mssql-2", "fake-mssql-3"]
+
+
+def test_fails_with_every_start_after_the_last_attempt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    fake = _FakeDocker(tmp_path, monkeypatch, ready_from=99)
+    with (
+        pytest.warns(_mssql.ContainerRestarted),
+        pytest.raises(_docker.ContainerStopped) as failed,
+    ):
+        _mssql.server()
+    assert fake.runs() == _mssql._START_ATTEMPTS  # pyright: ignore[reportPrivateUsage]
+    message = str(failed.value)
+    for start in range(1, fake.runs() + 1):
+        assert f"start {start}: the SQL Server container stopped" in message
+    assert message.count("CoInitializeSecurity failure") == fake.runs()
+    assert [r for r in fake.removed() if r.startswith("fake")] == [
+        f"fake-mssql-{n}" for n in range(1, fake.runs() + 1)
+    ]
+
+
+def test_does_not_replace_a_container_past_the_startup_deadline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    fake = _FakeDocker(tmp_path, monkeypatch, ready_from=3)
+    monkeypatch.setattr(_mssql, "_STARTUP_TIMEOUT", 0.0)
+    with pytest.raises(_docker.ContainerStopped, match=r"^start 1: "):
+        _mssql.server()
+    assert fake.runs() == 1
