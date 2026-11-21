@@ -18,7 +18,8 @@ thread, ticking for the whole session and recording while a test runs, tells the
   time means the process was running (a C call holding the GIL, which also uses no CPU, is
   pyfect) and names where (``_DumpTimer``). Only a SIGCONT in the gap, the end of every
   SIGSTOP, proves the host froze the process (``_Continues``): on a loaded machine a dump
-  comes seconds late with the process running, so a late dump proves nothing. Anything
+  comes seconds late with the process running, so a late dump proves nothing; one written a
+  threshold before the watchdog woke still shows the process running, however late. Anything
   else counts as running time.
 - Each tick also samples every thread's stack, through ``sys._current_frames()``
   (``pyfect._frames``) under the GIL (text: holding frames would keep what a finished step handled
@@ -691,7 +692,7 @@ class Watchdog:
                 if dump is None and unclaimed is not None and unclaimed.at >= last_wall:
                     dump = unclaimed
                 stall = self._process_stall(
-                    now - last, now_cpu - cpu, dump, collected, continued=continued
+                    now - last, now_cpu - cpu, dump, collected, continued=continued, woke=now_wall
                 )
                 self._record(stall)
                 unclaimed = None
@@ -714,9 +715,11 @@ class Watchdog:
         collection: tuple[float, int],
         *,
         continued: bool,
+        woke: float,
     ) -> str:
         """Names a stall of the whole process: no Python thread ran for ``gap`` seconds, in
-        which ``collection`` was the longest garbage collection (seconds, generation)."""
+        which ``collection`` was the longest garbage collection (seconds, generation), and
+        that ended when the watchdog woke at ``woke`` (wall time)."""
         head = f"process stalled {gap:.1f} s"
         collected, generation = collection
         steal, load = self._steal.since_last(), _load()
@@ -740,6 +743,12 @@ class Watchdog:
             with self._lock:
                 self._frozen += gap - self.tick
             return f"{head}: host: process frozen, resumed by SIGCONT ({numbers})"
+        # Late, but written a threshold before the watchdog could tick: the threads ran while
+        # it stayed starved, so the process was running and the GIL held (a loaded host
+        # delivers the dump's signal late). A freeze wakes both together.
+        if (fibers or busy) and dump is not None and dump.at <= woke - self.threshold:
+            frames = (fibers or busy)[0].frames
+            return f"{head}: pyfect blocked in {frames[0]} ({numbers})\n" + _stack(frames)
         return f"{head}: {_not_frozen(gap, cpu, dump, dumps=self.dump)} ({numbers})"
 
     def frozen_seconds(self) -> float:

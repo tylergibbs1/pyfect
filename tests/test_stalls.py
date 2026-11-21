@@ -108,6 +108,43 @@ def test_sleeps_holding_the_gil():
 """
 )
 
+GIL_HELD_SLEEP_DUMPED_LATE = (
+    _SLEEP_HOLDING_THE_GIL
+    + """
+import threading
+
+import _stalls
+
+arm = _stalls._DumpTimer.arm
+late_next = threading.Event()
+armed_late = threading.Event()
+
+
+def arm_late(timer):
+    \"\"\"The watchdog's arming, noting the dump due 0.2 s before it fires: the dump then reads
+    0.2 s late, as a loaded host's signal delivery made it (CI, 3.14.0, load 8.7 on 4 CPUs).\"\"\"
+    arm(timer)
+    if late_next.is_set():
+        late_next.clear()
+        timer._current.due -= 0.2
+        armed_late.set()
+
+
+_stalls._DumpTimer.arm = arm_late
+
+
+def sleep_on_purpose():
+    ctypes.PyDLL(None).read(*a_pipe_written_in(1))  # the GIL stays held, no CPU used
+
+
+def test_sleeps_holding_the_gil():
+    late_next.set()
+    armed_late.wait(timeout=2)
+    sleep_on_purpose()  # within a tick of the late arming: its dump comes during the read
+    assert False
+"""
+)
+
 DEADLOCK = """
 import threading
 import time
@@ -299,6 +336,19 @@ def test_a_c_call_sleeping_with_the_gil_held_is_named_pyfect_not_host(
     out = _run(pytester, monkeypatch, GIL_HELD_SLEEP)
     assert "pyfect blocked in sleep_on_purpose (" in out
     assert ": host" not in out
+
+
+@_NEEDS_STACK_DUMPS
+def test_a_c_call_holding_the_gil_dumped_late_is_named_pyfect_not_host(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A loaded host delivers the dump's signal late (0.1 s on CI), but the dump still came
+    while the call held the GIL, a threshold before the watchdog could tick: the process was
+    running, so the stall is the call's, as with a dump on time."""
+    out = _run(pytester, monkeypatch, GIL_HELD_SLEEP_DUMPED_LATE)
+    assert "pyfect blocked in sleep_on_purpose (" in out, out
+    assert ": host" not in out
+    assert "unexplained" not in out
 
 
 def test_a_deadlock_is_no_stall(pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch) -> None:
