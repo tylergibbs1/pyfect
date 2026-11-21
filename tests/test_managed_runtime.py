@@ -87,10 +87,17 @@ def test_fibers_the_layer_forked_keep_running_across_sync_runs():
         return ticks
 
     with fx.ManagedRuntime.make(layer.effect(Ticks, ticking)) as runtime:
-        first = runtime.run_blocking(Ticks().flat_map(lambda t: t.get()))
-        runtime.run_blocking(fx.sleep("20 millis"))
-        second = runtime.run_blocking(Ticks().flat_map(lambda t: t.get()))
-    assert second > first
+
+        def ticks() -> int:
+            return runtime.run_blocking(Ticks().flat_map(lambda t: t.get()))
+
+        # Each read is a sync run of its own. Between them the fiber runs on the background
+        # thread, whenever the host schedules that: on a loaded runner, not within a fixed
+        # 20 ms (free-threaded CI, "assert 0 > 0").
+        first = ticks()
+        wait_until(lambda: ticks() > first, what="the layer's fiber to tick after its build")
+        second = ticks()
+        wait_until(lambda: ticks() > second, what="the layer's fiber to tick again")
 
 
 def test_sync_runs_from_several_threads_share_one_build():
