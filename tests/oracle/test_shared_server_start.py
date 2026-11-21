@@ -100,7 +100,7 @@ def test_second():
 
 
 def test_started_once():
-    assert len(runs) == 1
+    assert len(runs) == {starts}
 """
 
 
@@ -110,9 +110,14 @@ def test_a_container_that_never_serves_fails_once_with_its_state_and_logs(
     module: str, name: str, running: str, pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
 ):
     """The start waits on its own deadline, not the test's alarm (0.3 s here, the start
-    0.6 s): the failure names the container's state and logs, and later tests fail at once."""
+    0.6 s): the failure names the container's state and logs, and later tests fail at once.
+    SQL Server replaces a container that exited before it served (``_mssql``), within that
+    deadline."""
     monkeypatch.setenv("PYTHONPATH", str(Path(__file__).parents[1]))
-    pytester.makepyfile(test_uses=_NEVER_READY.format(module=module, running=running))
+    starts = 3 if (module, running) == ("_mssql", "false") else 1
+    pytester.makepyfile(
+        test_uses=_NEVER_READY.format(module=module, running=running, starts=starts)
+    )
     result = pytester.runpytest_subprocess(
         "-p", "no:randomly", "-p", "no:cacheprovider", "-p", "_timeout", "-o", "test_timeout=0.3"
     )
@@ -121,7 +126,7 @@ def test_a_container_that_never_serves_fails_once_with_its_state_and_logs(
     result.stdout.fnmatch_lines(
         [
             "*_ test_first _*",
-            f"E *ContainerFailed: *{name}*{cause}*status=exited oom_killed=true*1.9GiB / 2GiB*",
+            f"E *Container*: *{name}*{cause}*status=exited oom_killed=true*1.9GiB / 2GiB*",
             "*the fake server's last words*",
             "*_ test_second _*",
             f"E *Failed: * did not start in an earlier test: *{name}*{cause}*",
