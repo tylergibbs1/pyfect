@@ -7,13 +7,17 @@ import { metaSchema, pageSchema } from 'fumadocs-core/source/schema';
 import { createPython } from 'fumadocs-python';
 import { codeThemes } from './code-theme';
 import { remarkReferenceHeadings } from './reference-headings';
+import { rehypeTableColumns } from './table-columns';
 import { navSections, type NavSection } from './page-tree';
 
 const docs = defineDocs({
   dir: 'content/docs',
   docs: {
     schema: pageSchema,
-    mdxOptions: applyMdxPreset({ rehypeCodeOptions: { themes: codeThemes } }),
+    mdxOptions: applyMdxPreset({
+      rehypeCodeOptions: { themes: codeThemes },
+      rehypePlugins: (plugins) => [rehypeTableColumns, ...plugins],
+    }),
     postprocess: {
       includeProcessedMarkdown: true,
     },
@@ -28,6 +32,7 @@ const python = createPython({
   file: './.generated/pyfect.json',
   groupBy: 'none',
   remarkPlugins: [remarkReferenceHeadings],
+  rehypePlugins: [rehypeTableColumns],
   rehypeCodeOptions: { themes: codeThemes },
 });
 

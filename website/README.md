@@ -48,6 +48,11 @@ Every route is static (search uses a prebuilt index), so any static host works t
 - The layout, components and styles follow shadcn/ui's docs (`apps/v4`, MIT): the header,
   sidebar, page frame, table of contents, code blocks, tabs and `typeset.css` are adapted
   from it, with attribution comments in each file. `components/ui/` holds its primitives.
+- `lib/table-columns.ts` (a rehype plugin) gives every Markdown table a `<colgroup>` worked out
+  from all its cells at build time, the widths the browser's auto layout would give once every
+  row had arrived, so rows streaming in never resize a column; narrower than the columns'
+  minimum, the table scrolls. `check:layout` fails on a table that sizes its columns from its
+  rows, or on text wider than its cell.
 - Guides include code with `<include>../../snippets/...</include>`. `tests/test_doc_snippets.py`
   runs every snippet, fails on an inline Python block or a snippet no guide uses, and pyright
   checks `snippets/` with the rest of the project. A snippet that prints keeps its output in

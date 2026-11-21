@@ -48,9 +48,10 @@ export const mdxComponents = {
   h5: heading('h5'),
   h6: heading('h6'),
   a: MdxLink,
-  // Typeset tables stay real tables and wrap to fit; wide ones scroll.
+  // Column widths come from the build (lib/table-columns.ts), so rows streaming in never resize
+  // them; they are lengths of the wrapper (a size container), and a narrow screen scrolls.
   table: (props: ComponentProps<'table'>) => (
-    <div className="typeset-scroll no-scrollbar *:[table]:w-full">
+    <div className="typeset-scroll no-scrollbar @container *:[table]:w-full *:[table]:table-fixed">
       <table {...props} />
     </div>
   ),

@@ -53,6 +53,27 @@ function measure() {
   };
 }
 
+/**
+ * A table whose columns its rows size moves them when a longer row streams in, and a fixed
+ * column too narrow for its text spills into the next: each table in the prose has fixed column
+ * widths (lib/table-columns.ts), and nothing in a cell is wider than the cell.
+ */
+function tableProblems() {
+  const problems = [];
+  for (const table of document.querySelectorAll('[data-docs-article] .typeset table')) {
+    const head = table.querySelector('th, td')?.textContent?.trim().slice(0, 30);
+    if (getComputedStyle(table).tableLayout !== 'fixed' || !table.querySelector(':scope > colgroup')) {
+      problems.push(`the table starting "${head}" sizes its columns from its rows`);
+    }
+    for (const c of table.querySelectorAll('th, td')) {
+      if (c.scrollWidth > c.clientWidth + 1) {
+        problems.push(`"${c.textContent.trim().slice(0, 30)}" is wider than its cell (${c.scrollWidth} > ${c.clientWidth}px)`);
+      }
+    }
+  }
+  return problems;
+}
+
 function recordShifts() {
   window.__shifts = [];
   new PerformanceObserver((list) => {
@@ -157,6 +178,7 @@ try {
         failures.push(`${width}px ${path}: scrolls sideways (${loaded[kind].scrollWidth}px)`);
       }
       if (!loaded[kind].h1) failures.push(`${width}px ${path}: no h1`);
+      for (const problem of await page.evaluate(tableProblems)) failures.push(`${width}px ${path}: ${problem}`);
     }
 
     const [first, ...rest] = Object.keys(PAGES);

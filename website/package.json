@@ -11,7 +11,7 @@
     "postbuild": "node scripts/check-links.mjs && node scripts/check-search-size.mjs && node scripts/check-page-size.mjs",
     "start": "next start",
     "check:layout": "node scripts/check-layout.mjs",
-    "test:layout": "node --test scripts/layout/streaming.test.mjs",
+    "test:layout": "bun test scripts/layout/table-columns.test.mjs && node --test scripts/layout/streaming.test.mjs",
     "diagram:readme": "node scripts/readme-diagram.mjs",
     "types:check": "next typegen && tsc --noEmit"
   },
@@ -34,6 +34,7 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "4.3.3",
+    "@types/hast": "3.0.5",
     "@types/mdast": "4.0.4",
     "@types/mdx": "2.0.14",
     "@types/node": "26.6.5",
