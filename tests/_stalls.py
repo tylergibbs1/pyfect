@@ -5,21 +5,24 @@ running the process (CPU starvation, steal) or that pyfect itself blocked: a fib
 making a blocking call, a C call holding the GIL, a long garbage collection. One watchdog
 thread, ticking for the whole session and recording while a test runs, tells them apart:
 
-- It ticks every ``stall_threshold / 4`` seconds. Each tick re-arms
-  ``faulthandler.dump_traceback_later(stall_threshold)``, whose watchdog is a C thread that
-  needs no GIL: if no Python thread runs for the threshold, it writes every thread's stack
-  while the stall is still on.
+- It ticks every ``stall_threshold / 4`` seconds. Each tick re-arms a timer on every other
+  thread (``_thread_cpu_timer.StackDumps``, Linux): if no Python thread runs for the
+  threshold, each thread's timer signals it, and faulthandler's handler there writes that
+  thread's own stack, with no GIL, while the stall is still on. No thread reads another's
+  frames: faulthandler's all-threads dump, which ``dump_traceback_later`` makes from a C
+  thread, segfaulted when the other threads ran meanwhile (at the end of a SIGSTOP).
 - A tick that comes ``stall_threshold`` late is a process stall. With the dump, the time
   ``gc.callbacks`` saw collecting, the process's CPU time over the gap and, on Linux, the
   CPU steal of ``/proc/stat`` and ``/proc/loadavg``, it is named "host" or "pyfect blocked
-  in <frame>" (a busy thread, a fiber's first). faulthandler's watchdog needs no GIL, so a
-  dump written on time means the process was running (a C call holding the GIL, which also
-  uses no CPU, is pyfect) and names where (``_DumpTimer``). Only a SIGCONT in the gap, the
-  end of every SIGSTOP, proves the host froze the process (``_Continues``): on a loaded
-  machine faulthandler's thread writes seconds late with the process running, so a late
-  dump proves nothing. Anything else counts as running time.
-- Each tick also samples every thread's stack, as a faulthandler dump (text: holding
-  frames would keep what a finished step handled alive). A thread inside ``Fiber._run``
+  in <frame>" (a busy thread, a fiber's first). The dump needs no GIL, so one written on
+  time means the process was running (a C call holding the GIL, which also uses no CPU, is
+  pyfect) and names where (``_DumpTimer``). Only a SIGCONT in the gap, the end of every
+  SIGSTOP, proves the host froze the process (``_Continues``): on a loaded machine a dump
+  comes seconds late with the process running, so a late dump proves nothing. Anything
+  else counts as running time.
+- Each tick also samples every thread's stack, through ``sys._current_frames()`` under the
+  GIL (text: holding frames would keep what a finished step handled alive). A thread inside
+  ``Fiber._run``
   whose stack has not moved for the threshold, while the process used next to no CPU, is a
   fiber step that blocks with the GIL released (a sync sleep or lock), which the timer dump
   cannot see. Fibers never block, so that is "pyfect blocked in <frame>" too. With the CPU
@@ -39,8 +42,7 @@ alarm (``tests/_timeout.py``) with no stall says so instead, with the process's 
 where the test's thread was at its last sample before the failure: still running, or
 waiting. Per test, arming and reading the
 watchdog cost about a microsecond; it waits only when its tick is overdue, after a stall.
-pytest's own ``faulthandler_timeout`` uses the same faulthandler timer, so setting it turns
-the dump off; the rest still works.
+Off Linux there is no dump, and a GIL-held call is not named.
 """
 
 from __future__ import annotations
@@ -67,7 +69,8 @@ from typing import Any
 
 import pytest
 from _native_stacks import froze
-from _thread_cpu_timer import ThreadCpuTimer
+from _thread_cpu_timer import AVAILABLE as _STACK_DUMPS
+from _thread_cpu_timer import StackDumps, ThreadCpuTimer
 from _threads import live_threads
 
 from pyfect.duration import Duration, seconds
@@ -91,7 +94,8 @@ _IDLE_FILES = (
 _STDLIB = os.path.dirname(threading.__file__) + os.sep  # as frames name it, links resolved
 _RUNNER = tuple(f"{os.sep}{package}{os.sep}" for package in ("_pytest", "pytest", "pluggy"))
 
-_DUMP_THREAD = re.compile(r"^(?:Current thread|Thread) (0x[0-9a-f]+)", re.MULTILINE)
+_MOST_FRAMES = 100
+"""As many frames of a thread as faulthandler writes."""
 _DUMP_FRAME = re.compile(r'^\s+File "(?P<file>[^"]+)", line (?P<line>\d+) in (?P<func>\S+)$')
 
 
@@ -140,19 +144,21 @@ class DumpedThread:
         return any(f.func == "_run" and f.file.endswith("_fiber.py") for f in self.frames)
 
 
-def _dump_threads(text: str) -> list[DumpedThread]:
-    """The threads of a faulthandler dump that have frames."""
+def _current_threads() -> list[DumpedThread]:
+    """Every thread's stack, through ``sys._current_frames()``: read under the GIL, or with
+    the world stopped (free-threaded), so no thread changes its frames meanwhile. As text
+    (``Frame``): holding the frames would keep what a finished step handled alive."""
+    me = threading.get_ident()
     threads: list[DumpedThread] = []
-    for match, block in zip(
-        _DUMP_THREAD.finditer(text), _DUMP_THREAD.split(text)[2::2], strict=True
-    ):
-        frames = tuple(
-            Frame(m["file"], int(m["line"]), m["func"])
-            for line in block.splitlines()
-            if (m := _DUMP_FRAME.match(line))
-        )
+    for ident, top in sys._current_frames().items():  # pyright: ignore[reportPrivateUsage]
+        frames: list[Frame] = []
+        frame: FrameType | None = top
+        while frame is not None and len(frames) < _MOST_FRAMES:
+            code = frame.f_code
+            frames.append(Frame(code.co_filename, frame.f_lineno or 0, code.co_name))
+            frame = frame.f_back
         if frames:
-            threads.append(DumpedThread(match[1], match[0].startswith("Current"), frames))
+            threads.append(DumpedThread(f"{ident:#018x}", ident == me, tuple(frames)))
     return threads
 
 
@@ -417,7 +423,7 @@ class _CpuSamples:
 
 
 class _Timing(Enum):
-    """When faulthandler's C thread wrote a dump, against the due time of its own arming."""
+    """When the threads wrote a dump, against the due time of its own arming."""
 
     ON_TIME = "on time"
     """It ran at its due time: the process was running."""
@@ -431,7 +437,7 @@ class _Timing(Enum):
 
 @dataclass(frozen=True, slots=True)
 class _Dump:
-    """What one arming of faulthandler's dump timer saw."""
+    """What one arming of the dump timers saw."""
 
     threads: list[DumpedThread]
     at: float
@@ -453,20 +459,19 @@ class _Arming:
 
 
 class _DumpTimer:
-    """``faulthandler.dump_traceback_later``, re-armed each tick, and each dump judged against
-    the due time of the arming that wrote it.
+    """Every other thread's own stack (``StackDumps``), re-armed each tick, and each dump
+    judged against the due time of the arming that wrote it.
 
     Two armings can have written the file since the last read: the one this tick made, and
     the one it replaced, if the watchdog was starved after its last read and before its
     re-arm. The replaced one wrote before the re-arm returned; the new one cannot write until
     a threshold after it. So a dump written before half a threshold after the re-arm is the
-    replaced arming's."""
+    replaced arming's. Made on the main thread."""
 
     def __init__(self, threshold: float, tick: float) -> None:
         self._threshold = threshold
         self._tick = tick
-        # Open for the session: faulthandler writes to its descriptor from a C thread.
-        self._file = tempfile.TemporaryFile("w+")  # noqa: SIM115
+        self._stacks = StackDumps()
         self._current = _Arming(time.time() + threshold)
         self._replaced: _Arming | None = None
         self._split = 0.0
@@ -475,7 +480,7 @@ class _DumpTimer:
     def arm(self) -> None:
         now = time.time()
         arming = _Arming(now + self._threshold)
-        faulthandler.dump_traceback_later(self._threshold, file=self._file)
+        self._stacks.arm(self._threshold, but=threading.get_ident())
         self._current.replaced = now
         self._replaced, self._current = self._current, arming
         self._split = time.time() + self._threshold / 2
@@ -483,20 +488,15 @@ class _DumpTimer:
     def take(self, *, stalled: bool) -> _Dump | None:
         """What the armings saw since the last take: a dump, or one that missed its due time.
         After a stall whose current arming is past due, waits up to a tick for its dump: when
-        a freeze ends, faulthandler's C thread and this one wake together."""
-        fd = self._file.fileno()
+        a freeze ends, the threads writing it and this one wake together."""
         current, replaced = self._current, self._replaced
         if stalled:
             deadline = time.time() + self._tick
-            while not os.fstat(fd).st_size and current.due < time.time() < deadline:
+            while not self._stacks.written and current.due < time.time() < deadline:
                 time.sleep(self._tick / 20)
-        written = os.fstat(fd)
-        self._file.seek(0)
-        text = self._file.read()
-        self._file.seek(0)
-        self._file.truncate()
-        if written.st_size:
-            at = written.st_mtime
+        written = self._stacks.take()
+        if written:
+            at = min(w.at for w in written)
             arming = replaced if replaced is not None and at < self._split else current
             arming.read = True
             late = at - arming.due
@@ -507,7 +507,12 @@ class _DumpTimer:
                 if late < -self._tick
                 else _Timing.ON_TIME
             )
-            return _Dump(_dump_threads(text), at, late, timing)
+            threads = [
+                DumpedThread(f"{w.ident:#018x}", False, stack)
+                for w in written
+                for stack in _samples(w.text)[-1:]  # the last, should two armings have fired
+            ]
+            return _Dump(threads, at, late, timing)
         if replaced is None or replaced.read or replaced.replaced is None:
             return None
         replaced.read = True
@@ -515,8 +520,7 @@ class _DumpTimer:
         return _Dump([], replaced.replaced, late, _Timing.MISSED) if late > self._tick else None
 
     def close(self) -> None:
-        faulthandler.cancel_dump_traceback_later()
-        self._file.close()
+        self._stacks.close()
 
 
 class Watchdog:
@@ -537,7 +541,6 @@ class Watchdog:
         """Seconds the host froze the whole process for, over the session."""
         self._stop = threading.Event()
         self._lock = threading.Lock()
-        self._sample = tempfile.TemporaryFile("w+")  # noqa: SIM115
         self._cpu = _CpuSamples()
         self._steal = _Steal()
         self._collections = _Collections()
@@ -578,7 +581,6 @@ class Watchdog:
         if self._dumps is not None:
             self._dumps.close()
         self._continues.close()
-        self._sample.close()
         self._cpu.close()
 
     def arm(self) -> None:
@@ -732,14 +734,8 @@ class Watchdog:
         return HostFreezes(seconds(total), seconds(2 * self.tick) if overdue else None)
 
     def _sample_fibers(self, now: float) -> None:
-        """Reports a fiber step whose stack has not moved for the threshold. The stacks come
-        from a faulthandler dump, as text: holding the threads' frames would keep what a
-        finished step handled alive."""
-        self._sample.seek(0)
-        self._sample.truncate()
-        faulthandler.dump_traceback(self._sample, all_threads=True)
-        self._sample.seek(0)
-        threads = {t.ident: t for t in _dump_threads(self._sample.read()) if not t.current}
+        """Reports a fiber step whose stack has not moved for the threshold."""
+        threads = {t.ident: t for t in _current_threads() if not t.current}
         test_thread = next(
             (t for ident, t in threads.items() if int(ident, 16) == self._test_thread), None
         )
@@ -911,11 +907,7 @@ def pytest_configure(config: pytest.Config) -> None:
     threshold = float(config.getini("stall_threshold"))
     if threshold <= 0:
         return
-    try:
-        faulthandler_timeout = float(config.getini("faulthandler_timeout") or 0)
-    except ValueError:  # pytest's faulthandler plugin is off
-        faulthandler_timeout = 0.0
-    watchdog = Watchdog(threshold, dump=faulthandler_timeout <= 0)
+    watchdog = Watchdog(threshold, dump=_STACK_DUMPS)
     watchdog.start()
     config.stash[_WATCHDOG] = watchdog
     if watchdog.continues:  # without SIGCONT nothing proves a freeze

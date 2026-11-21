@@ -21,9 +21,9 @@ those still start an interpreter of their own.
 """
 
 import contextlib
-import faulthandler
 import gc
 import importlib
+import importlib.util
 import json
 import os
 import runpy
@@ -70,12 +70,25 @@ def _start_child(request: _Request) -> NoReturn:
     os.close(devnull)
     os.environ.clear()
     os.environ.update(request["env"])
-    faulthandler.dump_traceback_later(TIMEOUT, exit=True)
+    _hang_killer().dump_stacks_then_kill(TIMEOUT, refresh=False)
     raise _Run(request["argv"])
 
 
 def _wake(signum: int, frame: FrameType | None) -> None:
     """SIGCHLD's handler: the wakeup fd, not this, tells the loop a child exited."""
+
+
+def _hang_killer() -> ModuleType:
+    """``tests/_thread_cpu_timer.py``, loaded by its path: a run's ``sys.path`` must be what
+    ``python -P`` gives it, without this directory. Without ``refresh`` its dump has the
+    run's threads as they are at its start (its main thread): a daemon thread of ours would
+    be among the threads a program counts or prints."""
+    path = Path(__file__).with_name("_thread_cpu_timer.py")
+    spec = importlib.util.spec_from_file_location("_thread_cpu_timer", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def _preload(modules: list[str]) -> None:

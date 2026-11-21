@@ -9,18 +9,26 @@ import os
 import re
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 import pytest
 from _stalls import (
     DumpedThread,
     Frame,
+    _current_threads,  # pyright: ignore[reportPrivateUsage]
     _Dump,  # pyright: ignore[reportPrivateUsage]
-    _dump_threads,  # pyright: ignore[reportPrivateUsage]
     _not_frozen,  # pyright: ignore[reportPrivateUsage]
     _Timing,  # pyright: ignore[reportPrivateUsage]
 )
 from _subprocess import SUBPROCESS_TIMEOUT
+from _thread_cpu_timer import AVAILABLE as _STACK_DUMPS
+
+_NEEDS_STACK_DUMPS = pytest.mark.skipif(
+    not _STACK_DUMPS,
+    reason="the stall dump's per-thread timers (SIGEV_THREAD_ID) are Linux's: off it, no "
+    "thread writes its stack during a stall, so nothing names a GIL-held call",
+)
 
 BLOCKING_FIBER = """
 import time
@@ -67,18 +75,38 @@ def test_is_frozen():
     assert False
 """
 
-GIL_HELD_SLEEP = """
+_SLEEP_HOLDING_THE_GIL = """
 import ctypes
+import os
+import subprocess
 
+_writers = []
+
+
+def a_pipe_written_in(seconds):
+    # read()'s arguments for a pipe written to in ``seconds``. A read through PyDLL holds the
+    # GIL and uses no CPU, and the kernel restarts it after the stall dump's signal
+    # (faulthandler's handlers are SA_RESTART); a sleep it would cut short, and back in
+    # Python the watchdog would take the GIL.
+    out, into = os.pipe()
+    _writers.append(subprocess.Popen(["sh", "-c", f"sleep {seconds}; printf x"], stdout=into))
+    os.close(into)
+    return out, ctypes.create_string_buffer(1), 1
+"""
+
+GIL_HELD_SLEEP = (
+    _SLEEP_HOLDING_THE_GIL
+    + """
 
 def sleep_on_purpose():
-    ctypes.PyDLL(None).sleep(1)  # libc sleep through PyDLL: the GIL stays held, no CPU used
+    ctypes.PyDLL(None).read(*a_pipe_written_in(1))  # the GIL stays held, no CPU used
 
 
 def test_sleeps_holding_the_gil():
     sleep_on_purpose()  # outside a fiber, as a driver's C call on the test's thread
     assert False
 """
+)
 
 DEADLOCK = """
 import threading
@@ -107,7 +135,6 @@ def test_deadlocks():
 """
 
 FROZEN_RIGHT_AFTER_ARMING = """
-import faulthandler
 import os
 import subprocess
 import threading
@@ -116,30 +143,26 @@ import time
 import _stalls
 import pyfect as fx
 
+arm = _stalls.StackDumps.arm
+stop_next = threading.Event()
 
-class StopAfterArming:
-    \"\"\"The watchdog's faulthandler, whose next arming is followed by a SIGSTOP of the
-    process before the watchdog notes when the dump is due.\"\"\"
 
-    def __init__(self):
-        self.next = threading.Event()
+def stop_after_arming(dumps, delay, *, but=None):
+    \"\"\"The watchdog's dump timers, whose next arming is followed by a SIGSTOP of the
+    process before the watchdog notes it replaced the last.\"\"\"
+    arm(dumps, delay, but=but)
+    if stop_next.is_set():
+        stop_next.clear()
+        script = f"kill -STOP {os.getpid()}; sleep 1; kill -CONT {os.getpid()}"
+        subprocess.Popen(["sh", "-c", script])
+        time.sleep(0.3)  # the stop lands here: armed
 
-    def __getattr__(self, name):
-        return getattr(faulthandler, name)
 
-    def dump_traceback_later(self, *args, **kwargs):
-        faulthandler.dump_traceback_later(*args, **kwargs)
-        if self.next.is_set():
-            self.next.clear()
-            script = f"kill -STOP {os.getpid()}; sleep 1; kill -CONT {os.getpid()}"
-            subprocess.Popen(["sh", "-c", script])
-            time.sleep(0.3)  # the stop lands here: armed, the due time not yet noted
+_stalls.StackDumps.arm = stop_after_arming
 
 
 def test_is_frozen_right_after_arming():
-    shim = StopAfterArming()
-    _stalls.faulthandler = shim
-    shim.next.set()
+    stop_next.set()
     fx.run_blocking(fx.sleep("2 seconds"))
     assert False
 """
@@ -220,6 +243,7 @@ def test_a_blocking_call_in_a_fiber_step_is_named(
     assert "test_a_blocking_call_in_a_fiber_step_is_named.py:7)" in out
 
 
+@_NEEDS_STACK_DUMPS
 @pytest.mark.skipif(
     not getattr(__import__("sys"), "_is_gil_enabled", lambda: True)(),
     reason="free-threaded: a C call holds no GIL, and the fiber sampler names it",
@@ -246,6 +270,7 @@ def test_a_frozen_process_is_named_a_host_stall(
     assert "pyfect blocked" not in out
 
 
+@_NEEDS_STACK_DUMPS
 @pytest.mark.skipif(__import__("sys").platform == "win32", reason="libc sleep through ctypes")
 @pytest.mark.skipif(
     not getattr(__import__("sys"), "_is_gil_enabled", lambda: True)(),
@@ -255,20 +280,22 @@ def test_a_frozen_process_is_named_a_host_stall(
 def test_a_freeze_right_after_the_dump_is_armed_is_a_host_stall(
     pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """#135's CI: a freeze that lands between arming faulthandler's dump and noting when it
-    is due made the due time fall after the freeze, so the dump the C watchdog wrote at
-    resume read as on time, and the stall as in-process. The due time is noted first."""
+    """#135's CI: a freeze that lands between arming the dump and noting when it is due made
+    the due time fall after the freeze, so the dump written at resume read as on time, and
+    the stall as in-process. The due time is noted first."""
     out = _run(pytester, monkeypatch, FROZEN_RIGHT_AFTER_ARMING)
     assert "process stalled 1." in out
     assert ": host: process frozen, " in out
     assert "on time" not in out
 
 
+@_NEEDS_STACK_DUMPS
 def test_a_c_call_sleeping_with_the_gil_held_is_named_pyfect_not_host(
     pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Like a frozen host it uses no CPU and starves the watchdog thread, but faulthandler's
-    C watchdog needs no GIL and writes its dump on time: the process was running."""
+    """Like a frozen host it uses no CPU and starves the watchdog thread, but the stall dump
+    needs no GIL (each thread writes its own stack from a signal) and comes on time: the
+    process was running."""
     out = _run(pytester, monkeypatch, GIL_HELD_SLEEP)
     assert "pyfect blocked in sleep_on_purpose (" in out
     assert ": host" not in out
@@ -764,8 +791,9 @@ def test_frozen_with_no_dump():
 """
 )
 
-LATE_DUMP_WITHOUT_A_FREEZE = """
-import ctypes
+LATE_DUMP_WITHOUT_A_FREEZE = (
+    _SLEEP_HOLDING_THE_GIL
+    + """
 import time
 
 import _stalls
@@ -786,7 +814,7 @@ _stalls._DumpTimer.take = unwritten_when_stalled
 
 
 def sleep_on_purpose():
-    ctypes.PyDLL(None).sleep(2)  # the GIL held 2 s, no CPU used: looks frozen, is not
+    ctypes.PyDLL(None).read(*a_pipe_written_in(2))  # the GIL held 2 s: looks frozen, is not
 
 
 @it.live(timeout="1 second")
@@ -794,6 +822,7 @@ def test_holds_the_gil_with_a_late_dump():
     yield from fx.sync(sleep_on_purpose)  # the timeout passes during it
     yield from fx.never  # so it is due as soon as the step ends
 """
+)
 
 FROZEN_AFTER_THE_CLOCKS = """
 import os
@@ -841,15 +870,15 @@ def test_deadlocked():
     yield from fx.never  # every fiber waiting: the watchdog keeps ticking
 """
 
-GIL_HELD_IN_A_STEP = """
-import ctypes
-
+GIL_HELD_IN_A_STEP = (
+    _SLEEP_HOLDING_THE_GIL
+    + """
 import pyfect as fx
 import pyfect.testing as it
 
 
 def sleep_on_purpose():
-    ctypes.PyDLL(None).sleep(2)  # the GIL held 2 s, no CPU used: looks frozen, is not
+    ctypes.PyDLL(None).read(*a_pipe_written_in(2))  # the GIL held 2 s: looks frozen, is not
 
 
 @it.live(timeout="1 second")
@@ -857,10 +886,12 @@ def test_holds_the_gil():
     yield from fx.sync(sleep_on_purpose)  # the timeout passes during it
     yield from fx.never  # so it is due as soon as the step ends
 """
+)
 
 
-STARVED_BEFORE_REARMING = """
-import ctypes
+STARVED_BEFORE_REARMING = (
+    _SLEEP_HOLDING_THE_GIL
+    + """
 import threading
 
 import _stalls
@@ -888,7 +919,7 @@ def sleep_on_purpose():
     starve.set()
     parked.wait(timeout=5)
     holding.set()
-    ctypes.PyDLL(None).sleep(2)  # the GIL held 2 s, no CPU used: the watchdog starved
+    ctypes.PyDLL(None).read(*a_pipe_written_in(2))  # the GIL held 2 s: the watchdog starved
 
 
 @it.live(timeout="1 second")
@@ -896,6 +927,7 @@ def test_starves_the_watchdog():
     yield from fx.sync(sleep_on_purpose)
     yield from fx.never
 """
+)
 
 FROZEN_BEFORE_REARMING = """
 import os
@@ -1007,6 +1039,7 @@ def test_a_c_call_holding_the_gil_times_out_on_time(
     assert "not counted" not in out, out
 
 
+@_NEEDS_STACK_DUMPS
 @pytest.mark.skipif(__import__("sys").platform == "win32", reason="libc sleep through ctypes")
 @pytest.mark.skipif(
     not getattr(__import__("sys"), "_is_gil_enabled", lambda: True)(),
@@ -1025,6 +1058,7 @@ def test_a_watchdog_starved_before_it_rearms_counts_the_time(
     assert "not counted" not in out, out
 
 
+@_NEEDS_STACK_DUMPS
 @pytest.mark.skipif(__import__("sys").platform == "win32", reason="libc sleep through ctypes")
 @pytest.mark.skipif(
     not getattr(__import__("sys"), "_is_gil_enabled", lambda: True)(),
@@ -1122,29 +1156,19 @@ def test_a_test_within_its_limit_passes(
     _blocking(pytester, monkeypatch, WITHIN_ITS_LIMIT, "fail").assert_outcomes(passed=1)
 
 
-def test_a_dump_reads_each_threads_frames_innermost_first() -> None:
-    dump = (
-        "Timeout (0:00:02)!\n"
-        "Thread 0x00007f0000000001 (most recent call first):\n"
-        '  File "/usr/lib/python3.13/threading.py", line 359 in wait\n'
-        '  File "/w/app.py", line 3 in main\n'
-        "\n"
-        "Current thread 0x00007f0000000002 (most recent call first):\n"
-        '  File "/w/app.py", line 9 in spin\n'
-    )
-    assert _dump_threads(dump) == [
-        DumpedThread(
-            "0x00007f0000000001",
-            False,
-            (
-                Frame("/usr/lib/python3.13/threading.py", 359, "wait"),
-                Frame("/w/app.py", 3, "main"),
-            ),
-        ),
-        DumpedThread("0x00007f0000000002", True, (Frame("/w/app.py", 9, "spin"),)),
-    ]
+def test_a_frame_in_a_wait_is_idle() -> None:
     assert Frame("/usr/lib/python3.13/threading.py", 359, "wait").idle
     assert not Frame("/w/app.py", 9, "spin").idle
+
+
+def test_the_current_threads_are_read_innermost_first() -> None:
+    def here() -> list[DumpedThread]:
+        return _current_threads()
+
+    mine = [t for t in here() if t.current]
+    assert len(mine) == 1, mine
+    assert [f.func for f in mine[0].frames[:2]] == ["_current_threads", "here"]
+    assert int(mine[0].ident, 16) == threading.get_ident()
 
 
 def test_the_suite_loads_the_stall_plugin(pytestconfig: pytest.Config) -> None:

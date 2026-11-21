@@ -1,8 +1,8 @@
 """Cross-thread resume and interrupt stress, run by
 ``tests/test_free_threaded.py`` under a free-threaded CPython (no GIL to
 order the threads). Exits 0 when every invariant held, 1 with a report
-otherwise; a lost resume hangs until the faulthandler dumps the stacks
-and exits.
+otherwise; a lost resume hangs until every thread dumps its own stack
+and the process is killed (`_thread_cpu_timer.dump_stacks_then_kill`).
 
 1. A callback resumed from another thread while the fiber is still
    registering it: the resume must never be lost.
@@ -18,12 +18,13 @@ and exits.
    "ManagedRuntime disposed").
 """
 
-import faulthandler
+import importlib.util
 import random
 import sys
 import threading
 import time
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 import pyfect as fx
@@ -203,7 +204,13 @@ def dispose_while_runs_start(seed: int) -> list[str]:
 
 
 if __name__ == "__main__":
-    faulthandler.dump_traceback_later(120, exit=True)
+    # By its path: this runs under another interpreter, with only src on its path.
+    _timers = Path(__file__).parent.parent / "_thread_cpu_timer.py"
+    _spec = importlib.util.spec_from_file_location("_thread_cpu_timer", _timers)
+    assert _spec is not None and _spec.loader is not None
+    _killer = importlib.util.module_from_spec(_spec)
+    _spec.loader.exec_module(_killer)
+    _killer.dump_stacks_then_kill(120, refresh=True)
     sys.setswitchinterval(1e-5)
     problems = register_race(20_000)
     for seed in range(5):

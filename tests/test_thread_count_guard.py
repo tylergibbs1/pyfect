@@ -11,6 +11,10 @@ import _source
 from _source import TESTS
 
 _BANNED = frozenset({"active_count", "activeCount", "enumerate"})
+_MAY_LIST_EVERY_THREAD = frozenset({"_threads.py", "_thread_cpu_timer.py"})
+"""``_threads.live_threads`` itself, and the stack dumps, which signal every thread to write
+its own stack (a report of each, never a count) and load where ``_threads`` cannot be
+imported (a fork's ``sys.path`` stays what ``python -P`` gives)."""
 
 
 def _counts_all_threads(node: ast.AST) -> bool:
@@ -29,7 +33,7 @@ def test_tests_find_threads_only_through_live_threads():
     offenders = [
         f"{path.relative_to(TESTS)}:{getattr(node, 'lineno', 0)}"
         for path in _source.files(TESTS)
-        if path.name != "_threads.py" and _source.mentions(path, *_BANNED)
+        if path.name not in _MAY_LIST_EVERY_THREAD and _source.mentions(path, *_BANNED)
         for node in _source.walk(path)
         if _counts_all_threads(node)
     ]

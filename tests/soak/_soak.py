@@ -4,12 +4,12 @@ then stops everything and records how the shutdown went."""
 
 from __future__ import annotations
 
-import faulthandler
 import os
 import signal
 import sys
 import threading
 import time
+import traceback
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -181,7 +181,10 @@ def _watchdog(
         return
     stacks = config.out.with_suffix(".stacks.txt")
     with stacks.open("w") as file:
-        faulthandler.dump_traceback(file=file, all_threads=True)
+        # Read under the GIL, not faulthandler's lock-free dump of threads that may be running.
+        for ident, frame in sys._current_frames().items():  # pyright: ignore[reportPrivateUsage]
+            file.write(f"Thread {ident:#x} (most recent call last):\n")
+            file.write("".join(traceback.format_stack(frame)) + "\n")
     sampler.write(
         End(
             t=sampler.elapsed(),
