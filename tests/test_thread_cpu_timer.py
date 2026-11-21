@@ -41,4 +41,5 @@ def test_a_hung_process_writes_each_threads_stack_and_is_killed(refresh: bool) -
     assert done.returncode == -9, done.stderr
     assert done.stderr.count("Stack (most recent call first):") >= 2, done.stderr
     assert "in parked_on_purpose" in done.stderr
-    assert 'File "<string>", line 14 in <module>' in done.stderr
+    hang = 1 + source.splitlines().index("threading.Event().wait()  # hung on the main thread")
+    assert f'File "<string>", line {hang} in <module>' in done.stderr
