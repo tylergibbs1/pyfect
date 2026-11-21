@@ -40,25 +40,28 @@ const PAGES = {
     `<style>@font-face{font-family:Late;src:url(/slow-font.woff2) format("woff2");font-display:swap}
      body{font-family:Late,monospace}</style>`,
   ),
-  '/image': page(`<h1>A guide</h1><img src="/slow.png" style="width:100%">${paragraphs}`),
-  // inserted while the page is still streaming in
+  // These two move the page while it is still streaming in: about 70 KB, so 35 pauses (900 ms).
+  '/image': page(`<h1>A guide</h1><img src="/slow.png" style="width:100%">${paragraphs.repeat(3)}`),
+  // the script runs once the parser reaches it, and inserts the banner after the next frame
   '/banner': page(
-    `<h1>A guide</h1><script>setTimeout(() => {
+    `<h1>A guide</h1>${paragraphs}<script>requestAnimationFrame(() => requestAnimationFrame(() => {
        const banner = document.createElement('div');
        banner.style.height = '80px';
        banner.textContent = 'A banner';
        document.body.prepend(banner);
-     }, 150)</script>${paragraphs}`,
+     }))</script>${paragraphs.repeat(2)}`,
   ),
-  // a pause always lands inside the link: it grows to the left as its text arrives
+  // A comment of 24 KB, so a dozen pauses (300 ms) where only the part before it has arrived:
+  // a slow runner paints the first frame late.
+  // A pause always lands inside the link: it grows to the left as its text arrives.
   '/growing-link': page(
-    `<div style="display:flex;justify-content:flex-end"><a href="/next">Next <span></span><!--${'x'.repeat(6 * 1024)}-->
+    `<div style="display:flex;justify-content:flex-end"><a href="/next">Next <span></span><!--${'x'.repeat(24 * 1024)}-->
      page, with a longer name</a></div>${paragraphs}`,
   ),
   // a pause always lands between the two buttons: the first is complete, and moves left
   '/row': page(
     `<div style="display:flex;justify-content:flex-end;gap:8px"><button>One</button>
-     <!--${'x'.repeat(6 * 1024)}--><button>Two</button></div>${paragraphs}`,
+     <!--${'x'.repeat(24 * 1024)}--><button>Two</button></div>${paragraphs}`,
   ),
 };
 
@@ -74,8 +77,8 @@ before(async () => {
       await wait(600);
       res.writeHead(200, { 'content-type': 'font/woff2' }).end(font);
     } else if (req.url === '/slow.png') {
-      // while the page is still streaming in (about 50 KB, so 25 pauses)
-      await wait(150);
+      // well after the first paint, while the page is still streaming in
+      await wait(400);
       res.writeHead(200, { 'content-type': 'image/png' }).end(PIXEL);
     } else if (req.url in PAGES) {
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }).end(PAGES[req.url]);
@@ -131,7 +134,7 @@ describe('text still arriving', () => {
       const offsets = [...afterParens, ...Array.from({ length: 8 }, (_, i) => i * 256)];
       const found = await pooled(offsets, (offset) => shifts('/prose', { offset, width }));
       found.forEach(({ counted, arriving }, i) => {
-        assert.deepEqual(counted, [], `${width}px, pauses +${offsets[i]} B`);
+        assert.deepEqual(counted, [], `${width}px, pauses +${offsets[i]} B: ${JSON.stringify(counted)}`);
         rewrapped += arriving.length;
       });
     }
@@ -144,7 +147,7 @@ test('a right-aligned link growing as its text arrives never counts', async () =
   const offsets = [0, 700, 1400];
   const found = await pooled(offsets, (offset) => shifts('/growing-link', { offset, width: 1024 }));
   found.forEach(({ counted, arriving }, i) => {
-    assert.deepEqual(counted, [], `pauses +${offsets[i]} B`);
+    assert.deepEqual(counted, [], `pauses +${offsets[i]} B: ${JSON.stringify(counted)}`);
     assert.ok(arriving.length > 0, `pauses +${offsets[i]} B: the link never moved; the fixture tests nothing`);
   });
 });

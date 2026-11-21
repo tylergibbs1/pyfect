@@ -21,9 +21,9 @@ const WIDTHS = [1512, 1280, 1024, 390];
 /** How late the fonts arrive in the late-font pass, in ms: well after the first paint. */
 const FONT_DELAY = 1000;
 // `--sweep`: only the streamed pass, on every docs page, at every width and each `--offsets`
-// (comma-separated bytes), `--jobs` pages at a time, `--pages` a comma-separated subset. Proves no
-// page depends on where pauses land. `--raw` counts every shift, text still arriving too (what
-// this check counted before it told the two apart).
+// (comma-separated bytes), `--jobs` pages at a time; `--pages` and `--widths` (comma-separated)
+// narrow it. Proves no page depends on where pauses land. `--raw` counts every shift, text
+// still arriving too (what this check counted before it told the two apart).
 const args = process.argv.slice(2);
 const flag = (name) => args.find((a) => a.startsWith(`--${name}=`))?.split('=')[1];
 const SWEEP = args.includes('--sweep');
@@ -128,7 +128,8 @@ try {
     const manifest = JSON.parse(await readFile(new URL('../.next/prerender-manifest.json', import.meta.url), 'utf8'));
     const paths =
       flag('pages')?.split(',') ?? Object.keys(manifest.routes).filter((r) => r === '/docs' || r.startsWith('/docs/'));
-    for (const width of WIDTHS) {
+    const widths = flag('widths')?.split(',').map(Number) ?? WIDTHS;
+    for (const width of widths) {
       for (const offset of SWEEP_OFFSETS) {
         // a shorter settle: the sweep is thousands of loads
         const found = await streamedFailures(browser, width, offset, paths, { jobs: JOBS, all: RAW, settle: 400 });
@@ -137,7 +138,7 @@ try {
         failures.push(...found);
       }
     }
-    console.log(`swept ${paths.length} pages at ${WIDTHS.join(', ')}px, pauses moved by ${SWEEP_OFFSETS.join(', ')} B`);
+    console.log(`swept ${paths.length} pages at ${widths.join(', ')}px, pauses moved by ${SWEEP_OFFSETS.join(', ')} B`);
   }
   for (const width of SWEEP ? [] : WIDTHS) {
     const context = await browser.newContext({ viewport: { width, height: 900 } });

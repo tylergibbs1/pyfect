@@ -72,6 +72,7 @@ export async function startStreamingProxy(upstream) {
  * has open, so `window.__streamedShifts()` can tell text still arriving from content that moved.
  */
 export function watchStreamedShifts() {
+  const SLACK = 100;
   /** One per frame, in order: when it ran and the nodes still open (the document's last path). */
   const frames = [];
   const entries = [];
@@ -138,11 +139,17 @@ export function watchStreamedShifts() {
     const counted = [];
     const arriving = [];
     for (const entry of entries) {
-      // the frame the shift was painted in is the last one that started before it was reported;
-      // the frame before that is the layout it moved from
+      // The layout a shift moved from is the frame before the one it was painted in. Chrome
+      // stamps a shift with its frame's start, which on a busy machine is well before that
+      // frame's callbacks ran, so the frames of the SLACK ms before the shift, the last one
+      // that started before it and the one before that all count: what was open in any of them
+      // was still arriving (this hides nothing that had been complete for longer).
       let i = frames.length - 1;
       while (i >= 0 && frames[i].t >= entry.startTime) i--;
-      const before = frames[i - 1]?.open ?? new Set();
+      const before = new Set();
+      for (let j = i; j >= 0 && (j >= i - 1 || frames[j].t >= entry.startTime - SLACK); j--) {
+        for (const node of frames[j].open) before.add(node);
+      }
       // a source whose node is gone (removed since) counts
       const moved = entry.sources.filter((s) => !s.node || !stillArriving(s, before));
       const shift = {
