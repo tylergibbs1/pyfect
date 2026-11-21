@@ -11,4 +11,5 @@
   workflow's body again, so a resumed run stops where an uncrashed one does, and tools behind
   the tool ledger never run twice. Other frameworks' durable agents overflowed their history
   (Temporal #1890, terminated at call 53 of 100) or replayed changed requests from stale
-  results. `explore.activity_crashes` takes `at=` to split a long sweep into parts.
+  results. `explore.activity_crashes` takes `at=` and `stored=` to split a long sweep into
+  parts.

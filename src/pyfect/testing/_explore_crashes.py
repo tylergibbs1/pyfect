@@ -151,6 +151,7 @@ def activity_crashes[P, A, E, R, ER = Never, RL = Never](
     layer: Layer[R | WorkflowEngine, ER, RL],
     check: Callable[[Exit[A, E]], Effect[str | None, Never, R]],
     at: Iterable[int] | None = None,
+    stored: bool | None = None,
 ) -> Effect[CrashReport, CrashFailure | ER, RL]:
     """Run ``workflow`` with ``payload`` once without a crash, then once per
     crash point: after each activity it executes ran (before the engine
@@ -160,7 +161,9 @@ def activity_crashes[P, A, E, R, ER = Never, RL = Never](
 
     ``at`` names the crash points' activities instead (numbered from 1, in
     the order the run executes them), to split a long sweep into parts: the
-    run without a crash is then not made.
+    run without a crash is then not made. ``stored`` keeps only the crash
+    points after the result was stored (``True``) or only those before
+    (``False``).
 
     ``layer`` provides the engine with the workflow registered (memory, or
     a cluster engine such as ``single_runner.layer`` on SQLite) and what
@@ -179,13 +182,13 @@ def activity_crashes[P, A, E, R, ER = Never, RL = Never](
             indices = range(1, len(executed) + 1)
         points: list[CrashPoint] = []
         for index in indices:
-            for stored in (False, True):
-                crash = _Crash(index, stored)
+            for after_store in (False, True) if stored is None else (stored,):
+                crash = _Crash(index, after_store)
                 problem = yield from _attempt(workflow, payload, layer, check, crash)
                 point = crash.fired
                 if point is None:
                     name = "?" if executed is None else executed[index - 1]
-                    point = CrashPoint(index, name, stored)
+                    point = CrashPoint(index, name, after_store)
                     problem = f"the run executed fewer than {index} activities this time"
                 points.append(point)
                 if problem is not None:

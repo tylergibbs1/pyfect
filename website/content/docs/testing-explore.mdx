@@ -42,7 +42,8 @@ the point.
 
 A long workflow has many crash points, and every one replays the run. `at=range(1, 11)` tries
 only the points after activities 1 to 10 (numbered in the order the run executes them) and skips
-the run without a crash, so a sweep can be split over several tests. The
+the run without a crash, so a sweep can be split over several tests. `stored=True` or
+`stored=False` keeps only the crashes after, or before, each result was stored. The
 [durable agents](/docs/ai-durable) tests sweep a 100-turn run this way.
 
 `layer` provides the engine with the workflow registered, and whatever `check` reads. It is

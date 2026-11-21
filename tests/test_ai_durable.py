@@ -13,6 +13,7 @@ import gc
 from collections.abc import Callable
 from typing import Any
 
+import pytest
 from _ai_durable_agent import (
     KIT,
     Agent,
@@ -200,6 +201,37 @@ def test_the_request_hash_covers_the_prompt_and_the_tools_but_not_the_span():
     )
     assert durable.call_hash("Lookup", {"n": 1}) != durable.call_hash("Lookup", {"n": 2})
     yield from fx.void
+
+
+def test_a_grown_prompt_digests_only_its_new_messages_and_hashes_as_one_built_afresh(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """A turn's request hash costs the same at turn 100 as at turn 1: the messages the
+    prompt kept are not digested again, and the hash is the one the whole prompt has."""
+    encoded: list[object] = []
+    encode = durable._encode_message  # pyright: ignore[reportPrivateUsage]
+
+    def counting(message: P.Message) -> object:
+        encoded.append(message)
+        return encode(message)
+
+    monkeypatch.setattr(durable, "_encode_message", counting)
+    prompt = P.make(f"turn {0} of a long run")
+    for turn in range(1, 50):
+        prompt = prompt.concat(f"turn {turn}")
+        durable.request_hash(lm.ProviderOptions(prompt), streamed=False)
+    assert len(encoded) == 50
+    afresh = P.make(f"turn {0} of a long run")
+    for turn in range(1, 50):
+        afresh = afresh.concat(f"turn {turn}")
+    assert not any(a is b for a, b in zip(afresh.content, prompt.content, strict=True))
+    assert durable.request_hash(lm.ProviderOptions(afresh), streamed=False) == (
+        durable.request_hash(lm.ProviderOptions(prompt), streamed=False)
+    )
+    reordered = P.from_messages(reversed(prompt.content))
+    assert durable.request_hash(lm.ProviderOptions(reordered), streamed=False) != (
+        durable.request_hash(lm.ProviderOptions(prompt), streamed=False)
+    )
 
 
 # Budgets and the tool ledger -------------------------------------------------------------

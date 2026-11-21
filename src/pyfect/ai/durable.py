@@ -92,10 +92,11 @@ class RequestDiverged(S.TaggedError, identifier="pyfect/ai/Durable/RequestDiverg
 # Request hashes --------------------------------------------------------------------------
 
 _encode_message = S.encode_unknown_sync(S.to_codec_json(P.MESSAGE))
-_message_digests: OrderedDict[int, tuple[P.Message, str]] = OrderedDict()
-_MESSAGE_DIGESTS = 4096
-"""Each message's digest, by identity: a run's prompt grows by a few messages a turn and
-keeps the ones before, so hashing it is linear in the new messages, not the whole."""
+_prompt_chains: OrderedDict[int, tuple[P.Message, P.Message | None, str]] = OrderedDict()
+_PROMPT_CHAINS = 4096
+"""For each message, by identity: the message before it and the digest of the prompt up to
+it. A run's prompt grows by a few messages a turn and keeps the ones before, so hashing it
+digests only the new messages, and a turn's hash costs the same at turn 100 as at turn 1."""
 _tool_documents: dict[int, tuple[AnyTool, object]] = {}
 _cache_lock = threading.Lock()
 
@@ -104,18 +105,26 @@ def _digest(document: object) -> str:
     return hashlib.sha256(key_bytes(stringify(document, sort_keys=True))).hexdigest()
 
 
-def _message_digest(message: P.Message) -> str:
+def _prompt_digest(messages: Sequence[P.Message]) -> str:
+    """The digest of ``messages``, each message's digest chained onto the ones before."""
+    done, chain = 0, ""
     with _cache_lock:
-        found = _message_digests.get(id(message))
-        if found is not None and found[0] is message:
-            _message_digests.move_to_end(id(message))
-            return found[1]
-    digest = _digest(_encode_message(message))
-    with _cache_lock:
-        _message_digests[id(message)] = (message, digest)
-        if len(_message_digests) > _MESSAGE_DIGESTS:
-            _message_digests.popitem(last=False)
-    return digest
+        for end in range(len(messages), 0, -1):
+            found = _prompt_chains.get(id(messages[end - 1]))
+            before = messages[end - 2] if end > 1 else None
+            if found is not None and found[0] is messages[end - 1] and found[1] is before:
+                _prompt_chains.move_to_end(id(messages[end - 1]))
+                done, chain = end, found[2]
+                break
+    for index in range(done, len(messages)):
+        message = messages[index]
+        chain = _digest([chain, _digest(_encode_message(message))])
+        with _cache_lock:
+            before = messages[index - 1] if index > 0 else None
+            _prompt_chains[id(message)] = (message, before, chain)
+            if len(_prompt_chains) > _PROMPT_CHAINS:
+                _prompt_chains.popitem(last=False)
+    return chain
 
 
 def _tool_document(tool: AnyTool) -> object:
@@ -149,7 +158,7 @@ def request_hash(options: lm.ProviderOptions, *, streamed: bool) -> str:
     return _digest(
         {
             "streamed": streamed,
-            "prompt": [_message_digest(message) for message in options.prompt.content],
+            "prompt": _prompt_digest(options.prompt.content),
             "tools": [_tool_document(tool) for tool in options.tools],
             "toolChoice": options.tool_choice,
             "responseFormat": response_format,

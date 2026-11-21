@@ -242,10 +242,13 @@ def step_of(activity: str) -> str:
     return f"model {turn}" if parts[3] == "model" else f"tool {turn}"
 
 
-def sweep(engine: fx.Layer[Any, Any, Any], at: range) -> fx.Effect[None, Any, Any]:
-    """Run ``TURNS`` turns, crash after each activity in ``at`` (before its result is
-    stored, and after), resume, and check: the run ends with "done", every step ran, and
-    only a step cut off before its result was stored ran again, once."""
+def sweep(
+    engine: fx.Layer[Any, Any, Any], step: int, stored: bool | None = None
+) -> fx.Effect[None, Any, Any]:
+    """Run ``TURNS`` turns, crash after activity ``step`` (before its result is stored,
+    after, or both when ``stored`` is ``None``), resume, and check: the run ends with
+    "done", every step ran, and only a step cut off before its result was stored ran
+    again, once."""
     seen: list[Seen] = []
 
     def check(ex: fx.Exit[str, Any]) -> fx.Effect[str | None, Any, CallsService]:
@@ -267,19 +270,11 @@ def sweep(engine: fx.Layer[Any, Any, Any], at: range) -> fx.Effect[None, Any, An
             AgentPayload(turns=TURNS, prompt="go"),
             layer=agent_layer(engine),
             check=check,
-            at=at,
+            at=[step],
+            stored=stored,
         )
-        assert len(seen) == len(report.points) == 2 * len(at)
+        assert len(seen) == len(report.points) == (2 if stored is None else 1)
         for point, run in zip(report.points, seen, strict=True):
             assert run.repeated() == ([] if point.stored else [step_of(point.activity)]), point
 
     return body
-
-
-def chunks(size: int) -> list[range]:
-    """The steps ``1..STEPS`` in ranges of ``size``, a test each (each test has 5 s)."""
-    return [range(start, min(start + size, STEPS + 1)) for start in range(1, STEPS + 1, size)]
-
-
-def chunk_id(at: range) -> str:
-    return f"steps-{at.start}-{at.stop - 1}"

@@ -286,3 +286,20 @@ def test_at_crashes_only_after_the_activities_it_names_and_skips_the_run_without
         "crash after activity 2 ('charge') ran, after its result was stored",
     ]
     assert checked == ["check", "check"]
+
+
+@testing.effect
+def test_stored_keeps_only_the_crash_points_on_that_side_of_the_store():
+    checked: list[str] = []
+
+    def check(ex: fx.Exit[str, Any]) -> fx.Effect[str | None, Any, BankService]:
+        checked.append("check")
+        return _once(ex)
+
+    report = yield from explore.activity_crashes(
+        Order, {"id": "o-1"}, layer=_on_memory(keyed=True), check=check, at=[2], stored=True
+    )
+    assert [str(p) for p in report.points] == [
+        "crash after activity 2 ('charge') ran, after its result was stored",
+    ]
+    assert checked == ["check"]
