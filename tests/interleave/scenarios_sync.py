@@ -16,6 +16,7 @@ from typing import Any
 
 import pyfect as fx
 from pyfect import scope
+from pyfect.ai import _budget, budget, language_model, prompt
 from pyfect.errors import Done
 from pyfect.exit import Exit, Failure, Success
 from pyfect.pubsub import Subscription
@@ -841,6 +842,75 @@ def _ref_modify(w: World) -> None:
     w.check(check)
 
 
+def _ai_budget(w: World) -> None:
+    """Three model requests and two tool calls against a budget with room for two
+    requests' worst cases and one tool call; a request is interrupted by a fiber, one from
+    a thread, at any point. What is spent and held never passes a limit, a request that
+    succeeded spent its response's usage, and once all end nothing is still held.
+    Each response uses less than its reservation, so nothing may pass the limit."""
+    limits = budget.Limits(
+        total_tokens=20, tool_calls=1, max_output_tokens=5, estimate_input_tokens=lambda _: 5
+    )
+    options = language_model.ProviderOptions(prompt.make("hi"))
+    shared = Slot[budget.Budget]()
+    second = Slot[AnyFiber]()
+    peaks: list[int] = []
+    returned: list[int] = []
+    settled: list[int] = []
+
+    def request(used: int) -> fx.Effect[None, budget.BudgetExceeded]:
+        def provider() -> fx.Effect[list[Any]]:
+            b = shared.get()
+            peaks.append(b._spent.total_tokens + b._held.total_tokens)
+            finish = {
+                "type": "finish",
+                "usage": {"inputTokens": {"total": used - 1}, "outputTokens": {"total": 1}},
+            }
+            answered = fx.sync(lambda: returned.append(used))
+            return fx.yield_now().and_then(answered).as_([finish])
+
+        sent = _budget.metered_request(options, provider)
+        return sent.map(lambda _: settled.append(used)).pipe(budget.provide(shared.get()))
+
+    def tool_call() -> fx.Effect[None, budget.BudgetExceeded]:
+        return _budget.tool_call().map(lambda _: None).pipe(budget.provide(shared.get()))
+
+    @fx.gen
+    def main():
+        shared.set((yield from budget.make(limits)))
+        first = yield from request(10).exit().fork()
+        second.set((yield from request(4).exit().fork()))
+        third = yield from request(7).exit().fork()
+        tools = yield from fx.all([tool_call().exit(), tool_call().exit()]).fork()
+        yield from fx.yield_now()
+        yield from first.interrupt()
+        yield from second.get().await_exit()
+        yield from third.await_exit()
+        yield from tools.await_exit()
+
+    w.fork(main)
+    interrupt_from_thread(w, "interrupter", second)
+
+    def check() -> Problems:
+        b = shared.get()
+        spent, held = b._spent, b._held
+        if held != budget.Spent() or spent.tool_calls > 1 or any(p > 20 for p in peaks):
+            return f"spent {spent}, held {held}, peaks {peaks}"
+        # A request that settled spent its usage; one interrupted after its provider
+        # answered may have too; any other spent none of its tokens.
+        maybe = [used for used in returned if used not in settled]
+        sums = {
+            sum(settled) + sum(c)
+            for n in range(len(maybe) + 1)
+            for c in itertools.combinations(maybe, n)
+        }
+        if spent.total_tokens not in sums or spent.requests < len(settled):
+            return f"spent {spent}, settled {settled}, returned {returned}"
+        return None
+
+    w.check(check)
+
+
 def _synchronized_ref(w: World) -> None:
     """Two ``update_effect`` calls and a ``modify_effect`` on a
     SynchronizedRef, each yielding before it stores, plus a plain
@@ -1098,6 +1168,7 @@ SCENARIOS: list[Scenario] = [
     Scenario("latch", _latch, runs=1000),
     Scenario("ref_modify", _ref_modify, runs=1000),
     Scenario("synchronized_ref", _synchronized_ref, runs=600),
+    Scenario("ai_budget", _ai_budget, runs=600),
     Scenario("subscription_ref", _subscription_ref, runs=600),
     Scenario("deferred_race", _deferred_race, runs=1000),
     Scenario("reference", _reference, runs=600),

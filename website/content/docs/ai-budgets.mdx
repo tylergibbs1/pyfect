@@ -1,0 +1,62 @@
+---
+title: AI budgets
+description: "Cap the tokens, requests, tool calls and cost of a whole agent run, sub-agents and parallel tool calls included."
+---
+
+`pyfect.ai.budget` limits what everything under an effect may spend: input, output and
+total tokens, model requests, tool calls, and cost through a price function you give.
+`effect.pipe(budget.limit(budget.Limits(...)))` gives the effect a new budget each time it
+runs; `budget.make(limits)` and `budget.provide(shared)` share one you can read with
+`spent()` and `held()`. The effect can then fail with `BudgetExceeded`, which
+`fx.catch_tag` recovers from. For a time limit, use `fx.timeout`.
+
+## One budget for the whole run
+
+The budget lives in the fiber's context. Forked fibers, concurrent tool calls and an
+agent run inside a tool's handler all draw from it, whatever `LanguageModel` they use,
+so a sub-agent can't slip past its parent's limit. A nested `limit` or `provide` draws
+from its own budget and from every one around it.
+
+A tool call is counted before its handler runs. Here a lead agent delegates eight tasks
+at once and each sub-agent searches once: sixteen calls, with room for nine. The ninth is
+the last to be counted, the tenth fails with `BudgetExceeded`, and that failure
+interrupts the calls still running, whose finalizers run as with any interrupted fiber:
+
+<CodeOutput>
+
+<include meta='title="budget.py"'>../../snippets/ai/budget.py</include>
+
+<include lang="text">../../snippets/ai/budget.out</include>
+
+</CodeOutput>
+
+## Reservations
+
+Calls running in parallel can't overshoot a token or cost limit, because each request
+reserves its worst case before it is sent. The worst case is an estimate of the prompt's
+input tokens plus `max_output_tokens`, which you set to the `max_tokens` your provider is
+configured with (a limit on output tokens, total tokens or cost needs it). If the
+reservation doesn't fit beside what is spent and held, the request fails before the
+provider is called. When the response arrives, its `usage` settles the reservation, and
+what it didn't use goes back.
+
+A request that fails or is interrupted gives its tokens and cost back but still counts
+as a request. A response without `usage` spends the whole reservation. The default
+estimate counts a token per four characters of the prompt, so pass
+`estimate_input_tokens` (a function of the `ProviderOptions`) to count with your
+provider's tokenizer. Overshoot is possible only when the response uses more than its
+reservation: more input tokens than estimated, or more output than `max_output_tokens`.
+
+<CodeOutput>
+
+<include meta='title="budget_tokens.py"'>../../snippets/ai/budget_tokens.py</include>
+
+<include lang="text">../../snippets/ai/budget_tokens.out</include>
+
+</CodeOutput>
+
+`stream_text` reserves the same way when its stream starts. It settles from the stream's
+finish part when the stream ends, fails or is interrupted.
+
+Reference: [`budget`](/docs/reference/ai/budget),
+[`language_model`](/docs/reference/ai/language_model).

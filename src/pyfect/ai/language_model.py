@@ -47,6 +47,7 @@ from pyfect.ai import _tool_call_ids as Ids
 from pyfect.ai import prompt as P
 from pyfect.ai import response as R
 from pyfect.ai import toolkit as K
+from pyfect.ai._budget import metered_request, metered_stream
 from pyfect.ai._stream_resolution import (
     incomplete_reason,
     interrupted_result,
@@ -479,7 +480,8 @@ class Service:
             error = Ids.Ledger(options.prompt.content).admit(parts, "generateText")
             return fx.succeed(parts) if error is None else fx.fail(error)
 
-        return self._provider_request(options).flat_map(admitted)
+        request = metered_request(options, lambda: self._provider_request(options))
+        return request.flat_map(admitted)
 
     def _provider_request(
         self, options: ProviderOptions
@@ -503,7 +505,8 @@ class Service:
                 error = ledger.admit(chunk, "streamText")
                 return fx.succeed(chunk) if error is None else fx.fail(error)
 
-            return self._provider_stream(options).map_array_effect(admit)
+            provided = metered_stream(options, lambda: self._provider_stream(options))
+            return provided.map_array_effect(admit)
 
         return StreamC.suspend(checked)
 

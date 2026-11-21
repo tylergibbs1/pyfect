@@ -29,6 +29,7 @@ import pyfect as fx
 from pyfect import schema as S
 from pyfect._core import Effect
 from pyfect.ai import ai_error as AiErr
+from pyfect.ai._budget import tool_call
 from pyfect.ai.ai_error import AiError
 from pyfect.ai.prompt import ToolModelOutputPart
 from pyfect.ai.response import ToolResultFailure, ToolResultSuccess
@@ -260,7 +261,7 @@ def _handle(
             return _make_error(name, cast("AiErr.AnyReason", error))
         return error
 
-    def run(decoded: object) -> Effect[Stream[HandlerResult, Any, Any], Never, Any]:
+    def run(decoded: object) -> Effect[Stream[HandlerResult, Any, Any], Any, Any]:
         def with_capacity(
             capacity: int | None,
         ) -> Effect[Stream[HandlerResult, Any, Any], Never, Any]:
@@ -293,7 +294,8 @@ def _handle(
             )
             return worker.fork().map(lambda fiber: results(queue, fiber))
 
-        return PreliminaryBuffer().flat_map(with_capacity)
+        # Counted in the budgets before the handler runs (pyfect.ai.budget).
+        return tool_call().and_then(PreliminaryBuffer().flat_map(with_capacity))
 
     def results(queue: Queue[_Output, Any], fiber: Any) -> Stream[HandlerResult, Any, Any]:
         source: Stream[_Output, Any, Any] = StreamSources.from_queue(queue)

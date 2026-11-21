@@ -16,6 +16,9 @@ and exits.
    nothing a run does lands after the layer's release, and every run
    returns an ``Exit`` (a run started once disposal began dies with
    "ManagedRuntime disposed").
+5. Model requests and tool calls from runs on many threads against one AI
+   budget: exactly as many fit as the limits allow, never more, and nothing
+   stays reserved.
 """
 
 import faulthandler
@@ -28,6 +31,8 @@ from typing import Any
 
 import pyfect as fx
 from pyfect import layer
+from pyfect.ai import _budget, budget, prompt
+from pyfect.ai import language_model as lm
 
 
 def register_race(n: int) -> list[str]:
@@ -202,6 +207,54 @@ def dispose_while_runs_start(seed: int) -> list[str]:
     return bad + [f"runs trial {seed}: run_blocking_exit raised {r}" for r in raised[:1]]
 
 
+def budget_race(threads: int, per_thread: int) -> list[str]:
+    limits = budget.Limits(
+        requests=150,
+        tool_calls=40,
+        total_tokens=10_000,
+        max_output_tokens=40,
+        estimate_input_tokens=lambda _: 10,
+    )
+    shared = budget.Budget(limits)
+    options = lm.ProviderOptions(prompt.make("hi"))
+    finish: lm.EncodedPart = {
+        "type": "finish",
+        "usage": {"inputTokens": {"total": 7}, "outputTokens": {"total": 3}},
+    }
+    over: list[str] = []
+
+    def answer() -> fx.Effect[list[lm.EncodedPart]]:
+        def observe() -> None:
+            in_use = shared._spent + shared._held  # pyright: ignore[reportPrivateUsage]
+            if in_use.total_tokens > 10_000 or in_use.requests > 150:
+                over.append(f"in use {in_use}")
+
+        return fx.sync(observe).as_([finish])
+
+    request = _budget.metered_request(options, answer)
+    tool_call = _budget.tool_call()
+
+    def run() -> None:
+        both = request.exit().zip(tool_call.exit())
+        each = fx.for_each(range(per_thread), lambda _: both)
+        fx.run_blocking(each.pipe(budget.provide(shared)).exit())
+
+    workers = [threading.Thread(target=run) for _ in range(threads)]
+    for t in workers:
+        t.start()
+    for t in workers:
+        t.join()
+    spent, held = shared._spent, shared._held  # pyright: ignore[reportPrivateUsage]
+    # 150 requests of 10 tokens each fit the request limit before the token one.
+    expected = budget.Spent(requests=150, tool_calls=40, input_tokens=1050, output_tokens=450)
+    bad = (
+        []
+        if (spent, held) == (expected, budget.Spent())
+        else [f"budget: spent {spent}, held {held}"]
+    )
+    return bad + over[:1]
+
+
 if __name__ == "__main__":
     faulthandler.dump_traceback_later(120, exit=True)
     sys.setswitchinterval(1e-5)
@@ -211,6 +264,8 @@ if __name__ == "__main__":
     problems += concurrent_dispose(100)
     for seed in range(150):
         problems += dispose_while_runs_start(seed)
+    for _ in range(20):
+        problems += budget_race(8, 40)
     print(f"GIL enabled: {sys._is_gil_enabled()}")  # pyright: ignore[reportPrivateUsage]
     for p in problems[:20]:
         print(p)
