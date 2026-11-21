@@ -1,0 +1,101 @@
+---
+title: Durable agents
+description: "Run an agent loop inside a workflow so a crashed run resumes where it stopped, without calling the model or a tool again."
+---
+
+An agent run can take minutes and a hundred model calls. When its process dies at call 53,
+starting over pays for 52 calls again and runs their tools again. A
+[workflow](/docs/workflows) avoids that: each activity's result is stored, and a resumed run
+gets the stored results back instead of running them. But an agent loop is
+`generate_text` in a `while` loop, not a list of activities.
+
+`pyfect.ai.durable.layer` closes that gap. Provide it over the `LanguageModel` a workflow
+uses, and every model request and every tool call the model makes inside the workflow runs
+as an activity of it. The agent's code does not change. Outside a workflow the layer does
+nothing.
+
+<CodeOutput>
+
+<include meta='title="durable.py"'>../../snippets/ai/durable.py</include>
+
+<include lang="text">../../snippets/ai/durable.out</include>
+
+</CodeOutput>
+
+A crash after a step's result was stored repeats nothing. A crash after a step ran but
+before its result was stored repeats that one step: activities run at least once. The
+[tool ledger](/docs/ai-tool-ledger) closes that last gap for tools, below.
+
+## How steps are named
+
+A replay finds a step's stored result by its name, so the name comes from the step's place
+in the run, not from a counter that a crash would reset somewhere else:
+
+- `pyfect/ai/<n>/model` is the run's `n`-th model request, from 1.
+- `pyfect/ai/<n>/tool/<i>` is the `i`-th tool call in the response to request `n`.
+- `pyfect/ai/handler/<k>` is a tool call no response of the run made, such as
+  `WithHandler.handle` called directly.
+
+The numbers follow the order the run makes its requests, which a replay repeats. Tool calls
+of one response can run at the same time, since each is named by its position in the
+response. Model requests made concurrently from several fibers of one run cannot: their
+order must be the same on every replay.
+
+A request made inside an activity, such as a sub-agent in a tool's handler, is not made an
+activity again. The activity around it already stores its result.
+
+## What is stored
+
+Each step stores its output and a SHA-256 hash of its request. A model request's hash
+covers the prompt, the tools offered, the tool choice, the response format, and whether it
+was streamed. A tool call's hash covers the tool's name and the parameters the model sent.
+The prompt itself is not stored, because the workflow rebuilds it on every replay from the
+earlier steps' outputs.
+
+So a run's history grows by each turn's output, not by the conversation so far. In a
+100-turn run on SQLite, turn 100 adds as many bytes as turn 10 did. Storing each request's
+prompt would make the history grow with the square of the turns.
+
+## When a replay asks something else
+
+Activities are found by name. If the workflow's code changed under a running execution,
+say a new system prompt was deployed, the replayed step has the old name and a new request.
+Its stored result answers the old request.
+
+On replay, each step compares its request's hash with the stored one. A difference dies with
+`durable.RequestDiverged`, naming the step and both hashes, and the model is not called. It
+is a defect rather than a typed failure because nothing in the workflow can fix it: the code
+and the history disagree. Annotate the workflow with `workflow.SuspendOnFailure` to keep
+such an execution resumable once the old code is back.
+
+The hashes live in the stored value, not in the workflow engine. That way they work on every
+engine (`workflow_engine.layer_memory`, the cluster engine on any SQL database) without
+changing what the engine stores. They also cover only what the layer can hash: a request it
+built. A plain activity has no request to hash.
+
+## Streaming
+
+A streamed request is one activity too. The layer reads the provider's stream to its end,
+stores the parts, and gives the caller all of them as one chunk. It does this on the first
+run and on every replay, so a consumer never sees a part twice when a crash cuts a stream
+short. The text still arrives, just not token by token. Stream outside the workflow if you
+need tokens as they come.
+
+## Budgets and the tool ledger
+
+A [budget](/docs/ai-budgets) made in the workflow's body, `agent.pipe(budget.limit(...))`,
+starts fresh on every replay. Every step spends it again, replayed or not, at the usage the
+first run recorded. So a resumed run stops at the same request a run without a crash stops
+at. Skipping replayed steps would let a crashed run spend its budget twice over. A budget
+provided from outside the workflow outlives replays, so replayed steps spend it again: make
+the budget in the body.
+
+Tools guarded by the [tool ledger](/docs/ai-tool-ledger) compose with the layer. The ledger
+runs inside the tool's activity, so a call whose activity ran but was not stored is answered
+from the ledger when it runs again, and its handler does not run twice.
+
+## Testing it
+
+`explore.activity_crashes` ([Exploring schedules and crashes](/docs/testing-explore)) stops
+the run after every step and resumes it, as above. For a long run, `at=` splits the sweep
+into parts of a few steps each.

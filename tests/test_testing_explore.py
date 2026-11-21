@@ -266,3 +266,23 @@ def test_single_runner_on_sqlite_finds_the_double_charge():
     assert failure == explore.CrashFailure(
         explore.CrashPoint(2, "charge", stored=False), "2 charges, 1 emails"
     )
+
+
+@testing.effect
+def test_at_crashes_only_after_the_activities_it_names_and_skips_the_run_without_a_crash():
+    """A long sweep splits into parts: ``at`` tries the named activities only, and the run
+    without a crash (which a part need not repeat) is not made."""
+    checked: list[str] = []
+
+    def check(ex: fx.Exit[str, Any]) -> fx.Effect[str | None, Any, BankService]:
+        checked.append("check")
+        return _once(ex)
+
+    report = yield from explore.activity_crashes(
+        Order, {"id": "o-1"}, layer=_on_memory(keyed=True), check=check, at=[2]
+    )
+    assert [str(p) for p in report.points] == [
+        "crash after activity 2 ('charge') ran, before its result was stored",
+        "crash after activity 2 ('charge') ran, after its result was stored",
+    ]
+    assert checked == ["check", "check"]

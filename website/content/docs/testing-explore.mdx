@@ -40,6 +40,11 @@ the result and after. At each point the run stops, the workflow is resumed, and 
 its exit and returns a problem or `None`. The first problem fails with `CrashFailure`, which names
 the point.
 
+A long workflow has many crash points, and every one replays the run. `at=range(1, 11)` tries
+only the points after activities 1 to 10 (numbered in the order the run executes them) and skips
+the run without a crash, so a sweep can be split over several tests. The
+[durable agents](/docs/ai-durable) tests sweep a 100-turn run this way.
+
 `layer` provides the engine with the workflow registered, and whatever `check` reads. It is
 built again for every run, so each one starts with an empty engine. It can be
 `workflow_engine.layer_memory`, or a cluster engine such as

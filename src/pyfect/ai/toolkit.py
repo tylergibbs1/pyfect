@@ -29,7 +29,7 @@ import pyfect as fx
 from pyfect import schema as S
 from pyfect._core import Effect
 from pyfect.ai import ai_error as AiErr
-from pyfect.ai._budget import tool_call
+from pyfect.ai._budget import Precounted, tool_call
 from pyfect.ai.ai_error import AiError
 from pyfect.ai.prompt import ToolModelOutputPart
 from pyfect.ai.response import ToolResultFailure, ToolResultSuccess
@@ -285,8 +285,11 @@ def _handle(
             body = fx.suspend(lambda: registered.handler.run(decoded, context)).flat_map(
                 lambda result: queue.offer(_Output(result, False, False))
             )
+            # The handler's own tool calls are not the one counted for it.
             provided = fx.context().flat_map(
-                lambda current: body.pipe(fx.provide_context(registered.context.merge(current)))
+                lambda current: body.pipe(
+                    fx.provide_context(registered.context.merge(current).add(Precounted, None))
+                )
             )
             worker = provided.match_cause_effect(
                 on_failure=queue.fail_cause,
@@ -295,7 +298,7 @@ def _handle(
             return worker.fork().map(lambda fiber: results(queue, fiber))
 
         # Counted in the budgets before the handler runs (pyfect.ai.budget).
-        return tool_call().and_then(PreliminaryBuffer().flat_map(with_capacity))
+        return tool_call(tool_call_id).and_then(PreliminaryBuffer().flat_map(with_capacity))
 
     def results(queue: Queue[_Output, Any], fiber: Any) -> Stream[HandlerResult, Any, Any]:
         source: Stream[_Output, Any, Any] = StreamSources.from_queue(queue)
