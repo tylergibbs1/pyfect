@@ -15,7 +15,7 @@ import { createServer } from 'node:http';
  * The page's HTML comes in small chunks for its first FINE_UNTIL bytes (the header, the title row
  * and the first screen) and large ones after, with a pause after each so the browser paints in
  * between. `offset` moves every pause that many bytes later, so a run can show its result does
- * not depend on where the pauses land.
+ * not depend on where the pauses land. A paced page (see `PACED_HEADER`) is painted at every pause.
  */
 const FINE_CHUNK = 2 * 1024;
 const FINE_UNTIL = 256 * 1024;
@@ -36,14 +36,71 @@ export function pauses(length, offset = 0) {
 /** The request header that sets a page's offset (a context's `extraHTTPHeaders`). */
 export const OFFSET_HEADER = 'x-stream-offset';
 
+/**
+ * The request header that paces a page (a context's `extraHTTPHeaders`, with `reportPaintedFrames`
+ * as an init script): a pause lasts until the page has painted what came before it, however
+ * slowly the machine paints, instead of a fixed time a starved CPU may not fit a frame into.
+ * Its value names the page's stream, unique among the pages streaming at once.
+ */
+export const PACED_HEADER = 'x-stream-paced';
+const PAINTED_PATH = '/__stream-painted';
+
+/**
+ * How many elements the parser has made once it has read `html`: its complete start tags, outside
+ * comments and the text of raw-text elements.
+ */
+export function startTags(html) {
+  const tags = html
+    .replace(/<!--[\s\S]*?(-->|$)/g, '')
+    .replace(/<(script|style|title|textarea)\b([^>]*)>[\s\S]*?(?=<\/\1|$)/gi, '<$1$2>');
+  return tags.match(/<[a-zA-Z][^>]*>/g)?.length ?? 0;
+}
+
+/**
+ * An init script for a paced page: after each frame painted while the HTML arrives, tells the
+ * proxy how many elements that frame had.
+ */
+export function reportPaintedFrames() {
+  const elements = document.getElementsByTagName('*');
+  let sent = -1;
+  const tick = () => {
+    if (document.readyState !== 'loading') return;
+    const count = elements.length;
+    // a task queued in a frame's callbacks runs after that frame is rendered
+    setTimeout(() => {
+      if (count <= sent) return;
+      sent = count;
+      // PAINTED_PATH, spelled out: an init script is sent to the page as its source alone
+      fetch('/__stream-painted', { method: 'POST', body: String(count) });
+    });
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}
+
 /** A proxy to `upstream` that streams HTML documents with pauses (see `pauses`). */
 export async function startStreamingProxy(upstream) {
+  /** Per paced stream: the most elements a painted frame had, and a wake for the pause waiting on it. */
+  const paced = new Map();
   const proxy = createServer(async (req, res) => {
+    const stream = req.headers[PACED_HEADER];
+    if (req.url === PAINTED_PATH) {
+      let body = '';
+      for await (const part of req) body += part;
+      const page = paced.get(stream);
+      if (page) {
+        page.painted = Math.max(page.painted, Number(body));
+        page.wake();
+      }
+      res.writeHead(204).end();
+      return;
+    }
     const offset = Number(req.headers[OFFSET_HEADER] ?? 0);
     const headers = { ...req.headers };
     delete headers.host;
     delete headers['accept-encoding'];
     delete headers[OFFSET_HEADER];
+    delete headers[PACED_HEADER];
     const response = await fetch(upstream + req.url, { headers });
     const body = Buffer.from(await response.arrayBuffer());
     res.writeHead(response.status, {
@@ -55,13 +112,21 @@ export async function startStreamingProxy(upstream) {
       res.end(body);
       return;
     }
+    const page = stream === undefined ? undefined : { painted: 0, wake: () => {} };
+    if (page) paced.set(stream, page);
     let from = 0;
     for (const to of pauses(body.length, offset)) {
       res.write(body.subarray(from, to));
       from = to;
-      await new Promise((r) => setTimeout(r, PAUSE));
+      const pause = new Promise((r) => setTimeout(r, PAUSE));
+      if (page) {
+        const made = startTags(body.subarray(0, to).toString());
+        while (page.painted < made) await new Promise((r) => (page.wake = r));
+      }
+      await pause;
     }
     res.end(body.subarray(from));
+    paced.delete(stream);
   });
   await new Promise((r) => proxy.listen(0, r));
   return { proxy, base: `http://localhost:${proxy.address().port}` };

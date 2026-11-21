@@ -1,12 +1,22 @@
 // The streamed pass on fixture pages: text still arriving never counts, wherever the pauses
 // land, and real shifts (a late font, an image without dimensions, a late banner, a complete
-// button moved by one after it) always do. `bun run test:layout`; uses the installed Chrome.
+// button moved by one after it) always do. Every pause is painted (`PACED_HEADER`), so a fixture
+// makes its shift however slow the machine. `bun run test:layout`; uses the installed Chrome.
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { after, before, describe, test } from 'node:test';
 import { chromium } from 'playwright-core';
-import { OFFSET_HEADER, pauses, startStreamingProxy, streamedShifts, watchStreamedShifts } from './streaming.mjs';
+import {
+  OFFSET_HEADER,
+  PACED_HEADER,
+  pauses,
+  reportPaintedFrames,
+  startStreamingProxy,
+  startTags,
+  streamedShifts,
+  watchStreamedShifts,
+} from './streaming.mjs';
 
 const FONT = new URL('../../node_modules/next/dist/next-devtools/server/font/geist-latin.woff2', import.meta.url);
 // a 1x1 PNG
@@ -97,12 +107,16 @@ after(async () => {
   server?.close();
 });
 
+let streams = 0;
+
+/** Streams `path`, painted at every pause, so a fixture's shift happens however slow the machine. */
 async function shifts(path, { offset = 0, width = 390 } = {}) {
   const context = await browser.newContext({
     viewport: { width, height: 900 },
-    extraHTTPHeaders: { [OFFSET_HEADER]: String(offset) },
+    extraHTTPHeaders: { [OFFSET_HEADER]: String(offset), [PACED_HEADER]: String(streams++) },
   });
   await context.addInitScript(watchStreamedShifts);
+  await context.addInitScript(reportPaintedFrames);
   try {
     return await streamedShifts(await context.newPage(), base + path, { settle: 300 });
   } finally {
@@ -123,23 +137,30 @@ test('an offset moves every pause by that many bytes', () => {
   assert.deepEqual(pauses(300 * 1024).slice(-3), [254 * 1024, 256 * 1024, 288 * 1024]);
 });
 
+test('a paced pause waits for the elements whose start tags have arrived', () => {
+  assert.equal(startTags('<!doctype html><html><head><meta charset="utf-8"><title>a <b></title>'), 4);
+  assert.equal(startTags('<p>one <code>two</code> <a href="/x'), 2);
+  assert.equal(startTags('<div><!-- <p> --><span></span><!-- <p>'), 2);
+  assert.equal(startTags('<script>if (a <b) x()</script><p><script>"<i>'), 3);
+});
+
 describe('text still arriving', () => {
   const html = PAGES['/prose'];
   // a pause right after each of the first "(" before a code span
   const afterParens = [...html.matchAll(/\(<span><\/span><code>/g)].slice(0, 12).map((m) => m.index + '(<span></span>'.length);
 
   test('rewraps when a pause lands after a "(", and never counts', async () => {
-    let rewrapped = 0;
     for (const width of [390, 1024]) {
       const offsets = [...afterParens, ...Array.from({ length: 8 }, (_, i) => i * 256)];
       const found = await pooled(offsets, (offset) => shifts('/prose', { offset, width }));
+      let rewrapped = 0;
       found.forEach(({ counted, arriving }, i) => {
         assert.deepEqual(counted, [], `${width}px, pauses +${offsets[i]} B: ${JSON.stringify(counted)}`);
         rewrapped += arriving.length;
       });
+      // so the pass saw text rewrap, and ignored it
+      assert.ok(rewrapped > 0, `${width}px: no pause made a paragraph rewrap; the fixture tests nothing`);
     }
-    // so the pass saw text rewrap, and ignored it
-    assert.ok(rewrapped > 0, 'no pause made a paragraph rewrap; the fixture tests nothing');
   });
 });
 
