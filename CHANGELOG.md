@@ -12,15 +12,6 @@
   types a value; the layer's requirements are the handlers', less what the group's middleware
   provides.
 
-### Fixed
-
-- Releasing a `redis_py` layer waits until its client's loop thread has closed, with its
-  commands cancelled and its connections closed, as the httpx client's release already did.
-  The thread used to stop on its own after the layer's scope had closed.
-- A SQL call (psycopg, asyncmy, libsql) interrupted before the SQL loop started it no longer
-  runs at all. It used to start, be cancelled at its first await, and release anything it had
-  opened by then. Every pyfect loop now runs coroutines for fibers in one way
-  (`pyfect._loop_bridge`), so each driver gets the same interrupt and release behaviour.
 ### Added
 
 - AI: `tool_ledger.guard(toolkit, on_unknown=...)` records each tool call, by its
@@ -34,6 +25,16 @@
   `layer_memory`, or `layer_sql()` on SQLite, PostgreSQL, MySQL or SQL Server. A toolkit not
   passed through `guard` behaves as before. Other frameworks run the tool again in this case
   (PydanticAI #10926: "2 payments").
+
+### Fixed
+
+- Releasing a `redis_py` layer waits until its client's loop thread has closed, with its
+  commands cancelled and its connections closed, as the httpx client's release already did.
+  The thread used to stop on its own after the layer's scope had closed.
+- A SQL call (psycopg, asyncmy, libsql) interrupted before the SQL loop started it no longer
+  runs at all. It used to start, be cancelled at its first await, and release anything it had
+  opened by then. Every pyfect loop now runs coroutines for fibers in one way
+  (`pyfect._loop_bridge`), so each driver gets the same interrupt and release behaviour.
 
 ## 0.6.16 (2026-11-20)
 
