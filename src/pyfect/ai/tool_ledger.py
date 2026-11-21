@@ -34,22 +34,23 @@ from typing import Any, Literal, LiteralString, Never, cast, overload
 
 import pyfect as fx
 from pyfect import schema as S
-from pyfect._core import Effect, _call_user
+from pyfect._core import Effect
 from pyfect._effect_args import require_effect
 from pyfect._json_text import parse as parse_json
 from pyfect._json_text import stringify
+from pyfect.ai import _tool_outcomes as outcomes
+from pyfect.ai._tool_outcomes import Outcome
 from pyfect.ai.response import ToolResultFailure
 from pyfect.ai.tool import (
     AnyTool,
     FailureOrigin,
     Idempotent,
     Readonly,
-    failure_result_schema,
     is_client_executed,
 )
-from pyfect.ai.toolkit import FailureOriginAnnotation, HandlerResult, WithHandler
-from pyfect.cause import Cause, Fail
-from pyfect.context import Context, Tag
+from pyfect.ai.toolkit import HandlerResult, WithHandler
+from pyfect.cause import Cause
+from pyfect.context import Tag
 from pyfect.errors import TaggedError
 from pyfect.exit import Success
 from pyfect.layer import Layer
@@ -91,16 +92,6 @@ class ToolLedgerError(TaggedError):
     method: str
     tool_call_id: str
     cause: object = None
-
-
-@dataclass(frozen=True)
-class Outcome:
-    """A handler's final result: ``encoded_result`` is what the model saw (JSON), and a
-    failure keeps its origin."""
-
-    is_failure: bool
-    encoded_result: object
-    failure_origin: FailureOrigin | None = None
 
 
 @dataclass(frozen=True)
@@ -422,30 +413,21 @@ class _Call:
         def record(result: HandlerResult) -> Effect[HandlerResult, ToolLedgerError]:
             if result.preliminary:
                 return fx.succeed(result)
-            outcome = Outcome(result.is_failure, result.encoded_result, result.failure_origin)
-            return ledger.complete(self.id, outcome).as_(result)
+            return ledger.complete(self.id, outcomes.of_result(result)).as_(result)
 
         def record_failure(cause: Cause[Any]) -> Stream[HandlerResult, Any, Any]:
             # A failure the handler raised to the caller ("error" mode) is an outcome too;
             # a defect or an interrupt is not, so the call stays pending.
             failed = StreamC.fail_cause(cause)
-            match cause.reasons:
-                case (Fail(error=error) as reason,):
-                    origin = cast("FailureOrigin", reason.annotations.get(FailureOriginAnnotation))
-                    encoded = S.encode_unknown_effect(failure_result_schema(tool))(error)
-                    return StreamC.unwrap(
-                        encoded.exit().flat_map(
-                            lambda exit: (
-                                ledger.complete(self.id, Outcome(True, exit.value, origin)).as_(
-                                    failed
-                                )
-                                if isinstance(exit, Success)
-                                else fx.succeed(failed)
-                            )
-                        )
+            return StreamC.unwrap(
+                outcomes.of_failure(tool, cause).flat_map(
+                    lambda outcome: (
+                        fx.succeed(failed)
+                        if outcome is None
+                        else ledger.complete(self.id, outcome).as_(failed)
                     )
-                case _:
-                    return failed
+                )
+            )
 
         handled = self.guarded.inner.handle(tool.name, self.params, self.id, self.options)
         return handled.map(
@@ -462,45 +444,16 @@ class _Call:
         return fx.succeed(StreamC.make(HandlerResult(unknown, encoded, True, False, "handler")))
 
     def replay(self, outcome: Outcome) -> Effect[Stream[HandlerResult, Any, Any], Any, Any]:
-        tool = self.tool
-        encoded = outcome.encoded_result
-        if not outcome.is_failure:
-            return self._decoded(tool.success_schema, encoded).flat_map(
-                lambda result: self._model_output(result).map(
-                    lambda parts: StreamC.make(
-                        HandlerResult(result, encoded, False, False, None, parts)
-                    )
-                )
-            )
-        origin = outcome.failure_origin
-        decoded = self._decoded(failure_result_schema(tool), encoded)
-        if tool.failure_mode == "error":
-            annotation = Context.make(FailureOriginAnnotation, origin or "handler")
-            return decoded.map(
-                lambda error: StreamC.fail_cause(Cause((Fail(error),)).annotate(annotation))
-            )
-        return decoded.map(
-            lambda error: StreamC.make(HandlerResult(error, encoded, True, False, origin))
-        )
-
-    def _decoded(self, schema: S.Top, encoded: object) -> Effect[object, ToolLedgerError]:
-        decode = cast(
-            "Callable[[object], Effect[object, S.SchemaError]]", S.decode_unknown_effect(schema)
-        )
-        return decode(encoded).map_error(
+        return outcomes.replay(
+            self.tool,
+            outcome,
             lambda error: ToolLedgerError(
                 f"The recorded result of {self.id} no longer decodes: {error.message}",
                 "replay",
                 self.id,
                 error,
-            )
+            ),
         )
-
-    def _model_output(self, result: object) -> Effect[Any]:
-        to_parts = self.tool.to_model_output
-        if to_parts is None:
-            return fx.succeed(None)
-        return _call_user(lambda: fx.succeed(tuple(to_parts(result))))
 
 
 @overload

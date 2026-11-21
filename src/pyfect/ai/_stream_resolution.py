@@ -20,8 +20,10 @@ from pyfect.ai import _approvals as A
 from pyfect.ai import prompt as P
 from pyfect.ai import response as R
 from pyfect.ai import toolkit as K
+from pyfect.ai._handler_hook import handle_call
 from pyfect.ai.id_generator import IdGenerator
 from pyfect.ai.tool import AnyTool, is_client_executed
+from pyfect.exit import Exit, Failure
 from pyfect.fiber_set import FiberSet
 from pyfect.queue import Queue
 from pyfect.semaphore import Semaphore
@@ -94,7 +96,7 @@ def resolve_calls(
     denied = {approval.tool_call_id: approval for approval in approvals.denied}
 
     def handle(id: str, name: str, call: EncodedPart) -> Stream[R.AnyToolResultPart, Any, Any]:
-        handled = kit.handle(name, call.get("params"), id)
+        handled = handle_call(kit, name, call.get("params"), id)
         return StreamC.unwrap(handled).map(lambda result: result_part(id, name, result))
 
     def run(call: EncodedPart) -> Stream[Any, Any, Any]:
@@ -216,7 +218,7 @@ class _Resolution:
 
             return fx.sync(run)
 
-        handled = self.kit.handle(name, call.get("params"), id)
+        handled = handle_call(self.kit, name, call.get("params"), id)
         return StreamC.unwrap(handled).run_for_each(offer)
 
     def _fork_buffered(self) -> Effect[None, Any, Any]:
@@ -227,7 +229,9 @@ class _Resolution:
                 handle = self._handle(call)
                 if self.semaphore is not None:
                     handle = self.semaphore.with_permits(handle)
-                forks.append(self.fibers.run(handle))
+                # A handler run interrupted from inside (a workflow suspending in a
+                # durable step) fails the join; ``clear`` interrupts still do not.
+                forks.append(self.fibers.run(handle, propagate_interruption=True))
             return fx.for_each(forks, lambda fork: fork).as_(None)
 
         return fx.suspend(run)
@@ -273,6 +277,11 @@ class _Resolution:
 
         return fx.suspend(run)
 
+    def _fail_on_failure(self, exit: Exit[object, Any]) -> Effect[object]:
+        # On exit, not on its cause: a run interrupted from inside (a workflow
+        # suspending in a durable step) still ends the consumer's stream.
+        return self.queue.fail_cause(exit.cause) if isinstance(exit, Failure) else fx.void
+
     def run(
         self,
         provider: Stream[EncodedPart, Any, Any],
@@ -283,6 +292,6 @@ class _Resolution:
             .and_then(self._settle())
             .and_then(fx.suspend(lambda: self.queue.offer_all(self.finishes)))
             .and_then(self.queue.end())
-            .tap_cause(self.queue.fail_cause)
+            .on_exit(self._fail_on_failure)
             .as_(None)
         )

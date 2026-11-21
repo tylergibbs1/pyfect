@@ -26,7 +26,7 @@ from layer_cases._case import AnyEffect, AnyLayer, Case
 from pyfect import config, config_provider, metric, otel, sink, stdio, stream
 from pyfect import layer as L
 from pyfect import schema as S
-from pyfect.ai import ag_ui_server, id_generator
+from pyfect.ai import ag_ui_server, durable, id_generator
 from pyfect.ai import chat as Chat
 from pyfect.ai import embedding_model as em
 from pyfect.ai import language_model as lm
@@ -315,6 +315,13 @@ def _fake_model() -> AnyLayer:
     )
 
 
+def _generates_through_durable() -> AnyEffect:
+    """Outside a workflow the durable layer hands the request to the model it wraps."""
+    return lm.generate_text("hello").flat_map(
+        lambda response: _check(response.text == "hi there", f"text {response.text!r}")
+    )
+
+
 def _chats() -> AnyEffect:
     @fx.gen
     def run():
@@ -344,6 +351,9 @@ _AI_CASES: dict[str, Case] = {
         use=_generates_id,
     ),
     "pyfect.ai.toolkit.Toolkit.to_layer": Case(layer=_handlers, use=_handles_add),
+    "pyfect.ai.durable.layer": Case(
+        layer=lambda: durable.layer, needs=_fake_model, use=_generates_through_durable
+    ),
     "pyfect.ai.chat.layer_persisted": Case(
         layer=lambda: Chat.layer_persisted(store_id="chat"),
         needs=lambda: L.merge(persistence.layer_backing_memory, _fake_model()),

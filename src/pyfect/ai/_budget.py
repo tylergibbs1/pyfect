@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any, Literal, final
 import pyfect as fx
 from pyfect._core import Effect
 from pyfect.ai import prompt as P
-from pyfect.context import Tag
+from pyfect.context import Reference, Tag
 from pyfect.errors import TaggedError
 from pyfect.exit import Exit, Success
 from pyfect.stream import Stream
@@ -325,12 +325,25 @@ def metered_stream[E, R](
     return StreamC.scoped(StreamC.unwrap(_with_budgets(run, lambda: fx.succeed(request()))))
 
 
-def tool_call() -> Effect[object, BudgetExceeded]:
-    """Count one tool call in every current budget, before its handler runs. The claim
-    is the last step, so what it decided goes straight to the caller's continuation."""
-    return _with_budgets(
+class Precounted(Reference[str | None], key="pyfect/ai/budget/Precounted"):
+    """The id of the tool call its caller already counted (``pyfect.ai.durable`` counts
+    each call before the activity that runs it, so a replayed call counts too)."""
+
+    @classmethod
+    def default(cls) -> str | None:
+        return None
+
+
+def tool_call(tool_call_id: str | None = None) -> Effect[object, BudgetExceeded]:
+    """Count one tool call in every current budget, before its handler runs, unless it is
+    the ``Precounted`` one. The claim is the last step, so what it decided goes straight
+    to the caller's continuation."""
+    count = _with_budgets(
         lambda budgets: fx.suspend(
             lambda: _claim(budgets, lambda _: Spent(tool_calls=1), hold=False)
         ),
         lambda: fx.void,
     )
+    if tool_call_id is None:
+        return count
+    return Precounted().flat_map(lambda counted: fx.void if counted == tool_call_id else count)
