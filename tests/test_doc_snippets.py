@@ -19,13 +19,14 @@ in "Output" tabs. The file must equal what running the snippet prints; regenerat
 """
 
 import ast
+import importlib
 import os
 import re
 import subprocess
 import sys
 from collections import Counter
 from collections.abc import Iterator
-from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import _source
@@ -33,6 +34,7 @@ import pytest
 from _count_sleeps import MARKER
 from _inventory import parse
 from _snippet_forks import Forks
+from _snippet_runs import Run
 
 from pyfect.duration import from_input_unsafe
 
@@ -154,7 +156,17 @@ def name(path: Path) -> str:
 
 SCRIPTS = [p for p in snippet_files() if not p.name.startswith("test_")]
 TESTS = [p for p in snippet_files() if p.name.startswith("test_")]
-SERVERS = (POSTGRES, MYSQL, MSSQL, CLICKHOUSE)
+SERVERS = {POSTGRES: "_postgres", MYSQL: "_mysql", MSSQL: "_mssql", CLICKHOUSE: "_clickhouse"}
+"""The snippet directories whose snippets need a shared server, and its module in tests/oracle."""
+
+
+def server_of(path: Path) -> Path | None:
+    return next((server for server in SERVERS if path.is_relative_to(server)), None)
+
+
+def start_server(server: Path) -> object:
+    """The shared server ``server``'s snippets use, started; a missing one skips."""
+    return importlib.import_module(f"oracle.{SERVERS[server]}").server()
 
 
 COUNT_SLEEPS = Path(__file__).parent / "_count_sleeps.py"
@@ -223,7 +235,7 @@ def shared_imports(paths: list[Path]) -> list[str]:
 
 
 # A run of a snippet, by the name of the test that checks it and the snippet.
-Runs = dict[tuple[str, Path], Future[subprocess.CompletedProcess[str]]]
+Runs = dict[tuple[str, Path], Run[subprocess.CompletedProcess[str]]]
 
 
 def assert_ran(done: subprocess.CompletedProcess[str]) -> None:
@@ -299,7 +311,9 @@ def runs(request: pytest.FixtureRequest) -> Iterator[Runs]:
     (threads/lag.py), and a CPU taken by another run would make them late, as it would other
     workers' tests. Snippets of a database server share it, so they run one at a time,
     alongside the others and those of the other servers (a server's start is mostly waiting on
-    its container); one that finds no server skips its test.
+    its container); one that finds no server skips its test. Each server starts first on its
+    executor, and its snippets' tests wait for that start outside their hang alarm
+    (`_snippet_runs.py`).
     """
     keys = [
         (item.originalname, path)
@@ -317,16 +331,18 @@ def runs(request: pytest.FixtureRequest) -> Iterator[Runs]:
     workers = int(os.environ.get("PYTEST_XDIST_WORKER_COUNT", "1"))
     pool = ThreadPoolExecutor(max_workers=snippet_threads(os.process_cpu_count() or 1, workers))
     servers = {server: ThreadPoolExecutor(max_workers=1) for server in SERVERS}
+    needed = {server for _, path in keys if (server := server_of(path)) is not None}
+    starts = {server: servers[server].submit(start_server, server) for server in sorted(needed)}
     forks = Forks(ROOT, shared_imports(sorted({path for _, path in keys})))
     try:
         yield {
-            (test, path): pool.submit(run_snippet, forks, "-c", SLOW_DRAIN, str(path))
+            (test, path): Run(None, pool.submit(run_snippet, forks, "-c", SLOW_DRAIN, str(path)))
             if test == "test_cluster_snippet_with_a_slow_drain"
-            else pool.submit(run_snippet, forks, str(SLOW_STORAGE), str(path))
+            else Run(None, pool.submit(run_snippet, forks, str(SLOW_STORAGE), str(path)))
             if test == "test_cluster_snippet_with_slow_storage"
-            else servers[server].submit(run_with_server, forks, path)
-            if (server := next((s for s in SERVERS if path.is_relative_to(s)), None))
-            else pool.submit(run_snippet, forks, *snippet_args(path))
+            else Run(starts[server], servers[server].submit(run_with_server, forks, path))
+            if (server := server_of(path))
+            else Run(None, pool.submit(run_snippet, forks, *snippet_args(path)))
             for test, path in keys
         }
     finally:

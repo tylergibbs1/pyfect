@@ -18,6 +18,7 @@ a ``pytest.fail`` swallowed elsewhere becomes a ``_Hung``.
 
 import asyncio
 import signal
+import threading
 import traceback
 from collections.abc import Generator
 from contextlib import contextmanager
@@ -106,7 +107,12 @@ def pytest_runtest_call(item: pytest.Item) -> Generator[None, object, object]:
 def suspended() -> Generator[None]:
     """The running test's alarm stopped, and given back what it had left after: for a shared
     server's start (``oracle/_shared_server.py``), which waits on its own deadline and fails
-    with its own cause instead of as the first test that happened to ask for it."""
+    with its own cause instead of as the first test that happened to ask for it. Off the main
+    thread it does nothing: the alarm interrupts only the test on the main thread, which a
+    start elsewhere is not part of (the docs snippets wait for one with ``_snippet_runs.Run``)."""
+    if threading.current_thread() is not threading.main_thread():
+        yield
+        return
     remaining, _ = signal.setitimer(signal.ITIMER_REAL, 0)
     try:
         yield
