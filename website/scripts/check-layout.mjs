@@ -6,8 +6,9 @@
 // Runs against the production build (`bun run build` first). Uses the installed
 // Google Chrome, so no browser download is needed (GitHub's Ubuntu runners have it).
 import { spawn } from 'node:child_process';
-import { createServer } from 'node:http';
+import { readFile } from 'node:fs/promises';
 import { chromium } from 'playwright-core';
+import { OFFSET_HEADER, startStreamingProxy, streamedShifts, watchStreamedShifts } from './layout/streaming.mjs';
 
 const PORT = 3199;
 const BASE = `http://localhost:${PORT}`;
@@ -19,20 +20,16 @@ const PAGES = {
 const WIDTHS = [1512, 1280, 1024, 390];
 /** How late the fonts arrive in the late-font pass, in ms: well after the first paint. */
 const FONT_DELAY = 1000;
-/**
- * The streamed pass sends each page's HTML in chunks with a pause between them, so the browser
- * paints it part-parsed, as it does on a slow connection. These pages are large (up to a few
- * MB), and something laid out by an element that comes later in the document moves when that
- * element arrives; without the pauses that happened only on some runs. The network can split
- * the HTML anywhere, so the start of the page (header, title row and first screen, all in
- * the first STREAM_FINE_UNTIL bytes) comes in small chunks, so this pass paints inside the
- * header and inside the title row (with 32 KiB chunks it never did). The rest comes in
- * large ones.
- */
-const STREAM_FINE_CHUNK = 2 * 1024;
-const STREAM_FINE_UNTIL = 256 * 1024;
-const STREAM_CHUNK = 32 * 1024;
-const STREAM_PAUSE = 25;
+// `--sweep`: only the streamed pass, on every docs page, at every width and each `--offsets`
+// (comma-separated bytes), `--jobs` pages at a time, `--pages` a comma-separated subset. Proves no
+// page depends on where pauses land. `--raw` counts every shift, text still arriving too (what
+// this check counted before it told the two apart).
+const args = process.argv.slice(2);
+const flag = (name) => args.find((a) => a.startsWith(`--${name}=`))?.split('=')[1];
+const SWEEP = args.includes('--sweep');
+const SWEEP_OFFSETS = (flag('offsets') ?? '0,509,1021,1531').split(',').map(Number);
+const JOBS = Number(flag('jobs') ?? 4);
+const RAW = args.includes('--raw');
 
 /** Positions that must match across page types. */
 function measure() {
@@ -90,31 +87,30 @@ async function startServer() {
   throw new Error('next start did not come up; run `bun run build` first');
 }
 
-/** A proxy to the site that streams HTML documents slowly (see STREAM_CHUNK). */
-async function startStreamingProxy() {
-  const proxy = createServer(async (req, res) => {
-    const headers = { ...req.headers };
-    delete headers.host;
-    delete headers['accept-encoding'];
-    const upstream = await fetch(BASE + req.url, { headers });
-    const type = upstream.headers.get('content-type') ?? '';
-    const body = Buffer.from(await upstream.arrayBuffer());
-    res.writeHead(upstream.status, { 'content-type': type, 'cache-control': 'no-store' });
-    // only the page itself; the router's prefetches and assets come at full speed
-    if (req.headers['sec-fetch-dest'] !== 'document') {
-      res.end(body);
-      return;
-    }
-    for (let at = 0; at < body.length; ) {
-      const size = at < STREAM_FINE_UNTIL ? STREAM_FINE_CHUNK : STREAM_CHUNK;
-      res.write(body.subarray(at, at + size));
-      at += size;
-      await new Promise((r) => setTimeout(r, STREAM_PAUSE));
-    }
-    res.end();
+/** Streams each path at `width` with every pause `offset` bytes later, `jobs` pages at a time. */
+async function streamedFailures(browser, width, offset, paths, { jobs = 1, all = false, settle = 800 } = {}) {
+  const context = await browser.newContext({
+    viewport: { width, height: 900 },
+    extraHTTPHeaders: { [OFFSET_HEADER]: String(offset) },
   });
-  await new Promise((r) => proxy.listen(0, r));
-  return { proxy, base: `http://localhost:${proxy.address().port}` };
+  await context.addInitScript(watchStreamedShifts);
+  const found = [];
+  const queue = [...paths];
+  await Promise.all(
+    Array.from({ length: jobs }, async () => {
+      const page = await context.newPage();
+      for (let path = queue.shift(); path !== undefined; path = queue.shift()) {
+        const { counted, arriving } = await streamedShifts(page, STREAMED_BASE + path, { settle });
+        const shifts = all ? [...counted, ...arriving] : counted;
+        if (shifts.length > 0) {
+          found.push(`${width}px ${path} (pauses +${offset} B): layout shift while the page streams in ${JSON.stringify(shifts)}`);
+        }
+      }
+      await page.close();
+    }),
+  );
+  await context.close();
+  return found;
 }
 
 const failures = [];
@@ -125,10 +121,23 @@ const same = (what, a, b) => {
 };
 
 const server = await startServer();
-const { proxy, base: STREAMED_BASE } = await startStreamingProxy();
+const { proxy, base: STREAMED_BASE } = await startStreamingProxy(BASE);
 const browser = await chromium.launch({ channel: 'chrome' });
 try {
-  for (const width of WIDTHS) {
+  if (SWEEP) {
+    const manifest = JSON.parse(await readFile(new URL('../.next/prerender-manifest.json', import.meta.url), 'utf8'));
+    const paths =
+      flag('pages')?.split(',') ?? Object.keys(manifest.routes).filter((r) => r === '/docs' || r.startsWith('/docs/'));
+    for (const width of WIDTHS) {
+      for (const offset of SWEEP_OFFSETS) {
+        // a shorter settle: the sweep is thousands of loads
+        const found = await streamedFailures(browser, width, offset, paths, { jobs: JOBS, all: RAW, settle: 400 });
+        console.log(`${width}px, pauses +${offset} B: ${paths.length} pages, ${found.length} with a shift`);
+        failures.push(...found);
+      }
+    }
+  }
+  for (const width of SWEEP ? [] : WIDTHS) {
     const context = await browser.newContext({ viewport: { width, height: 900 } });
     await context.addInitScript(recordShifts);
     const page = await context.newPage();
@@ -203,19 +212,7 @@ try {
     await late.close();
 
     // Each page painted while its HTML is still arriving: nothing already painted may move.
-    const streamed = await browser.newContext({ viewport: { width, height: 900 } });
-    await streamed.addInitScript(recordShifts);
-    const streamedPage = await streamed.newPage();
-    for (const path of Object.values(PAGES)) {
-      await streamedPage.goto(STREAMED_BASE + path, { waitUntil: 'networkidle' });
-      await streamedPage.evaluate(() => document.fonts.ready);
-      await settle(streamedPage);
-      const shifts = await streamedPage.evaluate(() => window.__shifts);
-      if (shifts.length > 0) {
-        failures.push(`${width}px ${path}: layout shift while the page streams in ${JSON.stringify(shifts)}`);
-      }
-    }
-    await streamed.close();
+    failures.push(...(await streamedFailures(browser, width, 0, Object.values(PAGES))));
   }
 } finally {
   await browser.close();

@@ -63,4 +63,11 @@ Every route is static (search uses a prebuilt index), so any static host works t
   page loads, after a client-side navigation, when the fonts arrive a second late (they are
   `display: 'optional'`, so a late font never reflows the page), or while a page's HTML
   arrives in slow chunks (the browser paints these large pages part-parsed, so nothing may be
-  laid out by an element that comes later in the document). It uses the installed Google Chrome.
+  laid out by an element that comes later in the document). In that streamed pass the text of
+  a block the parser still has open may rewrap as its next words arrive; only content that had
+  finished arriving counts when it moves (`scripts/layout/streaming.mjs`), so the result does
+  not depend on where the pauses land. `bun run check:layout --sweep` runs that pass on every
+  docs page, at each width, with the pauses moved by several offsets; `bun run test:layout`
+  checks it on fixture pages (a late font, an image without dimensions, a late banner and a
+  button moved by a later one must fail; a paragraph rewrapping as it streams must not). It uses
+  the installed Google Chrome.

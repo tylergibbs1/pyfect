@@ -148,6 +148,10 @@ jobs:
         working-directory: website
         run: bun install --frozen-lockfile
 
+      - name: Test the layout check's streamed pass on fixture pages
+        working-directory: website
+        run: bun run test:layout
+
       - name: Generate the API reference JSON
         working-directory: website
         run: bun run generate:api

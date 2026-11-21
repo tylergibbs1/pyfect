@@ -73,11 +73,13 @@ function DocsPage({
     // - At xl a grid, not flex: the rail's column exists before the rail is parsed. A flex
     //   column first filled the rail's place too, so the article jumped sideways when the
     //   rail arrived.
+    // - At xl the column is at least as tall as the rail: on a page shorter than the screen
+    //   the rail set the row's height, so the prev / next row moved down when it arrived.
     <div
       data-slot="docs"
       className="flex scroll-mt-24 items-stretch pb-8 text-[1.05rem] sm:text-[15px] xl:grid xl:w-full xl:grid-cols-[minmax(0,1fr)_var(--sidebar-width)]"
     >
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="flex min-w-0 flex-1 flex-col xl:min-h-[90svh]">
         <div className="h-(--top-spacing) shrink-0" />
         <div
           data-docs-article=""

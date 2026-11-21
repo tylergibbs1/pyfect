@@ -11,6 +11,7 @@
     "postbuild": "node scripts/check-links.mjs && node scripts/check-search-size.mjs && node scripts/check-page-size.mjs",
     "start": "next start",
     "check:layout": "node scripts/check-layout.mjs",
+    "test:layout": "node --test scripts/layout/streaming.test.mjs",
     "diagram:readme": "node scripts/readme-diagram.mjs",
     "types:check": "next typegen && tsc --noEmit"
   },
