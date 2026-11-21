@@ -769,7 +769,13 @@ def test_the_nightly_flake_hunt_reruns_the_suite_as_ci_runs_it_and_tolerates_not
         assert budget and int(budget.group(1)) >= 50 + 15, "the longest rounds, setup and one more"
     report = _job("flakes-nightly.yml", "report")
     assert "needs: [images, suite, free-threaded]" in report and "if: always()" in report
-    assert "python3 scripts/flakes.py report --out .report .flakes" in report
+    assert "python3 scripts/flakes.py report --out flake-report flake-rounds" in report
+    # upload-artifact leaves out hidden files: a `.flakes` directory uploaded nothing, and the
+    # report found no rounds.
+    uploads = re.findall(r"(?m)^          path: (.*)$", text)
+    assert uploads and not [path for path in uploads if path.startswith(".")], uploads
+    for job in (suite, threaded):
+        assert "path: ${{ runner.temp }}/flake-rounds\n          if-no-files-found: error" in job
     assert (
         '[ "$IMAGES" = success ] && [ "$SUITE" = success ] && [ "$FREE_THREADED" = success ]'
         in report
