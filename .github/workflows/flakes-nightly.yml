@@ -1,0 +1,223 @@
+name: flakes-nightly
+
+# Looks for flaky tests: failures that come once in tens or hundreds of runs, which a pull
+# request's one run rarely meets and a release's rerun of everything then does (0.6.21 took
+# four tries). Each job reruns a share of the suite round after round for MINUTES, every
+# round in a new random order (pytest-randomly) and every second round beside HOGS busy
+# processes. `suite` runs ci.yml's shards on exact CPython patches: 3.13's and 3.14's latest
+# and 3.14.0, the oldest 3.14 pyproject allows. `free-threaded` runs the suites extras.yml
+# runs on 3.14t (tests/free_threaded_suites.txt). `report` lists every test that failed, with
+# its job, round and seed, in the run's summary and the flakes-report artifact
+# (scripts/flakes.py), and fails the run if any did. Nothing retries, skips or widens a
+# timeout, and no issue is opened: what to file is the maintainers' call.
+#
+# A newer CPython patch is a change to the pins below (python-build-standalone's releases).
+
+on:
+  schedule:
+    - cron: "37 5 * * *"
+  workflow_dispatch:
+    inputs:
+      minutes:
+        description: Minutes each job keeps starting rounds (1 to 50)
+        default: "40"
+      hogs:
+        description: Busy processes beside every second round
+        default: "2"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: flakes-nightly
+  cancel-in-progress: false
+
+env:
+  MINUTES: ${{ inputs.minutes || '40' }}
+  HOGS: ${{ inputs.hogs || '2' }}
+
+jobs:
+  images:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: CPUs
+        run: |
+          nproc
+          lscpu | grep -E '^CPU\(s\)|Thread|Core|Model name'
+
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/container-images
+        with:
+          mode: save
+
+  suite:
+    name: suite (${{ matrix.python }}, ${{ matrix.shard }}/5)
+    needs: images
+    strategy:
+      fail-fast: false
+      # Half the account's 20 concurrent jobs, so pull requests' checks still start.
+      max-parallel: 8
+      matrix:
+        python: ["3.13.18", "3.14.10", "3.14.0"]
+        shard: [1, 2, 3, 4, 5]
+    runs-on: ubuntu-latest
+    # Rounds stop starting at MINUTES (at most 50); setup and the last round fit in the rest.
+    timeout-minutes: 80
+    env:
+      UV_PYTHON: ${{ matrix.python }}
+      EFFECT_COMMIT: 289a53f7b1fc40049219c6e69022db2fb859c356 # Effect 4.1.4; tests/_effect_ref.py checks local checkouts against it
+      PYFECT_EFFECT_REF: ${{ github.workspace }}/.effect
+      # A test skipped for a missing server, binary or interpreter fails the round (tests/_skips.py).
+      PYFECT_REQUIRE_ALL_TESTS: "1"
+    steps:
+      - name: CPUs
+        run: |
+          nproc
+          lscpu | grep -E '^CPU\(s\)|Thread|Core|Model name'
+
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/container-images
+        with:
+          mode: load
+
+      - uses: ./.github/actions/check-setup
+        with:
+          python: ${{ matrix.python }}
+
+      - name: Fetch main
+        # As ci.yml's test job: tests/test_changelog.py compares the CHANGELOG with main's.
+        run: git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main
+
+      - name: Warm up pwsh
+        # As ci.yml's test job: pwsh's first start on a cold disk outlasts a test's limit.
+        run: nohup pwsh -NoLogo -NoProfile -NonInteractive -Command 'TabExpansion2 -inputScript "Get-Chil" -cursorColumn 8 | Out-Null' > /dev/null 2>&1 &
+
+      - name: Rounds
+        run: >
+          python3 scripts/flakes.py rounds
+          --job "suite-${{ matrix.python }}-${{ matrix.shard }}" --minutes "$MINUTES" --hogs "$HOGS"
+          --out ".flakes/suite-${{ matrix.python }}-${{ matrix.shard }}" --
+          uv run --no-sync pytest -q -rfEs -n auto --shard=${{ matrix.shard }}/5
+
+      - name: Upload the rounds' logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: flakes-suite-${{ matrix.python }}-${{ matrix.shard }}
+          path: .flakes
+          if-no-files-found: warn
+
+  free-threaded:
+    name: free-threaded (${{ matrix.python }}, ${{ matrix.copy }})
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.14.10t"]
+        # Two jobs: these suites are short and hold the races only free threading shows.
+        copy: [1, 2]
+    runs-on: ubuntu-latest
+    timeout-minutes: 65
+    env:
+      PYTHON_GIL: "0"
+      PYFECT_REQUIRE_FREE_THREADED: "1"
+    steps:
+      - name: CPUs
+        run: |
+          nproc
+          lscpu | grep -E '^CPU\(s\)|Thread|Core|Model name'
+
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+
+      - name: Install gdb (a hung test's report carries native stacks, tests/_native_stacks.py)
+        # As extras.yml's free-threaded job: py-spy can't read a free-threaded process.
+        timeout-minutes: 1
+        continue-on-error: true
+        run: command -v gdb >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq gdb; }
+
+      - name: Install CPython ${{ matrix.python }} with pyfect and pytest
+        # As extras.yml's free-threaded job, with pytest-randomly for the rounds' orders.
+        env:
+          PYTHON: ${{ matrix.python }}
+        run: |
+          uv python install "$PYTHON"
+          uv venv -q --python "$PYTHON" "$RUNNER_TEMP/ft"
+          uv pip install -q --python "$RUNNER_TEMP/ft/bin/python" . pytest pytest-xdist pytest-randomly
+          "$RUNNER_TEMP/ft/bin/python" -c "import platform, sys; print(sys.version); assert platform.python_version() + 't' == '$PYTHON'; assert not sys._is_gil_enabled(), 'GIL enabled'"
+
+      - name: Rounds
+        run: >
+          python3 scripts/flakes.py rounds
+          --job "free-threaded-${{ matrix.python }}-${{ matrix.copy }}" --minutes "$MINUTES" --hogs "$HOGS"
+          --out ".flakes/free-threaded-${{ matrix.python }}-${{ matrix.copy }}" --
+          "$RUNNER_TEMP/ft/bin/python" -m pytest -q -rfEs -n auto -p no:cacheprovider
+          $(sed 's/#.*//' tests/free_threaded_suites.txt)
+
+      - name: Upload the rounds' logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: flakes-free-threaded-${{ matrix.python }}-${{ matrix.copy }}
+          path: .flakes
+          if-no-files-found: warn
+
+  report:
+    needs: [images, suite, free-threaded]
+    # Also when a job failed: the failures are what it reports.
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: CPUs
+        run: |
+          nproc
+          lscpu | grep -E '^CPU\(s\)|Thread|Core|Model name'
+
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts
+
+      # gh, not actions/download-artifact, as in ci.yml's check job (actions/toolkit#2575).
+      - name: Download every job's rounds
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --pattern 'flakes-*' --dir .flakes
+
+      - name: Every failed test, with its job and seed
+        # .report holds the summary and the logs of the rounds that failed.
+        run: python3 scripts/flakes.py report --out .report .flakes
+
+      - name: Summary
+        if: always()
+        run: '[ ! -f .report/summary.md ] || cat .report/summary.md >> "$GITHUB_STEP_SUMMARY"'
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: flakes-report
+          path: .report
+          if-no-files-found: warn
+
+      - name: Every job finished
+        if: always()
+        env:
+          IMAGES: ${{ needs.images.result }}
+          SUITE: ${{ needs.suite.result }}
+          FREE_THREADED: ${{ needs.free-threaded.result }}
+        run: |
+          echo "images: $IMAGES, suite: $SUITE, free-threaded: $FREE_THREADED"
+          [ "$IMAGES" = success ] && [ "$SUITE" = success ] && [ "$FREE_THREADED" = success ]

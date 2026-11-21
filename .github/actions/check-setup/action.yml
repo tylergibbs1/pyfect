@@ -6,7 +6,7 @@ description: >
   starts from main's and the cache holds one entry per lockfile and Python.
 inputs:
   python:
-    description: The Python to sync, as in the job's matrix.
+    description: The Python to sync, as in the job's matrix (3.14, or an exact patch such as 3.14.10).
     required: true
   tests:
     description: Also set up what the tests read (Node, the Effect checkout, CPython 3.14t).
@@ -51,7 +51,8 @@ runs:
         TESTS: ${{ inputs.tests }}
       run: |
         uv sync --locked --python "$PYTHON"
-        uv run --no-sync python -c "import sys; assert f'{sys.version_info.major}.{sys.version_info.minor}' == '$PYTHON', sys.version"
+        # The interpreter the run uses, by its patch: a request for 3.14 takes whichever 3.14 uv finds.
+        uv run --no-sync python -c "import platform, sys; print(sys.executable, sys.version); v = platform.python_version(); assert '$PYTHON' in (v, v.rpartition('.')[0]), v; assert sys._is_gil_enabled(), 'free-threaded'"
         # tests/test_free_threaded.py runs programs on the free-threaded build.
         if [ "$TESTS" = true ]; then uv python install -q 3.14t; fi
 

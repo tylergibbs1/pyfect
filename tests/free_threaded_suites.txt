@@ -1,0 +1,23 @@
+# The suites CPython 3.14t runs without the GIL: the stress, the shared-state primitives shared
+# by runs on several threads (tests/cross_run) and the runtime suites. extras.yml's
+# free-threaded job runs them once per change; flakes-nightly.yml runs them round after round.
+# One path per line; `#` starts a comment.
+tests/test_free_threaded.py
+tests/cross_run
+tests/test_run_caller_context.py
+tests/test_concurrency.py
+tests/test_decided_results.py
+tests/test_fibers.py
+tests/test_interrupt_delivery.py
+tests/test_race_interruption.py
+tests/test_for_each_interruption.py
+tests/test_queue.py
+tests/test_fiber_collections.py
+tests/test_managed_runtime.py
+tests/test_base_exceptions.py
+tests/test_source_cache.py
+tests/oracle/test_synchronous_resume.py
+tests/test_fiber_profiler.py
+tests/test_on_thread.py
+tests/test_interpreter_pool.py
+tests/test_native_stacks.py

@@ -51,6 +51,36 @@ uv run ruff format . && uv run ruff check . && uv run pyright && uv run pytest
 `tests/type_checks.py` is part of the pyright run. Its `assert_type` lines pin inferred
 types, and its `# pyright: ignore[...]` lines must produce an error.
 
+## Flaky tests
+
+The tests run in parallel and in a random order (pytest-xdist and pytest-randomly), so a
+test that fails once in a hundred runs rarely shows up on a pull request. The
+`flakes-nightly` workflow looks for these every night, and you can start it by hand from the
+Actions tab. It reruns ci.yml's five shards on exact CPython patches (3.13's latest, 3.14's
+latest and 3.14.0) and extras.yml's free-threaded suites
+(`tests/free_threaded_suites.txt`) on 3.14t. Each job keeps starting rounds for 40 minutes.
+Every round uses a new seed, and every second round runs beside two busy processes that load
+the CPUs. Nothing is retried or skipped, and the 5 s limit stays. The run fails if any test
+failed even once.
+
+The run's summary lists each failed test with its job, round, seed and load, and the
+command that repeats that order. The `flakes-report` artifact holds the summary and the
+logs of the rounds that failed. To repeat a failure, run the same shard with the same seed
+on the same Python (`+gil`, which needs uv 0.9.8 or later, keeps uv off the free-threaded
+build):
+
+```sh
+uv run --python 3.14.10+gil pytest -q -n 4 --shard=2/5 -p randomly --randomly-seed=1238892984
+```
+
+A free-threaded failure repeats with the job's own environment: a 3.14t venv holding pyfect,
+pytest, pytest-xdist and pytest-randomly, run with `PYTHON_GIL=0` on the files in
+`tests/free_threaded_suites.txt`, with the seed added.
+
+The seed fixes the order of the tests, but not which worker runs which test. A race may
+need several tries. Run the one test in a shell loop, with one `python -c "while True: pass" &`
+per spare CPU to keep the CPUs busy.
+
 ## Porting from Effect
 
 1. Read the Effect module and its tests (`packages/effect/src` and `packages/effect/test`

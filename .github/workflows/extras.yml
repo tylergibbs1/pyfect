@@ -113,27 +113,9 @@ jobs:
           "$RUNNER_TEMP/ft/bin/python" -c "import sys; assert not sys._is_gil_enabled(), 'GIL enabled'"
 
       - name: Concurrency stress and runtime suites without the GIL
-        run: >
-          "$RUNNER_TEMP/ft/bin/python" -m pytest -q -n auto -p no:cacheprovider
-          tests/test_free_threaded.py
-          tests/cross_run
-          tests/test_run_caller_context.py
-          tests/test_concurrency.py
-          tests/test_decided_results.py
-          tests/test_fibers.py
-          tests/test_interrupt_delivery.py
-          tests/test_race_interruption.py
-          tests/test_for_each_interruption.py
-          tests/test_queue.py
-          tests/test_fiber_collections.py
-          tests/test_managed_runtime.py
-          tests/test_base_exceptions.py
-          tests/test_source_cache.py
-          tests/oracle/test_synchronous_resume.py
-          tests/test_fiber_profiler.py
-          tests/test_on_thread.py
-          tests/test_interpreter_pool.py
-          tests/test_native_stacks.py
+        run: |
+          # The suites are listed in tests/free_threaded_suites.txt, which flakes-nightly.yml repeats.
+          "$RUNNER_TEMP/ft/bin/python" -m pytest -q -n auto -p no:cacheprovider $(sed 's/#.*//' tests/free_threaded_suites.txt)
 
   soak-short:
     # Six minutes of tests/soak (soak.yml runs it for hours): leaks, stuck fibers, stalls,

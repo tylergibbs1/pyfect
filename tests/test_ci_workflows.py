@@ -362,7 +362,7 @@ def test_the_audit_ignore_guard_rejects_a_missing_reason_or_date_and_a_stale_one
 def test_every_ci_job_has_a_time_budget():
     """A job's timeout is its budget: one that grows past it fails instead of slowing every
     run down."""
-    for workflow in ("ci.yml", "extras.yml", "soak-nightly.yml"):
+    for workflow in ("ci.yml", "extras.yml", "soak-nightly.yml", "flakes-nightly.yml"):
         text = (WORKFLOWS / workflow).read_text(encoding="utf-8")
         jobs = re.findall(r"(?m)^  ([\w-]+):\n", text.split("\njobs:\n", 1)[1])
         for job in jobs:
@@ -375,7 +375,7 @@ def test_no_budgeted_job_waits_on_a_package_mirror():
     for free-threaded Python, which py-spy can't read), the step has its own short budget and
     can't fail the job: the mirrors once took 3 minutes of free-threaded's 4, and the job was
     cancelled as its tests finished."""
-    for workflow in ("ci.yml", "extras.yml", "soak-nightly.yml"):
+    for workflow in ("ci.yml", "extras.yml", "soak-nightly.yml", "flakes-nightly.yml"):
         text = (WORKFLOWS / workflow).read_text(encoding="utf-8")
         for step in re.split(r"(?m)^      - ", text)[1:]:
             if "apt-get" not in step and "apt install" not in step:
@@ -569,6 +569,7 @@ def test_the_server_tests_load_the_cached_images_and_never_pull():
         ("ci.yml", "images", ["test"]),
         ("drivers.yml", "images", ["driver"]),
         ("soak-nightly.yml", "images", ["cluster"]),
+        ("flakes-nightly.yml", "images", ["suite"]),
         ("docs.yml", "images", ["snippets"]),
     ):
         assert save in _job(workflow, saver), f"{workflow}'s {saver} job saves no images"
@@ -693,3 +694,105 @@ def test_a_failed_run_on_main_opens_an_issue_for_every_push_workflow():
     assert "github.event.workflow_run.event == 'push'" in alert
     for command in ("gh issue create", "gh issue comment", "gh issue close"):
         assert command in alert, command
+
+
+def _steps(job: str) -> dict[str, str]:
+    """A job's named steps by name."""
+    found: dict[str, str] = {}
+    for step in re.split(r"(?m)^      - ", job)[1:]:
+        name = re.match(r"name: (.*)$", step.splitlines()[0])
+        if name:
+            found[name.group(1)] = step
+    return found
+
+
+def test_the_nightly_flake_hunt_reruns_the_suite_as_ci_runs_it_and_tolerates_nothing():
+    """flakes-nightly.yml finds the one-in-a-hundred failures a release's rerun used to: ci.yml's
+    shards and extras.yml's free-threaded suites, round after round in new random orders on
+    exact CPython patches. A retried, skipped or slower-allowed test would hide the flake."""
+    text = (WORKFLOWS / "flakes-nightly.yml").read_text(encoding="utf-8")
+    for tolerated in (
+        "--reruns", "retry", "|| true", "set +e", "--timeout", "-p no:randomly", " -x",
+        "--maxfail", "--lf", " -k ", " -m \"", " -m '", "--deselect", "--ignore",
+    ):  # fmt: skip
+        assert tolerated not in text, tolerated
+    tolerant = [step for step in re.split(r"(?m)^      - ", text) if "continue-on-error" in step]
+    assert all("apt-get install -y -qq gdb" in step for step in tolerant), "only gdb may fail"
+
+    suite = _job("flakes-nightly.yml", "suite")
+    ci_test = _job("ci.yml", "test")
+    shards = re.search(r"(?m)^\s+shard: \[(.*)\]$", ci_test)
+    assert shards and f"        shard: [{shards.group(1)}]" in suite, "ci.yml's shards"
+    count = len(shards.group(1).split(","))
+    assert (
+        f"uv run --no-sync pytest -q -rfEs -n auto --shard=${{{{ matrix.shard }}}}/{count}\n"
+        in suite
+    )
+    for setup in ("uses: ./.github/actions/check-setup", "python: ${{ matrix.python }}"):
+        assert setup in suite, setup
+    for env in (
+        "UV_PYTHON: ${{ matrix.python }}",
+        'PYFECT_REQUIRE_ALL_TESTS: "1"',
+        _effect_ref.ENV,
+    ):
+        assert env in suite and env in ci_test, env
+    ci_steps, nightly_steps = _steps(ci_test), _steps(suite)
+    for name in ("Fetch main", "Warm up pwsh"):
+        run = re.search(r"(?m)^        run: (.*)$", ci_steps[name])
+        assert run and run.group(0) in nightly_steps[name], f"{name} as in ci.yml's test job"
+
+    # Exact patches of every Python pyproject lists, 3.14's oldest among them.
+    pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    listed = re.findall(r'"Programming Language :: Python :: (3\.\d+)"', pyproject)
+    matrix = re.search(r"(?m)^        python: \[(.*)\]$", suite)
+    assert matrix, "the suite job has no python matrix"
+    pythons = re.findall(r'"([^"]+)"', matrix.group(1))
+    assert all(re.fullmatch(r"3\.\d+\.\d+", python) for python in pythons), pythons
+    assert {python.rpartition(".")[0] for python in pythons} == set(listed)
+    assert "3.14.0" in pythons
+    newest = max(pythons, key=lambda v: tuple(int(n) for n in v.split(".")))
+    threaded = _job("flakes-nightly.yml", "free-threaded")
+    assert f'        python: ["{newest}t"]' in threaded, "3.14t at the suite's newest 3.14"
+    for env in ('PYTHON_GIL: "0"', 'PYFECT_REQUIRE_FREE_THREADED: "1"'):
+        assert env in threaded and env in _job("extras.yml", "free-threaded"), env
+
+    # One list of free-threaded suites, read by both jobs that run it.
+    suites = "$(sed 's/#.*//' tests/free_threaded_suites.txt)"
+    assert suites in threaded and suites in _job("extras.yml", "free-threaded")
+    listing = (ROOT / "tests" / "free_threaded_suites.txt").read_text(encoding="utf-8")
+    paths = [line.split("#")[0].strip() for line in listing.splitlines()]
+    assert [path for path in paths if path and not (ROOT / path).exists()] == []
+
+    for job in (suite, threaded):
+        assert "python3 scripts/flakes.py rounds" in job and '--minutes "$MINUTES"' in job
+        budget = re.search(r"(?m)^    timeout-minutes: (\d+)$", job)
+        assert budget and int(budget.group(1)) >= 50 + 15, "the longest rounds, setup and one more"
+    report = _job("flakes-nightly.yml", "report")
+    assert "needs: [images, suite, free-threaded]" in report and "if: always()" in report
+    assert "python3 scripts/flakes.py report --out .report .flakes" in report
+    assert (
+        '[ "$IMAGES" = success ] && [ "$SUITE" = success ] && [ "$FREE_THREADED" = success ]'
+        in report
+    )
+
+
+def test_the_nightly_flake_hunt_only_reads_and_gates_nothing():
+    """It runs on a schedule (and by hand) and only reads: no release or pull request waits on
+    it, it publishes nothing, and it opens no issue, since what to file in public is the
+    maintainers' call."""
+    text = (WORKFLOWS / "flakes-nightly.yml").read_text(encoding="utf-8")
+    triggers = text.split("\njobs:\n", 1)[0]
+    assert re.findall(r"(?m)^  (\w+):", triggers.split("\non:\n", 1)[1].split("\n\n", 1)[0]) == [
+        "schedule",
+        "workflow_dispatch",
+    ]
+    assert re.search(r'(?m)^    - cron: "\d+ \d+ \* \* \*"$', triggers), "daily"
+    for path in sorted(WORKFLOWS.glob("*.yml")):
+        if path.name != "flakes-nightly.yml":
+            assert "workflows/flakes-nightly.yml" not in path.read_text(encoding="utf-8"), path.name
+    levels = re.findall(r"(?m)^ +(?:contents|actions|[\w-]+): (read|write|none)$", text)
+    assert levels and set(levels) == {"read"}, "every permission is read-only"
+    assert re.findall(r"\$\{\{\s*(secrets\.\w+)", text) == [], "no secrets"
+    assert "GH_TOKEN: ${{ github.token }}" in text
+    for publishing in ("gh issue", "gh release", "gh pr ", "git push", "pypi", "upload-release"):
+        assert publishing not in text, publishing
