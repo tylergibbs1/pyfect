@@ -1,13 +1,14 @@
 """pyfect's stability bar: an area is stable once it has been clean for 7 days in a row.
 
-Clean means: no "Fixed" CHANGELOG entry touching the area merged to main, every CI run on main
+Clean means: no "Fixed" entry touching the area merged to main (a changes/*.fixed.md fragment,
+or CHANGELOG.md's), every CI run on main
 green on its first attempt, the nightly soak (.github/workflows/soak-nightly.yml) green, and
 no open item for the area in tests/stability_known_bugs.toml.
 
     python scripts/stability.py          # a summary per area
     python scripts/stability.py --json   # the report as JSON
 
-It reads main's history of CHANGELOG.md with git and the workflow runs with `gh api`.
+It reads main's history of CHANGELOG.md and changes/ with git and the workflow runs with `gh api`.
 """
 
 import argparse
@@ -107,9 +108,16 @@ def _key(entry: str) -> str:
     return " ".join(entry.split())[:80]
 
 
+def with_fragments(changelog: str, fragments: dict[str, str]) -> str:
+    """CHANGELOG.md with the Fixed fragments of changes/ (name to body) as one more section,
+    so a fix counts when it merges, not when it is released."""
+    fixed = [body for name, body in sorted(fragments.items()) if name.endswith(".fixed.md")]
+    return changelog + "\n## Fragments\n\n### Fixed\n\n" + "".join(fixed) if fixed else changelog
+
+
 @dataclass(frozen=True)
 class Snapshot:
-    """CHANGELOG.md as a commit on main left it."""
+    """CHANGELOG.md and its fragments as a commit on main left them."""
 
     sha: str
     merged_at: datetime
@@ -363,11 +371,17 @@ def _run(*args: str) -> str:
 
 
 def changelog_history(ref: str) -> list[Snapshot]:
-    log = _run("git", "log", "--first-parent", "--format=%H %cI", ref, "--", "CHANGELOG.md")
+    log = _run(
+        "git", "log", "--first-parent", "--format=%H %cI", ref, "--", "CHANGELOG.md", "changes"
+    )
     snapshots: list[Snapshot] = []
     for line in reversed(log.splitlines()):
         sha, date = line.split()
-        text = _run("git", "show", f"{sha}:CHANGELOG.md")
+        names = _run("git", "ls-tree", "--name-only", f"{sha}:", "changes/").split()
+        fragments = {
+            name.removeprefix("changes/"): _run("git", "show", f"{sha}:{name}") for name in names
+        }
+        text = with_fragments(_run("git", "show", f"{sha}:CHANGELOG.md"), fragments)
         snapshots.append(Snapshot(sha, _timestamp(date), text))
     return snapshots
 

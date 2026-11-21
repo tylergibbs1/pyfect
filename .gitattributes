@@ -1,3 +1,0 @@
-# Branches that each add an entry under the same heading merge to both entries, not a
-# conflict. tests/test_changelog.py fails if a merge leaves a heading twice.
-CHANGELOG.md merge=union

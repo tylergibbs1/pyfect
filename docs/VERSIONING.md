@@ -24,10 +24,29 @@ worked on `0.5.x`, and `0.5.x` releases may not.
 
 Each entry under Changed or Removed says what to do instead.
 
+## Adding an entry and cutting a release
+
+An entry is a file of its own, `changes/<slug>.<section>.md`, where the section is `added`,
+`changed`, `deprecated`, `removed`, `fixed`, `performance` or `docs`, and the body is the
+entry's Markdown, starting with `- ` and with later lines indented two spaces. A branch adds
+fragments and never edits CHANGELOG.md, so a release merged meanwhile can't take its entry.
+
+`uv run python scripts/release.py 0.6.19` cuts a release: the fragments become
+`## 0.6.19 (date)` in CHANGELOG.md, in the order Added, Changed, Deprecated, Removed, Fixed,
+Performance, Docs, and are deleted; pyproject's version is set and `uv lock` run. It refuses a
+patch version while a `changed` or `removed` fragment waits.
+
 ## Enforced
 
-`tests/test_changelog.py` fails if a patch section after 0.5.5 has a heading other than
-Fixed, Added, Deprecated, Performance or Docs. Entries waiting for a release go under
-`## Unreleased` at the top, which has no version yet; the release gives it one, and the check
-then applies: once it has a Changed or Removed entry, the release must be a minor one.
+`tests/test_changelog.py` fails if:
+
+- CHANGELOG.md changes other than in a release commit (one new section on top, for
+  pyproject's version, with no fragment left), or has a heading that is not a version;
+- a file in `changes/` is not a fragment, or two fragments cite the same Effect change;
+- a patch section after 0.5.5 has a heading other than Fixed, Added, Deprecated, Performance
+  or Docs;
+- a `changed` or `removed` fragment is on main while pyproject's version is in the newest
+  released minor series: the next release would have to be a minor one, so the change waits
+  on a `-0X0` branch.
+
 Releases up to 0.5.5 were made before this policy and are not checked.

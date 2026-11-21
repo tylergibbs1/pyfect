@@ -81,6 +81,13 @@ Patch releases only fix, add, deprecate, speed up or document; behaviour a worki
 could rely on, removals and stricter types wait for the next minor release
 (`docs/VERSIONING.md`, enforced by `tests/test_changelog.py`).
 
+A changelog entry is a file, `changes/<slug>.<section>.md` (section: added, changed,
+deprecated, removed, fixed, performance or docs), holding the entry's Markdown from `- `.
+Branches never edit CHANGELOG.md. A release is `uv run python scripts/release.py X.Y.Z`: it
+moves the fragments under `## X.Y.Z (date)`, sets pyproject's version and runs `uv lock`.
+If main gains fragments before the release PR lands, reset those three files to main's and
+run it again.
+
 ## Tests run in parallel, in random order
 
 CI runs `pytest -n 4` with pytest-randomly (the run ends by printing the seed; `-p randomly

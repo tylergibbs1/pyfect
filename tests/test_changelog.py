@@ -1,158 +1,112 @@
-"""CHANGELOG.md has one section per version, newest first, and only the top one unreleased.
+"""The changelog: one fragment per entry in changes/, and CHANGELOG.md, which only a release
+commit changes (``scripts/release.py``), one section per version, newest first.
 
-Merging branches that each add to the unreleased section can leave two copies of it.
+Branches used to add entries under ``## Unreleased`` in CHANGELOG.md; a release merged
+meanwhile renamed that heading, and a rebase slid the branch's entry into the shipped version.
+A fragment is a file of its own, so no rebase can move it.
 """
 
+import importlib.util
 import re
-import shutil
 import subprocess
+import sys
 import tomllib
-from collections import Counter
+from datetime import date
 from pathlib import Path
+from types import ModuleType
+
+import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 CHANGELOG = ROOT / "CHANGELOG.md"
-HEADING = re.compile(r"^## (\d+)\.(\d+)\.(\d+) \((unreleased|\d{4}-\d{2}-\d{2})\)$", re.MULTILINE)
-# Entries waiting for a release go under this heading; the release gives them their version.
-UNRELEASED = "## Unreleased"
+
+
+def _script() -> ModuleType:
+    spec = importlib.util.spec_from_file_location("release", ROOT / "scripts" / "release.py")
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["release"] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+release = _script()
+Version = release.Version
+HEADING = re.compile(r"^## (\d+)\.(\d+)\.(\d+) \((\d{4}-\d{2}-\d{2})\)$")
+# docs/VERSIONING.md: a patch release only fixes, adds, deprecates, speeds up or documents.
+PATCH_HEADINGS = {release.TITLES[section] for section in release.PATCH_SECTIONS}
+POLICY_SINCE = Version(0, 5, 5)
 
 
 def _text() -> str:
     return CHANGELOG.read_text(encoding="utf-8")
 
 
-def _headings(text: str) -> list[str]:
-    return [line for line in text.splitlines() if line.startswith("## ")]
+def _pyproject_version() -> Version:
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    return Version.parse(pyproject["project"]["version"])
 
 
-def _sections(text: str) -> list[tuple[tuple[int, int, int], str]]:
-    return [((int(a), int(b), int(c)), when) for a, b, c, when in HEADING.findall(text)]
+def _sections(text: str) -> dict[Version, str]:
+    """Each version's section, its heading line to the next ``## `` heading."""
+    found: dict[Version, str] = {}
+    for chunk in re.split(r"(?m)^(?=## )", text)[1:]:
+        heading = HEADING.match(chunk.split("\n", 1)[0])
+        if heading:
+            found[Version(*(int(part) for part in heading.groups()[:3]))] = chunk
+    return found
 
 
-def _unparsed_headings(text: str) -> list[str]:
-    return [h for h in _headings(text) if h != UNRELEASED and not HEADING.match(h)]
+def _git(*args: str) -> str:
+    return subprocess.run(
+        ["git", "-C", str(ROOT), *args], check=True, capture_output=True, text=True
+    ).stdout
 
 
-def _unreleased_positions(text: str) -> list[int]:
-    return [
-        i
-        for i, heading in enumerate(_headings(text))
-        if heading == UNRELEASED or heading.endswith("(unreleased)")
+# CHANGELOG.md
+
+
+def test_every_heading_is_a_released_version():
+    """Entries waiting for a release are fragments in changes/, not an Unreleased section."""
+    others = [
+        line for line in _text().splitlines() if line.startswith("## ") and not HEADING.match(line)
     ]
-
-
-def test_every_version_heading_parses():
-    assert _unparsed_headings(_text()) == []
+    assert others == [], "add each entry as changes/<slug>.<section>.md (docs/VERSIONING.md)"
 
 
 def test_versions_are_unique_and_newest_first():
-    versions = [v for v, _ in _sections(_text())]
+    versions = [
+        Version(int(a), int(b), int(c))
+        for a, b, c in re.findall(r"^## (\d+)\.(\d+)\.(\d+) ", _text(), re.MULTILINE)
+    ]
     assert versions == sorted(set(versions), reverse=True)
 
 
-def test_only_the_top_section_is_unreleased():
-    assert _unreleased_positions(_text()) in ([], [0])
-
-
-def test_the_section_checks_reject_a_misplaced_or_doubled_unreleased_section():
-    released = "## 0.6.10 (2026-11-16)\n\n## 0.6.9 (2026-11-16)\n"
-    assert _unparsed_headings("## Unreleased\n\n" + released) == []
-    assert _unreleased_positions("## Unreleased\n\n" + released) == [0]
-    assert _unreleased_positions(released + "\n## Unreleased\n") == [2]
-    assert _unreleased_positions("## Unreleased\n\n## 0.6.11 (unreleased)\n" + released) == [0, 1]
-    assert _unparsed_headings("## unreleased\n\n## 0.6.10\n") == ["## unreleased", "## 0.6.10"]
-
-
-# docs/VERSIONING.md: a patch release only fixes, adds, deprecates, speeds up or documents.
-PATCH_HEADINGS = {"Fixed", "Added", "Deprecated", "Performance", "Docs"}
-POLICY_SINCE = (0, 5, 5)
-
-
-def _headings_by_version() -> dict[tuple[int, int, int], list[str]]:
-    text = _text()
-    found: dict[tuple[int, int, int], list[str]] = {}
-    version: tuple[int, int, int] | None = None
-    for line in text.splitlines():
-        heading = HEADING.match(line)
-        if heading:
-            a, b, c, _ = heading.groups()
-            version = (int(a), int(b), int(c))
-            found[version] = []
-        elif line.startswith("### ") and version is not None:
-            found[version].append(line[4:].strip())
-    return found
+def _subheadings(section: str) -> list[str]:
+    return [line[4:].strip() for line in section.splitlines() if line.startswith("### ")]
 
 
 def test_patch_releases_only_fix_add_deprecate_or_document():
     offenders = {
-        ".".join(map(str, version)): sorted(set(headings) - PATCH_HEADINGS)
-        for version, headings in _headings_by_version().items()
-        if version > POLICY_SINCE and version[2] != 0 and set(headings) - PATCH_HEADINGS
+        str(version): sorted(set(_subheadings(section)) - PATCH_HEADINGS)
+        for version, section in _sections(_text()).items()
+        if version > POLICY_SINCE
+        and version.patch != 0
+        and set(_subheadings(section)) - PATCH_HEADINGS
     }
     assert not offenders, (
-        "these patch sections need a minor release (docs/VERSIONING.md), "
-        f"or the entries belong under Fixed / Added / Deprecated: {offenders}"
+        f"these patch sections need a minor release (docs/VERSIONING.md): {offenders}"
     )
-
-
-def _unreleased_headings(text: str) -> list[str]:
-    """The ``### `` headings under ``## Unreleased``."""
-    _, found, rest = f"\n{text}".partition(f"\n{UNRELEASED}\n")
-    if not found:
-        return []
-    section = rest.split("\n## ", 1)[0]
-    return [line[4:].strip() for line in section.splitlines() if line.startswith("### ")]
-
-
-def _too_early_for_a_minor(text: str, version: str) -> list[str]:
-    """Unreleased headings a patch release can't carry, while ``version`` (pyproject's) is
-    still in the newest released minor series: the next release would have to be a minor."""
-    released = [v for v, when in _sections(text) if when != "unreleased"]
-    major, minor, _ = (int(part) for part in version.split("."))
-    if not released or (major, minor) != released[0][:2]:
-        return []
-    return sorted(set(_unreleased_headings(text)) - PATCH_HEADINGS)
-
-
-def test_unreleased_minor_entries_wait_for_the_minor_version():
-    """#175 put a Changed entry on main while the version was 0.6.14, which made the next
-    release a minor one and blocked 0.6.x patches. Such entries stay on a -070 branch until
-    the release bumps pyproject to 0.7.0."""
-    version = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"][
-        "version"
-    ]
-    offenders = _too_early_for_a_minor(_text(), version)
-    assert not offenders, (
-        f"## Unreleased has {offenders} while pyproject is {version}: the next release would be "
-        "a minor one (docs/VERSIONING.md). Keep the change on a -0X0 branch until the minor "
-        "release bumps the version"
-    )
-
-
-def test_the_minor_entry_check_waits_for_the_version_bump():
-    text = (
-        "## Unreleased\n\n### Changed\n\n- a\n\n### Fixed\n\n- b\n\n"
-        "## 0.6.14 (2026-11-19)\n\n### Fixed\n\n- c\n"
-    )
-    assert _too_early_for_a_minor(text, "0.6.14") == ["Changed"]
-    assert _too_early_for_a_minor(text.replace("Changed", "Removed"), "0.6.15") == ["Removed"]
-    assert _too_early_for_a_minor(text, "0.7.0") == []
-    assert _too_early_for_a_minor(text.replace("### Changed", "### Added"), "0.6.14") == []
 
 
 def _repeated_subheadings(text: str) -> list[str]:
-    """``### `` headings that appear twice in one ``## `` section, as ``section / heading``."""
-    seen: set[tuple[str, str]] = set()
-    repeated: list[str] = []
-    section = ""
-    for line in text.splitlines():
-        if line.startswith("## "):
-            section = line
-        elif line.startswith("### "):
-            if (section, line) in seen:
-                repeated.append(f"{section} / {line}")
-            seen.add((section, line))
-    return repeated
+    """``### `` headings that appear twice in one version, as ``version / heading``."""
+    return [
+        f"{version} / {heading}"
+        for version, section in _sections(text).items()
+        for heading in sorted(set(_subheadings(section)))
+        if _subheadings(section).count(heading) > 1
+    ]
 
 
 def test_no_section_repeats_a_subheading():
@@ -160,113 +114,244 @@ def test_no_section_repeats_a_subheading():
 
 
 def test_the_subheading_check_rejects_a_heading_doubled_within_a_section():
-    one = "## Unreleased\n\n### Fixed\n\n- a\n\n## 0.6.10 (2026-11-16)\n\n### Fixed\n"
+    one = "## 0.6.11 (2026-11-17)\n\n### Fixed\n\n- a\n\n## 0.6.10 (2026-11-16)\n\n### Fixed\n"
     assert _repeated_subheadings(one) == []
-    doubled = "## Unreleased\n\n### Fixed\n\n- a\n\n### Fixed\n\n- b\n"
-    assert _repeated_subheadings(doubled) == ["## Unreleased / ### Fixed"]
+    doubled = "## 0.6.11 (2026-11-17)\n\n### Fixed\n\n- a\n\n### Fixed\n\n- b\n"
+    assert _repeated_subheadings(doubled) == ["0.6.11 / Fixed"]
+
+
+def _above_the_sections(text: str) -> str:
+    """The text before the first ``## `` heading (an Unreleased one fails its own test)."""
+    first = re.search(r"(?m)^## ", text)
+    return text[: first.start()] if first else text
+
+
+def _edits_outside_a_release(
+    base: str, head: str, version: Version, fragments: list[str]
+) -> list[str]:
+    """How ``head``'s CHANGELOG.md differs from ``base``'s (main's) other than by a release:
+    one new section on top, for pyproject's ``version``, with every fragment moved into it."""
+    old, new = _sections(base), _sections(head)
+    problems = [f"{v} was edited after its release" for v in new if v in old and new[v] != old[v]]
+    if _above_the_sections(head) != _above_the_sections(base):
+        problems.append("the text above the sections changed")
+    added = [v for v in new if v not in old]
+    if added and (added != [version] or next(iter(new)) != version):
+        problems.append(f"{added} added, where a release adds one section on top, for {version}")
+    if added and fragments:
+        problems.append(f"the release left {fragments} in changes/: run scripts/release.py again")
+    return problems
+
+
+def test_only_a_release_changes_the_changelog():
+    """CHANGELOG.md changes only in a release commit, made by ``scripts/release.py``. CI fetches
+    ``origin/main`` for this; a branch behind main may lack main's newest sections."""
+    problems = _edits_outside_a_release(
+        _git("show", "origin/main:CHANGELOG.md"),
+        _text(),
+        _pyproject_version(),
+        [fragment.name for fragment in release.read_fragments(ROOT)],
+    )
+    assert problems == [], (
+        "CHANGELOG.md changes only in a release commit (scripts/release.py X.Y.Z). "
+        f"For an entry, add changes/<slug>.<section>.md instead: {problems}"
+    )
+
+
+def test_the_release_check_rejects_any_other_edit():
+    base = "# Changelog\n\n## 0.6.12 (2026-11-18)\n\n### Fixed\n\n- b\n"
+    shipped = "# Changelog\n\n## 0.6.13 (2026-11-19)\n\n### Fixed\n\n- c\n\n" + base[13:]
+    v12, v13 = Version(0, 6, 12), Version(0, 6, 13)
+    assert _edits_outside_a_release(base, base, v12, ["a.fixed.md"]) == []
+    assert _edits_outside_a_release(base, shipped, v13, []) == []
+    assert _edits_outside_a_release(shipped, base, v12, ["a.fixed.md"]) == []  # behind main
+    late = base.replace("- b\n", "- b\n- c\n")
+    assert _edits_outside_a_release(base, late, v12, []) == ["0.6.12 was edited after its release"]
+    intro = base.replace("\n\n## 0.6.12", "\n\nAll the changes.\n\n## 0.6.12")
+    assert _edits_outside_a_release(base, intro, v12, []) == ["the text above the sections changed"]
+    assert _edits_outside_a_release(base, shipped, v12, []) == [
+        f"{[v13]} added, where a release adds one section on top, for {v12}"
+    ]
+    assert _edits_outside_a_release(base, shipped, v13, ["a.fixed.md"]) == [
+        "the release left ['a.fixed.md'] in changes/: run scripts/release.py again"
+    ]
+
+
+# Fragments
+
+
+def test_every_file_in_changes_is_a_fragment():
+    release.read_fragments(ROOT)
+
+
+@pytest.mark.parametrize(
+    ("name", "body", "message"),
+    [
+        ("fix.md", "- a\n", "name it <slug>.<section>.md"),
+        ("fix.breaking.md", "- a\n", "name it <slug>.<section>.md"),
+        ("Fix.fixed.md", "- a\n", "name it <slug>.<section>.md"),
+        ("fix.fixed.md", "a\n", "starts with '- '"),
+        ("fix.fixed.md", "- a", "ends in one newline"),
+        ("fix.fixed.md", "- a\n\n", "ends in one newline"),
+        ("fix.fixed.md", "- a\n- b\n", "one entry per fragment"),
+        ("fix.fixed.md", "- a\n### Fixed\n", "one entry per fragment"),
+    ],
+)
+def test_a_malformed_fragment_is_refused(name: str, body: str, message: str):
+    with pytest.raises(release.ReleaseError, match=re.escape(message)):
+        release.parse_fragment(name, body)
+
+
+def test_an_entry_may_run_over_several_lines_and_paragraphs():
+    body = "- a\n  b\n\n  c\n"
+    assert release.parse_fragment("a-b_2.performance.md", body).body == body
+
+
+def _waiting_for_a_minor(fragments: list[str], version: Version, newest: Version) -> list[str]:
+    """Fragments the next release can't carry while pyproject's ``version`` is still in the
+    newest released minor series: that release would have to be a minor one."""
+    if version[:2] != newest[:2]:
+        return []
+    sections = [release.parse_fragment(name, "- a\n") for name in fragments]
+    return release.too_early_for_a_minor(sections, Version(*newest[:2], newest.patch + 1))
+
+
+def test_minor_fragments_wait_for_the_minor_version():
+    """#175 put a Changed entry on main while the version was 0.6.14, which made the next
+    release a minor one and blocked 0.6.x patches. Such fragments stay on a -070 branch until
+    the 0.7.0 release commit carries them."""
+    version = _pyproject_version()
+    offenders = _waiting_for_a_minor(
+        [fragment.name for fragment in release.read_fragments(ROOT)],
+        version,
+        release.released_versions(_text())[0],
+    )
+    assert not offenders, (
+        f"{offenders} while pyproject is {version}: the next release would be a minor one "
+        "(docs/VERSIONING.md). Keep the change on a -0X0 branch until the minor release"
+    )
+
+
+def test_the_minor_fragment_check_waits_for_the_version_bump():
+    v14 = Version(0, 6, 14)
+    names = ["a.changed.md", "b.fixed.md"]
+    assert _waiting_for_a_minor(names, v14, v14) == ["a.changed.md"]
+    assert _waiting_for_a_minor(["a.removed.md"], v14, v14) == ["a.removed.md"]
+    assert _waiting_for_a_minor(names, Version(0, 7, 0), v14) == []
+    assert _waiting_for_a_minor(["a.added.md"], v14, v14) == []
 
 
 _EFFECT_REF = re.compile(r"Effect-TS/effect#(\d+)")
 
 
-def _repeated_effect_refs(text: str) -> list[str]:
-    """Effect PRs cited by more than one entry of the Unreleased section. Each ported Effect fix
-    gets one entry, so a second is a copy, such as a union merge keeps when a branch edited
-    its entry in a later commit."""
-    section = text.split(f"{UNRELEASED}\n", 1)[1].split("\n## ", 1)[0] if UNRELEASED in text else ""
-    entries = re.split(r"\n(?=- |### )", section)
+def _repeated_effect_refs(bodies: list[str]) -> list[str]:
+    """Effect PRs cited by more than one fragment. Each ported Effect fix gets one entry, so a
+    second is a copy."""
     seen: set[str] = set()
     repeated: list[str] = []
-    for entry in entries:
-        for ref in sorted(set(_EFFECT_REF.findall(entry))):
+    for body in bodies:
+        for ref in sorted(set(_EFFECT_REF.findall(body))):
             if ref in seen and ref not in repeated:
                 repeated.append(ref)
             seen.add(ref)
     return repeated
 
 
-def test_no_two_unreleased_entries_cite_the_same_effect_change():
-    assert _repeated_effect_refs(_text()) == []
+def test_no_two_fragments_cite_the_same_effect_change():
+    assert _repeated_effect_refs([f.body for f in release.read_fragments(ROOT)]) == []
 
 
 def test_the_effect_ref_check_rejects_a_copied_entry():
-    one = "## Unreleased\n\n### Fixed\n\n- a, as Effect-TS/effect#1 and Effect-TS/effect#1.\n"
-    assert _repeated_effect_refs(one) == []
-    released = "\n## 0.6.10 (2026-11-16)\n\n### Fixed\n\n- a, as Effect-TS/effect#1.\n"
-    assert _repeated_effect_refs(one + released) == []
-    copied = one + "\n- a again, as\n  Effect-TS/effect#1.\n"
-    assert _repeated_effect_refs(copied) == ["1"]
+    one = "- a, as Effect-TS/effect#1 and Effect-TS/effect#1.\n"
+    assert _repeated_effect_refs([one]) == []
+    assert _repeated_effect_refs([one, "- a again, as\n  Effect-TS/effect#1.\n"]) == ["1"]
 
 
-def _git(repo: Path, *args: str) -> str:
-    return subprocess.run(
-        ["git", "-C", str(repo), *args], check=True, capture_output=True, text=True
-    ).stdout
+# scripts/release.py
 
 
-def test_the_changelog_merges_by_union():
-    assert _git(ROOT, "check-attr", "merge", "--", "CHANGELOG.md").strip().endswith(": union")
+def _repo(tmp_path: Path, changelog: str, fragments: dict[str, str]) -> Path:
+    (tmp_path / "CHANGELOG.md").write_text(changelog)
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "x"\nversion = "0.6.12"\n')
+    (tmp_path / "changes").mkdir()
+    for name, body in fragments.items():
+        (tmp_path / "changes" / name).write_text(body)
+    return tmp_path
 
 
-def test_branches_adding_fixed_entries_merge_without_conflict(tmp_path: Path):
-    """Two branches that each add an entry under the same heading merge to both entries."""
-    repo = tmp_path / "repo"
-    repo.mkdir()
-    _git(repo, "init", "-q", "-b", "main")
-    _git(repo, "config", "user.email", "test@example.invalid")
-    _git(repo, "config", "user.name", "test")
-    shutil.copy(ROOT / ".gitattributes", repo / ".gitattributes")
-    base = "# Changelog\n\n## Unreleased\n\n### Fixed\n\n- base\n\n## 0.6.10 (2026-11-16)\n"
-    changelog = repo / "CHANGELOG.md"
-    changelog.write_text(base)
-    _git(repo, "add", ".")
-    _git(repo, "commit", "-qm", "base")
-    for branch, entry in (("one", "- one\n"), ("two", "- two\n")):
-        _git(repo, "checkout", "-q", "-b", branch, "main")
-        changelog.write_text(base.replace("- base\n", f"- base\n\n{entry}"))
-        _git(repo, "commit", "-qam", branch)
-    _git(repo, "merge", "-q", "--no-edit", "one")
-    merged = changelog.read_text()
-    assert "- one\n" in merged and "- two\n" in merged
-    assert "<<<<<<<" not in merged
-    assert _repeated_subheadings(merged) == []
+def _as_fragments(section: str) -> dict[str, str]:
+    """A released section's entries as fragments, named to keep their order."""
+    fragments: dict[str, str] = {}
+    heading = ""
+    for chunk in re.split(r"(?m)^(?=### |- )", section)[1:]:
+        if chunk.startswith("### "):
+            heading = chunk[4:].split("\n", 1)[0].lower()
+        else:
+            fragments[f"e{len(fragments):03d}.{heading}.md"] = chunk.rstrip("\n") + "\n"
+    return fragments
 
 
-def _released_sections(text: str) -> dict[str, list[str]]:
-    """Each released version's heading and its lines."""
-    sections: dict[str, list[str]] = {}
-    lines: list[str] | None = None
-    for line in text.splitlines():
-        if line.startswith("## "):
-            lines = sections.setdefault(line, []) if HEADING.match(line) else None
-        elif lines is not None:
-            lines.append(line)
-    return {h: body for h, body in sections.items() if not h.endswith("(unreleased)")}
+@pytest.mark.parametrize("version", ["0.6.16", "0.6.17", "0.6.18", "0.6.19"])
+def test_a_release_rebuilds_from_its_fragments(tmp_path: Path, version: str):
+    """The script writes what was written by hand before it."""
+    text = _text()
+    sections = _sections(text)
+    section = sections[Version.parse(version)]
+    older = text[text.index(section) + len(section) :]
+    day = date.fromisoformat(section[len(f"## {version} (") :][:10])
+    repo = _repo(tmp_path, "# Changelog\n\n" + older, _as_fragments(section))
+    release.release(repo, Version.parse(version), day)
+    assert (repo / "CHANGELOG.md").read_text() == "# Changelog\n\n" + section + older
 
 
-def _added_to_released(base: str, head: str) -> list[str]:
-    """Lines ``head`` adds inside a version ``base`` already released: an entry meant for
-    the next release that landed under a shipped one."""
-    head_sections = _released_sections(head)
-    added: list[str] = []
-    for heading, lines in _released_sections(base).items():
-        left = Counter(lines)
-        for line in head_sections.get(heading, []):
-            if left[line] > 0:
-                left[line] -= 1
-            else:
-                added.append(f"{heading}: {line}")
-    return added
+def test_a_release_moves_the_fragments_and_sets_the_version(tmp_path: Path):
+    old = "# Changelog\n\n## 0.6.12 (2026-11-18)\n\n### Fixed\n\n- old\n"
+    repo = _repo(
+        tmp_path,
+        old,
+        {"z.fixed.md": "- z\n", "a.fixed.md": "- a\n  more\n", "doc.docs.md": "- d\n"},
+    )
+    release.release(repo, Version(0, 6, 13), date(2026, 11, 19))
+    assert (repo / "CHANGELOG.md").read_text() == (
+        "# Changelog\n\n## 0.6.13 (2026-11-19)\n\n### Fixed\n\n- a\n  more\n- z\n\n"
+        "### Docs\n\n- d\n\n## 0.6.12 (2026-11-18)\n\n### Fixed\n\n- old\n"
+    )
+    assert list((repo / "changes").iterdir()) == []
+    assert 'version = "0.6.13"' in (repo / "pyproject.toml").read_text()
 
 
-def test_no_branch_adds_to_a_released_section():
-    """Main's CHANGELOG is the released record (CI fetches ``origin/main`` for this)."""
-    base = _git(ROOT, "show", "origin/main:CHANGELOG.md")
-    assert _added_to_released(base, _text()) == [], "move the entry to ## Unreleased"
+def test_a_patch_release_with_a_changed_fragment_fails(tmp_path: Path):
+    old = "# Changelog\n\n## 0.6.12 (2026-11-18)\n\n### Fixed\n\n- old\n"
+    repo = _repo(tmp_path, old, {"a.changed.md": "- a\n", "b.fixed.md": "- b\n"})
+    with pytest.raises(release.ReleaseError, match=r"0\.6\.13 is a patch release.*a\.changed\.md"):
+        release.release(repo, Version(0, 6, 13), date(2026, 11, 19))
+    assert (repo / "CHANGELOG.md").read_text() == old
+    release.release(repo, Version(0, 7, 0), date(2026, 11, 19))
+    assert (
+        (repo / "CHANGELOG.md")
+        .read_text()
+        .startswith(
+            "# Changelog\n\n## 0.7.0 (2026-11-19)\n\n### Changed\n\n- a\n\n### Fixed\n\n- b\n\n"
+        )
+    )
 
 
-def test_the_released_section_check_rejects_an_entry_under_a_shipped_version():
-    base = "## Unreleased\n\n### Fixed\n\n- a\n\n## 0.6.12 (2026-11-18)\n\n### Fixed\n\n- b\n"
-    late = base.replace("- b\n", "- b\n- c\n")
-    assert _added_to_released(base, late) == ["## 0.6.12 (2026-11-18): - c"]
-    assert _added_to_released(base, base.replace("- a\n", "- a\n- c\n")) == []
+@pytest.mark.parametrize(
+    ("version", "fragments", "message"),
+    [
+        ("0.6.12", {"a.fixed.md": "- a\n"}, "not after the newest release, 0.6.12"),
+        ("0.6.13", {}, "nothing to release"),
+    ],
+)
+def test_a_release_refuses_an_old_version_or_no_fragments(
+    tmp_path: Path, version: str, fragments: dict[str, str], message: str
+):
+    repo = _repo(tmp_path, "# Changelog\n\n## 0.6.12 (2026-11-18)\n\n### Fixed\n\n- b\n", fragments)
+    with pytest.raises(release.ReleaseError, match=re.escape(message)):
+        release.release(repo, Version.parse(version), date(2026, 11, 19))
+
+
+@pytest.mark.parametrize("text", ["0.6", "0.6.x", "v0.6.1", "0.6.1.2", "0.6.\u0661"])
+def test_a_version_is_three_numbers(text: str):
+    with pytest.raises(release.ReleaseError, match="is not a version"):
+        Version.parse(text)

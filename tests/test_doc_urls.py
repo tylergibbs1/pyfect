@@ -1,6 +1,6 @@
 """Every ``https://pyfect.dev/docs/...`` URL that the code (in an error
-message, say) or the changelog gives names a guide, or an old URL the
-site redirects: a renamed guide must leave a redirect behind."""
+message, say), the changelog or a fragment in changes/ gives names a guide,
+or an old URL the site redirects: a renamed guide must leave a redirect behind."""
 
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ _REDIRECT = re.compile(r"source: '(/docs[^']*)'")
 def _given() -> set[str]:
     texts = [_source.text(p) for p in _source.files(ROOT / "src")]
     texts += [(ROOT / name).read_text() for name in ("CHANGELOG.md", "README.md")]
+    texts += [fragment.read_text() for fragment in (ROOT / "changes").glob("*.md")]
     return {url.rstrip("/") for text in texts for url in _URL.findall(text)}
 
 

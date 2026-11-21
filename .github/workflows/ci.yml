@@ -150,8 +150,8 @@ jobs:
           python: ${{ matrix.python }}
 
       - name: Fetch main
-        # tests/test_changelog.py compares the CHANGELOG with main's: a branch must not add to
-        # a section main has already released.
+        # tests/test_changelog.py compares the CHANGELOG with main's: only a release commit
+        # changes it.
         run: git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main
 
       - name: Warm up pwsh

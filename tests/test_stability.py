@@ -92,6 +92,27 @@ def test_fixed_entries_are_read_from_every_fixed_section_only():
     ]
 
 
+def test_a_fixed_fragment_counts_when_it_merges_and_once_when_released():
+    released = "# Changelog\n\n## 0.6.12 (2026-11-18)\n\n### Fixed\n\n- old fix.\n"
+    fragments = {"cache.fixed.md": "- `Cache`: a lookup\n  hung.\n", "a.added.md": "- New.\n"}
+    merged = stability.with_fragments(released, fragments)
+    assert stability.fixed_entries(merged) == ["old fix.", "`Cache`: a lookup hung."]
+    shipped = released.replace(
+        "## 0.6.12",
+        "## 0.6.13 (2026-11-19)\n\n### Fixed\n\n- `Cache`: a lookup\n  hung.\n\n## 0.6.12",
+    )
+    history = [
+        stability.Snapshot(sha * 40, datetime(2026, 11, day, tzinfo=UTC), text)
+        for sha, day, text in (("a", 16, released), ("b", 17, merged), ("c", 18, shipped))
+    ]
+    added = stability.added_fixed_entries(history)
+    assert [(entry.sha[0], entry.entry) for entry in added] == [
+        ("a", "old fix."),
+        ("b", "`Cache`: a lookup hung."),
+    ]
+    assert stability.with_fragments(released, {"a.added.md": "- New.\n"}) == released
+
+
 def test_an_entry_counts_once_where_it_first_appears():
     """Releasing moves entries out of Unreleased, and a later commit may reword an entry's end;
     neither is a new fix."""
