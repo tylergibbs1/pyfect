@@ -487,7 +487,14 @@ class Pool[A = Unsubscripted, E = Never]:
     def _wake_waiters(self, fiber: Fiber[Any, Any], count: int) -> None:
         """Call holding the lock."""
         state = self.state
-        state.waiters.wake(fiber.dispatcher(), count, lambda: state.available_head is not None)
+        state.waiters.wake(fiber.dispatcher(), count, self._has_available)
+
+    def _leave_line(self, fiber: Fiber[Any, Any], waiter: Waiter) -> None:
+        """Call holding the lock, done with any item ``waiter`` takes: it may be let go."""
+        self.state.waiters.leave(waiter, fiber.dispatcher(), self._has_available)
+
+    def _has_available(self) -> bool:
+        return self.state.available_head is not None
 
     # --- sizing ---------------------------------------------------------------
 
@@ -731,11 +738,7 @@ class _SlowGet[A, E, X, R]:
         state = pool.state
         with state.lock:
             state.usage -= 1
-            # Only a woken waiter is still registered here: one cancelled
-            # while asleep already left. It passes its wake on, so the
-            # capacity it was woken for is not stranded.
-            if state.waiters.leave(self.waiter):
-                pool._wake_waiters(fiber, 1)
+            pool._leave_line(fiber, self.waiter)
         return _VOID
 
     def _attempt(self, fiber: Fiber[Any, Any]) -> Effect[X, Any, R]:
@@ -760,8 +763,8 @@ class _SlowGet[A, E, X, R]:
             if isinstance(ex, Failure):
                 state._remove(item)
                 return self.loop()
-            state.waiters.leave(waiter)
             pool._bookkeep(item)
+            pool._leave_line(fiber, waiter)
         return self.lease(item, ex.value, fiber, self.restore)
 
     def _grow(self, fiber: Fiber[Any, Any]) -> Effect[X, Any, R]:

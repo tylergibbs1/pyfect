@@ -6,6 +6,10 @@
 - A fiber parks in one run; a run on another thread wakes it and ends at once. A wake that
   Effect defers to a scheduled task was queued on the waker's run, which never ran it once its
   root fiber ended, so the waiter slept forever. It now goes to the waiter's own run.
+- A pool borrower is woken, but its run is busy, and a second item comes back meanwhile: no
+  wake for it, as nobody is asleep. A newcomer queues behind the woken one and sleeps. The
+  woken one takes an item and left the line without waking the newcomer, who slept forever
+  next to a free item (a TTL pool made in an ended run hung growing on free-threaded CI).
 """
 
 from __future__ import annotations
@@ -17,8 +21,10 @@ from collections.abc import Callable
 from typing import Any
 
 import pytest
+from _timing import wait_until
 
 import pyfect as fx
+from pyfect import scope
 from pyfect.option import Some
 
 type Rmw = Callable[[fx.Ref[int], Callable[[int], int]], fx.Effect[Any]]
@@ -113,3 +119,53 @@ WAKES: dict[str, Callable[[], None]] = {
 @pytest.mark.parametrize("case", WAKES.values(), ids=WAKES.keys())
 def test_a_wake_from_a_run_that_ends_at_once_reaches_the_waiter(case: Callable[[], None]):
     case()
+
+
+def test_a_borrower_that_takes_an_item_wakes_the_one_asleep_behind_it():
+    owner = fx.run_blocking(scope.make())
+    pool = fx.run_blocking(fx.Pool.make(fx.succeed(1), size=2).pipe(scope.provide(owner)))
+
+    def pending() -> int:
+        return fx.run_blocking(pool.stats()).pending
+
+    def in_thread(eff: fx.Effect[Any, Any]) -> threading.Thread:
+        thread = threading.Thread(target=fx.run_blocking_exit, args=(eff,), daemon=True)
+        thread.start()
+        return thread
+
+    both_out, give_back = threading.Event(), fx.Deferred[None]()
+    # The yield runs the wakes the releases left queued before the holder's run ends, so
+    # none of them is still to come once the newcomer parks.
+    holder = in_thread(
+        fx.scoped(
+            fx.all(pool.get(), pool.get())
+            .and_then(fx.sync(both_out.set))
+            .and_then(give_back.wait())
+        ).and_then(fx.yield_now())
+    )
+    assert both_out.wait(5), "the holder never got both items"
+
+    # The first borrower parks, then its run's thread blocks: once woken, it cannot retry.
+    run_busy, run_free = threading.Event(), threading.Event()
+    first_got, first_keeps = threading.Event(), fx.Deferred[None]()
+    first = fx.scoped(pool.get().and_then(fx.sync(first_got.set)).and_then(first_keeps.wait()))
+    parked = fx.yield_now().and_then(pool.stats()).repeat(until=lambda s: s.pending == 1)
+    busy = parked.and_then(fx.sync(run_busy.set)).and_then(fx.sync(lambda: run_free.wait(5)))
+    first_run = in_thread(first.fork().flat_map(lambda f: busy.and_then(f.join())))
+    assert run_busy.wait(5), "the first borrower never parked"
+
+    fx.run_blocking(give_back.succeed(None))  # both items come back; the first is woken
+    holder.join(5)
+    newcomer_got = threading.Event()
+    newcomer = in_thread(fx.scoped(pool.get().and_then(fx.sync(newcomer_got.set))))
+    wait_until(lambda: pending() == 1, what="the newcomer to park")
+
+    run_free.set()  # the first borrower retries and takes one item
+    try:
+        assert first_got.wait(5), "the woken borrower never took an item"
+        assert newcomer_got.wait(5), "the newcomer slept next to a free item"
+    finally:
+        fx.run_blocking(first_keeps.succeed(None))
+        first_run.join(5)
+        fx.run_blocking(owner.close(fx.Success(None)))
+        newcomer.join(5)
