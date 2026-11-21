@@ -18,7 +18,7 @@ import shutil
 import tempfile
 from collections.abc import Callable, Generator
 from dataclasses import dataclass
-from typing import Any, TypedDict
+from typing import Any, Never, TypedDict
 
 from oracle import _clickhouse, _mssql, _mysql, _postgres, _redis
 from oracle._d1_fake import FakeD1
@@ -28,6 +28,7 @@ from layer_cases._case import Case
 from pyfect import config, config_provider, file_system, path, redacted
 from pyfect import schema as S
 from pyfect import socket as fx_socket
+from pyfect.ai import tool_ledger
 from pyfect.context import Tag
 from pyfect.crypto import aead, digest, secure_random
 from pyfect.eventlog import event as Ev
@@ -533,6 +534,18 @@ def _redis_and_prefix(prefix: str) -> Callable[[], AnyLayer]:
     return lambda: fx.layer.merge(_redis_client(), _provider(PREFIX=prefix))
 
 
+def _ledger_use() -> fx.Effect[None, Never, tool_ledger.ToolLedger]:
+    """A fresh ledger: the first ``begin`` of a call claims it."""
+    begin = tool_ledger.ToolLedger().flat_map(lambda ledger: ledger.begin("c1", "Pay"))
+    return begin.flat_map(
+        lambda begun: (
+            fx.void
+            if isinstance(begun, tool_ledger.Claimed)
+            else fx.die(AssertionError(f"not a fresh ledger: {begun}"))
+        )
+    ).or_die()
+
+
 _PREFIX = {"prefix": config.string("PREFIX")}
 _PLATFORM = fx.layer.merge(file_system.layer, path.layer)
 
@@ -550,6 +563,12 @@ _PERSISTENCE: dict[str, Case] = {
     ),
     "pyfect.persistence.key_value_store.layer_sql": Case(
         layer=kvs.layer_sql, needs=_sqlite, use=_kv_use(fresh=True)
+    ),
+    "pyfect.ai.tool_ledger.layer_memory": Case(
+        layer=lambda: tool_ledger.layer_memory, use=_ledger_use
+    ),
+    "pyfect.ai.tool_ledger.layer_sql": Case(
+        layer=tool_ledger.layer_sql, needs=_sqlite, use=_ledger_use
     ),
     "pyfect.persistence.persistence.layer_backing_memory": Case(
         layer=lambda: persistence.layer_backing_memory, use=_backing_use(fresh=True)

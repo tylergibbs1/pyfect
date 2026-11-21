@@ -36,6 +36,7 @@ import pyfect._fiber as fiber_module
 from pyfect import pubsub, stream
 from pyfect import scope as fx_scope
 from pyfect._wake_tracking import WakeTracker
+from pyfect.ai import tool_ledger
 from pyfect.duration import Duration
 from pyfect.encoding import tar
 from pyfect.encoding import zip as encoding_zip
@@ -268,6 +269,24 @@ def _ref_case() -> _Case:
         return ref.get().map(lambda v: None if v == len(seen) else f"value {v}, saw {seen}")
 
     return _Case(lambda: fx.Ref.make(0), op, check)
+
+
+def _tool_ledger_case() -> _Case:
+    """``ToolLedger.begin`` claims a tool call by recording its intent: the claim reaches
+    its continuation, or no intent is recorded (a lost claim would report a call that never
+    ran as one whose outcome is unknown)."""
+
+    def op(ledger: tool_ledger.ToolLedgerService, seen: list[Any]) -> fx.Effect[Any, Any]:
+        return ledger.begin("c1", "Pay").map(seen.append)
+
+    def check(ledger: tool_ledger.ToolLedgerService, seen: list[Any]) -> fx.Effect[str | None]:
+        def verdict(entry: object) -> str | None:
+            claimed = seen == [tool_ledger.Claimed()] and entry == tool_ledger.Pending("Pay")
+            return None if claimed or (seen == [] and entry is None) else f"saw {seen}, {entry}"
+
+        return ledger.lookup("c1").map(verdict).or_die()
+
+    return _Case(lambda: fx.sync(tool_ledger.memory), op, check)
 
 
 def _synchronized_ref_case() -> _Case:
@@ -546,6 +565,7 @@ _CASES: dict[str, _Case] = {
     "callback resumed while registering": _callback_case(),
     "ref.update": _ref_case(),
     "synchronized_ref.update": _synchronized_ref_case(),
+    "tool_ledger.begin (memory)": _tool_ledger_case(),
     "semaphore.take (free)": _semaphore_case(parked=False),
     "semaphore.take (woken)": _semaphore_case(parked=True),
     "semaphore.take_scoped (free)": _semaphore_take_scoped_case(parked=False),

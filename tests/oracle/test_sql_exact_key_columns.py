@@ -32,6 +32,7 @@ import _source
 import pytest
 
 import pyfect as fx
+from pyfect.ai import tool_ledger
 from pyfect.cluster import sql_message_storage, sql_runner_storage
 from pyfect.crypto import digest
 from pyfect.eventlog import sql_event_log_server_encrypted, sql_event_log_server_unencrypted
@@ -57,6 +58,10 @@ def _persistence(layer: fx.Layer[BackingPersistence, Any, Any]) -> Build:
 
 def _key_value_store() -> fx.Effect[Any, Any, Any]:
     return key_value_store.KeyValueStore().pipe(fx.provide(key_value_store.layer_sql(table="kv")))
+
+
+def _tool_ledger() -> fx.Effect[Any, Any, Any]:
+    return tool_ledger.ToolLedger().pipe(fx.provide(tool_ledger.layer_sql()))
 
 
 def _queue() -> fx.Effect[Any, Any, Any]:
@@ -96,6 +101,7 @@ SCHEMAS: dict[str, Schema] = {
     ),
     "key value store": Schema("persistence/key_value_store/_sql.py", _key_value_store),
     "persisted queue": Schema("persistence/persisted_queue/_sql_migrations.py", _queue),
+    "ai tool ledger": Schema("ai/tool_ledger.py", _tool_ledger),
     "cluster messages": Schema(
         "cluster/sql_message_storage.py",
         lambda: sql_message_storage.run_migrations(prefix="cluster"),
@@ -130,6 +136,8 @@ NOT_KEYS: dict[tuple[str, str], str] = {
     (r".*_migrations", "name"): "a migration's name, recorded and never looked up",
     ("queue", "acquired_by"): _GENERATED + ": the claiming poll's lock",
     ("queue", "state"): _VOCABULARY,
+    ("effect_ai_tool_ledger", "tool_name"): "the called tool's name, stored and read back, "
+    "never compared",
     ("cluster_messages", "trace_id"): "a span's trace id, stored and read back, never compared",
     ("cluster_messages", "span_id"): "a span's id, stored and read back, never compared",
     (r"enc_events_compaction_\w+", "scope"): _GENERATED + ": the store's scope hash",

@@ -21,6 +21,19 @@
   runs at all. It used to start, be cancelled at its first await, and release anything it had
   opened by then. Every pyfect loop now runs coroutines for fibers in one way
   (`pyfect._loop_bridge`), so each driver gets the same interrupt and release behaviour.
+### Added
+
+- AI: `tool_ledger.guard(toolkit, on_unknown=...)` records each tool call, by its
+  `tool_call_id`, before its handler runs and again with its result, so a replayed call (a
+  retried turn, an approved call run again from the history, a process resumed after a crash)
+  does not run its handler twice. A call with a recorded result gets that result back; a call
+  that started and has no result runs again only for an `Idempotent` or `Readonly` tool, and
+  otherwise gets a `ToolOutcomeUnknown`: a failed tool result the model sees
+  (`on_unknown="tell_model"`), or a typed error (`"fail"`). The guarantee is at most once, or
+  you are told; it is not exactly once. The ledger is the `ToolLedger` service:
+  `layer_memory`, or `layer_sql()` on SQLite, PostgreSQL, MySQL or SQL Server. A toolkit not
+  passed through `guard` behaves as before. Other frameworks run the tool again in this case
+  (PydanticAI #10926: "2 payments").
 
 ## 0.6.16 (2026-11-20)
 

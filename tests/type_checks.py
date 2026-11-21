@@ -67,6 +67,7 @@ from pyfect.ai import model as ai_model
 from pyfect.ai import prompt as ai_prompt
 from pyfect.ai import response as ai_response
 from pyfect.ai import tool as ai_tool
+from pyfect.ai import tool_ledger as ai_tool_ledger
 from pyfect.ai import toolkit as ai_toolkit
 from pyfect.ai.ai_error import AiError
 from pyfect.ai.amazon_bedrock import client as bedrock_client
@@ -7855,6 +7856,41 @@ def check_ai_toolkit() -> None:
             lm.LanguageModel | AiDb | ai_toolkit.Handlers[Literal["Weather", "Clock"]],
         ],
     )
+
+    # A guarded toolkit adds what the ledger can answer: an unknown outcome as a tool result
+    # the model sees, or as an error; a ledger failure; the ToolLedger service.
+    told = lm.generate_text("hi", toolkit=ai_tool_ledger.guard(kit, on_unknown="tell_model"))
+    assert_type(
+        told,
+        fx.Effect[
+            lm.GenerateTextResponse[
+                Literal["Weather", "Clock"],
+                AiResults
+                | ai_response.ToolResultFailure[
+                    Literal["Weather", "Clock"], ai_tool_ledger.ToolOutcomeUnknown
+                ],
+            ],
+            AiError | str | ai_tool_ledger.ToolLedgerError,
+            lm.LanguageModel
+            | AiDb
+            | ai_toolkit.Handlers[Literal["Weather", "Clock"]]
+            | ai_tool_ledger.ToolLedger,
+        ],
+    )
+    failing = lm.generate_text("hi", toolkit=ai_tool_ledger.guard(kit, on_unknown="fail"))
+    assert_type(
+        failing,
+        fx.Effect[
+            lm.GenerateTextResponse[Literal["Weather", "Clock"], AiResults],
+            AiError | str | ai_tool_ledger.ToolLedgerError | ai_tool_ledger.ToolOutcomeUnknown,
+            lm.LanguageModel
+            | AiDb
+            | ai_toolkit.Handlers[Literal["Weather", "Clock"]]
+            | ai_tool_ledger.ToolLedger,
+        ],
+    )
+    ai_tool_ledger.guard(kit)  # pyright: ignore[reportCallIssue]
+    ai_tool_ledger.guard(kit, on_unknown="retry")  # pyright: ignore[reportCallIssue, reportArgumentType]
 
 
 def check_ai_chat(chat: ai_chat.Service, persisted: ai_chat.PersistenceService) -> None:

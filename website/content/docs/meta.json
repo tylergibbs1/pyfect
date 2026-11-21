@@ -41,6 +41,7 @@
     "subinterpreters",
     "workflows",
     "ai",
+    "ai-tool-ledger",
     "mcp",
     "models",
     "graphql",

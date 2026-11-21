@@ -1,0 +1,3 @@
+Pay ok {'receipt': 'r-1'}
+Pay ok {'receipt': 'r-1'}
+Pay failed {'_tag': 'ToolOutcomeUnknown', 'toolCallId': 'pay-1', 'toolName': 'Pay', 'description': 'This tool call was started before and may or may not have run. It was not run again. Do not assume it succeeded or failed.'}

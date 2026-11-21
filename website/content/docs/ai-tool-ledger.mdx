@@ -1,0 +1,91 @@
+---
+title: Tool ledger
+description: "Record each tool call before and after its handler runs, so a replayed call does not pay twice."
+---
+
+A tool call can reach its handler more than once. A turn is retried after a timeout, a
+process dies and its work is resumed, an approved call is run again from the chat's
+history. With a plain [toolkit](/docs/ai#tools-and-toolkits), each replay runs the
+handler again. That is harmless for a weather lookup and a real problem for a payment or
+an email.
+
+`pyfect.ai.tool_ledger` puts a ledger in front of the handlers. `tool_ledger.guard(Tools,
+on_unknown=...)` gives back the toolkit, to pass as `toolkit=` wherever the toolkit
+would go. For each call, keyed by its `tool_call_id`, the ledger writes two records:
+
+1. Before the handler runs, an intent: this call has started.
+2. After the handler's final result, that result, as the model saw it.
+
+When the same call comes again, the ledger answers first:
+
+- A call with a recorded result gets that result back. The handler does not run.
+- A call with an intent and no result was cut short somewhere between the two records, so
+  the ledger cannot know whether the handler did its work. A tool annotated `Idempotent`
+  or `Readonly` (`Pay.annotate(tool.Idempotent, True)`) runs again. Any other tool does
+  not run, and its outcome is unknown.
+
+## At most once, or you are told
+
+The guarantee is: a handler runs at most once per `tool_call_id`, and when the ledger
+cannot tell whether it ran, you are told, with a `ToolOutcomeUnknown`. Idempotent and
+read-only tools are the exception, because they are allowed to run again.
+
+It is not exactly once. A handler interrupted half way may have done part of its work. A
+handler that finished but whose result was never recorded did all of it, and its replay
+still reports the outcome as unknown. Only the tool's own system can say what happened:
+make the call idempotent there (a payment API's idempotency key, say) when you need more
+than this.
+
+## Choosing what an unknown outcome does
+
+`on_unknown` has no default, because the right answer depends on the tool:
+
+- `"tell_model"` answers the call with a failed tool result holding `ToolOutcomeUnknown`:
+  its `toolCallId`, `toolName` and a `description` telling the model not to assume the call
+  succeeded or failed. The call still gets a result, so the history stays valid for every
+  provider, and the model can ask the user or check another way. The response's
+  `tool_results` type includes `ToolResultFailure[N, ToolOutcomeUnknown]`.
+- `"fail"` fails the turn with `ToolOutcomeUnknown` as a typed error, for code or a person
+  to decide. It is in the error type of `generate_text`, so pyright makes you handle it.
+
+Either way the turn's errors also include `ToolLedgerError`: the ledger could not read or
+write a record. A failed intent write stops the call before its handler. A failed result
+write fails the call after its handler ran, and the call stays pending.
+
+The handler's own typed failures are outcomes too: the ledger records them and replays them
+as the tool's `failure_mode` says, without running the handler. A defect or an interrupt
+records nothing, so the call stays pending. Calls whose parameters do not decode never
+reach the handler, and leave no record.
+
+<CodeOutput>
+
+<include meta='title="tool_ledger.py"'>../../snippets/ai/tool_ledger.py</include>
+
+<include lang="text">../../snippets/ai/tool_ledger.out</include>
+
+</CodeOutput>
+
+## Stores
+
+`tool_ledger.layer_memory` keeps the ledger in the process. It protects against retries
+and interrupts, not against the process dying. `tool_ledger.layer_sql(table=...)` keeps it
+in a table of the [`SqlClient`](/docs/sql) (made if missing, `effect_ai_tool_ledger` by
+default), on SQLite, PostgreSQL, MySQL or SQL Server. A fresh process over the same database
+sees every record. Recording the intent is a single insert-if-absent statement, so two
+processes replaying the same call at once never both run it.
+
+The ledger is the `ToolLedger` service, whose `ToolLedgerService` has three operations:
+`begin` (record the intent unless the call has a record, and say which it was), `complete`
+and `lookup`. Any other store can implement them.
+
+## What the ledger does not cover
+
+The ledger knows a call by its `tool_call_id`, and the model makes that id. A model asked
+again makes new calls with new ids, which are new calls to the ledger. So the ledger
+protects a replay of the same call: an approved call run again from the history, a
+response that was recorded before its tools ran, a retried tool resolution. A turn that
+asks the model again is not one of them.
+
+Ids are compared exactly. On SQL Server, whose primary keys ignore trailing spaces, a
+second id that differs from a stored one only in trailing spaces fails with
+`ToolLedgerError` and does not run.

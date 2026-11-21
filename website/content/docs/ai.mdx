@@ -185,6 +185,10 @@ as a failure result. `tool_choice` is `"auto"`, `"none"`, `"required"`, `{"tool"
 `{"one_of": names}`, and a tool with `needs_approval` gives an approval request in place
 of running.
 
+A replayed call (a retried turn, an approved call run again from the history) runs its
+handler again. The [tool ledger](/docs/ai-tool-ledger) records each call before and after
+its handler runs, so a replay gets the recorded result, or is told the outcome is unknown.
+
 `to_model_output=f` on `tool.make` maps a successful result to `prompt.TextPart` and
 `prompt.FilePart` values that the model sees instead of the encoded result, such as a
 screenshot. The response keeps the typed result. Anthropic and OpenAI send the parts as
