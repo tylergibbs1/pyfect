@@ -20,10 +20,16 @@ const page = (body, head = '') => `<!doctype html><html><head><meta charset="utf
 <meta name="viewport" content="width=device-width"><style>body{margin:16px;font:16px/1.5 sans-serif}</style>${head}</head>
 <body>${body}</body></html>`;
 
-/** Words, with a "(" right before a long code span every few words. */
+/**
+ * Words, with a "(" right before a long code span every few words. Chrome inserts the text the
+ * parser has read only once it inserts the next node (an empty span here), so a pause after
+ * the span is the one that paints the "(" without the code after it.
+ */
 const prose = (n) =>
   Array.from({ length: n }, (_, i) =>
-    i % 7 === 3 ? `see <code>run</code> (<code>effect.with_concurrency_and_a_long_name_${i}</code>)` : `streamed words ${i}`,
+    i % 7 === 3
+      ? `see <code>run</code> (<span></span><code>effect.with_concurrency_and_a_long_name_${i}</code>)`
+      : `streamed words ${i}`,
   ).join(' ');
 
 const paragraphs = Array.from({ length: 12 }, () => `<p>${prose(60)}</p>`).join('\n');
@@ -46,7 +52,7 @@ const PAGES = {
   ),
   // a pause always lands inside the link: it grows to the left as its text arrives
   '/growing-link': page(
-    `<div style="display:flex;justify-content:flex-end"><a href="/next">Next <!--${'x'.repeat(6 * 1024)}-->
+    `<div style="display:flex;justify-content:flex-end"><a href="/next">Next <span></span><!--${'x'.repeat(6 * 1024)}-->
      page, with a longer name</a></div>${paragraphs}`,
   ),
   // a pause always lands between the two buttons: the first is complete, and moves left
@@ -117,7 +123,7 @@ test('an offset moves every pause by that many bytes', () => {
 describe('text still arriving', () => {
   const html = PAGES['/prose'];
   // a pause right after each of the first "(" before a code span
-  const afterParens = [...html.matchAll(/\(<code>/g)].slice(0, 12).map((m) => m.index + 1);
+  const afterParens = [...html.matchAll(/\(<span><\/span><code>/g)].slice(0, 12).map((m) => m.index + '(<span></span>'.length);
 
   test('rewraps when a pause lands after a "(", and never counts', async () => {
     let rewrapped = 0;
