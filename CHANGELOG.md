@@ -1,16 +1,6 @@
 # Changelog
 
-## 0.6.17 (2026-11-21)
-
-### Added
-
-- `handlers.handle_all({"getUser": get_user, ...})` registers a group's handlers from a mapping
-  of endpoint identifiers to handlers, as Effect's `handlers.handleAll` does: in order, with the
-  same error for an endpoint handled twice or not in the group, and only the mapping's items
-  (never attributes of its class). `builder.HandleAllEntry(f, uninterruptible=True)` is a value
-  with `handle`'s option. A key can't carry its endpoint's types, so `builder.handler(endpoint, f)`
-  types a value; the layer's requirements are the handlers', less what the group's middleware
-  provides.
+## Unreleased
 
 ### Added
 
@@ -25,6 +15,18 @@
   `layer_memory`, or `layer_sql()` on SQLite, PostgreSQL, MySQL or SQL Server. A toolkit not
   passed through `guard` behaves as before. Other frameworks run the tool again in this case
   (PydanticAI #10926: "2 payments").
+
+## 0.6.17 (2026-11-21)
+
+### Added
+
+- `handlers.handle_all({"getUser": get_user, ...})` registers a group's handlers from a mapping
+  of endpoint identifiers to handlers, as Effect's `handlers.handleAll` does: in order, with the
+  same error for an endpoint handled twice or not in the group, and only the mapping's items
+  (never attributes of its class). `builder.HandleAllEntry(f, uninterruptible=True)` is a value
+  with `handle`'s option. A key can't carry its endpoint's types, so `builder.handler(endpoint, f)`
+  types a value; the layer's requirements are the handlers', less what the group's middleware
+  provides.
 
 ### Fixed
 
