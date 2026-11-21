@@ -11,6 +11,15 @@
   runs at all. It used to start, be cancelled at its first await, and release anything it had
   opened by then. Every pyfect loop now runs coroutines for fibers in one way
   (`pyfect._loop_bridge`), so each driver gets the same interrupt and release behaviour.
+### Added
+
+- `handlers.handle_all({"getUser": get_user, ...})` registers a group's handlers from a mapping
+  of endpoint identifiers to handlers, as Effect's `handlers.handleAll` does: in order, with the
+  same error for an endpoint handled twice or not in the group, and only the mapping's items
+  (never attributes of its class). `builder.HandleAllEntry(f, uninterruptible=True)` is a value
+  with `handle`'s option. A key can't carry its endpoint's types, so `builder.handler(endpoint, f)`
+  types a value; the layer's requirements are the handlers', less what the group's middleware
+  provides.
 
 ## 0.6.16 (2026-11-20)
 

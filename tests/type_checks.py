@@ -6802,6 +6802,42 @@ def check_http_api(
         lambda _r: fx.succeed(1),  # pyright: ignore[reportArgumentType]
     )
 
+    # handle_all maps endpoint identifiers to handlers; its requirements are the
+    # handlers', less what the group's middleware provides.
+    assert_type(
+        handlers.handle_all({"getUser": find, "health": lambda _r: fx.succeed(None)}),
+        Handlers[Never, Never, ApiCurrentUser | ApiDb],
+    )
+    assert_type(
+        handlers.handle_all({"health": lambda _r: fx.succeed(None)}), Handlers[Never, Never, Never]
+    )
+    assert_type(
+        admin_handlers.handle_all({"getUser": find}),
+        Handlers[ApiCurrentUser, api_error.Unauthorized, ApiAuth | ApiDb],
+    )
+    assert_type(
+        handlers.handle(ApiUsers.health)(lambda _r: fx.succeed(None)).handle_all({"getUser": find}),
+        Handlers[Never, Never, ApiCurrentUser | ApiDb],
+    )
+    # A key can't name its endpoint's types; builder.handler gives a value its
+    # endpoint's request, success and errors.
+    assert_type(
+        handlers.handle_all(
+            {
+                "getUser": api_builder.handler(ApiUsers.get_user, find),
+                "createUser": api_builder.HandleAllEntry(
+                    api_builder.handler(
+                        ApiUsers.create_user,
+                        lambda r: fx.succeed(ApiUser(id=1, name=r.payload["name"])),
+                    ),
+                    uninterruptible=True,
+                ),
+            }
+        ),
+        Handlers[Never, Never, ApiCurrentUser | ApiDb],
+    )
+    handlers.handle_all({"health": 1})  # pyright: ignore[reportCallIssue, reportArgumentType]
+
     api = HttpApi.make("api").add(ApiUsers, ApiAdmin)
     assert_type(api, HttpApi[ApiUsers | ApiAdmin])
     assert_type(
@@ -6818,6 +6854,14 @@ def check_http_api(
             ),
         ),
         fx.Layer[ApiUsers, Never, ApiCurrentUser | ApiDb | ApiAuth],
+    )
+    assert_type(
+        api_builder.group(
+            api,
+            ApiUsers,
+            lambda h: h.handle_all({"getUser": find, "health": lambda _r: fx.succeed(None)}),
+        ),
+        fx.Layer[ApiUsers, Never, ApiCurrentUser | ApiDb],
     )
     assert_type(api_builder.layer(api), fx.Layer[Never, Never, HttpRouter | ApiUsers | ApiAdmin])
     assert_type(

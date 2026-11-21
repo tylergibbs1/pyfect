@@ -43,6 +43,7 @@ from pyfect.http_api import _path
 from pyfect.http_api import schema as api_schema
 from pyfect.http_api._handlers import (
     GroupHandlers,
+    HandleAllEntry,
     HandlerEntry,
     Handlers,
     HttpApiRequest,
@@ -513,6 +514,7 @@ def _apply_middleware(
 
 
 __all__ = [
+    "HandleAllEntry",
     "authorization_credential",
     "endpoint",
     "group",

@@ -2,9 +2,10 @@
 titles not ported are listed in the module report). Each test's docstring
 is the Effect test title, prefixed by its ``describe`` block.
 
-``handleAll`` is not ported: a mapping from identifiers to handlers cannot
-be checked against each endpoint's types, and ``handle(endpoint)(fn)`` is
-the typed spelling, so the ``handleAll`` halves of these tests are left out.
+``handleAll`` is ``handle_all``, a mapping from endpoint identifiers to
+handlers. Effect's "inherited properties" are a JavaScript object's
+prototype; a Python mapping's own entries are its items, so the attributes
+of its class (a ``dict`` subclass's methods) stand for them.
 """
 
 # Groups made with ``HttpApiGroup.make`` type their endpoints as ``Any``, so
@@ -147,22 +148,88 @@ def test_rejects_unknown_endpoint_identifiers(identifier: str) -> None:
     assert str(defect) == f'HttpApiEndpoint "{identifier}" not found in HttpApiGroup "users"'
 
 
+def test_registers_handle_all_handlers_at_runtime() -> None:
+    """HttpApiBuilder / registers handleAll handlers at runtime"""
+    user = struct({"id": S.String, "name": S.String})
+    group = HttpApiGroup.make("users").add(
+        ep.get("getUser", "/users/:id", params=struct({"id": S.String}), success=user),
+        ep.post("createUser", "/users", payload=struct({"name": S.String}), success=user),
+    )
+    api = HttpApi.make("Api").add(group)
+    live = builder.group(
+        api,
+        group,
+        lambda h: h.handle_all(
+            {
+                "getUser": lambda ctx: effect.succeed({"id": ctx.params["id"], "name": "Ada"}),
+                "createUser": builder.HandleAllEntry(
+                    lambda ctx: effect.succeed({"id": "created", "name": ctx.payload["name"]}),
+                    uninterruptible=True,
+                ),
+            }
+        ),
+    )
+
+    def program() -> Any:
+        api_client = yield from api_test.groups(api, [group])
+        users = get_group(api_client, group)
+        got = yield from users.method("getUser")(params={"id": "user-1"})
+        created = yield from users.method("createUser")(payload={"name": "Grace"})
+        return got, created
+
+    got, created = fx.run_blocking(
+        scoped(effect.gen(program)).pipe(fx.provide(live)).pipe(fx.provide(server.layer_services))
+    )
+    assert got == {"id": "user-1", "name": "Ada"}
+    assert created == {"id": "created", "name": "Grace"}
+
+
 def test_rejects_duplicate_handle_and_handle_all_registrations() -> None:
     """HttpApiBuilder / rejects duplicate handle and handleAll registrations"""
     api = _users_api()
     users = api.groups["users"]
     get_user = users.endpoints["getUser"]
-    live = builder.group(
+    handle_live = builder.group(
         api,
         users,
         lambda h: h.handle(get_user)(lambda _: effect.succeed("first")).handle(get_user)(
             lambda _: effect.succeed("second")
         ),
     )
-    defect = _build_defect(live)
-    assert str(defect) == (
-        'Handler for HttpApiEndpoint "getUser" is already registered in HttpApiGroup "users"'
+    handle_all_live = builder.group(
+        api,
+        users,
+        lambda h: h.handle_all({"getUser": lambda _: effect.succeed("first")}).handle_all(
+            {"getUser": lambda _: effect.succeed("second")}
+        ),
     )
+    for live in (handle_live, handle_all_live):
+        defect = _build_defect(live)
+        assert str(defect) == (
+            'Handler for HttpApiEndpoint "getUser" is already registered in HttpApiGroup "users"'
+        )
+
+
+def test_ignores_inherited_handle_all_properties() -> None:
+    """HttpApiBuilder / ignores inherited handleAll properties"""
+    api = _users_api()
+    users = api.groups["users"]
+
+    class Implementations(dict[str, Any]):
+        def inherited(self, _: Any) -> Any:
+            return effect.succeed("inherited")
+
+    implementations = Implementations(getUser=lambda _: effect.succeed("own"))
+    live = builder.group(api, users, lambda h: h.handle_all(implementations))
+
+    def program() -> Any:
+        api_client = yield from api_test.groups(api, [users])
+        return (yield from get_group(api_client, users).method("getUser")())
+
+    result = fx.run_blocking(
+        scoped(effect.gen(program)).pipe(fx.provide(live)).pipe(fx.provide(server.layer_services))
+    )
+    assert result == "own"
 
 
 def test_executes_effectful_handler_builders() -> None:

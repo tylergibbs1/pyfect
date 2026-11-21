@@ -2,6 +2,7 @@
 ``Handlers``)::
 
     handlers.handle(Users.get_user)(get_user).handle(Users.list_users)(list_users)
+    handlers.handle_all({"getUser": get_user, "listUsers": list_users})
 
 ``handle(endpoint)`` gives the slot of one endpoint; calling it with the
 handler gives the handlers with that one added. The two steps let the
@@ -15,7 +16,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Generic, Never, TypeVar, overload
+from typing import TYPE_CHECKING, Any, Generic, Never, TypeVar, cast, overload
 
 from pyfect._core import Effect
 from pyfect.http.router import Provided
@@ -85,6 +86,21 @@ class HandlerEntry:
 
 
 @dataclass(frozen=True, slots=True)
+class HandleAllEntry(Generic[R_co]):
+    """A ``handle_all`` value with options (Effect's ``{ handler, options }``)."""
+
+    handler: Callable[[HttpApiRequest[Any, Any, Any, Any]], Effect[Any, Any, R_co]]
+    uninterruptible: bool = False
+
+
+type HandleAllValue[R] = (
+    Callable[[HttpApiRequest[Any, Any, Any, Any]], Effect[Any, Any, R]] | HandleAllEntry[R]
+)
+"""A handler or a ``HandleAllEntry``. A key's type can't name its endpoint, so
+a value is typed by its endpoint only through ``builder.handler(endpoint, f)``."""
+
+
+@dataclass(frozen=True, slots=True)
 class Handlers(Generic[GP, GE, R_co]):
     """The handlers of ``group`` so far, needing ``R``. ``GP`` and ``GE``
     are what the group's middleware provides and fails with."""
@@ -136,8 +152,15 @@ class Handlers(Generic[GP, GE, R_co]):
         request's body itself."""
         return Bound[Any, Any, Any, Any, Any, Any, Any](self, endpoint, True, uninterruptible)
 
-    def _register(self, entry: HandlerEntry) -> Handlers[Any, Any, Any]:
-        identifier = entry.endpoint.identifier
+    @property
+    def handle_all(self) -> HandleAll[GP, GE, R_co]:
+        """Registers a mapping of endpoint identifiers to handlers (see
+        ``HandleAll``)."""
+        return HandleAll(self)
+
+    def _register(
+        self, identifier: str, handler: Handler, is_raw: bool, uninterruptible: bool
+    ) -> Handlers[Any, Any, Any]:
         group = self.group
         if identifier not in group.endpoints:
             raise ValueError(
@@ -148,10 +171,8 @@ class Handlers(Generic[GP, GE, R_co]):
                 f'Handler for HttpApiEndpoint "{identifier}" is already registered in '
                 f'HttpApiGroup "{group.identifier}"'
             )
-        canonical = HandlerEntry(
-            group.endpoints[identifier], entry.handler, entry.is_raw, entry.uninterruptible
-        )
-        return Handlers(group, {**self.entries, identifier: canonical})
+        entry = HandlerEntry(group.endpoints[identifier], handler, is_raw, uninterruptible)
+        return Handlers(group, {**self.entries, identifier: entry})
 
 
 @dataclass(frozen=True, slots=True)
@@ -186,11 +207,61 @@ class Bound(Generic[X_co, S, E, MP_co, GP, GE, R_co]):
     ) -> Handlers[GP, GE, R_co | R1]: ...
     def __call__(self, handler: Any, /) -> Any:
         return self.handlers._register(  # pyright: ignore[reportPrivateUsage]
-            HandlerEntry(self.endpoint, handler, self.is_raw, self.uninterruptible)
+            self.endpoint.identifier, handler, self.is_raw, self.uninterruptible
         )
 
 
+@dataclass(frozen=True, slots=True)
+class HandleAll(Generic[GP, GE, R_co]):
+    """``handlers.handle_all``: called with a mapping of endpoint identifiers
+    to handlers, it registers each as ``handle`` would, in order (Effect's
+    ``handleAll``). Only the mapping's items count, never attributes of its
+    class. A class of its own, as ``Bound``, so that ``GP`` is fixed before
+    the handlers' requirements are solved."""
+
+    handlers: Handlers[Any, Any, Any]
+
+    @overload
+    def __call__(
+        self, handlers: Mapping[str, HandleAllValue[GP | Provided]], /
+    ) -> Handlers[GP, GE, R_co]: ...
+    @overload
+    def __call__[R1](
+        self, handlers: Mapping[str, HandleAllValue[R1 | GP | Provided]], /
+    ) -> Handlers[GP, GE, R_co | R1]: ...
+    def __call__(self, handlers: Mapping[str, HandleAllValue[Any]], /) -> Any:
+        result = self.handlers
+        for identifier, value in handlers.items():
+            entry = (
+                cast("HandleAllEntry[Any]", value)
+                if isinstance(value, HandleAllEntry)
+                else HandleAllEntry(value)
+            )
+            result = result._register(  # pyright: ignore[reportPrivateUsage]
+                identifier, entry.handler, False, entry.uninterruptible
+            )
+        return result
+
+
 G_co = TypeVar("G_co", covariant=True)
+
+
+class _GroupHandleAll:
+    """``GroupHandlers.handle_all``, typed by the group's middleware."""
+
+    @overload
+    def __get__(
+        self, handlers: GroupHandlers[HttpApiGroup[Never, Never]], owner: object, /
+    ) -> HandleAll[Never, Never, Never]: ...
+    @overload
+    def __get__[GP1, GE1, GR1, GT1](
+        self,
+        handlers: GroupHandlers[HttpApiGroup[HttpApiMiddleware[GP1, GE1, GR1], GT1]],
+        owner: object,
+        /,
+    ) -> HandleAll[GP1, GE1, GT1 | GR1]: ...
+    def __get__(self, handlers: GroupHandlers[Any], owner: object, /) -> Any:
+        return HandleAll[Any, Any, Any](Handlers(handlers.group))
 
 
 @dataclass(frozen=True, slots=True)
@@ -239,6 +310,8 @@ class GroupHandlers(Generic[G_co]):
         """The slot of ``endpoint``'s handler (see ``Handlers.handle``)."""
         return Handlers[Any, Any, Any](self.group).handle(endpoint, uninterruptible=uninterruptible)
 
+    handle_all = _GroupHandleAll()
+
     @overload
     def handle_raw[P, Q, B, CB, H, S1, CS, E1](
         self: GroupHandlers[HttpApiGroup[Never, Never]],
@@ -280,4 +353,14 @@ class GroupHandlers(Generic[G_co]):
         )
 
 
-__all__ = ["Bound", "GroupHandlers", "HandlerEntry", "Handlers", "HttpApiRequest", "PayloadErrors"]
+__all__ = [
+    "Bound",
+    "GroupHandlers",
+    "HandleAll",
+    "HandleAllEntry",
+    "HandleAllValue",
+    "HandlerEntry",
+    "Handlers",
+    "HttpApiRequest",
+    "PayloadErrors",
+]

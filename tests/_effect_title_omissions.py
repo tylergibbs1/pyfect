@@ -247,11 +247,6 @@ OMISSIONS: tuple[Omission, ...] = (
     ),
     _some(
         "effect/test/httpapi/HttpApiBuilder.test.ts",
-        "NOT_PORTED `handlers.handleAll`: one handler per endpoint is the only form here",
-        r"handleAll",
-    ),
-    _some(
-        "effect/test/httpapi/HttpApiBuilder.test.ts",
         "a memo of a transformation by source AST, an identity not observable in Python",
         r"reuses response schema",
     ),

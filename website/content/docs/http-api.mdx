@@ -30,6 +30,13 @@ endpoint has no handler. `builder.layer(api)` adds every group's routes to the
 [router](/docs/http-server) and needs each group's layer, which pyright checks, so
 `router.serve` serves the API like any other routes.
 
+`handlers.handle_all({"getUser": get_user, "createUser": create_user})` registers several
+handlers at once, keyed by endpoint identifier (Effect's `handleAll`); a value
+`builder.HandleAllEntry(f, uninterruptible=True)` takes `handle`'s option. A key can't carry its
+endpoint's types, so `builder.handler(Users.get_user, f)` checks a value against its endpoint.
+Register an endpoint with middleware of its own with `handle`: only `handle` adds what that
+middleware needs to the layer's requirements.
+
 `client.make(api)` derives a client: `get_group(api_client, Users).get_user(params={"id": 1})`
 encodes the request, sends it with the `HttpClient` and decodes the response, failing with
 the endpoint's declared errors as values of their own classes. `get_group` is typed as the
