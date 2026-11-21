@@ -125,18 +125,20 @@ function DocsPage({
             </div>
           ) : null}
           <div className="typeset w-full flex-1 pb-16 *:data-[slot=alert]:first:mt-0 sm:pb-0">{children}</div>
+          {/* Each link takes at most half the row, so two long names never overflow it and the
+              right one stays right-aligned while its name streams in. */}
           <div className="hidden h-16 w-full items-center gap-2 px-4 sm:flex sm:px-0">
             {neighbours.previous ? (
-              <Button variant="secondary" size="sm" asChild className="shadow-none">
+              <Button variant="secondary" size="sm" asChild className="max-w-[calc(50%-0.25rem)] shadow-none">
                 <Link href={neighbours.previous.url}>
-                  <ArrowLeft /> {neighbours.previous.name}
+                  <ArrowLeft /> <span className="min-w-0 truncate">{neighbours.previous.name}</span>
                 </Link>
               </Button>
             ) : null}
             {neighbours.next ? (
-              <Button variant="secondary" size="sm" className="ml-auto shadow-none" asChild>
+              <Button variant="secondary" size="sm" className="ml-auto max-w-[calc(50%-0.25rem)] shadow-none" asChild>
                 <Link href={neighbours.next.url}>
-                  {neighbours.next.name} <ArrowRight />
+                  <span className="min-w-0 truncate">{neighbours.next.name}</span> <ArrowRight />
                 </Link>
               </Button>
             ) : null}
