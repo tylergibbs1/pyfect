@@ -51,8 +51,8 @@ from pyfect.ai._stream_resolution import (
     incomplete_reason,
     interrupted_result,
     resolvable_tool,
+    resolve_calls,
     resolve_stream,
-    result_part,
 )
 from pyfect.ai._structured_output_json import resolve_root
 from pyfect.ai.ai_error import (
@@ -74,7 +74,6 @@ from pyfect.option import Option, Some
 from pyfect.schema import SchemaError
 from pyfect.stream import Stream
 from pyfect.stream import _constructors as StreamC
-from pyfect.stream._many import merge_all
 from pyfect.tracer import Span
 
 if TYPE_CHECKING:
@@ -271,55 +270,6 @@ def _tool_calls(parts: Sequence[EncodedPart]) -> list[EncodedPart]:
         for part in parts
         if part.get("type") == "tool-call" and part.get("providerExecuted") is not True
     ]
-
-
-def _resolve(
-    kit: K.WithHandler[Any, Any, Any, Any],
-    calls: Sequence[EncodedPart],
-    messages: Sequence[P.Message],
-    concurrency: Concurrency,
-) -> Stream[R.AnyToolResultPart | R.ToolApprovalRequestPart, Any, Any]:
-    """Each call's results: ``execution-denied`` when the user denied it,
-    the handler's when approved or not needing approval, else an approval
-    request."""
-    approvals = A.collect(messages)
-    approved = {approval.tool_call_id for approval in approvals.approved}
-    denied = {approval.tool_call_id: approval for approval in approvals.denied}
-
-    def handle(id: str, name: str, call: EncodedPart) -> Stream[R.AnyToolResultPart, Any, Any]:
-        handled = kit.handle(name, call.get("params"), id)
-        return StreamC.unwrap(handled).map(lambda result: result_part(id, name, result))
-
-    def run(call: EncodedPart) -> Stream[Any, Any, Any]:
-        id, name = cast("str", call["id"]), cast("str", call["name"])
-        tool = resolvable_tool(kit, name)
-        if tool is None:
-            return StreamC.empty
-        if id in denied:
-            return StreamC.make(A.denied_result(id, name, denied[id].reason))
-        if id in approved:
-            return handle(id, name, call)
-        return StreamC.unwrap(
-            A.needs_approval(tool, call, messages).flat_map(
-                lambda needed: (
-                    _approval_request(id).map(StreamC.make)
-                    if needed
-                    else fx.succeed(handle(id, name, call))
-                )
-            )
-        )
-
-    return merge_all([run(call) for call in calls], concurrency=concurrency)
-
-
-def _approval_request(tool_call_id: str) -> Effect[R.ToolApprovalRequestPart, Never, IdGenerator]:
-    return IdGenerator().flat_map(
-        lambda generator: generator.generate_id().map(
-            lambda approval_id: R.ToolApprovalRequestPart(
-                approval_id=approval_id, tool_call_id=tool_call_id
-            )
-        )
-    )
 
 
 def _validate_provider_executed(
@@ -540,7 +490,17 @@ class Service:
         disable_tool_call_resolution: bool,
         *,
         sent: list[ProviderOptions],
+        received: list[Any] | None,
     ) -> Effect[list[Any], Any, Any]:
+        """The response's parts and its tool calls' results. ``received`` (an
+        interrupt-safe chat's turn) gets each part once it is decided: the pre-resolved
+        results, the decoded response, then each final tool result as it finishes."""
+
+        def receive[A](parts: Sequence[A]) -> Sequence[A]:
+            if received is not None:
+                received.extend(parts)
+            return parts
+
         def with_tracker(found: Any) -> Effect[list[Any], Any, Any]:
             tracker = cast("Tracker | None", found.value if found is not None else None)
             if toolkit is None:
@@ -561,6 +521,7 @@ class Service:
                 return (
                     self._request(request)
                     .flat_map(decode)
+                    .map(lambda content: list(receive(content)))
                     .tap(
                         lambda content: fx.sync(
                             lambda: _mark_response(tracker, request.prompt, content)
@@ -568,7 +529,7 @@ class Service:
                     )
                 )
             return A.pre_resolve(approvals, kit, concurrency).flat_map(
-                lambda pre: run_tools(kit, tracker, approvals, pre)
+                lambda pre: run_tools(kit, tracker, approvals, list(receive(pre)))
             )
 
         def run_tools(
@@ -586,6 +547,7 @@ class Service:
 
             def resolve(raw: Sequence[EncodedPart]) -> Effect[list[Any], Any, Any]:
                 def results(content: list[Any]) -> Effect[list[Any], Any, Any]:
+                    receive(content)
                     if disable_tool_call_resolution:
                         return fx.succeed([*pre, *content])
                     calls = [
@@ -602,10 +564,15 @@ class Service:
                             for c in calls
                         ]
                         return fx.succeed([*pre, *content, *interrupted])
-                    resolved = _resolve(kit, calls, request.prompt.content, concurrency).filter(
-                        lambda result: (
-                            isinstance(result, R.ToolApprovalRequestPart) or not result.preliminary
+                    resolved = (
+                        resolve_calls(kit, calls, request.prompt.content, concurrency)
+                        .filter(
+                            lambda result: (
+                                isinstance(result, R.ToolApprovalRequestPart)
+                                or not result.preliminary
+                            )
                         )
+                        .map(lambda result: receive((result,))[0])
                     )
                     return resolved.run_collect().map(lambda rs: [*pre, *content, *rs])
 
@@ -646,6 +613,28 @@ class Service:
         tool_call_validation: ToolCallValidation = "strict",
     ) -> Effect[GenerateTextResponse[Any, Any], Any, Any]:
         """See the module's ``generate_text``."""
+        return self._generate_text(
+            prompt,
+            None,
+            toolkit=toolkit,
+            tool_choice=tool_choice,
+            concurrency=concurrency,
+            disable_tool_call_resolution=disable_tool_call_resolution,
+            tool_call_validation=tool_call_validation,
+        )
+
+    def _generate_text(
+        self,
+        prompt: P.RawInput,
+        received: list[Any] | None,
+        *,
+        toolkit: Any,
+        tool_choice: ToolChoice,
+        concurrency: Concurrency,
+        disable_tool_call_resolution: bool,
+        tool_call_validation: ToolCallValidation,
+    ) -> Effect[GenerateTextResponse[Any, Any], Any, Any]:
+        """``generate_text``, giving ``received`` each part once it is decided."""
 
         def body(span: Span) -> Effect[GenerateTextResponse[Any, Any], Any, Any]:
             options = ProviderOptions(
@@ -657,7 +646,13 @@ class Service:
             )
             sent = [options]
             content = self._content(
-                options, toolkit, tool_choice, concurrency, disable_tool_call_resolution, sent=sent
+                options,
+                toolkit,
+                tool_choice,
+                concurrency,
+                disable_tool_call_resolution,
+                sent=sent,
+                received=received,
             )
             return self._transformed(content, sent).map(GenerateTextResponse[Any, Any])
 
@@ -677,6 +672,34 @@ class Service:
         allow_empty: bool = False,
     ) -> Effect[GenerateObjectResponse[Any, Any, Any], Any, Any]:
         """See the module's ``generate_object``."""
+        return self._generate_object(
+            prompt,
+            None,
+            schema=schema,
+            object_name=object_name,
+            toolkit=toolkit,
+            tool_choice=tool_choice,
+            concurrency=concurrency,
+            disable_tool_call_resolution=disable_tool_call_resolution,
+            tool_call_validation=tool_call_validation,
+            allow_empty=allow_empty,
+        )
+
+    def _generate_object(
+        self,
+        prompt: P.RawInput,
+        received: list[Any] | None,
+        *,
+        schema: S.Top,
+        object_name: str | None,
+        toolkit: Any,
+        tool_choice: ToolChoice,
+        concurrency: Concurrency,
+        disable_tool_call_resolution: bool,
+        tool_call_validation: ToolCallValidation,
+        allow_empty: bool,
+    ) -> Effect[GenerateObjectResponse[Any, Any, Any], Any, Any]:
+        """``generate_object``, giving ``received`` each part once it is decided."""
         name = get_object_name(object_name, schema)
 
         def body(span: Span) -> Effect[GenerateObjectResponse[Any, Any, Any], Any, Any]:
@@ -690,7 +713,13 @@ class Service:
             )
             sent = [options]
             content = self._content(
-                options, toolkit, tool_choice, concurrency, disable_tool_call_resolution, sent=sent
+                options,
+                toolkit,
+                tool_choice,
+                concurrency,
+                disable_tool_call_resolution,
+                sent=sent,
+                received=received,
             )
             return self._transformed(content, sent).flat_map(
                 lambda parts: self._structured(parts, schema, allow_empty=allow_empty).map(

@@ -1,0 +1,63 @@
+---
+title: Interrupt-safe chats
+description: "Keep a chat's history valid when a turn is cancelled or fails, and finish the turn later with resume."
+---
+
+A [chat](/docs/ai#conversations) records a turn when the call succeeds, as Effect's `Chat`
+does. When a turn is cancelled or fails half way, nothing is recorded, so the results of
+tools that already ran are lost. A streamed turn keeps the parts it streamed, which can
+leave a tool call with no result, and providers reject a history like that on every later
+request.
+
+`chat.interrupt_safe(session)` gives back the same chat (same history, same lock, same
+saves) with turns that are recorded however they end. A turn that is interrupted or fails
+adds:
+
+- the user's prompt;
+- the model's output that arrived: its text, and the tool calls it made;
+- each of those tool calls with its result, if the handler finished, or with an
+  `execution-interrupted` result, if it did not.
+
+So every tool call has exactly one result, and the next request is valid for Anthropic,
+OpenAI's Responses API and Chat Completions alike. A turn that finishes is recorded
+exactly as a plain chat records it. Calls the application answers itself are left as a
+finished turn leaves them: calls to `execution="client"` tools, calls waiting for
+approval, and calls made with `disable_tool_call_resolution=True`. A provider-executed
+call that has no result is dropped, because only the provider can answer it.
+
+`generate_text`, `generate_object` and `stream_text` all work this way. The partial turn is
+written in the call's finalizer, before a persisted chat saves, so `chat.Persistence`,
+`export_json` and `chat.from_json` keep it like any other turn: wrap a chat from
+`get_or_create` or `from_json` in `interrupt_safe` to get the same behaviour back.
+
+## Finishing a turn with resume
+
+`session.resume(toolkit=...)` runs again the calls of the last turn that ended with an
+`execution-interrupted` result, and puts their results in place. Results that finished
+are kept and not run again. It returns the new results, and does nothing when there is
+nothing to finish. A call that needs approval gets its approval request instead. If
+`resume` is cut short too, the results that finished are kept again.
+
+A handler can finish just before the turn is cut short, but too late for the chat to see
+its result. Running that call again would do its work twice. Pass a toolkit behind
+[`tool_ledger.guard`](/docs/ai-tool-ledger) to both the turn and `resume`: the ledger
+answers a call that ran with the result it recorded, and a call that started but has no
+recorded result runs again only if its tool is `Idempotent` or `Readonly`. Any other tool
+gets a `ToolOutcomeUnknown` instead. Together, a resumed turn runs no tool twice and loses
+no result that finished.
+
+<CodeOutput>
+
+<include meta='title="interrupt_safe.py"'>../../snippets/ai/interrupt_safe.py</include>
+
+<include lang="text">../../snippets/ai/interrupt_safe.out</include>
+
+</CodeOutput>
+
+## When the turn fails before the model answers
+
+If the request fails or is cancelled before the model answers, the turn adds only the
+user's prompt, as a chat app keeps a message whose reply never came. Retrying that call
+with `.retry(...)` sends the prompt again, so it then appears twice. To ask again, call
+`session.generate_text([], ...)` with no new message: the prompt is already in the
+history.

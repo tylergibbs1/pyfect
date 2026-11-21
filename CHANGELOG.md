@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- AI: `chat.interrupt_safe(session)` is the same chat with turns that are recorded however
+  they end. A `generate_text`, `generate_object` or `stream_text` turn that is interrupted
+  or fails adds the prompt, the model's output that arrived, and each tool call it made with
+  its result, or with an `execution-interrupted` result when its handler did not finish, so
+  the history stays valid for every provider and finished results are kept. A finished turn
+  is recorded as Effect's `Chat` records it, and a plain chat is unchanged. `resume(toolkit=...)`
+  runs the unfinished calls again and puts their results in place; with a toolkit behind
+  `tool_ledger.guard`, a resumed turn runs no tool twice. Other frameworks leave a tool call
+  without a result after a cancel (LangGraph #5672, #6726; OpenAI Agents SDK #5642, #1061).
+
 ## 0.6.18 (2026-11-21)
 
 ### Added

@@ -16,17 +16,19 @@ each new message with a message id under ``PERSISTENCE_KEY``.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from typing import Any, Literal, LiteralString, Never, cast, overload
 
 import pyfect as fx
 from pyfect import schema as S
 from pyfect._concurrency import Concurrency
 from pyfect._core import Effect
+from pyfect.ai import _partial_turns as _partial
 from pyfect.ai import language_model as lm
 from pyfect.ai import prompt as P
 from pyfect.ai import response as R
 from pyfect.ai import toolkit as K
+from pyfect.ai._stream_resolution import resolvable_tool, resolve_calls
 from pyfect.ai.ai_error import AiError, InvalidOutputError
 from pyfect.ai.id_generator import IdGenerator, default_id_generator
 from pyfect.ai.id_generator import Service as IdService
@@ -35,7 +37,7 @@ from pyfect.context import Tag
 from pyfect.duration import Duration, from_input_unsafe
 from pyfect.duration import Input as DurationInput
 from pyfect.effect import sync
-from pyfect.exit import Exit
+from pyfect.exit import Exit, Success
 from pyfect.layer import Layer
 from pyfect.layer import effect as layer_effect
 from pyfect.option import Option
@@ -92,17 +94,15 @@ class Service:
         return encoded.map_error(_invalid_output("exportJson")).with_span("Chat.exportJson")
 
     def _call[A: lm.GenerateTextResponse[Any, Any], E, RR](
-        self, prompt: P.RawInput, call: Callable[[P.Prompt], Effect[A, E, RR]]
+        self, prompt: P.RawInput, tools: _TurnTools, call: _Call[A, E, RR]
     ) -> Effect[A, E, RR]:
         """``call`` with the history plus ``prompt``; the history then gains
         the response's parts."""
 
         def run(history: P.Prompt) -> Effect[A, E, RR]:
             full = history.concat(prompt)
-            return call(full).flat_map(
-                lambda response: self.history.set(
-                    full.concat(P.from_response_parts(cast("list[R.AnyPart]", response.content)))
-                ).as_(response)
+            return call(full, tools.toolkit, None).flat_map(
+                lambda response: self.history.set(full.concat(_reply(response))).as_(response)
             )
 
         locked = self._lock.with_permits(self.history.get().flat_map(run))
@@ -171,10 +171,12 @@ class Service:
         """``language_model.generate_text`` on the history plus ``prompt``."""
         return self._call(
             prompt,
-            lambda full: _model().flat_map(
-                lambda model: model.generate_text(
+            _TurnTools(toolkit, not disable_tool_call_resolution),
+            lambda full, kit, received: _model().flat_map(
+                lambda model: model._generate_text(  # pyright: ignore[reportPrivateUsage]
                     full,
-                    toolkit=toolkit,
+                    received,
+                    toolkit=kit,
                     tool_choice=tool_choice,
                     concurrency=concurrency,
                     disable_tool_call_resolution=disable_tool_call_resolution,
@@ -315,12 +317,14 @@ class Service:
         """``language_model.generate_object`` on the history plus ``prompt``."""
         call = self._call(
             prompt,
-            lambda full: _model().flat_map(
-                lambda model: model.generate_object(
+            _TurnTools(toolkit, not disable_tool_call_resolution),
+            lambda full, kit, received: _model().flat_map(
+                lambda model: model._generate_object(  # pyright: ignore[reportPrivateUsage]
                     full,
+                    received,
                     schema=schema,
                     object_name=object_name,
-                    toolkit=toolkit,
+                    toolkit=kit,
                     tool_choice=tool_choice,
                     concurrency=concurrency,
                     disable_tool_call_resolution=disable_tool_call_resolution,
@@ -403,20 +407,44 @@ class Service:
         round's parts, each round ending with its own ``finish`` part, and the history
         records each round in order."""
 
-        def start() -> Stream[Any, Any, Any]:
-            loop = _StepLoop(
-                lambda prompt: _model().map(
-                    lambda model: model.stream_text(
-                        prompt,
-                        toolkit=toolkit,
-                        tool_choice=tool_choice,
-                        concurrency=concurrency,
-                        disable_tool_call_resolution=disable_tool_call_resolution,
-                        tool_call_validation=tool_call_validation,
-                    )
-                ),
-                max_steps,
+        def stream_round(prompt: P.Prompt, kit: Any) -> Effect[Stream[Any, Any, Any], Never, Any]:
+            return _model().map(
+                lambda model: model.stream_text(
+                    prompt,
+                    toolkit=kit,
+                    tool_choice=tool_choice,
+                    concurrency=concurrency,
+                    disable_tool_call_resolution=disable_tool_call_resolution,
+                    tool_call_validation=tool_call_validation,
+                )
             )
+
+        tools = _TurnTools(toolkit, not disable_tool_call_resolution)
+        stream = self._stream_turn(prompt, tools, stream_round, max_steps)
+        stream = stream.with_span("Chat.streamText")
+        after = self._after_call
+        if after is None:
+            return stream
+        return StreamC.unwrap(self.history.get().map(lambda before: stream.ensuring(after(before))))
+
+    def _stream_turn(
+        self, prompt: P.RawInput, tools: _TurnTools, stream_round: _StreamRound, max_steps: int
+    ) -> Stream[Any, Any, Any]:
+        return self._stream_rounds(prompt, tools.toolkit, stream_round, max_steps, list)
+
+    def _stream_rounds(
+        self,
+        prompt: P.RawInput,
+        toolkit: Any,
+        stream_round: _StreamRound,
+        max_steps: int,
+        close: Callable[[list[Any]], list[Any]],
+    ) -> Stream[Any, Any, Any]:
+        """The rounds of a ``stream_text`` call; the history gains every round, the last
+        one's parts so far through ``close``."""
+
+        def start() -> Stream[Any, Any, Any]:
+            loop = _StepLoop(lambda prompt: stream_round(prompt, toolkit), max_steps)
 
             def begin(history: P.Prompt) -> None:
                 loop.completed = history.concat(prompt)
@@ -425,7 +453,7 @@ class Service:
                 return to_channel(loop.run_round(1))
 
             def release(_: None, __: Exit[Any, Any]) -> Effect[object]:
-                done = loop.completed.concat(P.from_response_parts(loop.parts))
+                done = loop.completed.concat(P.from_response_parts(close(loop.parts)))
                 return self.history.set(done).and_then(self._lock.release(1))
 
             acquire = self._lock.take(1).and_then(self.history.get()).map(begin)
@@ -433,11 +461,26 @@ class Service:
             # model's stream ends, before any finalizer added outside (the save).
             return from_channel(acquire_use_release(acquire, use, release))
 
-        stream = StreamC.unwrap(fx.sync(start)).with_span("Chat.streamText")
-        after = self._after_call
-        if after is None:
-            return stream
-        return StreamC.unwrap(self.history.get().map(lambda before: stream.ensuring(after(before))))
+        return StreamC.unwrap(fx.sync(start))
+
+
+@dataclass(frozen=True)
+class _TurnTools:
+    """A call's ``toolkit`` as given, and whether the chat runs its tool calls."""
+
+    toolkit: Any
+    resolves: bool
+
+
+type _Call[A, E, RR] = Callable[[P.Prompt, Any, list[Any] | None], Effect[A, E, RR]]
+"""A model call on the full prompt, with the toolkit and the list that receives each part
+once it is decided (``None``: nothing is told)."""
+
+type _StreamRound = Callable[[P.Prompt, Any], Effect[Stream[Any, Any, Any], Never, Any]]
+
+
+def _reply(response: lm.GenerateTextResponse[Any, Any]) -> P.Prompt:
+    return P.from_response_parts(cast("list[R.AnyPart]", response.content))
 
 
 class _StepLoop:
@@ -516,6 +559,149 @@ def from_export(data: object) -> Effect[Service, SchemaError]:
 def from_json(data: str) -> Effect[Service, SchemaError]:
     """A chat from ``export_json``'s text."""
     return _decode_json(data).flat_map(from_prompt)
+
+
+# --- interrupt-safe turns -------------------------------------------------------------
+
+
+class InterruptSafe(Service):
+    """``chat`` (its history, its lock and its saves) with turns that commit when cut
+    short. Effect's chat records a turn only when the call succeeds; this one also
+    records an interrupted or failed one, as a history every provider takes: the prompt,
+    the model's output received, and each tool call with its result, or with an
+    ``execution-interrupted`` result when it did not finish. ``resume`` runs those again.
+    A finished turn is recorded as Effect's chat records it."""
+
+    def __init__(self, chat: Service) -> None:
+        super().__init__(chat.history, chat._after_call)
+        self._lock = chat._lock
+        self.chat = chat
+        """The chat this one commits to (a ``Persisted`` one keeps its ``save``)."""
+
+    def _call[A: lm.GenerateTextResponse[Any, Any], E, RR](
+        self, prompt: P.RawInput, tools: _TurnTools, call: _Call[A, E, RR]
+    ) -> Effect[A, E, RR]:
+        def run(history: P.Prompt) -> Effect[A, E, RR]:
+            turn = _Turn(history.concat(prompt), tools.resolves)
+            started = _optional_kit(tools.toolkit).flat_map(
+                lambda kit: call(turn.prompt, turn.uses(kit), turn.received)
+            )
+            return started.on_exit(lambda exit: self.history.set(turn.committed(exit)))
+
+        locked = self._lock.with_permits(self.history.get().flat_map(run))
+        return self._after(locked)
+
+    def _stream_turn(
+        self, prompt: P.RawInput, tools: _TurnTools, stream_round: _StreamRound, max_steps: int
+    ) -> Stream[Any, Any, Any]:
+        def rounds(kit: K.WithHandler[Any, Any, Any, Any] | None) -> Stream[Any, Any, Any]:
+            runs = _runs_handler(kit, tools.resolves)
+
+            def close(parts: list[Any]) -> list[Any]:
+                return _partial.closed(parts, runs)
+
+            return self._stream_rounds(prompt, kit, stream_round, max_steps, close)
+
+        return StreamC.unwrap(_optional_kit(tools.toolkit).map(rounds))
+
+    def resume[NN: LiteralString, RP, EE, RR](
+        self,
+        *,
+        toolkit: _ToolkitInput[NN, RP, EE, RR],
+        concurrency: Concurrency = "unbounded",
+    ) -> Effect[tuple[RP | R.ToolApprovalRequestPart, ...], AiError | EE, RR]:
+        """Run again the tool calls the last turn left without a result, with
+        ``toolkit``, and put their results in the history in place of the
+        ``execution-interrupted`` ones: the results, in the order they finished. With a
+        toolkit behind ``tool_ledger.guard``, a call whose handler ran before is answered
+        from the ledger. A call that needs approval gets its approval request instead.
+        Interrupted again, the history keeps what finished."""
+
+        def run(history: P.Prompt) -> Effect[tuple[Any, ...], Any, Any]:
+            calls = _partial.unfinished(history)
+            if not calls:
+                return fx.succeed(())
+            done: list[Any] = []
+
+            def received(part: Any) -> Any:
+                done.append(part)
+                return part
+
+            def resolve(kit: K.WithHandler[Any, Any, Any, Any]) -> Effect[Any, Any, Any]:
+                encoded = [
+                    {"type": "tool-call", "id": c.id, "name": c.name, "params": c.params}
+                    for c in calls
+                ]
+                resolved = resolve_calls(kit, encoded, history.content, concurrency)
+                final = resolved.filter(
+                    lambda r: isinstance(r, R.ToolApprovalRequestPart) or not r.preliminary
+                )
+                return final.map(received).run_drain()
+
+            ran = _kit(toolkit).flat_map(resolve).pipe(_with_id_generator)
+            committed = ran.on_exit(lambda _: self.history.set(_partial.resumed(history, done)))
+            return committed.map(lambda _: tuple(done))
+
+        locked = self._lock.with_permits(self.history.get().flat_map(run))
+        return self._after(locked).with_span("Chat.resume")
+
+
+def interrupt_safe(chat: Service) -> InterruptSafe:
+    """``chat``, with turns that commit when interrupted or failed (``InterruptSafe``)."""
+    return InterruptSafe(chat)
+
+
+class _Turn:
+    """One interrupt-safe call: the prompt sent, the toolkit and the parts received."""
+
+    def __init__(self, prompt: P.Prompt, resolves: bool) -> None:
+        self.prompt = prompt
+        self.resolves = resolves
+        self.kit: K.WithHandler[Any, Any, Any, Any] | None = None
+        self.received: list[Any] = []
+
+    def uses(
+        self, kit: K.WithHandler[Any, Any, Any, Any] | None
+    ) -> K.WithHandler[Any, Any, Any, Any] | None:
+        self.kit = kit
+        return kit
+
+    def committed(self, exit: Exit[lm.GenerateTextResponse[Any, Any], Any]) -> P.Prompt:
+        """The history after the call: the response's parts as Effect's chat adds them,
+        or the parts received, closed."""
+        if isinstance(exit, Success):
+            return self.prompt.concat(_reply(exit.value))
+        parts = _partial.closed(self.received, _runs_handler(self.kit, self.resolves))
+        return self.prompt.concat(P.from_response_parts(parts))
+
+
+def _optional_kit(toolkit: object) -> Effect[K.WithHandler[Any, Any, Any, Any] | None, Any, Any]:
+    return fx.succeed(None) if toolkit is None else _kit(toolkit)
+
+
+def _kit(toolkit: object) -> Effect[K.WithHandler[Any, Any, Any, Any], Any, Any]:
+    if isinstance(toolkit, Effect):
+        return cast("Effect[K.WithHandler[Any, Any, Any, Any], Any, Any]", toolkit)
+    return fx.succeed(cast("K.WithHandler[Any, Any, Any, Any]", toolkit))
+
+
+def _runs_handler(
+    kit: K.WithHandler[Any, Any, Any, Any] | None, resolves: bool
+) -> Callable[[str], bool]:
+    """Whether the chat runs a handler for a call to the tool ``name``."""
+    return lambda name: resolves and kit is not None and resolvable_tool(kit, name) is not None
+
+
+def _with_id_generator[A, E, R](eff: Effect[A, E, R]) -> Effect[A, E, R]:
+    """``eff`` with an ``IdGenerator`` (for approval requests): the one in context, else
+    the default one."""
+    return fx.service_option(IdGenerator).flat_map(
+        lambda found: eff.pipe(
+            fx.provide_service(
+                IdGenerator, found.value if found is not None else default_id_generator
+            )
+        )
+    )
 
 
 # --- persistence ----------------------------------------------------------------------
@@ -670,6 +856,7 @@ __all__ = [
     "AiError",
     "Chat",
     "ChatNotFoundError",
+    "InterruptSafe",
     "Persisted",
     "Persistence",
     "PersistenceError",
@@ -680,6 +867,7 @@ __all__ = [
     "from_export",
     "from_json",
     "from_prompt",
+    "interrupt_safe",
     "layer_persisted",
     "make_persisted",
 ]

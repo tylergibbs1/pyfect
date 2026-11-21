@@ -7960,6 +7960,26 @@ def check_ai_chat(chat: ai_chat.Service, persisted: ai_chat.PersistenceService) 
     )
     chat.generate_text(1)  # pyright: ignore[reportArgumentType]
 
+    # An interrupt-safe chat has the chat's types; resume gives the toolkit's results.
+    safe = ai_chat.interrupt_safe(chat)
+    assert_type(
+        safe.generate_text("hi"),
+        fx.Effect[lm.GenerateTextResponse[Never, Never], AiError, lm.LanguageModel],
+    )
+    assert_type(
+        safe.resume(toolkit=kit),
+        fx.Effect[
+            tuple[
+                ai_response.ToolResultPart[Literal["Weather"], AiWeather, AiError]
+                | ai_response.ToolApprovalRequestPart,
+                ...,
+            ],
+            AiError,
+            ai_toolkit.Handlers[Literal["Weather"]],
+        ],
+    )
+    safe.resume()  # pyright: ignore[reportCallIssue]
+
 
 def check_ai_ag_ui(
     input: ai_ag_ui_schema.RunAgentInput,

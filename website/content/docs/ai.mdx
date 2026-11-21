@@ -279,6 +279,9 @@ history plus the new prompt and adds the reply, and calls on one chat run one at
 `chat.layer_persisted(store_id=...)` over any [persistence](/docs/persistence) backing
 store, keeps chats by id: `get_or_create(id, time_to_live=...)` opens one and every call
 saves it.
+A chat records a turn only when the call succeeds. `chat.interrupt_safe(session)` also
+records a turn that is cancelled or fails, as a history every provider takes, and
+`resume` finishes it: see [Interrupt-safe chats](/docs/ai-interrupt-safe-chat).
 
 <CodeOutput>
 

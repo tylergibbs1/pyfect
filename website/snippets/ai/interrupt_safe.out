@@ -1,0 +1,10 @@
+after the cancel:
+user
+assistant
+  w1 sunny in Rome
+  w2 {'type': 'execution-interrupted', 'reason': 'Tool call execution was interrupted because the turn ended before it finished'}
+after resume:
+user
+assistant
+  w1 sunny in Rome
+  w2 sunny in Oslo

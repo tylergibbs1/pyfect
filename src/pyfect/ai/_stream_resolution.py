@@ -12,7 +12,7 @@ failure result.
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Never, cast
 
 import pyfect as fx
 from pyfect._core import Effect
@@ -28,6 +28,7 @@ from pyfect.semaphore import Semaphore
 from pyfect.stream import Stream
 from pyfect.stream import _constructors as StreamC
 from pyfect.stream import _sources as StreamSources
+from pyfect.stream._many import merge_all
 
 if TYPE_CHECKING:
     from pyfect._concurrency import Concurrency
@@ -76,6 +77,55 @@ def result_part(id: str, name: str, result: K.HandlerResult) -> R.AnyToolResultP
         encoded_result=result.encoded_result,
         preliminary=result.preliminary,
         model_output=result.model_output,
+    )
+
+
+def resolve_calls(
+    kit: K.WithHandler[Any, Any, Any, Any],
+    calls: Sequence[EncodedPart],
+    messages: Sequence[P.Message],
+    concurrency: Concurrency,
+) -> Stream[R.AnyToolResultPart | R.ToolApprovalRequestPart, Any, Any]:
+    """Each call's results: ``execution-denied`` when the user denied it,
+    the handler's when approved or not needing approval, else an approval
+    request."""
+    approvals = A.collect(messages)
+    approved = {approval.tool_call_id for approval in approvals.approved}
+    denied = {approval.tool_call_id: approval for approval in approvals.denied}
+
+    def handle(id: str, name: str, call: EncodedPart) -> Stream[R.AnyToolResultPart, Any, Any]:
+        handled = kit.handle(name, call.get("params"), id)
+        return StreamC.unwrap(handled).map(lambda result: result_part(id, name, result))
+
+    def run(call: EncodedPart) -> Stream[Any, Any, Any]:
+        id, name = cast("str", call["id"]), cast("str", call["name"])
+        tool = resolvable_tool(kit, name)
+        if tool is None:
+            return StreamC.empty
+        if id in denied:
+            return StreamC.make(A.denied_result(id, name, denied[id].reason))
+        if id in approved:
+            return handle(id, name, call)
+        return StreamC.unwrap(
+            A.needs_approval(tool, call, messages).flat_map(
+                lambda needed: (
+                    approval_request(id).map(StreamC.make)
+                    if needed
+                    else fx.succeed(handle(id, name, call))
+                )
+            )
+        )
+
+    return merge_all([run(call) for call in calls], concurrency=concurrency)
+
+
+def approval_request(tool_call_id: str) -> Effect[R.ToolApprovalRequestPart, Never, IdGenerator]:
+    return IdGenerator().flat_map(
+        lambda generator: generator.generate_id().map(
+            lambda approval_id: R.ToolApprovalRequestPart(
+                approval_id=approval_id, tool_call_id=tool_call_id
+            )
+        )
     )
 
 

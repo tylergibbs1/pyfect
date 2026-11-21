@@ -42,6 +42,7 @@
     "workflows",
     "ai",
     "ai-tool-ledger",
+    "ai-interrupt-safe-chat",
     "mcp",
     "models",
     "graphql",
