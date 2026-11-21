@@ -318,20 +318,28 @@ class _Collections:
     """The garbage collector's passes, through ``gc.callbacks``."""
 
     def __init__(self) -> None:
-        self.started: float | None = None
+        self.started: tuple[float, int] | None = None
+        """When the pass running now started, and its generation."""
         self.longest = (0.0, -1)
 
     def __call__(self, phase: str, info: dict[str, Any]) -> None:
         if phase == "start":
-            self.started = time.monotonic()
-        elif self.started is not None:
-            took = time.monotonic() - self.started
+            self.started = (time.monotonic(), int(info.get("generation", -1)))
+        elif (started := self.started) is not None:
+            took = time.monotonic() - started[0]
             self.started = None
             if took > self.longest[0]:
-                self.longest = (took, int(info.get("generation", -1)))
+                self.longest = (took, started[1])
 
-    def take_longest(self) -> tuple[float, int]:
+    def take_longest(self, now: float) -> tuple[float, int]:
+        """The longest pass since the last look, counting one still running up to ``now``
+        (monotonic): the watchdog can judge a stall while the collecting thread waits for the
+        GIL back."""
         longest, self.longest = self.longest, (0.0, -1)
+        if (started := self.started) is not None:
+            self.started = (now, started[1])
+            if now - started[0] > longest[0]:
+                return (now - started[0], started[1])
         return longest
 
 
@@ -678,15 +686,17 @@ class Watchdog:
                 self._stacks.clear()
             stalled = now - last - self.tick >= self.threshold and not froze(last, now)
             dump = None if self._dumps is None else self._dumps.take(stalled=stalled)
+            collected = self._collections.take_longest(now)
             if stalled:
                 if dump is None and unclaimed is not None and unclaimed.at >= last_wall:
                     dump = unclaimed
-                stall = self._process_stall(now - last, now_cpu - cpu, dump, continued=continued)
+                stall = self._process_stall(
+                    now - last, now_cpu - cpu, dump, collected, continued=continued
+                )
                 self._record(stall)
                 unclaimed = None
             else:
                 self._steal.mark()
-                self._collections.take_longest()
                 unclaimed = dump
             last_wall, last, cpu = now_wall, now, now_cpu
             if self._armed.is_set():
@@ -696,13 +706,27 @@ class Watchdog:
                 self._ticks += 1
                 self._ticked.notify_all()
 
-    def _process_stall(self, gap: float, cpu: float, dump: _Dump | None, *, continued: bool) -> str:
-        """Names a stall of the whole process: no Python thread ran for ``gap`` seconds."""
+    def _process_stall(
+        self,
+        gap: float,
+        cpu: float,
+        dump: _Dump | None,
+        collection: tuple[float, int],
+        *,
+        continued: bool,
+    ) -> str:
+        """Names a stall of the whole process: no Python thread ran for ``gap`` seconds, in
+        which ``collection`` was the longest garbage collection (seconds, generation)."""
         head = f"process stalled {gap:.1f} s"
-        collected, generation = self._collections.take_longest()
+        collected, generation = collection
         steal, load = self._steal.since_last(), _load()
         numbers = f"{steal}, {load}, process CPU {cpu:.1f} s"
-        if collected >= self.threshold / 2:
+        # A freeze uses no CPU: only then is a SIGCONT whose handler is slow worth a wait.
+        idle = cpu < gap / 2
+        collecting = collected >= self.threshold / 2
+        resumed = continued or (collecting and idle and self._continues.came(wait=2 * self.tick))
+        # A collection's wall time holds any freeze it spanned, in which it used no CPU.
+        if collecting and not (idle and resumed):
             took = f"generation {generation}, {collected:.1f} s"
             return f"{head}: pyfect blocked in garbage collection ({took})"
         threads = [] if dump is None else dump.threads
@@ -712,8 +736,7 @@ class Watchdog:
         if (fibers or busy) and (on_time or cpu >= gap / 2):
             frames = (fibers or busy)[0].frames
             return f"{head}: pyfect blocked in {frames[0]} ({numbers})\n" + _stack(frames)
-        # A freeze uses no CPU: only then is a SIGCONT whose handler is slow worth a wait.
-        if continued or self._continues.came(wait=2 * self.tick if cpu < gap / 2 else 0.0):
+        if resumed or self._continues.came(wait=2 * self.tick if idle else 0.0):
             with self._lock:
                 self._frozen += gap - self.tick
             return f"{head}: host: process frozen, resumed by SIGCONT ({numbers})"

@@ -965,6 +965,77 @@ def test_frozen_before_rearming():
 """
 
 
+FROZEN_IN_A_COLLECTION = """
+import ctypes
+import gc
+import os
+import subprocess
+
+import pyfect as fx
+import pyfect.testing as it
+
+freeze = False
+freezers = []
+
+
+def freeze_in_the_collection(phase, info):
+    \"\"\"Once, the host freezes the process inside a collection, after the watchdog's
+    callback noted its start. The GIL stays held throughout, as in the collector's C code, so
+    the collection ends (its callbacks run) before the watchdog's first tick after it.\"\"\"
+    global freeze
+    if phase == "start" and freeze:
+        freeze = False
+        out, into = os.pipe()
+        pid = os.getpid()
+        script = f"kill -STOP {pid}; sleep 1; kill -CONT {pid}; printf x"
+        freezers.append(subprocess.Popen(["sh", "-c", script], stdout=into))
+        os.close(into)
+        ctypes.PyDLL(None).read(out, ctypes.create_string_buffer(1), 1)  # once resumed
+
+
+gc.callbacks.append(freeze_in_the_collection)
+
+
+@it.live(timeout="1 second")
+def test_frozen_in_a_collection():
+    global freeze
+    freeze = True
+    gc.collect(0)
+    yield from fx.sleep("3 seconds")  # 2 s of the test's own time: past its limit
+"""
+
+COLLECTION_HOLDING_THE_GIL = (
+    _SLEEP_HOLDING_THE_GIL
+    + """
+import gc
+
+import pyfect as fx
+import pyfect.testing as it
+
+hold = False
+
+
+def hold_the_gil_in_the_collection(phase, info):
+    # As a long collection does: the GIL held 1 s, inside it, with no freeze.
+    global hold
+    if phase == "start" and hold:
+        hold = False
+        ctypes.PyDLL(None).read(*a_pipe_written_in(1))
+
+
+gc.callbacks.append(hold_the_gil_in_the_collection)
+
+
+@it.live(timeout="1 second")
+def test_collects_for_long():
+    global hold
+    hold = True
+    gc.collect(0)
+    yield from fx.never
+"""
+)
+
+
 def _limited(
     pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch, source: str, *, passed: bool = False
 ) -> str:
@@ -1088,6 +1159,31 @@ def test_a_freeze_before_the_watchdog_rearms_is_left_out(
     assert ": host: process frozen, resumed by SIGCONT (" in out, out
     assert "TestTimeoutError: test timed out after 1.0 s of running time (" in out, out
     assert re.search(r"host froze the process (0\.[89]|1\.[0-9]) s, not counted\)", out), out
+
+
+@pytest.mark.skipif(__import__("sys").platform == "win32", reason="SIGSTOP is POSIX")
+def test_a_freeze_inside_a_collection_is_left_out(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Release 0.6.20's CI: SIGSTOPped while a collection ran, the process "stalled 1.1 s:
+    pyfect blocked in garbage collection (generation 0, 1.0 s)", and the 1 s freeze counted
+    in the timeout. The collection's wall time held the freeze; the SIGCONT proves it."""
+    out = _limited(pytester, monkeypatch, FROZEN_IN_A_COLLECTION)
+    assert ": host: process frozen, resumed by SIGCONT (" in out, out
+    assert "garbage collection" not in out, out
+    assert "TestTimeoutError: test timed out after 1.0 s of running time (" in out, out
+    assert re.search(r"host froze the process (0\.[89]|1\.[0-9]) s, not counted\)", out), out
+
+
+@pytest.mark.skipif(__import__("sys").platform == "win32", reason="libc read through ctypes")
+def test_a_long_collection_is_named_and_counted(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A collection that holds the GIL 1 s with no freeze is pyfect's own time."""
+    out = _limited(pytester, monkeypatch, COLLECTION_HOLDING_THE_GIL)
+    assert ": pyfect blocked in garbage collection (generation 0, " in out, out
+    assert "TestTimeoutError: test timed out after 1.0s" in out, out
+    assert "not counted" not in out, out
 
 
 BLOCKS_PAST_ITS_LIMIT = """
