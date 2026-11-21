@@ -4,10 +4,13 @@ and explores what it claims to."""
 
 from __future__ import annotations
 
+import ast
 import contextvars
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
+import _source
 import pytest
 
 import pyfect as fx
@@ -216,3 +219,25 @@ def test_each_simulated_thread_has_its_own_contextvars():
 
     run_once(Scenario("threads", build), Replay([0, 1]))
     assert seen == ["-", "set"]
+
+
+def test_every_run_a_scenario_starts_itself_counts_its_fibers():
+    """The harness counts a run's fibers through ``FiberRuntimeMetrics`` in
+    the context of the roots it forks; a run a scenario starts itself
+    (``fx.run_fork``, ``fx.run_sync``, ...) or a ``ManagedRuntime`` it makes
+    must take ``w.context`` too, or a fiber of it that never ends goes
+    unreported."""
+    starters = {"run_fork", "run_sync", "run_sync_exit", "run_blocking", "run_blocking_exit"}
+    unseen: list[str] = []
+    for path in _source.files(Path(__file__).parent, "scenarios*.py"):
+        for node in _source.walk(path):
+            if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)):
+                continue
+            owner, name = ast.unparse(node.func.value), node.func.attr
+            run = owner == "fx" and name in starters
+            if run and not any(k.arg == "context" for k in node.keywords):
+                unseen.append(f"{path.name}:{node.lineno} fx.{name}")
+            runtime = owner.endswith("ManagedRuntime") and name == "make"
+            if runtime and "w.context" not in ast.unparse(node):
+                unseen.append(f"{path.name}:{node.lineno} ManagedRuntime.make")
+    assert unseen == []

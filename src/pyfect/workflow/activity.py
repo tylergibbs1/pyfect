@@ -54,6 +54,7 @@ from pyfect.schema import Unknown as UnknownSchema
 from pyfect.schema._data import DefectCodec
 from pyfect.scope import Scope
 from pyfect.tracer import annotate_current_span
+from pyfect.workflow._activity_hook import ActivityHook
 from pyfect.workflow._crypto import make_hash_digest
 from pyfect.workflow._result import Suspended
 from pyfect.workflow._services import WorkflowEngine, WorkflowInstance
@@ -258,8 +259,10 @@ def _make_execute[A, E](activity: Activity[A, E, Any]) -> Effect[A, E, Any]:
         instance = yield from WorkflowInstance()
         attempt = yield from CurrentAttempt()
         yield from annotate_current_span({"executionId": instance.execution_id})
+        hook = yield from ActivityHook()
+        run = engine.activity_execute(activity, attempt)
         result = yield from wrap_activity_result(
-            engine.activity_execute(activity, attempt), lambda r: isinstance(r, Suspended)
+            run if hook is None else hook(activity, run), lambda r: isinstance(r, Suspended)
         )
         if isinstance(result, Suspended):
             if result.failed:

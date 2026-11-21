@@ -1,7 +1,9 @@
 # Interleaving harness
 
 Deterministic, systematic exploration of the fiber runtime's interleavings, in the
-spirit of loom, CHESS and deterministic simulation testing. Fixed scenarios and
+spirit of loom, CHESS and deterministic simulation testing. The engine ships as
+`pyfect.testing.explore` (`src/pyfect/testing/_interleave.py` and `_interleave_search.py`);
+`_harness.py` adds this suite's budget, seed and failure messages. Fixed scenarios and
 random stress (`tests/test_decided_results.py`, `tests/test_free_threaded.py`) check
 the orders they happen to hit; this checks every order up to a bound.
 
@@ -11,8 +13,10 @@ the orders they happen to hit; this checks every order up to a bound.
   seam (`fx.run_fork(eff, scheduler=...)`, or as a `ManagedRuntime`'s scheduler). It
   runs nothing itself: every hand-over (a scheduled run, a `call_later` timer, a
   `wake_soon`, a resume or interrupt sent from another thread) becomes a pending
-  action. The fiber loop has no hooks; the harness only counts each fiber's exits by
-  wrapping `Fiber._finish` for the run.
+  action. The fiber loop has no hooks; the harness counts the run's fibers through
+  `FiberRuntimeMetrics`, the runtime's own report of each fiber's start and end, which
+  every root it forks carries (pass `context=w.context` to a run a scenario starts
+  itself, as `scenarios.py` does for `fx.run_fork` and a `ManagedRuntime`).
 - At each step the enabled actions are listed in a fixed order (tasks oldest first,
   then the due timers, then the simulated threads that can go on) and a chooser picks
   one. A run is its list of choices, so it replays exactly.

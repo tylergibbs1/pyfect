@@ -1,0 +1,73 @@
+---
+title: Exploring schedules and crashes
+description: "Run an effect under many fiber schedules, with interrupts at every step, and crash a workflow at every activity, to find the races and replay bugs one run never hits."
+---
+
+A test runs an effect once, in one order of its fibers. A race shows up only in some other
+order, and a replay bug only when the process stops at one particular point. `pyfect.testing.explore`
+runs the effect many ways and checks each run: `explore.schedules` tries the fiber schedules,
+and `explore.activity_crashes` stops a workflow at each activity and resumes it.
+
+## Fiber schedules
+
+`explore.schedules(effect, check)` runs `effect` under up to `runs` distinct schedules (1000 by
+default) and calls `check` with each run's `Exit`. The check returns what went wrong, or
+`None`. Half the runs go to every schedule with few deviations from the first-come order, so a
+small effect is covered exhaustively (the report says so). The rest are random, from `seed`
+on. A fiber that never ends, such as a lost wake-up or a deadlock, fails the run as well.
+
+A failure raises `ScheduleFailure`. It lists the problems and the last steps of the run, and
+names the schedule, which `replay=` runs again exactly. When a random run found it, it also
+names the seed, and exploring again with that `seed` finds it on the first random run.
+`max_ops_before_yield=1` pauses a fiber after every step, so other fibers can run between any
+two of its steps, not only where it waits or yields.
+
+<include meta='title="test_explore_schedules.py"'>../../snippets/testing/test_explore_schedules.py</include>
+
+With `interrupts=True` the effect's fiber is also interrupted, and the search lands the interrupt
+at each step of the run. The check then sees an interrupted exit, so it reads state the effect
+does not own. Pass a function that makes a fresh `(effect, check)` pair for each run, as
+`leaky_lock` does above. The failure's `interrupted_at` is the step the interrupt was sent at.
+
+## Activity crashes
+
+Activities run at least once, not exactly once: when a process stops after an activity ran but
+before the engine stored its result, the resumed workflow runs it again. And a call in the
+workflow's body, outside any activity, runs again on every replay.
+`explore.activity_crashes(workflow, payload, layer=..., check=...)` runs the workflow once without
+a crash, then once per crash point: after each activity it executes, before the engine stored
+the result and after. At each point the run stops, the workflow is resumed, and `check` gets
+its exit and returns a problem or `None`. The first problem fails with `CrashFailure`, which names
+the point.
+
+`layer` provides the engine with the workflow registered, and whatever `check` reads. It is
+built again for every run, so each one starts with an empty engine. It can be
+`workflow_engine.layer_memory`, or a cluster engine such as
+`cluster_workflow_engine.layer` on `single_runner.layer` with SQLite (`":memory:"` gives each
+build its own database). Run the cluster one under `@testing.live`: its runner polls on a
+timer.
+
+<include meta='title="test_explore_crashes.py"'>../../snippets/testing/test_explore_crashes.py</include>
+
+A crash stops the run as a suspension does: nothing after the boundary runs, the run's
+finalizers don't run, and what the engine stored stays. Resuming replays the run from the start,
+as a restarted runner would. The process and the layer aren't restarted, though, so state kept
+outside the engine, such as a module-level cache, survives the crash where a real restart would
+lose it.
+
+## What explore doesn't support
+
+`explore.schedules` drives every fiber itself and runs timers on virtual time, so the effect
+must do all its work on fibers:
+
+- Work handed to another thread or process (`fx.blocking`, SQLite and the other SQL clients,
+  HTTP clients, workers) finishes outside the schedule. Its order isn't explored, and the run
+  usually fails with a fiber that never ended (parked), waiting for an answer the schedule
+  can't deliver. Provide in-memory layers of those services instead.
+- A program that polls forever never goes idle: a cluster's sharding loops wake on every
+  interval, so the run ends with "no end after 10000 steps". Test cluster workflows with
+  `activity_crashes` under `@testing.live` instead.
+- The effect must do the same thing on every run, with no real time or randomness of its own,
+  or a schedule doesn't replay.
+
+Reference: [`pyfect.testing.explore`](/docs/reference/testing/explore).

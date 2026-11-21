@@ -460,7 +460,8 @@ def _managed_runtime(w: World) -> None:
     once and released once, and each run reads its own caller's
     ``contextvars``."""
     built = layer.effect(Greeting, resource(w, "layer").as_("hi"))
-    runtime = fx.ManagedRuntime.make(built)
+    # Its runs take the world's context, so their fibers are counted.
+    runtime = fx.ManagedRuntime.make(layer.merge(built, layer.succeed_context(w.context)))
     runtime._run_scheduler = lambda: w.scheduler
     runtime._fork_outside_runs = w.scheduler
     reads: list[tuple[str, str]] = []
@@ -599,7 +600,7 @@ def _contextvars(w: World) -> None:
     def starter(caller: str) -> Callable[[], ThreadBody]:
         def body() -> ThreadBody:
             request_id.set(caller)
-            fx.run_fork(w.budgeted(program(caller)), scheduler=w.scheduler)
+            fx.run_fork(w.budgeted(program(caller)), scheduler=w.scheduler, context=w.context)
             yield
 
         return body

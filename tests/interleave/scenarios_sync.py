@@ -740,7 +740,12 @@ def _semaphore_thread_release(w: World) -> None:
         yield from waiter.await_exit()
 
     w.fork(main)
-    from_thread(w, "releaser", lambda: fx.run_sync(sem.get().release()), when=taken.is_set)
+    from_thread(
+        w,
+        "releaser",
+        lambda: fx.run_sync(sem.get().release(), context=w.context),
+        when=taken.is_set,
+    )
     w.check(permits.check)
 
 

@@ -11614,3 +11614,49 @@ def check_ai_workload_identity(token: fx.Effect[fx.Redacted[str], OSError, fx.Fi
         service_account_id="s",
         identity_token_type="saml",  # pyright: ignore[reportArgumentType]
     )
+
+
+def check_testing_explore() -> None:
+    from typing import TypedDict
+
+    from pyfect.testing import explore
+    from pyfect.workflow import WorkflowEngine, workflow, workflow_engine
+
+    class Payload(TypedDict):
+        id: str
+
+    class Ledger(fx.Tag[list[str]]): ...
+
+    class Other(fx.Tag[int]): ...
+
+    assert_type(explore.schedules(fx.succeed(1), lambda ex: None), explore.Report)
+    assert_type(
+        explore.schedules(lambda: (fx.succeed(1), lambda ex: None), interrupts=True),
+        explore.Report,
+    )
+    explore.schedules(fx.succeed(1))  # pyright: ignore[reportArgumentType]
+    explore.schedules(Other(), lambda ex: None)  # pyright: ignore[reportArgumentType]
+
+    wf = workflow.make(
+        "Wf", payload=S.Struct(Payload), success=S.String, idempotency_key=lambda p: p["id"]
+    )
+    layer = (
+        wf.to_layer(lambda p, _: fx.succeed(p["id"]))
+        .pipe(fx.layer.provide_merge(workflow_engine.layer_memory))
+        .pipe(fx.layer.provide_merge(fx.layer.sync(Ledger, list[str])))
+    )
+    assert_type(layer, fx.Layer[WorkflowEngine | Ledger, Never, Never])
+
+    def judge(ex: fx.Exit[str, Never]) -> fx.Effect[str | None, Never, Ledger]:
+        return Ledger().map(lambda seen: None if len(seen) <= 1 else "twice")
+
+    assert_type(
+        explore.activity_crashes(wf, {"id": "1"}, layer=layer, check=judge),
+        fx.Effect[explore.CrashReport, explore.CrashFailure, Never],
+    )
+
+    def needs_other(ex: fx.Exit[str, Never]) -> fx.Effect[str | None, Never, Other]:
+        return Other().map(lambda _: None)
+
+    # The check reads only what the layer provides.
+    explore.activity_crashes(wf, {"id": "1"}, layer=layer, check=needs_other)  # pyright: ignore[reportArgumentType]
