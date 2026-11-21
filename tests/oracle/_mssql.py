@@ -12,6 +12,13 @@ Server 2022 under x86 emulation stops at start (Rosetta has no
 asynchronous I/O for it) or crawls (QEMU). ``PYFECT_MSSQL_IMAGE``
 overrides the choice. ``sa`` logs in; as in Effect's container, the
 database is ``master``.
+
+SQL Server 2022 now and then exits within seconds of its start, before it serves, with
+``CoInitializeSecurity failure. (HRESULT 0x800706b5)`` (RPC_S_SERVER_UNAVAILABLE) from its
+platform layer, while the same image starts in the other jobs of the run (CI run
+44897877038). So a container that exits before it serves is replaced, up to ``_START_ATTEMPTS``
+containers within the one ``_STARTUP_TIMEOUT``, each replacement a ``ContainerRestarted``
+warning. A container that runs but does not serve in time is not replaced.
 """
 
 from __future__ import annotations
@@ -20,6 +27,8 @@ import atexit
 import os
 import platform
 import subprocess
+import time
+import warnings
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -38,6 +47,13 @@ LABEL = "pyfect.test=mssql"
 PASSWORD = "Pyfect_test_1!"
 DATABASE = "master"
 _STARTUP_TIMEOUT = 240.0
+"""Seconds from the first ``docker run`` until a server serves, across every attempt."""
+_START_ATTEMPTS = 3
+"""Containers started at most, each after the one before exited before it served."""
+
+
+class ContainerRestarted(UserWarning):
+    """A SQL Server container exited before it served, and another was started."""
 
 
 def image() -> str:
@@ -126,9 +142,9 @@ def _waiting(server: MssqlServer) -> str | None:
         connection.close()
 
 
-def _wait_ready(server: MssqlServer) -> None:
+def _wait_ready(server: MssqlServer, since: float) -> None:
     _containers.wait_ready(
-        "SQL Server", server.container, lambda: _waiting(server), _STARTUP_TIMEOUT, 1
+        "SQL Server", server.container, lambda: _waiting(server), _STARTUP_TIMEOUT, 1, since=since
     )
 
 
@@ -137,6 +153,22 @@ def _start() -> MssqlServer:
     _containers.reap_stale(LABEL)
     chosen = image()
     _containers.pull(chosen)
+    since = time.monotonic()
+    stopped: list[str] = []
+    while True:
+        try:
+            return _start_container(chosen, since)
+        except _containers.ContainerStopped as error:
+            stopped.append(f"start {len(stopped) + 1}: {error}")
+            if len(stopped) == _START_ATTEMPTS or time.monotonic() >= since + _STARTUP_TIMEOUT:
+                raise _containers.ContainerStopped("\n".join(stopped)) from None
+            warnings.warn(
+                ContainerRestarted(f"starting another SQL Server container: {error}"),
+                stacklevel=1,
+            )
+
+
+def _start_container(chosen: str, since: float) -> MssqlServer:
     started = _containers.docker(
         "run",
         "-d",
@@ -158,7 +190,7 @@ def _start() -> MssqlServer:
     atexit.register(_containers.remove, container)
     try:
         server = MssqlServer("127.0.0.1", _containers.published_port(container, 1433), container)
-        _wait_ready(server)
+        _wait_ready(server, since)
     except BaseException:
         _containers.remove(container)
         raise
@@ -204,6 +236,7 @@ __all__ = [
     "EDGE_IMAGE",
     "LABEL",
     "SQL_SERVER_IMAGE",
+    "ContainerRestarted",
     "MssqlServer",
     "image",
     "mssql_server",
