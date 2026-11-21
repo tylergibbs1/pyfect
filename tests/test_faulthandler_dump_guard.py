@@ -8,8 +8,9 @@ SIGSEGV and nothing on stderr, as that thread blocks every signal).
 
 So no thread reads another's frames: a thread's stack is written by the thread itself, from
 a signal only it is sent (``tests/_thread_cpu_timer.py``), or read under the GIL through
-``sys._current_frames()``. This guard fails any call that dumps every thread, and any config
-that turns on pytest's ``faulthandler_timeout`` (``dump_traceback_later`` again)."""
+``sys._current_frames()`` (``pyfect._frames``). This guard fails any call that dumps every
+thread, and any config that turns on pytest's ``faulthandler_timeout``
+(``dump_traceback_later`` again)."""
 
 from __future__ import annotations
 

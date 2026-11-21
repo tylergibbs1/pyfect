@@ -17,7 +17,6 @@ name their threads with ``_threads.process_wide`` and are skipped too.
 """
 
 import concurrent.futures.thread
-import sys
 import threading
 import traceback
 from collections.abc import Generator
@@ -28,6 +27,7 @@ import pytest
 from _threads import PROCESS_WIDE, live_threads
 
 import pyfect
+from pyfect._frames import current_frames
 
 _BEFORE = pytest.StashKey[frozenset[threading.Thread]]()
 _LEFT = pytest.StashKey[dict[threading.Thread, str]]()
@@ -64,7 +64,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 
 
 def _frame(thread: threading.Thread) -> FrameType | None:
-    return sys._current_frames().get(thread.ident or -1)  # pyright: ignore[reportPrivateUsage]
+    return current_frames().get(thread.ident or -1)
 
 
 def _parked(thread: threading.Thread, frame: FrameType) -> bool:

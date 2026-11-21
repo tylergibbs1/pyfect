@@ -20,17 +20,16 @@ thread, ticking for the whole session and recording while a test runs, tells the
   SIGSTOP, proves the host froze the process (``_Continues``): on a loaded machine a dump
   comes seconds late with the process running, so a late dump proves nothing. Anything
   else counts as running time.
-- Each tick also samples every thread's stack, through ``sys._current_frames()`` under the
-  GIL (text: holding frames would keep what a finished step handled alive). A thread inside
-  ``Fiber._run``
-  whose stack has not moved for the threshold, while the process used next to no CPU, is a
-  fiber step that blocks with the GIL released (a sync sleep or lock), which the timer dump
-  cannot see. Fibers never block, so that is "pyfect blocked in <frame>" too. With the CPU
-  busy it is "pyfect busy in <frame>": one long step, or identical steps in a loop. A sample
-  taken holding the GIL finds a busy thread where it last released it, not where its CPU
-  goes, so while such a stall lasts (and only then) the busy thread is sampled by a timer on
-  its own CPU clock (``_CpuSamples``); where that cannot be exact (off Linux) the frame is
-  named "near", as approximate.
+- Each tick also samples every thread's stack, through ``sys._current_frames()``
+  (``pyfect._frames``) under the GIL (text: holding frames would keep what a finished step handled
+  alive). A thread inside ``Fiber._run`` whose stack has not moved for the threshold, while the
+  process used next to no CPU, is a fiber step that blocks with the GIL released (a sync sleep or
+  lock), which the timer dump cannot see. Fibers never block, so that is "pyfect blocked in <frame>"
+  too. With the CPU busy it is "pyfect busy in <frame>": one long step, or identical steps in a
+  loop. A sample taken holding the GIL finds a busy thread where it last released it, not where its
+  CPU goes, so while such a stall lasts (and only then) the busy thread is sampled by a timer on its
+  own CPU clock (``_CpuSamples``); where that cannot be exact (off Linux) the frame is named "near",
+  as approximate.
 
 A stall is added to the failure output of the test it happened in (a "stall" section), and
 a passing test that stalled gets a ``StallWarning``. A ``pyfect.testing`` test that passed
@@ -73,6 +72,7 @@ from _thread_cpu_timer import AVAILABLE as _STACK_DUMPS
 from _thread_cpu_timer import StackDumps, ThreadCpuTimer
 from _threads import live_threads
 
+from pyfect._frames import current_frames
 from pyfect.duration import Duration, seconds
 from pyfect.testing import HostFreezes, leave_out_host_freezes
 from pyfect.testing._decorators import settings as testing_settings
@@ -150,7 +150,7 @@ def _current_threads() -> list[DumpedThread]:
     (``Frame``): holding the frames would keep what a finished step handled alive."""
     me = threading.get_ident()
     threads: list[DumpedThread] = []
-    for ident, top in sys._current_frames().items():  # pyright: ignore[reportPrivateUsage]
+    for ident, top in current_frames().items():
         frames: list[Frame] = []
         frame: FrameType | None = top
         while frame is not None and len(frames) < _MOST_FRAMES:

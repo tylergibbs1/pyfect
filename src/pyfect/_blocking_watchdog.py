@@ -3,9 +3,9 @@ stack and warns about a fiber step that has run for at least that long.
 
 A fiber step that blocks its thread (``time.sleep``, a blocking socket read) holds up every
 fiber the thread runs, and ``.timeout`` and interrupts wait for it to return. The fiber loop
-has no code for this: the watchdog reads ``sys._current_frames()``, finds the innermost
-``Fiber._loop`` frame on each thread, and remembers the frame it called. A step in progress
-keeps that frame; the next step is a new frame. So the loop pays nothing, whether the
+has no code for this: the watchdog reads ``sys._current_frames()`` (through ``_frames``), finds
+the innermost ``Fiber._loop`` frame on each thread, and remembers the frame it called. A step
+in progress keeps that frame; the next step is a new frame. So the loop pays nothing, whether the
 variable is set or not, and unset, no thread starts.
 
 A warning filter that makes the warning an error (``-W error``, pytest's ``filterwarnings``)
@@ -27,6 +27,7 @@ from typing import Any, Final
 
 from pyfect import duration
 from pyfect._fiber import Fiber
+from pyfect._frames import current_frames
 from pyfect.scheduler import WARN_BLOCKING_ENV, BlockingStepWarning
 
 _LOOP: Final[CodeType] = Fiber.__dict__["_loop"].__code__
@@ -87,7 +88,7 @@ def _step(innermost: FrameType) -> tuple[Fiber[Any, Any], FrameType] | None:
 
 def _running(ident: int, step: FrameType) -> bool:
     """Whether ``step`` is still the running step of thread ``ident``."""
-    innermost = sys._current_frames().get(ident)  # pyright: ignore[reportPrivateUsage]
+    innermost = current_frames().get(ident)
     found = None if innermost is None else _step(innermost)
     return found is not None and found[1] is step
 
@@ -100,7 +101,7 @@ def _watch(threshold: float) -> None:
     while True:
         time.sleep(interval)
         now = time.monotonic()
-        stacks = sys._current_frames()  # pyright: ignore[reportPrivateUsage]
+        stacks = current_frames()
         running: dict[int, tuple[FrameType, float, bool]] = {}
         for ident, innermost in stacks.items():
             found = None if ident == me else _step(innermost)

@@ -18,6 +18,7 @@ import httpx
 
 import pyfect as fx
 from pyfect import Context, layer
+from pyfect._frames import current_frames
 from pyfect.http import httpx_client
 from pyfect.http.client import HttpClient
 from pyfect.http.server import HttpServer
@@ -182,7 +183,7 @@ def _watchdog(
     stacks = config.out.with_suffix(".stacks.txt")
     with stacks.open("w") as file:
         # Read under the GIL, not faulthandler's lock-free dump of threads that may be running.
-        for ident, frame in sys._current_frames().items():  # pyright: ignore[reportPrivateUsage]
+        for ident, frame in current_frames().items():
             file.write(f"Thread {ident:#x} (most recent call last):\n")
             file.write("".join(traceback.format_stack(frame)) + "\n")
     sampler.write(

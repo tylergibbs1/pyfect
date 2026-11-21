@@ -5,6 +5,7 @@ no interpreters to run work on)."""
 import contextlib
 import importlib
 import operator
+import os
 import signal
 import subprocess
 import sys
@@ -15,6 +16,7 @@ from types import ModuleType
 from typing import IO, Any
 
 import pytest
+from _subprocess import SUBPROCESS_TIMEOUT
 
 import pyfect as fx
 from pyfect import interpreter_pool
@@ -461,3 +463,46 @@ def test_a_worker_that_cannot_close_its_interpreter_fails_the_release(tmp_path: 
     )
     [line] = lines
     assert line.startswith("die InterpreterNotFoundError "), line
+
+
+# Runs pool calls that push and pop frames in their subinterpreters while the blocking
+# watchdog reads every thread's frames each millisecond.
+WATCHED_POOL = """
+import pyfect as fx
+from pyfect import interpreter_pool
+
+
+def nest(rounds: int) -> int:
+    def down(n):
+        return 0 if n == 0 else 1 + down(n - 1)
+
+    return sum(down(50) for _ in range(rounds))
+
+
+calls = [interpreter_pool.call(nest, 2000) for _ in range(4)]
+for _ in range(20):
+    sums = fx.run_blocking(
+        fx.all(*calls, concurrency=4).pipe(fx.provide(interpreter_pool.layer(4)))
+    )
+    assert sums == (100000,) * 4, sums
+print("ok")
+"""
+
+
+@needs_interpreters
+def test_the_blocking_watchdog_leaves_a_subinterpreter_s_frames_alone(tmp_path: Path) -> None:
+    # CPython 3.14 before 3.14.8 has sys._current_frames() make frame objects for every
+    # interpreter's threads, from the calling interpreter's allocator (python/cpython#158364).
+    # A subinterpreter then frees them into its own heap: CI's 3.14.4 workers died in this file
+    # ("double free or corruption" inside interp_create) while a watchdog sampled the stacks.
+    result = subprocess.run(
+        [sys.executable, "-c", WATCHED_POOL],
+        cwd=tmp_path,
+        env={**os.environ, "PYFECT_WARN_BLOCKING": "1 millis"},
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        timeout=SUBPROCESS_TIMEOUT,
+        check=False,
+    )
+    assert (result.returncode, result.stdout) == (0, "ok\n"), result.stderr[-3000:]

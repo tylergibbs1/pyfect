@@ -56,6 +56,7 @@ from pyfect import cause as cause_
 from pyfect import layer as layer_
 from pyfect._core import Effect, _Succeed
 from pyfect._fake_main import MainScriptRerunError
+from pyfect._frames import running_subinterpreter
 from pyfect._os_wait import os_wait
 from pyfect._public import publish
 from pyfect.context import Tag
@@ -114,16 +115,19 @@ class _OwnedInterpreter:
     def __init__(self, low: Any, failed: Callable[[object], Exception]) -> None:
         self._low = low
         self._failed = failed
-        self._id: object = low.create()
+        with running_subinterpreter():
+            self._id: object = low.create()
 
     def call(self, callable: Callable[..., object], /, *args: object) -> object:
-        result, excinfo = self._low.call(self._id, callable, args, restrict=True)
+        with running_subinterpreter():
+            result, excinfo = self._low.call(self._id, callable, args, restrict=True)
         if excinfo is not None:
             raise self._failed(excinfo)
         return result
 
     def close(self) -> None:
-        self._low.destroy(self._id, restrict=True)
+        with running_subinterpreter():
+            self._low.destroy(self._id, restrict=True)
 
 
 class _OwnedInterpreters:
