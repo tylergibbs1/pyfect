@@ -157,6 +157,20 @@ class HttpServerResponse:
             owned_headers=self.headers.set(key, value),
         )
 
+    def append_header(self, key: str, value: str) -> HttpServerResponse:
+        """``value`` added to the header, joined with ``", "``; an empty value (such as
+        ``format_link([])``) changes nothing. For list-valued headers such as ``Link`` or
+        ``Vary``; use the cookie API for ``Set-Cookie``."""
+        if value == "":
+            return self
+        return HttpServerResponse(
+            self.status,
+            self.status_text,
+            cookies=self.cookies,
+            body=self.body,
+            owned_headers=self.headers.append(key, value),
+        )
+
     def set_headers(self, headers: HeadersInput) -> HttpServerResponse:
         return HttpServerResponse(
             self.status,

@@ -167,6 +167,22 @@ rules on a plain tuple, for seeding a jar or reading one.
 
 </CodeOutput>
 
+`Link` headers (RFC 8288) carry pagination and related resources. `response.link(res, "next")`
+gives the URL of a response's first link with that relation type, resolved against the
+response URL, and `response.links(res)` all of them; links with an `anchor` describe another
+resource and are skipped. `headers.parse_link` reads a raw value and never fails,
+`headers.format_link` writes one, and `http.schema.LinkHeaderFromString` is the pair as a
+schema. `append_header` on a request or a server response adds to a header without replacing
+what is there, so several parts of an app can each add a link.
+
+<CodeOutput>
+
+<include meta='title="links.py"'>../../snippets/platform/links.py</include>
+
+<include lang="text">../../snippets/platform/links.out</include>
+
+</CodeOutput>
+
 ## A client backend of your own
 
 `httpx_client.layer` is one backend; `client.make(send)` builds an `HttpClient` on any other.

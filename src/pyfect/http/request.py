@@ -155,6 +155,11 @@ class HttpClientRequest:
     def set_headers(self, input: HeadersInput) -> HttpClientRequest:
         return self._with(headers=self.headers.set_all(input))
 
+    def append_header(self, key: str, value: str) -> HttpClientRequest:
+        """``value`` added to the header, joined with ``", "``; an empty value changes
+        nothing."""
+        return self if value == "" else self._with(headers=self.headers.append(key, value))
+
     def update_headers(self, f: Callable[[Headers], Headers]) -> HttpClientRequest:
         return self._with(headers=f(self.headers))
 

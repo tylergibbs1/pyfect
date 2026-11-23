@@ -34,7 +34,7 @@ from pyfect.http.error import (
     StatusCodeError,
     TransportError,
 )
-from pyfect.http.headers import Headers, Pattern
+from pyfect.http.headers import Headers, Link, Pattern, parse_link
 from pyfect.http.headers import Input as HeadersInput
 from pyfect.http.headers import from_input as headers_from_input
 from pyfect.http.incoming_message import (
@@ -479,6 +479,35 @@ def filter_status_ok(response: HttpClientResponse) -> Effect[HttpClientResponse,
     )
 
 
+def links(response: HttpClientResponse) -> list[Link]:
+    """The links of the response's ``Link`` header, each target resolved against the response
+    URL (the final one, after redirects); a target that does not resolve is dropped, and no
+    header gives ``[]``. Links with an ``anchor`` describe another resource (RFC 8288 §3.2), so
+    they are dropped too: ``headers.parse_link`` reads the raw header."""
+    header = response.headers.get("link")
+    if header is None:
+        return []
+    base = response.url or None
+    out: list[Link] = []
+    for link in parse_link(header):
+        if "anchor" in link.params:
+            continue
+        url = _url.Url.parse(link.target, base)
+        if url is not None:
+            out.append(Link(url.href, link.rel, link.params))
+    return out
+
+
+def link(response: HttpClientResponse, rel: str) -> _url.Url | None:
+    """The URL of the first of ``links(response)`` with the relation type ``rel`` (compared
+    without case), as for following a ``next`` page; ``None`` when no link has it."""
+    type = rel.lower()
+    for found in links(response):
+        if type in found.rel:
+            return _url.parse(found.target)
+    return None
+
+
 def schema_json[T, RD](
     schema: Codec[T, object, RD, object],
     *,
@@ -517,6 +546,8 @@ __all__ = [
     "filter_status",
     "filter_status_ok",
     "is_too_large",
+    "link",
+    "links",
     "make",
     "match_status",
     "schema_body_json",

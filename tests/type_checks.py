@@ -11800,3 +11800,35 @@ def check_testing_explore() -> None:
 
     # The check reads only what the layer provides.
     explore.activity_crashes(wf, {"id": "1"}, layer=layer, check=needs_other)  # pyright: ignore[reportArgumentType]
+
+
+# --- Link headers (Effect #10817) ----------------------------------------------------------
+def _link_headers() -> None:
+    from pyfect.http import headers as http_headers
+    from pyfect.http import request as http_request
+    from pyfect.http import response as http_response
+    from pyfect.http import schema as http_schema
+    from pyfect.http import url as http_url
+
+    assert_type(http_headers.parse_link('</p2>; rel="next"'), list[http_headers.Link])
+    assert_type(http_headers.format_link([http_headers.Link("/p2", ("next",))]), str)
+    assert_type(http_headers.EMPTY.append("Vary", "Accept"), http_headers.Headers)
+    assert_type(
+        http_request.get("/").append_header("Accept", "text/html"), http_request.HttpClientRequest
+    )
+    assert_type(
+        http_server_response.empty().append_header("Link", "</p2>"),
+        http_server_response.HttpServerResponse,
+    )
+    got = http_response.make(http_request.get("https://example.com"))
+    assert_type(http_response.links(got), list[http_headers.Link])
+    assert_type(http_response.link(got, "next"), http_url.Url | None)
+    assert_type(
+        http_schema.LinkHeaderFromString,
+        S.DecodeToSchema[tuple[http_headers.Link, ...], str],
+    )
+    # Relation types are a tuple, so a bare string (one character per type) is an error.
+    http_headers.Link("/p2", "next")  # pyright: ignore[reportArgumentType]
+
+
+del _link_headers

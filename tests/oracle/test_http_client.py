@@ -142,6 +142,23 @@ def test_stream_after_json():
     assert b"".join(chunks) == b"data: hello\n\n"
 
 
+def test_link_resolves_the_first_matching_link_against_the_request_url() -> None:
+    """HttpClientResponse.link resolves the first matching link against the request URL"""
+    request = req.get("https://example.com/items")
+    response = res.make(
+        request,
+        None,
+        headers={
+            "link": '<https://other.example/>; rel="next"; anchor="#frag", '
+            '</items?page=2>; title="Page 2, continued; details"; rel="next last"'
+        },
+    )
+    found = res.link(response, "next")
+    assert found is not None
+    assert found.href == "https://example.com/items?page=2"
+    assert res.link(res.make(request, None), "next") is None
+
+
 class _Value(TypedDict):
     value: str
 

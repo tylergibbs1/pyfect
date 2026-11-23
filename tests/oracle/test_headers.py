@@ -61,6 +61,15 @@ def test_from_input_keeps_every_value_of_iterable_input(pairs: list[tuple[str, s
         assert headers[name] == ", ".join(v for k, v in pairs if k.lower() == name)
 
 
+def test_append_creates_joins_and_ignores_an_empty_value() -> None:
+    """append creates, joins and ignores an empty value"""
+    created = h.EMPTY.append("Vary", "Accept")
+    joined = created.append("vary", "Origin")
+    assert dict(created) == {"vary": "Accept"}
+    assert dict(joined) == {"vary": "Accept, Origin"}
+    assert dict(joined.append("Vary", "")) == {"vary": "Accept, Origin"}
+
+
 def test_remove() -> None:
     """remove"""
     headers = h.from_input({"foo": "bar", "baz": "qux", "hello": "world"})
@@ -234,3 +243,62 @@ def test_schema_retry_after_accepts_only_finite_non_negative_durations() -> None
     assert is_retry_after(h.retry_after_duration("5 seconds"))
     assert not is_retry_after(h.RetryAfterDuration(seconds(-5)))
     assert not is_retry_after(h.RetryAfterDuration(infinity))
+
+
+def test_link_parses_quoted_values_containing_commas_and_semicolons() -> None:
+    """Link / parses quoted values containing commas and semicolons and multiple relation types"""
+    assert h.parse_link('</items?page=2>; title="Page 2, continued; details"; rel="next last"') == [
+        h.Link("/items?page=2", ("next", "last"), {"title": "Page 2, continued; details"})
+    ]
+
+
+def test_link_parses_mixed_case_names_tokens_valueless_and_repeated_parameters() -> None:
+    """Link / parses mixed case names, tokens, valueless and repeated parameters and title*"""
+    assert h.parse_link(
+        "<https://a.example/app.js>; REL=Preload; AS=script; nopush, "
+        '<https://b.example/de>; rel="alternate"; hreflang=de; hreflang=fr; title="plain"; '
+        "title*=UTF-8''Gr%C3%BC%C3%9Fe"
+    ) == [
+        h.Link("https://a.example/app.js", ("preload",), {"as": "script", "nopush": ""}),
+        h.Link("https://b.example/de", ("alternate",), {"hreflang": "de", "title": "Grüße"}),
+    ]
+
+
+def test_link_stops_at_malformed_input_and_keeps_the_links_read_so_far() -> None:
+    """Link / stops at malformed input and keeps the links read so far"""
+    assert h.parse_link('<a>; rel="next", garbage') == [h.Link("a", ("next",), {})]
+    assert h.parse_link("garbage") == []
+    assert h.parse_link('<a>; title="x\\') == [h.Link("a", (), {"title": "x"})]
+
+
+def test_link_ends_parameter_names_at_whitespace_and_keeps_the_first_rel() -> None:
+    """Link / ends parameter names at whitespace and keeps the first rel and extended parameter"""
+    assert h.parse_link("<a>; rel=next; anchor junk, <b>; rel=last") == [
+        h.Link("a", ("next",), {"anchor": ""})
+    ]
+    assert h.parse_link(
+        "<a>; rel=prev; rel*=UTF-8''next; title=plain; title*=bad; title*=UTF-8''later"
+    ) == [h.Link("a", ("prev",), {"title": "plain"})]
+
+
+def test_link_format_link_escapes_quoted_values_and_round_trips() -> None:
+    """Link / formatLink escapes quoted values, writes non-ASCII values as name* and round trips"""
+    links = [
+        h.Link("/a", ("next", "https://example.com/rel;v=1,2"), {"title": 'say "hi" \\ there'}),
+        h.Link("/b", ("alternate",), {"title": "Grüße"}),
+    ]
+    formatted = h.format_link(links)
+    assert formatted == (
+        '</a>; rel="next https://example.com/rel;v=1,2"; title="say \\"hi\\" \\\\ there", '
+        "</b>; rel=\"alternate\"; title*=UTF-8''Gr%C3%BC%C3%9Fe"
+    )
+    assert h.parse_link(formatted) == links
+    assert h.format_link([h.Link("/c", ('x"; a="b c',))]) == '</c>; rel="x%22;%20a=%22b%20c"'
+
+
+def test_link_schema_link_header_from_string_decodes_and_encodes() -> None:
+    """Link / Schema.LinkHeaderFromString decodes and encodes through Schema"""
+    header = '<https://example.com/>; rel="canonical"'
+    links = S.decode_unknown_sync(HS.LinkHeaderFromString)(header)
+    assert links == (h.Link("https://example.com/", ("canonical",), {}),)
+    assert S.encode_sync(HS.LinkHeaderFromString)(links) == header
