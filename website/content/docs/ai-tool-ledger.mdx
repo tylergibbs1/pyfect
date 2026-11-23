@@ -92,9 +92,21 @@ reuses an id (fake models and examples often do). Outside a workflow the key is 
 
 Releases up to 0.6.22 keyed every call by its bare id. So that an execution in flight across
 the upgrade does not run a tool twice, a call inside a workflow first looks for a record
-under its bare id and, if one exists, is answered from it. A bare-id record written outside a
-workflow also answers a workflow call with the same id, so give calls made outside workflows
-ids of their own.
+under its bare id and, if one exists, is answered from it. That costs each guarded call in a
+workflow one extra lookup.
+
+The bare-id record need not be the calling execution's own. One written by any execution
+under 0.6.22 or earlier answers every later execution that reuses that id, and so does one
+written outside a workflow. Once no execution started before the upgrade is still running,
+delete the bare-id rows (in the default table; a scoped key is the one with a `/`):
+
+```sql
+DELETE FROM effect_ai_tool_ledger WHERE id NOT LIKE '%/%'
+```
+
+That also deletes the records of calls guarded outside workflows, which stay bare, so run it
+only when none of them will be replayed. Otherwise use fresh call ids: ones no 0.6.22
+execution wrote, and, for calls made outside workflows, ids of their own.
 
 With [durable agents](/docs/ai-durable) the ledger runs inside each tool call's activity, and
 the activity stores what the guard gives back, `ToolOutcomeUnknown` and `ToolLedgerError`

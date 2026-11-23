@@ -122,6 +122,11 @@ while its handler ran gets `ToolOutcomeUnknown`, which the activity stores like 
 result: a failed tool result for the model with `on_unknown="tell_model"`, the call's typed
 failure with `"fail"`. A `ToolLedgerError` is stored as the call's failure too.
 
+With `"fail"`, the run fails with `ToolOutcomeUnknown`, and the workflow's caller gets it as
+a typed error only if the workflow's `error=` schema lists it, as in
+`error=tool_ledger.ToolOutcomeUnknown`. If the schema leaves it out, pyright rejects the body
+at the workflow's `to_layer`: catch the error in the body or add it to the schema.
+
 The tool activity stores whatever the toolkit's `call_failure_schema(name)` covers: the
 tool's own failures, plus whatever a toolkit wrapping it adds. A toolkit of your own that
 wraps another and fails with errors of its own should extend that schema the same way the

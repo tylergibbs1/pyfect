@@ -8000,6 +8000,32 @@ def check_ai_toolkit() -> None:
     ai_tool_ledger.guard(kit, on_unknown="retry")  # pyright: ignore[reportCallIssue, reportArgumentType]
 
 
+def check_ai_tool_ledger_workflow_error(
+    answer: fx.Effect[str, ai_tool_ledger.ToolOutcomeUnknown, lm.LanguageModel],
+) -> None:
+    # Through a workflow, on_unknown="fail"'s ToolOutcomeUnknown reaches the caller only when
+    # the workflow's error schema lists it; to_layer rejects a handler that fails with it
+    # otherwise.
+    listed = workflow.make(
+        "Listed",
+        payload=S.Struct(WorkflowOrder),
+        success=S.String,
+        error=ai_tool_ledger.ToolOutcomeUnknown,
+        idempotency_key=lambda o: o["id"],
+    )
+    assert_type(
+        listed.to_layer(lambda _o, _id: answer),
+        fx.Layer[Never, Never, lm.LanguageModel | WorkflowEngine],
+    )
+    unlisted = workflow.make(
+        "Unlisted",
+        payload=S.Struct(WorkflowOrder),
+        success=S.String,
+        idempotency_key=lambda o: o["id"],
+    )
+    unlisted.to_layer(lambda _o, _id: answer)  # pyright: ignore[reportCallIssue, reportArgumentType]
+
+
 def check_ai_chat(chat: ai_chat.Service, persisted: ai_chat.PersistenceService) -> None:
     from pyfect.persistence.persistence import BackingPersistence
 
