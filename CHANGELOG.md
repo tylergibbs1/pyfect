@@ -1,5 +1,88 @@
 # Changelog
 
+## 0.6.23 (2026-11-23)
+
+### Added
+
+- `WithHandler.call_failure_schema(name)`: every failure a call of the tool can give its
+  caller, as a failed result or an error. `pyfect.ai.durable` stores tool results with it; a
+  toolkit wrapping another (as `tool_ledger.guard` does) extends the wrapped one's.
+- `tool.ProviderToolConstructor`, the type of a provider-defined tool's constructor:
+  `failure_mode` is typed, and `failure_mode="return"` gives a tool whose handler raises
+  nothing to its caller. `ProviderDefined`'s `set_failure`, `set_success`, `set_parameters`
+  and `add_dependency` return a `ProviderDefined`.
+
+### Deprecated
+
+- `handlers.handle_all({...})`, the mapping form (and with it `builder.HandleAllEntry`, whose
+  only use is as a value there): pass `handle_all` `builder.entry(endpoint)(handler)` values,
+  which are typed by their endpoint, its own middleware included.
+
+### Fixed
+
+- `durable.layer` with `tool_ledger.guard`: a call whose ledger entry has an intent and no
+  result (a crash while its handler ran) gets `ToolOutcomeUnknown` as the ledger's docs say,
+  a failed tool result with `on_unknown="tell_model"` and the call's typed failure with
+  `"fail"`, and a failing ledger store gives `ToolLedgerError`. Each killed the run with a
+  `SchemaError` before, on the first run too: the tool activity stored and read back only the
+  tool's own failures. It now stores everything the toolkit's `call_failure_schema` covers.
+- Encrypted event log servers that start at the same moment on a new SQL database now agree on
+  its remote id. Each one used to read the empty remote id table and insert its own id, so the
+  servers disagreed about which log they serve. A start that finds no id now locks the upgrade
+  record's row, reads again, and inserts only if the table is still empty.
+- `Stream.group_by` and `group_by_key` with a finite `idle_time_to_live` no longer lose values.
+  A group could expire while a value was on its way into it: with a zero TTL every value was
+  dropped, and a group whose reader was slower than its TTL ended early, so the rest of its
+  key's values went to a new group. A group now stays open until each offer into it has been
+  accepted or cancelled.
+- `handlers.handle_all` gives an endpoint with middleware of its own the layer type `handle`
+  gives it: pass `builder.entry(Users.me)(get_me)` values, and the group layer needs the
+  endpoint's middleware and what that middleware needs, not what it provides. A mapping's key
+  can't name its endpoint, so the mapping form typed such an endpoint wrong: pyright accepted
+  layers that failed at runtime for want of the middleware, and rejected ones that were fine.
+  `builder.entry` also checks each handler's request, success and errors against its endpoint,
+  and `builder.entry(endpoint, uninterruptible=True)` takes `HandleAllEntry`'s option.
+- `race`, `race_first`, `race_all` and `race_all_first` interrupt a racer that settles the race
+  during its own first step. Such a racer used to run on after the race was decided (code after
+  completing the `Deferred` the winner waited on ran, and the racer ended with its own value),
+  and a racer whose fiber settled the race as it was built (a `FiberRuntimeMetrics` hook) still
+  ran. Each racer is now registered with the race before it runs.
+- `HttpRouter`: an explicit route such as `GET /test` and a wildcard route `GET /test/*` can be
+  registered together in either order. `/test` goes to the explicit route and `/test/anything`
+  to the wildcard. Before, registering `/test` after `/test/*` died with "Method 'GET' already
+  declared for route '/test'", and the other order did too. A wildcard registered alone still
+  serves its bare prefix, and two explicit routes for the same path still fail (Effect #10768).
+  `find_my_way.Router.on_fallback` registers a route that a later explicit one replaces.
+- An RPC socket client's pings keep their rhythm across reconnects, as in Effect. Each
+  reconnect restarted the ping interval, so a client's silence verdicts shifted by however long
+  its reconnects took. Effect's pinger keeps ticking from when it started, whatever the socket
+  does. The interval still restarts at the first open, so a request that times out at twice the
+  interval still finds the connection's error on its retry.
+- `sse.decode` emits the events it parsed before an event that is too large, then fails with
+  `SseError` (`EventTooLarge`). When a complete event and an oversized one came in the same
+  chunk, the complete event was dropped.
+- `tool_ledger.guard` keys a call made inside a workflow by `<execution id>/<tool_call_id>`,
+  so two executions on one database whose model reuses an id no longer answer the second
+  one's call from the first one's record. Outside a workflow the key is still the bare id,
+  and a record an earlier release stored under the bare id still answers the call.
+- Cluster workflows: an activity's result reaches its workflow when the activity's reply is
+  redelivered to the same runner. That happens when the runner's shard-ownership check fails
+  once while the reply is being saved. Before, the redelivered request found no registration
+  and answered `Suspended`, so the workflow waited forever. A redelivered activity now returns
+  the result it already produced, without running again, unless it runs `WithTransaction`, in
+  which case its transaction rolled back and it runs again. Two attempts of the same activity
+  running at once (an `activity.CurrentAttempt` given to each) also get their own results
+  instead of hanging. A runner that gives up a request it no longer owns releases its claim
+  only after the request's fiber has exited, so the storage poll can't hand the request back
+  while the runner would still drop it (Effect #10791).
+
+### Docs
+
+- Durable agents and the tool ledger: state an agent keeps beside the transcript (a list a
+  handler appends to) is not rebuilt on replay; outside the workflow on the cluster engine a
+  `RequestDiverged` arrives as an `S.ErrorInstance` named after it; with `SuspendOnFailure` a
+  caller waits until the run is resumed, so poll or set a timeout.
+
 ## 0.6.22 (2026-11-21)
 
 ### Added

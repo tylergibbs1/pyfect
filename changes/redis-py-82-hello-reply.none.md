@@ -1,1 +1,0 @@
-- Tests only: the redis-py stall tests' fake peer answers `HELLO 3` with a RESP3 map, as a server does, which redis-py 8.2.0 now checks; the driver is unchanged.
