@@ -18,6 +18,15 @@ on:
       - ".github/workflows/drivers.yml"
       - ".github/actions/container-images/**"
       - "tests/container_images.json"
+      # Each driver's tests (the matrix's ``tests``), so a change to them alone runs them.
+      - "tests/test_sql_pg_*.py"
+      - "tests/oracle/test_pg_*.py"
+      - "tests/test_mysql_*.py"
+      - "tests/test_sql_mysql_*.py"
+      - "tests/oracle/test_mysql_*.py"
+      - "tests/test_mssql_*.py"
+      - "tests/oracle/test_mssql_*.py"
+      - "tests/oracle/test_redis*.py"
   schedule:
     - cron: "23 5 * * *"
   workflow_dispatch:
