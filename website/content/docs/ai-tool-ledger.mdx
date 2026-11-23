@@ -98,7 +98,9 @@ ids of their own.
 
 With [durable agents](/docs/ai-durable) the ledger runs inside each tool call's activity, and
 the activity stores what the guard gives back, `ToolOutcomeUnknown` and `ToolLedgerError`
-included.
+included. For either to reach the workflow's caller as a typed error, list it in
+the workflow's `error=`, as in
+`error=S.Union(tool_ledger.ToolOutcomeUnknown, tool_ledger.ToolLedgerError)`.
 
 ## What the ledger does not cover
 

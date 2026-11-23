@@ -29,11 +29,15 @@ from _ai_durable_agent import (
 )
 
 import pyfect as fx
+from pyfect import schema as S
 from pyfect import testing
 from pyfect.ai import durable as durable_ai
 from pyfect.ai import language_model as lm
 from pyfect.ai import tool_ledger
 from pyfect.ai._tool_outcomes import Outcome
+from pyfect.exit import Failure
+from pyfect.result import Ok
+from pyfect.workflow import workflow
 
 type Engines = Callable[[], tuple[fx.Layer[Any, Any, Any], fx.Layer[Any, Any, Any]]]
 
@@ -138,26 +142,63 @@ def test_a_result_an_earlier_release_stored_under_the_bare_id_is_replayed(engine
     assert found == ("done", {})
 
 
+class _Broken(tool_ledger.ToolLedgerService):
+    """A ledger store that is down: ``begin`` fails with ``ToolLedgerError``."""
+
+    def begin(self, tool_call_id: str, tool_name: str) -> fx.Effect[Any, Any]:
+        return fx.fail(tool_ledger.ToolLedgerError("down", "begin", tool_call_id, OSError()))
+
+    def complete(self, tool_call_id: str, outcome: Outcome) -> fx.Effect[None, Any]:
+        raise AssertionError("not reached")
+
+    def lookup(self, tool_call_id: str) -> fx.Effect[Any, Any]:
+        return fx.succeed(None)
+
+
+def _broken_ledger() -> fx.Layer[tool_ledger.ToolLedger]:
+    return fx.layer.succeed(tool_ledger.ToolLedger, _Broken())
+
+
 @pytest.mark.parametrize("engine", ENGINES)
 @testing.live
 def test_a_failing_ledger_store_reaches_the_agent_as_a_typed_tool_ledger_error(engine: str):
-    class Broken(tool_ledger.ToolLedgerService):
-        def begin(self, tool_call_id: str, tool_name: str) -> fx.Effect[Any, Any]:
-            return fx.fail(tool_ledger.ToolLedgerError("down", "begin", tool_call_id, OSError()))
-
-        def complete(self, tool_call_id: str, outcome: Outcome) -> fx.Effect[None, Any]:
-            raise AssertionError("not reached")
-
-        def lookup(self, tool_call_id: str) -> fx.Effect[Any, Any]:
-            return fx.succeed(None)
-
     database, _ = ENGINES[engine]()
     guarded = tool_ledger.guard(KIT, on_unknown="fail")
-    broken = fx.layer.succeed(tool_ledger.ToolLedger, Broken())
-    layer = agent_layer(database, run=_reported(agent(toolkit=guarded)), extra=broken)
+    layer = agent_layer(database, run=_reported(agent(toolkit=guarded)), extra=_broken_ledger())
     scoped = yield from _scoped("call-0")
     answer = yield from Agent.execute(PAYLOAD).pipe(fx.provide(layer))
     assert answer == f"failed: ToolLedgerError {scoped}"
+
+
+TypedAgent = workflow.make(
+    "TypedAgent",
+    payload=S.Struct(AgentPayload),
+    success=S.String,
+    error=S.Union(tool_ledger.ToolOutcomeUnknown, tool_ledger.ToolLedgerError),
+    idempotency_key=lambda p: f"{p['turns']}/{p['prompt']}",
+)
+"""The agent with the guard's errors in ``error=``, so its caller gets them typed."""
+
+
+@pytest.mark.parametrize("engine", ENGINES)
+@testing.live
+def test_a_workflow_listing_tool_ledger_error_gives_its_caller_the_typed_error(engine: str):
+    database, _ = ENGINES[engine]()
+    guarded = tool_ledger.guard(KIT, on_unknown="fail")
+    layer = agent_layer(
+        database, run=agent(toolkit=guarded), extra=_broken_ledger(), registered=TypedAgent
+    )
+    scoped = yield from TypedAgent.execution_id(PAYLOAD).map(lambda e: f"{e}/call-0")
+    exit = yield from TypedAgent.execute(PAYLOAD).pipe(fx.provide(layer)).exit()
+    assert isinstance(exit, Failure), exit
+    found = exit.cause.find_error()
+    assert isinstance(found, Ok), exit.cause
+    error = found.value
+    assert isinstance(error, tool_ledger.ToolLedgerError), error
+    assert (error.message, error.method, error.tool_call_id) == ("down", "begin", scoped)
+    # The store's exception was stored as JSON: it comes back as an ErrorInstance.
+    assert isinstance(error.cause, S.ErrorInstance), error.cause
+    assert error.cause.name == "OSError"
 
 
 @pytest.mark.parametrize("durable", [True, False])

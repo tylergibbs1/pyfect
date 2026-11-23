@@ -28,7 +28,7 @@ from __future__ import annotations
 import secrets
 import threading
 from abc import ABC, abstractmethod
-from collections.abc import Callable, Generator
+from collections.abc import Callable, Generator, Mapping
 from dataclasses import dataclass, field
 from typing import Any, Literal, LiteralString, Never, TypedDict, TypeIs, cast, overload
 
@@ -95,6 +95,10 @@ class ToolLedgerError(TaggedError):
     tool_call_id: str
     cause: object = None
 
+    @classmethod
+    def __codec__(cls) -> S.Bottom[ToolLedgerError, Mapping[str, object]]:
+        return _LEDGER_ERROR
+
 
 class _EncodedLedgerError(TypedDict):
     _tag: Literal["ToolLedgerError"]
@@ -108,7 +112,7 @@ def _is_ledger_error(value: object) -> TypeIs[ToolLedgerError]:
     return isinstance(value, ToolLedgerError)
 
 
-_LEDGER_ERROR: S.Top = S.Struct(
+_LEDGER_ERROR: S.Bottom[ToolLedgerError, Mapping[str, object]] = S.Struct(
     _EncodedLedgerError, _tag=S.Literal("ToolLedgerError"), cause=S.Defect()
 ).pipe(
     S.decode_to(
@@ -128,7 +132,7 @@ _LEDGER_ERROR: S.Top = S.Struct(
     )
 )
 """A ``ToolLedgerError`` as JSON, its ``cause`` as a defect (an exception comes back as
-an ``ErrorInstance``), for a store of a guarded call's failures."""
+an ``ErrorInstance``), for a store of a guarded call's failures or a workflow's ``error=``."""
 
 
 @dataclass(frozen=True)
@@ -422,7 +426,7 @@ class _Guarded(WithHandler[Any, Any, Any, Any]):
         return S.Union(
             cast("Any", self.inner.call_failure_schema(name)),
             cast("Any", ToolOutcomeUnknown),
-            cast("Any", _LEDGER_ERROR),
+            cast("Any", ToolLedgerError),
         )
 
 
