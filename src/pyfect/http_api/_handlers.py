@@ -2,7 +2,9 @@
 ``Handlers``)::
 
     handlers.handle(Users.get_user)(get_user).handle(Users.list_users)(list_users)
-    handlers.handle_all({"getUser": get_user, "listUsers": list_users})
+    handlers.handle_all(
+        builder.entry(Users.get_user)(get_user), builder.entry(Users.list_users)(list_users)
+    )
 
 ``handle(endpoint)`` gives the slot of one endpoint; calling it with the
 handler gives the handlers with that one added. The two steps let the
@@ -17,6 +19,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Generic, Never, TypeVar, cast, overload
+from warnings import deprecated
 
 from pyfect._core import Effect
 from pyfect.http.router import Provided
@@ -41,6 +44,7 @@ MP_co = TypeVar("MP_co", covariant=True)
 GP = TypeVar("GP")
 GE = TypeVar("GE")
 R_co = TypeVar("R_co", covariant=True)
+EX_co = TypeVar("EX_co", covariant=True)
 
 type PayloadErrors = HttpApiSchemaError | HttpApiPayloadTooLarge
 """What reading a streamed payload may fail with; any handler may fail
@@ -87,10 +91,69 @@ class HandlerEntry:
 
 @dataclass(frozen=True, slots=True)
 class HandleAllEntry(Generic[R_co]):
-    """A ``handle_all`` value with options (Effect's ``{ handler, options }``)."""
+    """A value of ``handle_all``'s deprecated mapping form with options
+    (Effect's ``{ handler, options }``); ``builder.entry`` takes them now."""
 
     handler: Callable[[HttpApiRequest[Any, Any, Any, Any]], Effect[Any, Any, R_co]]
     uninterruptible: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class EndpointEntry(Generic[EX_co, R_co]):
+    """A handler of ``endpoint`` for ``handle_all``, from ``builder.entry``.
+    The group layer needs ``R`` for it; it may fail with ``EX`` beyond what
+    the endpoint declares, which must be what the group's middleware fails
+    with."""
+
+    endpoint: AnyEndpoint
+    handler: Handler
+    uninterruptible: bool
+
+
+@dataclass(frozen=True, slots=True)
+class EntrySlot(Generic[X_co, S, E, MP_co, R_co]):
+    """``builder.entry(endpoint)``: called with the handler, gives its
+    ``EndpointEntry``. Two steps, as ``Bound``: ``R`` (the endpoint's
+    middleware and what it needs) and ``MP`` (what it provides) are fixed
+    before the handler's requirements are solved."""
+
+    endpoint: AnyEndpoint
+    uninterruptible: bool
+
+    @overload
+    def __call__(
+        self,
+        handler: Callable[
+            [X_co], Effect[S | HttpServerResponse, E | PayloadErrors, MP_co | Provided]
+        ],
+        /,
+    ) -> EndpointEntry[Never, R_co]: ...
+    @overload
+    def __call__[R1](
+        self,
+        handler: Callable[
+            [X_co], Effect[S | HttpServerResponse, E | PayloadErrors, R1 | MP_co | Provided]
+        ],
+        /,
+    ) -> EndpointEntry[Never, R_co | R1]: ...
+    @overload
+    def __call__[EX](
+        self,
+        handler: Callable[
+            [X_co], Effect[S | HttpServerResponse, E | EX | PayloadErrors, MP_co | Provided]
+        ],
+        /,
+    ) -> EndpointEntry[EX, R_co]: ...
+    @overload
+    def __call__[EX, R1](
+        self,
+        handler: Callable[
+            [X_co], Effect[S | HttpServerResponse, E | EX | PayloadErrors, R1 | MP_co | Provided]
+        ],
+        /,
+    ) -> EndpointEntry[EX, R_co | R1]: ...
+    def __call__(self, handler: Any, /) -> Any:
+        return EndpointEntry[Any, Any](self.endpoint, handler, self.uninterruptible)
 
 
 type HandleAllValue[R] = (
@@ -211,25 +274,53 @@ class Bound(Generic[X_co, S, E, MP_co, GP, GE, R_co]):
         )
 
 
+_MAPPING_DEPRECATED = (
+    "a mapping's key can't name its endpoint, so its type misses the endpoint's own "
+    "middleware; pass builder.entry(endpoint)(handler) values"
+)
+
+
 @dataclass(frozen=True, slots=True)
 class HandleAll(Generic[GP, GE, R_co]):
-    """``handlers.handle_all``: called with a mapping of endpoint identifiers
-    to handlers, it registers each as ``handle`` would, in order (Effect's
-    ``handleAll``). Only the mapping's items count, never attributes of its
-    class. A class of its own, as ``Bound``, so that ``GP`` is fixed before
-    the handlers' requirements are solved."""
+    """``handlers.handle_all``: called with ``builder.entry`` values, it
+    registers each as ``handle`` would, in order (Effect's ``handleAll``).
+    A class of its own, as ``Bound``, so that ``GP`` is fixed before the
+    handlers' requirements are solved.
+
+    The deprecated form takes a mapping of endpoint identifiers to handlers:
+    a key can't name its endpoint, so that form misses an endpoint's own
+    middleware. Only the mapping's items count, never attributes of its
+    class."""
 
     handlers: Handlers[Any, Any, Any]
 
     @overload
+    def __call__(self, /, *entries: EndpointEntry[GE, GP]) -> Handlers[GP, GE, R_co]: ...
+    @overload
+    def __call__[R1](
+        self, /, *entries: EndpointEntry[GE, R1 | GP]
+    ) -> Handlers[GP, GE, R_co | R1]: ...
+    @overload
+    @deprecated(_MAPPING_DEPRECATED)
     def __call__(
         self, handlers: Mapping[str, HandleAllValue[GP | Provided]], /
     ) -> Handlers[GP, GE, R_co]: ...
     @overload
+    @deprecated(_MAPPING_DEPRECATED)
     def __call__[R1](
         self, handlers: Mapping[str, HandleAllValue[R1 | GP | Provided]], /
     ) -> Handlers[GP, GE, R_co | R1]: ...
-    def __call__(self, handlers: Mapping[str, HandleAllValue[Any]], /) -> Any:
+    def __call__(self, /, *values: Any) -> Any:
+        result = self.handlers
+        if len(values) == 1 and isinstance(values[0], Mapping):
+            return self._register_mapping(cast("Mapping[str, HandleAllValue[Any]]", values[0]))
+        for value in cast("tuple[EndpointEntry[Any, Any], ...]", values):
+            result = result._register(  # pyright: ignore[reportPrivateUsage]
+                value.endpoint.identifier, value.handler, False, value.uninterruptible
+            )
+        return result
+
+    def _register_mapping(self, handlers: Mapping[str, HandleAllValue[Any]]) -> Any:
         result = self.handlers
         for identifier, value in handlers.items():
             entry = (
@@ -355,6 +446,8 @@ class GroupHandlers(Generic[G_co]):
 
 __all__ = [
     "Bound",
+    "EndpointEntry",
+    "EntrySlot",
     "GroupHandlers",
     "HandleAll",
     "HandleAllEntry",

@@ -6697,6 +6697,20 @@ class ApiAdmin(HttpApiGroup[ApiAuth], identifier="admin"):
     get_user = api_get_user
 
 
+class ApiSessions(Tag[int]): ...
+
+
+class ApiSession(HttpApiMiddleware[ApiCurrentUser, api_error.Unauthorized, ApiSessions]):
+    """Needs ApiSessions, provides ApiCurrentUser."""
+
+    error = api_error.Unauthorized
+
+
+class ApiSessionUsers(HttpApiGroup, identifier="sessionUsers"):
+    me = api_get_user.middleware(ApiSession)
+    health = api_health
+
+
 type ApiClientErrors = HttpClientError | SchemaError
 
 
@@ -6804,27 +6818,28 @@ def check_http_api(
         lambda _r: fx.succeed(1),  # pyright: ignore[reportArgumentType]
     )
 
-    # handle_all maps endpoint identifiers to handlers; its requirements are the
+    # The deprecated mapping form of handle_all: its requirements are the
     # handlers', less what the group's middleware provides.
     assert_type(
-        handlers.handle_all({"getUser": find, "health": lambda _r: fx.succeed(None)}),
+        handlers.handle_all({"getUser": find, "health": lambda _r: fx.succeed(None)}),  # pyright: ignore[reportDeprecated]
         Handlers[Never, Never, ApiCurrentUser | ApiDb],
     )
     assert_type(
-        handlers.handle_all({"health": lambda _r: fx.succeed(None)}), Handlers[Never, Never, Never]
+        handlers.handle_all({"health": lambda _r: fx.succeed(None)}),  # pyright: ignore[reportDeprecated]
+        Handlers[Never, Never, Never],
     )
     assert_type(
-        admin_handlers.handle_all({"getUser": find}),
+        admin_handlers.handle_all({"getUser": find}),  # pyright: ignore[reportDeprecated]
         Handlers[ApiCurrentUser, api_error.Unauthorized, ApiAuth | ApiDb],
     )
     assert_type(
-        handlers.handle(ApiUsers.health)(lambda _r: fx.succeed(None)).handle_all({"getUser": find}),
+        handlers.handle(ApiUsers.health)(lambda _r: fx.succeed(None)).handle_all({"getUser": find}),  # pyright: ignore[reportDeprecated]
         Handlers[Never, Never, ApiCurrentUser | ApiDb],
     )
     # A key can't name its endpoint's types; builder.handler gives a value its
     # endpoint's request, success and errors.
     assert_type(
-        handlers.handle_all(
+        handlers.handle_all(  # pyright: ignore[reportDeprecated]
             {
                 "getUser": api_builder.handler(ApiUsers.get_user, find),
                 "createUser": api_builder.HandleAllEntry(
@@ -6861,7 +6876,7 @@ def check_http_api(
         api_builder.group(
             api,
             ApiUsers,
-            lambda h: h.handle_all({"getUser": find, "health": lambda _r: fx.succeed(None)}),
+            lambda h: h.handle_all({"getUser": find, "health": lambda _r: fx.succeed(None)}),  # pyright: ignore[reportDeprecated]
         ),
         fx.Layer[ApiUsers, Never, ApiCurrentUser | ApiDb],
     )
@@ -6893,6 +6908,73 @@ def check_http_api(
         assert_type(api_client.group(api, ApiAdmin, http_client=http), fx.Effect[ApiAdmin])
 
     del admin_client
+
+
+def check_http_api_handle_all_entries(
+    find: Callable[
+        [HttpApiRequest[ApiUserParams, None, None, None]],
+        fx.Effect[ApiUser, api_error.NotFound, ApiCurrentUser | ApiDb],
+    ],
+) -> None:
+    from pyfect.http_api import builder as api_builder
+    from pyfect.http_api._handlers import GroupHandlers
+
+    admin_handlers: GroupHandlers[ApiAdmin] = GroupHandlers(ApiAdmin)
+    # A mapping's key can't name its endpoint, so it can't see the endpoint's own
+    # middleware. builder.entry types a value by its endpoint: handle_all then
+    # needs what handle does, the middleware and what it needs, not what it provides.
+    session_handlers: GroupHandlers[ApiSessionUsers] = GroupHandlers(ApiSessionUsers)
+    assert_type(
+        session_handlers.handle(ApiSessionUsers.me)(find),
+        Handlers[Never, Never, ApiSession | ApiSessions | ApiDb],
+    )
+    assert_type(
+        session_handlers.handle_all(
+            api_builder.entry(ApiSessionUsers.me)(find),
+            api_builder.entry(ApiSessionUsers.health)(lambda _r: fx.succeed(None)),
+        ),
+        Handlers[Never, Never, ApiSession | ApiSessions | ApiDb],
+    )
+    assert_type(
+        session_handlers.handle_all(
+            api_builder.entry(ApiSessionUsers.health)(lambda _r: fx.succeed(None))
+        ),
+        Handlers[Never, Never, Never],
+    )
+    assert_type(
+        api_builder.entry(ApiSessionUsers.me, uninterruptible=True)(find),
+        api_builder.EndpointEntry[Never, ApiSession | ApiSessions | ApiDb],
+    )
+    # The group's middleware: what it provides is not required, its errors may be failed with.
+    assert_type(
+        admin_handlers.handle_all(api_builder.entry(ApiAdmin.get_user)(find)),
+        Handlers[ApiCurrentUser, api_error.Unauthorized, ApiAuth | ApiDb],
+    )
+    assert_type(
+        admin_handlers.handle_all(
+            api_builder.entry(ApiAdmin.get_user)(lambda _r: fx.fail(api_error.Unauthorized()))
+        ),
+        Handlers[ApiCurrentUser, api_error.Unauthorized, ApiAuth],
+    )
+    # An error neither the endpoint nor the group declares is rejected.
+    session_handlers.handle_all(  # pyright: ignore[reportCallIssue]
+        api_builder.entry(ApiSessionUsers.health)(lambda _r: fx.fail(api_error.NotFound()))  # pyright: ignore[reportArgumentType]
+    )
+    api_builder.entry(ApiSessionUsers.health)(  # pyright: ignore[reportCallIssue]
+        lambda _r: fx.succeed(1)  # pyright: ignore[reportArgumentType]
+    )
+    session_api = HttpApi.make("sessions").add(ApiSessionUsers)
+    session_layer = api_builder.group(
+        session_api,
+        ApiSessionUsers,
+        lambda h: h.handle_all(
+            api_builder.entry(ApiSessionUsers.me)(find),
+            api_builder.entry(ApiSessionUsers.health)(lambda _r: fx.succeed(None)),
+        ),
+    )
+    assert_type(session_layer, fx.Layer[ApiSessionUsers, Never, ApiSession | ApiSessions | ApiDb])
+    # The layer needs ApiSessions, the middleware's own requirement.
+    _without_sessions: fx.Layer[ApiSessionUsers, Never, ApiSession | ApiDb] = session_layer  # pyright: ignore[reportAssignmentType]
 
 
 def check_http_api_clients() -> None:

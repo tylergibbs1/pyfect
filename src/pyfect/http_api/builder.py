@@ -42,6 +42,8 @@ from pyfect.http.server_response import HttpServerResponse, empty, json_unsafe
 from pyfect.http_api import _path
 from pyfect.http_api import schema as api_schema
 from pyfect.http_api._handlers import (
+    EndpointEntry,
+    EntrySlot,
     GroupHandlers,
     HandleAllEntry,
     HandlerEntry,
@@ -275,6 +277,28 @@ def handler(endpoint: AnyEndpoint, f: Any, /) -> Any:
     """``f`` unchanged, typed as ``endpoint``'s handler, for a later
     ``handle(endpoint)(f)`` (Effect's ``HttpApiBuilder.handler``)."""
     return f
+
+
+@overload
+def entry[P, Q, B, CB, H, S1, CS, E1](
+    endpoint: HttpApiEndpoint[P, Q, B, CB, H, S1, CS, E1, Never],
+    /,
+    *,
+    uninterruptible: bool = False,
+) -> EntrySlot[HttpApiRequest[P, Q, B, H], S1, E1, Never, Never]: ...
+@overload
+def entry[P, Q, B, CB, H, S1, CS, E1, MP, ME, MR, MT](
+    endpoint: HttpApiEndpoint[P, Q, B, CB, H, S1, CS, E1, HttpApiMiddleware[MP, ME, MR], MT],
+    /,
+    *,
+    uninterruptible: bool = False,
+) -> EntrySlot[HttpApiRequest[P, Q, B, H], S1, E1 | ME, MP, MT | MR]: ...
+def entry(endpoint: AnyEndpoint, /, *, uninterruptible: bool = False) -> Any:
+    """The slot of ``endpoint``'s ``handle_all`` value (Effect's
+    ``handleAll`` entry): ``entry(Users.get_user)(get_user)`` is typed as
+    ``handle(Users.get_user)(get_user)`` is, its endpoint's middleware
+    included; ``uninterruptible`` runs it uninterruptibly."""
+    return EntrySlot[Any, Any, Any, Any, Any](endpoint, uninterruptible)
 
 
 def handler_to_route(
@@ -514,9 +538,11 @@ def _apply_middleware(
 
 
 __all__ = [
+    "EndpointEntry",
     "HandleAllEntry",
     "authorization_credential",
     "endpoint",
+    "entry",
     "group",
     "handler",
     "handler_to_http_effect",

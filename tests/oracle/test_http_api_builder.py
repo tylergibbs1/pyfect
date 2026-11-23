@@ -159,7 +159,7 @@ def test_registers_handle_all_handlers_at_runtime() -> None:
     live = builder.group(
         api,
         group,
-        lambda h: h.handle_all(
+        lambda h: h.handle_all(  # pyright: ignore[reportDeprecated]
             {
                 "getUser": lambda ctx: effect.succeed({"id": ctx.params["id"], "name": "Ada"}),
                 "createUser": builder.HandleAllEntry(
@@ -199,7 +199,7 @@ def test_rejects_duplicate_handle_and_handle_all_registrations() -> None:
     handle_all_live = builder.group(
         api,
         users,
-        lambda h: h.handle_all({"getUser": lambda _: effect.succeed("first")}).handle_all(
+        lambda h: h.handle_all({"getUser": lambda _: effect.succeed("first")}).handle_all(  # pyright: ignore[reportDeprecated]
             {"getUser": lambda _: effect.succeed("second")}
         ),
     )
@@ -220,7 +220,7 @@ def test_ignores_inherited_handle_all_properties() -> None:
             return effect.succeed("inherited")
 
     implementations = Implementations(getUser=lambda _: effect.succeed("own"))
-    live = builder.group(api, users, lambda h: h.handle_all(implementations))
+    live = builder.group(api, users, lambda h: h.handle_all(implementations))  # pyright: ignore[reportDeprecated]
 
     def program() -> Any:
         api_client = yield from api_test.groups(api, [users])
