@@ -74,6 +74,17 @@ def effect_checkout() -> Path:
         pytest.fail(str(wrong), pytrace=False)
 
 
+@pytest.fixture(scope="session")
+def ai_durable_crashes(tmp_path_factory: pytest.TempPathFactory) -> list[Path]:
+    """One 100-turn durable agent run on SQLite, its database copied at every activity
+    boundary (``_ai_durable_agent.crash_states``), made once per test process."""
+    from _ai_durable_agent import crash_states
+
+    import pyfect as fx
+
+    return fx.run_blocking(crash_states(tmp_path_factory.mktemp("ai-durable-crashes")))
+
+
 _ADDRESS = re.compile(r" at 0x[0-9a-fA-F]+")
 
 

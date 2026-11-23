@@ -12,18 +12,14 @@ never the run up to it."""
 from pathlib import Path
 
 import pytest
-from _ai_durable_agent import STEPS, crash_states, resume_crashed
+from _ai_durable_agent import STEPS, resume_crashed
 
-import pyfect as fx
 from pyfect import testing
-
-
-@pytest.fixture(scope="session")
-def crashes(tmp_path_factory: pytest.TempPathFactory) -> list[Path]:
-    return fx.run_blocking(crash_states(tmp_path_factory.mktemp("ai-durable-crashes")))
 
 
 @testing.live
 @pytest.mark.parametrize("stored", range(STEPS + 1))
-def test_a_100_turn_run_killed_at_every_step_repeats_nothing(stored: int, crashes: list[Path]):
-    yield from resume_crashed(crashes[stored], stored)
+def test_a_100_turn_run_killed_at_every_step_repeats_nothing(
+    stored: int, ai_durable_crashes: list[Path]
+):
+    yield from resume_crashed(ai_durable_crashes[stored], stored)

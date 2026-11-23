@@ -10,7 +10,10 @@ answer (PydanticAI #13832, #13942). The 100-turn run killed at every step is
 from __future__ import annotations
 
 import gc
+import sqlite3
 from collections.abc import Callable
+from contextlib import closing
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -27,7 +30,6 @@ from _ai_durable_agent import (
     memory_engine,
     model_layer,
     run_agent,
-    sqlite_engine,
     step_of,
 )
 
@@ -38,7 +40,6 @@ from pyfect.ai import budget, durable, tool_ledger
 from pyfect.ai import language_model as lm
 from pyfect.ai import prompt as P
 from pyfect.exit import Failure, Success
-from pyfect.sql.client import SqlClient
 from pyfect.testing import explore
 from pyfect.workflow import activity, workflow
 from pyfect.workflow._activity_hook import ActivityHook
@@ -67,40 +68,24 @@ def test_outside_a_workflow_the_layer_changes_nothing():
 # History size ----------------------------------------------------------------------------
 
 
-_STORED_BYTES = (
-    "SELECT (SELECT coalesce(sum(length(payload)), 0) FROM cluster_messages)"
-    " + (SELECT coalesce(sum(length(payload)), 0) FROM cluster_replies) AS stored"
-)
+def _stored_bytes(copy: Path) -> int:
+    """The bytes the cluster engine had stored in the database ``copy``: its messages (the
+    run, each activity's request) and their replies."""
+    with closing(sqlite3.connect(copy)) as db:
+        (stored,) = db.execute(
+            "SELECT (SELECT coalesce(sum(length(payload)), 0) FROM cluster_messages)"
+            " + (SELECT coalesce(sum(length(payload)), 0) FROM cluster_replies)"
+        ).fetchone()
+    return stored
 
 
-@testing.live
-def test_stored_bytes_grow_linearly_with_the_turns():
+def test_stored_bytes_grow_linearly_with_the_turns(ai_durable_crashes: list[Path]):
     """Each turn stores its outputs and two hashes, never the prompt so far: the bytes a
     turn adds are the same at turn 10 as at turn 100 (storing each request's prompt,
-    they would grow with it, and the total with the square of the turns). One run of 100
-    turns, measured as its requests after turns 10, 50 and 100 start: what the cluster
-    engine stored by then (its messages, the run's and each activity's, and their
-    replies)."""
-    stored: dict[int, int] = {}
-
-    def measure(turns: int) -> fx.Effect[None, Any, Any]:
-        def record(rows: list[Any]) -> None:
-            stored[turns] = rows[0]["stored"]
-
-        return SqlClient().flat_map(lambda sql: sql(_STORED_BYTES)).map(record)
-
-    def hook(activity: Any, run: Any) -> Any:
-        request = activity.name.split("/")
-        if request[3:] == ["model"] and (turns := int(request[2]) - 1) in (10, 50, 100):
-            return measure(turns).and_then(run)
-        return run
-
-    done = Agent.execute(AgentPayload(turns=100, prompt="go"))
-    assert (
-        yield from done.pipe(fx.provide(agent_layer(sqlite_engine()))).pipe(
-            fx.provide_service(ActivityHook, hook)
-        )
-    ) == "done"
+    they would grow with it, and the total with the square of the turns). Measured in the
+    copies of a 100-turn run's database (``ai_durable_crashes``): copy ``2t`` is the
+    database after ``t`` turns."""
+    stored = {turns: _stored_bytes(ai_durable_crashes[2 * turns]) for turns in (10, 50, 100)}
     early = (stored[50] - stored[10]) / 40
     late = (stored[100] - stored[50]) / 50
     assert abs(late - early) <= 0.05 * early, stored
