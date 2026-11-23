@@ -15,7 +15,8 @@ revisions from 2024-11-05 to the stateless 2026-07-28; the client, as Effect's, 
 `mcp_server.toolkit(Calculator)` registers a toolkit's tools, with its handlers' layer
 provided. Each tool is listed with its description, its parameters' JSON Schema and an
 output schema; `tool.Readonly`, `Destructive`, `Idempotent` and `OpenWorld` annotations
-become its hints. Invalid arguments and declared failures come back as tool errors the
+become its hints. A read-only tool with no `Destructive` annotation is listed as not
+destructive; any other tool is listed as destructive unless annotated otherwise. Invalid arguments and declared failures come back as tool errors the
 model can read, and any other failure as an internal error that leaks no details. The
 2025 revisions allow only an object as a structured result, so on them, as in Effect, a
 tool whose result is another kind of value, such as a list, sends it as text content only,

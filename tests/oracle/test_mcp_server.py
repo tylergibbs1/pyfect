@@ -186,8 +186,12 @@ class Answer(TypedDict):
     answer: str
 
 
-Structured = T.make("Structured", success=S.Struct(Answer))
-Untyped = T.make("Untyped")
+Structured = (
+    T.make("Structured", success=S.Struct(Answer))
+    .annotate(T.Readonly, True)
+    .annotate(T.Destructive, True)
+)
+Untyped = T.make("Untyped").annotate(T.Readonly, True)
 
 
 class Busy(TypedDict):
@@ -225,6 +229,26 @@ def _registered() -> fx.Effect[M.McpServerService]:
 def _text(result: MS.CallToolResult) -> str:
     [block] = result["content"]
     return cast("Any", block)["text"]
+
+
+@testing.effect
+def test_lists_read_only_tools_as_non_destructive_unless_explicitly_marked():
+    """McpServer / registerToolkit / lists read-only tools as non-destructive unless explicitly
+    marked destructive"""
+    harness = yield from stdio_harness(
+        P.v2025_11_25, None, M.register_toolkit(_toolkit).pipe(fx.provide(_handlers))
+    )
+    yield from harness.initialize()
+    listed = (yield from harness.send_request("tools/list", {}))["result"]["tools"]
+    tools = {tool["name"]: tool for tool in listed}
+
+    def hints(name: str) -> tuple[bool, bool]:
+        annotations = tools[name]["annotations"]
+        return annotations["readOnlyHint"], annotations["destructiveHint"]
+
+    assert hints("Untyped") == (True, False)
+    assert hints("Structured") == (True, True)
+    assert hints("PublicFailure") == (False, True)
 
 
 @testing.effect

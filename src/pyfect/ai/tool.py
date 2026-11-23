@@ -556,6 +556,9 @@ class Readonly(Reference[bool], key="effect/ai/Tool/Readonly"):
 
 
 class Destructive(Reference[bool], key="effect/ai/Tool/Destructive"):
+    """Whether the tool may destroy data. MCP's ``destructiveHint`` is this when set, else
+    ``not Readonly``."""
+
     @classmethod
     def default(cls) -> bool:
         return True

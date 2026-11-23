@@ -160,8 +160,10 @@ def _tool_annotations(annotations: Context[Any]) -> ToolAnnotations:
     title = annotations.get_option(Tool.Title)
     if title is not None:
         out["title"] = title.value
-    out["readOnlyHint"] = annotations.get_unsafe(Tool.Readonly)
-    out["destructiveHint"] = annotations.get_unsafe(Tool.Destructive)
+    read_only = annotations.get_unsafe(Tool.Readonly)
+    destructive = annotations.get_or_none(Tool.Destructive)
+    out["readOnlyHint"] = read_only
+    out["destructiveHint"] = not read_only if destructive is None else destructive
     out["idempotentHint"] = annotations.get_unsafe(Tool.Idempotent)
     out["openWorldHint"] = annotations.get_unsafe(Tool.OpenWorld)
     return out
