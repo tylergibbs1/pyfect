@@ -36,6 +36,7 @@ if TYPE_CHECKING:
     from pyfect.http.headers import Headers
     from pyfect.rpc._rpc import AnyRpc, ServerClient
     from pyfect.rpc.message import Request, RequestId
+    from pyfect.tracer import ExternalSpan
 
 P_co = TypeVar("P_co", covariant=True, default=Never)
 E_co = TypeVar("E_co", covariant=True, default=Never)
@@ -56,13 +57,15 @@ class Unhandled(Exception):
 @dataclass(frozen=True, slots=True)
 class MiddlewareOptions:
     """The request a middleware runs for: the ``client``, ``request_id``,
-    ``rpc``, decoded ``payload`` and ``headers``."""
+    ``rpc``, decoded ``payload`` and ``headers``, and the ``remote_parent_span``
+    the client sent (``None`` when it sent none)."""
 
     client: ServerClient
     request_id: RequestId
     rpc: AnyRpc
     payload: object
     headers: Headers
+    remote_parent_span: ExternalSpan | None = None
 
 
 type MiddlewareFn[P, E, R] = Callable[

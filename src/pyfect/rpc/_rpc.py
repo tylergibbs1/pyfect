@@ -46,6 +46,7 @@ if TYPE_CHECKING:
     from pyfect.rpc.group import RpcGroup, RpcGroupWith
     from pyfect.rpc.message import RequestId
     from pyfect.rpc.middleware import AnyMiddleware, RpcMiddleware
+    from pyfect.tracer import ExternalSpan
 
 P_co = TypeVar("P_co", covariant=True)
 S_co = TypeVar("S_co", covariant=True)
@@ -67,6 +68,29 @@ class ParseOptions(Reference[S.ParseOptions], key="effect/rpc/Rpc/ParseOptions")
     @classmethod
     def default(cls) -> S.ParseOptions:
         return {}
+
+
+type Tracing = Literal["client", "server", "both", "none"]
+"""Which sides make automatic spans for an RPC."""
+
+
+class TracingEnabled(Reference[Tracing], key="effect/rpc/Rpc/TracingEnabled"):
+    """The sides that make automatic spans for an RPC, read from its annotations
+    (``rpc.annotate(TracingEnabled, "server")``): ``"client"``, ``"server"``, ``"both"`` (the
+    default) or ``"none"``. Without a client span, the client still sends its caller's span,
+    which a handler reads as ``remote_parent_span``. A client's or server's
+    ``disable_tracing=True`` overrides it on that side, and a client with tracing disabled
+    sends no span."""
+
+    @classmethod
+    def default(cls) -> Tracing:
+        return "both"
+
+
+def traced_on(rpc: AnyRpc, side: Literal["client", "server"]) -> bool:
+    """Whether ``rpc``'s ``TracingEnabled`` makes automatic spans on ``side``."""
+    tracing = rpc.annotations.get_unsafe(TracingEnabled)
+    return tracing in ("both", side)
 
 
 class ServerClient:
@@ -95,13 +119,16 @@ class ClientErrors(Generic[TE_co]):
 @dataclass(frozen=True, slots=True)
 class RpcRequest(Generic[P_co]):
     """What a handler gets: the decoded ``payload``, the ``client`` that
-    sent it, the ``request_id``, the request ``headers`` and the ``rpc``."""
+    sent it, the ``request_id``, the request ``headers``, the ``rpc``, and the
+    ``remote_parent_span`` the client sent (``None`` when it sent none), to
+    parent spans of the handler's own."""
 
     payload: P_co
     client: ServerClient
     request_id: RequestId
     headers: Headers
     rpc: AnyRpc
+    remote_parent_span: ExternalSpan | None = None
 
 
 @dataclass(frozen=True, slots=True, eq=False)
@@ -543,6 +570,8 @@ __all__ = [
     "RpcRequest",
     "ServerClient",
     "StreamRpc",
+    "Tracing",
+    "TracingEnabled",
     "Wrap",
     "WrapOptions",
     "exit_schema",
@@ -550,6 +579,7 @@ __all__ = [
     "handler_tag",
     "make",
     "parse_options",
+    "traced_on",
     "uninterruptible",
     "unwrap",
     "wrap",

@@ -39,6 +39,7 @@ from pyfect.rpc._rpc import (
     RpcRequest,
     ServerClient,
     handler_tag,
+    traced_on,
     wrap_options,
 )
 from pyfect.rpc._rpc import unwrap as unwrap_handler
@@ -270,17 +271,24 @@ class RpcServer:
             return self._unknown_request(client, run)
         entry: HandlerEntry = found.value
         metadata = RpcRequest(
-            request.payload, client.server_client, request.id, request.headers, rpc
+            request.payload,
+            client.server_client,
+            request.id,
+            request.headers,
+            rpc,
+            self._remote_parent_span(request),
         )
         result, construction_failed = _run_handler(entry, metadata)
         options = wrap_options(result)
         effect = self._handler_effect(
-            entry, rpc, run, unwrap_handler(result), started=not construction_failed
+            entry, rpc, run, unwrap_handler(result), metadata, started=not construction_failed
         ).on_exit(run.on_exit)
         if on_request is not None:
             effect = on_request(effect)
-        if not self._options.disable_tracing:
-            effect = self._traced(effect, request, request_fiber.get_ref(ParentSpan))
+        if not self._options.disable_tracing and traced_on(rpc, "server"):
+            effect = self._traced(
+                effect, request, metadata.remote_parent_span, request_fiber.get_ref(ParentSpan)
+            )
         if not (options is not None and options.fork) and self._semaphore is not None:
             effect = self._semaphore.with_permits(effect)
         run.context = entry.context.merge(request_fiber._context).add(Scope, run.scope)
@@ -304,7 +312,14 @@ class RpcServer:
         return write.ensuring(self._end_client(client))
 
     def _handler_effect(
-        self, entry: HandlerEntry, rpc: AnyRpc, run: _RequestRun, result: Any, *, started: bool
+        self,
+        entry: HandlerEntry,
+        rpc: AnyRpc,
+        run: _RequestRun,
+        result: Any,
+        metadata: RpcRequest[Any],
+        *,
+        started: bool,
     ) -> Effect[Any, Any, Any]:
         """The handler's effect with the RPC's middleware around it; a
         stream is run, writing its chunks. A handler that raised while being
@@ -323,7 +338,12 @@ class RpcServer:
         if not rpc.middlewares:
             return handler
         middleware_options = MiddlewareOptions(
-            client.server_client, request.id, rpc, request.payload, request.headers
+            client.server_client,
+            request.id,
+            rpc,
+            request.payload,
+            request.headers,
+            metadata.remote_parent_span,
         )
         wrapped = _apply_middleware(self._services, entry, handler, middleware_options)
         if not rpc.is_stream:
@@ -336,8 +356,18 @@ class RpcServer:
             lambda exit: fail_cause(failures[0]) if failures else from_exit(exit).as_void()
         )
 
+    def _remote_parent_span(self, request: Request) -> ExternalSpan | None:
+        """The span the client sent, unless span propagation is off."""
+        if self._options.disable_span_propagation or not (request.span_id and request.trace_id):
+            return None
+        return ExternalSpan(request.span_id, request.trace_id, request.sampled is not False)
+
     def _traced(
-        self, effect: Effect[Any, Any, Any], request: Request, writer_span: AnySpan | None
+        self,
+        effect: Effect[Any, Any, Any],
+        request: Request,
+        parent: ExternalSpan | None,
+        writer_span: AnySpan | None,
     ) -> Effect[Any, Any, Any]:
         """``effect`` in the request's server span: a child of the client's
         span, linked to the span the request was written in."""
@@ -347,13 +377,10 @@ class RpcServer:
         attributes: dict[str, object] = {"rpc.system.name": "effect_rpc", "rpc.method": request.tag}
         attributes.update(options.span_attributes)
         span_options: SpanOptions = {"kind": "server", "attributes": attributes}
-        if not options.disable_span_propagation:
-            if request.span_id and request.trace_id:
-                span_options["parent"] = ExternalSpan(
-                    request.span_id, request.trace_id, request.sampled is not False
-                )
-            if writer_span is not None:
-                span_options["links"] = [SpanLink(writer_span)]
+        if parent is not None:
+            span_options["parent"] = parent
+        if not options.disable_span_propagation and writer_span is not None:
+            span_options["links"] = [SpanLink(writer_span)]
         return effect.with_span(name, capture_stack_trace=False, **span_options)
 
     def _stream_effect(

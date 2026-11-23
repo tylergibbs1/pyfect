@@ -33,14 +33,15 @@ from pyfect.cause import Die
 from pyfect.http import router, uvicorn_server
 from pyfect.http.web import WebRequest, WebResponse
 from pyfect.layer import Layer
-from pyfect.rpc import RpcGroup, RpcMiddleware, make
+from pyfect.pubsub import PubSub
+from pyfect.rpc import RpcGroup, RpcMiddleware, RpcRequest, TracingEnabled, make
 from pyfect.rpc import client as rpc_client
 from pyfect.rpc import serialization as rs
 from pyfect.rpc import server as rpc_server
 from pyfect.rpc import test as rpc_test
 from pyfect.rpc.message import ClientEnd, Eof, FromServer, Request, ResponseExit
-from pyfect.rpc.middleware import SuccessValue
-from pyfect.tracer import CurrentTracer, Ended, NativeSpan, SpanRequest, Tracer
+from pyfect.rpc.middleware import MiddlewareOptions, SuccessValue
+from pyfect.tracer import CurrentTracer, Ended, ExternalSpan, NativeSpan, SpanRequest, Tracer
 
 type Handler = Callable[[WebRequest], Awaitable[WebResponse]]
 
@@ -136,6 +137,143 @@ class Swallow(RpcMiddleware, key="Swallow"):
 class Encodes(RpcGroup):
     get_user_age = make("getUserAge", payload=S.Struct(Empty), success=S.Number)
     ages = make("ages", payload=S.Struct(Empty), success=S.Number, stream=True).middleware(Swallow)
+
+
+class Watching(RpcGroup):
+    watch = make("Watch", success=S.Number, stream=True).annotate(TracingEnabled, "none")
+
+
+def test_a_silent_subscription_can_trace_acquisition_using_only_the_propagated_caller_span() -> (
+    None
+):
+    """RpcServer / a silent subscription can trace acquisition using only the propagated caller span"""  # noqa: E501
+    spans: list[NativeSpan] = []
+
+    def make_span(request: SpanRequest) -> NativeSpan:
+        made = NativeSpan(request)
+        spans.append(made)
+        return made
+
+    caller = ExternalSpan("caller-span", "caller-trace", sampled=False)
+
+    def body():
+        feed = yield from PubSub[float].unbounded()
+        acquired = fx.Deferred[None]()
+        requests = yield from fx.Queue[Any].unbounded()
+
+        def watch(request: RpcRequest[Any]) -> stream.Stream[float]:
+            parent = request.remote_parent_span
+            assert parent is not None
+            return stream.unwrap(
+                feed.subscribe()
+                .with_span("Watch.subscribe", parent=parent)
+                .tap(lambda _: acquired.succeed(None))
+                .map(stream.from_subscription)
+            )
+
+        handlers = Watching.to_layer(Watching.handlers().handle(Watching.watch)(watch))
+        cores: list[rpc_client.ClientCore] = []
+        client, core = yield from rpc_client.make_no_serialization(
+            Watching, lambda sent: requests.offer(sent.message).as_void()
+        )
+        cores.append(core)
+        server = yield from rpc_server.make_no_serialization(
+            Watching,
+            lambda response: cores[0].write(response),  # noqa: PLW0108 (made above)
+        ).pipe(fx.provide(handlers))
+        # Only the message crosses from the caller to the server fiber.
+        yield from (
+            stream.from_queue(requests)
+            .run_for_each(lambda message: server.write(0, message))
+            .fork_scoped()
+        )
+        yield from client.watch().run_drain().with_parent_span(caller).fork_scoped()
+        yield from acquired.wait()
+        assert [span.name for span in spans] == ["Watch.subscribe"]
+        assert spans[0].parent == caller
+        assert isinstance(spans[0].status, Ended)
+
+    program = fx.scoped(effect.gen(body)).pipe(
+        effect.provide_service(CurrentTracer, Tracer.make(make_span))
+    )
+    fx.run_blocking(program.timeout("10 seconds").or_die())
+
+
+def test_a_request_with_a_span_id_but_no_trace_id_has_no_remote_parent() -> None:
+    """RpcServer / a request with a span ID but no trace ID has no remote parent"""
+
+    class Pinging(RpcGroup):
+        ping = make("Ping")
+
+    def body():
+        observed = fx.Deferred[ExternalSpan | None]()
+        handlers = Pinging.to_layer(
+            Pinging.handlers().handle(Pinging.ping)(
+                lambda request: observed.succeed(request.remote_parent_span).as_void()
+            )
+        )
+        server = yield from rpc_server.make_no_serialization(
+            Pinging, lambda _response: effect.void
+        ).pipe(fx.provide(handlers))
+        yield from server.write(0, Request("1", "Ping", None, span_id="orphan"))
+        assert (yield from observed.wait()) is None
+
+    fx.run_blocking(fx.scoped(effect.gen(body)).timeout("5 seconds").or_die())
+
+
+class Observe(RpcMiddleware, key="Observe"):
+    pass
+
+
+class ServerTraced(RpcGroup):
+    ping = make("Ping").annotate(TracingEnabled, "server").middleware(Observe)
+
+
+def test_server_only_tracing_parents_the_server_span_on_the_caller_span() -> None:
+    """Not an Effect title: with ``TracingEnabled`` ``"server"`` the client makes no span but
+    sends its caller's, which parents the server span and reaches middleware."""
+    spans: list[NativeSpan] = []
+
+    def make_span(request: SpanRequest) -> NativeSpan:
+        made = NativeSpan(request)
+        spans.append(made)
+        return made
+
+    seen: list[ExternalSpan | None] = []
+
+    def observe(eff: Any, options: MiddlewareOptions) -> Any:
+        seen.append(options.remote_parent_span)
+        return eff
+
+    def body():
+        handlers = ServerTraced.to_layer(
+            ServerTraced.handlers().handle(ServerTraced.ping)(lambda _: effect.void)
+        ).pipe(layer.provide_merge(layer.succeed(Observe, observe)))
+        cores: list[rpc_client.ClientCore] = []
+        server = yield from rpc_server.make_no_serialization(
+            ServerTraced,
+            lambda response: cores[0].write(response),  # noqa: PLW0108 (made below)
+        ).pipe(fx.provide(handlers))
+        client, core = yield from rpc_client.make_no_serialization(
+            ServerTraced, lambda sent: server.write(0, sent.message)
+        )
+        cores.append(core)
+        yield from client.ping().with_span("caller")
+
+    program = fx.scoped(effect.gen(body)).pipe(
+        effect.provide_service(CurrentTracer, Tracer.make(make_span))
+    )
+    fx.run_blocking(program.timeout("10 seconds").or_die())
+    caller, server_span = (
+        next(span for span in spans if span.name == name) for name in ("caller", "Ping")
+    )
+    assert sorted(span.kind for span in spans) == ["internal", "server"]
+    parent = server_span.parent
+    assert isinstance(parent, ExternalSpan)
+    assert (parent.trace_id, parent.span_id) == (caller.trace_id, caller.span_id)
+    assert [(s.trace_id, s.span_id) for s in seen if s is not None] == [
+        (caller.trace_id, caller.span_id)
+    ]
 
 
 def test_records_effect_and_stream_encode_defects_on_server_spans() -> None:

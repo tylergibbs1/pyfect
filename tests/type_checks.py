@@ -7119,6 +7119,7 @@ class RpcOther(rpc.RpcGroup):
 class RpcUsers(rpc.RpcGroup):
     get = rpc.make("Get", payload=fx.schema.String, success=RpcUser, error=RpcNotFound)
     ping = rpc.make("Ping")
+    silent_ping = rpc.make("SilentPing").annotate(rpc.TracingEnabled, "server")
     stream = rpc.make("Stream", success=fx.schema.Number, stream=True)
     me = rpc.make("Me", success=RpcUser).middleware(RpcAuth)
     never_fails = rpc.make(
@@ -11832,3 +11833,16 @@ def _link_headers() -> None:
 
 
 del _link_headers
+
+
+# --- Per-procedure RPC tracing (Effect #10780) ---------------------------------------------
+def _rpc_tracing(request: rpc.RpcRequest[str], options: rpc.middleware.MiddlewareOptions) -> None:
+    from pyfect.tracer import ExternalSpan
+
+    assert_type(request.remote_parent_span, ExternalSpan | None)
+    assert_type(options.remote_parent_span, ExternalSpan | None)
+    assert_type(rpc.TracingEnabled.default(), rpc.Tracing)
+    rpc.make("Ping").annotate(rpc.TracingEnabled, "always")  # pyright: ignore[reportArgumentType]
+
+
+del _rpc_tracing
