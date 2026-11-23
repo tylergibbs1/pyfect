@@ -657,6 +657,9 @@ def _done_message(state: _Stream, _index: int, item: Any) -> Gen[list[Part]]:
     if state.annotations:
         metadata["annotations"] = list(state.annotations)
     metadata.update(item_metadata(item["id"]))
+    refusals = [part["refusal"] for part in item["content"] if part["type"] == "refusal"]
+    if refusals:
+        metadata["refusal"] = "\n\n".join(refusals)
     return [{"type": "text-end", "id": item["id"], "metadata": {KEY: metadata}}]
 
 

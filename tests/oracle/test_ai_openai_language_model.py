@@ -1988,6 +1988,47 @@ def test_stream_usage():
 
 
 @testing.effect
+def test_stream_refusal_metadata():
+    """streamText / preserves refusal metadata in the reconstructed prompt"""
+    item = text_output(
+        "",
+        content=[
+            {"type": "refusal", "refusal": "First explanation."},
+            {"type": "refusal", "refusal": "Second explanation."},
+        ],
+    )
+    refusal = "First explanation.\n\nSecond explanation."
+    parts = yield from _stream_parts(
+        [
+            {
+                "type": "response.output_item.added",
+                "sequence_number": 1,
+                "output_index": 0,
+                "item": {**item, "status": "in_progress", "content": []},
+            },
+            {
+                "type": "response.output_item.done",
+                "sequence_number": 2,
+                "output_index": 0,
+                "item": item,
+            },
+        ],
+        prompt="Do something bad",
+    )
+    assert not _of(parts, R.TextDeltaPart)
+    assert _first(parts, R.TextEndPart).metadata["openai"] == {
+        "itemId": item["id"],
+        "refusal": refusal,
+    }
+    message = Pr.from_response_parts(parts).content[0]
+    assert isinstance(message, Pr.AssistantMessage)
+    text = message.content[0]
+    assert isinstance(text, Pr.TextPart)
+    openai: Any = text.options.get("openai", {})
+    assert (text.text, openai.get("itemId"), openai.get("refusal")) == ("", item["id"], refusal)
+
+
+@testing.effect
 def test_stream_shell_call_ids():
     """streamText / uses call_id for streamed shell calls and keeps the item ID in metadata"""
     item = {
