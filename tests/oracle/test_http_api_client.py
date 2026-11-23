@@ -762,6 +762,38 @@ def test_errors_group_schemas_by_normalized_declared_content_type() -> None:
     assert _flip("equivalentJson", http) == {"_tag": "SecondJsonError", "message": "bad request"}
 
 
+def test_decodes_single_value_form_response_arrays_with_headers_and_declared_errors() -> None:
+    """HttpApiClient / decodes single-value form response arrays with headers and declared errors"""
+    from pyfect.http import request as client_request
+
+    form = api_schema.as_form_url_encoded()(
+        struct({"tags": S.Array(S.String), "note": S.Array(S.String)})
+    )
+    group = HttpApiGroup.make("test").add(
+        ep.get(
+            "form",
+            "/form",
+            success=api_schema.WithHeaders(form, struct({"x-count": S.Int})),
+            error=form.pipe(api_schema.status(400)),
+        )
+    )
+    api = HttpApi.make("Api").add(group)
+    decode = client.decode_response(api, group, group.endpoints["form"])
+
+    def raw(status: int) -> HttpClientResponse:
+        return response.make(
+            client_request.get("http://test/form"),
+            b"tags=a&note=x",
+            status=status,
+            headers={"content-type": "application/x-www-form-urlencoded", "x-count": "1"},
+        )
+
+    assert _run(decode(raw(200))) == api_schema.with_headers(
+        {"tags": ("a",), "note": ("x",)}, {"x-count": 1}
+    )
+    assert _run(decode(raw(400)).flip()) == {"tags": ("a",), "note": ("x",)}
+
+
 def test_decodes_form_urlencoded_responses() -> None:
     """HttpApiClient / decodes form-urlencoded responses"""
     api = _api(

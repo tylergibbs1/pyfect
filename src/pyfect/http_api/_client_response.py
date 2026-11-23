@@ -176,18 +176,26 @@ def _sync(
     return lambda data, _options: succeed(f(data))  # pyright: ignore[reportArgumentType]
 
 
-_BODIES: Mapping[str, S.Bottom[object, Any]] = {
-    "Json": _from_bytes(_json),
-    "Text": _from_bytes(_sync(_text)),
-    "Uint8Array": _from_bytes(_sync(lambda data: data)),
-    "FormUrlEncoded": _from_bytes(_sync(lambda data: url_params.parse(_text(data)).to_record())),
+def _decoding_to(body: S.Bottom[object, Any]) -> Callable[[Top], Top]:
+    return lambda schema: body.pipe(S.decode_to(schema))
+
+
+_FORM = _from_bytes(_sync(lambda data: url_params.parse(_text(data)).to_record()))
+
+# Each encoding's body codec for a schema. A form body is a record of
+# strings that repeats a key for an array, so a key sent once still decodes
+# into an array field (Effect's ``toCodecArrayFromSingle``).
+_BODIES: Mapping[str, Callable[[Top], Top]] = {
+    "Json": _decoding_to(_from_bytes(_json)),
+    "Text": _decoding_to(_from_bytes(_sync(_text))),
+    "Uint8Array": _decoding_to(_from_bytes(_sync(lambda data: data))),
+    "FormUrlEncoded": lambda schema: _FORM.pipe(S.decode_to(S.to_codec_array_from_single(schema))),
 }
 
 
 def _from_body(schema: Top) -> Top:
     """``schema``'s values from the bytes of a response body."""
-    body = _BODIES[api_schema.get_response_encoding(schema.__codec__().ast).tag]
-    return body.pipe(S.decode_to(schema))
+    return _BODIES[api_schema.get_response_encoding(schema.__codec__().ast).tag](schema)
 
 
 def _schemas_response(
