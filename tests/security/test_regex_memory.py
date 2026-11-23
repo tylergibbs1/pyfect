@@ -30,7 +30,7 @@ from pyfect.ai._mcp import skill_rules
 from pyfect.cli.prompt import _date_parts
 from pyfect.config_provider import _dotenv, from_dot_env_contents
 from pyfect.encoding import _json_array_scanner, _json_parser, json5, json_array, jsonc, toml
-from pyfect.http import server_response
+from pyfect.http import _ext_value, server_response
 from pyfect.http.live_server import _body
 from pyfect.http.multipart_parser import _content_type
 from pyfect.http.static_server import _conditional
@@ -199,9 +199,9 @@ _REWRITES = {
         _body._CHUNK_SIZE,
         'aF0;=x"\\ \x01\xff',
     ),
-    "_content_type._EXT_VALUE": Rewrite(
+    "_ext_value._EXT_VALUE": Rewrite(
         r"^(utf-8|iso-8859-1)'[a-z0-9-]*'((?:%[0-9a-f]{2}|[!#$&+.^_`|~\w-])*)$",
-        _content_type._EXT_VALUE,
+        _ext_value._EXT_VALUE,
         "%aF0'-x \n",
         re.IGNORECASE | re.ASCII,
         "utf-8'",
