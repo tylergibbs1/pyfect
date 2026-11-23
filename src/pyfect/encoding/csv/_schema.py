@@ -20,6 +20,7 @@ from pyfect.encoding.csv._channels import (
     encode_records,
 )
 from pyfect.encoding.csv._error import CsvError
+from pyfect.encoding.csv._header import header_codec
 from pyfect.schema import Codec, NonEmptyArray, ParseOptions, SchemaError, ast, to_codec_string_tree
 from pyfect.schema import decode_unknown_effect as decode_with
 from pyfect.schema import encode_effect as encode_with
@@ -132,35 +133,12 @@ def decode_schema_string[T, RD, E = Never, D = None](
     here. Each chunk is decoded at once; a failure is a ``SchemaError`` whose
     paths start with the record number."""
     codec = _to_codec(schema, disable_codecs)
-    encoded = _resolve_suspend(ast.to_encoded(codec.__codec__().ast))
-    _check_cells(encoded, None)
-    # CSV cannot tell an empty cell from a missing one, so empty cells of
-    # optional keys are decoded as missing keys.
-    optional = (
-        [
-            property.name
-            for property in encoded.properties
-            if isinstance(property.name, str)
-            and (property.optional or ast.is_optional(property.type))
-        ]
-        if not disable_codecs and headers and isinstance(encoded, ast.Objects)
-        else []
-    )
-
-    def value_of(record: Decoded) -> object:
-        value = record.value
-        if not optional or not isinstance(value, dict):
-            return value
-        # Header records are made per row, so they can be changed in place.
-        for key in optional:
-            if value.get(key) == "":
-                del value[key]
-        return value
-
-    decode = decode_with(NonEmptyArray(codec), **options)
+    _check_cells(ast.to_encoded(codec.__codec__().ast), None)
+    item = header_codec(codec) if headers and not disable_codecs else codec
+    decode = decode_with(NonEmptyArray(item), **options)
 
     def decoded(records: tuple[Decoded, ...]) -> Any:
-        return decode(tuple(map(value_of, records))).map_error(
+        return decode(tuple(record.value for record in records)).map_error(
             lambda error: _rebase(error, lambda index: records[index].record)
         )
 

@@ -258,6 +258,45 @@ def test_converts_non_string_columns_with_the_stringtree_codec():
     assert (yield from _run(['score\n""\n'], csv.decode_schema_string(lazy, headers=True))) == [{}]
 
 
+class _ScoreCell(TypedDict):
+    kind: str
+    cell: NotRequired[float]
+
+
+class _TextCell(TypedDict):
+    kind: str
+    cell: str
+
+
+@testing.effect
+def test_decodes_empty_header_cells_according_to_the_selected_union_member():
+    """decodes empty header cells according to the selected union member"""
+    entry = S.Union(
+        S.Struct(_ScoreCell, kind=S.Literal("score")),
+        S.Struct(_TextCell, kind=S.Literal("text")),
+    )
+    text = "kind,cell\nscore,\nscore,12\ntext,\n"
+    assert (yield from _run([text], csv.decode_schema_string(entry, headers=True))) == [
+        {"kind": "score"},
+        {"kind": "score", "cell": 12},
+        {"kind": "text", "cell": ""},
+    ]
+
+
+@testing.effect
+def test_omits_empty_union_member_cells_before_checking_index_signatures():
+    """omits empty union member cells before checking index signatures"""
+    score = S.StructWithRest(
+        S.Struct(_ScoreCell, kind=S.Literal("score")),
+        S.Record(S.TemplateLiteral("cell", S.String), S.Number),
+    )
+    entry = S.Union(score, S.Struct(_TextCell, kind=S.Literal("text")), mode="one_of")
+    text = "kind,cell\nscore,\n"
+    assert (yield from _run([text], csv.decode_schema_string(entry, headers=True))) == [
+        {"kind": "score"}
+    ]
+
+
 class _Named(TypedDict):
     name: str
     age: float
