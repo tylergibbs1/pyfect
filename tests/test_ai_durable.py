@@ -67,38 +67,43 @@ def test_outside_a_workflow_the_layer_changes_nothing():
 # History size ----------------------------------------------------------------------------
 
 
-def _stored_bytes(turns: int) -> fx.Effect[int, Any, Any]:
-    """The bytes the cluster engine stored for a run of ``turns`` turns: its messages
-    (the run, each activity's request) and their replies."""
-
-    @fx.gen
-    def body():
-        assert (yield from Agent.execute(AgentPayload(turns=turns, prompt="go"))) == "done"
-        sql = yield from SqlClient()
-        rows = yield from sql(
-            "SELECT (SELECT coalesce(sum(length(payload)), 0) FROM cluster_messages)"
-            " + (SELECT coalesce(sum(length(payload)), 0) FROM cluster_replies) AS stored"
-        )
-        stored = rows[0]["stored"]
-        assert isinstance(stored, int)
-        return stored
-
-    return body.pipe(fx.provide(agent_layer(sqlite_engine())))
-
-
-STORED: dict[int, int] = {}
+_STORED_BYTES = (
+    "SELECT (SELECT coalesce(sum(length(payload)), 0) FROM cluster_messages)"
+    " + (SELECT coalesce(sum(length(payload)), 0) FROM cluster_replies) AS stored"
+)
 
 
 @testing.live
 def test_stored_bytes_grow_linearly_with_the_turns():
     """Each turn stores its outputs and two hashes, never the prompt so far: the bytes a
     turn adds are the same at turn 10 as at turn 100 (storing each request's prompt,
-    they would grow with it, and the total with the square of the turns)."""
-    for turns in (10, 50, 100):
-        STORED[turns] = yield from _stored_bytes(turns)
-    early = (STORED[50] - STORED[10]) / 40
-    late = (STORED[100] - STORED[50]) / 50
-    assert abs(late - early) <= 0.05 * early, STORED
+    they would grow with it, and the total with the square of the turns). One run of 100
+    turns, measured as its requests after turns 10, 50 and 100 start: what the cluster
+    engine stored by then (its messages, the run's and each activity's, and their
+    replies)."""
+    stored: dict[int, int] = {}
+
+    def measure(turns: int) -> fx.Effect[None, Any, Any]:
+        def record(rows: list[Any]) -> None:
+            stored[turns] = rows[0]["stored"]
+
+        return SqlClient().flat_map(lambda sql: sql(_STORED_BYTES)).map(record)
+
+    def hook(activity: Any, run: Any) -> Any:
+        request = activity.name.split("/")
+        if request[3:] == ["model"] and (turns := int(request[2]) - 1) in (10, 50, 100):
+            return measure(turns).and_then(run)
+        return run
+
+    done = Agent.execute(AgentPayload(turns=100, prompt="go"))
+    assert (
+        yield from done.pipe(fx.provide(agent_layer(sqlite_engine()))).pipe(
+            fx.provide_service(ActivityHook, hook)
+        )
+    ) == "done"
+    early = (stored[50] - stored[10]) / 40
+    late = (stored[100] - stored[50]) / 50
+    assert abs(late - early) <= 0.05 * early, stored
 
 
 # Divergence ------------------------------------------------------------------------------

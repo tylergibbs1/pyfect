@@ -5,10 +5,14 @@
 from __future__ import annotations
 
 import re
+import sqlite3
+import uuid
 from collections import Counter
 from collections.abc import Callable
+from contextlib import closing
 from dataclasses import dataclass
-from typing import Any, TypedDict
+from pathlib import Path
+from typing import Any, TypedDict, cast
 
 import pyfect as fx
 from pyfect import reactivity
@@ -18,11 +22,14 @@ from pyfect.ai import language_model as lm
 from pyfect.ai import tool as T
 from pyfect.ai import toolkit as K
 from pyfect.cluster import cluster_workflow_engine, single_runner
+from pyfect.deferred import Deferred
 from pyfect.sql import sqlite
-from pyfect.sql.client import SqlClient
+from pyfect.sql.client import SqlClient, SqlClientService
 from pyfect.stream import _constructors as streams
 from pyfect.testing import explore
 from pyfect.workflow import workflow, workflow_engine
+from pyfect.workflow._activity_hook import ActivityHook, ActivityRun
+from pyfect.workflow._result import Suspended
 
 
 class LookupParams(TypedDict):
@@ -204,9 +211,29 @@ def memory_engine() -> fx.Layer[Any, Any, Any]:
     return workflow_engine.layer_memory
 
 
-def sqlite_engine() -> fx.Layer[Any, Any, Any]:
-    """``single_runner`` on a fresh SQLite ``:memory:`` database each build."""
-    client = sqlite.make(sqlite.SqliteClientConfig(filename=":memory:"))
+def _seeded(snapshot: Path) -> fx.Effect[SqlClientService, Any, Any]:
+    """A client on a new in-memory database holding a copy of ``snapshot``."""
+    uri = f"file:ai-durable-{uuid.uuid4().hex}?mode=memory&cache=shared"
+
+    def seed() -> sqlite3.Connection:
+        # Holds the shared in-memory database open until the client's connection closes.
+        keeper = sqlite3.connect(uri, uri=True)
+        with closing(sqlite3.connect(snapshot)) as source:
+            source.backup(keeper)
+        return keeper
+
+    kept = fx.acquire_release(fx.sync(seed), lambda keeper, _: fx.sync(keeper.close))
+    return kept.and_then(sqlite.make(sqlite.SqliteClientConfig(filename=uri)))
+
+
+def sqlite_engine(snapshot: Path | None = None) -> fx.Layer[Any, Any, Any]:
+    """``single_runner`` on a fresh SQLite ``:memory:`` database each build, or on a
+    copy of the database ``snapshot``, as a runner restarted on it would find it."""
+    client = (
+        sqlite.make(sqlite.SqliteClientConfig(filename=":memory:"))
+        if snapshot is None
+        else _seeded(snapshot)
+    )
     sql = fx.layer.effect(SqlClient, client).pipe(fx.layer.provide(reactivity.layer))
     return cluster_workflow_engine.layer.pipe(
         fx.layer.provide_merge(single_runner.layer(runner_storage_kind="memory"))
@@ -278,3 +305,80 @@ def sweep(
             assert run.repeated() == ([] if point.stored else [step_of(point.activity)]), point
 
     return body
+
+
+# Crash states on SQLite ------------------------------------------------------------------
+
+
+def step_name(index: int) -> str:
+    """Activity ``index`` (from 1) of the run: model turn 0, its tool call, model turn 1..."""
+    return f"model {(index - 1) // 2}" if index % 2 else f"tool {(index - 2) // 2}"
+
+
+def crash_states(directory: Path) -> fx.Effect[list[Path], Any, Any]:
+    """Run ``TURNS`` turns on SQLite once, check that every step ran once and the run
+    ended "done", and copy the database at every activity boundary into ``directory``:
+    copy ``k`` is what a crash after activity ``k``'s result was stored, or before
+    activity ``k + 1``'s was, leaves (copy 0 holds no activity's result)."""
+    copies: list[Path] = []
+
+    def copy() -> fx.Effect[None, Any, Any]:
+        path = directory / f"{len(copies)}.db"
+        copies.append(path)
+        # VACUUM INTO runs on the engine's connection between its statements, so the copy
+        # is what the engine has committed.
+        return SqlClient().flat_map(lambda sql: sql("VACUUM INTO {}", str(path))).as_void()
+
+    def hook(_activity: Any, run: ActivityRun) -> ActivityRun:
+        after = cast("ActivityRun", run.tap(lambda _: copy()))
+        return copy().and_then(after) if not copies else after
+
+    @fx.gen
+    def body():
+        assert (yield from Agent.execute(AgentPayload(turns=TURNS, prompt="go"))) == "done"
+        calls = yield from CallsService()
+        ran = (dict(calls.model), dict(calls.tool))
+        assert ran == (dict.fromkeys(range(TURNS + 1), 1), dict.fromkeys(range(TURNS), 1)), ran
+        assert len(copies) == STEPS + 1, len(copies)
+        return copies
+
+    return body.pipe(fx.provide(agent_layer(sqlite_engine()))).pipe(
+        fx.provide_service(ActivityHook, hook)
+    )
+
+
+WINDOW = 2
+"""The steps a run restarted on a crash state runs before it stops: the step the crash
+cut off (or the one after the last stored) and the next, a model request and a tool call."""
+
+
+def resume_crashed(snapshot: Path, stored: int) -> fx.Effect[None, Any, Any]:
+    """Restart the run on ``snapshot``, the crash state with activities 1 to ``stored``
+    stored, and check: those replay without calling the model or a tool, and each of the
+    next ``WINDOW`` steps runs once (the last of them ends the run with "done"). The run
+    stops after them, so a case's work grows only with the replay, as a resumed run's
+    does."""
+    executed = [0]
+    stopped = Deferred[None]()
+    last = min(stored + WINDOW, STEPS)
+
+    def hook(_activity: Any, run: Any) -> Any:
+        executed[0] += 1
+        if executed[0] <= last:
+            return run
+        return stopped.succeed(None).as_(Suspended())
+
+    @fx.gen
+    def body():
+        waiter = yield from Agent.execute(AgentPayload(turns=TURNS, prompt="go")).exit().fork()
+        yield from stopped.wait().race_first(waiter.await_exit().as_void())
+        calls = yield from CallsService()
+        ran = {f"model {t}": n for t, n in calls.model.items()}
+        ran |= {f"tool {t}": n for t, n in calls.tool.items()}
+        assert ran == {step_name(i): 1 for i in range(stored + 1, last + 1)}, ran
+        if last == STEPS:
+            assert (yield from waiter.join()) == fx.exit.Success("done")
+
+    return body.pipe(fx.provide(agent_layer(sqlite_engine(snapshot)))).pipe(
+        fx.provide_service(ActivityHook, hook)
+    )
