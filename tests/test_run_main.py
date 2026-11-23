@@ -41,9 +41,6 @@ faulthandler.register(signal.SIGUSR1, all_threads=True)
 def ready():
     print("ready", flush=True)
 
-def signalled():
-    sys.stdin.readline()
-
 def log(msg):
     print(msg, flush=True)
 """
@@ -59,9 +56,9 @@ class Finished:
 def run_main_process(
     tmp_path: Path, program: str, *, send: signal.Signals | None = None
 ) -> Finished:
-    """Run ``program`` (with ``fx``, ``ready()``, ``signalled()`` and ``log()`` in
-    scope) in a new interpreter. With ``send``, deliver that signal once the program
-    calls ``ready()``; ``signalled()`` returns once it has been sent.
+    """Run ``program`` (with ``fx``, ``ready()`` and ``log()`` in scope) in a new
+    interpreter. With ``send``, deliver that signal once the program calls
+    ``ready()``.
 
     A child still running at ``SUBPROCESS_TIMEOUT`` is hung: the failure shows where
     its threads were (``faulthandler``)."""
@@ -80,7 +77,7 @@ def run_main_process(
                 first = proc.stdout.readline().strip()
                 assert first == READY, f"expected {READY!r}, got {first!r}"
                 os.kill(proc.pid, send)
-            stdout, stderr = proc.communicate("sent\n", timeout=SUBPROCESS_TIMEOUT)
+            stdout, stderr = proc.communicate(timeout=SUBPROCESS_TIMEOUT)
         except subprocess.TimeoutExpired:
             os.kill(proc.pid, signal.SIGUSR1)
             _, stderr = proc.communicate(timeout=SUBPROCESS_TIMEOUT)
@@ -264,17 +261,21 @@ def test_signal_handlers_are_restored_after_run_main(tmp_path: Path):
 
 def test_signal_waits_for_uninterruptible_work(tmp_path: Path):
     """The interrupt lands when the uninterruptible region ends, so the work
-    finishes and the process still exits 130. The work waits until the signal
-    was sent (it used to sleep 0.3 ms and race it), then yields to the loop."""
+    finishes and the process still exits 130. The work goes on once the interrupt
+    has reached the main fiber, which an interruptible probe meets: the loop's
+    handler interrupts it a loop turn or more after the signal arrives, so waiting
+    only until the signal was sent let a 1 ms sleep end first, and the work
+    finished before the interrupt came (exit 0, once in the nightly flake run)."""
     program = """
-    work = (
-        fx.sync(ready)
-        .and_then(fx.sync(signalled))
-        .and_then(fx.sleep("1 millis"))
-        .and_then(fx.sync(lambda: log("done")))
-    )
-    program = fx.uninterruptible_mask(lambda _restore: work)
-    fx.run_main(program)
+    def work(restore):
+        return (
+            fx.sync(ready)
+            .and_then(restore(fx.never).exit())
+            .and_then(fx.sleep("1 millis"))
+            .and_then(fx.sync(lambda: log("done")))
+        )
+
+    fx.run_main(fx.uninterruptible_mask(work))
     log("after run_main")
     """
     done = run_main_process(tmp_path, program, send=signal.SIGTERM)
