@@ -219,9 +219,9 @@ def _waiting_for_a_minor(fragments: list[str], version: Version, newest: Version
     newest released minor series: that release would have to be a minor one."""
     if version[:2] != newest[:2]:
         return []
-    sections = [release.parse_fragment(name, "- a\n") for name in fragments]
-    assert all(isinstance(fragment, release.Fragment) for fragment in sections)
-    return release.too_early_for_a_minor(sections, Version(*newest[:2], newest.patch + 1))
+    parsed = [release.parse_fragment(name, "- a\n") for name in fragments]
+    entries = [fragment for fragment in parsed if isinstance(fragment, release.Fragment)]
+    return release.too_early_for_a_minor(entries, Version(*newest[:2], newest.patch + 1))
 
 
 def test_minor_fragments_wait_for_the_minor_version():
@@ -247,6 +247,8 @@ def test_the_minor_fragment_check_waits_for_the_version_bump():
     assert _waiting_for_a_minor(["a.removed.md"], v14, v14) == ["a.removed.md"]
     assert _waiting_for_a_minor(names, Version(0, 7, 0), v14) == []
     assert _waiting_for_a_minor(["a.added.md"], v14, v14) == []
+    # A note that a change needs no entry never makes a release a minor one.
+    assert _waiting_for_a_minor(["a.none.md", "b.changed.md"], v14, v14) == ["b.changed.md"]
 
 
 _EFFECT_REF = re.compile(r"Effect-TS/effect#(\d+)")

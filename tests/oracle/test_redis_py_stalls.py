@@ -6,10 +6,11 @@ within two seconds and close its socket.
 
 Each test's docstring is the Effect test title. Adapted: the peers answer
 redis-py's ``CLIENT SETINFO`` like any other command (Effect turns
-node-redis' off with ``disableClientInfo``), and RESP2 is redis-py's
-default. ``layer`` also opens a connection of its own to check the server
-before it is built; it answers like the shared client, so the stalling
-peer's "connection 0" is that probe.
+node-redis' off with ``disableClientInfo``), and its ``HELLO 3`` as a
+server does (redis-py speaks RESP3 by default). ``layer`` also opens a
+connection of its own to check the server before it is built; it answers
+like the shared client, so the stalling peer's "connection 0" is that
+probe.
 """
 
 from __future__ import annotations
@@ -33,6 +34,14 @@ from pyfect.persistence.redis import Redis
 _COMMAND = re.compile(rb"\*\d+\r\n\$\d+\r\n(\w+)\r\n")
 _WAIT = 10.0
 """How long the test waits for the peer to see something, in seconds."""
+
+
+def _answer(command: bytes) -> bytes:
+    """A server's reply to ``command``: ``HELLO`` gets a map naming the
+    protocol, which redis-py checks from 8.2 on, and the rest ``+OK``."""
+    if command.upper() == b"HELLO":
+        return b"%1\r\n+proto\r\n:3\r\n"
+    return b"+OK\r\n"
 
 
 class _Peer:
@@ -78,7 +87,7 @@ class _Peer:
 
 
 def _stalling(stall: Callable[[int, str], bool]) -> _Peer:
-    """A peer answering ``+OK`` to each command but those ``stall`` takes
+    """A peer answering each command (see ``_answer``) but those ``stall`` takes
     (by connection number, in the order connections first send data, and
     command name), which never get a reply."""
 
@@ -89,7 +98,7 @@ def _stalling(stall: Callable[[int, str], bool]) -> _Peer:
                 peer.watch(connection)
                 peer.stalled.set()
             else:
-                connection.sendall(b"+OK\r\n")
+                connection.sendall(_answer(match.group(1)))
 
     return _Peer(on_data)
 
@@ -99,6 +108,16 @@ def _awaited(event: threading.Event) -> fx.Effect[None]:
         assert event.wait(_WAIT), "the peer never saw it"
 
     return fx.blocking(wait)
+
+
+def _seen_by_peer(event: threading.Event, fiber: fx.Fiber[Any, Any]) -> fx.Effect[None]:
+    """``_awaited(event)``, failing with the program's exit if it ends first
+    (a reply the client rejects ends it instead of stalling it)."""
+
+    def ended(exit: fx.Exit[Any, Any]) -> fx.Effect[None]:
+        return fx.die(AssertionError(f"the program ended before the peer saw it: {exit}"))
+
+    return _awaited(event).race_first(fiber.await_exit().flat_map(ended))
 
 
 def _layer(port: int, **options: Any) -> fx.Layer[Any, Any]:
@@ -125,7 +144,7 @@ def test_interrupts_a_stalled_handshake(tls: bool) -> None:
         # ``db=1`` sends ``SELECT``, a handshake whatever the version.
         build = fx.scoped(_layer(peer.port, db=1, ssl=tls).build())
         fiber = yield from build.fork()
-        yield from _awaited(peer.received)
+        yield from _seen_by_peer(peer.received, fiber)
         yield from _interrupt_within_two_seconds(fiber)
         yield from _awaited(peer.closed)
 
@@ -142,7 +161,7 @@ def test_bounds_shutdown_while_a_command_is_stalled() -> None:
                 peer.watch(connection)
                 peer.stalled.set()
             else:
-                connection.sendall(b"+OK\r\n")
+                connection.sendall(_answer(match.group(1)))
 
     peer = _Peer(on_data)
 
@@ -152,7 +171,7 @@ def test_bounds_shutdown_while_a_command_is_stalled() -> None:
             yield from redis.send("PING")
 
         fiber = yield from fx.gen(ping).pipe(fx.provide(_layer(peer.port))).fork()
-        yield from _awaited(peer.stalled)
+        yield from _seen_by_peer(peer.stalled, fiber)
         yield from _interrupt_within_two_seconds(fiber)
         yield from _awaited(peer.closed)
 
@@ -171,7 +190,7 @@ def test_interrupts_a_subscriber_stalled_on(command: str) -> None:
 
         program = fx.scoped(fx.gen(subscribe)).pipe(fx.provide(_layer(peer.port, db=1)))
         fiber = yield from program.fork()
-        yield from _awaited(peer.stalled)
+        yield from _seen_by_peer(peer.stalled, fiber)
         yield from _interrupt_within_two_seconds(fiber)
         yield from _awaited(peer.closed)
 
@@ -189,7 +208,7 @@ def test_interrupts_a_stalled_reserved_connection() -> None:
 
         program = fx.scoped(fx.gen(reserve)).pipe(fx.provide(_layer(peer.port, db=1)))
         fiber = yield from program.fork()
-        yield from _awaited(peer.stalled)
+        yield from _seen_by_peer(peer.stalled, fiber)
         yield from _interrupt_within_two_seconds(fiber)
         # The connection attempt is aborted rather than left to open later.
         yield from _awaited(peer.closed)
