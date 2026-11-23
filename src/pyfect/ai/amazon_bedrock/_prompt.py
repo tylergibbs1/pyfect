@@ -4,10 +4,11 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, cast
 
+from pyfect import _json_text
 from pyfect._js import trim
 from pyfect._url import Url
 from pyfect.ai import _provider as P
@@ -98,11 +99,19 @@ def _document_name(file_name: str | None, position: int) -> str:
 
 
 def _tool_result_content(result: object) -> list[W.ToolResultContentBlock]:
+    """Converse takes only an object as a JSON block, so any other value goes as its JSON
+    text (Effect's ``toolResultContent``)."""
     if isinstance(result, str):
         return [{"text": result}]
     if result is None:
         return [{"text": ""}]
-    return [{"json": result}]
+    if isinstance(result, Mapping):
+        return [_json_block(cast("Mapping[str, object]", result))]
+    return [{"text": _json_text.stringify(result)}]
+
+
+def _json_block(document: Mapping[str, object]) -> W.ToolResultContentBlock:
+    return {"json": document}
 
 
 def _cache_point(options: Pr.ProviderOptions) -> W.CachePointBlock | None:

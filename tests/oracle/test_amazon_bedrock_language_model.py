@@ -225,21 +225,33 @@ def test_decodes_tool_use():
 @testing.effect
 def test_sends_tool_calls_and_results():
     """AmazonBedrockLanguageModel / generateText / sends tool calls and results back as toolUse
-    and toolResult blocks"""
+    and toolResult blocks
+
+    Effect sends a ``null`` result as the text ``null``; ``None`` is also Effect's
+    ``undefined``, which it sends as empty text, and pyfect keeps that. The last two
+    results are not in Effect's test: a nested array and a boolean go as JSON text too."""
     http = _replying(converse_response([{"text": "Done"}]))
     prompt = Pr.make(
         [
-            Pr.UserMessage([Pr.TextPart("Weather in SF and LA?")]),
+            Pr.UserMessage([Pr.TextPart("Weather in SF, LA, NY and DC?")]),
             Pr.AssistantMessage(
                 [
                     Pr.ToolCallPart("tooluse_1", "Weather", {"city": "SF"}),
                     Pr.ToolCallPart("tooluse_2", "Weather", {"city": "LA"}),
+                    Pr.ToolCallPart("tooluse_3", "Weather", {"city": "NY"}),
+                    Pr.ToolCallPart("tooluse_4", "Weather", {"city": "DC"}),
+                    Pr.ToolCallPart("tooluse_5", "Weather", {"city": "LV"}),
+                    Pr.ToolCallPart("tooluse_6", "Weather", {"city": "SD"}),
                 ]
             ),
             Pr.ToolMessage(
                 [
                     Pr.ToolResultPart("tooluse_1", "Weather", False, {"temperature": 20}),
                     Pr.ToolResultPart("tooluse_2", "Weather", True, "service unavailable"),
+                    Pr.ToolResultPart("tooluse_3", "Weather", False, []),
+                    Pr.ToolResultPart("tooluse_4", "Weather", False, None),
+                    Pr.ToolResultPart("tooluse_5", "Weather", False, [{"t": 0.5}, "é"]),
+                    Pr.ToolResultPart("tooluse_6", "Weather", False, True),
                 ]
             ),
         ]
@@ -248,12 +260,12 @@ def test_sends_tool_calls_and_results():
         lm.generate_text(prompt, toolkit=toolkit, disable_tool_call_resolution=True), http
     )
     assert body_json(http.requests[0])["messages"] == [
-        {"role": "user", "content": [{"text": "Weather in SF and LA?"}]},
+        {"role": "user", "content": [{"text": "Weather in SF, LA, NY and DC?"}]},
         {
             "role": "assistant",
             "content": [
-                {"toolUse": {"toolUseId": "tooluse_1", "name": "Weather", "input": {"city": "SF"}}},
-                {"toolUse": {"toolUseId": "tooluse_2", "name": "Weather", "input": {"city": "LA"}}},
+                {"toolUse": {"toolUseId": f"tooluse_{i}", "name": "Weather", "input": {"city": c}}}
+                for i, c in enumerate(["SF", "LA", "NY", "DC", "LV", "SD"], 1)
             ],
         },
         {
@@ -272,6 +284,15 @@ def test_sends_tool_calls_and_results():
                         "status": "error",
                     }
                 },
+                {"toolResult": {"toolUseId": "tooluse_3", "content": [{"text": "[]"}]}},
+                {"toolResult": {"toolUseId": "tooluse_4", "content": [{"text": ""}]}},
+                {
+                    "toolResult": {
+                        "toolUseId": "tooluse_5",
+                        "content": [{"text": '[{"t":0.5},"é"]'}],
+                    }
+                },
+                {"toolResult": {"toolUseId": "tooluse_6", "content": [{"text": "true"}]}},
             ],
         },
     ]
