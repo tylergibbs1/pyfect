@@ -31,6 +31,7 @@ from pyfect.eventlog.sql_event_log_server_encrypted import (
     LegacyStoreMigrationError,
     LegacyStoreNeedsMigration,
 )
+from pyfect.persistence._columns import column_bytes
 from pyfect.sql import sqlite
 from pyfect.sql.client import SqlClient
 
@@ -253,14 +254,30 @@ def any_db(request: pytest.FixtureRequest, tmp_path: Path) -> LegacyDb:
 DIALECTS = ["SQLite", "pg", "mysql2", "mssql"]
 
 
-def _prepare_065(db: Db, remote_id_table: str) -> fx.Effect[None, Any]:
-    return tables.create_065_tables(db.sql, db.prefix, remote_id_table)
+def _remote_id(db: Db, remote_id_table: str) -> Generator[Any, Any, J.RemoteId]:
+    """The remote id as earlier versions read or made it."""
+    table = db.sql.identifier(remote_id_table)
+    rows = yield from db.sql("SELECT remote_id FROM {}", table)
+    if rows:
+        return J.RemoteId(column_bytes(rows[0]["remote_id"]))
+    created = J.make_remote_id_unsafe()
+    yield from db.sql("INSERT INTO {} (remote_id) VALUES ({})", table, created)
+    return created
 
 
-def _prepare_067(db: Db, remote_id_table: str) -> fx.Effect[None, Any]:
+def _prepare_065(db: Db, remote_id_table: str) -> fx.Effect[J.RemoteId, Any]:
+    def body():
+        yield from tables.create_065_tables(db.sql, db.prefix, remote_id_table)
+        return (yield from _remote_id(db, remote_id_table))
+
+    return fx.gen(body)
+
+
+def _prepare_067(db: Db, remote_id_table: str) -> fx.Effect[J.RemoteId, Any]:
     def body():
         yield from tables.create_065_tables(db.sql, db.prefix, remote_id_table)
         yield from tables.create_alias_tables(db.sql, db.prefix)
+        return (yield from _remote_id(db, remote_id_table))
 
     return fx.gen(body)
 

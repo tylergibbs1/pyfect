@@ -39,7 +39,7 @@ from pyfect.eventlog._sql_server_encrypted.legacy import (
 from pyfect.eventlog._sql_server_encrypted.rows import to_batch
 from pyfect.eventlog._sql_server_encrypted.sweeper import Sweeper
 from pyfect.eventlog._sql_server_encrypted.tables import create_scope_tables
-from pyfect.eventlog.event_journal import EntryId, RemoteId, StoreId, make_remote_id_unsafe
+from pyfect.eventlog.event_journal import EntryId, RemoteId, StoreId
 from pyfect.eventlog.event_log_encryption import EncryptedBatch, EncryptedRemoteBatch
 from pyfect.eventlog.event_log_message import WriteAck
 from pyfect.logger import log_info, log_warning
@@ -211,14 +211,7 @@ def make_storage(
         sql = (yield from SqlClient()).without_transforms()
         config = yield from make_compaction_config(compaction)
         db = Db(sql, entry_table_prefix, config)
-        yield from upgrade.prepare(db, remote_id_table)
-        remote_ids = sql.identifier(remote_id_table)
-        rows = yield from sql("SELECT remote_id FROM {}", remote_ids)
-        if rows:
-            remote_id = RemoteId(column_bytes(rows[0]["remote_id"]))
-        else:
-            remote_id = make_remote_id_unsafe()
-            yield from sql("INSERT INTO {} (remote_id) VALUES ({})", remote_ids, remote_id)
+        remote_id = yield from upgrade.prepare(db, remote_id_table)
         stores = yield from RcMap.make(
             _make_lookup(db, digest, migrate_legacy_stores), idle_time_to_live="5 minutes"
         )

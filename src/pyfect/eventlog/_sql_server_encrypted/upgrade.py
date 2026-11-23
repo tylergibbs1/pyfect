@@ -28,15 +28,17 @@ from dataclasses import dataclass
 
 from pyfect._core import Effect
 from pyfect.effect import gen
-from pyfect.eventlog._sql_server_encrypted.db import CHUNK, Db
+from pyfect.eventlog._sql_server_encrypted.db import CHUNK, Db, Steps
 from pyfect.eventlog._sql_server_encrypted.tables import (
     create_065_tables,
     create_alias_tables,
     create_upgrade_tables,
 )
-from pyfect.persistence._columns import column_int, column_text
+from pyfect.eventlog.event_journal import RemoteId, make_remote_id_unsafe
+from pyfect.persistence._columns import column_bytes, column_int, column_text
 from pyfect.persistence._sql_keys import key_equals
 from pyfect.sql.client import SqlClientService
+from pyfect.sql.connection import Row
 from pyfect.sql.error import SqlError
 from pyfect.sql.statement import Identifier
 
@@ -109,9 +111,41 @@ def _record(db: Db) -> Effect[None, SqlError]:
     return gen(body)
 
 
-def prepare(db: Db, remote_id_table: str) -> Effect[None, SqlError]:
+def _remote_id(db: Db, table: Identifier) -> Effect[RemoteId, SqlError]:
+    """The stored remote id, or a new one. Effect reads and then inserts, so
+    starts that read the empty table at once each inserted their own id;
+    here a start that finds none takes the upgrade record's row, which
+    ``_record`` wrote, and reads again before it inserts."""
+    sql = db.sql
+
+    def stored(rows: list[Row]) -> RemoteId | None:
+        return RemoteId(column_bytes(rows[0]["remote_id"])) if rows else None
+
+    def take(created: RemoteId) -> Steps[RemoteId]:
+        yield from sql(
+            "SELECT id FROM {} {} WHERE id = 1 {}", _upgrade(db), db.lock_hint, db.for_update
+        )
+        found = stored(
+            (yield from sql("SELECT remote_id FROM {} {} {}", table, db.lock_hint, db.for_update))
+        )
+        if found is not None:
+            return found
+        yield from sql("INSERT INTO {} (remote_id) VALUES ({})", table, created)
+        return created
+
+    def body():
+        found = stored((yield from sql("SELECT remote_id FROM {}", table)))
+        if found is not None:
+            return found
+        created = make_remote_id_unsafe()
+        return (yield from sql.with_transaction(gen(lambda: take(created))))
+
+    return gen(body)
+
+
+def prepare(db: Db, remote_id_table: str) -> Effect[RemoteId, SqlError]:
     """Creates the global tables, writing the record of the upgrade before
-    the aliases table exists."""
+    the aliases table exists; the database's remote id."""
     sql = db.sql
 
     def body():
@@ -119,6 +153,7 @@ def prepare(db: Db, remote_id_table: str) -> Effect[None, SqlError]:
         yield from create_upgrade_tables(sql, db.prefix)
         yield from _record(db)
         yield from create_alias_tables(sql, db.prefix)
+        return (yield from _remote_id(db, sql.identifier(remote_id_table)))
 
     return gen(body)
 
