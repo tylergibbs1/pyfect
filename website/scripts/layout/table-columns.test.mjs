@@ -21,14 +21,15 @@ const BODY = [
   row('td', ['the same past ', '413']),
 ];
 
-/** The width in px of a CSS length from columnWidths, at font size `em` and container width `w`. */
+/** The width in px of a CSS length from columnWidths (em, cqi, calc, min, max), at font size
+ * `em` and container width `w`. */
 function px(length, em, w) {
-  const value = (s) => {
-    const max = s.match(/^max\((.*), calc\((.*)em \+ (.*)cqi\)\)$/);
-    if (max) return Math.max(value(max[1]), Number(max[2]) * em + (Number(max[3]) * w) / 100);
-    return Number(s.replace(/em$/, '')) * em;
-  };
-  return value(length);
+  const js = length
+    .replace(/(-?[\d.]+)em/g, `($1*${em})`)
+    .replace(/(-?[\d.]+)cqi/g, `($1*${w}/100)`)
+    .replace(/\bcalc\(/g, '(')
+    .replace(/\b(min|max)\(/g, 'Math.$1(');
+  return Function(`return ${js}`)();
 }
 
 /** Every column's width in px as Chrome's fixed layout gives them: the last takes what is left. */
@@ -45,7 +46,7 @@ describe('columnWidths', () => {
   });
 
   test('fill the wrapper exactly when it is wider than the minimum', () => {
-    for (const w of [480, 640, 900]) {
+    for (const w of [480, 640, 900, 2000]) {
       const cols = layout([HEAD, ...BODY], 16, w);
       expect(cols.reduce((a, b) => a + b, 0)).toBeCloseTo(w, 1);
     }
@@ -58,7 +59,7 @@ describe('columnWidths', () => {
       rows.forEach((r) =>
         r.forEach((c, i) => {
           const padding = i === 0 ? 1 : 2;
-          expect(cols[i]).toBeGreaterThanOrEqual((measureCell(c).word + padding) * 18 - 0.01);
+          expect(cols[i]).toBeGreaterThanOrEqual((measureCell(c).word + padding) * 18 - 0.05); // widths are rounded to 0.001em
         }),
       );
     }
@@ -69,6 +70,14 @@ describe('columnWidths', () => {
     const [failure, status] = layout([HEAD, ...BODY], 16, 640);
     expect(status).toBeCloseTo((measureCell(HEAD[1]).word + 2) * 16, 1);
     expect(failure).toBeGreaterThan(500);
+  });
+
+  test('are what the auto layout gives with every row there: past the unwrapped widths, by width', () => {
+    const rows = [HEAD, ...BODY];
+    const max = rows[0].map((_, i) => Math.max(...rows.map((r) => measureCell(r[i]).full)) + (i === 0 ? 1 : 2));
+    const total = max.reduce((a, b) => a + b, 0);
+    const cols = layout(rows, 16, total * 16 * 1.5);
+    cols.forEach((c, i) => expect(c).toBeCloseTo(max[i] * 16 * 1.5, 1));
   });
 
   test('a header never wraps', () => {

@@ -12,20 +12,18 @@ import type { Element, ElementContent, Root, RootContent } from 'hast';
  * and scrolls. The last column takes whatever is left.
  */
 
-/** Advance widths in em of printable ASCII (from " "), Geist 400 and 500 as measured in Chrome;
- * digits are tabular in tables, so each is the widest digit. Geist Mono is 0.6em throughout. */
-// prettier-ignore
-const SANS = [0.25,0.213,0.346,0.478,0.629,0.802,0.62,0.178,0.274,0.274,0.43,0.558,0.201,0.419,0.201,0.48,0.663,0.663,0.663,0.663,0.663,0.663,0.663,0.663,0.663,0.663,0.297,0.297,0.544,0.54,0.544,0.559,0.906,0.668,0.68,0.703,0.694,0.603,0.59,0.7,0.713,0.27,0.597,0.64,0.58,0.877,0.743,0.739,0.65,0.733,0.672,0.64,0.552,0.689,0.667,0.945,0.606,0.576,0.544,0.347,0.455,0.347,0.426,0.557,0.248,0.551,0.595,0.546,0.595,0.561,0.395,0.594,0.581,0.244,0.26,0.59,0.267,0.877,0.581,0.573,0.595,0.595,0.379,0.52,0.392,0.575,0.536,0.819,0.585,0.537,0.537,0.389,0.264,0.389,0.523];
-// prettier-ignore
-const MEDIUM = [0.243,0.228,0.361,0.515,0.643,0.81,0.649,0.186,0.29,0.29,0.427,0.562,0.213,0.418,0.213,0.494,0.673,0.673,0.673,0.673,0.673,0.673,0.673,0.673,0.673,0.673,0.302,0.302,0.546,0.544,0.546,0.57,0.925,0.689,0.688,0.713,0.701,0.609,0.595,0.713,0.716,0.28,0.607,0.656,0.583,0.89,0.745,0.751,0.657,0.745,0.68,0.654,0.568,0.694,0.688,0.968,0.633,0.594,0.561,0.361,0.47,0.361,0.438,0.558,0.258,0.565,0.608,0.563,0.608,0.576,0.412,0.607,0.591,0.256,0.284,0.609,0.282,0.885,0.591,0.588,0.608,0.608,0.394,0.537,0.41,0.586,0.56,0.829,0.607,0.553,0.552,0.395,0.274,0.395,0.523];
+/** Advance widths in em of printable ASCII (from " "), Geist 400 and 500 as measured in Chrome,
+ * with tabular digits as tables use. Geist Mono is 0.6em throughout. */
+const SANS = [0.25,0.213,0.346,0.478,0.629,0.802,0.62,0.178,0.274,0.274,0.43,0.558,0.201,0.419,0.201,0.48,0.6,0.6,0.6,0.6,0.6,0.6,0.6,0.6,0.6,0.6,0.297,0.297,0.544,0.54,0.544,0.559,0.906,0.668,0.68,0.703,0.694,0.603,0.59,0.7,0.713,0.27,0.597,0.64,0.58,0.877,0.743,0.739,0.65,0.733,0.672,0.64,0.552,0.689,0.667,0.945,0.606,0.576,0.544,0.347,0.455,0.347,0.426,0.557,0.248,0.551,0.595,0.546,0.595,0.561,0.395,0.594,0.581,0.244,0.26,0.59,0.267,0.877,0.581,0.573,0.595,0.595,0.379,0.52,0.392,0.575,0.536,0.819,0.585,0.537,0.537,0.389,0.264,0.389,0.523];
+const MEDIUM = [0.243,0.228,0.361,0.515,0.643,0.81,0.649,0.186,0.29,0.29,0.427,0.562,0.213,0.418,0.213,0.494,0.612,0.612,0.612,0.612,0.612,0.612,0.612,0.612,0.612,0.612,0.302,0.302,0.546,0.544,0.546,0.57,0.925,0.689,0.688,0.713,0.701,0.609,0.595,0.713,0.716,0.28,0.607,0.656,0.583,0.89,0.745,0.751,0.657,0.745,0.68,0.654,0.568,0.694,0.688,0.968,0.633,0.594,0.561,0.361,0.47,0.361,0.438,0.558,0.258,0.565,0.608,0.563,0.608,0.576,0.412,0.607,0.591,0.256,0.284,0.609,0.282,0.885,0.591,0.588,0.608,0.608,0.394,0.537,0.41,0.586,0.56,0.829,0.607,0.553,0.552,0.395,0.274,0.395,0.523];
 /** Inline code (typeset.css): 0.85em Geist Mono with 0.3em of padding each side. */
 const CODE_SIZE = 0.85;
 const CODE_CHAR = 0.6 * CODE_SIZE;
 const CODE_PADDING = 2 * 0.3 * CODE_SIZE;
 /** A cell's padding (typeset.css): 1em each side, none before the first column. */
 const PADDING = 2;
-/** Kerning and fonts that miss the table: a word measured short would overflow its column. */
-const SLACK = 1.04;
+/** A word measured short would overflow its column; the measure is within a percent or two. */
+const SLACK = 1.01;
 
 type Run = { text: string; font: 'sans' | 'medium' | 'mono' };
 
@@ -75,8 +73,10 @@ export function measureCell(cell: Element): { full: number; word: number } {
     }
   }
   word = Math.max(word, current);
-  // a header never wraps (typeset.css)
-  return cell.tagName === 'th' ? { full: full * SLACK, word: full * SLACK } : { full: full * SLACK, word: word * SLACK };
+  // a header never wraps (typeset.css); a cell's unwrapped width only shares out room, so it
+  // needs no slack, but it is never less than its widest word
+  if (cell.tagName === 'th') return { full: full * SLACK, word: full * SLACK };
+  return { full: Math.max(full, word * SLACK), word: word * SLACK };
 }
 
 const round = (n: number) => Math.round(n * 1000) / 1000;
@@ -99,15 +99,20 @@ export function columnWidths(rows: Element[][]): { widths: string[]; minWidth: s
     max[i] += padding;
   }
   const sumMin = min.reduce((a, b) => a + b, 0);
+  const sumMax = max.reduce((a, b) => a + b, 0);
   const slack = max.map((m, i) => m - min[i]);
   const sumSlack = slack.reduce((a, b) => a + b, 0);
-  const sumMax = max.reduce((a, b) => a + b, 0);
-  // nothing wraps anywhere: share the room as the browser does, by content width
-  const share = sumSlack > 0 ? slack.map((s) => s / sumSlack) : max.map((m) => m / sumMax);
+  // Up to every column's unwrapped width, the room past the minimum goes by how much wider a
+  // column gets unwrapped; past it, the room goes by unwrapped width. Both lines meet at sumMax,
+  // so a column is the lesser of the two when the first rises faster, else the greater.
   const widths = min.slice(0, -1).map((m, i) => {
-    const percent = round(100 * share[i]);
-    if (percent === 0) return `${round(m)}em`;
-    return `max(${round(m)}em, calc(${round(m - sumMin * share[i])}em + ${percent}cqi))`;
+    const wrapped = sumSlack > 0 ? slack[i] / sumSlack : 0;
+    const unwrapped = max[i] / sumMax;
+    const below = sumSlack > 0 ? `calc(${round(m - sumMin * wrapped)}em + ${round(100 * wrapped)}cqi)` : null;
+    const above = `${round(100 * unwrapped)}cqi`;
+    if (below === null) return `max(${round(m)}em, ${above})`;
+    const width = wrapped >= unwrapped ? `min(${below}, ${above})` : `max(${below}, ${above})`;
+    return `max(${round(m)}em, ${width})`;
   });
   return { widths, minWidth: `${round(sumMin)}em` };
 }
