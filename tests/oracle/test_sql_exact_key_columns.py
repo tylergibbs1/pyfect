@@ -65,7 +65,9 @@ def _tool_ledger() -> fx.Effect[Any, Any, Any]:
 
 
 def _queue() -> fx.Effect[Any, Any, Any]:
-    return migrator.make()(loader=queue_migrations("queue"), table="queue_migrations")
+    return SqlClient().flat_map(
+        lambda sql: migrator.make()(loader=queue_migrations("queue", sql), table="queue_migrations")
+    )
 
 
 def _event_log_encrypted() -> fx.Effect[Any, Any, Any]:

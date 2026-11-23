@@ -2,7 +2,8 @@
 Effect's: ``0001`` makes the first schema (a ``completed`` flag), ``0002``
 upgrades it to ``state`` and ``visible_at`` with a partial index for
 pollers. ``0003`` is pyfect's: element ids and queue names compare exactly
-on MySQL and SQL Server (``persistence._sql_keys``)."""
+on MySQL and SQL Server (``persistence._sql_keys``). ``0004`` is Effect's
+PostgreSQL-only ``0003_widen_sequence``, numbered after pyfect's ``0003``."""
 
 from __future__ import annotations
 
@@ -376,7 +377,23 @@ def _exact_ids(table_name: str) -> Effect[object, object, SqlClient]:
     return gen(body)
 
 
-def migrations(table_name: str) -> migrator.Loader:
+def _widen_sequence(table_name: str) -> Effect[object, object, SqlClient]:
+    """``0002`` widened the PostgreSQL ``sequence`` column to ``BIGINT`` but
+    not the ``SERIAL`` sequence behind it, so offers stopped at 2^31 - 1."""
+
+    def body() -> Generator[Any, Any]:
+        sql = (yield from SqlClient()).without_transforms()
+        relation, _ = sql("{}", sql.identifier(table_name)).compile()
+        rows = yield from sql("SELECT pg_get_serial_sequence({}, 'sequence') AS sequence", relation)
+        sequence = rows[0]["sequence"]
+        if sequence is not None:
+            # PostgreSQL already quotes and qualifies the sequence name.
+            yield from sql.unsafe(f"ALTER SEQUENCE {sequence} AS bigint")
+
+    return gen(body)
+
+
+def migrations(table_name: str, sql: SqlClientService) -> migrator.Loader:
     """Deployed databases have run the earlier migrations: a change to the
     schema is a new one, never an edit of an old one."""
     return migrator.from_record(
@@ -384,5 +401,9 @@ def migrations(table_name: str) -> migrator.Loader:
             "0001_create_table": _create(table_name),
             "0002_upgrade_schema": _upgrade(table_name),
             "0003_exact_ids": _exact_ids(table_name),
+            **sql.on_dialect_or_else(
+                pg=lambda: {"0004_widen_sequence": _widen_sequence(table_name)},
+                or_else=dict[str, Effect[object, object, SqlClient]],
+            ),
         }
     )

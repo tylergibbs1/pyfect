@@ -28,7 +28,8 @@ from pyfect import schema as S
 from pyfect import testing
 from pyfect.latch import Latch
 from pyfect.persistence import persisted_queue as pq
-from pyfect.sql import SqlClient, pg
+from pyfect.persistence.persisted_queue._sql_migrations import migrations
+from pyfect.sql import SqlClient, SqlClientService, migrator, pg
 
 from . import _persisted_queue_sql_suite as sql_suite
 from . import _persisted_queue_suite as suite
@@ -43,7 +44,7 @@ def _client(server: PgServer) -> fx.Layer[Any, Any]:
 
 def _drop(*tables: str) -> None:
     for table in tables:
-        query_now(f"DROP TABLE IF EXISTS {table}, {table}_migrations")
+        query_now(f'DROP TABLE IF EXISTS "{table}", "{table}_migrations"')
 
 
 class _Server:
@@ -290,14 +291,25 @@ def test_dead_letters_elements_from_workers_that_crashed_on_the_final_attempt(
 # --- PersistedQueue SQL migrations (sql-pglite) ---------------------------------------
 
 
+def _offer_past_the_32_bit_sequence(
+    sql: SqlClientService, store: pq.PersistedQueueStoreService, table_name: str
+) -> Generator[Any, Any]:
+    yield from sql(
+        "SELECT setval(pg_get_serial_sequence({}, 'sequence'), 2147483647)", f'"{table_name}"'
+    )
+    yield from store.offer(name="test", id="boundary", element="value", is_custom_id=True)
+    rows = yield from sql("SELECT sequence::text FROM {}", sql.identifier(table_name))
+    assert [row["sequence"] for row in rows] == ["2147483648"]
+
+
 def test_runs_fresh_install_migrations_once(pg_server: PgServer) -> None:
     """PersistedQueue SQL migrations / runs fresh-install migrations once"""
-    table_name = "persisted_queue_migration_test"
+    table_name = "PersistedQueue_migration_test"
 
     def body():
         sql = (yield from SqlClient()).without_transforms()
         yield from pq.make_store_sql(table_name=table_name)
-        yield from pq.make_store_sql(table_name=table_name)
+        store = yield from pq.make_store_sql(table_name=table_name)
 
         migrations = yield from sql(
             "SELECT migration_id, name FROM {} ORDER BY migration_id",
@@ -308,6 +320,8 @@ def test_runs_fresh_install_migrations_once(pg_server: PgServer) -> None:
             (2, "upgrade_schema"),
             # pyfect's own, a no-op on PostgreSQL (PARITY section 4)
             (3, "exact_ids"),
+            # Effect's 0003_widen_sequence: 0003 is pyfect's exact_ids
+            (4, "widen_sequence"),
         ]
 
         indexes = yield from sql(
@@ -315,10 +329,41 @@ def test_runs_fresh_install_migrations_once(pg_server: PgServer) -> None:
             table_name,
         )
         assert [row["indexname"] for row in indexes] == [
+            f"{table_name}_pkey",
             f"idx_{table_name}_id",
             f"idx_{table_name}_take",
             f"idx_{table_name}_update",
-            f"{table_name}_pkey",
         ]
+
+        yield from _offer_past_the_32_bit_sequence(sql, store, table_name)
+
+    _run(pg_server, body, table_name)
+
+
+def test_a_table_migrated_through_0003_widens_its_sequence(pg_server: PgServer) -> None:
+    """A table a release before the sequence fix made (migrations 0001 to
+    0003) gets migration 0004, and its offers go past the 32-bit limit."""
+    table_name = "PersistedQueue_upgrade_test"
+    migrations_table = f"{table_name}_migrations"
+
+    def body():
+        sql = (yield from SqlClient()).without_transforms()
+        through_0003 = migrations(table_name, sql).map(
+            lambda loaded: [m for m in loaded if m[0] <= 3]
+        )
+        yield from migrator.make()(loader=through_0003, table=migrations_table)
+        sequence_type = yield from sql(
+            "SELECT data_type FROM information_schema.sequences WHERE sequence_name = {}",
+            f"{table_name}_sequence_seq",
+        )
+        assert [row["data_type"] for row in sequence_type] == ["integer"]
+
+        store = yield from pq.make_store_sql(table_name=table_name)
+        applied = yield from sql(
+            "SELECT migration_id, name FROM {} ORDER BY migration_id",
+            sql.identifier(migrations_table),
+        )
+        assert [(row["migration_id"], row["name"]) for row in applied][-1] == (4, "widen_sequence")
+        yield from _offer_past_the_32_bit_sequence(sql, store, table_name)
 
     _run(pg_server, body, table_name)

@@ -23,7 +23,7 @@ from pyfect import schema as S
 from pyfect import testing
 from pyfect.persistence import persisted_queue as pq
 from pyfect.persistence.persisted_queue._sql_migrations import migrations
-from pyfect.sql import SqlClient, migrator
+from pyfect.sql import SqlClient, SqlClientService, migrator
 
 pytestmark = pytest.mark.filterwarnings("ignore::pyfect.testing.ClockNotAdvancedWarning")
 
@@ -166,13 +166,13 @@ def test_upgrades_a_table_that_already_has_rows(client: fx.Layer[Any, Any]) -> N
     unclaimed ones are still taken, after the store's later migrations."""
     table = "effect_queue_exact_upgrade"
 
-    def first_two() -> migrator.Loader:
-        return migrations(table).map(lambda loaded: [m for m in loaded if m[0] <= 2])
+    def first_two(sql: SqlClientService) -> migrator.Loader:
+        return migrations(table, sql).map(lambda loaded: [m for m in loaded if m[0] <= 2])
 
     def body():
         yield from _drop(table)
-        yield from migrator.make()(loader=first_two(), table=f"{table}_migrations")
         sql = yield from SqlClient()
+        yield from migrator.make()(loader=first_two(sql), table=f"{table}_migrations")
         now = sql.on_dialect_or_else(
             mssql=lambda: sql.literal("SYSDATETIME()"), or_else=lambda: sql.literal("NOW()")
         )

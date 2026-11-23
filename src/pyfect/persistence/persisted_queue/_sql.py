@@ -309,7 +309,7 @@ def make_store_sql(
     def build() -> Generator[Any, Any, PersistedQueueStoreService]:
         sql = (yield from SqlClient()).without_transforms()
         yield from migrator.make()(
-            loader=migrations(table_name), table=f"{table_name}_migrations"
+            loader=migrations(table_name, sql), table=f"{table_name}_migrations"
         ).or_die()
         dialect = Dialect(sql)
         expires_at = dialect.seconds_ago(lock_expiration_seconds)
