@@ -28,11 +28,17 @@ class Outcome:
     is_failure: bool
     encoded_result: object
     failure_origin: FailureOrigin | None = None
+    returned: bool = False
+    """A failure the call gave as a result, not raised, though its tool is in ``"error"``
+    mode (the ``ToolOutcomeUnknown`` a tool ledger tells the model); otherwise a failure
+    replays as the tool's ``failure_mode`` says."""
 
 
 def of_result(result: HandlerResult) -> Outcome:
     """The outcome of a final result."""
-    return Outcome(result.is_failure, result.encoded_result, result.failure_origin)
+    return Outcome(
+        result.is_failure, result.encoded_result, result.failure_origin, result.is_failure
+    )
 
 
 def of_failure(tool: AnyTool, cause: Cause[Any]) -> Effect[Outcome | None]:
@@ -56,11 +62,16 @@ def of_failure(tool: AnyTool, cause: Cause[Any]) -> Effect[Outcome | None]:
 
 
 def replay[E](
-    tool: AnyTool, outcome: Outcome, invalid: Callable[[S.SchemaError], E]
+    tool: AnyTool,
+    outcome: Outcome,
+    invalid: Callable[[S.SchemaError], E],
+    *,
+    failures: S.Top,
 ) -> Effect[Stream[HandlerResult, Any, Any], E | Any, Any]:
-    """The call's results again, from ``outcome``: decoded with the tool's schemas
-    (``invalid`` when it no longer decodes), failing the stream for a failure of a tool in
-    ``"error"`` mode."""
+    """The call's results again, from ``outcome``: a success decoded with the tool's
+    success schema, a failure with ``failures`` (the ``call_failure_schema`` of the toolkit
+    that made it), ``invalid`` when it no longer decodes; a failure of a tool in ``"error"``
+    mode fails the stream."""
     encoded = outcome.encoded_result
     if not outcome.is_failure:
         return _decoded(tool.success_schema, encoded, invalid).flat_map(
@@ -71,8 +82,8 @@ def replay[E](
             )
         )
     origin = outcome.failure_origin
-    decoded = _decoded(failure_result_schema(tool), encoded, invalid)
-    if tool.failure_mode == "error":
+    decoded = _decoded(failures, encoded, invalid)
+    if tool.failure_mode == "error" and not outcome.returned:
         annotation = Context.make(FailureOriginAnnotation, origin or "handler")
         return decoded.map(
             lambda error: StreamC.fail_cause(Cause((Fail(error),)).annotate(annotation))

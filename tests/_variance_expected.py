@@ -93,6 +93,7 @@ EXPECTED: dict[str, tuple[Variance, ...]] = {
     "pyfect.ai.tool.Handler": ("out",),
     "pyfect.ai.tool.HandlerContext": ("in",),
     "pyfect.ai.tool.ProviderDefined": ("out", "out", "out", "out", "out", "out"),
+    "pyfect.ai.tool.ProviderToolConstructor": ("out", "out", "out", "out"),
     "pyfect.ai.tool.Tool": ("out", "out", "out", "out", "out", "out"),
     "pyfect.ai.toolkit.Handlers": ("out",),
     "pyfect.ai.toolkit.ToolResultFailure": ("out", "out"),

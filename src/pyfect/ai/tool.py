@@ -36,6 +36,7 @@ from typing import (
     Literal,
     LiteralString,
     Never,
+    Protocol,
     Self,
     TypedDict,
     TypeVar,
@@ -181,6 +182,26 @@ class ProviderDefined(Tool[N_co, P_co, S_co, F_co, HE_co, R_co]):
     @property
     def id(self) -> str:
         return self.provider_id
+
+    def add_dependency[T](
+        self, tag: type[Tag[Any] | T]
+    ) -> ProviderDefined[N_co, P_co, S_co, F_co, HE_co, R_co | T]:
+        return cast("Any", replace(self))
+
+    def set_parameters[PP](
+        self, schema: S.Codec[PP, Any, Any, Any]
+    ) -> ProviderDefined[N_co, PP, S_co, F_co, HE_co, R_co]:
+        return cast("Any", replace(self, parameters_schema=schema))
+
+    def set_success[SS](
+        self, schema: S.Codec[SS, Any, Any, Any]
+    ) -> ProviderDefined[N_co, P_co, SS, F_co, HE_co, R_co]:
+        return cast("Any", replace(self, success_schema=schema, to_model_output=None))
+
+    def set_failure[FF](
+        self, schema: S.Codec[FF, Any, Any, Any]
+    ) -> ProviderDefined[N_co, P_co, S_co, FF, Any, R_co]:
+        return cast("Any", replace(self, failure_schema=schema))
 
 
 @dataclass(frozen=True)
@@ -381,6 +402,40 @@ def dynamic(
     )
 
 
+class ProviderToolConstructor[NN: LiteralString, PP, SS, FF](Protocol):
+    """What ``provider_defined`` returns: called with the tool's arguments (encoded) and,
+    for a tool that ``requires_handler``, its ``failure_mode``; in ``"return"`` mode the
+    handler's failures become results, so the handler raises nothing to the caller."""
+
+    @overload
+    def __call__(
+        self,
+        args: Mapping[str, object] | None = None,
+        /,
+        *,
+        failure_mode: Literal["error"] = "error",
+        **kwargs: object,
+    ) -> ProviderDefined[NN, PP, SS, FF, FF, Never]: ...
+    @overload
+    def __call__(
+        self,
+        args: Mapping[str, object] | None = None,
+        /,
+        *,
+        failure_mode: Literal["return"],
+        **kwargs: object,
+    ) -> ProviderDefined[NN, PP, SS, FF, Never, Never]: ...
+    @overload
+    def __call__(
+        self,
+        args: Mapping[str, object] | None = None,
+        /,
+        *,
+        failure_mode: FailureMode,
+        **kwargs: object,
+    ) -> ProviderDefined[NN, PP, SS, FF, FF, Never]: ...
+
+
 def provider_defined[NN: LiteralString, PP = None, SS = None, FF = Never](
     *,
     id: str,
@@ -391,7 +446,7 @@ def provider_defined[NN: LiteralString, PP = None, SS = None, FF = Never](
     parameters: S.Codec[PP, Any, Any, Any] | None = None,
     success: S.Codec[SS, Any, Any, Any] | None = None,
     failure: S.Codec[FF, Any, Any, Any] | None = None,
-) -> Callable[..., ProviderDefined[NN, PP, SS, FF, FF, Never]]:
+) -> ProviderToolConstructor[NN, PP, SS, FF]:
     """A provider-defined tool's constructor: call it with the tool's
     arguments (encoded) and, when ``requires_handler``, ``failure_mode``."""
     parameters_schema: S.Top = S.Null if parameters is None else parameters
@@ -416,7 +471,7 @@ def provider_defined[NN: LiteralString, PP = None, SS = None, FF = Never](
             requires_handler=requires_handler,
         )
 
-    return construct
+    return cast("ProviderToolConstructor[NN, PP, SS, FF]", construct)
 
 
 # Names, descriptions and JSON Schemas ---------------------------------------------------
@@ -577,6 +632,7 @@ __all__ = [
     "NeedsApprovalContext",
     "OpenWorld",
     "ProviderDefined",
+    "ProviderToolConstructor",
     "Readonly",
     "Strict",
     "Title",

@@ -30,7 +30,7 @@ import threading
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Generator
 from dataclasses import dataclass, field
-from typing import Any, Literal, LiteralString, Never, cast, overload
+from typing import Any, Literal, LiteralString, Never, TypedDict, TypeIs, cast, overload
 
 import pyfect as fx
 from pyfect import schema as S
@@ -58,12 +58,14 @@ from pyfect.layer import effect as layer_effect
 from pyfect.layer import sync as layer_sync
 from pyfect.persistence._columns import column_int, column_text
 from pyfect.persistence._sql_keys import MSSQL_KEY, MYSQL_KEY, key_equals, mssql_match
+from pyfect.schema import transformation as T
 from pyfect.sql.client import SqlClient, SqlClientService
 from pyfect.sql.connection import Row
 from pyfect.sql.error import SqlError
 from pyfect.sql.statement import Identifier
 from pyfect.stream import Stream
 from pyfect.stream import _constructors as StreamC
+from pyfect.workflow._services import WorkflowInstance
 
 type OnUnknown = Literal["tell_model", "fail"]
 """What a call whose outcome is unknown does: ``"tell_model"`` answers the model with a
@@ -92,6 +94,41 @@ class ToolLedgerError(TaggedError):
     method: str
     tool_call_id: str
     cause: object = None
+
+
+class _EncodedLedgerError(TypedDict):
+    _tag: Literal["ToolLedgerError"]
+    message: str
+    method: str
+    toolCallId: str
+    cause: object
+
+
+def _is_ledger_error(value: object) -> TypeIs[ToolLedgerError]:
+    return isinstance(value, ToolLedgerError)
+
+
+_LEDGER_ERROR: S.Top = S.Struct(
+    _EncodedLedgerError, _tag=S.Literal("ToolLedgerError"), cause=S.Defect()
+).pipe(
+    S.decode_to(
+        S.declare(_is_ledger_error, expected="ToolLedgerError"),
+        T.transform(
+            decode=lambda e: ToolLedgerError(
+                e["message"], e["method"], e["toolCallId"], e["cause"]
+            ),
+            encode=lambda e: _EncodedLedgerError(
+                _tag="ToolLedgerError",
+                message=e.message,
+                method=e.method,
+                toolCallId=e.tool_call_id,
+                cause=e.cause,
+            ),
+        ),
+    )
+)
+"""A ``ToolLedgerError`` as JSON, its ``cause`` as a defect (an exception comes back as
+an ``ErrorInstance``), for a store of a guarded call's failures."""
 
 
 @dataclass(frozen=True)
@@ -381,6 +418,13 @@ class _Guarded(WithHandler[Any, Any, Any, Any]):
             )
         )
 
+    def call_failure_schema(self, name: str) -> S.Top:
+        return S.Union(
+            cast("Any", self.inner.call_failure_schema(name)),
+            cast("Any", ToolOutcomeUnknown),
+            cast("Any", _LEDGER_ERROR),
+        )
+
 
 @dataclass(frozen=True)
 class _Call:
@@ -391,29 +435,51 @@ class _Call:
     options: S.ParseOptions
 
     def begin(self) -> Effect[Stream[HandlerResult, Any, Any], Any, Any]:
+        """Claim the call's record and act on what the ledger held. Inside a workflow the
+        record's key is ``<execution id>/<tool_call_id>``, so executions sharing a ledger
+        never answer each other's calls; outside one it is the bare ``tool_call_id``."""
         ledger = self.guarded.ledger
 
-        def decide(found: Begun) -> Effect[Stream[HandlerResult, Any, Any], Any, Any]:
+        def decide(key: str, found: Begun) -> Effect[Stream[HandlerResult, Any, Any], Any, Any]:
             match found:
                 case Claimed():
-                    return self.run()
+                    return self.run(key)
                 case Pending() if _reruns(self.tool):
-                    return self.run()
+                    return self.run(key)
                 case Pending():
                     return self.unknown()
                 case Completed(outcome=outcome):
                     return self.replay(outcome)
 
-        return ledger.begin(self.id, self.tool.name).flat_map(decide)
+        def claim(key: str) -> Effect[Stream[HandlerResult, Any, Any], Any, Any]:
+            return ledger.begin(key, self.tool.name).flat_map(lambda found: decide(key, found))
 
-    def run(self) -> Effect[Stream[HandlerResult, Any, Any], Any, Any]:
+        def in_execution(execution_id: str) -> Effect[Stream[HandlerResult, Any, Any], Any, Any]:
+            # Releases up to 0.6.22 keyed calls inside a workflow by the bare id too: a
+            # record they left still answers, so a run in flight across the upgrade does
+            # not run its tool again.
+            return ledger.lookup(self.id).flat_map(
+                lambda legacy: (
+                    claim(f"{execution_id}/{self.id}")
+                    if legacy is None
+                    else decide(self.id, legacy)
+                )
+            )
+
+        return fx.service_option(WorkflowInstance).flat_map(
+            lambda found: (
+                claim(self.id) if found is None else in_execution(found.value.execution_id)
+            )
+        )
+
+    def run(self, key: str) -> Effect[Stream[HandlerResult, Any, Any], Any, Any]:
         ledger = self.guarded.ledger
         tool = self.tool
 
         def record(result: HandlerResult) -> Effect[HandlerResult, ToolLedgerError]:
             if result.preliminary:
                 return fx.succeed(result)
-            return ledger.complete(self.id, outcomes.of_result(result)).as_(result)
+            return ledger.complete(key, outcomes.of_result(result)).as_(result)
 
         def record_failure(cause: Cause[Any]) -> Stream[HandlerResult, Any, Any]:
             # A failure the handler raised to the caller ("error" mode) is an outcome too;
@@ -424,7 +490,7 @@ class _Call:
                     lambda outcome: (
                         fx.succeed(failed)
                         if outcome is None
-                        else ledger.complete(self.id, outcome).as_(failed)
+                        else ledger.complete(key, outcome).as_(failed)
                     )
                 )
             )
@@ -453,6 +519,7 @@ class _Call:
                 self.id,
                 error,
             ),
+            failures=self.guarded.inner.call_failure_schema(self.tool.name),
         )
 
 

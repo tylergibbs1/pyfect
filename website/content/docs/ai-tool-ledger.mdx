@@ -57,6 +57,11 @@ as the tool's `failure_mode` says, without running the handler. A defect or an i
 records nothing, so the call stays pending. Calls whose parameters do not decode never
 reach the handler, and leave no record.
 
+A replayed call gets the recorded result and nothing else. Whatever the handler did besides
+returning it, such as appending to a list the agent reads afterwards, does not happen
+again, so that list misses the call. Read what a call returned from the tool results in
+the conversation, which a replay gives back, not from state the handler keeps.
+
 <CodeOutput>
 
 <include meta='title="tool_ledger.py"'>../../snippets/ai/tool_ledger.py</include>
@@ -77,6 +82,23 @@ processes replaying the same call at once never both run it.
 The ledger is the `ToolLedger` service, whose `ToolLedgerService` has three operations:
 `begin` (record the intent unless the call has a record, and say which it was), `complete`
 and `lookup`. Any other store can implement them.
+
+## Inside a workflow
+
+Inside a [workflow](/docs/workflows) the ledger keys a call by `<execution id>/<tool_call_id>`,
+so executions that share a database never answer each other's calls, even when their model
+reuses an id (fake models and examples often do). Outside a workflow the key is the bare
+`tool_call_id`, as before. A custom store sees the key as the `tool_call_id` it is given.
+
+Releases up to 0.6.22 keyed every call by its bare id. So that an execution in flight across
+the upgrade does not run a tool twice, a call inside a workflow first looks for a record
+under its bare id and, if one exists, is answered from it. A bare-id record written outside a
+workflow also answers a workflow call with the same id, so give calls made outside workflows
+ids of their own.
+
+With [durable agents](/docs/ai-durable) the ledger runs inside each tool call's activity, and
+the activity stores what the guard gives back, `ToolOutcomeUnknown` and `ToolLedgerError`
+included.
 
 ## What the ledger does not cover
 

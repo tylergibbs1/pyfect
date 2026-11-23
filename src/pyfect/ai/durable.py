@@ -39,7 +39,7 @@ import threading
 import weakref
 from collections import OrderedDict
 from collections.abc import Sequence
-from typing import Any, Never, TypedDict, cast
+from typing import Any, Never, NotRequired, TypedDict, cast
 
 import pyfect as fx
 from pyfect import schema as S
@@ -258,9 +258,18 @@ class _Outcome(TypedDict):
     is_failure: bool
     encoded_result: object
     failure_origin: str | None
+    returned: NotRequired[bool]
+    """Missing in records of releases up to 0.6.22, which never stored a returned failure
+    of a tool in ``"error"`` mode."""
 
 
-_TOOL_RECORD = _record_schema(S.Struct(_Outcome, encoded_result=S.Unknown), S.Never)
+_OUTCOME = S.Struct(_Outcome, encoded_result=S.Unknown)
+
+
+def _tool_record(kit: K.WithHandler[Any, Any, Any, Any], name: str) -> S.Top:
+    """A tool call's record: the result the model saw, or a failure the call gave its
+    caller instead, any the toolkit (wrapped by a tool ledger, say) can give."""
+    return _record_schema(_OUTCOME, kit.call_failure_schema(name))
 
 
 def _step[A](
@@ -337,25 +346,31 @@ def _outcome(tool: AnyTool, handled: Handled) -> Effect[_Outcome, Any, Any]:
             lambda outcome: fx.fail_cause(cause) if outcome is None else fx.succeed(outcome)
         )
 
-    collected = handled.flat_map(lambda stream: stream.run_collect()).flat_map(final)
-    return collected.catch_cause(failed).map(
-        lambda o: _Outcome(
+    def stored(o: Outcome) -> _Outcome:
+        record = _Outcome(
             is_failure=o.is_failure,
             encoded_result=o.encoded_result,
             failure_origin=o.failure_origin,
         )
-    )
+        # Only where it changes the replay, so every other record is stored as before.
+        if o.returned and tool.failure_mode == "error":
+            record["returned"] = True
+        return record
+
+    collected = handled.flat_map(lambda stream: stream.run_collect()).flat_map(final)
+    return collected.catch_cause(failed).map(stored)
 
 
-def _replayed(tool: AnyTool, stored: _Outcome) -> Handled:
+def _replayed(tool: AnyTool, failures: S.Top, stored: _Outcome) -> Handled:
     outcome = Outcome(
         stored["is_failure"],
         stored["encoded_result"],
         cast("FailureOrigin | None", stored["failure_origin"]),
+        stored.get("returned", False),
     )
 
     # A stored result that no longer decodes is a defect: the tool's schemas changed.
-    return outcomes.replay(tool, outcome, lambda error: error).or_die()
+    return outcomes.replay(tool, outcome, lambda error: error, failures=failures).or_die()
 
 
 def _call(
@@ -374,9 +389,11 @@ def _call(
         # Counted here, on the first run and on every replay; the handler's run inside
         # the activity does not count it again.
         inner = handled.pipe(fx.provide_service(Precounted, tool_call_id))
-        stored = _step(step, call_hash(name, params), _TOOL_RECORD, _outcome(known, inner))
+        record = _tool_record(kit, name)
+        stored = _step(step, call_hash(name, params), record, _outcome(known, inner))
+        failures = kit.call_failure_schema(name)
         return tool_call(tool_call_id).and_then(
-            stored.flat_map(lambda found: _replayed(known, found))
+            stored.flat_map(lambda found: _replayed(known, failures, found))
         )
 
     return _durable_run().flat_map(in_run)

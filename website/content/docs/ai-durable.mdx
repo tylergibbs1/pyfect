@@ -44,6 +44,18 @@ order must be the same on every replay.
 A request made inside an activity, such as a sub-agent in a tool's handler, is not made an
 activity again. The activity around it already stores its result.
 
+## State outside the transcript
+
+A replay rebuilds the run from stored model responses and tool results, and nothing else.
+State the agent keeps beside them is not rebuilt: a list a tool handler appends to, a
+counter in a closure, a field on a service. A replayed tool call returns its stored result
+without running the handler, so the list misses that call's entry, and after a crash it
+holds only what the resumed run added.
+
+Read such state from the transcript instead: the tool results in the prompt the run builds,
+or `response.tool_results` of each turn. Those come back on every replay. If the state must
+live elsewhere, write it in an activity of its own, whose result the workflow stores.
+
 ## What is stored
 
 Each step stores its output and a SHA-256 hash of its request. A model request's hash
@@ -67,6 +79,19 @@ On replay, each step compares its request's hash with the stored one. A differen
 is a defect rather than a typed failure because nothing in the workflow can fix it: the code
 and the history disagree. Annotate the workflow with `workflow.SuspendOnFailure` to keep
 such an execution resumable once the old code is back.
+
+Inside the workflow, and with `workflow_engine.layer_memory`, the defect is the
+`RequestDiverged` instance. A caller outside the workflow on the cluster engine gets the
+run's result through storage, where a defect is written with `Schema.Defect()`, as in
+Effect. It reads back as an `S.ErrorInstance` holding the error's `name` and `message`, not
+as a `RequestDiverged`, so match on the name there: the cause's defect is an
+`S.ErrorInstance` whose `name` is `"pyfect/ai/Durable/RequestDiverged"`.
+
+With `SuspendOnFailure`, the execution suspends instead of failing, and `Agent.execute` keeps
+waiting for a result that comes only after someone resumes it. A CLI or a request handler
+that starts the run should not wait on it forever: start it with `Agent.execute(payload,
+discard=True)` and poll `Agent.poll(execution_id)`, which shows the suspended state, or give
+the wait a timeout (`Agent.execute(payload).timeout("5 minutes")`).
 
 The hashes live in the stored value, not in the workflow engine. That way they work on every
 engine (`workflow_engine.layer_memory`, the cluster engine on any SQL database) without
@@ -92,7 +117,19 @@ the budget in the body.
 
 Tools guarded by the [tool ledger](/docs/ai-tool-ledger) compose with the layer. The ledger
 runs inside the tool's activity, so a call whose activity ran but was not stored is answered
-from the ledger when it runs again, and its handler does not run twice.
+from the ledger when it runs again, and its handler does not run twice. A call cut off
+while its handler ran gets `ToolOutcomeUnknown`, which the activity stores like any other
+result: a failed tool result for the model with `on_unknown="tell_model"`, the call's typed
+failure with `"fail"`. A `ToolLedgerError` is stored as the call's failure too.
+
+The tool activity stores whatever the toolkit's `call_failure_schema(name)` covers: the
+tool's own failures, plus whatever a toolkit wrapping it adds. A toolkit of your own that
+wraps another and fails with errors of its own should extend that schema the same way the
+ledger's guard does.
+
+Inside a workflow the ledger keys a call by `<execution id>/<tool_call_id>`, so two
+executions on one database never answer each other's calls, even when their model reuses
+an id.
 
 ## Testing it
 

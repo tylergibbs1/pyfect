@@ -30,6 +30,7 @@ from _ai_durable_agent import (
     memory_engine,
     model_layer,
     run_agent,
+    sqlite_engine,
     step_of,
 )
 
@@ -125,6 +126,41 @@ def test_a_replay_with_a_changed_prompt_dies_with_request_diverged():
         assert diverged.step == "pyfect/ai/1/model"
         assert diverged.recorded != diverged.requested
         assert (dict(calls.model), dict(calls.tool)) == ({0: 1}, {0: 1})
+
+    yield from body.pipe(fx.provide(layer)).pipe(
+        fx.provide_service(ActivityHook, stop_after_turn_one)
+    )
+
+
+@testing.live
+def test_on_the_cluster_engine_a_caller_outside_gets_request_diverged_as_an_error_instance():
+    """The cluster engine stores the run's result, its defect through ``Schema.Defect()``
+    as Effect does: a caller outside the workflow reads it back as an ``ErrorInstance``
+    named after ``RequestDiverged``, not as the class."""
+    extra = [""]
+    stops: list[str] = []
+
+    def stop_after_turn_one(activity: Any, run: Any) -> Any:
+        stops.append(activity.name)
+        return run.and_then(fx.succeed(Suspended())) if len(stops) == 2 else run
+
+    payload = AgentPayload(turns=3, prompt="go")
+    layer = agent_layer(sqlite_engine(), run=agent(extra_prompt=lambda: extra[0]))
+
+    @fx.gen
+    def body():
+        execution_id = yield from Agent.execution_id(payload)
+        waiter = yield from Agent.execute(payload).exit().fork()
+        while not isinstance((yield from Agent.poll(execution_id)), Suspended):
+            yield from fx.yield_now()
+        extra[0] = " (now in French)"
+        yield from Agent.resume(execution_id)
+        ex = yield from waiter.join()
+        assert isinstance(ex, Failure)
+        defect = ex.cause.squash()
+        assert isinstance(defect, S.ErrorInstance), defect
+        assert defect.name == "pyfect/ai/Durable/RequestDiverged"
+        assert defect.message.startswith("pyfect/ai/1/model: the replayed request")
 
     yield from body.pipe(fx.provide(layer)).pipe(
         fx.provide_service(ActivityHook, stop_after_turn_one)

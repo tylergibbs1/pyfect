@@ -171,6 +171,13 @@ class WithHandler(Generic[N_co, RP_co, HE_co, R_co]):
         ``"return"`` mode."""
         return cast("Any", _handle(self, name, params, tool_call_id, options or {}))
 
+    def call_failure_schema(self, name: str) -> S.Top:
+        """Every failure a call of the tool ``name`` through ``handle`` can give its
+        caller, as a failed result or as an error: what a store of the call's outcome
+        (``pyfect.ai.durable``) keeps. A toolkit that wraps another and adds failures
+        extends the wrapped one's schema."""
+        return failure_result_schema(self.tools[name])
+
 
 def _handle(
     kit: WithHandler[Any, Any, Any, Any],

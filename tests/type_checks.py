@@ -8502,6 +8502,31 @@ def check_ai_openai(service: openai_client.Service) -> None:
             Never,
         ],
     )
+    # In "return" mode the handler's failures are results: it raises nothing.
+    assert_type(
+        openai_tool.WebSearch(failure_mode="return"),
+        ai_tool.ProviderDefined[
+            Literal["OpenAiWebSearch"],
+            openai_tool.WebSearchParameters,
+            openai_tool.WebSearchSuccess,
+            openai_tool.WebSearchFailure,
+            Never,
+            Never,
+        ],
+    )
+    openai_tool.WebSearch(failure_mode="raise")  # pyright: ignore[reportCallIssue, reportArgumentType]
+    # Changing a schema keeps the tool provider-defined.
+    assert_type(
+        openai_tool.WebSearch().set_failure(S.String),
+        ai_tool.ProviderDefined[
+            Literal["OpenAiWebSearch"],
+            openai_tool.WebSearchParameters,
+            openai_tool.WebSearchSuccess,
+            str,
+            Any,
+            Never,
+        ],
+    )
     openai_lm.with_config_override({"use_item_reference": True})  # pyright: ignore[reportArgumentType]
 
 
