@@ -12,6 +12,7 @@ from typing import NotRequired, TypedDict
 
 import pytest
 
+import pyfect as fx
 from pyfect import schema as S
 from pyfect import stream, testing
 from pyfect.encoding import sse
@@ -183,6 +184,27 @@ def test_fails_when_pending_data_exceeds_max_event_size():
     assert isinstance(error, sse.SseError)
     assert isinstance(error.reason, sse.EventTooLarge)
     assert error.reason.max_event_size == 3
+
+
+@testing.effect
+def test_emits_completed_events_before_a_later_size_error():
+    """emits completed events before a later size error"""
+    valid = "data: ready\n\n"
+    invalid = "data: update in progress"
+    for chunks in ([valid + invalid], [valid, invalid]):
+        data: list[str] = []
+        events = stream.from_iterable(chunks, chunk_size=1).pipe_through_channel(
+            sse.decode(max_event_size=16)
+        )
+
+        def record(event: Event, data: list[str] = data) -> fx.Effect[None]:
+            return fx.sync(lambda: data.append(event.data))
+
+        error = yield from events.run_for_each(record).flip()
+        assert data == ["ready"]
+        assert isinstance(error, sse.SseError)
+        assert isinstance(error.reason, sse.EventTooLarge)
+        assert error.reason.max_event_size == 16
 
 
 @testing.effect

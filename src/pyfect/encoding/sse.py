@@ -254,8 +254,8 @@ def decode[E = Never, D = None](
     dispatch_empty_named_events: bool = False,
 ) -> Channel[tuple[Event, ...], E | Retry | SseError, D, tuple[str, ...], E, D]:
     """Parse chunks of SSE text into events (see ``make_parser``). A
-    ``retry:`` directive fails the channel with ``Retry`` once the events
-    before it are written; an oversized event fails it with ``SseError``."""
+    ``retry:`` directive fails the channel with ``Retry``, and an oversized
+    event with ``SseError``, once the events before it are written."""
 
     def build(upstream: AnyPull) -> AnyPull:
         parsed = _Parsed()
@@ -269,7 +269,9 @@ def decode[E = Never, D = None](
             for text in chunk:
                 error = parser.feed(text)
                 if error is not None:
-                    return _FailCause(fail_cause(error))
+                    # Written after the events parsed before it, as a ``retry:``.
+                    parsed.failure = error
+                    break
             return _Succeed(None)
 
         return _Suspend(_DecodeLoop(parsed, upstream.flat_map(feed)).loop)
@@ -283,15 +285,15 @@ def decode[E = Never, D = None](
 class _Parsed:
     """What ``decode``'s parser has read and not yet written."""
 
-    __slots__ = ("events", "retry")
+    __slots__ = ("events", "failure")
 
     def __init__(self) -> None:
         self.events: list[Event] = []
-        self.retry: Retry | None = None
+        self.failure: Retry | SseError | None = None
 
     def __call__(self, event: AnyEvent) -> None:
         if isinstance(event, Retry):
-            self.retry = event
+            self.failure = event
         else:
             self.events.append(event)
 
@@ -312,8 +314,8 @@ class _DecodeLoop:
             out = tuple(events)
             events.clear()
             return _Succeed(out)
-        if self.parsed.retry is not None:
-            return _FailCause(fail_cause(self.parsed.retry))
+        if self.parsed.failure is not None:
+            return _FailCause(fail_cause(self.parsed.failure))
         return self.pump.flat_map(self.pumped)
 
     def pumped(self, _: object) -> AnyPull:
