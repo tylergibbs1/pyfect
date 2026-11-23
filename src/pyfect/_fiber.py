@@ -973,12 +973,18 @@ class Fiber(Generic[A_co, E_co]):
         daemon: bool,
         start_immediately: bool,
         uninterruptible: Uninterruptible = False,
+        enlist: Callable[[Fiber[Any, Any]], bool] | None = None,
     ) -> Fiber[Any, Any]:
         """A fiber running ``effect``, a child of this one unless ``daemon``.
         With ``start_immediately`` it runs now, up to its first wait or
         yield, before this fiber goes on (Effect's ``runForkWith``, and
         ``fork*`` with ``startImmediately``); otherwise it is scheduled.
-        Required, so each port states which of the two Effect does."""
+        Required, so each port states which of the two Effect does.
+
+        ``enlist`` sees the child after it is built and before it runs (as
+        Effect's ``new FiberImpl`` then ``evaluate`` in ``raceAll``), so
+        whatever must observe it, a race interrupting its losers, does so
+        from its first step; returning ``False`` interrupts it unstarted."""
         interruptible = self._interruptible if uninterruptible == "inherit" else not uninterruptible
         # The child switches to this fiber's context: hand it this view.
         _last_view[0] = self._view
@@ -987,7 +993,9 @@ class Fiber(Generic[A_co, E_co]):
         )
         if not daemon:
             self._children[child] = None
-        if start_immediately:
+        if enlist is not None and not enlist(child):
+            child.interrupt_as_unsafe(self.id, self._interruptor_annotations())
+        elif start_immediately:
             child._drive_first(effect)
         else:
             child._start(effect, parent=self)

@@ -14,7 +14,7 @@ from typing import Any
 import pytest
 
 import pyfect as fx
-from pyfect import testing
+from pyfect import metric, testing
 from pyfect._fiber import Fiber
 from pyfect._stack_frame import CurrentStackFrame, InterruptorStackTrace, StackFrame
 from pyfect.scope import CloseableScope
@@ -68,19 +68,81 @@ def test_race_first_interrupts_the_loser_when_the_other_side_fails():
 RACES = ["race", "race_first"]
 
 
+# Every combinator that forks racers through the one race loop, for the
+# "settles the race" titles (Effect's own run race and raceFirst).
+ALL_RACES = [*RACES, "race_all", "race_all_first"]
+
+
 def _race(name: str, a: fx.Effect[Any, Any], b: fx.Effect[Any, Any]) -> fx.Effect[Any, Any]:
-    return a.race(b) if name == "race" else a.race_first(b)
+    match name:
+        case "race":
+            return a.race(b)
+        case "race_first":
+            return a.race_first(b)
+        case "race_all":
+            return fx.race_all(a, b)
+        case _:
+            return fx.race_all_first(a, b)
 
 
-@pytest.mark.parametrize("name", RACES)
+@pytest.mark.parametrize("name", ALL_RACES)
 @testing.effect
 def test_interrupts_a_loser_that_settles_the_race_while_starting(name: str):
     """${name} interrupts a loser that settles the race while starting"""
-    interrupted: list[str] = []
-    deferred = yield from fx.Deferred[None].make()
-    loser = _on_interrupt(deferred.succeed(None).and_then(fx.never), interrupted, "loser")
-    yield from _race(name, deferred.wait(), loser)
-    assert interrupted == ["loser"]
+    after_settle_ran = False
+    loser_exit: list[fx.Exit[int, Any]] = []
+
+    def after_settle() -> int:
+        nonlocal after_settle_ran
+        after_settle_ran = True
+        return 41
+
+    deferred = yield from fx.Deferred[str].make()
+    loser = (
+        deferred.succeed("winner")
+        .and_then(fx.sync(after_settle))
+        .on_exit(lambda ex: fx.sync(lambda: loser_exit.append(ex)))
+    )
+    result = yield from _race(name, deferred.wait(), loser)
+    assert result == "winner"
+    assert not after_settle_ran
+    assert len(loser_exit) == 1
+    assert isinstance(loser_exit[0], fx.Failure)
+    assert loser_exit[0].cause.has_interrupts_only
+
+
+@pytest.mark.parametrize("name", ALL_RACES)
+@testing.effect
+def test_does_not_evaluate_a_loser_when_the_race_settles_during_fiber_construction(name: str):
+    """${name} does not evaluate a loser when the race settles during fiber construction"""
+    stop = yield from fx.Deferred[str].make()
+    starts = 0
+    ends = 0
+    ran = False
+
+    class Metrics:
+        def record_fiber_start(self, context: fx.Context) -> None:
+            nonlocal starts
+            starts += 1
+            if starts == 2:
+                stop.done_unsafe(fx.exit.succeed("stop"))
+
+        def record_fiber_end(self, context: fx.Context, exit: fx.Exit[Any, Any]) -> None:
+            nonlocal ends
+            ends += 1
+
+    def loser() -> str:
+        nonlocal ran
+        ran = True
+        return "loser"
+
+    result = yield from _race(name, stop.wait(), fx.sync(loser)).pipe(
+        fx.provide_service(metric.FiberRuntimeMetrics, Metrics())
+    )
+    assert result == "stop"
+    assert not ran
+    assert starts == 2
+    assert ends == 2
 
 
 @pytest.mark.parametrize("name", RACES)

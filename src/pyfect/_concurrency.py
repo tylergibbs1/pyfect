@@ -139,14 +139,20 @@ def _race(effects: list[Effect[Any, Any, Any]], *, first_exit_wins: bool) -> Eff
                     decided = True
                     resume(_FailCause(_drop_own_interrupts(causes, parent.id)))
 
+            def enlist(fiber: Fiber[Any, Any]) -> bool:
+                # Before it runs, so a race it settles in its first step
+                # interrupts it; building it (the runtime metrics hook) can
+                # settle the race too, and then it never runs.
+                fibers.append(fiber)
+                fiber.add_observer_unsafe(observer)
+                return not decided
+
             # Started at once, as in Effect: each runs before the next is
             # forked, and once one has decided the race no other starts.
             for e in effects:
                 if decided:
                     break
-                f = parent._fork(e, daemon=True, start_immediately=True)
-                fibers.append(f)
-                f.add_observer_unsafe(observer)
+                parent._fork(e, daemon=True, start_immediately=True, enlist=enlist)
 
         def stop_losers(ex: Exit[Any, Any]) -> Step:
             # However the race ends, won, lost or interrupted (also in a
