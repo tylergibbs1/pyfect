@@ -262,6 +262,9 @@ fails with `IllegalArgumentError` when the frontmatter is not valid Agent Skills
 a path leaves the skill, two skills overlap, or a file's URI is already a resource; a
 resource registered later at a skill file's URI is a defect.
 
+`mcp_server.skill(uri, refunds)` also takes a [`Skill` value](/docs/ai-skills) in place of
+the files, and serves its `skill.to_files`.
+
 The client's skill methods need `extensions={"skills": True}`: `list_skills`, `get_skill`,
 `read_resource_directory` and `read_skill_resource`. They call only a server that declares
 the extension, and `read_skill_resource` fails with a `ValidationError` unless the bytes

@@ -67,6 +67,7 @@ from pyfect.ai import mcp_schema as mcp_schema_module
 from pyfect.ai import model as ai_model
 from pyfect.ai import prompt as ai_prompt
 from pyfect.ai import response as ai_response
+from pyfect.ai import skill as ai_skill
 from pyfect.ai import tool as ai_tool
 from pyfect.ai import tool_ledger as ai_tool_ledger
 from pyfect.ai import toolkit as ai_toolkit
@@ -11791,3 +11792,39 @@ def check_testing_explore() -> None:
 
     # The check reads only what the layer provides.
     explore.activity_crashes(wf, {"id": "1"}, layer=layer, check=needs_other)  # pyright: ignore[reportArgumentType]
+
+
+# --- ai.skill: a standalone Agent Skill value (Effect 4.1.6) -------------------------
+
+
+def check_ai_skill(refunds: ai_skill.Skill) -> None:
+    from pyfect.ai import mcp_server as mcp_m
+    from pyfect.errors import IllegalArgumentError as Illegal
+
+    assert_type(
+        ai_skill.make(frontmatter={"name": "refunds", "description": "d"}, instructions=""),
+        ai_skill.Skill,
+    )
+    # The frontmatter needs a name and a description; other keys hold JSON.
+    ai_skill.make(frontmatter={"name": "refunds"}, instructions="")  # pyright: ignore[reportArgumentType]
+    ai_skill.make(
+        frontmatter={"name": "r", "description": "d", "#note": "kept", "n": [1, None]},
+        instructions="",
+        files={"assets/logo.png": b"\x89PNG", "policy.md": "text"},
+    )
+    ai_skill.make(frontmatter={"name": "r", "description": "d"}, instructions="", files={"a": 1})  # pyright: ignore[reportArgumentType]
+    assert_type(refunds.frontmatter["name"], str)
+    assert_type(refunds.files, Mapping[str, str | bytes])
+    # SKILL.md is always there, and always text.
+    files = ai_skill.to_files(refunds)
+    assert_type(files["SKILL.md"], str)
+    assert_type(ai_skill.from_files(files), fx.Effect[ai_skill.Skill, Illegal])
+    # A Skill value registers like its files.
+    assert_type(
+        mcp_m.skill("skill://refunds/SKILL.md", refunds),
+        fx.Layer[Never, Illegal, mcp_m.McpServer],
+    )
+    assert_type(
+        mcp_m.register_skill("skill://refunds/SKILL.md", refunds),
+        fx.Effect[None, Illegal, mcp_m.McpServer],
+    )

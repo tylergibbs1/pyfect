@@ -19,6 +19,7 @@ EXTENSION_ID = "io.modelcontextprotocol/skills"
 _SKILL_MD = "/SKILL.md"
 
 _FRONTMATTER = re.compile(r"﻿?---\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|\Z)")
+_LEADING_NEWLINE = re.compile(r"\A\r?\n")
 _SKILL_NAME = re.compile(r"[a-z0-9]++(?:-[a-z0-9]++)*+")
 
 
@@ -48,9 +49,10 @@ def _as_json(value: object) -> object:
     return value
 
 
-def parse_frontmatter(markdown: str) -> SkillFrontmatter | None:
-    """The YAML frontmatter of a ``SKILL.md``, or ``None`` when the file does
-    not begin with a frontmatter block holding a YAML mapping."""
+def split_skill_md(markdown: str) -> tuple[SkillFrontmatter, str] | None:
+    """The YAML frontmatter of a ``SKILL.md`` and the instructions after it,
+    or ``None`` when the file does not begin with a frontmatter block holding
+    a YAML mapping."""
     found = _FRONTMATTER.match(markdown)
     if found is None:
         return None
@@ -60,7 +62,14 @@ def parse_frontmatter(markdown: str) -> SkillFrontmatter | None:
         return None
     if not isinstance(parsed, dict):
         return None
-    return cast("SkillFrontmatter", _as_json(cast("dict[str, object]", parsed)))
+    frontmatter = cast("SkillFrontmatter", _as_json(cast("dict[str, object]", parsed)))
+    return frontmatter, _LEADING_NEWLINE.sub("", markdown[found.end() :], count=1)
+
+
+def parse_frontmatter(markdown: str) -> SkillFrontmatter | None:
+    """The YAML frontmatter of a ``SKILL.md`` (see ``split_skill_md``)."""
+    split = split_skill_md(markdown)
+    return None if split is None else split[0]
 
 
 def json_equal(a: object, b: object) -> bool:

@@ -1,0 +1,11 @@
+---
+"name": "refunds"
+"description": "Process customer refunds"
+---
+
+Read references/policy.md before issuing a refund.
+
+{'name': 'refunds', 'description': 'Process customer refunds'} ['assets/logo.png', 'references/policy.md']
+IllegalArgumentError
+{'references/policy.md': 'Refunds over $100 need approval.\n', 'assets/logo.png': {'base64': 'iVBORw=='}}
+system prompt: 'Read references/policy.md before issuing a refund.\n'

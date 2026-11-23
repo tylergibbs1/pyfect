@@ -52,13 +52,18 @@ checks the fields the Agent Skills specification defines (``name``,
 ``description``, ``license``, ``compatibility``, ``metadata``,
 ``allowed-tools``) and keeps the others unchanged."""
 
+FRONTMATTER_NAME = S.String.check(S.is_max_length(64), S.is_pattern(_SKILL_NAME))
+FRONTMATTER_DESCRIPTION = S.String.check(S.is_non_empty(), S.is_max_length(1024))
+FRONTMATTER_COMPATIBILITY = S.String.check(S.is_non_empty(), S.is_max_length(500))
+FRONTMATTER_METADATA = S.Record(S.String, S.String)
+
 SKILL_FRONTMATTER = S.StructWithRest(
     S.Struct(
         _SkillFrontmatterFields,
-        name=S.String.check(S.is_max_length(64), S.is_pattern(_SKILL_NAME)),
-        description=S.String.check(S.is_non_empty(), S.is_max_length(1024)),
-        compatibility=S.String.check(S.is_non_empty(), S.is_max_length(500)),
-        metadata=S.Record(S.String, S.String),
+        name=FRONTMATTER_NAME,
+        description=FRONTMATTER_DESCRIPTION,
+        compatibility=FRONTMATTER_COMPATIBILITY,
+        metadata=FRONTMATTER_METADATA,
     ),
     _JSON_OBJECT,
 )

@@ -74,6 +74,7 @@ from pyfect.ai._mcp.routing_header import decode_routing_header
 from pyfect.ai._mcp.skills import SkillFile, SkillFileInput
 from pyfect.ai.mcp_protocol import AnyProtocolAdapter, ProtocolAdapter, make_registry
 from pyfect.ai.mcp_schema import CompletionContext, Icon, McpServerClient, PromptMessage, Role
+from pyfect.ai.skill import Skill
 from pyfect.ai.toolkit import Handlers, Toolkit
 from pyfect.context import Context
 from pyfect.duration import Input as DurationInput
@@ -522,7 +523,7 @@ def prompt[P = Mapping[str, Never], E = Never, R = Never](
 
 def skill(
     uri: str,
-    files: Mapping[str, SkillFileInput],
+    files: Mapping[str, SkillFileInput] | Skill,
     *,
     annotations: Context[Never] | None = None,
 ) -> Layer[Never, IllegalArgumentError, McpServer]:
@@ -535,6 +536,8 @@ def skill(
             "references/policy.md": "Refunds above CHF 500 need approval.\n",
         },
     )
+
+    ``files`` may instead be a ``pyfect.ai.skill.Skill``.
     """
     return effect_discard(register_skill(uri, files, annotations=annotations))
 

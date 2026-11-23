@@ -12,6 +12,7 @@ from pyfect.ai._mcp.core import McpServer, ResourceEntry
 from pyfect.ai._mcp.invoke import Invoke
 from pyfect.ai._mcp.skills import SkillFileInput, SkillRegistration, make_static_skill
 from pyfect.ai.mcp_schema import Resource
+from pyfect.ai.skill import Skill, to_files
 from pyfect.context import Context
 from pyfect.effect import fail, gen, succeed
 from pyfect.errors import IllegalArgumentError
@@ -19,7 +20,7 @@ from pyfect.errors import IllegalArgumentError
 
 def register_skill(
     uri: str,
-    files: Mapping[str, SkillFileInput],
+    files: Mapping[str, SkillFileInput] | Skill,
     *,
     annotations: Context[Never] | None = None,
 ) -> Effect[None, IllegalArgumentError, McpServer]:
@@ -27,7 +28,8 @@ def register_skill(
 
     ``uri`` addresses its ``SKILL.md`` (``skill://<skill-path>/SKILL.md``),
     whose last path segment is the skill's name; ``files`` maps paths under
-    the skill root to the files, ``SKILL.md`` included, served verbatim.
+    the skill root to the files, ``SKILL.md`` included, served verbatim, or
+    is a ``pyfect.ai.skill.Skill``, served as its ``to_files``.
     Each file is a resource, ``skills/list`` and ``skills/get`` list the
     skill with every file's SHA-256 digest and size, and every directory of
     the namespace is readable with ``resources/directory/read``.
@@ -43,7 +45,7 @@ def register_skill(
 
     @gen
     def register():
-        built = make_static_skill(uri, files)
+        built = make_static_skill(uri, to_files(files) if isinstance(files, Skill) else files)
         if isinstance(built, IllegalArgumentError):
             return (yield from fail(built))
         server = yield from McpServer()

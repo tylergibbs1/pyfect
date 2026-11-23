@@ -45,6 +45,7 @@
     "ai-interrupt-safe-chat",
     "ai-budgets",
     "ai-durable",
+    "ai-skills",
     "mcp",
     "models",
     "graphql",

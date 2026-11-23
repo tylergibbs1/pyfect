@@ -22,6 +22,7 @@ import pyfect as fx
 from pyfect import layer, testing
 from pyfect.ai import mcp_protocol as P
 from pyfect.ai import mcp_server as M
+from pyfect.ai import skill as skill_value
 from pyfect.ai._mcp.core import ResourceEntry
 from pyfect.ai.mcp_schema import McpServerClient, ServerClient
 from pyfect.context import Context, Tag
@@ -165,6 +166,37 @@ def test_lists_every_skill_with_a_manifest_of_the_bytes_resources_read_serves():
         assert resource["size"] == len(content)
     served = yield from read_bytes(harness, "skill://acme/billing/refunds/SKILL.md")
     assert served.decode() == REFUNDS_SKILL_MD
+
+
+@testing.effect
+def test_registers_a_skill_value_with_the_same_manifest_and_files_as_the_raw_files_form():
+    """registers a Skill value with the same manifest and files as the raw-files form"""
+    refunds_skill = skill_value.make(
+        frontmatter={
+            "name": "refunds",
+            "description": "Process refunds using the billing tools",
+            "license": "Apache-2.0",
+            "metadata": {"acme-tools": "issue_refund"},
+        },
+        instructions="Read references/policy.md before issuing a refund.\n",
+        files={
+            "references/policy.md": "Refunds above CHF 500 require manager approval.\n",
+            "assets/logo.png": PNG,
+        },
+    )
+    harness = yield from modern_harness(
+        M.register_skill("skill://acme/billing/refunds/SKILL.md", refunds_skill)
+    )
+    message = yield from message_of(harness, "skills/list")
+    [listed] = message["result"]["skills"]
+    assert listed["uri"] == "skill://acme/billing/refunds/SKILL.md"
+    assert listed["frontmatter"] == refunds_skill.frontmatter
+    assert [r["uri"] for r in listed["resources"]] == [
+        "skill://acme/billing/refunds/SKILL.md",
+        "skill://acme/billing/refunds/assets/logo.png",
+        "skill://acme/billing/refunds/references/policy.md",
+    ]
+    assert (yield from read_bytes(harness, "skill://acme/billing/refunds/assets/logo.png")) == PNG
 
 
 @testing.effect

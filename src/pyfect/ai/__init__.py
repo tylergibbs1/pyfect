@@ -3,6 +3,7 @@ toolkits, the provider-neutral ``LanguageModel`` and ``EmbeddingModel``
 services, ``decision`` and the ``DecisionModel`` service (``decision_model``),
 the Model Context Protocol (``mcp_server``, ``mcp_client``, ``mcp_test``), the
 Agent User Interaction protocol (``ag_ui_schema``, ``ag_ui``, ``ag_ui_server``),
+Agent Skills as values (``skill``),
 each provider's structured-output codec (``anthropic_structured_output``,
 ``openai_structured_output``), and ``workload_identity`` (an ``HttpClient``
 authenticated with access tokens exchanged for a workload's identity token).
@@ -35,6 +36,7 @@ from pyfect.ai import (
     prompt,
     response,
     response_id_tracker,
+    skill,
     tokenizer,
     tool,
     toolkit,
@@ -78,6 +80,7 @@ __all__ = [
     "prompt",
     "response",
     "response_id_tracker",
+    "skill",
     "tokenizer",
     "tool",
     "toolkit",

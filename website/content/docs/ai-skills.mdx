@@ -1,0 +1,57 @@
+---
+title: Agent Skills
+description: "Build, check, save and load Agent Skills as values, then give them to a local agent or serve them over MCP."
+---
+
+An [Agent Skill](https://agentskills.io/specification) is a directory an agent can read
+when a task calls for it: a `SKILL.md` with YAML frontmatter (a `name` and a `description`
+of when to use the skill) and markdown instructions, plus the files those instructions
+refer to, such as a policy or a script.
+
+`pyfect.ai.skill` makes a skill a value. `skill.make(frontmatter=..., instructions=...,
+files=...)` gives a `Skill`, checked when it is made: the frontmatter must follow the
+specification (`name` is 1 to 64 lowercase letters, digits and single hyphens,
+`description` 1 to 1024 characters), and a file's path must stay inside the skill and must
+not be `SKILL.md`, which the skill writes itself. A bad skill raises `SchemaError`, so a
+skill in your code is either valid or never made. pyright checks the shape too: the
+frontmatter's `Frontmatter` type needs `name` and `description`, and any other key holds
+JSON.
+
+## Files and directories
+
+`skill.to_files(s)` gives the skill as files: the generated `SKILL.md`, then the supporting
+files. Its type says `SKILL.md` is always there and always text. Each frontmatter key and
+value is written as JSON, which YAML reads back unchanged, so a description such as
+`yes: it's #1` survives the trip.
+
+`skill.from_files(files)` goes the other way, for skills you did not write, such as a
+directory read from disk. It takes text or bytes, and fails with `IllegalArgumentError`
+when `SKILL.md` is missing, is not UTF-8, does not begin with YAML frontmatter, or the
+skill is not valid. A hand-written `SKILL.md` with a BOM or Windows line endings reads
+fine.
+
+A `Skill` is also a schema class, so `S.to_codec_json(skill.Skill)` stores it as JSON. A
+file's bytes are written as `{"base64": ...}`, so text and binary files come back as
+what they were.
+
+<CodeOutput>
+
+<include meta='title="skills.py"'>../../snippets/ai/skills.py</include>
+
+<include lang="text">../../snippets/ai/skills.out</include>
+
+</CodeOutput>
+
+## Using a skill
+
+In a local agent, the skill is the instructions you give the model: put
+`s.instructions` in the system prompt, as above, or list each skill's `name` and
+`description` there and add a skill's instructions once the model picks it. A tool that
+reads `s.files[path]` lets the model open the files the instructions refer to.
+
+To share a skill with other agents, serve it over [MCP](/docs/mcp#skills):
+`mcp_server.skill("skill://billing/refunds/SKILL.md", refunds)` registers it, as it
+registers a map of files. The URI's last path segment must be the skill's `name`.
+
+Reference: [`skill`](/docs/reference/ai/skill),
+[`mcp_server`](/docs/reference/ai/mcp_server).
