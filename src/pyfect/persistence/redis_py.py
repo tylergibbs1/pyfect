@@ -14,7 +14,8 @@ replies (no redis-py response callbacks), decoded as text unless
 ``decode_responses=False`` is passed. ``reserve`` opens connections of its
 own that do not reconnect: run blocking commands there, as a blocking
 command on the shared client holds a connection of its pool.
-Interrupting ``subscribe`` or ``reserve`` while its connection is opening
+``subscribe`` returns once the server confirmed ``SUBSCRIBE``. Interrupting
+``subscribe`` or ``reserve`` while its connection is opening
 (or ``SUBSCRIBE`` is unanswered) cancels the attempt and closes it.
 """
 
@@ -240,8 +241,14 @@ def make(
                 # connection or ``SUBSCRIBE`` can be interrupted; the scope
                 # closes it.
                 async def open_subscription() -> PubSub:
+                    # redis-py only sends ``SUBSCRIBE``; as node-redis, return
+                    # once the server confirms it.
                     await subscription.subscribe(channel)
-                    return subscription
+                    reading: Any = subscription
+                    while True:
+                        reply: Mapping[str, Any] | None = await reading.get_message(timeout=None)
+                        if reply is not None and reply["type"] == "subscribe":
+                            return subscription
 
                 # The scope owns the subscription already.
                 return loop.run(open_subscription, waits_for="work", release=None)

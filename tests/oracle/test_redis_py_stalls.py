@@ -125,7 +125,20 @@ def _layer(port: int, **options: Any) -> fx.Layer[Any, Any]:
 
 
 def _interrupt_within_two_seconds(fiber: fx.Fiber[Any, Any]) -> fx.Effect[None, Any]:
-    return fiber.interrupt().timeout("2 seconds")
+    """Interrupts ``fiber``, which must end within two seconds, and by the
+    interrupt: a program that ended on its own was never stalled."""
+
+    def interrupted(exit: fx.Exit[Any, Any]) -> None:
+        assert isinstance(exit, fx.Failure) and exit.cause.has_interrupts_only, (
+            f"the program ended on its own: {exit}"
+        )
+
+    return (
+        fiber.interrupt()
+        .timeout("2 seconds")
+        .flat_map(lambda _: fiber.await_exit())
+        .map(interrupted)
+    )
 
 
 def _run(peer: _Peer, body: Callable[[], Generator[Any, Any]]) -> None:
@@ -195,6 +208,38 @@ def test_interrupts_a_subscriber_stalled_on(command: str) -> None:
         yield from _awaited(peer.closed)
 
     _run(peer, body)
+
+
+def test_subscribe_returns_once_the_server_confirmed_it() -> None:
+    """Adapted: node-redis' ``subscribe`` resolves at the server's reply, so
+    a message published once it returned is delivered. The peer holds that
+    reply until ``subscribe`` returns (or a second passes): a ``subscribe``
+    that returns at the send finds it unsent."""
+    returned = threading.Event()
+    confirmed = threading.Event()
+
+    def on_data(peer: _Peer, connection: socket.socket, data: bytes) -> None:
+        for match in _COMMAND.finditer(data):
+            if match.group(1).upper() != b"SUBSCRIBE":
+                connection.sendall(_answer(match.group(1)))
+                continue
+            returned.wait(1.0)
+            confirmed.set()
+            connection.sendall(b">3\r\n$9\r\nsubscribe\r\n$7\r\nchannel\r\n:1\r\n")
+
+    peer = _Peer(on_data)
+
+    def body():
+        redis = yield from Redis()
+        yield from redis.subscribe("channel")
+        seen = confirmed.is_set()
+        returned.set()
+        assert seen, "subscribe returned before the server confirmed SUBSCRIBE"
+
+    def run():
+        yield from fx.gen(body).pipe(fx.provide(_layer(peer.port)))
+
+    _run(peer, run)
 
 
 def test_interrupts_a_stalled_reserved_connection() -> None:
