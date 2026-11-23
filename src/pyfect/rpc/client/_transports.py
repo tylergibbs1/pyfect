@@ -16,7 +16,6 @@ from pyfect.duration import Duration, from_input_unsafe, nanos_or_infinite
 from pyfect.duration import Input as DurationInput
 from pyfect.effect import fail, gen, succeed, suspend
 from pyfect.latch import Latch
-from pyfect.queue import Queue
 from pyfect.result import Ok
 from pyfect.rpc.client._protocol import (
     ClientProtocolParts,
@@ -99,31 +98,33 @@ def default_retry_policy() -> Schedule[Any, Any, Never, Never]:
 
 class _Pinger:
     """Ticks from when the protocol is made (a socket that never opens is dropped as silent)
-    and again from each open, so a connection is silent no sooner than two intervals after
-    it opened."""
+    and again from the first open, so a connection is silent no sooner than two intervals
+    after it opened. Reconnects leave the ticks where they are, as in Effect, so clients made
+    together are declared silent together however long each takes to reconnect."""
 
-    __slots__ = ("_awaiting", "_clock", "_last_seen", "_opens", "_timeout", "latch")
+    __slots__ = ("_awaiting", "_clock", "_first_open", "_last_seen", "_timeout", "latch")
 
     def __init__(self, clock: Any, timeout: Duration) -> None:
         self._clock = clock
         self._timeout = nanos_or_infinite(timeout)
         self._last_seen = clock.monotonic_nanos_unsafe()
         self._awaiting = False
-        self._opens: Queue[None, Never] = Queue()
+        self._first_open = Latch(False)
         self.latch = Latch(False)
 
     def opened(self) -> Effect[None]:
-        """The connection opened: the silence and the ticks count from now."""
+        """The connection opened: the silence counts from now, and the ticks too if it is
+        the first open."""
 
         def restart() -> Effect[None]:
             self.on_frame()
-            return self._opens.offer(None).as_void()
+            return self._first_open.open().as_void()
 
         return suspend(restart)
 
     def ticking(self, ticks: Effect[Never, Any]) -> Effect[Never, Any]:
-        """``ticks``, started again at each open."""
-        return ticks.race_first(self._opens.take()).forever()
+        """``ticks``, started again at the first open only."""
+        return ticks.race_first(self._first_open.wait()).and_then(ticks)
 
     def on_frame(self) -> None:
         self._last_seen = self._clock.monotonic_nanos_unsafe()
