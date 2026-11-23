@@ -73,6 +73,7 @@ from pyfect.http_api.api import (
     HttpApi,
     api_of,
     endpoint_redacted_names,
+    endpoint_redacted_params,
     get_slot_parse_options,
 )
 from pyfect.http_api.endpoint import AnyEndpoint, HttpApiEndpoint
@@ -311,6 +312,7 @@ def handler_to_route(
         _path.to_router_path(endpoint.path, endpoint.params),
         handler_to_http_effect(api, group, endpoint, services, entry.handler, is_raw=entry.is_raw),
         uninterruptible=entry.uninterruptible,
+        redacted_params=endpoint_redacted_params(api, group, endpoint),
     )
 
 

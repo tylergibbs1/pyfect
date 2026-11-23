@@ -29,6 +29,7 @@ from pyfect.http import http_effect, router, server
 from pyfect.http import response as client_response
 from pyfect.http.client import TracerDisabledWhen
 from pyfect.http.middleware import TracerHeaderFilter
+from pyfect.http.server_error import HttpServerError
 from pyfect.http.server_request import HttpServerRequest
 from pyfect.http.web import WebRequest
 from pyfect.http.web_handler import request_from_web
@@ -52,7 +53,7 @@ from pyfect.http_api.group import HttpApiGroup
 from pyfect.http_api.middleware import HttpApiMiddleware
 from pyfect.scope import scoped
 from pyfect.testing import TestClock, adjust
-from pyfect.tracer import CurrentTracer, NativeSpan, SpanRequest, Tracer
+from pyfect.tracer import CurrentTracer, Ended, NativeSpan, SpanRequest, Tracer
 
 from ._http_api import api_layer, call_group, respond, struct
 
@@ -282,23 +283,34 @@ def _post(path: str, content_type: str, body: Any, **headers: str) -> WebRequest
     )
 
 
-def test_redacted_names_redacts_declared_query_and_header_names_in_server_spans() -> None:
-    """HttpApiBuilder RedactedNames / redacts declared query and header names in server spans"""
+def test_redacted_names_redacts_declared_path_param_query_and_header_names_in_server_spans() -> (
+    None
+):
+    """HttpApiBuilder RedactedNames / redacts declared path param, query and header names in server spans / redacts declared query and header names in server spans"""  # noqa: E501
     build = ep.post(
         "build",
-        "/build",
+        "/build/:token",
+        params=struct({"token": S.String}),
         query=struct({"remote": S.String, "t": S.String}),
         headers=struct({"x-registry-config": S.String}),
         success=S.String,
-    ).annotate(RedactedNames, {"query": ["remote"], "headers": ["x-registry-config"]})
+        error=api_schema.status(500)(S.String),
+    ).annotate(
+        RedactedNames,
+        {"params": ["token"], "query": ["remote"], "headers": ["x-registry-config"]},
+    )
     group = HttpApiGroup.make("images").add(build)
     api = HttpApi.make("Api").add(group)
     received: list[dict[str, str]] = []
 
     def handle(ctx: Any) -> Any:
+        if ctx.query["t"] == "fail":
+            return effect.fail("boom")
+
         def run() -> str:
             received.append(
                 {
+                    "token": ctx.params["token"],
                     "remote": ctx.query["remote"],
                     "t": ctx.query["t"],
                     "config": ctx.headers["x-registry-config"],
@@ -323,8 +335,13 @@ def test_redacted_names_redacts_declared_query_and_header_names_in_server_spans(
 
     async def use(handler: Any) -> None:
         remote = "https%3A%2F%2Fuser%3Apass%40host%2Frepo.git"
-        # The second fails query decoding, as `t` is missing: names apply before decoding.
-        for url in [f"/build?remote={remote}&t=app", f"/build?remote={remote}"]:
+        for url in [
+            f"/build/tok?remote={remote}&t=app",
+            # Fails query decoding, as `t` is missing: names apply before decoding.
+            f"/build/tok?remote={remote}",
+            # 500 response: synthesized span error keeps path and query redacted.
+            f"/build/tok?remote={remote}&t=fail",
+        ]:
             response = await handler(
                 WebRequest(
                     f"http://localhost{url}",
@@ -336,18 +353,31 @@ def test_redacted_names_redacts_declared_query_and_header_names_in_server_spans(
             statuses.append(response.status)
 
     _with_handler(api_layer(api, live), use)
-    assert statuses == [200, 400]
-    success, invalid = spans
-    assert success.attributes["url.full"] == "http://localhost/build?remote=REDACTED&t=app"
+    assert statuses == [200, 400, 500]
+    success, invalid, failed = spans
+    assert success.attributes["url.full"] == "http://localhost/build/REDACTED?remote=REDACTED&t=app"
     assert success.attributes["url.query"] == "remote=REDACTED&t=app"
     assert success.attributes["http.request.header.x-registry-config"] == "<redacted>"
     assert success.attributes["http.request.header.x-page"] == "1"
     # The handler sees the values unchanged.
     assert received == [
-        {"remote": "https://user:pass@host/repo.git", "t": "app", "config": "cfg-s3cret"}
+        {
+            "token": "tok",
+            "remote": "https://user:pass@host/repo.git",
+            "t": "app",
+            "config": "cfg-s3cret",
+        }
     ]
-    assert invalid.attributes["url.full"] == "http://localhost/build?remote=REDACTED"
+    assert invalid.attributes["url.full"] == "http://localhost/build/REDACTED?remote=REDACTED"
     assert invalid.attributes["http.request.header.x-registry-config"] == "<redacted>"
+    assert failed.attributes["url.full"] == (
+        "http://localhost/build/REDACTED?remote=REDACTED&t=fail"
+    )
+    assert isinstance(failed.status, Ended)
+    assert isinstance(failed.status.exit, Failure)
+    error = failed.status.exit.cause.squash()
+    assert isinstance(error, HttpServerError)
+    assert error.request.url == "/build/REDACTED?remote=REDACTED&t=fail"
 
 
 def test_responds_413_from_content_length_before_the_handler_runs() -> None:

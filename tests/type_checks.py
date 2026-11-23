@@ -6234,6 +6234,15 @@ assert_type(
     http_router.route("GET", "/db", route_db_handler),
     http_router.Route[RouteNotAllowed, RouteDb],
 )
+# Redacting path params changes no type.
+assert_type(
+    http_router.route("GET", "/db/:token", route_db_handler, redacted_params=["token"]),
+    http_router.Route[RouteNotAllowed, RouteDb],
+)
+assert_type(
+    http_router.add("GET", "/db/:token", route_db_handler, redacted_params=["token"]),
+    fx.Layer[Never, Never, HttpRouter | Requires[RouteDb] | Raises[RouteNotAllowed]],
+)
 
 route_app = http_router.use(
     lambda r: r.add("GET", "/db", route_db_handler).and_then(

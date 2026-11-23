@@ -501,6 +501,7 @@ def test_keeps_a_synthesized_5xx_span_failure_redacted_after_the_request_complet
     assert isinstance(error, HttpServerError)
     # The message is path-only, so query values never reach exporters through it.
     assert error.message == "ResponseError (500 GET /failure)"
+    assert error.request.url == "/failure?token=REDACTED"
     # Exporters reading the request later no longer have the request's redacted names.
     assert isinstance(error.reason, ResponseError)
     assert error.reason.request.url == "/failure?token=REDACTED"

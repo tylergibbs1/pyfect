@@ -11,7 +11,7 @@ from pyfect._fiber import Fiber
 from pyfect.cause import Interrupt
 from pyfect.effect import from_exit
 from pyfect.exit import Exit, Failure
-from pyfect.http import _request_state
+from pyfect.http import _redacted_path, _request_state
 from pyfect.http._url_text import strip_search_and_hash
 from pyfect.http.server_error import ClientAbort, cause_response_stripped
 from pyfect.http.server_request import HttpServerRequest
@@ -36,17 +36,23 @@ def logger[E, R](
     app: Effect[HttpServerResponse, E, R],
 ) -> Effect[HttpServerResponse, E, R | HttpServerRequest]:
     """Log ``"Sent HTTP response"`` (or the failure's cause) with the
-    method, path and status, in an ``http.span`` log span."""
+    method, path and status, in an ``http.span`` log span. The path hides the
+    matched route's ``redacted_params``."""
     require_effect(app, "app")
 
     def body(fiber: Fiber[Any, Any]) -> Effect[HttpServerResponse, E, R | HttpServerRequest]:
         request = fiber._context.get_unsafe(HttpServerRequest)
         state = _request_state.get(fiber._context)
-        path = strip_search_and_hash(request.url)
 
         def after(exit: Exit[HttpServerResponse, E]) -> Effect[HttpServerResponse, E]:
             if state is not None and state.logger_disabled:
                 return from_exit(exit)
+            # Read on exit: the router records the redacted path when a route matches.
+            path = (
+                strip_search_and_hash(request.url)
+                if state is None or state.redacted_path is None
+                else _redacted_path.format_path(state.redacted_path)
+            )
             message: object = "Sent HTTP response"
             if isinstance(exit, Failure):
                 response, cause = cause_response_stripped(exit.cause)

@@ -80,6 +80,9 @@ BUILT_AT_RUN_TIME: dict[tuple[str, str], str] = {
         "src/pyfect/http/find_my_way/_router.py",
         "'(?:' + ''.join(regexps) + ')\\\\Z'",
     ): "a route's own parameter patterns, as find-my-way joins them",
+    ("src/pyfect/http/_redacted_path.py", "regex"): (
+        "a route parameter's own pattern, compiled only to count its capture groups"
+    ),
     (
         "src/pyfect/http/headers.py",
         (

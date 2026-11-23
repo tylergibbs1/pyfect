@@ -15,7 +15,7 @@ from pyfect._primitives import _Locally
 from pyfect._tracer_ref import CurrentTracer
 from pyfect.context import Context, Reference, Tag
 from pyfect.effect import fail, sync, void
-from pyfect.http import find_my_way
+from pyfect.http import _redacted_path, _request_state, find_my_way
 from pyfect.http.find_my_way._paths import closing_parenthesis
 from pyfect.http.router._markers import Raises, Requires, Unhandled
 from pyfect.http.router._middleware_stack import MiddlewareFn, middleware_of
@@ -25,6 +25,7 @@ from pyfect.http.router._route import (
     Route,
     prefix_path,
     prefix_route,
+    redacted_param_names,
     remove_trailing_slash,
     to_effect,
 )
@@ -51,6 +52,7 @@ class RouterConfig(Reference[find_my_way.RouterConfig], key="effect/http/HttpRou
 class _Entry:
     route: Route[Any, Any]
     prefix_segments: int | None
+    redacted_path: _redacted_path.Template | None
 
 
 def count_segments(prefix: str, ignore_duplicate_slashes: bool) -> int:
@@ -119,6 +121,9 @@ class _Core:
             None
             if route.prefix is None
             else count_segments(route.prefix, self.config.ignore_duplicate_slashes),
+            _redacted_path.compile_template(route.path, route.redacted_params)
+            if route.redacted_params
+            else None,
         )
         if route.method == "*":
             self.router.all(route.path, entry)
@@ -158,6 +163,13 @@ class _Core:
             if segments is None
             else slice_request_url(request, segments, self.config.ignore_duplicate_slashes)
         )
+        template = result.handler.redacted_path
+        if template is not None:
+            state = _request_state.get(fiber._context)
+            if state is not None:
+                state.redacted_path = _redacted_path.combine(
+                    state.redacted_path, _redacted_path.render(template, result.params), request
+                )
         if fiber.get_ref(CurrentTracer) is not native_tracer:
             span = fiber.get_ref(ParentSpan)
             if span is not None and not isinstance(span, ExternalSpan) and span.sampled:
@@ -207,6 +219,7 @@ class HttpRouterService:
         | Callable[[ServerRequest], Effect[HttpServerResponse, Never, Provided]],
         *,
         uninterruptible: bool = False,
+        redacted_params: Sequence[str] = (),
     ) -> Effect[None]: ...
     @overload
     def add[E](
@@ -217,6 +230,7 @@ class HttpRouterService:
         | Callable[[ServerRequest], Effect[HttpServerResponse, E, Provided]],
         *,
         uninterruptible: bool = False,
+        redacted_params: Sequence[str] = (),
     ) -> Effect[None, Never, Raises[E]]: ...
     @overload
     def add[R](
@@ -227,6 +241,7 @@ class HttpRouterService:
         | Callable[[ServerRequest], Effect[HttpServerResponse, Never, R | Provided]],
         *,
         uninterruptible: bool = False,
+        redacted_params: Sequence[str] = (),
     ) -> Effect[None, Never, Requires[R]]: ...
     @overload
     def add[E, R](
@@ -237,6 +252,7 @@ class HttpRouterService:
         | Callable[[ServerRequest], Effect[HttpServerResponse, E, R | Provided]],
         *,
         uninterruptible: bool = False,
+        redacted_params: Sequence[str] = (),
     ) -> Effect[None, Never, Requires[R] | Raises[E]]: ...
     def add(
         self,
@@ -248,17 +264,18 @@ class HttpRouterService:
         | Callable[[ServerRequest], Effect[HttpServerResponse, Any, Any]],
         *,
         uninterruptible: bool = False,
+        redacted_params: Sequence[str] = (),
     ) -> Effect[None, Never, Any]:
         """Add a route. ``handler`` is a response, an effect, or a function
-        of the request; it runs interruptibly unless ``uninterruptible``."""
-        if self._prefix is None:
-            return self._core.add_all([Route(method, path, to_effect(handler), uninterruptible)])
+        of the request; it runs interruptibly unless ``uninterruptible``.
+        ``redacted_params`` are as in ``route``."""
         route = Route(
             method,
-            prefix_path(path, self._prefix),
+            path if self._prefix is None else prefix_path(path, self._prefix),
             to_effect(handler),
             uninterruptible,
             self._prefix,
+            redacted_param_names(redacted_params),
         )
         return self._core.add_all([route])
 
