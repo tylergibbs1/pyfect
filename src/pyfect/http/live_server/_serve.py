@@ -26,6 +26,7 @@ from pyfect.http.live_server._upgrade import upgrade
 from pyfect.http.live_server._ws_deflate import WebSocketConfig
 from pyfect.http.server_error import CLIENT_ABORT_ANNOTATION
 from pyfect.http.server_request import RequestProtocol, SourceRequest
+from pyfect.http.server_response import raw
 from pyfect.option import Option
 from pyfect.socket._connection import Connection
 from pyfect.socket._errors import SocketError
@@ -38,6 +39,35 @@ CLOSE_GRACE_PERIOD = millis(500)
 before it is torn down (so the response is not lost to a reset)."""
 
 type Handle = Callable[[SourceRequest, Exchange], Effect[None]]
+
+_UNAVAILABLE = raw(
+    "service unavailable",
+    status=503,
+    headers={"cache-control": "no-store", "retry-after": "1"},
+)
+
+
+class Handlers:
+    """The apps ``serve`` attached, as Node's ``request`` listeners: a
+    request goes to the first one, and is answered with 503 while there is
+    none."""
+
+    __slots__ = ("_attached",)
+
+    def __init__(self) -> None:
+        self._attached: tuple[Handle, ...] = ()
+
+    def handle(self, request: SourceRequest, exchange: Exchange) -> Effect[None]:
+        attached = self._attached
+        if attached:
+            return attached[0](request, exchange)
+        return exchange.respond(request, _UNAVAILABLE).ignore()
+
+    def attach(self, handle: Handle) -> None:
+        self._attached = (*self._attached, handle)
+
+    def detach(self, handle: Handle) -> None:
+        self._attached = tuple(h for h in self._attached if h is not handle)
 
 
 @dataclass(frozen=True, slots=True)

@@ -57,13 +57,23 @@ class ConnectionState:
 class Listener:
     """Connections accepted and being served."""
 
-    __slots__ = ("_closed", "_pending", "_serving", "address", "lock", "shutting_down", "signal")
+    __slots__ = (
+        "_closed",
+        "_connections",
+        "_pending",
+        "_serving",
+        "address",
+        "lock",
+        "shutting_down",
+        "signal",
+    )
 
     def __init__(self) -> None:
         self.lock = threading.Lock()
         self.signal = Signal(self.lock)
         self._pending: list[Connection] = []
         self._serving: set[ConnectionState] = set()
+        self._connections = CloseableScope()
         self._closed = False
         self.shutting_down = False
         self.address: SocketAddress | None = None
@@ -97,33 +107,34 @@ class Listener:
         for wake in waiters:
             wake()
 
-    def run(
-        self, serve: Callable[[ConnectionState], Effect[None]], shutdown_timeout: Duration
-    ) -> Effect[Never]:
-        """Serve every connection, each on a fiber of a scope closed, after
-        the graceful shutdown, when this is interrupted."""
+    def accept(self, serve: Callable[[ConnectionState], Effect[None]]) -> Effect[Never]:
+        """Serve every connection, each on a fiber that ``close_connections``
+        or ``close_now`` ends."""
+        scope = self._connections
 
-        def loop(scope: CloseableScope) -> Effect[Never]:
-            def fork_taken():
-                for state in self._take():
-                    conn = state.conn
-                    fiber = yield from fork_in(serve(state), scope)
-                    fiber.add_observer_unsafe(lambda _, s=state, c=conn: self._release(s, c))
+        def fork_taken():
+            for state in self._take():
+                conn = state.conn
+                fiber = yield from fork_in(serve(state), scope)
+                fiber.add_observer_unsafe(lambda _, s=state, c=conn: self._release(s, c))
 
-            hand_over = gen(fork_taken).uninterruptible()
+        hand_over = gen(fork_taken).uninterruptible()
 
-            def forever():
-                while True:
-                    yield from self.signal.wait(lambda: bool(self._pending))
-                    yield from hand_over
+        def forever():
+            while True:
+                yield from self.signal.wait(lambda: bool(self._pending))
+                yield from hand_over
 
-            return gen(forever)
+        return gen(forever)
 
-        def close_all(scope: CloseableScope) -> Effect[None]:
-            """As Node's ``closeAllConnections``: interrupt the requests still
-            running, and abort the connections that do not end within the
-            grace period (a write waiting on a client that stopped reading,
-            which an interrupt cannot end)."""
+    def close_connections(self, shutdown_timeout: Duration) -> Effect[None]:
+        """The graceful shutdown, then interrupt the requests still running,
+        and abort the connections that do not end within the grace period
+        (a write waiting on a client that stopped reading, which an interrupt
+        cannot end), as Node's ``closeAllConnections``."""
+        scope = self._connections
+
+        def close_all() -> Effect[None]:
             serving = self.serving()
 
             def abort() -> None:
@@ -138,12 +149,11 @@ class Listener:
 
             return gen(body)
 
-        def body():
-            scope = CloseableScope()
-            closed = self.shutdown(shutdown_timeout).and_then(suspend(lambda: close_all(scope)))
-            return (yield from loop(scope).ensuring(closed))
+        return self.shutdown(shutdown_timeout).and_then(suspend(close_all))
 
-        return gen(body)
+    def close_now(self) -> Effect[None]:
+        """Interrupt the connections' fibers."""
+        return suspend(lambda: self._connections.close(Success(None)))
 
     def _release(self, state: ConnectionState, conn: Connection) -> None:
         conn.close(graceful=True)
