@@ -201,7 +201,7 @@ def merge(left: AnyChannel, right: AnyChannel, halt_strategy: HaltStrategy) -> C
                     .flat_map(lambda pull: pull.flat_map(queue.offer).forever())
                     .on_error(stopped)
                 )
-                return fork_in(run, forked)
+                return fork_in(run, forked, start_immediately=True)
 
             yield run_side("left", left, forked.fork_unsafe())
             yield run_side("right", right, forked.fork_unsafe())
