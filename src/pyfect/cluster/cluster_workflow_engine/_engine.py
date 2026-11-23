@@ -82,7 +82,7 @@ from pyfect.rpc.schema import ClientAbort
 from pyfect.schedule import exponential, min, spaced
 from pyfect.schema import decode_unknown_effect, decode_unknown_sync, to_codec_json
 from pyfect.schema import to_json_schema_document as json_schema_document
-from pyfect.scope import CloseableScope, Scope, scoped
+from pyfect.scope import CloseableScope, Scope, acquire_release, scoped
 from pyfect.semaphore import Semaphore
 from pyfect.tracer import annotate_current_span, current_span
 from pyfect.workflow._encoded import DeferredState, Encoded, Handler, make_deferred_state
@@ -219,10 +219,18 @@ class _CurrentRun:
     activity_awaits: dict[str, int]
 
 
-@dataclass(frozen=True, slots=True)
-class _ActivityEntry:
+@dataclass(eq=False, slots=True)
+class _ActivityRegistration:
+    """Held by the ``activity_execute`` call waiting on it; ``result`` is the
+    handler's last outcome."""
+
     activity: Activity[Any, Any, Any]
     context: Context[Any]
+    result: Result[Any, Any] | None = None
+
+
+def _activity_registration_key(execution_id: str, activity: str, attempt: int) -> str:
+    return f"{execution_id}/{activity_primary_key(activity, attempt)}"
 
 
 class ClusterEngine:
@@ -245,8 +253,7 @@ class ClusterEngine:
         self.workflows: dict[str, AnyWorkflow] = {}
         self.entities: dict[str, builtins.type[Entity]] = {}
         self.partial_entities: dict[str, builtins.type[Entity]] = {}
-        self.activities: dict[str, _ActivityEntry] = {}
-        self.interrupted_activities: set[str] = set()
+        self.activities: dict[str, _ActivityRegistration] = {}
         self.deferred_state: DeferredState = make_deferred_state()
         # Rebuilds share an activation; overlapping activations have separate
         # results. Removed once the activation has closed its runs.
@@ -718,7 +725,7 @@ class ClusterEngine:
             services = yield from context()
             instance = services.get_unsafe(WorkflowInstance)
             yield from annotate_current_span("executionId", instance.execution_id)
-            activity_id = f"{instance.execution_id}/{activity.name}"
+            activity_id = _activity_registration_key(instance.execution_id, activity.name, attempt)
             # A pending interrupt replays only to rebuild compensations, so it
             # must not run new activities. Finalizers run once ``interrupted``
             # is set.
@@ -737,9 +744,21 @@ class ClusterEngine:
                     return Suspended()
             make_client = yield from self.clients_partial.get(instance.workflow.tag)
             client: Any = make_client(instance.execution_id)
+
+            def register() -> _ActivityRegistration:
+                entry = _ActivityRegistration(activity, services)
+                self.activities[activity_id] = entry
+                return entry
+
+            def release(entry: _ActivityRegistration, _exit: object) -> Effect[None]:
+                def run() -> None:
+                    if self.activities.get(activity_id) is entry:
+                        del self.activities[activity_id]
+
+                return sync(run)
+
+            entry = yield from acquire_release(sync(register), release)
             while True:
-                if activity_id not in self.activities:
-                    self.activities[activity_id] = _ActivityEntry(activity, services)
                 payload = ActivityPayload(
                     name=activity.name,
                     attempt=attempt,
@@ -750,14 +769,15 @@ class ClusterEngine:
                 )
                 # If the activity has suspended and did not execute, resume it
                 # by resetting the attempt and executing it again.
-                if isinstance(result, Suspended) and (
-                    activity_id in self.activities or activity_id in self.interrupted_activities
+                if (
+                    isinstance(result, Suspended)
+                    and self.activities.get(activity_id) is entry
+                    and not isinstance(entry.result, Suspended)
                 ):
                     yield from self.reset_activity_attempt(
                         instance.workflow, instance.execution_id, activity, attempt
                     )
                     continue
-                self.activities.pop(activity_id, None)
                 return result
 
         return cast("Effect[Result[Any, Any], Never, WorkflowInstance]", scoped(gen(body)))
@@ -1012,19 +1032,22 @@ class _Handlers:
     def activity(self, request: Request[ActivityPayload]) -> Effect[Any, Any, Any]:
         engine = self.engine
         payload = request.payload
-        activity_id = f"{self.execution_id}/{payload.name}"
+        activity_id = _activity_registration_key(self.execution_id, payload.name, payload.attempt)
         current = self.current_run
         instance = WorkflowInstanceService.initial(
             self.workflow,
             self.execution_id,
             awaited_deferreds=None if current is None else current.activity_awaits,
         )
-        engine.interrupted_activities.discard(activity_id)
         entry = engine.activities.get(activity_id)
         if entry is None:
             # Replay may never register a losing race activity. Answer it
             # without waiting; a later registration can reset this reply.
             return rpc_wrap(fork=True)(succeed(Suspended()))
+        # The request is redelivered when its reply could not be saved. A
+        # transaction rolled the activity back, so it runs again.
+        if entry.result is not None and not payload.withTransaction:
+            return rpc_wrap(fork=True)(succeed(entry.result))
         services = (
             entry.context.add(WorkflowInstance, instance)
             .add(CurrentActivationScope, self.activation)
@@ -1037,19 +1060,18 @@ class _Handlers:
                 isinstance(reason, Interrupt) and ClientAbort in reason.annotations
                 for reason in cause.reasons
             ):
-                engine.interrupted_activities.add(activity_id)
                 return succeed(Suspended())
             return fail_cause(cause)
 
-        def forget() -> None:
-            engine.activities.pop(activity_id, None)
+        def record(result: Result[Any, Any]) -> None:
+            entry.result = result
 
         effect = (
             into_result(entry.activity.execute_encoded.pipe(provide_context(services)))
+            .tap(lambda result: sync(lambda: record(result)))
             .catch_cause(on_cause)
             .pipe(provide_service(WorkflowInstance, instance))
             .pipe(provide_service(CurrentAttempt, payload.attempt))
-            .ensuring(sync(forget))
         )
         return rpc_wrap(fork=True, uninterruptible=True)(effect)
 

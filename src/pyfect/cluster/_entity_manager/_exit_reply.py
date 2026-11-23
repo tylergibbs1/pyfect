@@ -16,11 +16,13 @@ from typing import TYPE_CHECKING, Any, cast
 from pyfect import cause as Cause
 from pyfect import exit as Exit
 from pyfect._core import Effect
+from pyfect._fiber import Fiber
 from pyfect.cluster.cluster_error import EntityNotAssignedToRunner, PersistenceError
 from pyfect.cluster.reply import WithExit
 from pyfect.cluster.snowflake import Snowflake
-from pyfect.effect import fail, succeed, suspend, sync
+from pyfect.effect import fail, succeed, suspend, sync, with_fiber
 from pyfect.logger import log_debug
+from pyfect.scope import fork_in
 
 from ._core import ManagerCore, retry_respond
 from ._state import RequestEntry
@@ -187,20 +189,24 @@ class ExitReply:
         return _has_stored_exit(self.activation.core, envelope_id).flat_map(decide)
 
     def _abandon(self) -> Effect[None]:
-        """Leave the request for the shard's owner: release the claim so its
-        next poll sees it, and let local callers re-route."""
-        storage = self.activation.core.storage
+        """Leave the request for the shard's owner and let local callers
+        re-route. The claim is released once this fiber exits: the RPC server
+        drops a redelivery that arrives while it still tracks the request."""
+        core = self.activation.core
+        storage = core.storage
         envelope_id = self._envelope_id
 
-        def run() -> Effect[None]:
+        def run(fiber: Fiber[Any, Any]) -> Effect[None]:
             self.activation.remove_active_request(self.request_id)
+            release = fiber.await_exit().and_then(storage.reset_requests([envelope_id]).ignore())
             return (
                 log_debug("Abandoning a request whose shard this runner no longer owns")
                 .and_then(storage.unregister_reply_handler(envelope_id))
-                .and_then(storage.reset_requests([envelope_id]).ignore())
+                .and_then(fork_in(release, core.manager_scope))
+                .as_void()
             )
 
-        return suspend(run)
+        return with_fiber(run)
 
 
 __all__ = ["ExitReply"]

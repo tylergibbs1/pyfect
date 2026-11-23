@@ -10,6 +10,7 @@ sessions are terminated."""
 
 from __future__ import annotations
 
+import copy
 import itertools
 import os
 from collections.abc import Callable
@@ -25,19 +26,24 @@ from pyfect.clock import Clock, LiveClock
 from pyfect.cluster import runner_health, runners, sharding, sharding_config
 from pyfect.cluster import sql_message_storage as SqlMessageStorage
 from pyfect.cluster import sql_runner_storage as SqlRunnerStorage
+from pyfect.cluster.cluster_error import PersistenceError
 from pyfect.cluster.cluster_schema import Persisted
 from pyfect.cluster.entity import CurrentRunnerAddress, Entity, Request
 from pyfect.cluster.entity_id import EntityId
-from pyfect.cluster.message_storage import MessageStorage
+from pyfect.cluster.message_storage import MessageStorage, MessageStorageService
 from pyfect.cluster.runner_address import RunnerAddress
+from pyfect.cluster.runner_storage import RunnerStorage
 from pyfect.cluster.snowflake import Snowflake
 from pyfect.context import Context
 from pyfect.deferred import Deferred
 from pyfect.duration import Duration, millis
 from pyfect.latch import Latch
 from pyfect.layer import Layer
+from pyfect.option import Some
 from pyfect.rpc import make as make_rpc
 from pyfect.sql.client import SqlClient, SqlClientService
+
+from . import _cluster_workflows as W
 
 _prefixes = itertools.count()
 
@@ -97,7 +103,13 @@ class _FreezableClock:
         return self._live.sleep(duration).and_then(self.thawed.wait())
 
 
-def _runner_layer(probe: _Probe, prefix: str, advisory: bool) -> Layer[Any, Never, SqlClient]:
+def _runner_layer(
+    probe: _Probe,
+    prefix: str,
+    advisory: bool,
+    runner_storage: Layer[RunnerStorage, Never, Any] | None = None,
+    message_storage: Layer[MessageStorage, Never, Any] | None = None,
+) -> Layer[Any, Never, SqlClient]:
     config = replace(
         sharding_config.DEFAULTS,
         shard_lock_disable_advisory=not advisory,
@@ -117,13 +129,15 @@ def _runner_layer(probe: _Probe, prefix: str, advisory: bool) -> Layer[Any, Neve
         .pipe(
             fx.layer.provide(
                 fx.layer.merge(
-                    SqlRunnerStorage.layer_with(prefix=prefix),
+                    runner_storage or SqlRunnerStorage.layer_with(prefix=prefix),
                     runner_health.layer_noop,
                     runners.layer_noop,
                 )
             )
         )
-        .pipe(fx.layer.provide_merge(SqlMessageStorage.layer_with(prefix=prefix)))
+        .pipe(
+            fx.layer.provide_merge(message_storage or SqlMessageStorage.layer_with(prefix=prefix))
+        )
         .pipe(fx.layer.provide(sharding_config.layer(config)))
     )
 
@@ -228,6 +242,79 @@ def _stale_owner_test(pg_server: Any, *, advisory: bool) -> fx.Effect[None, Any,
     return fx.scoped(body)
 
 
+def _reset_overlap(pg_server: Any) -> fx.Effect[None, Any, Any]:
+    prefix = f"fence_{os.getpid()}_{next(_prefixes)}"
+    probe = _Probe(1234)
+    deny_once = [True]
+
+    def wrap_ownership(storage: Any) -> Any:
+        def refresh(address: Any, shard_ids: Any) -> fx.Effect[Any, Any]:
+            shards = list(shard_ids)
+            if deny_once[0] and probe.returned.is_done_unsafe() and len(shards) == 1:
+                deny_once[0] = False
+                return fx.fail(PersistenceError(cause=RuntimeError("inconclusive lock refresh")))
+            return storage.refresh(address, shards)
+
+        return copy.replace(storage, refresh=refresh)
+
+    ownership = fx.layer.effect(RunnerStorage, RunnerStorage().map(wrap_ownership)).pipe(
+        fx.layer.provide(SqlRunnerStorage.layer_with(prefix=prefix))
+    )
+
+    reader_advanced = Latch(False)
+    reset_id: list[Snowflake] = []
+    reclaimed = [False]
+
+    def wrap_journal(storage: MessageStorageService) -> MessageStorageService:
+        def reset_requests(ids: Any) -> fx.Effect[None, Any]:
+            def after(_: None) -> fx.Effect[None]:
+                if deny_once[0] or reset_id or len(ids) != 1:
+                    return fx.void
+                reset_id.append(ids[0])
+                return reader_advanced.wait()
+
+            return storage.reset_requests(ids).flat_map(after)
+
+        def unprocessed_messages(shard_ids: Any, **options: Any) -> fx.Effect[Any, Any]:
+            def seen(messages: list[Any]) -> fx.Effect[object]:
+                # A later read begins after the reader tried to deliver the previously
+                # claimed message.
+                if reclaimed[0]:
+                    return reader_advanced.open()
+                reclaimed[0] = bool(reset_id) and any(
+                    message.envelope.request_id == reset_id[0] for message in messages
+                )
+                return fx.void
+
+            return storage.unprocessed_messages(shard_ids, **options).tap(seen)
+
+        return W.override_storage(
+            storage, reset_requests=reset_requests, unprocessed_messages=unprocessed_messages
+        )
+
+    journal = fx.layer.effect(MessageStorage, MessageStorage().map(wrap_journal)).pipe(
+        fx.layer.provide(SqlMessageStorage.layer_with(prefix=prefix))
+    )
+
+    @fx.gen
+    def body():
+        sql = yield from _pg_client(pg_server)
+        context: Context[Any] = yield from (
+            _runner_layer(probe, prefix, True, ownership, journal)
+            .build()
+            .pipe(fx.provide_service(SqlClient, sql))
+        )
+        make_client = yield from Hold.client().pipe(fx.provide(context))
+        caller = yield from make_client("1").hold().fork_scoped()
+        yield from probe.entered.wait()
+        yield from probe.gate.open()
+        yield from reader_advanced.wait()
+        reply = yield from caller.join().timeout_option("3 seconds")
+        assert reply == Some("1234")
+
+    return fx.scoped(body)
+
+
 @pytest.fixture
 def _psycopg() -> None:
     pytest.importorskip("psycopg")
@@ -245,3 +332,10 @@ def test_a_runner_that_lost_its_advisory_lock_cannot_store_a_reply(pg_server: An
 def test_a_runner_that_lost_its_lease_cannot_store_a_reply(pg_server: Any):
     """a runner that lost its lease cannot store a reply"""
     yield from _stale_owner_test(pg_server, advisory=False)
+
+
+@pytest.mark.usefixtures("_psycopg")
+@testing.live
+def test_a_request_claimed_before_its_fenced_reset_returns_remains_deliverable(pg_server: Any):
+    """a request claimed before its fenced reset returns remains deliverable"""
+    yield from _reset_overlap(pg_server)

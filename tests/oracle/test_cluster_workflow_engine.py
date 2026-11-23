@@ -23,7 +23,7 @@ from pyfect.clock import Clock, now_millis_unsafe
 from pyfect.cluster import message_storage, runner_storage
 from pyfect.cluster._entity_activation import CurrentActivationScope
 from pyfect.cluster.cluster_error import PersistenceError
-from pyfect.cluster.cluster_schema import Persisted
+from pyfect.cluster.cluster_schema import Persisted, WithTransaction
 from pyfect.cluster.entity import Entity, EntityHandlers
 from pyfect.cluster.entity_id import EntityId
 from pyfect.cluster.envelope import Request as EnvelopeRequest
@@ -357,6 +357,90 @@ def test_can_serialize_workflow_defects():
 
 
 # --- scopes, activities and shutdown -----------------------------------------------------
+
+
+@pytest.mark.parametrize("transactional", [False, True])
+@testing.effect
+def test_activity_when_its_reply_is_redelivered(transactional: bool):
+    """${transactional ? "reruns a rolled-back" : "reuses a completed"} activity when its reply is redelivered"""  # noqa: E501
+    calls = [0]
+    fenced = [False]
+
+    # The ownership check for the activity's reply is inconclusive once.
+    def wrap(storage: Any) -> Any:
+        def refresh(address: Any, shard_ids: Any) -> fx.Effect[Any, Any]:
+            shards = list(shard_ids)
+            if calls[0] == 0 or fenced[0] or len(shards) != 1:
+                return storage.refresh(address, shards)
+            fenced[0] = True
+            return fx.fail(PersistenceError(cause=RuntimeError("inconclusive lock refresh")))
+
+        return copy.replace(storage, refresh=refresh)
+
+    runner_storage_layer = fx.layer.effect(RunnerStorage, runner_storage.make_memory().map(wrap))
+    wf = workflow.make(
+        "ActivityReplyRedelivery", payload=W.EMPTY, idempotency_key=lambda _: "one", success=S.Int
+    )
+
+    def count() -> int:
+        calls[0] += 1
+        return calls[0]
+
+    layer = wf.to_layer(
+        lambda _, __: activity.make(name="count", success=S.Int, execute=fx.sync(count)).annotate(
+            WithTransaction, transactional
+        )
+    ).pipe(
+        fx.layer.provide_merge(
+            W.make_test_workflow_engine(
+                sharding_layer=sharding_layer_of.pipe(fx.layer.provide(runner_storage_layer)),
+                config_overrides={
+                    "entity_message_poll_interval": millis(10),
+                    "entity_reply_poll_interval": millis(10),
+                },
+            )
+        )
+    )
+
+    @fx.gen
+    def run():
+        caller = yield from wf.execute({}).fork_scoped()
+        yield from advance_until(
+            lambda: caller.poll_unsafe() is not None,
+            "the caller must receive the activity result",
+        )
+        assert fenced[0]
+        assert (yield from caller.join()) == (2 if transactional else 1)
+
+    yield from run.pipe(fx.provide(layer))
+
+
+@testing.effect
+def test_runs_concurrent_attempts_of_an_activity_separately():
+    """runs concurrent attempts of an activity separately"""
+    wf = workflow.make(
+        "ConcurrentActivityAttempts",
+        payload=W.EMPTY,
+        idempotency_key=lambda _: "one",
+        success=S.Array(S.Int),
+    )
+    attempt = activity.make(name="attempt", success=S.Int, execute=activity.CurrentAttempt())
+    layer = wf.to_layer(
+        lambda _, __: fx.all(
+            *[attempt.pipe(fx.provide_service(activity.CurrentAttempt, n)) for n in (1, 2)],
+            concurrency="unbounded",
+        )
+    ).pipe(fx.layer.provide_merge(W.make_test_workflow_engine()))
+
+    @fx.gen
+    def run():
+        caller = yield from wf.execute({}).fork_scoped()
+        yield from advance_until(
+            lambda: caller.poll_unsafe() is not None, "the caller must receive both results"
+        )
+        assert (yield from caller.join()) == (1, 2)
+
+    yield from run.pipe(fx.provide(layer))
 
 
 @testing.effect
