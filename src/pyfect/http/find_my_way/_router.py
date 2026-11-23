@@ -61,6 +61,13 @@ class _Route:
     pattern: str
 
 
+@dataclass(slots=True)
+class _Registered:
+    node: Node
+    handler: Handler[object]
+    fallback: bool
+
+
 # Components whose escapes ``decodeURI`` keeps and find-my-way decodes
 # itself in parameters: ``# $ & + , / : ; = ? @`` and ``%``.
 _COMPONENT_ESCAPES: dict[str, str] = {
@@ -143,7 +150,7 @@ class Router[A]:
 
     config: RouterConfig = field(default_factory=RouterConfig)
     max_param_length_exceeded: bool = False
-    _routes: list[_Route] = field(default_factory=list[_Route])
+    _routes: dict[_Route, _Registered] = field(default_factory=dict[_Route, _Registered])
     _trees: dict[str, StaticNode] = field(default_factory=dict[str, StaticNode])
     _static: dict[str, dict[str, Handler[object]]] = field(
         default_factory=dict[str, dict[str, Handler[object]]]
@@ -156,24 +163,38 @@ class Router[A]:
     def on(self, method: str | Iterable[str], path: str, handler: A) -> None:
         """Register ``handler``; a duplicate method and pattern raises
         ``ValueError``."""
+        self._register(method, path, handler, fallback=False)
+
+    def all(self, path: str, handler: A) -> None:
+        self.on(HTTP_METHODS, path, handler)
+
+    def on_fallback(self, method: str, path: str, handler: A) -> None:
+        """Register ``handler`` unless a route is already declared at
+        ``path``; a route declared there later replaces it. ``"*"`` is
+        every method."""
+        methods = HTTP_METHODS if method == "*" else method
+        self._register(methods, path, handler, fallback=True)
+
+    def _register(
+        self, method: str | Iterable[str], path: str, handler: A, *, fallback: bool
+    ) -> None:
         optional = _OPTIONAL_PARAM.search(path)
         if optional is not None:
             if optional.end() != len(path):
                 raise ValueError("Optional Parameter needs to be the last parameter of the path")
-            self.on(method, _OPTIONAL_PARAM.sub(r"\1\2", path, count=1), handler)
-            self.on(method, _OPTIONAL_PARAM.sub(r"\2", path, count=1) or "/", handler)
+            full = _OPTIONAL_PARAM.sub(r"\1\2", path, count=1)
+            self._register(method, full, handler, fallback=fallback)
+            bare = _OPTIONAL_PARAM.sub(r"\2", path, count=1) or "/"
+            self._register(method, bare, handler, fallback=fallback)
             return
         if self.config.ignore_duplicate_slashes:
             path = remove_duplicate_slashes(path)
         if self.config.ignore_trailing_slash:
             path = trim_last_slash(path)
         for name in [method] if isinstance(method, str) else method:
-            self._on(name, path, handler)
+            self._on(name, path, handler, fallback)
 
-    def all(self, path: str, handler: A) -> None:
-        self.on(HTTP_METHODS, path, handler)
-
-    def _on(self, method: str, path: str, handler: A) -> None:  # noqa: PLR0912, PLR0915
+    def _on(self, method: str, path: str, handler: A, fallback: bool) -> None:  # noqa: PLR0912, PLR0915
         tree = self._trees.get(method)
         if tree is None:
             tree = self._trees[method] = StaticNode("/")
@@ -274,12 +295,22 @@ class Router[A]:
         if pattern == "*":
             pattern = "/*"
         route = _Route(method, pattern)
-        if route in self._routes:
+        added = Handler[object](tuple(params), handler)
+        existing = self._routes.get(route)
+        # Different regex nodes can share a normalized pattern.
+        if existing is not None and existing.node is current:
+            if fallback:
+                return
+            if existing.fallback:
+                current.replace_route(existing.handler, added)
+                existing.fallback = False
+                return
+        if existing is not None:
             raise ValueError(f"Method '{method}' already declared for route '{pattern}'")
-        self._routes.append(route)
-        current.add_route(Handler(tuple(params), handler))
+        current.add_route(added)
         stored = current.handler
         assert stored is not None
+        self._routes[route] = _Registered(current, stored, fallback)
         if not params:
             key = pattern.replace("::", ":").replace("%", "%25")
             self._static.setdefault(method, {}).setdefault(key, stored)

@@ -18,7 +18,7 @@ from pyfect.exit import Failure
 from pyfect.http import find_my_way, router, server_response
 from pyfect.http.http_effect import append_pre_response_handler
 from pyfect.http.middleware import decompression
-from pyfect.http.router import HttpRouter, RouterConfig
+from pyfect.http.router import HttpRouter, HttpRouterService, RouterConfig
 from pyfect.http.server_error import HttpServerError, RouteNotFound
 from pyfect.http.server_request import HttpServerRequest, ServerRequest
 from pyfect.http.server_response import HttpServerResponse
@@ -47,6 +47,34 @@ def _fetch_text(app: fx.Layer[Any, Any, Any], path: str) -> str:
             await made.dispose()
 
     return asyncio.run(main())
+
+
+@pytest.mark.parametrize("first", ["static", "wildcard"])
+def test_dispatches_static_and_wildcard_routes_with_first_registered_first(first: str) -> None:
+    """dispatches static and wildcard routes with ${first} registered first"""
+    exact = router.route("GET", "/test", server_response.text("static"))
+    wildcard = router.route("GET", "/test/*", server_response.text("wildcard"))
+
+    def register(service: HttpRouterService) -> fx.Effect[None]:
+        ordered = [exact, wildcard] if first == "static" else [wildcard, exact]
+        return fx.for_each(ordered, lambda route: service.add_all([route]), discard=True)
+
+    routes = router.use(register)
+    assert _fetch_text(routes, "/test") == "static"
+    assert _fetch_text(routes, "/test/anything") == "wildcard"
+
+
+@pytest.mark.parametrize("first", ["explicit", "wildcard"])
+def test_rejects_colliding_regex_patterns_with_first_registered_first(first: str) -> None:
+    """rejects colliding regex patterns with ${first} registered first"""
+    explicit = router.route("GET", "/files/:id(456)", server_response.empty())
+    wildcard = router.route("GET", "/files/:id(123)/*", server_response.empty())
+    ordered = [explicit, wildcard] if first == "explicit" else [wildcard, explicit]
+    result = fx.run_sync_exit(router.make.flat_map(lambda service: service.add_all(ordered)))
+    assert isinstance(result, Failure)
+    assert [(type(d), str(d)) for d in result.cause.defects] == [
+        (ValueError, "Method 'GET' already declared for route '/files/:()'")
+    ]
 
 
 def test_normalizes_the_prefix_stored_by_prefix_route() -> None:

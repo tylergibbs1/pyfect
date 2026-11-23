@@ -120,14 +120,13 @@ class _Core:
             if route.prefix is None
             else count_segments(route.prefix, self.config.ignore_duplicate_slashes),
         )
-        paths = [route.path]
+        if route.method == "*":
+            self.router.all(route.path, entry)
+        else:
+            self.router.on(route.method, route.path, entry)
+        # A wildcard route also serves its bare prefix, unless that path has its own route.
         if route.path.endswith("/*"):
-            paths.append(route.path[:-2])
-        for path in paths:
-            if route.method == "*":
-                self.router.all(path, entry)
-            else:
-                self.router.on(route.method, path, entry)
+            self.router.on_fallback(route.method, route.path[:-2] or "/", entry)
 
     def as_http_effect(self) -> Effect[HttpServerResponse, Any, HttpServerRequest]:
         handler: Effect[HttpServerResponse, Any, Any] = _WithFiber(self._dispatch)

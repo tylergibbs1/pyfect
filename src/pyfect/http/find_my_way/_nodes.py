@@ -9,7 +9,7 @@ from typing import Literal, Self
 type Node = StaticNode | ParametricNode | WildcardNode
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True, eq=False)
 class Handler[A]:
     params: tuple[str, ...]
     handler: A
@@ -40,6 +40,11 @@ class _NodeBase:
     def add_route(self, handler: Handler[object]) -> None:
         if self.handler is None:
             self.handler = handler
+
+    def replace_route(self, stored: Handler[object], handler: Handler[object]) -> None:
+        # The lookup caches hold the stored handler, so update it in place.
+        stored.params = handler.params
+        stored.handler = handler.handler
 
 
 class _ParentNode(_NodeBase):
