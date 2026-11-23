@@ -23,6 +23,7 @@ pytest_plugins = [
     "_metric_registry",
     "_parallel",
     "_stalls",
+    "_hypothesis_tables",
     "_leaked_threads",
     "_leaked_fibers",
     "_leaked_interpreters",
