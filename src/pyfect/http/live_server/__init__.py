@@ -18,12 +18,20 @@ idle for ``keep_alive_timeout``.
 
 from __future__ import annotations
 
-from typing import Any, NotRequired, TypedDict, Unpack
+from typing import Any, Never, NotRequired, TypedDict, Unpack
 
 from pyfect._core import Effect
+from pyfect._fiber import Fiber
 from pyfect.duration import Input as DurationInput
 from pyfect.duration import from_input_unsafe
-from pyfect.effect import fail, provide_service, suspend
+from pyfect.effect import (
+    fail,
+    provide_service,
+    set_context,
+    suspend,
+    sync,
+    with_fiber_succeed,
+)
 from pyfect.file_system import FileSystem
 from pyfect.file_system import layer as file_system_layer
 from pyfect.http.client import HttpClient
@@ -33,7 +41,7 @@ from pyfect.http.http_effect import to_handled
 from pyfect.http.httpx_client import layer as httpx_layer
 from pyfect.http.live_server._exchange import Exchange
 from pyfect.http.live_server._listener import ConnectionState, Listen, Listener, Tls, listen
-from pyfect.http.live_server._serve import Timeouts, serve_connection
+from pyfect.http.live_server._serve import Handle, Handlers, Timeouts, serve_connection
 from pyfect.http.live_server._ws_deflate import PerMessageDeflate, WebSocketConfig
 from pyfect.http.platform import HttpPlatform
 from pyfect.http.platform import layer_live as platform_layer_live
@@ -51,7 +59,7 @@ from pyfect.layer import effect as layer_effect
 from pyfect.path import Path
 from pyfect.path import layer as path_layer
 from pyfect.redacted import Redacted
-from pyfect.scope import Scope
+from pyfect.scope import Scope, acquire_release
 from pyfect.socket._loop import get_loop
 from pyfect.socket._socket import PemInput, TlsUpgradeOptions
 from pyfect.socket._tls import server_context
@@ -100,7 +108,12 @@ def _websocket_config(options: Options) -> WebSocketConfig:
     )
 
 
-def _serve(listener: Listener, protocol: RequestProtocol, options: Options) -> HttpServerService:
+def _serve(
+    listener: Listener, protocol: RequestProtocol, options: Options
+) -> Effect[HttpServerService, Never, Scope]:
+    """Serve connections from now on; their requests go to the app ``serve``
+    attached, as Node's server does, or are answered with 503 while there is
+    none."""
     timeout = from_input_unsafe(options.get("graceful_shutdown_timeout", "20 seconds"))
     timeouts = Timeouts(
         keep_alive=from_input_unsafe(options.get("keep_alive_timeout", "5 seconds")),
@@ -108,28 +121,50 @@ def _serve(listener: Listener, protocol: RequestProtocol, options: Options) -> H
         request=from_input_unsafe(options.get("request_timeout", "300 seconds")),
     )
     websocket = _websocket_config(options)
+    handlers = Handlers()
+
+    def serve_one(state: ConnectionState) -> Effect[None]:
+        return serve_connection(
+            listener, state, handlers.handle, protocol, timeouts, websocket=websocket
+        )
 
     def serve(app: HttpApp, middleware: Middleware | None) -> Effect[None, Any, Scope]:
-        def handle(request: SourceRequest, exchange: Exchange) -> Effect[None]:
-            handled = to_handled(app, exchange.respond, middleware)
-            return handled.pipe(provide_service(HttpServerRequest, request))
+        def attach(fiber: Fiber[Any, Any]) -> Handle:
+            # The app runs with the services of the fiber that called serve.
+            services = fiber._context  # pyright: ignore[reportPrivateUsage]
 
-        def serve_one(state: ConnectionState) -> Effect[None]:
-            return serve_connection(
-                listener, state, handle, protocol, timeouts, websocket=websocket
+            def handle(request: SourceRequest, exchange: Exchange) -> Effect[None]:
+                handled = to_handled(app, exchange.respond, middleware)
+                served = handled.pipe(provide_service(HttpServerRequest, request))
+                return served.pipe(set_context(services))
+
+            handlers.attach(handle)
+            return handle
+
+        def detach(handle: Handle, _exit: object) -> Effect[None]:
+            # As Node's server: stop accepting and drain while the app still
+            # answers, then remove it.
+            return listener.close_connections(timeout).ensuring(
+                sync(lambda: handlers.detach(handle))
             )
 
-        served = listener.run(serve_one, timeout)
-        return served.fork_scoped().as_void()
+        return acquire_release(with_fiber_succeed(attach), detach).as_void()
 
-    assert listener.address is not None
-    return make_server(serve=serve, address=listener.address)
+    def started(_: object) -> HttpServerService:
+        assert listener.address is not None
+        return make_server(serve=serve, address=listener.address)
+
+    accepting = acquire_release(
+        listener.accept(serve_one).fork_daemon(),
+        lambda fiber, _: fiber.interrupt().and_then(listener.close_now()),
+    )
+    return accepting.map(started)
 
 
 def _make(
     listen_with: Listen, protocol: RequestProtocol, options: Options, tls: Tls | None = None
 ) -> Effect[HttpServerService, SocketServerError, Scope]:
-    return listen(listen_with, tls).map(lambda listener: _serve(listener, protocol, options))
+    return listen(listen_with, tls).flat_map(lambda listener: _serve(listener, protocol, options))
 
 
 def make(**options: Unpack[Options]) -> Effect[HttpServerService, SocketServerError, Scope]:

@@ -1052,6 +1052,18 @@ def test_a_body_stream_failing_after_the_head_is_a_defect_beside_the_response() 
     assert isinstance(sent_response.defect, HttpServerResponse)
 
 
+def test_answers_a_post_before_serving_starts() -> None:
+    """answers a POST before serving starts"""
+
+    @fx.fn
+    def program():
+        client = yield from HttpClient()
+        response = yield from client.post("/")
+        return response.status, response.headers.get("retry-after")
+
+    assert run_live(program().timeout("2 seconds")) == (503, "1")
+
+
 def test_layer_test_binds_to_ipv4_loopback() -> None:
     """layerTest binds to IPv4 loopback"""
 
