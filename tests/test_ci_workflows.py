@@ -568,6 +568,8 @@ def test_each_driver_runs_its_tests_at_its_newest_and_lowest_versions():
         assert sorted(packages.split()) == sorted(names), extra
         for pattern in tests.split():
             assert list(ROOT.glob(pattern)), f"{extra}: {pattern} matches no test"
+            # A PR changing only the tests runs them too (redis-py 8.2.0 broke a test harness).
+            assert f'"{pattern}"' in triggers, f"{extra}: a PR changing {pattern} skips the job"
 
 
 def _image_keys_named_in(path: Path) -> list[str]:
