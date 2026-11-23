@@ -322,6 +322,7 @@ for _target in (
     server_request.parse_content_length,
     headers.parse_http_date,
     headers.parse_retry_after,
+    headers.parse_link,
     middleware.parse_accept_encoding,
     middleware.parse_content_encoding,
     url.from_string,
@@ -775,6 +776,7 @@ for _name_ in dir(S):
         schema(getattr(S, _name_), f"S.{_name_}")
 schema(snowflake.SnowflakeFromString, "snowflake.SnowflakeFromString")
 schema(http_schema.RetryAfterFromString, "http_schema.RetryAfterFromString")
+schema(http_schema.LinkHeaderFromString, "http_schema.LinkHeaderFromString")
 schema(S.to_codec_json(S.RegExp), "S.to_codec_json(S.RegExp)")
 schema(S.UnknownFromJsonString, "S.UnknownFromJsonString")
 schema(S.BigDecimal.pipe(S.to_codec_json), "S.BigDecimal.pipe(S.to_codec_json)")
