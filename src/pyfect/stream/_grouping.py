@@ -12,7 +12,6 @@ when it stops, so a group that stops early never blocks the others.
 from __future__ import annotations
 
 from collections.abc import Callable, Generator, Hashable, Sequence
-from functools import partial
 from typing import Any
 
 from pyfect import channel
@@ -25,9 +24,7 @@ from pyfect._core import (
     _Succeed,
     _Suspend,
     _Sync,
-    _WithFiber,
 )
-from pyfect._fiber import Fiber
 from pyfect.cause import Cause
 from pyfect.channel._base import end_with
 from pyfect.duration import Input as DurationInput
@@ -44,7 +41,8 @@ type AnyEffect = Effect[Any, Any, Any]
 type Chunk = tuple[Any, ...]
 type AnyStream_ = Stream[Any, Any, Any]
 type Groups = RcMap[Any, Queue[Any, Done], Any]
-type OfferChunk = Callable[[Chunk, Groups, dict[Any, Queue[Any, Done]]], AnyEffect]
+type OpenQueues = dict[Any, Queue[Any, Done]]
+type OfferChunk = Callable[[Chunk, Groups, OpenQueues | None], AnyEffect]
 
 _ENDED: AnyEffect = end_with(None)
 _VOID: AnyEffect = _Succeed(None)
@@ -65,41 +63,37 @@ def from_queue_shutdown_on_end(queue: Queue[Any, Any]) -> AnyStream_:
 def _offer_groups(
     batch: Sequence[tuple[Any, list[Any]]],
     groups: Groups,
-    open_queues: dict[Any, Queue[Any, Done]],
+    open_queues: OpenQueues | None,
     start: int = 0,
 ) -> AnyEffect:
-    """Effect's per-key ``RcMap.get`` (for a new key), ``RcMap.touch`` and
-    ``Queue.offerAll``, from ``batch[start]`` on. A key whose group is open
-    and has room for its values is served within this one step; the first
-    that needs a new group or has to wait goes on as effects."""
+    """Effect's ``useQueue`` and ``Queue.offerAll`` per key, from
+    ``batch[start]`` on. ``open_queues`` is ``None`` when groups can expire:
+    then every offer holds its group (``_offer_held``). Otherwise a key whose
+    group is open and has room for its values is served within this one
+    step; the first that needs a new group or has to wait goes on as
+    effects."""
 
-    def offer(fiber: Fiber[Any, Any]) -> AnyEffect:
+    def offer() -> AnyEffect:
         for index in range(start, len(batch)):
             key, values = batch[index]
-            queue = open_queues.get(key)
+            queue = None if open_queues is None else open_queues.get(key)
             if queue is None:
-                return _Gen(partial(_offer_new_group, batch, groups, open_queues, index))
-            groups.touch_unsafe(key, fiber)
+                then = _offer_groups(batch, groups, open_queues, index + 1)
+                return _offer_held(groups, key, values).and_then(then)
             rest = queue.offer_all_unsafe(values)
             if rest:
                 then = _offer_groups(batch, groups, open_queues, index + 1)
                 return queue.offer_all(rest).and_then(then)
         return _VOID
 
-    return _WithFiber(offer)
+    return _Suspend(offer)
 
 
-def _offer_new_group(
-    batch: Sequence[tuple[Any, list[Any]]],
-    groups: Groups,
-    open_queues: dict[Any, Queue[Any, Done]],
-    index: int,
-) -> Generator[AnyEffect, Any]:
-    key, values = batch[index]
-    queue = yield scoped(groups.get(key))
-    yield groups.touch(key)
-    yield queue.offer_all(values)
-    yield _offer_groups(batch, groups, open_queues, index + 1)
+def _offer_held(groups: Groups, key: Any, values: list[Any]) -> AnyEffect:
+    """Offer ``values`` to ``key``'s group, holding it (its ``RcMap``
+    reference) until the offer is accepted or cancelled, so an idle TTL
+    cannot end it while the values wait."""
+    return scoped(groups.get(key).flat_map(lambda queue: queue.offer_all(values)))
 
 
 def _group_by(
@@ -114,7 +108,7 @@ def _group_by(
         def body() -> Generator[AnyEffect, Any, AnyEffect]:
             out: Queue[Any, Any] = Queue(None)
             yield scope.add_finalizer(lambda _: out.shutdown())
-            open_queues: dict[Any, Queue[Any, Done]] = {}
+            open_queues: OpenQueues = {}
 
             def lookup(key: Any) -> AnyEffect:
                 def opened(queue: Queue[Any, Done]) -> AnyEffect:
@@ -130,7 +124,9 @@ def _group_by(
 
             make_groups = RcMap.make(lookup, idle_time_to_live=ttl)
             groups: Groups = yield make_groups.pipe(provide_service(Scope, forked))
-            run = _FlatMap(pull, lambda chunk: offer_chunk(chunk, groups, open_queues)).forever(
+            # Effect's fast path only for groups that never expire.
+            fast = None if ttl.is_finite() else open_queues
+            run = _FlatMap(pull, lambda chunk: offer_chunk(chunk, groups, fast)).forever(
                 disable_yield=True
             )
 
@@ -154,9 +150,7 @@ def group_by(
     buffer_size: int,
     idle_time_to_live: DurationInput | None,
 ) -> AnyStream_:
-    def offer_chunk(
-        chunk: Chunk, groups: Groups, open_queues: dict[Any, Queue[Any, Done]]
-    ) -> AnyEffect:
+    def offer_chunk(chunk: Chunk, groups: Groups, open_queues: OpenQueues | None) -> AnyEffect:
         def body() -> Generator[AnyEffect, Any]:
             for item in chunk:
                 key, value = yield f(item)
@@ -173,9 +167,7 @@ def group_by_key(
     buffer_size: int,
     idle_time_to_live: DurationInput | None,
 ) -> AnyStream_:
-    def offer_chunk(
-        chunk: Chunk, groups: Groups, open_queues: dict[Any, Queue[Any, Done]]
-    ) -> AnyEffect:
+    def offer_chunk(chunk: Chunk, groups: Groups, open_queues: OpenQueues | None) -> AnyEffect:
         batch: dict[Any, list[Any]] = {}
         for item in chunk:
             batch.setdefault(f(item), []).append(item)

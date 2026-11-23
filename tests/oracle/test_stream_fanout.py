@@ -36,6 +36,8 @@ import contextlib
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+import pytest
+
 import pyfect as fx
 from pyfect import schedule, sink, stream, testing
 from pyfect.scope import CloseableScope
@@ -92,6 +94,48 @@ def test_group_by_a_group_that_stops_early_does_not_block_the_others():
         .run_collect()
     )
     assert sorted(result) == [1, 2, 4, 6, 8]
+
+
+GROUPINGS = ["group_by", "group_by_key"]
+
+
+def _single_group(
+    name: str, idle_time_to_live: fx.duration.Input
+) -> Callable[[Stream[int]], Stream[tuple[int, Stream[int]]]]:
+    def group(source: Stream[int]) -> Stream[tuple[int, Stream[int]]]:
+        if name == "group_by":
+            return source.group_by(
+                lambda n: fx.succeed((0, n)), buffer_size=1, idle_time_to_live=idle_time_to_live
+            )
+        return source.group_by_key(lambda _: 0, buffer_size=1, idle_time_to_live=idle_time_to_live)
+
+    return group
+
+
+@pytest.mark.parametrize("name", GROUPINGS)
+@testing.effect
+def test_delivers_all_values_with_zero_idle_ttl(name: str):
+    """${name} delivers all values with zero idle TTL"""
+    values = yield from (
+        stream.make(1, 2, 3)
+        .pipe(_single_group(name, "0 millis"))
+        .flat_map(lambda group: group[1])
+        .run_collect()
+    )
+    assert values == [1, 2, 3]
+
+
+@pytest.mark.parametrize("name", GROUPINGS)
+@testing.effect
+def test_keeps_a_backpressured_group_past_its_idle_ttl(name: str):
+    """${name} keeps a backpressured group past its idle TTL"""
+    groups = yield from (
+        stream.range(1, 3, chunk_size=1)
+        .pipe(_single_group(name, "1 second"))
+        .map_effect(lambda group: testing.adjust("2 seconds").and_then(group[1].run_collect()))
+        .run_collect()
+    )
+    assert groups == [[1, 2, 3]]
 
 
 @testing.effect
