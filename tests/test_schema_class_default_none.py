@@ -1,8 +1,12 @@
-"""A field whose default is ``None`` but whose schema refuses ``None`` says how to fix it.
+"""A field's default must be a value of its schema's type, and a class whose default isn't fails
+where it is defined, naming the field and saying what it needs.
 
-``n: int | None = S.field(S.Int, default=None)`` decodes a missing key to ``None`` and then
-cannot construct or encode that ``None``. The error says what the field needs:
+pyright accepts ``n: int | None = S.field(S.Int, default=None)``: a ``Codec`` is covariant (as
+Effect's is), so ``S.Int`` reads as a ``Codec[int | None]``. Effect's compiler rejects such a
+constructor default, so the class definition does here. A ``None`` default gets the fix
 ``S.NullOr(S.Int)``, or ``S.Union(S.Int, S.Undefined)`` to leave the key out while it is None.
+The default's checks run at construction, as Effect's do, and a schema naming a class not
+defined yet is checked on first use.
 """
 
 from __future__ import annotations
@@ -13,13 +17,8 @@ from pyfect import schema as S
 
 _HINT = (
     "Expected number, and the default None is not one: write S.NullOr(schema) for a field that "
-    "may be None, or S.Union(schema, S.Undefined) to leave the key out while it is None\n"
-    '  at ["n"]'
+    "may be None, or S.Union(schema, S.Undefined) to leave the key out while it is None"
 )
-
-
-class Misdefined(S.Class):
-    n: int | None = S.field(S.Int, default=None)
 
 
 class Absent(S.Class):
@@ -30,23 +29,45 @@ class Nullable(S.Class):
     n: int | None = S.field(S.NullOr(S.Int), default=None)
 
 
-def test_constructing_or_encoding_the_default_none_says_what_the_field_needs() -> None:
-    with pytest.raises(S.SchemaError) as constructing:
-        Misdefined()
-    assert str(constructing.value) == _HINT
-    decoded = S.decode_unknown_sync(Misdefined)({})
-    with pytest.raises(S.SchemaError) as encoding:
-        S.encode_sync(Misdefined)(decoded)
-    assert str(encoding.value) == _HINT
+def test_a_none_default_the_schema_refuses_fails_at_definition() -> None:
+    with pytest.raises(TypeError) as raised:
+
+        class Misdefined(S.Class):  # pyright: ignore[reportUnusedClass]
+            n: int | None = S.field(S.Int, default=None)
+
+    assert str(raised.value) == f"Misdefined.n: {_HINT}"
 
 
-def test_the_hint_keeps_check_failures_and_good_values_as_they_were() -> None:
+def test_any_default_of_another_type_fails_at_definition() -> None:
+    with pytest.raises(TypeError) as raised:
+
+        class Wrong(S.Class):  # pyright: ignore[reportUnusedClass]
+            n: int | str = S.field(S.Int, default="a")
+
+    assert str(raised.value) == (
+        "Wrong.n: Expected number, and the default 'a' is not one: give the field a default of "
+        "its schema's type, or a schema that takes it"
+    )
+
+
+def test_a_default_failing_only_a_check_fails_at_construction() -> None:
     class Positive(S.Class):
-        n: int | None = S.field(S.Int.check(S.is_greater_than(0)), default=None)
+        n: int = S.field(S.Int.check(S.is_greater_than(0)), default=0)
 
+    assert Positive(n=1).n == 1
     with pytest.raises(S.SchemaError, match=r"^Expected a value greater than 0\n"):
-        Positive(n=-1)
-    assert S.encode_sync(Misdefined)(Misdefined(n=1)) == {"n": 1}
+        Positive()
+
+
+def test_a_schema_naming_a_later_class_is_checked_on_first_use() -> None:
+    class Holder(S.Class):
+        n: Later | None = S.field(S.suspend(lambda: Later), default=None)
+
+    class Later(S.Class):
+        v: int
+
+    with pytest.raises(S.SchemaError, match=r"^Expected Later\n"):
+        Holder()
 
 
 def test_a_field_whose_schema_takes_none_gets_no_hint() -> None:

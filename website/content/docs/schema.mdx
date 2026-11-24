@@ -116,11 +116,12 @@ fields differ between the database and a JSON API is a [model](/docs/models).
 
 </CodeOutput>
 
-A default fills a missing key when decoding, but the field's schema still has to take the
-default when the class is built or encoded. So `S.field(S.Int, default=None)` decodes
-`{}` and then fails on that `None`. A field that may be `None` needs a schema that accepts
-it: `S.Union(S.Int, S.Undefined)` leaves the key out while the value is `None`, and
-`S.NullOr(S.Int)` writes `null`.
+A default fills a missing key when decoding, so it must be a value of the field's schema's
+type. Pyright accepts `n: int | None = S.field(S.Int, default=None)` (it reads `S.Int` as a
+schema of `int | None`), so the class fails where it is defined, naming the field. A field that
+may be `None` needs a schema that accepts it: `S.Union(S.Int, S.Undefined)` leaves the key out
+while the value is `None`, and `S.NullOr(S.Int)` writes `null`. The default's checks
+(`S.is_greater_than(0)`) run when the class is built, as any value's do.
 
 <CodeOutput>
 

@@ -54,6 +54,7 @@ from pyfect._core import Effect
 from pyfect._pipe import pipe_one
 from pyfect.exit import Failure, Success
 from pyfect.option import Option
+from pyfect.result import Ok
 from pyfect.schema import ast
 from pyfect.schema._adapters import CONSTRUCTOR, raise_schema_failure
 from pyfect.schema._check_guard import CheckRaisedError
@@ -374,16 +375,47 @@ def _derived(cls: type, name: str) -> AnyBottom:
         raise TypeError(f"{cls.__name__}.{name}: {error}") from None
 
 
-def _derive_resolvable(cls: type, names: tuple[str, ...]) -> None:
-    """Derive the annotation of each field without an explicit schema now, so
-    one with no schema fails where the class is defined. An annotation naming
-    what is not defined yet (the class itself, a class below it) waits for
-    first use."""
+def _check_fields(cls: type, names: tuple[str, ...]) -> None:
+    """Derive each field's schema now and check its default against it, so a field
+    with no schema, or a default its schema's type refuses, fails where the class
+    is defined. An annotation or a schema naming what is not defined yet (the
+    class itself, a class below it) waits for first use."""
     declared = {f.name: f for f in dataclasses.fields(cast("Any", cls))}
     for name in names:
-        if _SCHEMA not in declared[name].metadata:
-            with contextlib.suppress(NameError):
-                _derived(cls, name)
+        f = declared[name]
+        explicit = f.metadata.get(_SCHEMA)
+        with contextlib.suppress(NameError):
+            schema = (
+                cast("Codec[Any, Any, Any, Any]", explicit).__codec__()
+                if explicit is not None
+                else _derived(cls, name)
+            )
+            if f.default is not MISSING:
+                _require_default_fits(f"{cls.__name__}.{name}", schema, f.default)
+
+
+_TYPE_ONLY: ParseOptions = {"disable_checks": True}
+
+
+def _require_default_fits(field: str, schema: AnyBottom, default: object) -> None:
+    """A default must be a value of its field's type, as Effect's compiler requires of
+    a constructor default. pyright can't check it: a ``Codec`` is covariant, so
+    ``x: int | None = S.field(S.Int, default=None)`` reads ``S.Int`` as a
+    ``Codec[int | None]``. Checks are left to construction, as Effect's are."""
+    match ast.run_now(schema.ast.to_type().parse(default, _TYPE_ONLY)):
+        case Failure(cause=cause) if isinstance(cause.find_error(), Ok):
+            fix = (
+                "write S.NullOr(schema) for a field that may be None, or "
+                "S.Union(schema, S.Undefined) to leave the key out while it is None"
+                if default is None
+                else "give the field a default of its schema's type, or a schema that takes it"
+            )
+            raise TypeError(
+                f"{field}: Expected {schema.ast.expected()}, and the default {default!r} is "
+                f"not one: {fix}"
+            )
+        case _:
+            pass
 
 
 def _annotation(cls: type, name: str) -> object:
@@ -453,7 +485,7 @@ def _define(
     if error:
         shape.name = identifier if identifier is not None else tag or cls.__name__
     type.__setattr__(cls, _SHAPE, shape)
-    _derive_resolvable(cls, shape.field_names)
+    _check_fields(cls, shape.field_names)
 
     @functools.wraps(init)
     def __init__(self: object, *args: object, **kwargs: object) -> None:  # noqa: N807  installed as cls.__init__

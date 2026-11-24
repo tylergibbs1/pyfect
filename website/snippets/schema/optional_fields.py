@@ -13,11 +13,10 @@ print(rule)
 print(S.encode_sync(Rule)(rule))
 
 
-class Broken(S.Class):
-    min_count: int | None = S.field(S.Int, default=None)  # S.Int refuses None
-
-
 try:
-    Broken()
-except S.SchemaError as error:
+
+    class Broken(S.Class):
+        min_count: int | None = S.field(S.Int, default=None)  # S.Int refuses None
+
+except TypeError as error:  # where the class is defined
     print(error)
