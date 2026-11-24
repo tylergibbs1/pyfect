@@ -1,5 +1,48 @@
 # Changelog
 
+## 0.6.30 (2026-11-24)
+
+### Added
+
+- `slack_chat.layer` takes `base_url`, passed to its `slack_web_api.layer` (default
+  `https://slack.com/api`), so a GovSlack app can use `https://slack-gov.com/api`. Effect's
+  `SlackChat.layer` has no such option; its `SlackWebApi.layer` takes `baseUrl`, which
+  `slack_web_api.layer(base_url=...)` already matched. Docs: [Slack](https://pyfect.dev/docs/chat-slack).
+
+### Fixed
+
+- CSV decoding with `headers=True` reads an empty cell of an optional field of an `S.Class`, or of
+  a union of classes, as a missing key, as it already did for structs (Effect #10759). Classes
+  also count as structs when HttpApi finds the names of path parameters, documents the file
+  fields of a multipart payload as binary in OpenAPI, and refuses the reserved event name in a
+  `StreamSse` events schema: each walk now reads a class's fields through
+  `schema.ast.encoded_objects`.
+- The SQL event log storages (`make_storage`, `layer_storage`, `layer_storage_subtle`) refuse a
+  `poll_interval` of zero, a negative one or infinity when called, raising
+  `IllegalArgumentError` (a `ValueError`) that names the value, instead of dying when the layer
+  is built.
+- Free-threaded CPython: threads asking for the same lazily made value at once all get one
+  value. Two threads could each make their own handler tag for an RPC, so a server built on
+  one thread found no handler registered from another (`Unknown request tag`); the same race
+  hit tool handler tags, middleware client tags, fixed-offset and ICU-only zones from
+  `date_time.zone_named` (which then compared unequal), and a TypedDict's derived struct
+  (which could raise `KeyError`). Entities held by cluster runners on several threads at
+  once are released correctly.
+- `mcp_server.register_toolkit` and `mcp_server.toolkit` accept a `content` list built before
+  the call (`mappers = [mcp_server.tool_content(...)]; content=mappers`), not only one
+  written inline: `ToolContent` is covariant in the tool's name. A mapper for a tool outside
+  the toolkit now adds that tool's `Handlers` to the requirements, which the toolkit's
+  handlers layer cannot provide, instead of failing at the call.
+- `protobuf.message.encode`, `get_extension` and `set_extension` accept a message `decode`
+  or `set_extension` returned (`Message`, unknown fields included) as well as a mapping of
+  field names, so a decode, edit, encode round trip type-checks without an ignore.
+
+### Docs
+
+- Slack docs, "Slow slash commands": a checked example of a command handler that races its
+  work against a 2 second budget, answers `defer` when the budget runs out, and sends the
+  answer with `Chat.follow_up` from fibers forked into the interactions layer's scope.
+
 ## 0.6.29 (2026-11-24)
 
 ### Added
