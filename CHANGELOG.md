@@ -1,5 +1,99 @@
 # Changelog
 
+## 0.6.27 (2026-11-24)
+
+### Added
+
+- `testing.count_scheduler_rounds()`: a `MixedScheduler` that counts the rounds it runs, for
+  tests that check an answer needs no extra round (pyfect-only: Effect has no round counter).
+  `MixedScheduler.set_immediate` is public, as Effect's `setImmediate` is, so a test can wrap
+  the default instead of importing `pyfect.scheduler._run_soon`.
+- `mcp_server.toolkit` and `register_toolkit` take `content=[mcp_server.tool_content(tool,
+  mapper)]`, so a tool can answer with MCP content blocks such as images or resources
+  instead of JSON text. The mapper gets the tool's decoded success; a mapped tool lists no
+  output schema and sends no `structuredContent`, and its failures skip the mapper. Tools
+  without a mapper send what they did before (Effect #10733).
+- `pyfect.protobuf`, Effect's `effect/protobuf` in pure Python (Effect #10554, #9454): the
+  wire `reader` and `writer`; `descriptor.make` and `descriptor.from_file_descriptor_set`,
+  which resolve `protoc`'s descriptors (proto2, proto3 and editions 2023 to 2026); and
+  `message.encode`, `decode`, `get_extension` and `set_extension` for messages as dicts,
+  with unknown fields kept. `descriptor_proto` has the types and descriptors of
+  `google/protobuf/descriptor.proto`. Decoding bounds nesting (`max_depth`, 100 by default)
+  and varint lengths, and takes an optional `max_size`. The OTLP protobuf exporter now
+  writes with `writer.ProtobufWriter`, and log record trace and span ids may be bytes.
+- `pyfect.workers.shared_memory` (Effect's `SharedMemory`, Effect #10644): `make(kind, length)`
+  allocates a zero-filled `SharedArray` in a `multiprocessing.shared_memory` segment that the
+  scope frees when it closes, and `schema(kind)` is the worker message field that carries it.
+  Thread and process workers both write into the sender's memory: a process worker maps the
+  segment by name rather than getting a copy.
+
+### Fixed
+
+- `S.to_codec_array_from_single` reaches into schema classes (`S.Class`, `S.Error`,
+  `S.TaggedClass`, `S.TaggedError`) and declarations' type parameters, as Effect 4.1.4's does:
+  a form-urlencoded body or query string whose array field arrives as one key (`missing=amount`)
+  now decodes into a class too. A derived `HttpApiClient` reports a declared `S.TaggedError`
+  with such a field as that error instead of an `HttpClientError`. The walk now runs on the
+  same derivation as `to_codec_string_tree` and `to_codec_json`, which already covered every
+  kind of schema.
+- `IllegalArgumentError`, `NoSuchElementException` and `ExceededCapacityError` have the optional
+  `message` Effect's built-in errors take: `IllegalArgumentError("bad arg").message == "bad arg"`,
+  and `None` when made without one. Code reading `error.message` on a `skill.from_files` failure,
+  say, no longer raises `AttributeError`. `TimeoutException` has a `message` too: by default the
+  text Effect's `timeout` writes, `"Operation timed out after '10ms'"`, which is also its string
+  form as before. Constructors, equality and string forms are unchanged.
+- `csv.decode_schema`, `decode_schema_string`, `encode_schema` and `encode_schema_string` accept
+  schema classes (`S.Class`, `S.Error`, `S.TaggedClass`, `S.TaggedError`) and unions of them,
+  as Effect 4.1.4's `Csv` does, instead of raising "Csv: cannot verify string cells for Class".
+  The structured-output codecs (`to_codec_openai`, `to_codec_anthropic`) also rewrite a class's
+  fields now (a tuple field is sent as an object, as in a struct), so a class with such a field
+  decodes from the model's output. Walks over a schema's encoded side read a class as its
+  fields' struct through the new `schema.ast.encoded_structure`, as Effect's `toEncoded` gives it.
+- A schema class field whose default is `None` but whose schema refuses `None`
+  (`S.field(S.Int, default=None)`) says what it needs when building or encoding the class
+  fails on that `None`: "Expected number, and the default None is not one: write
+  S.NullOr(schema) for a field that may be None, or S.Union(schema, S.Undefined) to leave the
+  key out while it is None". It said only "Expected number".
+- Event log SQL servers sharing one database: `EventLog.synced` through one server never
+  finished once another server on the database had taken a write. The server reported that
+  write as its latest sequence but streamed only the writes it took itself. Both
+  `sql_event_log_server_encrypted` and `sql_event_log_server_unencrypted` now stream from the
+  table they report from. A server's own writes still reach its clients at once, and other
+  servers' writes arrive within `poll_interval` (a new `layer_storage` option, default
+  `"1 second"`, positive and finite). Effect's servers stream only their own writes.
+- `crypto.password` turns a password into bytes as Effect's `Password` does (`TextEncoder`): a
+  lone surrogate (a JSON `"\ud800"` decodes to one) is U+FFFD. It was written as the
+  surrogate's own three bytes, so a hash Effect made for such a password never verified in
+  pyfect, and pyfect's never verified in Effect. Hashes of such passwords made by earlier
+  pyfect versions no longer verify; every other password hashes as before. The URL username
+  and password setters percent-encode a lone surrogate as `%EF%BF%BD` too, as the URL Standard
+  does and as parsing a URL already did.
+- `Redis.reserve`: a reserved connection held in a scope that outlives the `Redis` service (or the `redis_py` layer) no longer deadlocks its shutdown. The pool waited for the connection to come back, which happened only when that scope closed, after the service's. Closing the service now closes the connection, and a later command on it fails with a `RedisError`.
+- `SqlClient.reserve`: a reserved connection held in a scope that outlives the client (or its
+  layer) no longer deadlocks the client's shutdown on PostgreSQL, MySQL and SQL Server. The pool
+  waited for the connection to come back, which happened only when that scope closed, after the
+  client's. Closing the client now closes the connection, and a later statement on it fails with
+  the driver's `SqlError`.
+
+### Docs
+
+- Atoms: a query's `stale_time` is measured with the wall clock, not the `TestClock`, as in
+  Effect.
+- Event log docs, "One remote id per database": the statements that delete extra remote ids
+  name the default `effect_remote_id` table, so the page now tells you to swap in your own
+  `remote_id_table`. It also says what clients of each server see when several servers share
+  one database.
+- The 0.6.26 note about MCP HTTP rounds applies to tools registered directly (a `ToolEntry`):
+  on `mcp_server.layer_http_request_scoped`, a waiting `tools/call` of such a tool is answered
+  with no scheduler rounds first. Toolkit tools (`mcp_server.register_toolkit`) take 2 rounds
+  until 0.7.0.
+- RPC: over plain HTTP, `remote_parent_span` is always `None`, as in Effect; the caller's span
+  travels in the request's trace headers instead. Said in the RPC tracing docs and on
+  `TracingEnabled`, `RpcRequest` and `MiddlewareOptions`.
+- The Schema guide's Classes section shows a field that may be `None`: a default fills a
+  missing key when decoding, but the field's schema must take `None` too, as
+  `S.Union(S.Int, S.Undefined)` (no key while `None`) or `S.NullOr(S.Int)` (`null`) do.
+
 ## 0.6.26 (2026-11-24)
 
 0.6.24 and 0.6.25 were tagged but never published: flaky tests failed in their release runs. 0.6.26 carries their changes.
