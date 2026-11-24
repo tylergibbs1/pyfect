@@ -126,6 +126,17 @@ def test_closes_the_client_when_the_connection_check_times_out():
     assert [call.signal.aborted for call in fake.calls] == [True]
 
 
+def test_skips_the_initial_ping_when_disable_initial_ping_is_true():
+    """skips the initial ping when disableInitialPing is true"""
+    fake = FakeClickhouse(ping=None)
+
+    def body():
+        yield from clickhouse.make(fake.config(disable_initial_ping=True))
+        assert [call for call in fake.calls if call.request.url.endswith("/ping")] == []
+
+    _run(body)
+
+
 def _kills(fake: FakeClickhouse) -> list[tuple[str, dict[str, str]]]:
     return [(call.sql, call.params) for call in fake.commands]
 
