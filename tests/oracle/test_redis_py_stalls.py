@@ -15,6 +15,7 @@ probe.
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import re
 import socket
@@ -55,6 +56,8 @@ class _Peer:
         self.closed = threading.Event()
         self.stalled = threading.Event()
         self.order: dict[socket.socket, int] = {}
+        self._open = 0
+        self._all_closed = threading.Condition()
         self._watched: set[socket.socket] = set()
         self._lock = threading.Lock()
         self._stack = contextlib.ExitStack()
@@ -64,7 +67,22 @@ class _Peer:
         with self._lock:
             self._watched.add(connection)
 
+    def all_closed(self, timeout: float) -> bool:
+        """Whether every connection made so far closes within ``timeout`` seconds."""
+        with self._all_closed:
+            return self._all_closed.wait_for(lambda: self._open == 0, timeout)
+
     def _serve(self, connection: socket.socket, stopping: threading.Event) -> None:
+        with self._all_closed:
+            self._open += 1
+        try:
+            self._receive(connection)
+        finally:
+            with self._all_closed:
+                self._open -= 1
+                self._all_closed.notify_all()
+
+    def _receive(self, connection: socket.socket) -> None:
         while True:
             try:
                 data = connection.recv(65536)
@@ -259,3 +277,52 @@ def test_interrupts_a_stalled_reserved_connection() -> None:
         yield from _awaited(peer.closed)
 
     _run(peer, body)
+
+
+def test_a_subscriber_outliving_its_client_does_not_reconnect() -> None:
+    """Adapted: a subscription made in a scope that outlives the layer's.
+    Closing the client closes its subscriber's connection, and redis-py's
+    ``PubSub`` reconnects (and subscribes again) inside its retry; a
+    reconnected connection then sleeps in the retry's backoff, where
+    stopping the loop leaves it open (the unclosed ``Connection`` of the
+    0.6.25 release run). The client's close here waits for a second
+    ``SUBSCRIBE``, as a loop stopping late on a busy machine would: none
+    may come, and the peer sees every connection closed."""
+    resubscribed = threading.Event()
+    subscribes = [0]
+
+    def on_data(peer: _Peer, connection: socket.socket, data: bytes) -> None:
+        for match in _COMMAND.finditer(data):
+            if match.group(1).upper() != b"SUBSCRIBE":
+                connection.sendall(_answer(match.group(1)))
+                continue
+            subscribes[0] += 1
+            if subscribes[0] > 1:
+                resubscribed.set()
+            connection.sendall(b">3\r\n$9\r\nsubscribe\r\n$7\r\nchannel\r\n:1\r\n")
+
+    peer = _Peer(on_data)
+
+    def body():
+        redis = yield from Redis()
+        service = yield from redis_py.RedisPy()
+        client: Any = service.client
+        close = client.aclose
+
+        async def aclose_late(*args: Any, **kwargs: Any) -> None:
+            await close(*args, **kwargs)
+            await asyncio.to_thread(resubscribed.wait, 0.5)
+
+        client.aclose = aclose_late
+        yield from redis.subscribe("channel")
+
+    def run():
+        # The subscription's scope is this one, closed after the layer's.
+        yield from fx.gen(body).pipe(fx.provide(_layer(peer.port)))
+
+    try:
+        fx.run_blocking(fx.scoped(fx.gen(run)))
+        assert not resubscribed.is_set(), "the subscriber reconnected after its client closed"
+        assert peer.all_closed(_WAIT), "a connection was left open"
+    finally:
+        peer.close()
