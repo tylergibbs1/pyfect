@@ -1,5 +1,45 @@
 # Changelog
 
+## 0.6.29 (2026-11-24)
+
+### Added
+
+- `pyfect.chat.discord` (Effect's `@effect/chat-discord`, Effect #10581): the Discord adapter
+  for `pyfect.chat` over Discord's REST API with no SDK (`discord_rest`), one Gateway shard over
+  `pyfect.socket` (`discord_gateway`, which needs the `websockets` extra) that resumes from a
+  `ShardStateStore` and replays an event a `DispatchHook` refused, the HTTP interactions
+  endpoint (Ed25519 signatures checked through `Signature`, which needs the `crypto` extra, a
+  five minute timestamp window, a body limit, typed parsing at the route), buttons, selects,
+  modals and slash commands, `with_post_options` to choose who a post notifies, and the pure
+  `normalize` and `normalize_interaction`. Docs: [Discord](https://pyfect.dev/docs/chat-discord).
+- `pyfect.chat.teams` (Effect's `@effect/chat-teams`, Effect #10581 with #10758): the
+  Microsoft Teams adapter for `pyfect.chat` over the Bot Framework Connector with no SDK, and
+  the messaging endpoint, which checks each Bot Framework token (RS256 only, a key endorsed
+  for `msteams` from the OpenID metadata's key set, issuer, audience, expiry with five
+  minutes of skew, and the token's `serviceurl`, channel and tenant) and bounds the body.
+  Buttons, dialogs, agent commands, `start_thread` and downloads wait behind `Unverified`.
+  Locating mentions in an activity stops after scanning 64 times the text's length, so an
+  activity with many mention entities missing from its text costs linear time. Docs:
+  [Microsoft Teams](https://pyfect.dev/docs/chat-teams).
+- `pyfect.chat.telegram` (Effect's `@effect/chat-telegram`, Effect #10581): the Telegram Bot
+  API adapter for `pyfect.chat` with no SDK. The webhook compares the secret-token header in
+  constant time before reading the body, with a body limit and a 64 level nesting cap, and
+  `layer_polling` runs `getUpdates`, confirming each update only after it ran. Markdown is
+  escaped into rich messages that hold no raw HTML, image or non-web link, in linear time;
+  entity offsets are UTF-16 units; files, buttons and commands sit behind `unverified_*`
+  options; and `normalize`, `normalize_interaction` and `delivery_key` serve a consumer's own
+  transport. Docs: [Telegram](https://pyfect.dev/docs/chat-telegram).
+- `pyfect.chat.whatsapp` (Effect's `@effect/chat-whatsapp`, Effect #10581): the WhatsApp
+  Cloud API adapter for `pyfect.chat` over the Graph API with no SDK. The webhook answers
+  Meta's subscription check (verify token compared in constant time) and checks
+  `X-Hub-Signature-256` through `Mac`, with a body limit and a 64 level nesting cap. Markdown
+  renders to WhatsApp's formatting without ever growing the text, in linear time; replies
+  use reply buttons, link buttons and lists; `send_template` writes outside the 24 hour
+  window; and `normalize`, `delivery_key` and `update_key` serve a consumer's own transport.
+  Docs: [WhatsApp](https://pyfect.dev/docs/chat-whatsapp).
+- `jwks.make_remote` and `jwks.layer_remote` take `filter`, which keeps or drops each raw
+  key before it is decoded; `max_keys` counts the keys before filtering (Effect #10581).
+
 ## 0.6.28 (2026-11-24)
 
 0.6.27 was tagged but never published: a flaky test failed in its release run. 0.6.28 carries its changes.
