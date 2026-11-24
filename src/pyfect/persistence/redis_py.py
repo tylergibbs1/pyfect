@@ -17,6 +17,8 @@ command on the shared client holds a connection of its pool.
 ``subscribe`` returns once the server confirmed ``SUBSCRIBE``. Interrupting
 ``subscribe`` or ``reserve`` while its connection is opening
 (or ``SUBSCRIBE`` is unanswered) cancels the attempt and closes it.
+Closing the client cancels the calls still running on it first, so a
+subscriber outliving it does not reconnect.
 """
 
 from __future__ import annotations
@@ -91,10 +93,12 @@ class _Loop:
     """An asyncio loop on a thread of its own; a call once it stopped
     fails with a ``RedisError`` saying the client is closed."""
 
-    __slots__ = ("_bridge",)
+    __slots__ = ("_bridge", "_calls")
 
     def __init__(self) -> None:
         self._bridge = OwnedLoopBridge("pyfect-redis", "Redis client")
+        self._calls: set[asyncio.Task[Any]] = set()
+        """The calls running on the loop (touched there only)."""
 
     def run[A](
         self,
@@ -107,10 +111,37 @@ class _Loop:
         says whether ``make()`` is work or waits for an event that may never
         come (``pyfect._os_wait``). ``release`` closes a result that owns
         something (``None``: it owns nothing, or something else owns it)."""
-        return self._bridge.run(make, _failed, waits_for=waits_for, release=release)
+        return self._bridge.run(
+            lambda: self._call(make), _failed, waits_for=waits_for, release=release
+        )
 
-    def stop(self) -> Effect[None]:
-        return self._bridge.close()
+    async def _call[A](self, make: Callable[[], Coroutine[Any, Any, A]]) -> A:
+        task = cast("asyncio.Task[Any]", asyncio.current_task())
+        self._calls.add(task)
+        try:
+            return await make()
+        finally:
+            self._calls.discard(task)
+
+    def stop(self, client: AsyncRedis | None = None) -> Effect[None]:
+        """Stop the loop, closing ``client`` on it first (``_close_alone``)."""
+        return self._bridge.close(None if client is None else lambda: self._close_alone(client))
+
+    async def _close_alone(self, client: AsyncRedis) -> None:
+        """Close ``client`` once no call runs: the calls still running are
+        cancelled and waited for first. A subscriber still reading when its
+        connection closes reconnects inside redis-py's retry, then sleeps in
+        its backoff, where a cancel leaves that connection open; with no call
+        left, nothing reopens a connection the close closed."""
+        # Calls submitted before the close start first.
+        await asyncio.sleep(0)
+        while self._calls:
+            running = list(self._calls)
+            for task in running:
+                task.cancel()
+            await asyncio.gather(*running, return_exceptions=True)
+            await asyncio.sleep(0)
+        await client.aclose()
 
 
 def _failed(error: BaseException) -> Effect[Never, RedisError]:
@@ -201,7 +232,7 @@ def make(
             loop.run(
                 lambda: _make_client(url, dict(options)), waits_for="work", release=_close_client
             ),
-            lambda client, _: loop.run(client.aclose, waits_for="work", release=None).ignore(),
+            lambda client, _: loop.stop(client),
         )
 
         async def probe() -> None:
