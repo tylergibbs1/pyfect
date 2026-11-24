@@ -29,7 +29,7 @@ from pyfect.process import (
     StderrConfig,
     StdinConfig,
     StdoutConfig,
-    _live,
+    _live,  # pyright: ignore[reportPrivateUsage]
     _pipes,
     command_line,
     make,
@@ -611,3 +611,21 @@ def test_a_command_spawned_without_a_spawner_names_the_missing_service():
     exit = fx.run_blocking_exit(fx.scoped(make("echo")).pipe(fx.provide(file_system.layer)))  # pyright: ignore[reportArgumentType]
     assert isinstance(exit, fx.Failure)
     assert "ChildProcessSpawner" in exit.cause.pretty()
+
+
+@pytest.mark.parametrize(
+    ("shell", "line"),
+    [
+        (True, '"C:\\cmd.exe" /d /s /c "run.bat a b"'),
+        ("pwsh.cmd", '"pwsh.cmd" /d /s /c "run.bat a b"'),
+    ],
+)
+def test_a_windows_shell_command_line_is_passed_verbatim(
+    monkeypatch: pytest.MonkeyPatch, shell: bool | str, line: str
+) -> None:
+    """As Node's ``windowsVerbatimArguments``: given as a list, ``subprocess``
+    escapes the quotes around the script and ``cmd.exe`` runs nothing."""
+    monkeypatch.setattr(_live.os, "name", "nt")
+    monkeypatch.setenv("COMSPEC", "C:\\cmd.exe")
+    command = process.make("run.bat a b", shell=shell)
+    assert _live._argv(command, shell) == line  # pyright: ignore[reportPrivateUsage]
