@@ -12267,3 +12267,40 @@ def _chat_slack(effect: fx.Effect[int, ValueError, ChatService]) -> None:
 
 
 del _chat_slack
+
+
+def _chat_teams() -> None:
+    from pyfect.chat.chat_event import ChatEvent
+    from pyfect.chat.chat_handler import ChatHandler
+    from pyfect.chat.chat_test import MentionToken
+    from pyfect.chat.teams import teams_chat
+    from pyfect.crypto.digest import Digest
+    from pyfect.crypto.mac import Mac
+    from pyfect.crypto.signature import Signature
+    from pyfect.http.client import HttpClient
+    from pyfect.http.router import HttpRouter
+    from pyfect.redacted import make as redacted
+
+    # Interaction tokens sign with Mac and hash with Digest.
+    assert_type(
+        teams_chat.layer(app_id="a", tenant_id="t", credentials=redacted("secret")),
+        fx.Layer[teams_chat.TeamsChat, Never, HttpClient | ChatRegistry | Mac | Digest],
+    )
+    # The endpoint fetches the key set with the HttpClient and checks tokens with Signature.
+    assert_type(
+        teams_chat.layer_webhook(path="/api/messages"),
+        fx.Layer[
+            Never, Never, HttpRouter | teams_chat.TeamsChat | ChatHandler | HttpClient | Signature
+        ],
+    )
+    teams_chat.layer(app_id="a", tenant_id="t", credentials="secret")  # pyright: ignore[reportArgumentType]
+    assert_type(
+        teams_chat.TeamsChat().flat_map(lambda teams: teams.call("GET", "/v3/conversations")),
+        fx.Effect[JsonValue | None, ChatError, teams_chat.TeamsChat],
+    )
+    assert_type(teams_chat.normalize({}, app_id="a"), list[ChatEvent])
+    assert_type(teams_chat.parse_mention("<at>A</at>"), MentionToken | None)
+    assert_type(teams_chat.parts(teams_chat.thread("a:1")), teams_chat.Parts | None)
+
+
+del _chat_teams

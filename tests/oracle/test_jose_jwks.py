@@ -183,6 +183,40 @@ def test_caches_remote_key_sets_coalesces_concurrent_refreshes_and_refreshes_onc
 
 
 @testing.effect
+def test_filters_raw_keys_before_decoding_and_counts_max_keys_before_filtering():
+    """filters raw keys before decoding, and counts maxKeys before filtering"""
+    endorsed = {**EC, "kid": "endorsed", "endorsements": ["msteams"]}
+    document = {
+        "keys": [
+            endorsed,
+            {**EC, "kid": "other", "endorsements": ["skype"]},
+            {**EC, "kid": "bare"},
+            1,
+        ]
+    }
+
+    def keep(raw: Any) -> bool:
+        endorsements = raw.get("endorsements")
+        return isinstance(endorsements, list) and "msteams" in endorsements
+
+    client = serve(lambda request: fx.succeed(ok(request, document)))
+
+    @fx.gen
+    def program():
+        context = yield from jwks.layer_remote(URL, filter=keep).pipe(provide(client)).build()
+        keys = context.get(Jwks)
+        assert (yield from keys.resolve(Selection("ES256"))).kid == "endorsed"
+        assert_reason((yield from keys.resolve(Selection("ES256", "bare")).flip()), "KeyNotFound")
+
+        limited = (
+            yield from jwks.layer_remote(URL, filter=keep, max_keys=3).pipe(provide(client)).build()
+        ).get(Jwks)
+        assert_reason((yield from limited.resolve(Selection("ES256")).flip()), "KeySetUnavailable")
+
+    return fx.scoped(program).pipe(fx.provide(layer))
+
+
+@testing.effect
 def test_refetches_an_expired_key_set_at_once_when_time_to_live_is_shorter_than_cooldown():
     """refetches an expired key set at once when timeToLive is shorter than cooldown"""
     requests = 0

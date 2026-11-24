@@ -49,6 +49,7 @@
     "mcp",
     "chat",
     "chat-slack",
+    "chat-teams",
     "models",
     "graphql",
     "eventlog",

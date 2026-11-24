@@ -1,0 +1,82 @@
+---
+title: Microsoft Teams
+description: "Run a pyfect.chat bot on Microsoft Teams: the adapter, the messaging endpoint that checks Bot Framework tokens, and the capabilities still behind live checks."
+---
+
+`pyfect.chat.teams` is Effect's `@effect/chat-teams`, the Microsoft Teams adapter for
+[Chat](/docs/chat). `teams_chat.layer(app_id=..., tenant_id=..., credentials=...)`
+registers it for one bot in one tenant. It talks to the Bot Framework Connector over
+HTTP, with no Bot Framework SDK, and needs an `HttpClient` plus `Mac` and `Digest`
+(`pyfect.crypto.native`). A thread is `teams_chat.thread(conversation_id)`, the Bot
+Framework conversation id as it is; a channel thread is the channel's id followed by
+`;messageid={root}`. `credentials` is the app's client secret, or a function that gets a
+Connector token for a scope, for certificates or managed identities. The token is cached
+until five minutes before it expires.
+
+## The messaging endpoint
+
+`teams_chat.layer_webhook(path=...)` adds the bot's messaging endpoint to an
+`HttpRouter`. Every request is untrusted until its bearer token checks out: an RS256 JWT
+signed by a key from Bot Framework's key set that is endorsed for `msteams`, with
+Bot Framework's issuer, your app id as audience, an expiry and at most five minutes of
+clock skew. The token's `serviceurl` must equal the activity's `serviceUrl`, the
+channel must be `msteams` and the tenant yours. Anything else, including `alg: none` or
+an HMAC token, is answered 403. A body over `max_body_bytes` (1 MiB) is answered 413
+and one that is not a JSON object 400, both before the token is read.
+
+The key set is found from Bot Framework's OpenID metadata, fetched with redirects off
+and read to at most 64 KiB, and its `jwks_uri` must be on the metadata's own host. When
+it can't be read the endpoint answers 503, so Teams retries, and waits 30 seconds before
+fetching it again. Token checks use `Signature` (`pyfect.crypto.native.layer_signature`).
+
+Verified activities go through `teams_chat.normalize` to the `ChatHandler`. A message
+becomes `MessageCreated`, with Teams' `<at>…</at>` text and `mentions` pointing into it,
+and a reaction becomes `ReactionAdded` or `ReactionRemoved`. When the handler fails
+`NotAccepted`, or the request runs past `deadline` (10 seconds), the endpoint answers
+503.
+
+<CodeOutput>
+
+<include meta='title="teams_bot.py"'>../../snippets/chat/teams_bot.py</include>
+
+<include lang="text">../../snippets/chat/teams_bot.out</include>
+
+</CodeOutput>
+
+## What a post sends
+
+A post without buttons is Markdown in `text`, with every `<` and `&` sent as an entity,
+so no HTML and no `<at>` mention gets through, and every `$` outside code escaped, so
+Teams reads no math. Mentions notify nobody. A post with buttons is one Adaptive Card.
+`limits.message_length` is 44,288: half of the 100 KB Microsoft documents for an
+activity, less what the card's structure and mention entities can take, and `measure`
+prices each character by what escaping makes of it.
+
+## Capabilities behind live checks
+
+Buttons, modals, commands, `start_thread` and downloads are off until you turn each on
+with `Unverified(...)`: their checks against a live tenant have not passed yet. Off, a
+capability is missing from the descriptor and its op fails `Unsupported`.
+
+- `buttons` needs `interaction_keys`, HMAC keys with a `kid` each. A button carries a
+  token signed with the first key and bound to the app, the tenant and the
+  conversation. It is signed, not encrypted: anyone who sees the card can read the id
+  and value.
+- `modals` opens a dialog from the buttons named in `modal_buttons`. The dialog's token
+  also binds the user and expires after an hour, and a submit is checked against the
+  modal it signed.
+- `commands` takes a message only the bot can see as a command: its first word names
+  the command. Commands are answered privately or in public, and `follow_up` works for
+  24 hours.
+
+`fetch_message`, `history`, `opener`, replies, files and selects are not supported.
+
+## Testing
+
+`teams_chat.normalize` is a pure function from an activity to events, so captured
+activities test it directly; it checks no token. For the adapter's writes, provide an
+`HttpClient` that answers like the Connector, as the example above does. Effect's
+conformance suite runs against the adapter this way in pyfect's own tests
+(`chat_test.conformance`).
+
+Reference: [`teams_chat`](/docs/reference/chat/teams/teams_chat).

@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Never, NotRequired, TypedDict, cast, final
 from pyfect import schema as S
 from pyfect._catch import catch_tag
 from pyfect._core import Effect, Restore, uninterruptible_mask
+from pyfect._json_text import Json
 from pyfect._url import Url
 from pyfect.clock import current_time_millis
 from pyfect.context import Tag
@@ -35,8 +36,8 @@ from pyfect.exit import Exit, Failure, Success
 from pyfect.exit import fail as fail_exit
 from pyfect.http.client import HttpClient, HttpClientService
 from pyfect.http.error import HttpClientError
+from pyfect.jose._compact import JsonObject, invalid_argument, millis, parse_json_object
 from pyfect.jose._compact import fail as fail_reason
-from pyfect.jose._compact import invalid_argument, millis, parse_json_object
 from pyfect.jose.jose_error import AmbiguousKey, JoseError, KeyNotFound, KeySetUnavailable
 from pyfect.jose.jwk import (
     AsymmetricAlgorithm,
@@ -250,6 +251,24 @@ class _Options:
     timeout: float
     max_response_bytes: int
     max_keys: int
+    filter: Callable[[Mapping[str, object]], bool] | None
+
+
+def _filtered(
+    document: JsonObject | None,
+    raw_keys: object,
+    keep: Callable[[Mapping[str, object]], bool] | None,
+) -> JsonObject | None:
+    """``document`` with only the raw keys ``keep`` returns ``True`` for, before decoding;
+    a key that is not a JSON object is dropped without a call."""
+    if keep is None or document is None or not isinstance(raw_keys, list):
+        return document
+    kept: list[Json] = [
+        cast("Json", jwk)
+        for jwk in cast("list[object]", raw_keys)
+        if isinstance(jwk, dict) and keep(cast("Mapping[str, object]", jwk))
+    ]
+    return {**document, "keys": kept}
 
 
 class _Remote:
@@ -310,13 +329,15 @@ class _Remote:
                 return (yield from fail(_unavailable(description)))
             if response.url != options.href:
                 return (yield from fail(_unavailable("The key set response came from another URL")))
-            document = yield from response.stream.run_fold_effect(bytearray, self._append)
-            key_set = yield from S.decode_unknown_effect(KeySetSchema)(
-                parse_json_object(bytes(document))
-            ).map_error(lambda cause: _unavailable("The key set document is invalid", cause))
-            if len(key_set["keys"]) > options.max_keys:
+            body = yield from response.stream.run_fold_effect(bytearray, self._append)
+            document = parse_json_object(bytes(body))
+            raw_keys = None if document is None else document.get("keys")
+            if isinstance(raw_keys, list) and len(raw_keys) > options.max_keys:
                 description = f"The key set has more than {options.max_keys} keys"
                 return (yield from fail(_unavailable(description)))
+            key_set = yield from S.decode_unknown_effect(KeySetSchema)(
+                _filtered(document, raw_keys, options.filter)
+            ).map_error(lambda cause: _unavailable("The key set document is invalid", cause))
             now = yield from current_time_millis()
             return _Snapshot(_supported_keys(key_set), now + options.time_to_live)
 
@@ -411,6 +432,7 @@ def make_remote(
     timeout: DurationInput = "5 seconds",
     max_response_bytes: int = 131072,
     max_keys: int = 64,
+    filter: Callable[[Mapping[str, object]], bool] | None = None,
 ) -> Effect[JwksService, JoseError, HttpClient | Scope]:
     """A ``Jwks`` service over the key set at the HTTPS ``url``, fetched on
     first use. Fetches run in the current scope and stop when it closes.
@@ -419,7 +441,11 @@ def make_remote(
     minutes); ``cooldown`` the least time between refetches for unknown
     keys and retries after a failure (30 seconds); ``timeout`` bounds each
     fetch (5 seconds); ``max_response_bytes`` (128 KiB) and ``max_keys``
-    (64) bound the document."""
+    (64) bound the document. ``filter`` keeps only the raw keys it returns
+    ``True`` for, before the set is decoded: it sees each member of
+    ``keys`` as the endpoint sent it, with members such as a provider's own
+    ``endorsements`` that decoding drops. ``max_keys`` counts the set before
+    filtering, so a filter cannot raise the limit."""
 
     @gen
     def body():
@@ -432,6 +458,7 @@ def make_remote(
                 yield from _positive_integer("maxResponseBytes", max_response_bytes)
             ),
             max_keys=(yield from _positive_integer("maxKeys", max_keys)),
+            filter=filter,
         )
         client = (yield from HttpClient()).with_scope()
         scope = yield from Scope()
@@ -450,6 +477,7 @@ def layer_remote(
     timeout: DurationInput = "5 seconds",
     max_response_bytes: int = 131072,
     max_keys: int = 64,
+    filter: Callable[[Mapping[str, object]], bool] | None = None,
 ) -> Layer[Jwks, JoseError, HttpClient]:
     """``make_remote`` as a layer; fetches stop when the layer's scope closes."""
     return layer_effect(
@@ -461,6 +489,7 @@ def layer_remote(
             timeout=timeout,
             max_response_bytes=max_response_bytes,
             max_keys=max_keys,
+            filter=filter,
         ),
     )
 

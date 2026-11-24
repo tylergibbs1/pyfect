@@ -25,6 +25,7 @@ from layer_cases import (
     ai_otel,
     chat,
     chat_slack,
+    chat_teams,
     cluster,
     core,
     crypto,
@@ -55,6 +56,7 @@ _AREAS = (
     otlp,
     chat,
     chat_slack,
+    chat_teams,
 )
 CASES: dict[str, Case] = {name: case for area in _AREAS for name, case in area.CASES.items()}
 SKIPPED: dict[str, str] = {name: why for area in _AREAS for name, why in area.SKIPPED.items()}

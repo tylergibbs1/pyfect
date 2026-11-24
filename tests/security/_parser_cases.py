@@ -51,6 +51,8 @@ from pyfect.ai import tool as ai_tool
 from pyfect.ai.chat import from_json as chat_from_json
 from pyfect.chat import chat_interaction, chat_thread
 from pyfect.chat.slack import slack_chat
+from pyfect.chat.teams import _render as _teams_render
+from pyfect.chat.teams import teams_chat
 from pyfect.cluster import shard_id, snowflake
 from pyfect.crypto import key_format, password
 from pyfect.effect import Effect
@@ -603,6 +605,72 @@ def _slack_nested_lists(n: int) -> Work:
     for _ in range(n // 8):
         item = {"type": "rich_text_list", "elements": [item]}
     return _own_list(1, item)
+
+
+# ------------------------------------------------------------------------- Teams inbound
+
+# A Teams activity is peer input once its token checks out: any member of a
+# conversation the bot is in can send text (Teams allows about 28 KB) and the
+# activity's ``entities`` list. The adapter's own rendering runs on Markdown
+# that can hold such text.
+text(teams_chat.parse_mention)
+text(_teams_render.text_activity)
+text(_teams_render.blocks)
+
+
+def _teams_message(text: str, entities: Sequence[object] = ()) -> Work:
+    activity = {
+        "type": "message",
+        "id": "1800000000001",
+        "timestamp": "2026-11-15T10:00:00.000Z",
+        "serviceUrl": "https://smba.trafficmanager.net/teams",
+        "from": {"id": "29:peer", "aadObjectId": "peer"},
+        "conversation": {"id": "19:c@thread.tacv2", "conversationType": "channel"},
+        "text": text,
+        "entities": list(entities),
+    }
+    return lambda: teams_chat.normalize(activity, app_id="app")
+
+
+def _teams_mention(token: str) -> object:
+    return {"type": "mention", "text": token, "mentioned": {"id": "29:u", "name": "u"}}
+
+
+@case(teams_chat.normalize, "teams_chat.normalize: every mention found", size=4000)
+def _teams_found_mentions(n: int) -> Work:
+    return _teams_message("<at>u</at> " * (n // 11), [_teams_mention("<at>u</at>")] * (n // 11))
+
+
+@case(teams_chat.normalize, "teams_chat.normalize: distinct mentions not in the text", size=4000)
+def _teams_missing_mentions(n: int) -> Work:
+    missing = [_teams_mention(f"<at>{index}</at>") for index in range(n // 10)]
+    return _teams_message("x" * n, missing)
+
+
+@case(teams_chat.normalize, "teams_chat.normalize: astral text before each mention", size=4000)
+def _teams_astral_mentions(n: int) -> Work:
+    return _teams_message(
+        "\U0001f600<at>u</at>" * (n // 12), [_teams_mention("<at>u</at>")] * (n // 12)
+    )
+
+
+@case(
+    _teams_render.escape_dollars, "teams render: unmatched backtick runs of every length", size=4000
+)
+def _teams_backtick_runs(n: int) -> Work:
+    runs: list[str] = []
+    length = 1
+    while sum(map(len, runs)) < n:
+        runs.append("`" * length + "$")
+        length += 1
+    line = "".join(runs)
+    return lambda: _teams_render.escape_dollars(line)
+
+
+@case(_teams_render.blocks, "teams render: spaces before a pipe on every table line", size=4000)
+def _teams_delimiter_spaces(n: int) -> Work:
+    markdown = "| a |\n" + " " * n + "|"
+    return lambda: _teams_render.blocks(markdown)
 
 
 # ------------------------------------------------------------------------- streaming decoders
