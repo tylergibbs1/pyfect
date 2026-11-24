@@ -7,6 +7,7 @@ other processes and talk to it with messages.
   ``WorkerRunnerPlatform``.
 - ``worker_error``: ``WorkerError`` and its reasons.
 - ``transferable``: ``Collector`` and transferable schemas.
+- ``shared_memory``: typed arrays in shared memory, which workers write into in place.
 - ``python_worker`` / ``python_worker_runner``: the platform for Python
   threads (``ThreadWorker``) and child processes (``ProcessWorker``),
   Effect's ``NodeWorker`` / ``NodeWorkerRunner``.
@@ -19,6 +20,7 @@ other processes and talk to it with messages.
 from pyfect.workers import (
     python_worker,
     python_worker_runner,
+    shared_memory,
     transferable,
     worker,
     worker_error,
@@ -55,6 +57,7 @@ __all__ = [
     "make_platform",
     "python_worker",
     "python_worker_runner",
+    "shared_memory",
     "transferable",
     "worker",
     "worker_error",

@@ -26,6 +26,8 @@ CHECKED = {
     "schema/_derive.py": "test_schema_struct_cache_release.py",
     "sql/client/_transaction.py": "callbacks run with the transaction tag removed from context",
     "sql/statement/_compiler.py": "the (sql, params) tuple",
+    "workers/shared_memory.py": "the finalizer holds the view and segment, never the array "
+    "(test_workers_shared_memory.py: a dropped mapped copy is freed)",
     "workflow/durable_deferred.py": "a list of names",
 }
 

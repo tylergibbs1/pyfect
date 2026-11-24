@@ -197,6 +197,7 @@ import pyfect.testing
 import pyfect.tracer
 import pyfect.trie
 import pyfect.workers
+import pyfect.workers.shared_memory
 import pyfect.workers.worker
 import pyfect.workers.worker_error
 import pyfect.workflow
@@ -14549,27 +14550,57 @@ def v415_1_in(
     return x  # pyright: ignore[reportReturnType]
 
 
-# pyfect.workers.worker.ListenOptions
+# pyfect.workers.shared_memory.Kind
 
 
 def v416_0_out(
+    x: pyfect.workers.shared_memory.Kind[Never],
+) -> pyfect.workers.shared_memory.Kind[int | float]:
+    return x
+
+
+def v416_0_in(
+    x: pyfect.workers.shared_memory.Kind[int | float],
+) -> pyfect.workers.shared_memory.Kind[Never]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+# pyfect.workers.shared_memory.SharedArray
+
+
+def v417_0_out(
+    x: pyfect.workers.shared_memory.SharedArray[Never],
+) -> pyfect.workers.shared_memory.SharedArray[int | float]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v417_0_in(
+    x: pyfect.workers.shared_memory.SharedArray[int | float],
+) -> pyfect.workers.shared_memory.SharedArray[Never]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+# pyfect.workers.worker.ListenOptions
+
+
+def v418_0_out(
     x: pyfect.workers.worker.ListenOptions[_Sub],
 ) -> pyfect.workers.worker.ListenOptions[_Super]:
     return x
 
 
-def v416_0_in(
+def v418_0_in(
     x: pyfect.workers.worker.ListenOptions[_Super],
 ) -> pyfect.workers.worker.ListenOptions[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T416_0_co = TypeVar("T416_0_co", covariant=True)
+T418_0_co = TypeVar("T418_0_co", covariant=True)
 
 
-class Fields416(Protocol[T416_0_co]):
+class Fields418(Protocol[T418_0_co]):
     @property
-    def port(self) -> T416_0_co: ...
+    def port(self) -> T418_0_co: ...
     @property
     def emit(self) -> collections.abc.Callable[[pyfect.workers.worker.PlatformMessage], None]: ...
     @property
@@ -14578,134 +14609,134 @@ class Fields416(Protocol[T416_0_co]):
     ) -> pyfect.deferred.Deferred[None, pyfect.workers.worker_error.WorkerError]: ...
     @property
     def scope(self) -> pyfect.scope.CloseableScope: ...
-    def declared(self) -> tuple[T416_0_co]: ...
+    def declared(self) -> tuple[T418_0_co]: ...
 
 
 # pyfect.workers.worker.SetupOptions
 
 
-def v417_0_out(
+def v419_0_out(
     x: pyfect.workers.worker.SetupOptions[_Sub],
 ) -> pyfect.workers.worker.SetupOptions[_Super]:
     return x
 
 
-def v417_0_in(
+def v419_0_in(
     x: pyfect.workers.worker.SetupOptions[_Super],
 ) -> pyfect.workers.worker.SetupOptions[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T417_0_co = TypeVar("T417_0_co", covariant=True)
+T419_0_co = TypeVar("T419_0_co", covariant=True)
 
 
-class Fields417(Protocol[T417_0_co]):
+class Fields419(Protocol[T419_0_co]):
     @property
-    def worker(self) -> T417_0_co: ...
+    def worker(self) -> T419_0_co: ...
     @property
     def scope(self) -> pyfect.scope.CloseableScope: ...
-    def declared(self) -> tuple[T417_0_co]: ...
+    def declared(self) -> tuple[T419_0_co]: ...
 
 
 # pyfect.workflow.Activity
 
 
-def v418_0_out(
+def v420_0_out(
     x: pyfect.workflow.Activity[_Sub, Any, Any],
 ) -> pyfect.workflow.Activity[_Super, Any, Any]:
     return x
 
 
-def v418_0_in(
+def v420_0_in(
     x: pyfect.workflow.Activity[_Super, Any, Any],
 ) -> pyfect.workflow.Activity[_Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v418_1_out(
+def v420_1_out(
     x: pyfect.workflow.Activity[Any, _Sub, Any],
 ) -> pyfect.workflow.Activity[Any, _Super, Any]:
     return x
 
 
-def v418_1_in(
+def v420_1_in(
     x: pyfect.workflow.Activity[Any, _Super, Any],
 ) -> pyfect.workflow.Activity[Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v418_2_out(
+def v420_2_out(
     x: pyfect.workflow.Activity[Any, Any, _Sub],
 ) -> pyfect.workflow.Activity[Any, Any, _Super]:
     return x
 
 
-def v418_2_in(
+def v420_2_in(
     x: pyfect.workflow.Activity[Any, Any, _Super],
 ) -> pyfect.workflow.Activity[Any, Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T418_0_co = TypeVar("T418_0_co", covariant=True)
-T418_1_co = TypeVar("T418_1_co", covariant=True)
-T418_2_co = TypeVar("T418_2_co", covariant=True)
+T420_0_co = TypeVar("T420_0_co", covariant=True)
+T420_1_co = TypeVar("T420_1_co", covariant=True)
+T420_2_co = TypeVar("T420_2_co", covariant=True)
 
 
-class Fields418(Protocol[T418_0_co, T418_1_co, T418_2_co]):
-    def declared(self) -> tuple[T418_0_co, T418_1_co, T418_2_co]: ...
+class Fields420(Protocol[T420_0_co, T420_1_co, T420_2_co]):
+    def declared(self) -> tuple[T420_0_co, T420_1_co, T420_2_co]: ...
 
 
 # pyfect.workflow.Complete
 
 
-def v419_0_out(x: pyfect.workflow.Complete[_Sub, Any]) -> pyfect.workflow.Complete[_Super, Any]:
+def v421_0_out(x: pyfect.workflow.Complete[_Sub, Any]) -> pyfect.workflow.Complete[_Super, Any]:
     return x
 
 
-def v419_0_in(x: pyfect.workflow.Complete[_Super, Any]) -> pyfect.workflow.Complete[_Sub, Any]:
+def v421_0_in(x: pyfect.workflow.Complete[_Super, Any]) -> pyfect.workflow.Complete[_Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v419_1_out(x: pyfect.workflow.Complete[Any, _Sub]) -> pyfect.workflow.Complete[Any, _Super]:
+def v421_1_out(x: pyfect.workflow.Complete[Any, _Sub]) -> pyfect.workflow.Complete[Any, _Super]:
     return x
 
 
-def v419_1_in(x: pyfect.workflow.Complete[Any, _Super]) -> pyfect.workflow.Complete[Any, _Sub]:
+def v421_1_in(x: pyfect.workflow.Complete[Any, _Super]) -> pyfect.workflow.Complete[Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T419_0_co = TypeVar("T419_0_co", covariant=True)
-T419_1_co = TypeVar("T419_1_co", covariant=True)
+T421_0_co = TypeVar("T421_0_co", covariant=True)
+T421_1_co = TypeVar("T421_1_co", covariant=True)
 
 
-class Fields419(Protocol[T419_0_co, T419_1_co]):
+class Fields421(Protocol[T421_0_co, T421_1_co]):
     @property
-    def exit(self) -> pyfect.exit.Exit[T419_0_co, T419_1_co]: ...
-    def declared(self) -> tuple[T419_0_co, T419_1_co]: ...
+    def exit(self) -> pyfect.exit.Exit[T421_0_co, T421_1_co]: ...
+    def declared(self) -> tuple[T421_0_co, T421_1_co]: ...
 
 
 # pyfect.workflow.DurableDeferred
 
 
-def v420_0_out(
+def v422_0_out(
     x: pyfect.workflow.DurableDeferred[_Sub, Any],
 ) -> pyfect.workflow.DurableDeferred[_Super, Any]:
     return x
 
 
-def v420_0_in(
+def v422_0_in(
     x: pyfect.workflow.DurableDeferred[_Super, Any],
 ) -> pyfect.workflow.DurableDeferred[_Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v420_1_out(
+def v422_1_out(
     x: pyfect.workflow.DurableDeferred[Any, _Sub],
 ) -> pyfect.workflow.DurableDeferred[Any, _Super]:
     return x
 
 
-def v420_1_in(
+def v422_1_in(
     x: pyfect.workflow.DurableDeferred[Any, _Super],
 ) -> pyfect.workflow.DurableDeferred[Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
@@ -14714,37 +14745,37 @@ def v420_1_in(
 # pyfect.workflow.DurableQueue
 
 
-def v421_0_out(
+def v423_0_out(
     x: pyfect.workflow.DurableQueue[_Sub, Any, Any],
 ) -> pyfect.workflow.DurableQueue[_Super, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v421_0_in(
+def v423_0_in(
     x: pyfect.workflow.DurableQueue[_Super, Any, Any],
 ) -> pyfect.workflow.DurableQueue[_Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v421_1_out(
+def v423_1_out(
     x: pyfect.workflow.DurableQueue[Any, _Sub, Any],
 ) -> pyfect.workflow.DurableQueue[Any, _Super, Any]:
     return x
 
 
-def v421_1_in(
+def v423_1_in(
     x: pyfect.workflow.DurableQueue[Any, _Super, Any],
 ) -> pyfect.workflow.DurableQueue[Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v421_2_out(
+def v423_2_out(
     x: pyfect.workflow.DurableQueue[Any, Any, _Sub],
 ) -> pyfect.workflow.DurableQueue[Any, Any, _Super]:
     return x
 
 
-def v421_2_in(
+def v423_2_in(
     x: pyfect.workflow.DurableQueue[Any, Any, _Super],
 ) -> pyfect.workflow.DurableQueue[Any, Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
@@ -14753,37 +14784,37 @@ def v421_2_in(
 # pyfect.workflow.Workflow
 
 
-def v422_0_out(
+def v424_0_out(
     x: pyfect.workflow.Workflow[_Sub, Any, Any],
 ) -> pyfect.workflow.Workflow[_Super, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v422_0_in(
+def v424_0_in(
     x: pyfect.workflow.Workflow[_Super, Any, Any],
 ) -> pyfect.workflow.Workflow[_Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v422_1_out(
+def v424_1_out(
     x: pyfect.workflow.Workflow[Any, _Sub, Any],
 ) -> pyfect.workflow.Workflow[Any, _Super, Any]:
     return x
 
 
-def v422_1_in(
+def v424_1_in(
     x: pyfect.workflow.Workflow[Any, _Super, Any],
 ) -> pyfect.workflow.Workflow[Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v422_2_out(
+def v424_2_out(
     x: pyfect.workflow.Workflow[Any, Any, _Sub],
 ) -> pyfect.workflow.Workflow[Any, Any, _Super]:
     return x
 
 
-def v422_2_in(
+def v424_2_in(
     x: pyfect.workflow.Workflow[Any, Any, _Super],
 ) -> pyfect.workflow.Workflow[Any, Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
@@ -14792,13 +14823,13 @@ def v422_2_in(
 # pyfect.workflow.activity.Exactly
 
 
-def v423_0_out(
+def v425_0_out(
     x: pyfect.workflow.activity.Exactly[_Sub],
 ) -> pyfect.workflow.activity.Exactly[_Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v423_0_in(
+def v425_0_in(
     x: pyfect.workflow.activity.Exactly[_Super],
 ) -> pyfect.workflow.activity.Exactly[_Sub]:
     return x  # pyright: ignore[reportReturnType]
@@ -14807,57 +14838,57 @@ def v423_0_in(
 # pyfect.workflow.workflow_proxy.WorkflowEndpoints
 
 
-def v424_0_out(
+def v426_0_out(
     x: pyfect.workflow.workflow_proxy.WorkflowEndpoints[_Sub, Any, Any],
 ) -> pyfect.workflow.workflow_proxy.WorkflowEndpoints[_Super, Any, Any]:
     return x
 
 
-def v424_0_in(
+def v426_0_in(
     x: pyfect.workflow.workflow_proxy.WorkflowEndpoints[_Super, Any, Any],
 ) -> pyfect.workflow.workflow_proxy.WorkflowEndpoints[_Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v424_1_out(
+def v426_1_out(
     x: pyfect.workflow.workflow_proxy.WorkflowEndpoints[Any, _Sub, Any],
 ) -> pyfect.workflow.workflow_proxy.WorkflowEndpoints[Any, _Super, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v424_1_in(
+def v426_1_in(
     x: pyfect.workflow.workflow_proxy.WorkflowEndpoints[Any, _Super, Any],
 ) -> pyfect.workflow.workflow_proxy.WorkflowEndpoints[Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v424_2_out(
+def v426_2_out(
     x: pyfect.workflow.workflow_proxy.WorkflowEndpoints[Any, Any, _Sub],
 ) -> pyfect.workflow.workflow_proxy.WorkflowEndpoints[Any, Any, _Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v424_2_in(
+def v426_2_in(
     x: pyfect.workflow.workflow_proxy.WorkflowEndpoints[Any, Any, _Super],
 ) -> pyfect.workflow.workflow_proxy.WorkflowEndpoints[Any, Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T424_0_co = TypeVar("T424_0_co", covariant=True)
+T426_0_co = TypeVar("T426_0_co", covariant=True)
 
 
-class Fields424(Protocol[T424_0_co]):
+class Fields426(Protocol[T426_0_co]):
     @property
     def execute(
         self,
     ) -> pyfect.http_api.endpoint.HttpApiEndpoint[
-        None, None, T424_0_co, T424_0_co, None, Any, Any, Any
+        None, None, T426_0_co, T426_0_co, None, Any, Any, Any
     ]: ...
     @property
     def discard(
         self,
     ) -> pyfect.http_api.endpoint.HttpApiEndpoint[
-        None, None, T424_0_co, T424_0_co, None, str, str, typing.Never
+        None, None, T426_0_co, T426_0_co, None, str, str, typing.Never
     ]: ...
     @property
     def resume(
@@ -14872,60 +14903,60 @@ class Fields424(Protocol[T424_0_co]):
         None,
         typing.Never,
     ]: ...
-    def declared(self) -> tuple[T424_0_co]: ...
+    def declared(self) -> tuple[T426_0_co]: ...
 
 
 # pyfect.workflow.workflow_proxy.WorkflowRpcs
 
 
-def v425_0_out(
+def v427_0_out(
     x: pyfect.workflow.workflow_proxy.WorkflowRpcs[_Sub, Any, Any],
 ) -> pyfect.workflow.workflow_proxy.WorkflowRpcs[_Super, Any, Any]:
     return x
 
 
-def v425_0_in(
+def v427_0_in(
     x: pyfect.workflow.workflow_proxy.WorkflowRpcs[_Super, Any, Any],
 ) -> pyfect.workflow.workflow_proxy.WorkflowRpcs[_Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v425_1_out(
+def v427_1_out(
     x: pyfect.workflow.workflow_proxy.WorkflowRpcs[Any, _Sub, Any],
 ) -> pyfect.workflow.workflow_proxy.WorkflowRpcs[Any, _Super, Any]:
     return x
 
 
-def v425_1_in(
+def v427_1_in(
     x: pyfect.workflow.workflow_proxy.WorkflowRpcs[Any, _Super, Any],
 ) -> pyfect.workflow.workflow_proxy.WorkflowRpcs[Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v425_2_out(
+def v427_2_out(
     x: pyfect.workflow.workflow_proxy.WorkflowRpcs[Any, Any, _Sub],
 ) -> pyfect.workflow.workflow_proxy.WorkflowRpcs[Any, Any, _Super]:
     return x
 
 
-def v425_2_in(
+def v427_2_in(
     x: pyfect.workflow.workflow_proxy.WorkflowRpcs[Any, Any, _Super],
 ) -> pyfect.workflow.workflow_proxy.WorkflowRpcs[Any, Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T425_0_co = TypeVar("T425_0_co", covariant=True)
-T425_1_co = TypeVar("T425_1_co", covariant=True)
-T425_2_co = TypeVar("T425_2_co", covariant=True)
+T427_0_co = TypeVar("T427_0_co", covariant=True)
+T427_1_co = TypeVar("T427_1_co", covariant=True)
+T427_2_co = TypeVar("T427_2_co", covariant=True)
 
 
-class Fields425(Protocol[T425_0_co, T425_1_co, T425_2_co]):
+class Fields427(Protocol[T427_0_co, T427_1_co, T427_2_co]):
     @property
-    def execute(self) -> pyfect.rpc.Rpc[T425_0_co, T425_1_co, T425_2_co]: ...
+    def execute(self) -> pyfect.rpc.Rpc[T427_0_co, T427_1_co, T427_2_co]: ...
     @property
-    def discard(self) -> pyfect.rpc.Rpc[T425_0_co, str, typing.Never]: ...
+    def discard(self) -> pyfect.rpc.Rpc[T427_0_co, str, typing.Never]: ...
     @property
     def resume(
         self,
     ) -> pyfect.rpc.Rpc[pyfect.workflow.workflow_proxy.ResumePayload, None, typing.Never]: ...
-    def declared(self) -> tuple[T425_0_co, T425_1_co, T425_2_co]: ...
+    def declared(self) -> tuple[T427_0_co, T427_1_co, T427_2_co]: ...

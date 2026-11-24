@@ -79,6 +79,32 @@ and server collect the transferables of every request and reply, as Effect's do.
 
 </CodeOutput>
 
+## Shared memory
+
+A worker message is a copy, so a worker can't write into the parent's data through it.
+`pyfect.workers.shared_memory` is Effect's `SharedMemory`: `sm.make(sm.int32, n)` allocates
+a zero-filled `SharedArray` of `n` elements in a `multiprocessing.shared_memory` segment, and
+`sm.schema(sm.int32)` is the message field that carries it. A thread worker gets the array
+itself; a process worker's message carries the segment's name and the worker maps it, so
+both read the parent's memory and write into it. The kinds are `int8` to `uint64`,
+`float32` and `float64`, and an array indexes like a list.
+
+<CodeOutput>
+
+<include meta='title="shared_memory.py"'>../../snippets/workers/shared_memory.py</include>
+
+<include lang="text">../../snippets/workers/shared_memory.out</include>
+
+</CodeOutput>
+
+The scope that ran `make` frees the segment when it closes, whether it succeeded, failed or
+was interrupted, and a process that dies holding one has it freed by Python's resource
+tracker. A worker's mapping never frees it. Workers that write the same elements race, so
+give each its own range. `sm.schema` accepts only a shared array of its kind: a list or
+bytes would be copied and the worker's writes lost. Unlike Effect, where a child process
+gets a copy and the schema rejects it, pyfect shares the array with process workers too.
+
 Reference: [`pyfect.workers`](/docs/reference/workers),
 [`python_worker`](/docs/reference/workers/python_worker),
+[`shared_memory`](/docs/reference/workers/shared_memory),
 [`pyfect.rpc.worker`](/docs/reference/rpc/worker).

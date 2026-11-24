@@ -236,6 +236,7 @@ from pyfect.sql.statement import Literal as SqlLiteral
 from pyfect.stream import Stream
 from pyfect.trie import Trie
 from pyfect.workers import python_worker, python_worker_runner
+from pyfect.workers import shared_memory as sm
 from pyfect.workers.python_worker import ThreadWorker
 from pyfect.workers.worker import Spawner, Worker, WorkerPlatform
 from pyfect.workers.worker_error import WorkerError
@@ -12049,3 +12050,31 @@ def _password(stored: str) -> None:
 
 
 del _password
+
+
+def _shared_memory(unknown: object) -> None:
+    # The kind fixes the element type: int kinds hold ints, float kinds floats.
+    assert_type(sm.make(sm.int32, 4), fx.Effect[sm.SharedArray[int], sm.SharedMemoryError, Scope])
+    assert_type(
+        sm.make(sm.float64, 4), fx.Effect[sm.SharedArray[float], sm.SharedMemoryError, Scope]
+    )
+    assert_type(sm.schema(sm.uint8), S.Bottom[sm.SharedArray[int]])
+
+    @fx.gen
+    def program():
+        ints = yield from sm.make(sm.int64, 2)
+        floats = yield from sm.make(sm.float32, 2)
+        assert_type(ints[0], int)
+        assert_type(ints[0:1], list[int])
+        assert_type(floats[0], float)
+        floats[0] = 1  # an int is a float
+        ints[0] = 1.5  # pyright: ignore[reportArgumentType, reportCallIssue]
+        return ints.tolist()
+
+    assert_type(program, fx.Effect[list[int], sm.SharedMemoryError, Scope])
+    if sm.is_shared(unknown):
+        assert_type(unknown, sm.SharedArray[Any])
+    sm.make(sm.int32, 2.0)  # pyright: ignore[reportArgumentType]
+
+
+del _shared_memory

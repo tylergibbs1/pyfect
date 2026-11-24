@@ -440,6 +440,8 @@ EXPECTED: dict[str, tuple[Variance, ...]] = {
     "pyfect.workers.WorkerRunner": ("in", "out"),
     "pyfect.workers.worker.ListenOptions": ("out",),
     "pyfect.workers.worker.SetupOptions": ("out",),
+    "pyfect.workers.shared_memory.Kind": ("out",),
+    "pyfect.workers.shared_memory.SharedArray": ("inv",),
     "pyfect.workflow.Activity": ("out", "out", "out"),
     "pyfect.workflow.Complete": ("out", "out"),
     "pyfect.workflow.DurableDeferred": ("out", "out"),
