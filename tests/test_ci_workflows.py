@@ -63,6 +63,13 @@ def test_one_pyright_run_checks_every_python():
     assert synced and synced.group(1) == version.group(1), "the types job syncs pythonVersion"
 
 
+def test_ci_runs_the_batch_file_tests_on_windows():
+    """``_skips.ALLOWED`` lets the Windows-only tests skip elsewhere because this job runs them."""
+    job = _job("ci.yml", "windows")
+    assert "runs-on: windows-latest" in job
+    assert "tests/test_process_batch_files.py" in job
+
+
 def test_the_shards_run_every_test_once_and_the_check_says_so():
     """The tests run split across runners; `check (3.x)`, the name branch protection requires,
     passes only if every job passed and the shards' tests are a full collection's."""
@@ -85,7 +92,7 @@ def test_the_shards_run_every_test_once_and_the_check_says_so():
     assert "name: manifest-${{ matrix.python }}-full" in collect
 
     check = _job("ci.yml", "check")
-    jobs = ["lint", "types", "collect", "images", "test"]
+    jobs = ["lint", "types", "collect", "images", "test", "windows"]
     assert f"needs: [{', '.join(jobs)}]" in check
     # A required check that is skipped counts as passed, so it must run when a job failed.
     assert "if: always()" in check

@@ -47,6 +47,11 @@ ALLOWED = (
         lambda: sys.platform != "linux",
     ),
     Allowed(
+        re.compile(r"^on Windows only: "),
+        "ci.yml's windows job runs it",
+        lambda: sys.platform != "win32",
+    ),
+    Allowed(
         re.compile(r"^fumadocs-python is not installed"),
         "runs in docs.yml's site job, which installs website/",
     ),

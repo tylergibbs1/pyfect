@@ -14,6 +14,7 @@ its parent closing the socket as being closed, so an orphaned worker ends.
 from __future__ import annotations
 
 import atexit
+import errno
 import os
 import socket
 import subprocess
@@ -21,6 +22,7 @@ import sys
 import threading
 from collections.abc import Mapping, Sequence
 
+from pyfect import _batch_files
 from pyfect._owned_fd import OwnedFd
 from pyfect.workers._frames import FrameWriter, encode, read_frames
 from pyfect.workers._port import (
@@ -93,13 +95,20 @@ class ProcessWorker(WorkerHandle):
         self.env = env
 
     def start(self) -> WorkerPort:
+        program = self.executable or sys.executable
+        if _batch_files.refuses_batch_file(
+            program, shell=False, platform=_batch_files.current_platform()
+        ):
+            raise OSError(
+                errno.EINVAL, "spawn EINVAL: a worker cannot run a .bat or .cmd file", program
+            )
         parent, child = socket.socketpair()
         try:
             env = dict(os.environ if self.env is None else self.env)
             env[CHANNEL_ENV] = str(child.fileno())
             env[PARENT_ENV] = str(os.getpid())
             popen = subprocess.Popen(
-                [self.executable or sys.executable, *self.args],
+                [program, *self.args],
                 pass_fds=(child.fileno(),),
                 env=env,
                 cwd=self.cwd,
