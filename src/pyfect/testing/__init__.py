@@ -25,7 +25,8 @@ take no real time::
 - ``with_live``, ``TestClock.layer()``: the live clock inside a test, and a
   test clock inside any program.
 - ``TestConsole``: a console recording every call; ``effect`` tests run
-  with a fresh one, read back with ``log_lines`` / ``error_lines``.
+  with a fresh one, read back with ``log_lines``, ``error_lines``,
+  ``warn_lines``, ``info_lines``, ``debug_lines`` and ``trace_lines``.
 - ``assert_exit_success`` and friends: failures print ``Cause.pretty()``;
   ``assert_exit_fail(exit, error)`` compares a failure by its error alone.
 - ``SchemaAsserts``: decode, encode and make assertions for a schema.
@@ -63,9 +64,13 @@ from pyfect.testing._clock import (
 from pyfect.testing._console import (
     Entry,
     TestConsole,
+    debug_lines,
     error_lines,
+    info_lines,
     log_lines,
     test_console,
+    trace_lines,
+    warn_lines,
 )
 from pyfect.testing._decorators import TestBody, TestDecorator, effect, live
 from pyfect.testing._flaky import flaky
@@ -103,11 +108,13 @@ __all__ = [
     "assert_exit_success",
     "assert_failure",
     "assert_success",
+    "debug_lines",
     "effect",
     "effect_fixture",
     "effect_prop",
     "error_lines",
     "flaky",
+    "info_lines",
     "layer_fixture",
     "leave_out_host_freezes",
     "live",
@@ -122,6 +129,8 @@ __all__ = [
     "test_clock",
     "test_clock_with",
     "test_console",
+    "trace_lines",
+    "warn_lines",
     "with_live",
 ]
 

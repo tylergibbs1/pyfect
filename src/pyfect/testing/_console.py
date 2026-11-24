@@ -79,6 +79,26 @@ class TestConsole:
         """Every argument given to ``error``, in order."""
         return sync(lambda: self._lines("error"))
 
+    @property
+    def warn_lines(self) -> Effect[list[object]]:
+        """Every argument given to ``warn``, in order."""
+        return sync(lambda: self._lines("warn"))
+
+    @property
+    def info_lines(self) -> Effect[list[object]]:
+        """Every argument given to ``info``, in order."""
+        return sync(lambda: self._lines("info"))
+
+    @property
+    def debug_lines(self) -> Effect[list[object]]:
+        """Every argument given to ``debug``, in order."""
+        return sync(lambda: self._lines("debug"))
+
+    @property
+    def trace_lines(self) -> Effect[list[object]]:
+        """Every argument given to ``trace``, in order."""
+        return sync(lambda: self._lines("trace"))
+
     def _lines(self, method: Method) -> list[object]:
         return [p for e in self._entries if e.method == method for p in e.parameters]
 
@@ -162,3 +182,15 @@ log_lines: Effect[list[object]] = test_console().flat_map(lambda c: c.log_lines)
 
 error_lines: Effect[list[object]] = test_console().flat_map(lambda c: c.error_lines)
 """The current ``TestConsole``'s ``error_lines``."""
+
+warn_lines: Effect[list[object]] = test_console().flat_map(lambda c: c.warn_lines)
+"""The current ``TestConsole``'s ``warn_lines``."""
+
+info_lines: Effect[list[object]] = test_console().flat_map(lambda c: c.info_lines)
+"""The current ``TestConsole``'s ``info_lines``."""
+
+debug_lines: Effect[list[object]] = test_console().flat_map(lambda c: c.debug_lines)
+"""The current ``TestConsole``'s ``debug_lines``."""
+
+trace_lines: Effect[list[object]] = test_console().flat_map(lambda c: c.trace_lines)
+"""The current ``TestConsole``'s ``trace_lines``."""

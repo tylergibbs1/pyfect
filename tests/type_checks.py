@@ -2728,6 +2728,11 @@ def check_console(eff: fx.Effect[int, NotFound, Primary]) -> None:
     assert_type(fx.console.with_time(eff, "t"), fx.Effect[int, NotFound, Primary])
     assert_type(fx.console.console_with(fx.succeed), fx.Effect[fx.console.Console])
     assert_type(fx.testing.log_lines, fx.Effect[list[object]])
+    assert_type(fx.testing.warn_lines, fx.Effect[list[object]])
+    assert_type(fx.testing.info_lines, fx.Effect[list[object]])
+    assert_type(fx.testing.debug_lines, fx.Effect[list[object]])
+    assert_type(fx.testing.trace_lines, fx.Effect[list[object]])
+    assert_type(fx.testing.TestConsole().warn_lines, fx.Effect[list[object]])
     assert_type(fx.testing.test_console(), fx.Effect[fx.testing.TestConsole])
     assert_type(fx.testing.TestConsole.layer(), layer.Layer[Never])
     # A TestConsole is a Console; a partial console is not.
