@@ -8,13 +8,12 @@ restored."""
 
 from __future__ import annotations
 
-import itertools
-import os
 from collections.abc import Callable, Generator
 from dataclasses import replace
 from typing import Any
 
 import pytest
+from _db_names import fresh_name
 
 import pyfect as fx
 from pyfect import reactivity, testing
@@ -26,7 +25,6 @@ from pyfect.duration import millis
 from pyfect.exit import Success
 from pyfect.sql.client import SqlClient, SqlClientService
 
-_prefixes = itertools.count()
 address1 = runner_address.make("localhost", 1234)
 address2 = runner_address.make("localhost", 1235)
 shard1 = shard_id.make("default", 1)
@@ -36,7 +34,7 @@ type ClientMaker = Callable[[], fx.Effect[SqlClientService, Any, fx.Scope]]
 
 
 def _prefix() -> str:
-    return f"sessions_{os.getpid()}_{next(_prefixes)}"
+    return fresh_name("sessions")
 
 
 def _pg(server: Any) -> fx.Effect[SqlClientService, Any, fx.Scope]:

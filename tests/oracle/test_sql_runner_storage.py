@@ -27,8 +27,6 @@ Omitted:
 
 from __future__ import annotations
 
-import itertools
-import os
 import re
 import sqlite3
 from collections.abc import Callable, Generator
@@ -37,6 +35,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from _db_names import fresh_name
 
 import pyfect as fx
 from pyfect import reactivity, testing
@@ -60,13 +59,12 @@ from pyfect.sql.connection import Connection, SqlError
 
 from ._sqlite import make_client
 
-_prefixes = itertools.count()
 runner_address1 = runner_address.make("localhost", 1234)
 runner_address2 = runner_address.make("localhost", 1235)
 
 
 def _prefix(name: str) -> str:
-    return f"{name}_{os.getpid()}_{next(_prefixes)}"
+    return fresh_name(name)
 
 
 type ClientMaker = Callable[[], fx.Effect[SqlClientService, Any, fx.Scope]]

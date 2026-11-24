@@ -7,12 +7,12 @@ Each test's docstring is the Effect test title. The server is shared by
 the session, so each test uses its own tables, as Effect's do.
 """
 
-import itertools
 import os
 from collections.abc import Callable, Generator
 from typing import Any
 
 import pytest
+from _db_names import fresh_name
 
 pytest.importorskip("psycopg")
 
@@ -29,8 +29,6 @@ from pyfect.sql.client import SqlClient, SqlClientService
 
 from ._postgres import PgServer
 
-_namespaces = itertools.count()
-
 
 def _client(server: PgServer, **options: Any):
     return pg.make(pg.PgPoolConfig(url=server.url, **options))
@@ -42,7 +40,7 @@ def _open(client: SqlClientService, **options: Any) -> fx.Effect[J.EventJournalS
 
 def _tables(prefix: str) -> dict[str, str]:
     # Unique per run of the session's server.
-    n = f"{prefix}_{os.getpid()}_{next(_namespaces)}"
+    n = fresh_name(prefix)
     return {"entry_table": f"{n}_entries", "remotes_table": f"{n}_remotes"}
 
 

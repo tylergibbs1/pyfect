@@ -8,13 +8,12 @@ tables 0.6.5 had; ``as_067()`` creates the tables 0.6.6 and 0.6.7 had, and
 from __future__ import annotations
 
 import hashlib
-import itertools
-import os
 from collections.abc import Callable, Generator, Sequence
 from pathlib import Path
 from typing import Any
 
 import pytest
+from _db_names import fresh_name, owns_table
 
 import pyfect as fx
 from pyfect import logger
@@ -42,8 +41,6 @@ OWNER: Pair = ("Kq9/xT2+bQ==", "main")
 OTHER: Pair = ("Kq9", "xT2+bQ==/main")
 """Another split of the owner's legacy key ``Kq9/xT2+bQ==/main``."""
 
-_namespaces = itertools.count()
-
 
 def scope_hash(key: str) -> str:
     return hashlib.sha256(key.encode()).hexdigest()[:16]
@@ -54,7 +51,7 @@ class LegacyDb:
 
     def __init__(self, client: Callable[[], fx.Layer[SqlClient, Any]]) -> None:
         self.client = client
-        namespace = f"legacy_{os.getpid()}_{next(_namespaces)}"
+        self.namespace = namespace = fresh_name("legacy")
         self.prefix = f"{namespace}_events"
         self.remote_id_table = f"{namespace}_remote_id"
         self.migration: SqlServer.LegacyMigration = "never"
@@ -143,7 +140,7 @@ class LegacyDb:
                 or_else=lambda: sql("SELECT name FROM sqlite_master WHERE type = 'table'"),
             )
             names = {str(row["name"]) for row in rows}
-            return {n for n in names if n.lower().startswith(self.prefix.split("_events")[0])}
+            return {n for n in names if owns_table(self.namespace, n)}
 
         found = self.tool(fx.gen(body))
         assert isinstance(found, fx.Success)

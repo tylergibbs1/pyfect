@@ -32,7 +32,6 @@ from __future__ import annotations
 import copy
 import itertools
 import json
-import os
 import sqlite3
 import threading
 from collections.abc import Callable, Sequence
@@ -41,6 +40,7 @@ from pathlib import Path
 from typing import Any, Literal, Never, cast
 
 import pytest
+from _db_names import fresh_name
 
 import pyfect as fx
 from pyfect import duration, reactivity
@@ -118,8 +118,6 @@ WITHIN_TIMEOUT = 4
 """Seconds for all the waits of a test on the default 5 s timeout, leaving
 room for teardown, so a hung wait fails first, with the cluster's state
 (``Cluster.deadline``; pyfect-only)."""
-
-_clusters = itertools.count()
 
 
 @dataclass(eq=False)
@@ -1292,7 +1290,7 @@ def make(
     @fx.gen
     def make_():
         parent = yield from Scope()
-        prefix = f"cluster_{os.getpid()}_{next(_clusters)}"
+        prefix = fresh_name("cluster")
         settings = replace(
             DEFAULTS,
             **{**CLUSTER_CONFIG, **(config or {})},

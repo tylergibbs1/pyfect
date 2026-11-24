@@ -9,14 +9,13 @@ at a time; here each test builds its own storage under its own
 ``TestClock`` (SQL storages on their own tables).
 """
 
-import itertools
-import os
 import uuid
 from collections.abc import Callable, Generator, Sequence
 from datetime import timedelta
 from typing import Any
 
 import pytest
+from _db_names import fresh_name
 
 import pyfect as fx
 from pyfect import testing
@@ -40,14 +39,12 @@ def millis(n: int) -> timedelta:
     return timedelta(milliseconds=n)
 
 
-_namespaces = itertools.count()
-
 type MakeStorage = Callable[[Server.CompactionOptions | None], fx.Layer[Server.Storage, Any]]
 
 
 def _sql(client: Callable[[], fx.Layer[SqlClient, Any]]) -> MakeStorage:
     def make(options: Server.CompactionOptions | None) -> fx.Layer[Server.Storage, Any]:
-        namespace = f"compaction_{os.getpid()}_{next(_namespaces)}"
+        namespace = fresh_name("compaction")
         return (
             SqlServer.layer_storage(
                 entry_table_prefix=f"{namespace}_events",
