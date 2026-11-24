@@ -9793,6 +9793,19 @@ def cluster_storage_types() -> None:
         fx.Effect[int, PersistenceError],
     )
     message_storage.NOOP.delete_processed("t", 0, 1)  # pyright: ignore[reportCallIssue]
+
+    # Every storage implements delete_processed, as Effect 4.1.4 requires of MessageStorage.
+    def _custom(encoded: message_storage.EncodedStorage, base: message_storage.StorageBase) -> None:
+        assert_type(
+            encoded.delete_processed(entity_type="t", completed_before=0, limit=1),
+            fx.Effect[int, PersistenceError],
+        )
+        assert_type(
+            base.delete_processed(entity_type="t", completed_before=0, limit=1),
+            fx.Effect[int, PersistenceError],
+        )
+
+    del _custom
     assert_type(
         sql_runner_storage.make(prefix="p"),
         fx.Effect[RunnerStorageService, Never, SqlClient | ShardingConfig | fx.Scope],

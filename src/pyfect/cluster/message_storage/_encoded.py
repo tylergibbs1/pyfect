@@ -30,12 +30,10 @@ from pyfect.cluster.message import (
     serialize_envelope,
 )
 from pyfect.cluster.message_storage._service import (
-    DeletesProcessed,
     MessageStorageService,
     SaveDuplicate,
     SaveResult,
     SaveSuccess,
-    delete_processed_unsupported,
     make,
 )
 from pyfect.cluster.reply import Reply, ReplyWithContext, WithExit
@@ -65,9 +63,7 @@ class EncodedMessage:
 
 class EncodedStorage(Protocol):
     """What a message storage driver implements (Effect's
-    ``MessageStorage.Encoded``). Lists it is given are never empty. A driver
-    also implements ``DeletesProcessed`` (Effect's ``deleteProcessed``) to
-    support ``message_retention``."""
+    ``MessageStorage.Encoded``). Lists it is given are never empty."""
 
     def save_envelope(
         self, envelope: EnvelopeEncoded, primary_key: str | None, deliver_at: int | None, /
@@ -116,6 +112,18 @@ class EncodedStorage(Protocol):
     def clear_address(self, address: EntityAddress, /) -> Effect[None, PersistenceError]: ...
 
     def reset_shards(self, shard_ids: Sequence[str], /) -> Effect[None, PersistenceError]: ...
+
+    def delete_processed(
+        self, *, entity_type: str, completed_before: float, limit: int
+    ) -> Effect[int, PersistenceError]:
+        """Deletes up to ``limit`` requests of ``entity_type`` whose
+        ``WithExit`` reply id has a timestamp before ``completed_before``
+        (Unix milliseconds), with every message and reply of theirs, and
+        gives how many it deleted (Effect's ``deleteProcessed``). Requests
+        without one (running, or reset by ``clear_replies``) are kept.
+        Selecting and deleting is atomic; requests locked by another
+        transaction may be left for a later call."""
+        ...
 
     def with_transaction[A, E, R](self, effect: Effect[A, E, R], /) -> Effect[A, E, R]: ...
 
@@ -277,10 +285,7 @@ class _EncodedBase:
     def delete_processed(
         self, *, entity_type: str, completed_before: float, limit: int
     ) -> Effect[int, PersistenceError]:
-        encoded = self._encoded
-        if not isinstance(encoded, DeletesProcessed):
-            return delete_processed_unsupported(encoded)
-        return encoded.delete_processed(
+        return self._encoded.delete_processed(
             entity_type=entity_type, completed_before=completed_before, limit=limit
         )
 

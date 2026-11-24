@@ -20,7 +20,6 @@ from pyfect.cluster import entity_address, shard_id, snowflake
 from pyfect.cluster.cluster_error import (
     EntityNotAssignedToRunner,
     MalformedMessage,
-    PersistenceError,
 )
 from pyfect.cluster.cluster_schema import Abandon
 from pyfect.cluster.entity_id import EntityId
@@ -33,7 +32,6 @@ from pyfect.cluster.message_storage import (
     SaveDuplicate,
     SaveSuccess,
     layer_memory,
-    make_encoded,
     memory_driver_layer,
 )
 from pyfect.cluster.reply import Reply, ReplyWithContext, WithExit
@@ -651,28 +649,3 @@ def test_with_transaction_drops_exit_notifications_of_a_failed_transaction():
         assert seen == []
 
     yield from fx.gen(body).pipe(fx.provide(memory))
-
-
-@testing.effect
-def test_delete_processed_fails_on_a_storage_without_it():
-    """pyfect: a custom storage written before ``delete_processed`` existed
-    fails it with a ``PersistenceError``, so ``message_retention`` logs it."""
-
-    class Legacy:
-        def __getattr__(self, name: str) -> Any:
-            if name == "delete_processed":
-                raise AttributeError(name)
-
-            def anything(*_args: object, **_kwargs: object) -> fx.Effect[None]:
-                return fx.void
-
-            return anything
-
-    def body():
-        storage = yield from make_encoded(Legacy())  # pyright: ignore[reportArgumentType]
-        error = yield from storage.delete_processed(
-            entity_type="test", completed_before=CUTOFF, limit=1
-        ).flip()
-        assert isinstance(error, PersistenceError)
-
-    yield from fx.gen(body).pipe(fx.provide(snowflake.layer_generator))

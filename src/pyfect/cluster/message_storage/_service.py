@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Never, Protocol, runtime_checkable
+from typing import Any, Never, Protocol
 
 from pyfect._concurrency import for_each
 from pyfect._core import Effect
@@ -125,36 +125,19 @@ class StorageBase(Protocol):
 
     def clear_address(self, address: EntityAddress, /) -> Effect[None, PersistenceError]: ...
 
-    def with_transaction[A, E, R](self, effect: Effect[A, E, R], /) -> Effect[A, E, R]: ...
-
-
-@runtime_checkable
-class DeletesProcessed(Protocol):
-    """A storage (``StorageBase`` or ``EncodedStorage``) that can forget
-    completed requests. Every storage pyfect ships is one; a storage written
-    before ``delete_processed`` existed is not, and fails it with a
-    ``PersistenceError``."""
-
     def delete_processed(
         self, *, entity_type: str, completed_before: float, limit: int
     ) -> Effect[int, PersistenceError]:
         """Deletes up to ``limit`` requests of ``entity_type`` whose
         ``WithExit`` reply id has a timestamp before ``completed_before``
         (Unix milliseconds), with every message and reply of theirs, and
-        gives how many it deleted. Requests without one (running, or reset
-        by ``clear_replies``) are kept. Selecting and deleting is atomic;
-        requests locked by another transaction may be left for a later
-        call."""
+        gives how many it deleted (Effect's ``deleteProcessed``). Requests
+        without one (running, or reset by ``clear_replies``) are kept.
+        Selecting and deleting is atomic; requests locked by another
+        transaction may be left for a later call."""
         ...
 
-
-def delete_processed_unsupported(storage: object) -> Effect[Never, PersistenceError]:
-    return fail(
-        PersistenceError(
-            cause=f"{type(storage).__name__} does not implement delete_processed, "
-            "so it cannot forget completed requests"
-        )
-    )
+    def with_transaction[A, E, R](self, effect: Effect[A, E, R], /) -> Effect[A, E, R]: ...
 
 
 type Notification = Effect[None, PersistenceError | MalformedMessage]
@@ -334,10 +317,7 @@ class MessageStorageService:
         Inside a caller's transaction on MySQL before 8.0.20 or MariaDB,
         SQL storage needs that transaction at READ COMMITTED, or the delete
         can deadlock with a concurrent reply."""
-        base = self.base
-        if not isinstance(base, DeletesProcessed):
-            return delete_processed_unsupported(base)
-        return base.delete_processed(
+        return self.base.delete_processed(
             entity_type=entity_type, completed_before=completed_before, limit=limit
         )
 
@@ -471,7 +451,6 @@ class MessageStorage(Tag[MessageStorageService], key="effect/cluster/MessageStor
 
 __all__ = [
     "SAVE_SUCCESS",
-    "DeletesProcessed",
     "MessageStorage",
     "MessageStorageService",
     "Notification",
