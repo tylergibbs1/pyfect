@@ -21,11 +21,8 @@ privately unless told otherwise, so a Telegram bot passes `visibility="public"`.
 
 That escaping keeps your own Markdown safe to send, but text a user wrote still forms syntax
 inside it: a display name of `[x](https://evil.example)` is a live link. Put such text
-through `telegram_chat.escape_markdown` first, and it shows as typed:
-
-```python
-post = f"Deploy approved by {telegram_chat.escape_markdown(user.name)}"
-```
+through `telegram_chat.escape_markdown` first, as in
+`f"Approved by {telegram_chat.escape_markdown(name)}"`, and it shows as typed.
 
 ## The webhook
 
