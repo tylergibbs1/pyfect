@@ -149,7 +149,7 @@ def handle_request(
 
         # Detached, so a refusal reported after the answer still runs.
         fiber = yield from options.interaction(payload, options.deadline, send).fork_daemon()
-        yield from answered.wait().as_void().race(fiber.await_exit().as_void())
+        yield from answered.wait().as_void().race_first(fiber.await_exit().as_void())
         # The entry may end in the same step it answered: the deferred decides.
         polled = yield from answered.poll()
         if polled is None:

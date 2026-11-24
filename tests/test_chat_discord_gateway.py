@@ -29,6 +29,8 @@ from pyfect.chat.discord.discord_gateway import (
 from pyfect.queue import Queue
 from pyfect.redacted import make as redacted
 from pyfect.scope import Scope
+from pyfect.socket import WebSocketClientOptions, WebSocketConstructor
+from pyfect.socket._web_socket import Listener, WebSocketEvent, WebSocketEventType
 
 type Gen[A] = Generator[Effect[Any, Any, Any], Any, A]
 
@@ -265,3 +267,62 @@ def test_a_handler_defect_is_logged_and_the_event_dropped_so_the_events_after_it
         assert gateway.reconnects() == 0
 
     return fx.scoped(program)
+
+
+class _FakeSocket:
+    """An open WebSocket the test drives: ``dispatch`` delivers an event."""
+
+    def __init__(self) -> None:
+        self.ready_state = 1
+        self.listeners: dict[WebSocketEventType, list[Listener]] = {}
+        self.sent: list[bytes | str] = []
+
+    def add_event_listener(
+        self, type: WebSocketEventType, listener: Listener, *, once: bool = False
+    ) -> None:
+        self.listeners.setdefault(type, []).append(listener)
+
+    def remove_event_listener(self, type: WebSocketEventType, listener: Listener) -> None:
+        self.listeners[type] = [
+            entry for entry in self.listeners.get(type, []) if entry is not listener
+        ]
+
+    def dispatch(self, event: WebSocketEvent) -> None:
+        assert event.type is not None
+        for listener in list(self.listeners.get(event.type, [])):
+            listener(event)
+
+    def close(self, code: int | None = None, reason: str | None = None) -> None:
+        self.ready_state = 3
+
+    def send(self, data: bytes | str) -> None:
+        self.sent.append(data)
+
+
+@testing.effect
+def test_the_websocket_reconnects_when_discord_closes_the_connection_without_waiting_for_a_write():
+    sockets: list[_FakeSocket] = []
+
+    def construct(_url: str, _options: WebSocketClientOptions) -> _FakeSocket:
+        sockets.append(_FakeSocket())
+        return sockets[-1]
+
+    @fx.gen
+    def program() -> Gen[None]:
+        ws = yield from DiscordWs()
+        conn = yield from ws.connect("wss://gateway.example/?v=10&encoding=json", fx.void)
+        yield from until(lambda: len(sockets) == 1 and "message" in sockets[0].listeners)
+        sockets[0].dispatch(WebSocketEvent(type="message", data='{"op": 11}'))
+        assert (yield from conn.take) == {"op": 11}
+        # Discord moves the session: nothing is written, the read side alone sees the close.
+        sockets[0].dispatch(WebSocketEvent(type="close", code=4000, reason="reconnect"))
+        yield from testing.adjust("1 second")
+        yield from until(lambda: len(sockets) == 2)
+
+    return fx.scoped(program).pipe(
+        fx.provide(
+            discord_gateway.layer_ws.pipe(
+                layer.provide(layer.succeed(WebSocketConstructor, construct))
+            )
+        )
+    )

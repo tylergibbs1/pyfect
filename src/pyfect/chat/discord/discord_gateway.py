@@ -232,7 +232,7 @@ class _SocketWs:
 
                 reading = pull.flat_map(received).forever()
                 writing = outbound.take().flat_map(send).forever()
-                yield from reading.race(writing)
+                yield from reading.race_first(writing)
 
             def retry(error: object) -> Effect[None]:
                 if isinstance(error, _Dropped):
