@@ -17,8 +17,6 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any
-from warnings import deprecated
 
 from pyfect._extras import missing_extra
 
@@ -34,10 +32,8 @@ from pyfect._core import Effect
 from pyfect._js import text_encode, to_well_formed
 from pyfect.duration import Input as DurationInput
 from pyfect.layer import Layer
-from pyfect.layer import effect as layer_effect
 from pyfect.layer import provide as layer_provide
 from pyfect.layer import succeed as layer_succeed
-from pyfect.scope import Scope
 from pyfect.socket._event_target import EventTarget, ListenerEntry
 from pyfect.socket._loop import call_soon, get_loop
 from pyfect.socket._socket import Socket
@@ -60,9 +56,7 @@ from pyfect.socket._web_socket import (
     layer_web_socket as layer_web_socket_with,
 )
 from pyfect.socket.server import (
-    SocketServer,
     SocketServerError,
-    SocketServerService,
 )
 
 
@@ -365,36 +359,11 @@ def layer_web_socket(
     return client.pipe(layer_provide(constructor))
 
 
-# --- server -----------------------------------------------------------------
-
-
-@deprecated("Use pyfect.socket.server.make_web_socket; ws.make_server is removed in 0.7.0")
-def make_server(
-    port: int = 0, host: str | None = None, **serve_options: Any
-) -> Effect[SocketServerService, SocketServerError, Scope]:
-    """``pyfect.socket.server.make_web_socket``."""
-    from pyfect.socket._ws_server import make_web_socket
-
-    return make_web_socket(port, host, **serve_options)
-
-
-@deprecated("Use pyfect.socket.server.layer_web_socket; ws.layer_server is removed in 0.7.0")
-def layer_server(
-    port: int = 0, host: str | None = None, **serve_options: Any
-) -> Layer[SocketServer, SocketServerError]:
-    """``pyfect.socket.server.layer_web_socket``."""
-    from pyfect.socket._ws_server import make_web_socket
-
-    return layer_effect(SocketServer, make_web_socket(port, host, **serve_options))
-
-
 __all__ = [
     "SocketServerError",
     "WsWebSocket",
-    "layer_server",
     "layer_web_socket",
     "layer_web_socket_constructor",
     "layer_web_socket_constructor_with",
-    "make_server",
     "web_socket_constructor",
 ]

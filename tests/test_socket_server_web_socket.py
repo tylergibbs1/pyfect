@@ -6,7 +6,6 @@ as ``IncomingMessage``. The DevTools client speaks WebSocket, so a DevTools serv
 
 from __future__ import annotations
 
-import warnings
 from typing import Any
 
 from websockets.sync.client import connect
@@ -19,7 +18,6 @@ from pyfect.queue import Queue
 from pyfect.scope import scoped
 from pyfect.socket import SocketService
 from pyfect.socket import server as socket_server
-from pyfect.socket import ws as ws_platform
 from pyfect.socket.server import IncomingMessage, SocketServer, layer_web_socket, make_web_socket
 
 
@@ -80,18 +78,6 @@ def test_handlers_get_the_upgrade_request_as_incoming_message() -> None:
         return (yield from effect.blocking(lambda: _receive_one(url)))
 
     assert fx.run_blocking(scoped(program()).or_die()) == "/apps/lantern?x=1"
-
-
-def test_the_websockets_module_names_are_deprecated() -> None:
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        ws_platform.make_server(0, "127.0.0.1")  # pyright: ignore[reportDeprecated]
-        ws_platform.layer_server(0, "127.0.0.1")  # pyright: ignore[reportDeprecated]
-    messages = [str(w.message) for w in caught if issubclass(w.category, DeprecationWarning)]
-    assert messages == [
-        "Use pyfect.socket.server.make_web_socket; ws.make_server is removed in 0.7.0",
-        "Use pyfect.socket.server.layer_web_socket; ws.layer_server is removed in 0.7.0",
-    ]
 
 
 def test_every_node_socket_server_export_is_in_socket_server() -> None:

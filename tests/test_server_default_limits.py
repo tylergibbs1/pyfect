@@ -145,8 +145,6 @@ SERVERS: dict[str, Callable[[], Limits]] = {
     "pyfect.socket.server.layer_tls": _socket_tcp,
     "pyfect.socket.server.make_web_socket": _socket_web_socket,
     "pyfect.socket.server.layer_web_socket": _socket_web_socket,
-    "pyfect.socket.ws.make_server": _socket_web_socket,
-    "pyfect.socket.ws.layer_server": _socket_web_socket,
     "pyfect.ai.mcp_server.layer_http": _mcp_http,
     "pyfect.ai.mcp_server.layer_http_request_scoped": _mcp_http,
     "pyfect.ai.mcp_server.layer_stdio": _mcp_stdio,

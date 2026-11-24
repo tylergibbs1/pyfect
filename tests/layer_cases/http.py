@@ -843,6 +843,4 @@ CASES: dict[str, Case] = {
     **_NET,
     **_HTTP_API,
 }
-SKIPPED: dict[str, str] = {
-    "pyfect.socket.ws.layer_server": "deprecated: pyfect.socket.server.layer_web_socket",
-}
+SKIPPED: dict[str, str] = {}
