@@ -31,13 +31,21 @@ from pyfect.chat.chat_adapter import Registry
 from pyfect.chat.chat_error import ChatError
 from pyfect.chat.chat_event import ChatEvent
 from pyfect.chat.chat_handler import ChatHandler
-from pyfect.chat.chat_interaction import ButtonClicked, CommandInvoked, Group
+from pyfect.chat.chat_handler import Service as ChatHandlerService
+from pyfect.chat.chat_interaction import (
+    ButtonClicked,
+    CommandInvoked,
+    Group,
+    Handler,
+    HandlerService,
+)
 from pyfect.chat.chat_test import MentionToken
 from pyfect.chat.chat_thread import ChatThread
 from pyfect.chat.telegram import (
     _address,
     _commands,
     _errors,
+    _markdown,
     _normalize,
     _polling,
     _receive,
@@ -136,10 +144,25 @@ class TelegramChatService:
         self, update: object, options: ReceiveOptions | None = None
     ) -> Effect[Outcome, Never, ChatHandler]:
         """Runs one update; see the class."""
-        parsed = (options or ReceiveOptions()).parsed()
         return ChatHandler().flat_map(
-            lambda handler: _receive.receive(update, self._env, parsed, handler.handle)
+            lambda handler: fx.service_option(Handler).flat_map(
+                lambda found: self._run(
+                    update, options, handler, None if found is None else found.value
+                )
+            )
         )
+
+    def _run(
+        self,
+        update: object,
+        options: ReceiveOptions | None,
+        handler: ChatHandlerService,
+        interactions: HandlerService | None,
+    ) -> Effect[Outcome]:
+        """One update with the handlers given: what ``receive`` and both
+        transports run."""
+        parsed = (options or ReceiveOptions()).parsed()
+        return _receive.receive(update, self._env, parsed, handler.handle, interactions)
 
 
 class TelegramChat(Tag[TelegramChatService], key="@effect/chat-telegram/TelegramChat"):
@@ -170,6 +193,7 @@ def layer(
     unverified_files: bool = False,
     unverified_buttons: bool = False,
     unverified_commands: bool = False,
+    max_retry_after: DurationInput | None = None,
 ) -> Layer[TelegramChat | TelegramBotApi, ChatError, HttpClient | Registry]:
     """Registers the Telegram adapter in the ``Registry`` and provides
     ``TelegramChat`` and ``TelegramBotApi``.
@@ -187,6 +211,10 @@ def layer(
     - The bot's username, which commands and ``@`` mentions need, is read
       with ``getMe`` on the first message and kept. While it can't be read, a
       message update is ``invalid``, and Telegram sends it again.
+    - A call Telegram answers 429 is retried after its ``retry_after``,
+      however long, unless ``max_retry_after`` is set: a longer wait then
+      fails the op at once with ``RateLimited``, its ``retry_after`` the
+      wait asked for.
     """
     capabilities = capabilities_of(
         files=unverified_files, buttons=unverified_buttons, commands=unverified_commands
@@ -204,22 +232,33 @@ def layer(
         return TelegramChatService(api=api, env=env)
 
     return _layer_effect(TelegramChat, build).pipe(
-        _provide_merge(_bot_api_layer(token=token, environment=environment, api_url=api_url))
+        _provide_merge(
+            _bot_api_layer(
+                token=token,
+                environment=environment,
+                api_url=api_url,
+                max_retry_after=max_retry_after,
+            )
+        )
     )
 
 
 def _transport_receive(
     options: ReceiveOptions,
 ) -> Effect[Callable[[object], Effect[Outcome]], Never, TelegramChat | ChatHandler]:
-    """``TelegramChatService.receive`` with the layer's ``ChatHandler``, as a
-    transport runs it."""
+    """``TelegramChatService.receive`` with the layer's ``ChatHandler`` and
+    ``chat_interaction.Handler``, read once when the layer is built: the
+    webhook runs an update in its request's context and polling on its own
+    fiber, and both must see the same handlers."""
 
     @fx.gen
     def build() -> Generator[Effect[Any, Never, Any], Any, Callable[[object], Effect[Outcome]]]:
         telegram = yield from TelegramChat()
         handler = yield from ChatHandler()
-        return lambda update: telegram.receive(update, options).pipe(
-            fx.provide_service(ChatHandler, handler)
+        found = yield from fx.service_option(Handler)
+        interactions = None if found is None else found.value
+        return lambda update: telegram._run(  # pyright: ignore[reportPrivateUsage]
+            update, options, handler, interactions
         )
 
     return build
@@ -290,6 +329,9 @@ def layer_polling(
       times (3 by default) with a backoff, then logged as an error and
       skipped: ``getUpdates`` is one queue, and retrying forever would stall
       the bot.
+    - Each ``getUpdates`` has ``timeout`` plus 3 seconds to answer. One
+      that does not is given up and retried with ``retry_safe``'s backoff,
+      so a connection that died without a reset cannot stall polling.
     - The layer fails ``InvalidRequest`` with detail ``conflict`` when
       Telegram answers 409 at start: a webhook is set, or another process
       polls. It never deletes a webhook itself. A later 409 stops polling
@@ -314,6 +356,13 @@ def layer_polling(
         yield from _polling.loop(first, settings).fork_scoped()
 
     return _layer_effect_discard(start)
+
+
+def escape_markdown(text: str) -> str:
+    """``text``, such as a display name, as Markdown that shows it as typed:
+    no link, emphasis, code, mention or other syntax forms from it. Escape
+    what users write before putting it into a post's Markdown."""
+    return _markdown.escape(text)
 
 
 def set_webhook(
@@ -479,6 +528,7 @@ __all__ = [
     "TelegramPostOptions",
     "command_requests",
     "delivery_key",
+    "escape_markdown",
     "layer",
     "layer_polling",
     "layer_webhook",

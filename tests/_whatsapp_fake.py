@@ -41,6 +41,7 @@ class Status:
 
     status: int
     body: object = None
+    headers: Mapping[str, str] | None = None
 
 
 def graph_error(code: int, status: int = 400, subcode: int | None = None) -> Status:
@@ -128,7 +129,11 @@ class Graph:
             return fx.succeed(http_response.make(request, result))
         if isinstance(result, Status):
             text = json.dumps({} if result.body is None else result.body)
-            return fx.succeed(http_response.make(request, text, status=result.status))
+            return fx.succeed(
+                http_response.make(
+                    request, text, status=result.status, headers=dict(result.headers or {})
+                )
+            )
         return fx.succeed(
             http_response.make(
                 request, json.dumps(result), headers={"content-type": "application/json"}
@@ -140,13 +145,16 @@ class Graph:
         return client.layer_test(self._respond)
 
 
-def whatsapp_layer(graph: Graph, *, messaging_account_id: str | None = None) -> layer.Layer[Any]:
+def whatsapp_layer(
+    graph: Graph, *, messaging_account_id: str | None = None, **options: Any
+) -> layer.Layer[Any]:
     """``Chat``, ``Registry`` and the WhatsApp adapter on a fake Graph API."""
     return (
         whatsapp_chat.layer(
             access_token=redacted("EAAG-test"),
             phone_number_id=PHONE_NUMBER_ID,
             messaging_account_id=messaging_account_id,
+            **options,
         )
         .pipe(layer.provide_merge(chat.layer))
         .pipe(layer.provide(graph.layer))

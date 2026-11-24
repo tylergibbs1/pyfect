@@ -421,7 +421,7 @@ class TelegramAdapter:
         if "commands" not in self._capabilities:
             return self._unsupported(op, "commands")
         if deferred.visibility == "ephemeral":
-            return self._unsupported(op, "ephemeral")
+            return self._fail(op, _errors.PRIVATE_ANSWER)
         origin = origin_of(deferred.command)
         if origin is None:
             return self._fail(op, _errors.invalid_request("invalid_command"))

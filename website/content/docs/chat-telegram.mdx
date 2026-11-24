@@ -15,8 +15,14 @@ that text a user typed reaches Telegram as text: no raw HTML, image, math, spoil
 other than http, https and mailto, with nesting, tables and inline nodes kept within
 Telegram's limits. Files, buttons and commands are off until you turn them on with
 `unverified_files`, `unverified_buttons` and `unverified_commands`. There is no private
-(ephemeral) reply: one is refused through `chat_interaction.Handler.refused` and never
-posted.
+(ephemeral) reply: one is refused through `chat_interaction.Handler.refused` as `Unsupported`
+with detail `ephemeral`, and never posted. `chat_interaction.respond` and `defer` answer
+privately unless told otherwise, so a Telegram bot passes `visibility="public"`.
+
+That escaping keeps your own Markdown safe to send, but text a user wrote still forms syntax
+inside it: a display name of `[x](https://evil.example)` is a live link. Put such text
+through `telegram_chat.escape_markdown` first, as in
+`f"Approved by {telegram_chat.escape_markdown(name)}"`, and it shows as typed.
 
 ## The webhook
 
@@ -28,7 +34,8 @@ is never read. The secret must be 32 to 256 characters of `A-Za-z0-9_-`. A body 
 is not an update, 400.
 
 Messages go to the `ChatHandler`, and clicks and commands to the
-`chat_interaction.Handler`. When the handler fails `NotAccepted` or passes its deadline (10
+`chat_interaction.Handler`, both read from the layer's context when it is built, as for
+polling. When the handler fails `NotAccepted` or passes its deadline (10
 seconds), the route answers 503 and Telegram sends the update again. Delivery is at least
 once: claim `telegram_chat.delivery_key` before work that must not run twice.
 
@@ -49,7 +56,13 @@ headers adds `telegram_chat.SECRET_HEADER` to its redacted header names.
 `telegram_chat.layer_polling()` reads updates with `getUpdates` instead, for a process that
 runs without a public URL. Updates run one at a time, in order, and each is confirmed only
 after it ran. An update the handler does not accept is retried three times and then logged
-and skipped, so one bad update cannot stall the bot. The layer fails with detail `conflict`
+and skipped, so one bad update cannot stall the bot. Each `getUpdates` gets the long poll
+(`timeout`, 30 seconds) plus 3 seconds to answer, so a connection that died without a reset
+cannot stall it either: the call is given up and retried with a backoff.
+
+A call Telegram answers 429 is retried after its `retry_after`, however long. Pass
+`max_retry_after` to `telegram_chat.layer`, such as `"1 minute"`, and a longer wait fails
+the op at once with `RateLimited`, its `retry_after` the wait Telegram asked for. The layer fails with detail `conflict`
 when a webhook is set or another process polls.
 
 ## Commands and buttons

@@ -43,6 +43,11 @@ def unsupported(capability: Capability) -> AnyReason:
     return Unsupported(capability=capability)
 
 
+PRIVATE_ANSWER = Unsupported(capability="ephemeral", detail="ephemeral")
+"""A private answer, refused: there is no ``ephemeral`` in this version. The
+detail names it, so the refusal's message says what is missing."""
+
+
 def invalid_request(detail: str) -> AnyReason:
     return InvalidRequest(detail=detail)
 

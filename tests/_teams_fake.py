@@ -111,6 +111,10 @@ class Bot:
     answers: dict[str, Callable[[Sent], tuple[int, object]]] = field(
         default_factory=dict[str, Callable[[Sent], tuple[int, object]]]
     )
+    headers: dict[str, Callable[[Sent], Mapping[str, str]]] = field(
+        default_factory=dict[str, Callable[[Sent], Mapping[str, str]]]
+    )
+    """Extra headers of the answer to a URL, beside its ``answers`` entry."""
     _next: int = 1_700_000_000_000
 
     def _answer(self, sent: Sent) -> tuple[int, object]:  # noqa: PLR0911
@@ -154,12 +158,16 @@ class Bot:
                 )
                 self.sent.append(sent)
                 status, body = self._answer(sent)
+                extra = self.headers.get(url.href)
                 # As Fetch does: the response names the URL it came from, query included.
                 return http_response.make(
                     request,
                     json.dumps(body),
                     status=status,
-                    headers={"content-type": "application/json"},
+                    headers={
+                        "content-type": "application/json",
+                        **({} if extra is None else extra(sent)),
+                    },
                     url=url.href,
                 )
 

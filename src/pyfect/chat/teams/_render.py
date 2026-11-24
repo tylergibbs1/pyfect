@@ -37,6 +37,17 @@ def escape_text(text: str) -> str:
     return text.replace("&", "&amp;").replace("<", "&lt;")
 
 
+_INLINE_SYNTAX = re.compile(r"[\\`*_~\[\]]")
+
+
+def escape_markdown(text: str) -> str:
+    """Backslash-escapes the characters that start inline syntax (links,
+    images, emphasis, strikethrough, code) and backslashes. Adaptive Cards
+    show a backslash before other punctuation, so no more is escaped;
+    ``<``, ``&`` and ``$`` are escaped on every send."""
+    return _INLINE_SYNTAX.sub(lambda match: "\\" + match.group(0), text)
+
+
 def text_activity(markdown: str) -> Json:
     """The text form."""
     return {

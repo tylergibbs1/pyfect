@@ -11,6 +11,7 @@ from typing import Any, Never
 import pyfect as fx
 from pyfect._core import Effect
 from pyfect._json_text import Json, stringify
+from pyfect.chat._retry_after import parse_retry_after
 from pyfect.chat.chat_adapter import retry_safe
 from pyfect.chat.chat_error import AnyReason, ChatError
 from pyfect.chat.slack import _errors
@@ -83,7 +84,7 @@ class SlackWebApiService:
         )
 
         def answered(response: HttpClientResponse) -> Effect[Json, ChatError]:
-            retry_after = _errors.parse_retry_after(response.headers.get("retry-after"))
+            retry_after = parse_retry_after(response.headers.get("retry-after"))
             if not 200 <= response.status < 300:
                 return fail(
                     _errors.reason_for_status(response.status, write=write, retry_after=retry_after)

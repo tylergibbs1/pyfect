@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import copy
-import re
 
 from pyfect.chat.chat_error import (
     FILE_REFUSED,
@@ -21,7 +20,7 @@ from pyfect.chat.chat_error import (
     Unknown,
 )
 from pyfect.chat.slack._address import PLATFORM
-from pyfect.duration import Duration, seconds
+from pyfect.duration import Duration
 
 _UNAUTHENTICATED = frozenset(
     {
@@ -81,7 +80,6 @@ _NOT_FOUND = frozenset(
     }
 )
 
-_DECIMAL = re.compile(r"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?")
 
 _TOO_LARGE = frozenset({"msg_too_long", "msg_blocks_too_long"})
 _SERVER_ERRORS = frozenset(
@@ -146,17 +144,6 @@ def invalid_response(write: bool, detail: str, cause: object = None) -> AnyReaso
     if write:
         return Unknown(detail=detail, cause=cause)
     return InvalidResponse(detail=detail, cause=cause)
-
-
-def parse_retry_after(value: str | None) -> Duration | None:
-    """A ``Retry-After`` header in seconds, or ``None``."""
-    if value is None:
-        return None
-    text = value.strip()
-    if text and _DECIMAL.fullmatch(text) is None:
-        return None
-    number = float(text) if text else 0.0
-    return seconds(number) if 0 <= number < float("inf") else None
 
 
 def chat_error(op: str, reason: AnyReason) -> ChatError:

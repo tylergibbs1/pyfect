@@ -29,7 +29,15 @@ from pyfect.chat.chat_interaction import Handler
 from pyfect.chat.chat_interaction import Registry as InteractionRegistry
 from pyfect.chat.chat_test import MentionToken
 from pyfect.chat.chat_thread import ChatThread
-from pyfect.chat.teams import _address, _auth, _connector, _envelope, _interactions, _webhook
+from pyfect.chat.teams import (
+    _address,
+    _auth,
+    _connector,
+    _envelope,
+    _interactions,
+    _render,
+    _webhook,
+)
 from pyfect.chat.teams._adapter import TeamsAdapter
 from pyfect.chat.teams._address import Parts
 from pyfect.chat.teams._cloud import PUBLIC_CLOUD, Cloud, Credentials, TokenGrant, Unverified
@@ -61,6 +69,7 @@ __all__ = [
     "TeamsChatService",
     "TokenGrant",
     "Unverified",
+    "escape_markdown",
     "layer",
     "layer_webhook",
     "normalize",
@@ -142,6 +151,7 @@ def layer(
     interaction_keys: Sequence[Redacted[SecretJwk]] = (),
     modal_buttons: Sequence[str] = (),
     unverified: Unverified = Unverified(),  # noqa: B008
+    max_retry_after: DurationInput | None = None,
 ) -> Layer[TeamsChat, Never, HttpClient | Registry | Mac | Digest]:
     """Registers the Teams adapter in the ``Registry``, for one tenant, and
     provides ``TeamsChat``.
@@ -180,19 +190,32 @@ def layer(
       there are no buttons or modals.
     - ``modal_buttons`` are the ids of the buttons that open a dialog. Only
       these may answer ``OpenModal``.
+    - A request answered 429 is retried after its ``Retry-After``, however
+      long, unless ``max_retry_after`` is set: a longer wait then fails the
+      op at once with ``RateLimited``, its ``retry_after`` the wait asked
+      for.
 
     Interaction tokens use ``Mac`` and ``Digest``
     (``pyfect.crypto.native.layer_mac`` and ``layer_digest``).
     """
+
+    retry_ceiling = None if max_retry_after is None else from_input_unsafe(max_retry_after)
 
     @fx.gen
     def build() -> Generator[Effect[Any, Never, Any], Any, TeamsChatService]:
         http = yield from HttpClient()
         registry = yield from Registry()
         tokens = _connector.make_tokens(
-            http=http, cloud=cloud, app_id=app_id, tenant_id=tenant_id, credentials=credentials
+            http=http,
+            cloud=cloud,
+            app_id=app_id,
+            tenant_id=tenant_id,
+            credentials=credentials,
+            max_retry_after=retry_ceiling,
         )
-        connector = _connector.Connector(http=http, cloud=cloud, token=tokens)
+        connector = _connector.Connector(
+            http=http, cloud=cloud, token=tokens, max_retry_after=retry_ceiling
+        )
         envelope = (
             None
             if not interaction_keys
@@ -383,6 +406,13 @@ def normalize(activity: object, *, app_id: str, cloud: Cloud = PUBLIC_CLOUD) -> 
             file_host_suffixes=cloud.file_host_suffixes,
         ),
     )
+
+
+def escape_markdown(text: str) -> str:
+    """``text``, such as a display name, as Markdown that shows it as typed:
+    no link, image, emphasis or code forms from it. Escape what users write
+    before putting it into a post's Markdown, within a line."""
+    return _render.escape_markdown(text)
 
 
 def parse_mention(text: str) -> MentionToken | None:

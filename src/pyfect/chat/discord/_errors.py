@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import copy
-import math
 from collections.abc import Callable
 from typing import cast
 
+from pyfect.chat._retry_after import parse_retry_after
 from pyfect.chat.chat_error import (
     FILE_REFUSED,
     INTERACTION_EXPIRED,
@@ -25,7 +25,6 @@ from pyfect.chat.chat_error import (
 )
 from pyfect.chat.discord import _json
 from pyfect.chat.discord._normalize import PLATFORM
-from pyfect.duration import Duration, millis
 
 _NOT_FOUND = frozenset({10003, 10004, 10007, 10008, 10013, 10014, 10015})
 _FORBIDDEN = frozenset({20001, 20028, 50001, 50005, 50013, 50021, 50083, 160005, 160006})
@@ -64,17 +63,6 @@ def _code(value: object) -> int | None:
     return None
 
 
-def _retry_after(value: object) -> Duration | None:
-    """A 429's ``retry_after``, in seconds, as a wait."""
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        return None
-    try:
-        seconds = float(value)
-    except OverflowError:
-        return None
-    return millis(math.ceil(seconds * 1000)) if 0 <= seconds < math.inf else None
-
-
 def reason_for_response(  # noqa: PLR0911
     status: int, data: object, *, write: bool, cause: object = None
 ) -> AnyReason:
@@ -84,7 +72,7 @@ def reason_for_response(  # noqa: PLR0911
     body = _json.as_object(data) or {}
     code = _code(body.get("code"))
     if status == 429:
-        wait = _retry_after(body.get("retry_after"))
+        wait = parse_retry_after(body.get("retry_after"))
         return RateLimited(
             detail="http_429" if code is None else str(code), cause=cause, retry_after=wait
         )

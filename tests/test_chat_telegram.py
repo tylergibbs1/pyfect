@@ -11,6 +11,7 @@ from collections.abc import Callable, Generator
 from dataclasses import dataclass, field
 from typing import Any
 
+from _literal_markdown import literal
 from _telegram_fake import (
     BOT_ID,
     CHAT_ID,
@@ -37,6 +38,7 @@ from pyfect.chat.chat_handler import NotAccepted
 from pyfect.chat.telegram import telegram_chat
 from pyfect.chat.telegram.telegram_chat import Outcome, ReceiveOptions, TelegramChat
 from pyfect.deferred import Deferred
+from pyfect.duration import seconds
 from pyfect.exit import is_failure
 from pyfect.http import request as http_request
 from pyfect.http import router
@@ -517,3 +519,194 @@ def test_command_requests_refuses_ids_telegram_cant_register():
         "commands": [{"command": "deploy", "description": "Deploy"}]
     }
     assert is_failure(run(telegram_chat.command_requests(bad).exit()))
+
+
+# --- interactions over both transports ----------------------------------------------------
+
+
+def _with_interactions(recorder: Recorder, api: FakeApi) -> layer.Layer[Any, Any]:
+    """What a transport layer is given: the adapter, a ``ChatHandler`` and a
+    ``chat_interaction.Handler``."""
+    return layer.merge(
+        telegram_layer(api),
+        chat_handler.layer(recorder.on_event),
+        layer.succeed(ci.Handler, recorder.interactions()),
+    )
+
+
+@testing.effect
+def test_hands_a_webhook_command_and_click_to_the_interaction_handler_the_layer_was_given():
+    """The webhook runs each update in the request's context, where the
+    ``chat_interaction.Handler`` given to the layer is not: it has to come
+    from the layer, as polling's does."""
+    recorder = Recorder(
+        command=lambda: fx.succeed(ci.respond(markdown="pong", visibility="public"))
+    )
+    api = FakeApi()
+    app = telegram_chat.layer_webhook(path="/telegram", secret_token=redacted(SECRET)).pipe(
+        layer.provide(_with_interactions(recorder, api))
+    )
+
+    @fx.gen
+    def program() -> Gen[None]:
+        http = yield from router.in_memory_client(app)
+        for update in (command_update("deploy", "prod"), click("approve")):
+            sent = http_request.post("http://x").body_text(json.dumps(update), "application/json")
+            answered = yield from http.post(
+                "http://localhost/telegram",
+                body=sent.body,
+                headers={telegram_chat.SECRET_HEADER: SECRET},
+            )
+            assert answered.status == 200
+        assert [command.text for command in recorder.commands] == ["prod"]
+        assert [clicked.id for clicked in recorder.clicks] == ["approve"]
+        assert recorder.events == []
+        [answer] = api.sent("sendRichMessage")
+        assert answer["chat_id"] == CHAT_ID
+
+    return fx.scoped(program)
+
+
+@testing.effect
+def test_hands_a_polled_command_to_the_interaction_handler_the_layer_was_given():
+    recorder = Recorder()
+    api = FakeApi()
+    api.updates.append([command_update("deploy", "prod")])
+
+    @fx.gen
+    def program() -> Gen[None]:
+        yield from (
+            telegram_chat.layer_polling().pipe(layer.provide(_with_interactions(recorder, api)))
+        ).build()
+        yield from until(lambda: len(api.sent("getUpdates")) >= 2)
+        assert [command.text for command in recorder.commands] == ["prod"]
+
+    return fx.scoped(program)
+
+
+# --- polling deadlines --------------------------------------------------------------------
+
+
+def _advance_until(done: Callable[[], bool], step: str = "100 millis") -> Effect[None]:
+    """Moves the test clock a step at a time until ``done`` holds, at most 100 steps."""
+
+    @fx.gen
+    def loop() -> Gen[None]:
+        for _ in range(100):
+            if done():
+                return
+            yield from testing.adjust(step)
+        assert done()
+
+    return loop
+
+
+@testing.effect
+def test_gives_up_on_a_get_updates_that_never_answers_and_polls_again():
+    """A connection that dies without a reset leaves ``getUpdates``
+    unanswered: each call has the long poll plus a margin, then is retried."""
+    api = FakeApi()
+    api.updates.append([])  # the layer's own first call; then the fake never answers
+
+    @fx.gen
+    def program() -> Gen[None]:
+        yield from (
+            telegram_chat.layer_polling(timeout="1 second")
+            .pipe(layer.provide_merge(telegram_layer(api)))
+            .pipe(layer.provide(chat_handler.layer(Recorder().on_event)))
+            .build()
+        )
+        yield from until(lambda: len(api.sent("getUpdates")) >= 2)
+        # One second of long poll, plus three of margin.
+        yield from testing.adjust("3999 millis")
+        assert len(api.sent("getUpdates")) == 2
+        yield from testing.adjust("1 millis")
+        yield from _advance_until(lambda: len(api.sent("getUpdates")) >= 3)
+        [*_, last] = api.sent("getUpdates")
+        assert last["timeout"] == 1
+
+    return fx.scoped(program)
+
+
+# --- private answers ----------------------------------------------------------------------
+
+
+def test_names_what_is_missing_when_it_refuses_a_private_answer():
+    """``ci.respond`` answers privately by default, which Telegram has no
+    way to send: the refusal says so, so the log line explains the silence."""
+    recorder = Recorder(command=lambda: fx.succeed(ci.respond(markdown="secret")))
+    run(receive(FakeApi(), recorder, command_update("deploy")))
+    [error] = recorder.refused
+    assert "ephemeral" in error.message
+    assert error.reason.retry == "denied"
+
+
+# --- escape_markdown ----------------------------------------------------------------------
+
+UNTRUSTED = [
+    "[x](http://evil)",
+    "![x](http://evil/i.png)",
+    "<http://evil>",
+    "*bold* __strong__ _it_ ~~gone~~ `code`",
+    "<b>&amp;</b>",
+    "back\\slash \\[x\\](http://evil)",
+    "$x$ ||spoiler|| ==mark==",
+    "@everyone",
+]
+"""Display names a user picks, each of which forms syntax unescaped."""
+
+
+def test_escape_markdown_keeps_user_text_literal_in_what_telegram_is_sent():
+    """A dogfood app put display names into posts, and one name was a live
+    link: ``escape_markdown`` makes each show as typed."""
+    for name in UNTRUSTED:
+        api = FakeApi()
+        run(
+            post(f"Deploy by {telegram_chat.escape_markdown(name)}.").pipe(
+                fx.provide(telegram_layer(api))
+            )
+        )
+        [sent] = api.sent("sendRichMessage")
+        assert literal(sent["rich_message"]["markdown"]) == f"Deploy by {name}.", name
+
+
+def test_unescaped_user_text_forms_a_link():
+    api = FakeApi()
+    run(post("Deploy by [x](http://evil).").pipe(fx.provide(telegram_layer(api))))
+    [sent] = api.sent("sendRichMessage")
+    assert literal(sent["rich_message"]["markdown"]) is None
+
+
+# --- max_retry_after ----------------------------------------------------------------------
+
+
+def test_fails_at_once_with_the_wait_when_retry_after_passes_max_retry_after():
+    api = FakeApi()
+    api.next["sendRichMessage"] = api_error(
+        429, "Too Many Requests: retry after 3600", {"retry_after": 3600}
+    )
+    error = run(
+        post("alert").flip().pipe(fx.provide(telegram_layer(api, max_retry_after="1 minute")))
+    )
+    assert type(error.reason).__name__ == "RateLimited"
+    assert error.retry_after == seconds(3600)
+    assert len(api.sent("sendRichMessage")) == 1
+
+
+@testing.effect
+def test_waits_out_a_retry_after_within_max_retry_after():
+    api = FakeApi()
+    api.next["sendRichMessage"] = api_error(
+        429, "Too Many Requests: retry after 30", {"retry_after": 30}
+    )
+
+    @fx.gen
+    def program() -> Gen[None]:
+        fiber = yield from post("alert").fork()
+        yield from testing.adjust("29 seconds")
+        assert len(api.sent("sendRichMessage")) == 1
+        yield from testing.adjust("1 second")
+        yield from fiber.join()
+        assert len(api.sent("sendRichMessage")) == 2
+
+    return program.pipe(fx.provide(telegram_layer(api, max_retry_after="1 minute")))

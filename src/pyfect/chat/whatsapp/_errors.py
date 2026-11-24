@@ -20,6 +20,7 @@ from pyfect.chat.chat_error import (
 )
 from pyfect.chat.whatsapp import _json
 from pyfect.chat.whatsapp._address import PLATFORM
+from pyfect.duration import Duration
 
 OUTSIDE_WINDOW = "graph_131047"
 """The detail of a send refused outside the 24 hour window, Graph error 131047."""
@@ -52,15 +53,15 @@ def graph_error(body: object) -> GraphError | None:
 
 
 def reason_for_graph_error(  # noqa: PLR0911
-    error: GraphError, *, write: bool, cause: object = None
+    error: GraphError, *, write: bool, cause: object = None, retry_after: Duration | None = None
 ) -> AnyReason:
     """Maps a Graph error code to a reason. ``detail`` is ``graph_{code}``,
     which holds no message text or ids; the Graph error itself is the
-    ``cause``."""
+    ``cause``. A rate limit keeps the answer's ``retry_after``."""
     detail = f"graph_{error.code}"
     code = error.code
     if code in _RATE_LIMITED:
-        return RateLimited(detail=detail, cause=cause)
+        return RateLimited(detail=detail, cause=cause, retry_after=retry_after)
     if code in _UNAUTHENTICATED:
         return Unauthenticated(detail=detail, cause=cause)
     if code in _FORBIDDEN or 200 <= code < 300:
@@ -76,12 +77,14 @@ def reason_for_graph_error(  # noqa: PLR0911
     return InvalidRequest(detail=detail, cause=cause)
 
 
-def reason_for_status(status: int, *, write: bool, cause: object = None) -> AnyReason:  # noqa: PLR0911
+def reason_for_status(  # noqa: PLR0911
+    status: int, *, write: bool, cause: object = None, retry_after: Duration | None = None
+) -> AnyReason:
     """Maps an HTTP status without a Graph error to a reason, with detail
-    ``http_{status}``."""
+    ``http_{status}``. A 429 keeps the answer's ``retry_after``."""
     detail = f"http_{status}"
     if status == 429:
-        return RateLimited(detail=detail, cause=cause)
+        return RateLimited(detail=detail, cause=cause, retry_after=retry_after)
     if status >= 500:
         return PlatformUnavailable(
             retry="uncertain" if write else "retry", detail=detail, cause=cause
