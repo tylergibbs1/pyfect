@@ -36,7 +36,7 @@ from pyfect._effect_args import require_effect
 from pyfect._js import js_length, text_encode
 from pyfect.cause import Cause, Fail
 from pyfect.cluster import snowflake as snowflake_
-from pyfect.cluster._sql_keys import MSSQL_EXACT_TEXT, MYSQL_EXACT_TEXT, key_in
+from pyfect.cluster._sql_keys import MSSQL_EXACT_TEXT, key_in
 from pyfect.cluster.cluster_error import PersistenceError
 from pyfect.cluster.entity_address import EntityAddress
 from pyfect.cluster.envelope import Encoded as EnvelopeEncoded
@@ -56,7 +56,7 @@ from pyfect.cluster.reply import ChunkEncoded, Encoded, WithExitEncoded
 from pyfect.cluster.sharding_config import ShardingConfig
 from pyfect.cluster.snowflake import Snowflake
 from pyfect.effect import die, fail, fail_cause, gen, provide_service, succeed, suspend, void
-from pyfect.persistence._sql_keys import key_equals, mssql_match
+from pyfect.persistence._sql_keys import MYSQL_EXACT_TEXT, key_equals, mssql_match
 from pyfect.sql import migrator
 from pyfect.sql.client import BeginTransaction, SqlClient, SqlClientService
 from pyfect.sql.connection import Row

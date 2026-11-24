@@ -17,7 +17,7 @@ _KEPT: dict[tuple[str, str], str] = {
     ("net/dns/_records.py", "_quote"): "presentation-format byte escapes, no Effect counterpart",
     ("net/dns/_records.py", "_format_name"): "presentation-format byte escapes, as _quote",
     ("http/multipart.py", "persisted_file_name"): "a byte count: three bytes either way",
-    ("persistence/persisted_queue/_sql_statements.py", "offer"): "a byte count, as above",
+    ("persistence/persisted_queue/_sql_statements.py", "_mysql_too_long"): "a byte count, as above",
     ("sql/pg/error.py", "validate_channel_name"): "a byte count, as above",
     ("chat/slack/_text.py", "utf8_bytes"): "a byte count, as above",
     ("_json_depth.py", "within_depth"): "only the ASCII brackets and quotes are counted",

@@ -216,3 +216,185 @@ def test_an_id_longer_than_its_column_fails_instead_of_being_cut(
         assert (yield from _rows(table)) == 1
 
     _run(client, body)
+
+
+MYSQL_DATABASES = pytest.mark.parametrize(
+    "collation", [None, "utf8mb4_general_ci"], ids=["mysql", "mysql-pad-space"]
+)
+
+
+def _as_of_0_6_35(table: str, sql: SqlClientService) -> migrator.Loader:
+    """The migrations 0.6.35 ran on MySQL, SQL Server and SQLite: ``0004`` is
+    PostgreSQL's alone."""
+    return migrations(table, sql).map(lambda loaded: [m for m in loaded if m[0] <= 3])
+
+
+def _recorded(table: str) -> Generator[Any, Any, list[tuple[object, object]]]:
+    sql = (yield from SqlClient()).without_transforms()
+    rows: Sequence[Any] = yield from sql(
+        "SELECT migration_id, name FROM {} ORDER BY migration_id",
+        sql.identifier(f"{table}_migrations"),
+    )
+    return [(row["migration_id"], row["name"]) for row in rows]
+
+
+_RELEASED = [(1, "create_table"), (2, "upgrade_schema"), (3, "exact_ids")]
+UPGRADED = {"mysql": [*_RELEASED, (5, "exact_text_ids")], "mssql": _RELEASED, "sqlite": _RELEASED}
+"""What each dialect's migrations table records after a 0.6.35 table
+upgrades. A name is permanent in users' databases; PostgreSQL's (``0004``)
+is pinned by ``test_pg_persisted_queue``."""
+
+
+def _upgrade_from_0_6_35(table: str) -> Generator[Any, Any, list[tuple[object, object]]]:
+    yield from _drop(table)
+    sql = yield from SqlClient()
+    yield from migrator.make()(loader=_as_of_0_6_35(table, sql), table=f"{table}_migrations")
+    assert (yield from _recorded(table)) == _RELEASED
+    queue = yield from _queue(table, "jobs")
+    yield from queue.offer("element", id="job")
+    assert (yield from _take(queue)) == ("job", "element")
+    return (yield from _recorded(table))
+
+
+def test_a_0_6_35_table_upgrades_with_its_dialects_migrations(
+    client: fx.Layer[Any, Any], request: pytest.FixtureRequest
+) -> None:
+    """(pyfect) MySQL alone runs ``0005_exact_text_ids``; SQL Server keeps
+    0.6.35's migrations."""
+    dialect = "mysql" if request.node.callspec.params["client"].startswith("mysql") else "mssql"
+    recorded = _run(client, lambda: _upgrade_from_0_6_35("effect_queue_upgrade_0635"))
+    assert recorded == UPGRADED[dialect]
+
+
+def test_a_0_6_35_sqlite_table_keeps_its_migrations() -> None:
+    from pyfect.sql import sqlite
+
+    client = sqlite.layer(sqlite.SqliteClientConfig(filename=":memory:"))
+    recorded = _run(client, lambda: _upgrade_from_0_6_35("effect_queue_upgrade_0635"))
+    assert recorded == UPGRADED["sqlite"]
+
+
+def _raw_ids(table: str) -> Generator[Any, Any, list[tuple[object, object]]]:
+    sql = (yield from SqlClient()).without_transforms()
+    rows: Sequence[Any] = yield from sql(
+        "SELECT id, queue_name FROM {} ORDER BY sequence", sql.identifier(table)
+    )
+    return [(row["id"], row["queue_name"]) for row in rows]
+
+
+@MYSQL_DATABASES
+def test_mysql_ids_are_exact_text_as_in_effects_table(
+    request: pytest.FixtureRequest, collation: str | None
+) -> None:
+    """(pyfect) On MySQL the id and queue name columns hold text, as Effect's
+    ``VARCHAR(255)`` do, in ``utf8mb4_0900_bin``: a pyfect from before
+    ``0003_exact_ids`` (or Effect) reading the table gets ``"job"``, never
+    ``b"job"``, during a rolling upgrade or after a downgrade."""
+    client = _mysql(request, collation)
+    table = "effect_queue_text_ids"
+
+    def body():
+        yield from _drop(table)
+        queue = yield from _queue(table, "jobs")
+        yield from queue.offer("element", id="job")
+        assert (yield from _raw_ids(table)) == [("job", "jobs")]
+        sql = yield from SqlClient()
+        columns: Sequence[Any] = yield from sql(
+            "SELECT COLUMN_NAME AS name, COLUMN_TYPE AS type, COLLATION_NAME AS collation "
+            "FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() "
+            "AND TABLE_NAME = {} AND COLUMN_NAME IN ('id', 'queue_name') ORDER BY COLUMN_NAME",
+            table,
+        ).without_transform
+        assert [(c["name"], c["type"], c["collation"]) for c in columns] == [
+            ("id", "varchar(255)", "utf8mb4_0900_bin"),
+            ("queue_name", "varchar(255)", "utf8mb4_0900_bin"),
+        ]
+
+    _run(client, body)
+
+
+@MYSQL_DATABASES
+def test_mysql_upgrades_a_varbinary_table_and_keeps_its_rows(
+    request: pytest.FixtureRequest, collation: str | None
+) -> None:
+    """(pyfect) A table ``0003_exact_ids`` made ``VARBINARY`` (0.6.4 to 0.6.10)
+    goes back to text with its rows, which are taken as before."""
+    client = _mysql(request, collation)
+    table = "effect_queue_text_upgrade"
+
+    def body():
+        yield from _drop(table)
+        sql = yield from SqlClient()
+        yield from migrator.make()(loader=_as_of_0_6_35(table, sql), table=f"{table}_migrations")
+        for id, element in (("old-a", '"a"'), ("OLD-A", '"A"'), ("résumé", '"r"')):
+            yield from sql(
+                "INSERT INTO {} (id, queue_name, element, state, attempts, visible_at, "
+                "created_at, updated_at) VALUES ({}, 'jobs', {}, 'pending', 0, NOW(), NOW(), "
+                "NOW())",
+                sql.identifier(table),
+                id,
+                element,
+            )
+        varbinary: Sequence[Any] = yield from sql(
+            "SELECT id FROM {}", sql.identifier(table)
+        ).without_transform
+        assert all(isinstance(row["id"], bytes) for row in varbinary)
+        queue = yield from _queue(table, "jobs")
+        assert (yield from _raw_ids(table)) == [
+            ("old-a", "jobs"),
+            ("OLD-A", "jobs"),
+            ("résumé", "jobs"),
+        ]
+        yield from queue.offer("again", id="old-a")
+        assert (yield from _rows(table)) == 3
+        taken = {(yield from _take(queue)), (yield from _take(queue)), (yield from _take(queue))}
+        assert taken == {("old-a", "a"), ("OLD-A", "A"), ("résumé", "r")}
+
+    _run(client, body)
+
+
+def test_mysql_an_id_of_more_than_255_characters_fails_instead_of_being_cut(
+    request: pytest.FixtureRequest,
+) -> None:
+    """(pyfect) ``VARCHAR(255)`` holds 255 characters, however many bytes
+    they take; ``INSERT IGNORE`` would cut a longer id."""
+    client = _mysql(request, None)
+    table = "effect_queue_text_long_ids"
+
+    def body():
+        yield from _drop(table)
+        queue = yield from _queue(table, "jobs")
+        yield from queue.offer("wide", id="é" * 255)
+        for id in ("x" * 256, "é" * 256):
+            failed = yield from queue.offer("long", id=id).flip()
+            assert isinstance(failed, pq.PersistedQueueError), id
+        assert (yield from _raw_ids(table)) == [("é" * 255, "jobs")]
+
+    _run(client, body)
+
+
+def test_mysql_upgrading_a_table_holding_an_id_of_more_than_255_characters_fails(
+    request: pytest.FixtureRequest,
+) -> None:
+    """(pyfect) ``0003_exact_ids`` took ids of up to 1020 bytes; one longer
+    than ``VARCHAR(255)`` stops the upgrade, saying so, instead of being
+    cut."""
+    client = _mysql(request, None)
+    table = "effect_queue_text_long_upgrade"
+
+    def body():
+        yield from _drop(table)
+        sql = yield from SqlClient()
+        yield from migrator.make()(loader=_as_of_0_6_35(table, sql), table=f"{table}_migrations")
+        yield from sql(
+            "INSERT INTO {} (id, queue_name, element, state, attempts, visible_at, created_at, "
+            "updated_at) VALUES ({}, 'jobs', {}, 'pending', 0, NOW(), NOW(), NOW())",
+            sql.identifier(table),
+            "x" * 300,
+            '"a"',
+        )
+        failed = yield from pq.make_store_sql(table_name=table).exit()
+        assert "1 rows of effect_queue_text_long_upgrade have an id or queue name" in str(failed)
+        assert (yield from _raw_ids(table))[0][0] == b"x" * 300
+
+    _run(client, body)

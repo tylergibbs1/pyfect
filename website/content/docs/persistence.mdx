@@ -105,11 +105,13 @@ runs none and carries on, as Effect's migrator does. The exceptions:
   open a store renames its older files. After that, 0.6.5 and earlier read `None` for every
   key with an upper-case letter or a trailing `.`. Stop every older process before starting
   a new one on the same directory, and don't downgrade.
-- **SQL queues on MySQL:** 0.6.4 to 0.6.9 store `id` and `queue_name` as `VARBINARY`
+- **SQL queues on MySQL:** 0.6.4 to 0.6.x store `id` and `queue_name` as `VARBINARY`
   (migration `0003_exact_ids`), so a node older than 0.6.4 sharing the table, during a rolling
   upgrade or after a downgrade, hands its handlers `meta.id == "b'job'"`, which breaks
-  idempotency keys. 0.6.10 makes them text again (`0004_exact_text_ids`); upgrade straight
-  to it, and don't run nodes older than 0.6.4 next to 0.6.4 to 0.6.9.
+  idempotency keys. 0.7.0 makes them text again, `VARCHAR(255)` as in Effect
+  (`0005_exact_text_ids`); upgrade straight to it, and don't run nodes older than 0.6.4 next
+  to 0.6.4 to 0.6.x. An id or queue name of more than 255 characters fails its `offer`, and a
+  table already holding one stops the migration, naming how many rows to remove.
 - **SQL queues on SQLite:** since 0.6.6 `visible_at` keeps milliseconds. While old and new
   processes share a queue, a delayed or retried job can start up to a second after its
   delay, never before.

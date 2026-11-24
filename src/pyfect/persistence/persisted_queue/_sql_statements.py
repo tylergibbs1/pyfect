@@ -153,16 +153,27 @@ def replace_executed_statement(dialect: Dialect, table_name: str) -> ReplaceExec
     return replace
 
 
-MYSQL_KEY_BYTES: Final = 1020
-"""The bytes of MySQL's ``id`` and ``queue_name`` columns (``VARBINARY(1020)``)."""
+MYSQL_KEY_CHARACTERS: Final = 255
+"""The characters of MySQL's ``id`` and ``queue_name`` columns (``VARCHAR(255)``)."""
 
 MYSQL_ELEMENT_BYTES: Final = 16_777_215
 """The bytes of MySQL's ``element`` column (``MEDIUMTEXT``)."""
 
 
-def _too_long(column: str, limit: int) -> SqlError:
-    message = f"The {column} is longer than its column ({limit} bytes of UTF-8)"
+def _too_long(column: str, limit: str) -> SqlError:
+    message = f"The {column} is longer than its column ({limit})"
     return SqlError(reason=ConstraintError(cause=None, message=message, operation="offer"))
+
+
+def _mysql_too_long(id: str, name: str, element: str) -> SqlError | None:
+    """The first value longer than its column: MySQL counts a ``VARCHAR``'s
+    length in characters and a ``MEDIUMTEXT``'s in bytes."""
+    for column, value in (("id", id), ("queue_name", name)):
+        if len(value) > MYSQL_KEY_CHARACTERS:
+            return _too_long(column, f"{MYSQL_KEY_CHARACTERS} characters")
+    if len(element.encode("utf-8", "surrogatepass")) > MYSQL_ELEMENT_BYTES:
+        return _too_long("element", f"{MYSQL_ELEMENT_BYTES} bytes of UTF-8")
+    return None
 
 
 def offer_statement(dialect: Dialect, table_name: str) -> OfferStatement:
@@ -195,13 +206,9 @@ def offer_statement(dialect: Dialect, table_name: str) -> OfferStatement:
         def offer(
             id: str, name: str, element: str, visible_at: Fragment
         ) -> Effect[object, SqlError]:
-            for column, value, limit in (
-                ("id", id, MYSQL_KEY_BYTES),
-                ("queue_name", name, MYSQL_KEY_BYTES),
-                ("element", element, MYSQL_ELEMENT_BYTES),
-            ):
-                if len(value.encode("utf-8", "surrogatepass")) > limit:
-                    return fail(_too_long(column, limit))
+            too_long = _mysql_too_long(id, name, element)
+            if too_long is not None:
+                return fail(too_long)
             return sql(
                 "INSERT IGNORE INTO {} (id, queue_name, element, state, attempts, visible_at, "
                 "created_at, updated_at) VALUES ({}, {}, {}, 'pending', 0, {}, {}, {})",

@@ -14,6 +14,11 @@ collation (MySQL's ``NO PAD`` ``utf8mb4_0900_bin``, SQL Server's
 ``BIN2``, so the stores also compare lengths (``persistence._sql_keys``);
 each store's integration tests pin that on the server.
 
+A table Effect also defines keeps its keys text on MySQL, as Effect's are,
+so Effect, and a pyfect from before a change, read the same values from it
+(a ``VARBINARY`` id reads back as ``b"job"``):
+``test_tables_shared_with_effect_keep_text_keys_on_mysql``.
+
 ``test_every_module_with_ddl_is_checked`` keeps the list complete: a module
 of ``src/pyfect`` that creates a table fails it until its schema is added
 below (or it is listed as running on neither server).
@@ -91,34 +96,47 @@ class Schema:
     module: str
     """The module of ``src/pyfect`` holding the DDL."""
     build: Build
+    effect_tables: frozenset[str]
+    """Its tables Effect defines too."""
     dialects: frozenset[str] = frozenset({"mysql", "mssql"})
 
 
 SCHEMAS: dict[str, Schema] = {
     "persistence single table": Schema(
-        "persistence/persistence/_sql.py", _persistence(layer_backing_sql)
+        "persistence/persistence/_sql.py",
+        _persistence(layer_backing_sql),
+        frozenset({"effect_persistence"}),
     ),
     "persistence multi table": Schema(
-        "persistence/persistence/_sql.py", _persistence(layer_backing_sql_multi_table)
+        "persistence/persistence/_sql.py",
+        _persistence(layer_backing_sql_multi_table),
+        frozenset({"effect_persistence_users"}),
     ),
-    "key value store": Schema("persistence/key_value_store/_sql.py", _key_value_store),
-    "persisted queue": Schema("persistence/persisted_queue/_sql_migrations.py", _queue),
-    "ai tool ledger": Schema("ai/tool_ledger.py", _tool_ledger),
+    "key value store": Schema(
+        "persistence/key_value_store/_sql.py", _key_value_store, frozenset({"kv"})
+    ),
+    "persisted queue": Schema(
+        "persistence/persisted_queue/_sql_migrations.py", _queue, frozenset({"queue"})
+    ),
+    "ai tool ledger": Schema("ai/tool_ledger.py", _tool_ledger, frozenset()),
     "cluster messages": Schema(
         "cluster/sql_message_storage.py",
         lambda: sql_message_storage.run_migrations(prefix="cluster"),
+        frozenset({"cluster_messages", "cluster_replies"}),
     ),
     "cluster runners": Schema(
         "cluster/sql_runner_storage.py",
         lambda: sql_runner_storage.run_migrations(prefix="cluster"),
+        frozenset({"cluster_runners", "cluster_locks"}),
     ),
     "event log server (encrypted)": Schema(
-        "eventlog/_sql_server_encrypted/tables.py", _event_log_encrypted
+        "eventlog/_sql_server_encrypted/tables.py", _event_log_encrypted, frozenset()
     ),
     # SqlEventLogServerUnencrypted runs on SQLite, PostgreSQL and MySQL
     "event log server (unencrypted)": Schema(
         "eventlog/sql_event_log_server_unencrypted.py",
         _event_log_unencrypted,
+        frozenset(),
         frozenset({"mysql"}),
     ),
 }
@@ -259,6 +277,40 @@ def test_every_key_column_compares_exactly(request: pytest.FixtureRequest, diale
         if _is_key(c) and not _exact(dialect, c) and not _not_a_key(c.table, c.name)
     )
     assert not inexact, "inexact key columns:\n" + "\n".join(inexact)
+
+
+MYSQL_BINARY = {"binary", "varbinary", "tinyblob", "blob", "mediumblob", "longblob"}
+BINARY_UNLIKE_EFFECT = {
+    "kv": "GitHub issue #54",
+    "effect_persistence": "GitHub issue #54",
+    "effect_persistence_users": "GitHub issue #54",
+}
+"""Tables Effect also defines whose MySQL keys pyfect made binary, with the
+issue tracking it."""
+
+
+def test_tables_shared_with_effect_keep_text_keys_on_mysql(request: pytest.FixtureRequest) -> None:
+    client = _fresh_mysql(request)
+    shared = {table for schema in SCHEMAS.values() for table in schema.effect_tables}
+
+    def body():
+        for schema in SCHEMAS.values():
+            if "mysql" in schema.dialects and schema.effect_tables:
+                yield from schema.build()
+        sql = yield from SqlClient()
+        return (yield from sql.unsafe(_MYSQL_COLUMNS))
+
+    columns = _mysql_columns(fx.run_blocking(fx.gen(body).pipe(fx.provide(client)).or_die()))
+    assert shared <= {c.table for c in columns}
+    binary = {
+        c.table
+        for c in columns
+        if c.table in shared
+        and _is_key(c)
+        and c.type in MYSQL_BINARY
+        and not _not_a_key(c.table, c.name)
+    }
+    assert binary == set(BINARY_UNLIKE_EFFECT)
 
 
 def test_every_module_with_ddl_is_checked() -> None:

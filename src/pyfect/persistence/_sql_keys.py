@@ -21,6 +21,10 @@ from pyfect.sql.statement import Fragment
 
 MYSQL_KEY: Final = "VARBINARY(764)"
 """191 four-byte characters, as the ``VARCHAR(191)`` it replaces."""
+MYSQL_EXACT_TEXT: Final = "CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_bin"
+"""Text compared byte for byte (``NO PAD``: trailing spaces count). The
+values stay text, unlike ``VARBINARY``'s, so Effect's code can share
+the tables."""
 MSSQL_BINARY_COLLATION: Final = "Latin1_General_100_BIN2"
 MSSQL_KEY: Final = f"NVARCHAR(450) COLLATE {MSSQL_BINARY_COLLATION}"
 MSSQL_PAIR_KEY: Final = f"NVARCHAR(191) COLLATE {MSSQL_BINARY_COLLATION}"

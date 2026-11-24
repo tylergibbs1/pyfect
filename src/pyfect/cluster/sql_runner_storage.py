@@ -33,7 +33,7 @@ from pyfect._text_keys import key_bytes
 from pyfect.cause import Cause
 from pyfect.cluster._resource_ref import ResourceRef
 from pyfect.cluster._shard_lock import effective_interval
-from pyfect.cluster._sql_keys import MSSQL_EXACT_TEXT, MYSQL_EXACT_TEXT
+from pyfect.cluster._sql_keys import MSSQL_EXACT_TEXT
 from pyfect.cluster.cluster_error import PersistenceError
 from pyfect.cluster.runner_storage import (
     RunnerStorage,
@@ -43,6 +43,7 @@ from pyfect.cluster.runner_storage import (
 from pyfect.cluster.sharding_config import ShardingConfig, ShardingConfigService, shard_group_config
 from pyfect.effect import gen, provide_service, suspend, void
 from pyfect.exit import Exit
+from pyfect.persistence._sql_keys import MYSQL_EXACT_TEXT
 from pyfect.scope import CloseableScope, Scope, fork_in
 from pyfect.semaphore import Semaphore
 from pyfect.sql import migrator

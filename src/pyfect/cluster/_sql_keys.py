@@ -11,10 +11,6 @@ from pyfect.persistence._sql_keys import MSSQL_BINARY_COLLATION, key_equals
 from pyfect.sql.client import SqlClientService
 from pyfect.sql.statement import Fragment
 
-MYSQL_EXACT_TEXT: Final = "CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_bin"
-"""Text compared byte for byte (``NO PAD``: trailing spaces count). The
-values stay text, unlike ``VARBINARY``'s, so Effect's runners can share
-the tables."""
 MSSQL_EXACT_TEXT: Final = f"COLLATE {MSSQL_BINARY_COLLATION}"
 """Case and accents count; ``=`` still ignores trailing spaces."""
 

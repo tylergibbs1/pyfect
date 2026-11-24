@@ -3,7 +3,10 @@ Effect's: ``0001`` makes the first schema (a ``completed`` flag), ``0002``
 upgrades it to ``state`` and ``visible_at`` with a partial index for
 pollers. ``0003`` is pyfect's: element ids and queue names compare exactly
 on MySQL and SQL Server (``persistence._sql_keys``). ``0004`` is Effect's
-PostgreSQL-only ``0003_widen_sequence``, numbered after pyfect's ``0003``."""
+PostgreSQL-only ``0003_widen_sequence``, numbered after pyfect's ``0003``.
+``0005`` is pyfect's and MySQL-only: ids and queue names go back to text,
+Effect's ``VARCHAR(255)``, in ``utf8mb4_0900_bin`` so they still compare
+exactly."""
 
 from __future__ import annotations
 
@@ -11,11 +14,12 @@ from collections.abc import Generator
 from typing import Any
 
 from pyfect._core import Effect
-from pyfect.effect import gen, void
-from pyfect.persistence._sql_keys import MSSQL_BINARY_COLLATION
+from pyfect.effect import fail, gen, void
+from pyfect.persistence._columns import column_int
+from pyfect.persistence._sql_keys import MSSQL_BINARY_COLLATION, MYSQL_EXACT_TEXT
 from pyfect.sql import migrator
 from pyfect.sql.client import SqlClient, SqlClientService
-from pyfect.sql.error import SqlError
+from pyfect.sql.error import ConstraintError, SqlError
 
 
 def _create_table(sql: SqlClientService, table_name: str) -> Effect[object, SqlError]:
@@ -363,6 +367,53 @@ def _exact_ids_mssql(sql: SqlClientService, table_name: str) -> Effect[object, S
     return gen(body)
 
 
+def _exact_text_ids_mysql(sql: SqlClientService, table_name: str) -> Effect[object, SqlError]:
+    """Back to Effect's ``VARCHAR(255)`` from ``0003``'s ``VARBINARY``, in
+    a binary ``NO PAD`` collation so ids still compare exactly. An id of
+    more than 255 characters (``0003`` took up to 1020 bytes) fails the
+    migration rather than being cut."""
+    table = sql.identifier(table_name)
+    text = f"VARCHAR(255) {MYSQL_EXACT_TEXT} NOT NULL"
+
+    def body() -> Generator[Any, Any]:
+        rows = yield from sql(
+            "SELECT COUNT(*) AS n FROM {} WHERE "
+            "CHAR_LENGTH(CONVERT(id USING utf8mb4)) > 255 "
+            "OR CHAR_LENGTH(CONVERT(queue_name USING utf8mb4)) > 255",
+            table,
+        )
+        too_long = column_int(rows[0]["n"])
+        if too_long > 0:
+            return (yield from fail(_too_long_rows(table_name, too_long)))
+        yield from sql(
+            f"ALTER TABLE {{}} MODIFY COLUMN id {text}, MODIFY COLUMN queue_name {text}", table
+        )
+        return None
+
+    return gen(body)
+
+
+def _too_long_rows(table_name: str, count: int) -> SqlError:
+    return SqlError(
+        reason=ConstraintError(
+            cause=None,
+            message=(
+                f"{count} rows of {table_name} have an id or queue name of more than 255 "
+                "characters, which the column cannot hold: remove them and start again"
+            ),
+            operation="migrate",
+        )
+    )
+
+
+def _exact_text_ids(table_name: str) -> Effect[object, object, SqlClient]:
+    def body() -> Generator[Any, Any]:
+        sql = (yield from SqlClient()).without_transforms()
+        yield from _exact_text_ids_mysql(sql, table_name)
+
+    return gen(body)
+
+
 def _exact_ids(table_name: str) -> Effect[object, object, SqlClient]:
     """PostgreSQL and SQLite already compare these columns exactly."""
 
@@ -403,6 +454,7 @@ def migrations(table_name: str, sql: SqlClientService) -> migrator.Loader:
             "0003_exact_ids": _exact_ids(table_name),
             **sql.on_dialect_or_else(
                 pg=lambda: {"0004_widen_sequence": _widen_sequence(table_name)},
+                mysql=lambda: {"0005_exact_text_ids": _exact_text_ids(table_name)},
                 or_else=dict[str, Effect[object, object, SqlClient]],
             ),
         }
