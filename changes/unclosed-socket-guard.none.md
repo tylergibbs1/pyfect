@@ -1,0 +1,1 @@
+- tests: a test that leaves a socket for the garbage collector fails in its own teardown, naming the transport's protocol

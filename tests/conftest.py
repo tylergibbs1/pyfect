@@ -16,6 +16,7 @@ pytest_plugins = [
     "_timeout",
     "_asyncio_reports",
     "_loop_registrations",
+    "_unclosed_sockets",
     "_shards",
     "_skips",
     "_failures_named_at_once",
