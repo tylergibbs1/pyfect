@@ -1,1 +1,0 @@
-- Tests: the event journal migration test seeds its legacy tables in one transaction (one WAL sync on CI instead of 24), and the compaction tests read once per clock hour instead of polling half a second of live time on each.

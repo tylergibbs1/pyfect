@@ -1,6 +1,8 @@
 # Changelog
 
-## 0.6.31 (2026-11-24)
+## 0.6.32 (2026-11-24)
+
+0.6.31 was tagged but never published: a test timed out in its release run. 0.6.32 carries its changes.
 
 ### Added
 
