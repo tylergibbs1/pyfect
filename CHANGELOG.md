@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.6.33 (2026-11-24)
+
+### Added
+
+- `slack_chat.escape_markdown(text)` turns text a user wrote, such as a display name, into
+  Markdown that shows it as typed through the Slack adapter: `<!channel>`, `<@U1>` and
+  `<http://evil|click>` become entities, so no token in it notifies whatever
+  `SlackPostOptions` allow, and `*bold*`, `_x_`, `~x~`, `` `x` `` and links are backslash-escaped.
+- `slack_chat.layer` (and `slack_web_api`'s `make` and `layer`) take `max_retry_after`, as the
+  other adapters' layers do: a 429 asking to wait longer fails the op at once with
+  `RateLimited`, its `retry_after` the wait Slack asked for. Without it any wait is waited out,
+  as before and as in Effect.
+
+### Fixed
+
+- A `RateLimited` reason's message, and so its `ChatError`'s, ends with the wait the platform
+  asked for, such as `slack.post: RateLimited: ratelimited; retry after 1h`, so a log line of
+  the error alone says when to retry. Effect's message leaves it out.
+
+### Docs
+
+- The WhatsApp page says a backslash is sent as it is and shows to the user, so escaping text
+  with one is wrong.
+
 ## 0.6.32 (2026-11-24)
 
 0.6.31 was tagged but never published: a test timed out in its release run. 0.6.32 carries its changes.
