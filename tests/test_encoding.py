@@ -309,6 +309,15 @@ def test_sse_decode_writes_the_events_before_a_retry_then_fails_with_it():
 
 
 @testing.effect
+def test_sse_max_event_size_bounds_only_what_is_unfinished_at_the_end_of_a_chunk():
+    whole = _texts("data: 123456789\n\n").pipe_through_channel(sse.decode(max_event_size=4))
+    assert (yield from whole.run_collect()) == [sse.Event(data="123456789")]
+    split = _texts("data: 123456789\n", "\n").pipe_through_channel(sse.decode(max_event_size=4))
+    error = yield from split.run_collect().flip()
+    assert isinstance(error, sse.SseError) and isinstance(error.reason, sse.EventTooLarge)
+
+
+@testing.effect
 def test_sse_decode_drops_an_event_without_data_unless_it_is_named_and_asked_for():
     named = _texts("event: done\n\n")
     assert (yield from _run(named.pipe_through_channel(sse.decode()))) == Outcome([], [])

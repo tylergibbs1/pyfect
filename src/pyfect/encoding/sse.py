@@ -93,7 +93,8 @@ type AnyEvent = Event | Retry
 
 @dataclass(eq=False)
 class EventTooLarge(TaggedError):
-    """A pending event grew past ``max_event_size`` characters."""
+    """An event left unfinished at the end of a chunk passed
+    ``max_event_size`` characters."""
 
     max_event_size: int
 
@@ -166,7 +167,7 @@ class Parser:
 
     def feed(self, chunk: str) -> SseError | None:
         """Parse ``chunk``. Returns an ``SseError`` (and resets) when the
-        pending event passes ``max_event_size``. If the callback resets the
+        event left unfinished at its end passes ``max_event_size``. If the callback resets the
         parser, the rest of the chunk is dropped; if it raises, the
         exception propagates and the rest of the chunk is dropped."""
         if not chunk:
@@ -241,7 +242,8 @@ def make_parser(
     dispatch_empty_named_events: bool = False,
 ) -> Parser:
     """A parser reporting to ``on_parse``. ``max_event_size`` bounds the
-    characters of the pending line and event. With
+    characters of the line and event left unfinished at the end of a chunk;
+    a complete event inside one chunk is accepted at any size. With
     ``dispatch_empty_named_events``, an event with an ``event:`` name but no
     ``data:`` line is reported with empty data (WHATWG drops it; some
     protocols, such as graphql-sse's ``complete``, use it)."""

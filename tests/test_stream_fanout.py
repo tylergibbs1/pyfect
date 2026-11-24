@@ -32,6 +32,19 @@ def test_an_idle_group_ends_and_its_key_starts_a_new_one():
 
 
 @testing.effect
+def test_a_group_being_read_still_ends_once_no_value_arrives_for_the_idle_ttl():
+    source = stream.make("a1").concat(stream.from_effect_drain(fx.sleep("10 seconds")))
+    grouped = source.group_by_key(lambda s: s[0], idle_time_to_live="1 second")
+    first_group = grouped.take(1).flat_map(lambda group: group[1])
+    fiber = yield from first_group.run_collect().fork()
+    yield from testing.adjust("999 millis")
+    assert fiber.poll_unsafe() is None
+    yield from testing.adjust("1 millis")
+    assert fiber.poll_unsafe() is not None
+    assert (yield from fiber.join()) == ["a1"]
+
+
+@testing.effect
 def test_an_upstream_failure_fails_the_grouped_stream():
     source = stream.make(1, 2, 3).concat(stream.fail("boom"))
     grouped = source.group_by_key(lambda n: n % 2).map_effect(

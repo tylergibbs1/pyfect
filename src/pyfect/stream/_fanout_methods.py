@@ -38,9 +38,10 @@ class FanOutMethods(StreamBase[A_co, E_co, R_co]):
     ) -> Stream[tuple[K, Stream[V]], E_co | E2, R_co | R2]:
         """Write ``(key, group)`` once per new key ``f(item)`` gives, where
         ``group`` is the stream of that key's values. Upstream runs on a
-        fiber and waits while a group holds ``buffer_size`` values; a group
-        read by nobody for ``idle_time_to_live`` ends, and the key's next
-        value starts a new one. A group that stops early drops its values."""
+        fiber and waits while a group holds ``buffer_size`` values. A group
+        that takes no new value for ``idle_time_to_live`` ends, even while it
+        is read, and the key's next value starts a new one; a value waiting
+        for room keeps it open. A group that stops early drops its values."""
         from pyfect.stream import _grouping
 
         return _grouping.group_by(self, f, buffer_size, idle_time_to_live)

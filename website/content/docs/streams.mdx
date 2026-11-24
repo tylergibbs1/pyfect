@@ -117,7 +117,8 @@ Where Effect has no limit, pyfect's is opt-in too, so pass one at that boundary.
 | RPC `serialization.layer_ndjson` | `max_buffer_size` | 16 MiB |
 
 A line past the limit fails the stream as soon as that much of it has arrived, without reading
-the rest. The MCP stdio server stops at a 16 MiB line, as Effect's does. The HTTP server's own
+the rest. `max_event_size` counts only the event left unfinished at the end of a chunk, so a
+complete event that arrives in one read is accepted at any size. The MCP stdio server stops at a 16 MiB line, as Effect's does. The HTTP server's own
 limits are in [Security defaults](/docs/http-server#security-defaults).
 
 <include meta='title="line_limits.py"'>../../snippets/streams/line_limits.py</include>
