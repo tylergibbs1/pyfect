@@ -4,9 +4,9 @@
 Encoding a message with a ``Collector`` in the context gathers the values
 that schemas made with ``schema(s, f)`` report; a platform that moves
 values passes them as the message's transfer list. The Python platforms
-copy (processes) or share (threads) every message, so they ignore the
-list: the module is here for platforms and schemas written against
-Effect's API.
+copy every message when it is sent; a thread worker moves the values in
+the list (the other side gets those objects, not copies), a process worker
+copies them too.
 """
 
 from __future__ import annotations

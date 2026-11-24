@@ -363,7 +363,7 @@ def test_a_message_sent_while_the_worker_exits_goes_to_the_old_channel():
     ours, theirs = _window_pair()
     ours.arm()
     port = _ProcessWorkerPort(_Exited(), ours)  # pyright: ignore[reportArgumentType]
-    port.post("late")
+    port.post("late", ())
     assert ours.entered.wait(_WAIT)  # the writer thread has the number
     theirs.close()  # the worker exits: the reader thread closes the channel
     assert fx.run_blocking(port.exited.wait()) == 0

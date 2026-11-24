@@ -54,7 +54,8 @@ class _ProcessWorkerPort(WorkerPort):
         self._writer = FrameWriter(self._channel, "pyfect-worker-writer")
         threading.Thread(target=self._read, name="pyfect-worker-reader", daemon=True).start()
 
-    def post(self, message: object) -> None:
+    def post(self, message: object, transfers: Sequence[object]) -> None:
+        # Nothing moves to another process: transferred values are pickled too.
         self._writer.write(encode(message))
 
     def kill(self) -> None:
@@ -132,7 +133,8 @@ class _ProcessParent(ParentPort):
         threading.Thread(target=self._read, name="pyfect-worker-reader", daemon=True).start()
         atexit.register(self._writer.close, _FLUSH_TIMEOUT)
 
-    def post(self, message: object) -> None:
+    def post(self, message: object, transfers: Sequence[object]) -> None:
+        # Nothing moves to another process: transferred values are pickled too.
         self._writer.write(encode(message))
 
     def close(self) -> None:

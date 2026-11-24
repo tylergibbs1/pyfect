@@ -3,7 +3,8 @@
 The parent holds a ``WorkerPort``: it posts messages to the worker, and the
 worker's messages, receive errors and exit arrive in ``events``. The worker
 holds a ``ParentPort``: it posts to the parent, and the parent's messages
-arrive in ``inbox``. Each backend (a thread, a child process) implements
+arrive in ``inbox``. Posting copies the message, as Effect's ``postMessage``
+structured-clones it. Each backend (a thread, a child process) implements
 both; the threads moving messages only ever put into a ``Mailbox``.
 """
 
@@ -11,6 +12,7 @@ from __future__ import annotations
 
 import threading
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from pyfect.process._os import Latch
@@ -65,8 +67,9 @@ class WorkerPort(ABC):
         self._finished = threading.Lock()
 
     @abstractmethod
-    def post(self, message: object) -> None:
-        """Send ``message`` without waiting; raises if it cannot be sent."""
+    def post(self, message: object, transfers: Sequence[object]) -> None:
+        """Send a copy of ``message`` without waiting, moving the values in
+        ``transfers`` where the backend can; raises if it cannot be sent."""
 
     @abstractmethod
     def kill(self) -> None:
@@ -88,8 +91,10 @@ class ParentPort(ABC):
         self.inbox: Mailbox[ParentEvent] = Mailbox()
 
     @abstractmethod
-    def post(self, message: object) -> None:
-        """Send ``message`` to the parent without waiting."""
+    def post(self, message: object, transfers: Sequence[object]) -> None:
+        """Send a copy of ``message`` to the parent without waiting, moving
+        the values in ``transfers`` where the backend can; raises if it
+        cannot be sent."""
 
     @abstractmethod
     def close(self) -> None:
