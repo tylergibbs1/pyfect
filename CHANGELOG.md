@@ -1,6 +1,8 @@
 # Changelog
 
-## 0.6.27 (2026-11-24)
+## 0.6.28 (2026-11-24)
+
+0.6.27 was tagged but never published: a flaky test failed in its release run. 0.6.28 carries its changes.
 
 ### Added
 
@@ -26,6 +28,20 @@
   scope frees when it closes, and `schema(kind)` is the worker message field that carries it.
   Thread and process workers both write into the sender's memory: a process worker maps the
   segment by name rather than getting a copy.
+- `pyfect.chat` (Effect's `effect/chat`, Effect #10581 with #10748 and #10750): the `Chat`
+  service that posts, edits, reacts and streams to any registered platform adapter, typed
+  `ChatError` reasons with a fixed retry value, `chat_markdown.post` and `stream` (Markdown
+  split to a platform's limits at block boundaries, code fences closed and reopened, native
+  streaming or post-then-edit, failures that say what was posted), typed buttons, selects,
+  modals and slash commands with a 3 second deadline (`chat_interaction`), the `ChatHandler`
+  event layer, and `chat_test`: an in-memory platform plus the conformance suite adapters
+  run. Docs: [Chat](https://pyfect.dev/docs/chat).
+- `pyfect.chat.slack` (Effect's `@effect/chat-slack`, Effect #10581 with #10749): the Slack
+  adapter for `pyfect.chat` over the Web API with no SDK, the Events API and Interactivity
+  routes (`v0` signatures checked in constant time through `Mac`, a five minute timestamp
+  window, a body limit, typed parsing at the route), slash commands and modals, native
+  streaming with Slack's stop button, `with_post_options` to choose who a post notifies, and
+  the pure `normalize` and `normalize_interaction`. Docs: [Slack](https://pyfect.dev/docs/chat-slack).
 
 ### Fixed
 
@@ -74,6 +90,13 @@
   waited for the connection to come back, which happened only when that scope closed, after the
   client's. Closing the client now closes the connection, and a later statement on it fails with
   the driver's `SqlError`.
+
+### Performance
+
+- `pyfect.ai`: a tool call no longer derives the codecs of its failures again on every call. A tool's failed-result schema, a toolkit's (and a tool ledger's) call failures and `durable`'s record of a call are now one schema per tool, whose codecs are derived once; a durable agent with a tool ledger spent about 2 ms per call deriving them.
+- Percent-encoding a URL or a form body (`http_request.body_url_params`, `url_params`, URL
+  setters) runs in two passes in C instead of a loop per character: a 40,000 character Slack
+  message body encodes about three times faster.
 
 ### Docs
 

@@ -1,1 +1,0 @@
-- Tests: a hung test inside an asyncio loop reports the callback the loop is running, not asyncio's own code where the alarm happened to land between callbacks (the v0.6.27 release run's flake).

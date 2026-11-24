@@ -1,1 +1,0 @@
-- Tests: one counter names the tables tests make in a shared database (`tests/_db_names.py`), so a runner-storage test no longer makes `legacy_<pid>_<n>` tables that an event log test lists as its own.
