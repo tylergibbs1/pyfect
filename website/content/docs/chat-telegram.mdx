@@ -1,0 +1,76 @@
+---
+title: Telegram
+description: "Run a pyfect.chat bot on Telegram: the Bot API adapter, the webhook with its secret token or long polling, commands and buttons, and what the adapter escapes before it sends."
+---
+
+`pyfect.chat.telegram` is Effect's `@effect/chat-telegram`, the Telegram Bot API adapter for
+[Chat](/docs/chat). `telegram_chat.layer(token=...)` registers it for one bot and needs only
+an `HttpClient`. It calls the Bot API over HTTP, with no SDK, and keeps the token out of
+spans, logs and errors. A thread is `telegram_chat.thread(chat_id)`, or
+`telegram_chat.thread(chat_id, message_thread_id)` for a forum topic.
+
+Posts, edits, deletes, replies, downloads, `get_thread` and `get_user` work through `Chat` as
+on any adapter. Posts and edits go out as rich messages, and the Markdown is escaped first so
+that text a user typed reaches Telegram as text: no raw HTML, image, math, spoiler or link
+other than http, https and mailto, with nesting, tables and inline nodes kept within
+Telegram's limits. Files, buttons and commands are off until you turn them on with
+`unverified_files`, `unverified_buttons` and `unverified_commands`. There is no private
+(ephemeral) reply: one is refused through `chat_interaction.Handler.refused` and never
+posted.
+
+## The webhook
+
+`telegram_chat.layer_webhook(path=..., secret_token=...)` adds a `POST` route to an
+`HttpRouter`. Every request is untrusted until its `X-Telegram-Bot-Api-Secret-Token` header
+equals `secret_token`, compared in constant time; without it the answer is 401 and the body
+is never read. The secret must be 32 to 256 characters of `A-Za-z0-9_-`. A body over
+`max_body_bytes` (1 MiB) is answered 413, and one that is not JSON, nests past 64 levels or
+is not an update, 400.
+
+Messages go to the `ChatHandler`, and clicks and commands to the
+`chat_interaction.Handler`. When the handler fails `NotAccepted` or passes its deadline (10
+seconds), the route answers 503 and Telegram sends the update again. Delivery is at least
+once: claim `telegram_chat.delivery_key` before work that must not run twice.
+
+<CodeOutput>
+
+<include meta='title="telegram_bot.py"'>../../snippets/chat/telegram_bot.py</include>
+
+<include lang="text">../../snippets/chat/telegram_bot.out</include>
+
+</CodeOutput>
+
+`telegram_chat.set_webhook(url=..., secret_token=...)` registers the webhook with the update
+types the adapter reads; the adapter never calls it itself. An app that records request
+headers adds `telegram_chat.SECRET_HEADER` to its redacted header names.
+
+## Long polling
+
+`telegram_chat.layer_polling()` reads updates with `getUpdates` instead, for a process that
+runs without a public URL. Updates run one at a time, in order, and each is confirmed only
+after it ran. An update the handler does not accept is retried three times and then logged
+and skipped, so one bad update cannot stall the bot. The layer fails with detail `conflict`
+when a webhook is set or another process polls.
+
+## Commands and buttons
+
+With `unverified_commands=True`, a message starting with `/name` goes to the handler's
+`command`. `telegram_chat.set_commands(group)` registers a group's commands with Telegram;
+an id must be `[a-z0-9_]{1,32}`, as Telegram allows no `-`. A command gets its answer in
+public, as a reply.
+
+With `unverified_buttons=True`, actions become an inline keyboard. A click reaches the
+handler only when its data matches a button in Telegram's own copy of the message, and every
+click is answered within `click_deadline` (2.5 seconds) so the user's client stops waiting.
+
+## Testing
+
+`telegram_chat.normalize(update, NormalizeContext(bot_id=...))` is a pure function from an
+update's JSON to events, so captured payloads test it directly, and
+`TelegramChatService.receive` runs one update for your own transport. For writes, provide an
+`HttpClient` from `pyfect.http.client.layer_test` that answers like the Bot API, as the
+example above does. Effect's conformance suite runs against the adapter this way in pyfect's
+own tests.
+
+Reference: [`telegram_chat`](/docs/reference/chat/telegram/telegram_chat),
+[`telegram_bot_api`](/docs/reference/chat/telegram/telegram_bot_api).

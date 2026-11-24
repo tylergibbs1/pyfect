@@ -1,0 +1,3 @@
+sendRichMessage -1001234567890 'Deploying **docs** now'
+answered 200
+without the secret 401
