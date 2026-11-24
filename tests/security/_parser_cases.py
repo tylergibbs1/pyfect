@@ -50,6 +50,8 @@ from pyfect.ai import mcp_schema, mcp_server
 from pyfect.ai import tool as ai_tool
 from pyfect.ai.chat import from_json as chat_from_json
 from pyfect.chat import chat_interaction, chat_thread
+from pyfect.chat.discord import discord_chat
+from pyfect.chat.discord.discord_gateway import GatewayDispatch
 from pyfect.chat.slack import slack_chat
 from pyfect.chat.teams import _render as _teams_render
 from pyfect.chat.teams import teams_chat
@@ -671,6 +673,81 @@ def _teams_backtick_runs(n: int) -> Work:
 def _teams_delimiter_spaces(n: int) -> Work:
     markdown = "| a |\n" + " " * n + "|"
     return lambda: _teams_render.blocks(markdown)
+# ------------------------------------------------------------------------- Discord inbound
+
+# A Discord dispatch or interaction is peer input: any member of a guild posts
+# a message up to 2,000 characters (4,000 with Nitro, more through a webhook),
+# and its content is scanned for mention tokens outside code.
+text(discord_chat.parse_mention)
+
+
+def _discord_message(content: str, mentions: int = 0) -> Work:
+    d = {
+        "id": "1570607253965246584",
+        "channel_id": "1570607253965246584",
+        "channel_type": 0,
+        "type": 0,
+        "content": content,
+        "timestamp": "2026-05-12T10:00:00.000000+00:00",
+        "author": {"id": "449108784879763458", "username": "peer"},
+        "mentions": [{"id": str(i + 1)} for i in range(mentions)],
+    }
+    found = GatewayDispatch(t="MESSAGE_CREATE", d=cast("Any", d))
+    return lambda: discord_chat.normalize(found, bot_user_id="1564742987727118426")
+
+
+@case(discord_chat.normalize, "discord_chat.normalize: resolved mentions in content", size=1500)
+def _discord_mentions(n: int) -> Work:
+    count = n // 6
+    return _discord_message("".join(f"<@{i + 1}> " for i in range(count)), count)
+
+
+@case(discord_chat.normalize, "discord_chat.normalize: backtick runs that never close", size=1000)
+def _discord_open_backticks(n: int) -> Work:
+    # Each run of a new length looks for its closer once; a failed fence search is kept.
+    runs = []
+    length = 1
+    while sum(len(r) for r in runs) < n:
+        runs.append("`" * length + " <@1> ")
+        length += 1
+    return _discord_message("".join(runs)[:n], 1)
+
+
+@case(discord_chat.normalize, "discord_chat.normalize: unclosed fences and escapes", size=4000)
+def _discord_fences(n: int) -> Work:
+    return _discord_message("```\\<@1>``" * max(1, n // 11), 1)
+
+
+@case(discord_chat.normalize, "discord_chat.normalize: astral text before mentions", size=4000)
+def _discord_astral(n: int) -> Work:
+    count = n // 8
+    return _discord_message("\U0001f600 <@1> " * count, 1)
+
+
+def _discord_submit(n: int) -> Work:
+    payload = {
+        "id": "1570700000000000100",
+        "application_id": "1564742987727118426",
+        "type": 5,
+        "token": "token",
+        "channel_id": "1570607253965246584",
+        "member": {"user": {"id": "449108784879763458"}},
+        "data": {
+            "custom_id": "form",
+            "components": [
+                {"type": 18, "component": {"type": 4, "custom_id": f"f{i}", "value": "v"}}
+                for i in range(n)
+            ],
+        },
+    }
+    return lambda: discord_chat.normalize_interaction(payload)
+
+
+case(
+    discord_chat.normalize_interaction,
+    "discord_chat.normalize_interaction: a submit with many inputs",
+    size=500,
+)(_discord_submit)
 
 
 # ------------------------------------------------------------------------- streaming decoders
@@ -1325,6 +1402,9 @@ _REASONS: dict[str, list[str]] = {
     ],
     "builds an atom; parses nothing": [
         "pyfect.reactivity.atom._types.readable",
+    ],
+    "reads an HTTP answer; the JSON parse is _json.parse, measured through discord_chat": [
+        "pyfect.chat.discord.discord_rest.read_answer",
     ],
     "reads a socket; parses nothing": [
         "pyfect.socket._socket.reader_bytes",

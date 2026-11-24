@@ -24,6 +24,7 @@ from layer_cases import (
     ai_decisions,
     ai_otel,
     chat,
+    chat_discord,
     chat_slack,
     chat_teams,
     cluster,
@@ -55,6 +56,7 @@ _AREAS = (
     ai_bedrock,
     otlp,
     chat,
+    chat_discord,
     chat_slack,
     chat_teams,
 )

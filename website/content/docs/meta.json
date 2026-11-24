@@ -50,6 +50,7 @@
     "chat",
     "chat-slack",
     "chat-teams",
+    "chat-discord",
     "models",
     "graphql",
     "eventlog",
