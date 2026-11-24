@@ -84,8 +84,9 @@ ENTITY = re.compile(r"[<>]|&(?!lt;|gt;|amp;)")
 
 
 def check(
-    op: Literal["post", "edit"], markdown: str, notify: Notify, params: dict[str, str]
+    op: Literal["post", "edit"], markdown: str, notify: Notify, params: dict[str, str], whole: str
 ) -> None:
+    """``whole`` is the uncut text, ``build`` with no budget."""
     label = f"{op} {markdown[:40]!r} {notify}"
     block: str = json.loads(params["blocks"])[0]["text"]
     text = params["text"]
@@ -105,7 +106,6 @@ def check(
         if token in block:
             assert token in text, label
     # A cut is a prefix of the whole text, on a grapheme boundary and outside an entity.
-    whole = _text.build(markdown, notify, Budget("code_points", sys.maxsize)).text
     if text != whole:
         head = text[: text.rindex("…")]
         assert whole.startswith(head), label
@@ -113,36 +113,65 @@ def check(
         assert is_boundary(whole, len(head)), label
 
 
-# Effect's one test in three parts, which run on separate workers: the
-# generated inputs for each notify value, and the padded inputs.
+# Effect's one test, in parts that run on separate workers: the generated
+# inputs for each notify value, and the padded inputs, each dealt round-robin
+# into slices so every slice holds short and long inputs alike. Together the
+# slices are every input. Each part takes under a quarter of a second.
+REQUEST_PARTS = {"nobody": 5, "allowed": 8, "allowed-padded": 4}
+
+
+def request_inputs(notify: Notify, padded: bool, part: int, parts: int) -> list[str]:
+    """Slice ``part`` of ``parts`` of the generated inputs."""
+    if padded:
+        # 3,300 `&` are 16,500 code points of text, so a token in the word is
+        # past either cut.
+        return ["&" * 3_300 + word for word in WITH_TOKEN[part::parts]]
+    specs = [
+        *((word, False) for word in SHORT),
+        *((word, True) for n in (1, 2) for word in words(REQUEST_ALPHABET, n)),
+    ]
+    return [long(word, notify) if is_long else word for word, is_long in specs[part::parts]]
+
+
+def test_the_request_parts_cover_every_generated_input():
+    for padded, total in ((False, len(SHORT) + 110), (True, len(WITH_TOKEN))):
+        for parts in set(REQUEST_PARTS.values()):
+            sliced = [
+                word
+                for part in range(parts)
+                for word in request_inputs(NOBODY, padded, part, parts)
+            ]
+            assert len(sliced) == total
+            assert sorted(sliced) == sorted(request_inputs(NOBODY, padded, 0, 1))
+
+
 @pytest.mark.parametrize(
-    ("notify", "padded"),
-    [(NOBODY, False), (ALLOWED, False), (ALLOWED, True)],
-    ids=["nobody", "allowed", "allowed-padded"],
+    ("notify", "padded", "part", "parts"),
+    [
+        pytest.param(notify, padded, part, REQUEST_PARTS[name], id=f"{name}-{part}")
+        for name, notify, padded in (
+            ("nobody", NOBODY, False),
+            ("allowed", ALLOWED, False),
+            ("allowed-padded", ALLOWED, True),
+        )
+        for part in range(REQUEST_PARTS[name])
+    ],
 )
 @testing.effect
 def test_hold_the_mention_budget_and_cut_rules_over_a_generated_alphabet(
-    notify: Notify, padded: bool
+    notify: Notify, padded: bool, part: int, parts: int
 ):
     """request bodies / hold the mention, budget and cut rules over a generated alphabet"""
     fake = Fake({"chat.postMessage": {"ok": True, "channel": CHANNEL, "ts": "1.1"}})
+    inputs = request_inputs(notify, padded, part, parts)
 
     @fx.gen
     def program() -> Gen[None]:
         slack = yield from adapter
         count = 0
         cuts = {"post": 0, "edit": 0}
-        inputs = (
-            # 3,300 `&` are 16,500 code points of text, so a token in the word is
-            # past either cut.
-            ["&" * 3_300 + word for word in WITH_TOKEN]
-            if padded
-            else [
-                *SHORT,
-                *(long(word, notify) for n in (1, 2) for word in words(REQUEST_ALPHABET, n)),
-            ]
-        )
         for markdown in inputs:
+            whole = _text.build(markdown, notify, Budget("code_points", sys.maxsize)).text
             for op in ("post", "edit"):
                 before = len(fake.calls)
                 # A new message id for each edit, so pacing never waits.
@@ -155,15 +184,15 @@ def test_hold_the_mention_budget_and_cut_rules_over_a_generated_alphabet(
                 call = fake.calls[-1]
                 assert len(fake.calls) == before + 1
                 assert call.method == ("chat.postMessage" if op == "post" else "chat.update")
-                check(op, markdown, notify, call.params)
+                check(op, markdown, notify, call.params, whole)
                 if "…" in call.params["text"]:
                     cuts[op] += 1
                 count += 1
-        assert count == 2 * (len(WITH_TOKEN) if padded else len(SHORT) + 110)
+        assert count == 2 * len(inputs)
         if padded:
-            assert cuts == {"post": len(WITH_TOKEN), "edit": len(WITH_TOKEN)}
+            assert cuts == {"post": len(inputs), "edit": len(inputs)}
         else:
-            # The long inputs reach both budgets.
+            # The long inputs in every slice reach both budgets.
             assert cuts["post"] > 0
             assert cuts["edit"] > 0
 
@@ -218,9 +247,30 @@ SEEDS = [
 ]
 
 
-@pytest.mark.parametrize("notify", [NOBODY, Notify(users=("U1",))], ids=["nobody", "u1"])
+# Each notify value's words, dealt round-robin into slices that run on
+# separate workers. Together the slices are every word.
+STREAM_WORDS = [*SEEDS, *(w for n in (1, 2) for w in words(STREAM_ALPHABET, n))]
+STREAM_PARTS = 6
+
+
+def test_the_stream_parts_cover_every_word():
+    sliced = [word for part in range(STREAM_PARTS) for word in STREAM_WORDS[part::STREAM_PARTS]]
+    assert sorted(sliced) == sorted(STREAM_WORDS)
+    assert len(STREAM_WORDS) == len(SEEDS) + 14 + 14 * 14
+
+
+@pytest.mark.parametrize(
+    ("notify", "part"),
+    [
+        pytest.param(notify, part, id=f"{name}-{part}")
+        for name, notify in (("nobody", NOBODY), ("u1", Notify(users=("U1",))))
+        for part in range(STREAM_PARTS)
+    ],
+)
 @testing.effect
-def test_hold_the_mention_rule_at_every_split_and_leave_no_u200b_after_the_stream(notify: Notify):
+def test_hold_the_mention_rule_at_every_split_and_leave_no_u200b_after_the_stream(
+    notify: Notify, part: int
+):
     """stream bodies / hold the mention rule at every split, and leave no U+200B after the stream"""
     count = 0
 
@@ -241,7 +291,7 @@ def test_hold_the_mention_rule_at_every_split_and_leave_no_u200b_after_the_strea
         def allowed(found: str, notify: Notify = notify) -> bool:
             return bool(notify.users) and re.match(r"^<@U1[|>]", found) is not None
 
-        for word in [*SEEDS, *(w for n in (1, 2) for w in words(STREAM_ALPHABET, n))]:
+        for word in STREAM_WORDS[part::STREAM_PARTS]:
             # Every split in UTF-16 units, as JavaScript slices, so a
             # surrogate pair can be cut.
             length = utf16_length(word)
