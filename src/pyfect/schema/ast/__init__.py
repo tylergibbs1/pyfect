@@ -54,7 +54,13 @@ from pyfect.schema.ast._check import (
     make_filter_by_guard,
     normalize_filter_output,
 )
-from pyfect.schema.ast._class import Class, ClassShape, ClassSide, check_instance
+from pyfect.schema.ast._class import (
+    Class,
+    ClassShape,
+    ClassSide,
+    check_instance,
+    encoded_structure,
+)
 from pyfect.schema.ast._constructors import (
     struct,
     struct_with_rest,
@@ -195,6 +201,7 @@ __all__ = [
     "collect_issues",
     "collect_sentinels",
     "decode_to",
+    "encoded_structure",
     "filter_of",
     "flat_map",
     "format_literal",

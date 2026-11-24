@@ -6,10 +6,11 @@ several times a list."""
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass, replace
+from dataclasses import replace
 
 from pyfect.schema import ast
 from pyfect.schema import transformation as T
+from pyfect.schema._codec_derivation import CodecDerivation
 from pyfect.schema._schema import Bottom, Codec
 
 
@@ -27,49 +28,47 @@ FROM_SINGLE = T.transform(decode=_to_array, encode=_same)
 def to_codec_array_from_single[T_, E, RD, RE](
     schema: Codec[T_, E, RD, RE], /
 ) -> Bottom[T_, E, RD, RE]:
-    """``schema`` with every array (in structs, unions and arrays) also
-    decoding a single string as a one-element list; encoding is
-    unchanged. A comma-separated string is not split."""
-    return Bottom(_Walk()(schema.__codec__().ast))
+    """``schema`` with every array (in structs, classes, unions, arrays and
+    declarations' type parameters) also decoding a single string as a
+    one-element list; encoding is unchanged. A comma-separated string is not
+    split."""
+    return Bottom(_FromSingle.of(schema.__codec__().ast))
 
 
-@dataclass(frozen=True, slots=True)
-class _WalkedThunk:
-    """A walked ``Suspend``'s target: marks it walked, so walking it again keeps it."""
+class _FromSingle(CodecDerivation):
+    """Effect's ``toCodecArrayFromSingleAST``: the shared walk, with each array
+    given a link from a single string. Nothing else changes."""
 
-    walk: _Walk
-    source: ast.Suspend
+    def _stops_at(self, link: ast.Link) -> bool:
+        return link.transformation is FROM_SINGLE
 
-    def __call__(self) -> ast.AST:
-        return self.walk(self.source.target)
+    def _leaf(self, node: ast.AST) -> ast.AST:
+        if isinstance(node, ast.Declaration):
+            parameters = tuple(map(self, node.type_parameters))
+            if all(a is b for a, b in zip(parameters, node.type_parameters, strict=True)):
+                return node
+            return replace(node, type_parameters=parameters)
+        return node
 
+    def _priority(self, encoded: ast.AST) -> int:
+        return 0
 
-class _Walk:
-    def __init__(self) -> None:
-        self._done: dict[int, ast.AST] = {}
+    def _objects(self, node: ast.Objects) -> ast.Objects:
+        properties = tuple(replace(p, type=self(p.type)) for p in node.properties)
+        indexes = tuple(replace(i, type=self(i.type)) for i in node.index_signatures)
+        same = all(
+            a.type is b.type for a, b in zip(properties, node.properties, strict=True)
+        ) and all(a.type is b.type for a, b in zip(indexes, node.index_signatures, strict=True))
+        return node if same else replace(node, properties=properties, index_signatures=indexes)
 
-    def __call__(self, node: ast.AST) -> ast.AST:
-        done = self._done.get(id(node))
-        if done is not None:
-            return done
-        out = self._last_link(node)
-        self._done[id(node)] = out
-        self._done[id(out)] = out
-        return out
+    def _class_type(self, node: ast.Class) -> ast.AST:
+        return node
 
-    def _last_link(self, node: ast.AST) -> ast.AST:
-        if node.encoding is None:
-            return self._step(node)
-        *init, last = node.encoding
-        if last.transformation is FROM_SINGLE:
-            return node
-        to = self(last.to)
-        if to is last.to:
-            return node
-        return replace(node, encoding=(*init, ast.Link(to, last.transformation)))
+    def _class_encode(self, node: ast.Class) -> ast.AST:
+        return node
 
     def _step(self, node: ast.AST) -> ast.AST:
-        out = self._children(node)
+        out = super()._step(node)
         if not isinstance(out, ast.Arrays):
             return out
         source = ast.Union(
@@ -83,33 +82,3 @@ class _Walk:
         )
         ensure = ast.decode_to(source, out, FROM_SINGLE)
         return ast.optional_key(ensure) if node.optional_key else ensure
-
-    def _children(self, node: ast.AST) -> ast.AST:
-        match node:
-            case ast.Objects():
-                properties = tuple(replace(p, type=self(p.type)) for p in node.properties)
-                indexes = tuple(replace(i, type=self(i.type)) for i in node.index_signatures)
-                same = all(
-                    a.type is b.type for a, b in zip(properties, node.properties, strict=True)
-                ) and all(
-                    a.type is b.type for a, b in zip(indexes, node.index_signatures, strict=True)
-                )
-                return (
-                    node if same else replace(node, properties=properties, index_signatures=indexes)
-                )
-            case ast.Arrays():
-                return replace(
-                    node,
-                    elements=tuple(replace(e, type=self(e.type)) for e in node.elements),
-                    rest=tuple(map(self, node.rest)),
-                )
-            case ast.Union():
-                types = tuple(map(self, node.types))
-                same = all(a is b for a, b in zip(types, node.types, strict=True))
-                return node if same else replace(node, types=types)
-            case ast.Suspend() if isinstance(node.thunk, _WalkedThunk):
-                return node
-            case ast.Suspend():
-                return replace(node, thunk=_WalkedThunk(self, node))
-            case _:
-                return node

@@ -758,6 +758,21 @@ async def _one_async() -> int:
     return 1
 
 
+def check_built_in_error_messages() -> None:
+    # Effect's built-in errors take an optional message; an attribute an error does not
+    # declare is an error, as on any class.
+    assert_type(fx.IllegalArgumentError("x").message, str | None)
+    assert_type(fx.NoSuchElementException().message, str | None)
+    assert_type(fx.ExceededCapacityError("x").message, str | None)
+    assert_type(fx.TimeoutException(duration.millis(1)).message, str)
+    assert_type(fx.UnknownError(ValueError()).message, str | None)
+    from pyfect.errors import AsyncFiberError
+
+    assert_type(AsyncFiberError(None).message, str)
+    _ = fx.IllegalArgumentError("x").reason  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType, reportUnknownVariableType]
+    _ = fx.TaggedError().message  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType, reportUnknownVariableType]
+
+
 def check_error_constructors(
     mixed: list[int | str], r: fx.Result[int, str], opt: fx.Option[int | None]
 ) -> None:

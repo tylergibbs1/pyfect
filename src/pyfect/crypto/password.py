@@ -26,6 +26,7 @@ from dataclasses import dataclass
 from typing import Never, Protocol
 
 from pyfect._core import Effect
+from pyfect._js import text_encode
 from pyfect.context import Tag
 from pyfect.crypto import _web
 from pyfect.crypto.crypto_error import CryptoError, InvalidArgument
@@ -167,7 +168,7 @@ _HASH_LENGTH = 32
 
 def _to_bytes(password: str | Redacted[str]) -> bytes:
     text = redacted_value(password) if isinstance(password, Redacted) else password
-    return text.encode("utf-8", "surrogatepass")
+    return text_encode(text)
 
 
 class _Service:

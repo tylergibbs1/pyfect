@@ -222,19 +222,40 @@ def _rebuild[T](cls: Callable[..., T], init: dict[str, Any]) -> T:
 
 @dataclass
 class TimeoutException(TaggedError, builtins.TimeoutError):
-    """An effect ran longer than its ``timeout`` of ``duration``."""
+    """An effect ran longer than its ``timeout`` of ``duration``. ``message``
+    defaults to the one Effect's ``timeout`` writes."""
 
     duration: Duration
+    message: str = ""
+
+    def __post_init__(self) -> None:
+        if not self.message:
+            self.message = f"Operation timed out after '{self.duration.format()}'"
 
     def __str__(self) -> str:
-        return f"Operation timed out after '{self.duration.format()}'"
+        return self.message
 
 
-class NoSuchElementException(TaggedError, LookupError):
+class _OptionalMessage(TaggedError):
+    """One of Effect's built-in errors, made with an optional ``message``
+    (``new IllegalArgumentError(message?)``): ``None`` when it has none. The
+    string form is the message, as Python's own exceptions print."""
+
+    message: str | None = None
+
+    def __init__(self, message: str | None = None) -> None:
+        super().__init__(*(() if message is None else (message,)))
+        self.message = message
+
+    def __str__(self) -> str:
+        return Exception.__str__(self)
+
+
+class NoSuchElementException(_OptionalMessage, LookupError):
     """An expected value was missing."""
 
 
-class IllegalArgumentError(TaggedError, ValueError):
+class IllegalArgumentError(_OptionalMessage, ValueError):
     """An argument outside what an operation accepts, such as an unknown
     time zone name."""
 
@@ -291,7 +312,7 @@ class AsyncFiberError(TaggedError):
     message: str = "An asynchronous Effect was executed with Effect.runSync"
 
 
-class ExceededCapacityError(TaggedError):
+class ExceededCapacityError(_OptionalMessage):
     """A bounded structure was asked to hold more than its capacity."""
 
 

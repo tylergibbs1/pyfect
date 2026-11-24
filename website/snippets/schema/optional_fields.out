@@ -1,0 +1,4 @@
+Rule(id='a', min_count=None)
+{'id': 'a'}
+Expected number, and the default None is not one: write S.NullOr(schema) for a field that may be None, or S.Union(schema, S.Undefined) to leave the key out while it is None
+  at ["min_count"]

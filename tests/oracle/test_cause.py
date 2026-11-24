@@ -39,7 +39,7 @@ Omitted, with the reason:
 import traceback
 
 import pyfect as fx
-from pyfect import cause
+from pyfect import cause, duration
 from pyfect.cause import Cause, Die, EmptyCauseError, Fail, Interrupt
 from pyfect.result import Err, Ok
 from pyfect.tracer import InterruptorStackTrace, StackTrace
@@ -515,17 +515,44 @@ def test_returns_a_string_for_empty_cause() -> None:
 
 def test_creates_an_error_with_tag_and_message() -> None:
     """creates an error with _tag and message"""
-    assert str(fx.NoSuchElementException("not found")) == "not found"
+    error = fx.NoSuchElementException("not found")
+    assert error.message == "not found"
+    assert str(error) == "not found"
 
 
 def test_creates_an_error_without_message() -> None:
     """creates an error without message"""
+    assert fx.NoSuchElementException().message is None
     assert str(fx.NoSuchElementException()) == ""
 
 
 def test_is_an_instance_of_error() -> None:
     """is an instance of Error"""
     assert isinstance(fx.NoSuchElementException(), Exception)
+
+
+# TimeoutError (pyfect: TimeoutException, which also holds the duration)
+
+
+def test_timeout_error_creates_an_error_with_tag_and_message() -> None:
+    """creates an error with _tag and message"""
+    error = fx.TimeoutException(duration.millis(10), "timed out")
+    assert type(error).__name__ == "TimeoutException"
+    assert error.message == "timed out"
+    assert str(error) == "timed out"
+
+
+def test_timeout_error_creates_an_error_without_message() -> None:
+    """creates an error without message"""
+    # Effect.timeout writes this message (Effect.test.ts, timeout).
+    error = fx.TimeoutException(duration.millis(10))
+    assert error.message == "Operation timed out after '10ms'"
+    assert str(error) == error.message
+
+
+def test_timeout_error_is_an_instance_of_error() -> None:
+    """is an instance of Error"""
+    assert isinstance(fx.TimeoutException(duration.millis(10)), Exception)
 
 
 # IllegalArgumentError
@@ -535,11 +562,13 @@ def test_illegal_argument_error_creates_an_error_with_tag_and_message() -> None:
     """creates an error with _tag and message"""
     error = fx.IllegalArgumentError("bad arg")
     assert type(error).__name__ == "IllegalArgumentError"
+    assert error.message == "bad arg"
     assert str(error) == "bad arg"
 
 
 def test_illegal_argument_error_creates_an_error_without_message() -> None:
     """creates an error without message"""
+    assert fx.IllegalArgumentError().message is None
     assert str(fx.IllegalArgumentError()) == ""
 
 
@@ -561,11 +590,13 @@ def test_exceeded_capacity_error_creates_an_error_with_tag_and_message() -> None
     """creates an error with _tag and message"""
     error = fx.ExceededCapacityError("queue full")
     assert type(error).__name__ == "ExceededCapacityError"
+    assert error.message == "queue full"
     assert str(error) == "queue full"
 
 
 def test_exceeded_capacity_error_creates_an_error_without_message() -> None:
     """creates an error without message"""
+    assert fx.ExceededCapacityError().message is None
     assert str(fx.ExceededCapacityError()) == ""
 
 

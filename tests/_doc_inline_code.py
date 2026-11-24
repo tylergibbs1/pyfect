@@ -34,6 +34,12 @@ fx.sleep(5)
 fx.sleep("5 seconds")
 # schema.mdx
 S.HashSet(S.Int)
+# schema.mdx
+S.field(S.Int, default=None)
+# schema.mdx
+S.Union(S.Int, S.Undefined)
+# schema.mdx
+S.NullOr(S.Int)
 # streams.mdx
 S.field(S.String, key="primaryKey")
 # testing.mdx

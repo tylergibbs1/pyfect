@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+from pyfect._js import text_encode
+
 _HEX = frozenset("0123456789abcdefABCDEF")
 
 C0_CONTROL = frozenset(chr(i) for i in range(0x20))
@@ -18,7 +20,8 @@ FORM = COMPONENT | frozenset("!'()~")
 
 def encode(text: str, encode_set: frozenset[str], space_as_plus: bool = False) -> str:
     """``text`` with the characters of ``encode_set`` (and every non-ASCII
-    one) percent-encoded as UTF-8."""
+    one) percent-encoded as UTF-8 (a lone surrogate as U+FFFD, as the URL
+    Standard's UTF-8 encode writes it)."""
     if not any(ch in encode_set or ch > "~" for ch in text):
         return text
     out: list[str] = []
@@ -26,7 +29,7 @@ def encode(text: str, encode_set: frozenset[str], space_as_plus: bool = False) -
         if space_as_plus and ch == " ":
             out.append("+")
         elif ch in encode_set or ch > "~":
-            out.extend(f"%{b:02X}" for b in ch.encode("utf-8", "surrogatepass"))
+            out.extend(f"%{b:02X}" for b in text_encode(ch))
         else:
             out.append(ch)
     return "".join(out)
