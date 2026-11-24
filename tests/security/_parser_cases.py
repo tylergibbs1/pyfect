@@ -51,6 +51,9 @@ from pyfect.ai import tool as ai_tool
 from pyfect.ai.chat import from_json as chat_from_json
 from pyfect.chat import chat_interaction, chat_thread
 from pyfect.chat.slack import slack_chat
+from pyfect.chat.whatsapp import _json as whatsapp_json
+from pyfect.chat.whatsapp import _text as whatsapp_text
+from pyfect.chat.whatsapp import whatsapp_chat
 from pyfect.cluster import shard_id, snowflake
 from pyfect.crypto import key_format, password
 from pyfect.effect import Effect
@@ -603,6 +606,62 @@ def _slack_nested_lists(n: int) -> Work:
     for _ in range(n // 8):
         item = {"type": "rich_text_list", "elements": [item]}
     return _own_list(1, item)
+
+
+# ------------------------------------------------------------------------- WhatsApp
+
+# A WhatsApp delivery is peer input once its signature passes, and a post's Markdown
+# often echoes a user's text: the renderer scans ahead from every unmatched
+# delimiter, bracket and backtick run, so it runs on a budget linear in the input.
+text(whatsapp_chat.parse_mention)
+text(whatsapp_text.render)
+
+
+@case(whatsapp_text.render, "whatsapp _text.render: unmatched openers", size=4000)
+def _whatsapp_openers(n: int) -> Work:
+    value = "*a " * (n // 3)
+    return lambda: whatsapp_text.render(value)
+
+
+@case(whatsapp_text.render, "whatsapp _text.render: backtick runs of every length", size=4000)
+def _whatsapp_backticks(n: int) -> Work:
+    value = "".join("`" * (1 + i % 7) + " " for i in range(n // 5))
+    return lambda: whatsapp_text.render(value)
+
+
+@case(whatsapp_text.render, "whatsapp _text.render: nested link labels", size=4000)
+def _whatsapp_nested(n: int) -> Work:
+    value = "[" * (n // 5) + "x" + "](u)" * (n // 5)
+    return lambda: whatsapp_text.render(value)
+
+
+@case(whatsapp_json.within_depth, "whatsapp _json.within_depth: unterminated escapes", size=40_000)
+def _whatsapp_depth_quotes(n: int) -> Work:
+    value = b'"\\"' * (n // 3)
+    return lambda: whatsapp_json.within_depth(value)
+
+
+@case(whatsapp_chat.normalize, "whatsapp_chat.normalize: many messages", size=4000)
+def _whatsapp_messages(n: int) -> Work:
+    message = {"from": "1", "id": "w", "timestamp": "1", "type": "text", "text": {"body": "hi"}}
+    envelope = {
+        "object": "whatsapp_business_account",
+        "entry": [
+            {
+                "changes": [
+                    {
+                        "field": "messages",
+                        "value": {
+                            "metadata": {"phone_number_id": "1"},
+                            "contacts": [{"wa_id": str(i)} for i in range(n // 20)],
+                            "messages": [message] * (n // 20),
+                        },
+                    }
+                ]
+            }
+        ],
+    }
+    return lambda: whatsapp_chat.normalize(envelope, phone_number_id="1")
 
 
 # ------------------------------------------------------------------------- streaming decoders

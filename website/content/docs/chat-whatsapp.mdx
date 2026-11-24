@@ -1,0 +1,77 @@
+---
+title: WhatsApp
+description: "Run a pyfect.chat bot on WhatsApp: the Cloud API adapter, the signed webhook and its subscription check, templates for the 24 hour window, and what the adapter refuses before it sends."
+---
+
+`pyfect.chat.whatsapp` is Effect's `@effect/chat-whatsapp`, the WhatsApp Cloud API adapter
+for [Chat](/docs/chat). `whatsapp_chat.layer(access_token=..., phone_number_id=...)`
+registers it for one business phone number and needs only an `HttpClient`. It calls
+Meta's Graph API over HTTP, with no SDK. A thread is
+`whatsapp_chat.thread(phone_number_id=..., user=...)`, where `user` is a phone number in
+digits or a business-scoped user id (BSUID) such as `US.13491208655302741918`.
+
+WhatsApp has no edits, deletes, history or reactions you can send, so those ops fail
+`Unsupported`, and a streamed reply posts each part once. Posts, files, downloads, reply
+buttons and lists work through `Chat` as on any adapter. Markdown becomes WhatsApp's own
+formatting (`*bold*`, `_italic_`, `~strike~`, a link as `label (url)`), and each
+replacement is used only when it is no longer than what it replaces, so a post that fits
+before rendering still fits after.
+
+## The webhook
+
+`whatsapp_chat.layer_webhook(path=..., app_secret=..., verify_token=...)` adds two routes to
+an `HttpRouter`. `GET` answers Meta's subscription check with `hub.challenge` when
+`hub.verify_token` matches, compared in constant time, and 403 otherwise. `POST` takes
+deliveries, and every one is untrusted until its `X-Hub-Signature-256` passes: an
+HMAC-SHA256 of the raw body with your app secret, checked in constant time through `Mac`
+(`pyfect.crypto.native.layer_mac`). A body over `max_body_bytes` (3 MiB) is answered 413
+before that, a bad signature 401, and a body that is not a JSON object, or nests past 64
+levels, 400.
+
+Messages and reactions go to the `ChatHandler` in order, clicks on reply buttons and list
+rows to the `chat_interaction.Handler`, and delivery statuses and changed user ids to
+`on_update`. When the handler fails `NotAccepted`, or the request runs past `deadline`
+(10 seconds), the route answers 503 and Meta delivers the batch again. Delivery is at
+least once: drop repeats with `chat_event.dedupe_key` and `whatsapp_chat.update_key`, and
+claim `whatsapp_chat.delivery_key` before a click's side effects.
+
+<CodeOutput>
+
+<include meta='title="whatsapp_bot.py"'>../../snippets/chat/whatsapp_bot.py</include>
+
+<include lang="text">../../snippets/chat/whatsapp_bot.out</include>
+
+</CodeOutput>
+
+The access token needs `whatsapp_business_messaging`. Subscribe the app to the WhatsApp
+Business Account's `messages` field.
+
+## The 24 hour window
+
+A business may write freely only within 24 hours of the user's last message. Outside it a
+post fails `Forbidden` with detail `whatsapp_chat.OUTSIDE_WINDOW`, and the way to write is
+an approved template: `WhatsAppChat().flat_map(lambda w: w.send_template(thread,
+Template(name=..., language="en_US")))`. `mark_read(thread, message_id, typing=True)` marks
+a message read and shows the typing indicator.
+
+## Checks before sending
+
+Every check runs before any upload or send, so a refused post sends nothing. One file per
+post, of a type and size Meta accepts; one to three buttons with labels up to 20 go as
+reply buttons, a lone link button as a link button, and anything else as the rows of one
+list, at most ten, with labels up to 24. Lengths count UTF-16 units, as Meta does.
+`whatsapp_chat.with_post_options(WhatsAppPostOptions(...))` turns on link previews and
+names a list's button and its buttons section.
+
+## Testing
+
+`whatsapp_chat.normalize(envelope, phone_number_id=...)` is a pure function from a
+delivery's JSON to events, so captured payloads test it directly, and
+`WhatsAppChatService.receive` runs one delivery for your own transport. For writes, provide
+an `HttpClient` from `pyfect.http.client.layer_test` that answers like the Graph API, as the
+example above does. Effect's conformance suite runs against the adapter this way in
+pyfect's own tests.
+
+Reference: [`whatsapp_chat`](/docs/reference/chat/whatsapp/whatsapp_chat),
+[`whatsapp_graph_api`](/docs/reference/chat/whatsapp/whatsapp_graph_api),
+[`whatsapp_update`](/docs/reference/chat/whatsapp/whatsapp_update).
