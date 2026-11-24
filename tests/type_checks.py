@@ -8319,6 +8319,17 @@ def check_protobuf() -> None:
     assert_type(decoded, Result[protobuf_message.Message, protobuf_message.ProtobufMessageError])
     encoded = protobuf_message.encode(shape)({"name": "a.proto"})
     assert_type(encoded, Result[bytes, protobuf_message.ProtobufMessageError])
+    # A decoded message (unknown fields included) goes straight back to encode.
+    again = protobuf_message.encode(shape)(decoded.get_or_raise())
+    assert_type(again, Result[bytes, protobuf_message.ProtobufMessageError])
+    extension = protobuf_descriptor.make([]).get_or_raise().get_extension("e")
+    assert extension is not None
+    edited = protobuf_message.set_extension(decoded.get_or_raise(), extension, 1)
+    assert_type(edited, Result[protobuf_message.Message, protobuf_message.ProtobufMessageError])
+    assert_type(
+        protobuf_message.encode(shape)(edited.get_or_raise()),
+        Result[bytes, protobuf_message.ProtobufMessageError],
+    )
     w = protobuf_writer.make().tag(1, protobuf_writer.WireType.Len).string("a")
     assert_type(w, protobuf_writer.ProtobufWriter)
     r = protobuf_reader.make(w.finish())

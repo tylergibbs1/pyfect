@@ -26,6 +26,7 @@ from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, Generic, LiteralString, Never, TypeVar, cast, final, overload
 
 import pyfect as fx
+from pyfect import _stable_cache
 from pyfect import schema as S
 from pyfect._core import Effect
 from pyfect.ai import ai_error as AiErr
@@ -92,7 +93,7 @@ class _Registered:
     context: Context[Any]
 
 
-_handler_tags: dict[str, type[Tag[_Registered]]] = {}
+_handler_tags = _stable_cache.StableCache[str, type[Tag[_Registered]]]()
 
 
 def map_handler_contexts(
@@ -112,11 +113,12 @@ def map_handler_contexts(
 
 
 def _handler_tag(tool_id: str) -> type[Tag[_Registered]]:
-    tag = _handler_tags.get(tool_id)
-    if tag is None:
-        tag = cast("type[Tag[_Registered]]", type(f"Handler[{tool_id}]", (Tag,), {}, key=tool_id))
-        _handler_tags[tool_id] = tag
-    return tag
+    return _handler_tags.get(
+        tool_id,
+        lambda: cast(
+            "type[Tag[_Registered]]", type(f"Handler[{tool_id}]", (Tag,), {}, key=tool_id)
+        ),
+    )
 
 
 @dataclass(frozen=True)

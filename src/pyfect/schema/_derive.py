@@ -22,6 +22,7 @@ import datetime as dt
 import decimal
 import enum
 import sys
+import threading
 import types
 import typing
 from collections.abc import Callable, Mapping
@@ -215,10 +216,18 @@ def _hashable(value: object) -> bool:
 
 
 _STRUCTS: WeakKeyDictionary[type, ast.Objects] = WeakKeyDictionary()
-# The TypedDicts being derived, each with where its AST goes once built. A recursive
-# reference waits on that, not on the class: an AST reaching its class would keep its
-# ``_STRUCTS`` entry, and the class, forever.
-_BUILDING: dict[type, list[ast.Objects]] = {}
+
+
+class _Building(threading.local):
+    """The TypedDicts this thread is deriving, each with where its AST goes once built. A
+    recursive reference waits on that, not on the class: an AST reaching its class would keep
+    its ``_STRUCTS`` entry, and the class, forever."""
+
+    def __init__(self) -> None:
+        self.asts: dict[type, list[ast.Objects]] = {}
+
+
+_building = _Building()
 
 
 def typed_dict_ast(
@@ -231,17 +240,19 @@ def typed_dict_ast(
         cached = _STRUCTS.get(typed_dict)
         if cached is not None:
             return cached
-        building = _BUILDING.get(typed_dict)
-        if building is not None:
-            return ast.Suspend(lambda: building[0])
+        building = _building.asts
+        pending = building.get(typed_dict)
+        if pending is not None:
+            return ast.Suspend(lambda: pending[0])
         built: list[ast.Objects] = []
-        _BUILDING[typed_dict] = built
+        building[typed_dict] = built
         try:
-            node = objects_of(typed_dict, typed_dict_fields(typed_dict, {}))
+            made = objects_of(typed_dict, typed_dict_fields(typed_dict, {}))
         finally:
-            del _BUILDING[typed_dict]
+            del building[typed_dict]
+        # Threads deriving it at once all return the AST stored first.
+        node = _STRUCTS.setdefault(typed_dict, made)
         built.append(node)
-        _STRUCTS[typed_dict] = node
         return node
     return objects_of(typed_dict, fields)
 

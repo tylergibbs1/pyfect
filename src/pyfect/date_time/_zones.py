@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Literal, overload
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from pyfect import _stable_cache
 from pyfect.date_time._icu_zones import CANONICAL, DATA, TZIF
 
 type Disambiguation = Literal["compatible", "earlier", "later", "reject"]
@@ -105,7 +106,7 @@ def resolved_zone_id(zone: ZoneInfo) -> str:
 _OFFSET_ID = re.compile(r"([+\-\u2212])([01][0-9]|2[0-3])(?::?([0-5][0-9]))?", re.ASCII)
 
 
-@cache
+@_stable_cache.stable_cache
 def _offset_zone(minutes: int) -> ZoneInfo:
     """The fixed zone ``Intl`` names ``+05:30`` (``-00:00`` is ``+00:00``)."""
     hours, rest = divmod(abs(minutes), 60)
@@ -142,7 +143,7 @@ class _AliasZone(_IcuZone):
         return hash(_zone(self.resolved_id))
 
 
-@cache
+@_stable_cache.stable_cache
 def _alias_zone(key: str, canonical: str) -> ZoneInfo | None:
     data = _zone_data(canonical)
     if data is None:
@@ -165,7 +166,7 @@ def _aliases() -> dict[str, list[str]]:
     return aliases
 
 
-@cache
+@_stable_cache.stable_cache
 def _zone(canonical: str) -> ZoneInfo | None:
     if canonical not in TZIF:
         with contextlib.suppress(ZoneInfoNotFoundError, ValueError):

@@ -25,6 +25,8 @@ from pyfect.protobuf._descriptors import ExtensionDescriptor, MessageDescriptor
 from pyfect.result import Err, Ok, Result
 
 type _Bytes = bytes | bytearray | memoryview
+type _MessageIn = Mapping[str, object] | Mapping[str | UnknownFieldsKey, object]
+"""A message to read: one ``decode`` returned, or a mapping of field names only."""
 
 
 @dataclass(eq=False)
@@ -73,10 +75,10 @@ def encode(
     *,
     write_unknown_fields: bool = True,
     max_depth: int = DEFAULT_MAX_DEPTH,
-) -> Callable[[Mapping[str, object]], Result[bytes, ProtobufMessageError]]:
+) -> Callable[[_MessageIn], Result[bytes, ProtobufMessageError]]:
     """An encoder of messages of ``descriptor``, writing fields in number order."""
 
-    def run(message: Mapping[str, object]) -> Result[bytes, ProtobufMessageError]:
+    def run(message: _MessageIn) -> Result[bytes, ProtobufMessageError]:
         try:
             return Ok(
                 _binary.encode(
@@ -93,7 +95,7 @@ def encode(
 
 
 def get_extension(
-    message: Mapping[str, object], extension: ExtensionDescriptor
+    message: _MessageIn, extension: ExtensionDescriptor
 ) -> Result[object, ProtobufMessageError]:
     """The value of ``extension``, read from the unknown fields of ``message``:
     ``None`` (or ``[]`` for a repeated extension) when it is not set."""
@@ -104,7 +106,7 @@ def get_extension(
 
 
 def set_extension(
-    message: Mapping[str, object], extension: ExtensionDescriptor, value: object
+    message: _MessageIn, extension: ExtensionDescriptor, value: object
 ) -> Result[Message, ProtobufMessageError]:
     """A copy of ``message`` with ``extension`` set to ``value`` in its unknown
     fields, or cleared when ``value`` is ``None``."""

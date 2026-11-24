@@ -23,6 +23,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar, Generic, Never, TypeVar
 
+from pyfect import _stable_cache
 from pyfect._core import Effect
 from pyfect._effect_args import require_effect
 from pyfect.context import Context, ServiceMarker, Tag
@@ -127,18 +128,14 @@ class ForClient[M](ServiceMarker):
         raise TypeError("ForClient is a type-level marker")
 
 
-_client_tags: dict[str, type[Tag[Any]]] = {}
+_client_tags = _stable_cache.StableCache[str, type[Tag[Any]]]()
 
 
 def client_tag(middleware: AnyMiddleware) -> type[Tag[Any]]:
     """The tag holding ``middleware``'s client function, keyed
     ``<key>/Client`` as Effect keys it."""
     key = f"{middleware.key}/Client"
-    found = _client_tags.get(key)
-    if found is None:
-        found = type(f"{middleware.__name__}Client", (Tag,), {}, key=key)
-        _client_tags[key] = found
-    return found
+    return _client_tags.get(key, lambda: type(f"{middleware.__name__}Client", (Tag,), {}, key=key))
 
 
 def layer_client[M: RpcMiddleware[Any, Any, Any], E, R](

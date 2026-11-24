@@ -400,7 +400,7 @@ def test_encodes_a_decoded_descriptor_set_to_the_same_bytes(descriptor_set: byte
         loc for loc in files[0]["source_code_info"]["location"] if "leading_comments" in loc
     ]
     assert comments
-    encoded = protobuf_message.encode(descriptor_proto.FILE_DESCRIPTOR_SET)(decoded)  # pyright: ignore[reportArgumentType]
+    encoded = protobuf_message.encode(descriptor_proto.FILE_DESCRIPTOR_SET)(decoded)
     assert encoded == Ok(descriptor_set)
 
 
