@@ -134,6 +134,7 @@ def layer(
     phone_number_id: str,
     messaging_account_id: str | None = None,
     base_url: str = DEFAULT_BASE_URL,
+    max_retry_after: DurationInput | None = None,
 ) -> Layer[WhatsAppChat | WhatsAppGraphApi, Never, HttpClient | Registry]:
     """Registers the WhatsApp adapter in the ``Registry``, for one business
     phone number, and provides ``WhatsAppChat`` and ``WhatsAppGraphApi``.
@@ -167,6 +168,9 @@ def layer(
       ``opener`` is always ``None``.
     - ``messaging_account_id`` is sent as ``messaging_account_id`` on every
       message, to say which Messaging account sends.
+    - A rate limit is retried after Meta's ``Retry-After``, however long,
+      unless ``max_retry_after`` is set: a longer wait then fails the op at
+      once with ``RateLimited``, its ``retry_after`` the wait asked for.
     """
 
     @fx.gen
@@ -185,7 +189,11 @@ def layer(
         return WhatsAppChatService(phone_number_id=phone_number_id, adapter=adapter)
 
     return _layer_effect(WhatsAppChat, build).pipe(
-        _provide_merge(_graph_api_layer(access_token=access_token, base_url=base_url))
+        _provide_merge(
+            _graph_api_layer(
+                access_token=access_token, base_url=base_url, max_retry_after=max_retry_after
+            )
+        )
     )
 
 

@@ -16,6 +16,7 @@ from _whatsapp_fake import (
     PHONE_NUMBER_ID,
     THREAD,
     Graph,
+    Status,
     graph_error,
     inbound,
     statuses,
@@ -573,3 +574,48 @@ def test_keys_an_update_by_its_parts_escaped():
         f"{PHONE_NUMBER_ID}/status/wamid.a%2Fb/delivered",
         f"{PHONE_NUMBER_ID}/alias/wamid.a%2Fb/delivered/{PHONE}/{BSUID}",
     ]
+
+
+# --- Retry-After --------------------------------------------------------------------------
+
+MESSAGES = f"{PHONE_NUMBER_ID}/messages"
+
+
+def _rate_limited(retry_after: str) -> Status:
+    """Meta's 429 for too many messages, with its wait."""
+    answer = graph_error(130429, 429)
+    return Status(answer.status, answer.body, {"retry-after": retry_after})
+
+
+@testing.effect
+def test_waits_out_a_rate_limits_retry_after_before_sending_again():
+    """WhatsApp backed off on its own schedule, half a second first, and
+    sent again while Meta still refused."""
+    graph = Graph()
+    graph.next[MESSAGES] = _rate_limited("7")
+
+    @fx.gen
+    def program() -> Gen[None]:
+        fiber = yield from post("alert").fork()
+        yield from testing.adjust("6999 millis")
+        assert len(graph.sent()) == 1
+        yield from testing.adjust("1 millis")
+        yield from fiber.join()
+        assert len(graph.sent()) == 2
+
+    return program.pipe(fx.provide(whatsapp_layer(graph)))
+
+
+@testing.effect
+def test_fails_at_once_with_the_wait_when_retry_after_passes_max_retry_after():
+    graph = Graph()
+    graph.next[MESSAGES] = _rate_limited("3600")
+
+    @fx.gen
+    def program() -> Gen[None]:
+        error = yield from post("alert").flip()
+        assert error.retry_after == seconds(3600)
+        assert type(error.reason).__name__ == "RateLimited"
+        assert len(graph.sent()) == 1
+
+    return program.pipe(fx.provide(whatsapp_layer(graph, max_retry_after="1 minute")))

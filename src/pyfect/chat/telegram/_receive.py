@@ -217,7 +217,7 @@ def _command(
             # No ``ephemeral`` in this version: a private answer is refused, never posted.
             if reply.visibility == "ephemeral":
                 return handler.refused(
-                    event, _errors.chat_error("respond", _errors.unsupported("ephemeral"))
+                    event, _errors.chat_error("respond", _errors.PRIVATE_ANSWER)
                 ).as_(True)
             origin = origin_of(event)
             if origin is None:
@@ -250,8 +250,11 @@ def receive(
     env: Environment,
     options: Options,
     handle: Callable[[ChatEvent], Effect[None, NotAccepted]],
+    handler: ci.HandlerService | None,
 ) -> Effect[Outcome]:
-    """One update.
+    """One update. ``handle`` is the ``ChatHandler``'s and ``handler`` the
+    ``chat_interaction.Handler``, if any: both are passed in, never looked
+    up here, so every caller decides where they come from.
 
     - A click goes to ``chat_interaction.Handler`` and is answered.
     - An ephemeral message only ever takes the command path, and never
@@ -275,8 +278,6 @@ def receive(
             if on_unhandled is None
             else _call_user(on_unhandled, obj).as_("unhandled")
         )
-        found_handler = yield from fx.service_option(ci.Handler)
-        handler = None if found_handler is None else found_handler.value
         query = object_(obj, "callback_query")
         if query is not None:
             id = string(query, "id")

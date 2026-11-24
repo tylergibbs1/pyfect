@@ -24,6 +24,11 @@ LOGGED_RETRYING = "telegram polling: getUpdates failed, retrying"
 
 _RETRY_AFTER = seconds(5)
 
+DEADLINE_MARGIN = seconds(3)
+"""How long past its long poll a ``getUpdates`` may take before it is
+given up and retried: a connection that died without a reset never
+answers."""
+
 
 @dataclass(frozen=True, kw_only=True)
 class Options:
@@ -41,13 +46,15 @@ def _is_conflict(error: ChatError) -> bool:
 def get_updates(
     api: TelegramBotApiService, offset: int | None, timeout: Duration
 ) -> Effect[list[object], ChatError]:
-    """One ``getUpdates``, from ``offset``."""
+    """One ``getUpdates``, from ``offset``. Each request has ``timeout``
+    plus ``DEADLINE_MARGIN``; one past it is retried with the backoff of
+    ``chat_adapter.retry_safe``."""
     params: dict[str, object] = {
         "offset": offset,
         "timeout": int(timeout.to_millis() // 1000),
         "allowed_updates": list(ALLOWED_UPDATES),
     }
-    return api.call("getUpdates", params).map(_json.as_list)
+    return api.call("getUpdates", params, timeout=timeout + DEADLINE_MARGIN).map(_json.as_list)
 
 
 def run_update(update: object, options: Options) -> Effect[None]:

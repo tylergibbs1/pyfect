@@ -13,11 +13,12 @@ import pyfect as fx
 from pyfect._core import Effect, _call_user
 from pyfect._json_value import JsonValue
 from pyfect._url import Url
-from pyfect.chat.chat_adapter import retry_safe
+from pyfect.chat._capped_retry import parse_retry_after, retry_safe_within
 from pyfect.chat.chat_error import AnyReason, ChatError
 from pyfect.chat.teams import _errors, _json
 from pyfect.chat.teams._cloud import Cloud, Credentials, TokenGrant
 from pyfect.clock import current_time_millis
+from pyfect.duration import Duration
 from pyfect.http import request as http_request
 from pyfect.http.client import HttpClientService
 from pyfect.http.error import HttpClientError
@@ -101,7 +102,13 @@ type Tokens = Callable[[str], Effect[Redacted[str], ChatError]]
 
 
 def make_tokens(
-    *, http: Http, cloud: Cloud, app_id: str, tenant_id: str, credentials: Credentials
+    *,
+    http: Http,
+    cloud: Cloud,
+    app_id: str,
+    tenant_id: str,
+    credentials: Credentials,
+    max_retry_after: Duration | None,
 ) -> Tokens:
     """Gets a token by client credentials, or from the consumer's provider,
     and caches it until five minutes before it expires. A token with no
@@ -160,7 +167,7 @@ def make_tokens(
             if cached is not None and cached[1] > now:
                 return cached[0]
             cache.pop(scope, None)
-            grant = yield from retry_safe(provider(scope))
+            grant = yield from retry_safe_within(provider(scope), max_retry_after)
             if grant.expires_at is not None:
                 until = (grant.expires_at - _EPOCH) / timedelta(milliseconds=1)
                 until -= _REFRESH_MARGIN_MILLIS
@@ -200,10 +207,13 @@ class Connector:
     """The Connector client. ``path`` starts with ``/v3/`` and has its
     segments encoded by the caller."""
 
-    def __init__(self, *, http: Http, cloud: Cloud, token: Tokens) -> None:
+    def __init__(
+        self, *, http: Http, cloud: Cloud, token: Tokens, max_retry_after: Duration | None
+    ) -> None:
         self._http = http
         self._cloud = cloud
         self._token = token
+        self._max_retry_after = max_retry_after
 
     def call(
         self,
@@ -221,9 +231,10 @@ class Connector:
         activity's own, checked against the allowlist before a token is
         attached; without it the cloud's ``connector_url`` is used. A write
         is never retried once sent, and a failure that may have landed is
-        ``uncertain``."""
+        ``uncertain``. A 429's ``Retry-After`` is waited out before a retry,
+        unless it passes ``max_retry_after``: then the call fails at once."""
         once = self._once(method, path, body, write, service_url, query, op)
-        return retry_safe(once) if retry else once
+        return retry_safe_within(once, self._max_retry_after) if retry else once
 
     def _once(  # noqa: PLR0917
         self,
@@ -262,7 +273,7 @@ class Connector:
             if body is not None:
                 request = request.body_json_unsafe(body)
             response = yield from send(self._http, request, write=write, op=name)
-            retry_after = _errors.parse_retry_after(response.headers.get("retry-after"))
+            retry_after = parse_retry_after(response.headers.get("retry-after"))
             if not 200 <= response.status < 300:
                 text = yield from response.text.or_else_succeed(lambda _: "")
                 error = _json.object_(_json.parse(text), "error")

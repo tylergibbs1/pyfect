@@ -29,6 +29,8 @@ from pyfect.chat.chat_error import ChatError
 from pyfect.chat.chat_thread import ChatThread
 from pyfect.chat.telegram import _address, _errors, _json
 from pyfect.context import Tag
+from pyfect.duration import Duration, from_input_unsafe
+from pyfect.duration import Input as DurationInput
 from pyfect.http import body as http_body
 from pyfect.http import request as http_request
 from pyfect.http.client import HttpClient, HttpClientService, TracerDisabledWhen
@@ -92,7 +94,9 @@ class TelegramBotApiService:
       body is multipart and each object is a JSON string part. A ``write``
       is never repeated once the request left, and a failure that may have
       landed is ``uncertain``; ``retry`` (default true) retries ``retry``
-      failures as ``chat_adapter.retry_safe`` does.
+      failures as ``chat_adapter.retry_safe`` does. ``timeout``, when given,
+      bounds each request: one without an answer by then fails
+      ``Transport`` with detail ``timeout``, ``uncertain`` for a write.
     - An answer with ``ok: false`` fails with the reason for its
       ``error_code`` and ``parameters``. Its ``detail`` is a fixed string,
       never Telegram's description, which can quote the message. A
@@ -187,7 +191,12 @@ class TelegramBotApiService:
         return response.json.match_effect(on_failure=unreadable, on_success=read)
 
     def _once(
-        self, method: str, params: Mapping[str, object], write: bool, files: Sequence[Upload]
+        self,
+        method: str,
+        params: Mapping[str, object],
+        write: bool,
+        files: Sequence[Upload],
+        timeout: Duration | None,
     ) -> Effect[Json, ChatError]:
         request = http_request.post(self._method_url(method))
         if files:
@@ -205,18 +214,20 @@ class TelegramBotApiService:
             request = request.body_json_unsafe(
                 {key: value for key, value in params.items() if value is not None}
             )
-        return (
-            self._send(request, method, write)
-            .flat_map(lambda response: self._decode(method, write, response))
-            .with_span(
-                f"TelegramBotApi.{method}",
-                kind="client",
-                attributes={
-                    "http.request.method": "POST",
-                    "url.path": f"/bot<redacted>{self._suffix}/{method}",
-                    "telegram.method": method,
-                },
-            )
+        answered = self._send(request, method, write).flat_map(
+            lambda response: self._decode(method, write, response)
+        )
+        if timeout is not None:
+            timed_out = _errors.chat_error(method, _errors.transport(write, "timeout"))
+            answered = answered.timeout_or_else(timeout, lambda: fx.fail(timed_out))
+        return answered.with_span(
+            f"TelegramBotApi.{method}",
+            kind="client",
+            attributes={
+                "http.request.method": "POST",
+                "url.path": f"/bot<redacted>{self._suffix}/{method}",
+                "telegram.method": method,
+            },
         )
 
     def call(
@@ -227,13 +238,15 @@ class TelegramBotApiService:
         write: bool = False,
         files: Sequence[Upload] = (),
         retry: bool = True,
+        timeout: DurationInput | None = None,
     ) -> Effect[Json, ChatError]:
         """Posts ``params`` to ``method`` and succeeds with its ``result``;
         see the class. A ``None`` value is left out, as JavaScript's
         ``undefined`` is."""
         if _METHOD_NAME.fullmatch(method) is None:
             return fx.fail(_errors.chat_error(method, _errors.invalid_request("invalid_method")))
-        once = self._once(method, params or {}, write, files)
+        deadline = None if timeout is None else from_input_unsafe(timeout)
+        once = self._once(method, params or {}, write, files, deadline)
         return retry_safe(once) if retry else once
 
     def file(self, file_path: str, *, max_bytes: int) -> Stream[bytes, ChatError]:

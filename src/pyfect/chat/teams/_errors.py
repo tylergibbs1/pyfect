@@ -22,10 +22,9 @@ from pyfect.chat.chat_error import (
     Unsupported,
 )
 from pyfect.chat.teams._address import PLATFORM
-from pyfect.duration import Duration, seconds
+from pyfect.duration import Duration
 
 _CODE = re.compile(r"[A-Za-z0-9_.-]{1,64}")
-_DECIMAL = re.compile(r"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?")
 
 
 def reason_for_status(  # noqa: PLR0911
@@ -67,17 +66,6 @@ def invalid_response(write: bool, detail: str, cause: object = None) -> AnyReaso
     if write:
         return Unknown(detail=detail, cause=cause)
     return InvalidResponse(detail=detail, cause=cause)
-
-
-def parse_retry_after(value: str | None) -> Duration | None:
-    """A ``Retry-After`` header in seconds, or ``None``."""
-    if value is None:
-        return None
-    text = value.strip()
-    if text and _DECIMAL.fullmatch(text) is None:
-        return None
-    number = float(text) if text else 0.0
-    return seconds(number) if 0 <= number < float("inf") else None
 
 
 def chat_error(op: str, reason: AnyReason) -> ChatError:

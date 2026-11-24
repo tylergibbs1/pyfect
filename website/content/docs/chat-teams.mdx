@@ -27,7 +27,10 @@ and one that is not a JSON object 400, both before the token is read.
 The key set is found from Bot Framework's OpenID metadata, fetched with redirects off
 and read to at most 64 KiB, and its `jwks_uri` must be on the metadata's own host. When
 it can't be read the endpoint answers 503, so Teams retries, and waits 30 seconds before
-fetching it again. Token checks use `Signature` (`pyfect.crypto.native.layer_signature`).
+fetching it again. A token signed with a key the set does not hold refetches it, at most
+once every 30 seconds, as Effect's `Jwks` does: a key Microsoft adds within 30 seconds of
+the last fetch is refused with 403 until those 30 seconds pass. Token checks use
+`Signature` (`pyfect.crypto.native.layer_signature`).
 
 Verified activities go through `teams_chat.normalize` to the `ChatHandler`. A message
 becomes `MessageCreated`, with Teams' `<at>…</at>` text and `mentions` pointing into it,
@@ -51,6 +54,15 @@ Teams reads no math. Mentions notify nobody. A post with buttons is one Adaptive
 `limits.message_length` is 44,288: half of the 100 KB Microsoft documents for an
 activity, less what the card's structure and mention entities can take, and `measure`
 prices each character by what escaping makes of it.
+
+Your Markdown is sent as Markdown, so text a user wrote forms syntax inside it: a display
+name of `[x](https://evil.example)` is a live link. Put such text through
+`teams_chat.escape_markdown` first, within a line, and it shows as typed.
+
+A request Teams answers 429 is retried after its `Retry-After`, however long Teams asks
+for, which can be an hour. Pass `max_retry_after` to `teams_chat.layer`, such as
+`"1 minute"`, and a longer wait fails the op at once with `RateLimited`, its
+`retry_after` the wait Teams asked for, so the caller decides.
 
 ## Capabilities behind live checks
 

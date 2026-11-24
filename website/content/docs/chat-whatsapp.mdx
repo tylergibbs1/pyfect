@@ -17,6 +17,11 @@ formatting (`*bold*`, `_italic_`, `~strike~`, a link as `label (url)`), and each
 replacement is used only when it is no longer than what it replaces, so a post that fits
 before rendering still fits after.
 
+There is no `escape_markdown` for WhatsApp, as there is for Telegram and Teams. WhatsApp
+has no link markup, so a link always shows its URL and text a user wrote cannot hide one,
+and it has no escape character: `*bold*` in a display name is bold in WhatsApp however it
+is sent.
+
 ## The webhook
 
 `whatsapp_chat.layer_webhook(path=..., app_secret=..., verify_token=...)` adds two routes to
@@ -62,6 +67,11 @@ reply buttons, a lone link button as a link button, and anything else as the row
 list, at most ten, with labels up to 24. Lengths count UTF-16 units, as Meta does.
 `whatsapp_chat.with_post_options(WhatsAppPostOptions(...))` turns on link previews and
 names a list's button and its buttons section.
+
+A send Meta rate limits is retried after its `Retry-After`, however long, and with a
+backoff from half a second when there is none. Pass `max_retry_after` to
+`whatsapp_chat.layer`, such as `"1 minute"`, and a longer wait fails the op at once with
+`RateLimited`, its `retry_after` the wait Meta asked for.
 
 ## Testing
 

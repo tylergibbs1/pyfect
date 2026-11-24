@@ -70,6 +70,16 @@ _NOT_S = f"[^{_JS_SPACE}]"
 _DOT = "[^\n\r\u2028\u2029]"
 
 
+_ASCII_PUNCTUATION = re.compile(r"[!-/:-@\[-`{-~]")
+
+
+def escape(text: str) -> str:
+    """``text`` as Markdown that shows it as typed: every ASCII punctuation
+    character backslash-escaped, which ``render`` sends on as an escape or
+    an entity Telegram honors."""
+    return _ASCII_PUNCTUATION.sub(lambda match: "\\" + match.group(0), text)
+
+
 def js_trim(text: str) -> str:
     """JavaScript's ``String.prototype.trim``."""
     return text.strip(_JS_SPACE)
