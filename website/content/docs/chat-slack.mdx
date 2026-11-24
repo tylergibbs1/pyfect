@@ -10,6 +10,10 @@ Slack SDK. A thread is `slack_chat.thread(team=..., channel=..., thread_ts=...)`
 everything `Chat` does (posts, edits, reactions, files, history, native streaming) works
 on it.
 
+Web API calls go to `https://slack.com/api` unless you pass `base_url`. For GovSlack, pass
+`base_url="https://slack-gov.com/api"` to `slack_chat.layer`, or to `slack_web_api.layer`
+when you use the client on its own.
+
 ## Events and interactions
 
 `slack_chat.layer_webhook(path=..., signing_secret=..., app_id=...)` adds the Events API
@@ -28,6 +32,25 @@ commands, with the same checks. It hands each payload to the `chat_interaction.H
 within Slack's three seconds. With Socket Mode instead of a public URL, pass each
 envelope to `slack_chat.normalize` and each interaction to
 `SlackChatService.interaction` yourself.
+
+## Slow slash commands
+
+A slash-command handler that is still running at Slack's deadline is interrupted, the
+route answers 503, and Slack shows the user an error. When the work may take longer, race
+it against a budget below the deadline. If the work wins, answer with
+`chat_interaction.respond`. If the budget runs out first, return
+`chat_interaction.defer(command)`, which acknowledges the command at once, and send the
+answer later with `Chat.follow_up`, which posts to the command's `response_url` for up to
+30 minutes. The work and the follow-up run on fibers forked into the interactions layer's
+scope, so they outlive the handler and stop when the app shuts down.
+
+<CodeOutput>
+
+<include meta='title="slack_defer.py"'>../../snippets/chat/slack_defer.py</include>
+
+<include lang="text">../../snippets/chat/slack_defer.out</include>
+
+</CodeOutput>
 
 ## Who a post notifies
 

@@ -2069,13 +2069,28 @@ class Fields73(Protocol[T73_0_co]):
 def v74_0_out(
     x: pyfect.ai.mcp_server.ToolContent[Never],
 ) -> pyfect.ai.mcp_server.ToolContent[typing.LiteralString]:
-    return x  # pyright: ignore[reportReturnType]
+    return x
 
 
 def v74_0_in(
     x: pyfect.ai.mcp_server.ToolContent[typing.LiteralString],
 ) -> pyfect.ai.mcp_server.ToolContent[Never]:
     return x  # pyright: ignore[reportReturnType]
+
+
+T74_0_co = TypeVar("T74_0_co", covariant=True, bound=typing.LiteralString)
+
+
+class Fields74(Protocol[T74_0_co]):
+    @property
+    def name(self) -> T74_0_co: ...
+    @property
+    def mapper(
+        self,
+    ) -> collections.abc.Callable[
+        [typing.Any], collections.abc.Sequence[pyfect.ai.mcp_schema.ContentBlock]
+    ]: ...
+    def declared(self) -> tuple[T74_0_co]: ...
 
 
 # pyfect.ai.mcp_server.UriTemplate

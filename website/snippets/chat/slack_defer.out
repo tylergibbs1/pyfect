@@ -1,0 +1,4 @@
+/report summary: Respond
+/report full: Defer
+respond ok 'Weekly report (summary): 42 deploys, 0 rollbacks'
+followUp ok 'Weekly report (full): 42 deploys, 0 rollbacks'

@@ -175,15 +175,16 @@ def _is_parameter_error(error: object) -> bool:
     )
 
 
-# Invariant: a covariant name would let pyright widen a toolkit's names to admit any tool.
-_N = TypeVar("_N", bound=LiteralString)
+# Covariant, so a list of mappers built before the call passes. Pyright then widens a
+# toolkit's names to take in a stray tool's, whose handler the requirements keep asking for.
+_N_co = TypeVar("_N_co", bound=LiteralString, covariant=True)
 
 
 @dataclass(frozen=True)
-class ToolContent(Generic[_N]):
+class ToolContent(Generic[_N_co]):
     """A tool's content mapper, made by ``tool_content``."""
 
-    name: _N
+    name: _N_co
     mapper: Callable[[Any], Sequence[ContentBlock]]
 
 

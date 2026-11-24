@@ -22,9 +22,9 @@ from _slack_fake import (
 )
 
 import pyfect as fx
-from pyfect import testing
+from pyfect import layer, testing
 from pyfect._core import Effect
-from pyfect.chat import chat_ui
+from pyfect.chat import chat, chat_ui
 from pyfect.chat.chat_adapter import AppendResult, ChatAdapter, File, NativeStream
 from pyfect.chat.chat_error import PlatformUnavailable
 from pyfect.chat.chat_event import ChatEvent
@@ -34,6 +34,12 @@ from pyfect.chat.slack import slack_chat
 from pyfect.chat.slack._options import SlackPostOptions
 from pyfect.chat.slack.slack_web_api import SlackWebApi
 from pyfect.duration import seconds
+from pyfect.http import client
+from pyfect.http import response as http_response
+from pyfect.http.error import HttpClientError
+from pyfect.http.request import HttpClientRequest
+from pyfect.http.response import HttpClientResponse
+from pyfect.redacted import make as redacted
 
 type Gen[A] = Generator[Effect[Any, Any, Any], Any, A]
 
@@ -907,6 +913,41 @@ def test_bot_user_id_and_user():
         )
 
     return run(fake, program)
+
+
+@testing.effect
+def test_base_url_sends_every_web_api_call_to_the_given_host():
+    # GovSlack serves the Web API from slack-gov.com.
+    urls: list[str] = []
+
+    def answer(request: HttpClientRequest) -> Effect[HttpClientResponse, HttpClientError]:
+        urls.append(request.url)
+        return fx.succeed(
+            http_response.make(
+                request, json.dumps(AUTH_TEST), headers={"content-type": "application/json"}
+            )
+        )
+
+    gov = (
+        slack_chat.layer(
+            bot_token=redacted("xoxb-test"), team_id=TEAM, base_url="https://slack-gov.com/api"
+        )
+        .pipe(layer.provide_merge(chat.layer))
+        .pipe(layer.provide(client.layer_test(answer)))
+    )
+
+    @fx.gen
+    def program() -> Gen[None]:
+        slack = yield from slack_chat.SlackChat()
+        assert (yield from slack.bot_user_id) == BOT_USER_ID
+        api = yield from SlackWebApi()
+        yield from api.call("conversations.info", {"channel": CHANNEL})
+        assert urls == [
+            "https://slack-gov.com/api/auth.test",
+            "https://slack-gov.com/api/conversations.info",
+        ]
+
+    return program.pipe(fx.provide(gov))
 
 
 def test_emoji_in_both_directions() -> None:

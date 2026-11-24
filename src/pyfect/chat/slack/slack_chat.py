@@ -50,7 +50,7 @@ from pyfect.chat.slack._adapter import SlackAdapter, SlackUser
 from pyfect.chat.slack._address import Parts
 from pyfect.chat.slack._interactions import Body
 from pyfect.chat.slack._options import CurrentPostOptions, SessionStatus, SlackPostOptions
-from pyfect.chat.slack.slack_web_api import SlackWebApi
+from pyfect.chat.slack.slack_web_api import DEFAULT_BASE_URL, SlackWebApi
 from pyfect.chat.slack.slack_web_api import layer as _web_api_layer
 from pyfect.context import Tag
 from pyfect.crypto.mac import Mac
@@ -148,10 +148,13 @@ class SlackAttachFailed(
 
 
 def layer(
-    *, bot_token: Redacted[str], team_id: str
+    *, bot_token: Redacted[str], team_id: str, base_url: str = DEFAULT_BASE_URL
 ) -> Layer[SlackChat | SlackWebApi, Never, HttpClient | Registry]:
     """Registers the Slack adapter in the ``Registry``, for one workspace,
     and provides ``SlackChat`` and ``SlackWebApi``.
+
+    - Web API calls go to ``{base_url}/{method}``, as with
+      ``slack_web_api.layer``: ``"https://slack-gov.com/api"`` for GovSlack.
 
     - ``post`` and ``edit`` send the Markdown as one ``markdown`` block, in
       which a ``<`` outside code goes as ``&lt;``, plus a ``text`` the adapter
@@ -221,7 +224,9 @@ def layer(
             team_id=team_id, bot_user_id=bot_user_id, adapter=adapter, interaction=interaction
         )
 
-    return _layer_effect(SlackChat, build).pipe(_provide_merge(_web_api_layer(bot_token=bot_token)))
+    return _layer_effect(SlackChat, build).pipe(
+        _provide_merge(_web_api_layer(bot_token=bot_token, base_url=base_url))
+    )
 
 
 def thread(*, team: str, channel: str, thread_ts: str | None = None) -> ChatThread:

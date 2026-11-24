@@ -85,8 +85,8 @@ EXPECTED: dict[str, tuple[Variance, ...]] = {
     "pyfect.ai.mcp_schema.Param": ("out",),
     "pyfect.ai.mcp_server.Middleware": ("in", "inv", "inv"),
     "pyfect.ai.mcp_server.ProtocolAdapter": ("out",),
-    # Invariant on purpose: a covariant name lets pyright widen the toolkit's names.
-    "pyfect.ai.mcp_server.ToolContent": ("inv",),
+    # Covariant, so a list of mappers built before the call passes (see register.py).
+    "pyfect.ai.mcp_server.ToolContent": ("out",),
     "pyfect.ai.mcp_server.UriTemplate": ("skip",),
     "pyfect.ai.model.Model": ("in", "inv"),
     "pyfect.ai.openai_structured_output.StructuredOutputCodec": ("out", "out", "out"),
