@@ -1,0 +1,3 @@
+output schema None
+content [{'type': 'text', 'text': 'Sales'}, {'type': 'image', 'data': 'iVBORw==', 'mimeType': 'image/png'}]
+structured None

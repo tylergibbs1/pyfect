@@ -8289,6 +8289,7 @@ def check_mcp() -> None:
         mcp_m.toolkit(kit),
         fx.Layer[Never, Never, mcp_m.McpServer | ai_toolkit.Handlers[Literal["Weather"]]],
     )
+
     assert_type(
         mcp_m.run_stdio(name="s", version="1", protocols=(mcp_p.v2025_11_25,)),
         fx.Effect[None, Illegal | PlatformErr, mcp_m.McpServer | mcp_stdio.Stdio],
@@ -8406,6 +8407,38 @@ def check_mcp() -> None:
     modern: mcp_c.ClientProtocol = mcp_p.v2026_07_28
     assert_type(modern, mcp_p.ProtocolAdapter[Literal["2026-07-28"]])
     _june: mcp_c.ClientProtocol = mcp_p.v2025_06_18  # pyright: ignore[reportAssignmentType]
+
+
+def check_mcp_content() -> None:
+    from pyfect.ai import mcp_server as mcp_m
+
+    weather = ai_tool.make(
+        "Weather", parameters=S.Struct(AiWeatherParams), success=S.Struct(AiWeather)
+    )
+    kit = ai_toolkit.make(weather)
+    # A content mapper gets its tool's decoded success, and only a tool of the toolkit has one.
+    preview = ai_tool.make("preview", success=S.BytesFromBase64)
+    previews = ai_toolkit.make(weather, preview)
+    elsewhere = ai_tool.make("unknown", success=S.String)
+
+    def png(data: bytes) -> list[mcp_schema_module.ContentBlock]:
+        return [{"type": "image", "data": data.hex(), "mimeType": "image/png"}]
+
+    def decoded(data: bytes) -> list[mcp_schema_module.ContentBlock]:
+        assert_type(data, bytes)
+        return []
+
+    assert_type(mcp_m.tool_content(preview, png), mcp_m.ToolContent[Literal["preview"]])
+    assert_type(
+        mcp_m.register_toolkit(previews, content=[mcp_m.tool_content(preview, decoded)]),
+        fx.Effect[
+            None, Never, mcp_m.McpServer | ai_toolkit.Handlers[Literal["Weather", "preview"]]
+        ],
+    )
+    mcp_m.toolkit(previews, content=[mcp_m.tool_content(preview, png)])
+    mcp_m.register_toolkit(kit, content=[mcp_m.tool_content(preview, png)])  # pyright: ignore[reportArgumentType]
+    mcp_m.toolkit(previews, content=[mcp_m.tool_content(elsewhere, lambda _: [])])  # pyright: ignore[reportArgumentType]
+    mcp_m.tool_content(preview, lambda data: [{"type": "text", "text": data}])  # pyright: ignore[reportArgumentType]
 
 
 def check_mcp_client_calls(

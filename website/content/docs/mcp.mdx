@@ -43,6 +43,26 @@ by then, so the program keeps running after the input ends, in Effect as well.
 
 <Diagram name="mcp-session" title="The client's requests reach the server's toolkit handlers over HTTP or stdio, and each tool call comes back as a structured result" />
 
+### Return images and other content blocks
+
+A tool's result is JSON text by default. To answer with an image, audio or a resource
+instead, give the tool a content mapper: `mcp_server.tool_content(Render, chart_blocks)`
+in the `content=` of `mcp_server.toolkit` or `register_toolkit`. The mapper gets the
+decoded success and returns the call's MCP content blocks, so binary data goes in as
+Base64 text. A mapped tool lists no output schema and sends no `structuredContent`; its
+failures skip the mapper and come back as they would without one, and a mapper that raises
+is an internal error. Only a tool of the toolkit can have a mapper, and pyright checks the
+mapper's argument against the tool's success type. Send only the block types the client's
+protocol revision has: audio needs 2025-03-26 and resource links 2025-06-18.
+
+<CodeOutput>
+
+<include meta='title="content_blocks.py"'>../../snippets/mcp/content_blocks.py</include>
+
+<include lang="text">../../snippets/mcp/content_blocks.out</include>
+
+</CodeOutput>
+
 ## Connect a client
 
 `mcp_client.layer_http(name=..., version=..., url=..., protocol=...)` connects to a server
