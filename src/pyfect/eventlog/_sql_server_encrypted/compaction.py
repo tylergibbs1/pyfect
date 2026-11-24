@@ -200,7 +200,7 @@ class SqlCompaction(StorageCompaction):
             return BeginStarted(stage_id)
 
         return self._with_store(
-            public_key, store_id, lambda s, now: db.sql.with_transaction(gen(lambda: run(s, now)))
+            public_key, store_id, lambda s, now: db.transaction(gen(lambda: run(s, now)))
         )
 
     def input_headers(
@@ -366,7 +366,7 @@ class SqlCompaction(StorageCompaction):
                 return self._abort(store, stage_id).and_then(
                     fail(CompactionInvalidRequest(stage_id, invalid))
                 )
-            return sql.with_transaction(gen(lambda: run(store, now)))
+            return db.transaction(gen(lambda: run(store, now)))
 
         return self._with_store(public_key, store_id, guarded)
 
@@ -488,7 +488,7 @@ class SqlCompaction(StorageCompaction):
             ).as_(result)
 
         return self._with_store(
-            public_key, store_id, lambda s, now: sql.with_transaction(gen(lambda: run(s, now)))
+            public_key, store_id, lambda s, now: db.transaction(gen(lambda: run(s, now)))
         ).flat_map(logged)
 
     def record_no_op(
@@ -516,7 +516,7 @@ class SqlCompaction(StorageCompaction):
             return stage.through
 
         return self._with_store(
-            public_key, store_id, lambda s, now: db.sql.with_transaction(gen(lambda: run(s, now)))
+            public_key, store_id, lambda s, now: db.transaction(gen(lambda: run(s, now)))
         ).flat_map(
             lambda through: log_no_op(
                 public_key=public_key, store_id=store_id, stage_id=stage_id, through=through
@@ -532,7 +532,7 @@ class SqlCompaction(StorageCompaction):
             if stage is not None and stage.state == "open":
                 yield from db.close_stage(store.scope, stage_id)
 
-        return db.sql.with_transaction(gen(run))
+        return db.transaction(gen(run))
 
     def abort(self, public_key: str, store_id: StoreId, stage_id: str, /) -> Effect[None]:
         return self._with_store(public_key, store_id, lambda s, _: self._abort(s, stage_id))
@@ -668,7 +668,7 @@ class SqlCompaction(StorageCompaction):
                 yield from sql.after_commit(store.pubsub.publish_all(reappended).as_(None))
             return activation_id, target, withdrawn
 
-        return sql.with_transaction(gen(run))
+        return db.transaction(gen(run))
 
     def rollback(
         self, public_key: str, store_id: StoreId, expected_activation_id: str, /

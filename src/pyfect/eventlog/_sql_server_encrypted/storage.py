@@ -269,7 +269,7 @@ class _SqlStorage(StorageService):
             )
             return signing_public_key
 
-        return sql.with_transaction(gen(body)).with_tracer_enabled(False).or_die()
+        return self._db.transaction(gen(body)).with_tracer_enabled(False).or_die()
 
     def write(
         self, public_key: str, store_id: StoreId, batches: Sequence[EncryptedBatch], /
@@ -364,7 +364,7 @@ class _SqlStorage(StorageService):
             now = yield from Clock().map(now_millis_unsafe)
             return (
                 yield from store.semaphore.with_permits(
-                    sql.with_transaction(gen(lambda: write_batches(store, now)))
+                    db.transaction(gen(lambda: write_batches(store, now)))
                 )
             )
 

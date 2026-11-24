@@ -27,7 +27,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 
 from pyfect._core import Effect
-from pyfect.effect import gen
+from pyfect.effect import gen, succeed
 from pyfect.eventlog._sql_server_encrypted.db import CHUNK, Db, Steps
 from pyfect.eventlog._sql_server_encrypted.tables import (
     create_065_tables,
@@ -35,12 +35,16 @@ from pyfect.eventlog._sql_server_encrypted.tables import (
     create_upgrade_tables,
 )
 from pyfect.eventlog.event_journal import RemoteId, make_remote_id_unsafe
+from pyfect.logger import log_warning
 from pyfect.persistence._columns import column_bytes, column_int, column_text
 from pyfect.persistence._sql_keys import key_equals
 from pyfect.sql.client import SqlClientService
 from pyfect.sql.connection import Row
 from pyfect.sql.error import SqlError
 from pyfect.sql.statement import Identifier
+
+REMOTE_ID_NOTES = "https://pyfect.dev/docs/eventlog#one-remote-id-per-database"
+"""How to fix a remote id table holding several ids."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,39 +110,55 @@ def _record(db: Db) -> Effect[None, SqlError]:
     def body():
         if (yield from sql("SELECT id FROM {}", _upgrade(db))):
             return
-        yield from sql.with_transaction(gen(take))
+        yield from db.transaction(gen(take))
 
     return gen(body)
 
 
-def _remote_id(db: Db, table: Identifier) -> Effect[RemoteId, SqlError]:
+def _remote_id(db: Db, table: Identifier, remote_id_table: str) -> Effect[RemoteId, SqlError]:
     """The stored remote id, or a new one. Effect reads and then inserts, so
     starts that read the empty table at once each inserted their own id;
     here a start that finds none takes the upgrade record's row, which
-    ``_record`` wrote, and reads again before it inserts."""
+    ``_record`` wrote, and reads again before it inserts.
+
+    A table those starts left holding several ids records no order of
+    insertion, so every server takes the lowest in byte order and warns."""
     sql = db.sql
 
-    def stored(rows: list[Row]) -> RemoteId | None:
-        return RemoteId(column_bytes(rows[0]["remote_id"])) if rows else None
+    def stored(rows: list[Row]) -> Effect[RemoteId | None]:
+        if not rows:
+            return succeed(None)
+        lowest = RemoteId(column_bytes(rows[0]["remote_id"]))
+        if len(rows) == 1:
+            return succeed(lowest)
+        return log_warning(
+            f"{remote_id_table} holds {len(rows)} remote ids; serving the lowest, "
+            f"{bytes(lowest).hex()}. Delete the others: {REMOTE_ID_NOTES}"
+        ).as_(lowest)
 
     def take(created: RemoteId) -> Steps[RemoteId]:
         yield from sql(
             "SELECT id FROM {} {} WHERE id = 1 {}", _upgrade(db), db.lock_hint, db.for_update
         )
-        found = stored(
-            (yield from sql("SELECT remote_id FROM {} {} {}", table, db.lock_hint, db.for_update))
-        )
+        found = yield from sql(
+            "SELECT remote_id FROM {} {} ORDER BY remote_id {}",
+            table,
+            db.lock_hint,
+            db.for_update,
+        ).flat_map(stored)
         if found is not None:
             return found
         yield from sql("INSERT INTO {} (remote_id) VALUES ({})", table, created)
         return created
 
     def body():
-        found = stored((yield from sql("SELECT remote_id FROM {}", table)))
+        found = yield from sql("SELECT remote_id FROM {} ORDER BY remote_id", table).flat_map(
+            stored
+        )
         if found is not None:
             return found
         created = make_remote_id_unsafe()
-        return (yield from sql.with_transaction(gen(lambda: take(created))))
+        return (yield from db.transaction(gen(lambda: take(created))))
 
     return gen(body)
 
@@ -153,7 +173,7 @@ def prepare(db: Db, remote_id_table: str) -> Effect[RemoteId, SqlError]:
         yield from create_upgrade_tables(sql, db.prefix)
         yield from _record(db)
         yield from create_alias_tables(sql, db.prefix)
-        return (yield from _remote_id(db, sql.identifier(remote_id_table)))
+        return (yield from _remote_id(db, sql.identifier(remote_id_table), remote_id_table))
 
     return gen(body)
 

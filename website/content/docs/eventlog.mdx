@@ -127,6 +127,49 @@ destroyed directly through `EventJournal` is not noticed.
 Payloads, entries and the write and change frames are
 [SchemaBinary](/docs/streams#schemabinary) frames with Effect's bytes.
 
+## One remote id per database
+
+A server tells each client the id of the log it serves, and a client keeps its place in the
+sync per id. `sql_event_log_server_encrypted` keeps that id in the remote id table
+(`effect_remote_id`, or the `remote_id_table` you pass), which holds one row. Servers that
+start at the same moment on a new database agree on it, whatever isolation level the
+database defaults to: on PostgreSQL the storage runs its transactions at READ COMMITTED,
+since at REPEATABLE READ or SERIALIZABLE PostgreSQL aborts a transaction that waited for
+another's lock instead of letting it read what the other committed.
+
+Up to 0.6.22, and in Effect, two servers that started together on a new database could each
+store an id, and a server then served whichever row the database returned first. The table
+records no insertion order, so a server that finds several ids serves the lowest in byte
+order, every time, and logs a warning that names the table and counts its ids:
+
+```text
+effect_remote_id holds 2 remote ids; serving the lowest, 0b5c8e…. Delete the others: https://pyfect.dev/docs/eventlog#one-remote-id-per-database
+```
+
+A client that synced under another of those ids takes the lowest for a new log once: it
+sends its entries again, and the server keeps one copy of each, then reads the store from
+the start. To stop the warning, keep the lowest id and delete the rest. Servers of this
+version already serve the lowest, so they can keep running; stop any older one first, since
+it may be serving an id you delete. On PostgreSQL, MySQL and SQLite:
+
+```sql
+DELETE FROM effect_remote_id
+WHERE remote_id <> (
+  SELECT lowest FROM (
+    SELECT remote_id AS lowest FROM effect_remote_id ORDER BY remote_id LIMIT 1
+  ) AS kept
+);
+```
+
+On SQL Server:
+
+```sql
+WITH ranked AS (
+  SELECT ROW_NUMBER() OVER (ORDER BY remote_id) AS position FROM effect_remote_id
+)
+DELETE FROM ranked WHERE position > 1;
+```
+
 ## Remote compaction
 
 An encrypted server that sets `HelloResponse.compaction` can keep a compacted snapshot of
