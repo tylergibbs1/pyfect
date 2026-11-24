@@ -2,10 +2,10 @@
 titles not ported are listed in the module report). Each test's docstring
 is the Effect test title, prefixed by its ``describe`` block.
 
-``handleAll`` is ``handle_all``, a mapping from endpoint identifiers to
-handlers. Effect's "inherited properties" are a JavaScript object's
-prototype; a Python mapping's own entries are its items, so the attributes
-of its class (a ``dict`` subclass's methods) stand for them.
+``handleAll`` is ``handle_all``, which takes ``builder.entry(endpoint)(handler)``
+values instead of Effect's record keyed by endpoint identifier (a key can't
+carry its endpoint's type), so Effect's title about a record's inherited
+properties has no counterpart (PARITY section 4).
 """
 
 # Groups made with ``HttpApiGroup.make`` type their endpoints as ``Any``, so
@@ -160,14 +160,13 @@ def test_registers_handle_all_handlers_at_runtime() -> None:
     live = builder.group(
         api,
         group,
-        lambda h: h.handle_all(  # pyright: ignore[reportDeprecated]
-            {
-                "getUser": lambda ctx: effect.succeed({"id": ctx.params["id"], "name": "Ada"}),
-                "createUser": builder.HandleAllEntry(
-                    lambda ctx: effect.succeed({"id": "created", "name": ctx.payload["name"]}),
-                    uninterruptible=True,
-                ),
-            }
+        lambda h: h.handle_all(
+            builder.entry(group.endpoints["getUser"])(
+                lambda ctx: effect.succeed({"id": ctx.params["id"], "name": "Ada"})
+            ),
+            builder.entry(group.endpoints["createUser"], uninterruptible=True)(
+                lambda ctx: effect.succeed({"id": "created", "name": ctx.payload["name"]})
+            ),
         ),
     )
 
@@ -200,9 +199,9 @@ def test_rejects_duplicate_handle_and_handle_all_registrations() -> None:
     handle_all_live = builder.group(
         api,
         users,
-        lambda h: h.handle_all({"getUser": lambda _: effect.succeed("first")}).handle_all(  # pyright: ignore[reportDeprecated]
-            {"getUser": lambda _: effect.succeed("second")}
-        ),
+        lambda h: h.handle_all(
+            builder.entry(get_user)(lambda _: effect.succeed("first"))
+        ).handle_all(builder.entry(get_user)(lambda _: effect.succeed("second"))),
     )
     for live in (handle_live, handle_all_live):
         defect = _build_defect(live)
@@ -211,26 +210,18 @@ def test_rejects_duplicate_handle_and_handle_all_registrations() -> None:
         )
 
 
-def test_ignores_inherited_handle_all_properties() -> None:
-    """HttpApiBuilder / ignores inherited handleAll properties"""
+def test_handle_all_refuses_a_mapping_of_handlers() -> None:
+    """Effect's record form is ``builder.entry`` values here: a mapping is a defect."""
     api = _users_api()
     users = api.groups["users"]
-
-    class Implementations(dict[str, Any]):
-        def inherited(self, _: Any) -> Any:
-            return effect.succeed("inherited")
-
-    implementations = Implementations(getUser=lambda _: effect.succeed("own"))
-    live = builder.group(api, users, lambda h: h.handle_all(implementations))  # pyright: ignore[reportDeprecated]
-
-    def program() -> Any:
-        api_client = yield from api_test.groups(api, [users])
-        return (yield from get_group(api_client, users).method("getUser")())
-
-    result = fx.run_blocking(
-        scoped(effect.gen(program)).pipe(fx.provide(live)).pipe(fx.provide(server.layer_services))
+    live = builder.group(
+        api,
+        users,
+        lambda h: h.handle_all({"getUser": lambda _: effect.succeed("own")}),  # pyright: ignore[reportCallIssue, reportArgumentType]
     )
-    assert result == "own"
+    defect = _build_defect(live)
+    assert isinstance(defect, TypeError)
+    assert "builder.entry(endpoint)(handler)" in str(defect)
 
 
 def test_executes_effectful_handler_builders() -> None:

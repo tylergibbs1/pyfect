@@ -18,8 +18,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Generic, Never, TypeVar, cast, overload
-from warnings import deprecated
+from typing import TYPE_CHECKING, Any, Generic, Never, TypeVar, overload
 
 from pyfect._core import Effect
 from pyfect.context import ServiceMarker
@@ -97,15 +96,6 @@ class HandlerEntry:
     handler: Handler
     is_raw: bool
     uninterruptible: bool
-
-
-@dataclass(frozen=True, slots=True)
-class HandleAllEntry(Generic[R_co]):
-    """A value of ``handle_all``'s deprecated mapping form with options
-    (Effect's ``{ handler, options }``); ``builder.entry`` takes them now."""
-
-    handler: Callable[[HttpApiRequest[Any, Any, Any, Any]], Effect[Any, Any, R_co]]
-    uninterruptible: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -198,13 +188,6 @@ class EntrySlot(Generic[X_co, S, E, MP_co, R_co, LP_co, I_co]):
     ) -> EndpointEntry[EX, R_co | R1 | RI]: ...
     def __call__(self, handler: Any, /) -> Any:
         return EndpointEntry[Any, Any](self.endpoint, handler, self.uninterruptible)
-
-
-type HandleAllValue[R] = (
-    Callable[[HttpApiRequest[Any, Any, Any, Any]], Effect[Any, Any, R]] | HandleAllEntry[R]
-)
-"""A handler or a ``HandleAllEntry``. A key's type can't name its endpoint, so
-a value is typed by its endpoint only through ``builder.handler(endpoint, f)``."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -387,23 +370,12 @@ class Bound(Generic[X_co, S, E, MP_co, GP, GE, R_co, LP_co, LR_co, I_co]):
         )
 
 
-_MAPPING_DEPRECATED = (
-    "a mapping's key can't name its endpoint, so its type misses the endpoint's own "
-    "middleware; pass builder.entry(endpoint)(handler) values"
-)
-
-
 @dataclass(frozen=True, slots=True)
 class HandleAll(Generic[GP, GE, R_co]):
     """``handlers.handle_all``: called with ``builder.entry`` values, it
     registers each as ``handle`` would, in order (Effect's ``handleAll``).
     A class of its own, as ``Bound``, so that ``GP`` is fixed before the
-    handlers' requirements are solved.
-
-    The deprecated form takes a mapping of endpoint identifiers to handlers:
-    a key can't name its endpoint, so that form misses an endpoint's own
-    middleware. Only the mapping's items count, never attributes of its
-    class."""
+    handlers' requirements are solved."""
 
     handlers: Handlers[Any, Any, Any]
 
@@ -413,36 +385,15 @@ class HandleAll(Generic[GP, GE, R_co]):
     def __call__[R1](
         self, /, *entries: EndpointEntry[GE, R1 | GP]
     ) -> Handlers[GP, GE, R_co | R1]: ...
-    @overload
-    @deprecated(_MAPPING_DEPRECATED)
-    def __call__(
-        self, handlers: Mapping[str, HandleAllValue[GP | Provided]], /
-    ) -> Handlers[GP, GE, R_co]: ...
-    @overload
-    @deprecated(_MAPPING_DEPRECATED)
-    def __call__[R1](
-        self, handlers: Mapping[str, HandleAllValue[R1 | GP | Provided]], /
-    ) -> Handlers[GP, GE, R_co | R1]: ...
-    def __call__(self, /, *values: Any) -> Any:
+    def __call__(self, /, *entries: EndpointEntry[Any, Any]) -> Any:
         result = self.handlers
-        if len(values) == 1 and isinstance(values[0], Mapping):
-            return self._register_mapping(cast("Mapping[str, HandleAllValue[Any]]", values[0]))
-        for value in cast("tuple[EndpointEntry[Any, Any], ...]", values):
+        for entry in entries:
+            if not isinstance(entry, EndpointEntry):  # pyright: ignore[reportUnnecessaryIsInstance]
+                raise TypeError(
+                    f"handle_all takes builder.entry(endpoint)(handler) values, not {entry!r}"
+                )
             result = result._register(  # pyright: ignore[reportPrivateUsage]
-                value.endpoint.identifier, value.handler, False, value.uninterruptible
-            )
-        return result
-
-    def _register_mapping(self, handlers: Mapping[str, HandleAllValue[Any]]) -> Any:
-        result = self.handlers
-        for identifier, value in handlers.items():
-            entry = (
-                cast("HandleAllEntry[Any]", value)
-                if isinstance(value, HandleAllEntry)
-                else HandleAllEntry(value)
-            )
-            result = result._register(  # pyright: ignore[reportPrivateUsage]
-                identifier, entry.handler, False, entry.uninterruptible
+                entry.endpoint.identifier, entry.handler, False, entry.uninterruptible
             )
         return result
 
@@ -645,8 +596,6 @@ __all__ = [
     "EntrySlot",
     "GroupHandlers",
     "HandleAll",
-    "HandleAllEntry",
-    "HandleAllValue",
     "HandlerEntry",
     "Handlers",
     "HttpApiRequest",

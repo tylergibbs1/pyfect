@@ -6888,42 +6888,35 @@ def check_http_api(
         lambda _r: fx.succeed(1),  # pyright: ignore[reportArgumentType]
     )
 
-    # The deprecated mapping form of handle_all: its requirements are the
+    # handle_all takes builder.entry values: its requirements are the
     # handlers', less what the group's middleware provides.
     assert_type(
-        handlers.handle_all({"getUser": find, "health": lambda _r: fx.succeed(None)}),  # pyright: ignore[reportDeprecated]
-        Handlers[Never, Never, ApiCurrentUser | ApiDb],
-    )
-    assert_type(
-        handlers.handle_all({"health": lambda _r: fx.succeed(None)}),  # pyright: ignore[reportDeprecated]
-        Handlers[Never, Never, Never],
-    )
-    assert_type(
-        admin_handlers.handle_all({"getUser": find}),  # pyright: ignore[reportDeprecated]
-        Handlers[ApiCurrentUser, api_error.Unauthorized, ApiAuth | ApiDb],
-    )
-    assert_type(
-        handlers.handle(ApiUsers.health)(lambda _r: fx.succeed(None)).handle_all({"getUser": find}),  # pyright: ignore[reportDeprecated]
-        Handlers[Never, Never, ApiCurrentUser | ApiDb],
-    )
-    # A key can't name its endpoint's types; builder.handler gives a value its
-    # endpoint's request, success and errors.
-    assert_type(
-        handlers.handle_all(  # pyright: ignore[reportDeprecated]
-            {
-                "getUser": api_builder.handler(ApiUsers.get_user, find),
-                "createUser": api_builder.HandleAllEntry(
-                    api_builder.handler(
-                        ApiUsers.create_user,
-                        lambda r: fx.succeed(ApiUser(id=1, name=r.payload["name"])),
-                    ),
-                    uninterruptible=True,
-                ),
-            }
+        handlers.handle_all(
+            api_builder.entry(ApiUsers.get_user)(find),
+            api_builder.entry(ApiUsers.health)(lambda _r: fx.succeed(None)),
         ),
         Handlers[Never, Never, ApiCurrentUser | ApiDb],
     )
-    handlers.handle_all({"health": 1})  # pyright: ignore[reportCallIssue, reportArgumentType]
+    assert_type(
+        handlers.handle_all(api_builder.entry(ApiUsers.health)(lambda _r: fx.succeed(None))),
+        Handlers[Never, Never, Never],
+    )
+    assert_type(
+        handlers.handle(ApiUsers.health)(lambda _r: fx.succeed(None)).handle_all(
+            api_builder.entry(ApiUsers.get_user)(find)
+        ),
+        Handlers[Never, Never, ApiCurrentUser | ApiDb],
+    )
+    assert_type(
+        handlers.handle_all(
+            api_builder.entry(ApiUsers.create_user, uninterruptible=True)(
+                lambda r: fx.succeed(ApiUser(id=1, name=r.payload["name"]))
+            )
+        ),
+        Handlers[Never, Never, Never],
+    )
+    # The mapping form Effect's record maps to is gone: a key can't name its endpoint.
+    handlers.handle_all({"getUser": find})  # pyright: ignore[reportCallIssue, reportArgumentType]
 
     api = HttpApi.make("api").add(ApiUsers, ApiAdmin)
     assert_type(api, HttpApi[ApiUsers | ApiAdmin])
@@ -6946,7 +6939,10 @@ def check_http_api(
         api_builder.group(
             api,
             ApiUsers,
-            lambda h: h.handle_all({"getUser": find, "health": lambda _r: fx.succeed(None)}),  # pyright: ignore[reportDeprecated]
+            lambda h: h.handle_all(
+                api_builder.entry(ApiUsers.get_user)(find),
+                api_builder.entry(ApiUsers.health)(lambda _r: fx.succeed(None)),
+            ),
         ),
         fx.Layer[ApiUsers, Never, ApiCurrentUser | ApiDb],
     )
@@ -7249,14 +7245,14 @@ def check_http_api_clients() -> None:
 
     # A group of a two-group client is that group, not the union (DOGFOOD beacon 8):
     # `get_group` is a function because pyright solves a method's type variables
-    # from `self` first. `client[Group]` is deprecated and typed to reject any group.
+    # from `self` first. `client[Group]` is gone (0.7.0).
     def two_groups(
         both: api_client.Client[ApiUsers | ApiAdmin], users: api_client.Client[ApiUsers]
     ) -> None:
         assert_type(get_group(both, ApiUsers), ApiUsers)
         assert_type(get_group(both, ApiAdmin), ApiAdmin)
         get_group(users, ApiAdmin)  # pyright: ignore[reportArgumentType]
-        both[ApiUsers]  # pyright: ignore[reportArgumentType]
+        both[ApiUsers]  # pyright: ignore[reportIndexIssue]
 
         def pick[G: HttpApiGroup[Any, Any]](client: api_client.Client[G], group: type[G]) -> G:
             return get_group(client, group)

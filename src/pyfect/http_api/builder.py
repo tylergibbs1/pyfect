@@ -45,7 +45,6 @@ from pyfect.http_api._handlers import (
     EndpointEntry,
     EntrySlot,
     GroupHandlers,
-    HandleAllEntry,
     HandlerEntry,
     Handlers,
     HttpApiRequest,
@@ -555,7 +554,6 @@ def _apply_middleware(
 
 __all__ = [
     "EndpointEntry",
-    "HandleAllEntry",
     "authorization_credential",
     "endpoint",
     "entry",

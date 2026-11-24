@@ -34,9 +34,9 @@ endpoint has no handler. `builder.layer(api)` adds every group's routes to the
 registers several handlers at once (Effect's `handleAll`). Each `builder.entry` is typed by its
 endpoint as `handle` is: the handler's request, success and errors are checked, and for an
 endpoint with middleware of its own the layer needs that middleware and what it needs, not what
-it provides. `builder.entry(Users.me, uninterruptible=True)` takes `handle`'s option. The older
-mapping form, `handle_all({"getUser": get_user})`, is deprecated: a key can't name its endpoint,
-so it can't type the endpoint's middleware.
+it provides. `builder.entry(Users.me, uninterruptible=True)` takes `handle`'s option. Effect's
+`handleAll` takes a record keyed by endpoint identifier instead; a Python key can't name its
+endpoint, so pyfect takes entries.
 
 `client.make(api)` derives a client: `get_group(api_client, Users).get_user(params={"id": 1})`
 encodes the request, sends it with the `HttpClient` and decodes the response, failing with

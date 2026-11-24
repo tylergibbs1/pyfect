@@ -265,7 +265,6 @@ EXPECTED: dict[str, tuple[Variance, ...]] = {
     "pyfect.http_api.builder.EndpointEntry": ("out", "out"),
     "pyfect.http_api.builder.EntrySlot": ("out", "inv", "inv", "out", "out", "out", "out"),
     "pyfect.http_api.builder.GroupHandlers": ("out",),
-    "pyfect.http_api.builder.HandleAllEntry": ("out",),
     "pyfect.http_api.client.DecodeResponse": ("out", "out"),
     "pyfect.http_api.client.EndpointClient": ("out", "out", "out", "out", "out", "out", "out"),
     "pyfect.http_api.endpoint.AddMiddleware": (

@@ -250,6 +250,12 @@ OMISSIONS: tuple[Omission, ...] = (
         "a memo of a transformation by source AST, an identity not observable in Python",
         r"reuses response schema",
     ),
+    _some(
+        "effect/test/httpapi/HttpApiBuilder.test.ts",
+        "section 4 `HttpApiBuilder.handleAll` row: `handle_all` takes `builder.entry` values, "
+        "not a record, so there are no inherited properties to ignore",
+        r"^ignores inherited handleAll properties$",
+    ),
     # --- Schema: the module docstrings of tests/oracle/test_schema*.py give these groups.
     *_whole(
         _SYMBOLS,

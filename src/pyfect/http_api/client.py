@@ -18,7 +18,6 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any, Generic, Never, TypeIs, TypeVar, cast
 from urllib.parse import quote
-from warnings import deprecated
 
 from pyfect import schema as S
 from pyfect._core import Effect
@@ -79,20 +78,14 @@ class Client(Generic[G_contra]):
     def __init__(self, groups: Mapping[AnyGroup, HttpApiGroup[Any]]) -> None:
         self._groups = groups
 
-    @deprecated("client[Group] is typed as every group of the API; use get_group(client, Group)")
-    def __getitem__(self, group: Never) -> object:
-        """Deprecated: ``get_group(client, Group)``. Typed to reject every
-        group, since pyright does not report a deprecated ``[]``."""
-        return get_group(cast("Client[Any]", self), group)
-
 
 def get_group[G: HttpApiGroup[Any, Any]](client: Client[G], group: type[G], /) -> G:
     """The group ``group`` of ``client``: its endpoint attributes are client
     methods. A group the client's API lacks is a type error.
 
     A function, not a method: pyright solves a method's type variables from
-    ``self`` first, so ``client[Users]`` on a client of ``Users | Status``
-    would be typed ``Users | Status``."""
+    ``self`` first, so a method on a client of ``Users | Status`` would type
+    the group ``Users | Status``."""
     return cast("G", client._groups[cast("AnyGroup", group).origin])  # pyright: ignore[reportPrivateUsage]
 
 
