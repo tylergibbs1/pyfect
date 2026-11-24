@@ -13,7 +13,8 @@ import pyfect as fx
 from pyfect._core import Effect, _call_user
 from pyfect._json_value import JsonValue
 from pyfect._url import Url
-from pyfect.chat._capped_retry import parse_retry_after, retry_safe_within
+from pyfect.chat._retry_after import parse_retry_after
+from pyfect.chat.chat_adapter import retry_safe
 from pyfect.chat.chat_error import AnyReason, ChatError
 from pyfect.chat.teams import _errors, _json
 from pyfect.chat.teams._cloud import Cloud, Credentials, TokenGrant
@@ -167,7 +168,7 @@ def make_tokens(
             if cached is not None and cached[1] > now:
                 return cached[0]
             cache.pop(scope, None)
-            grant = yield from retry_safe_within(provider(scope), max_retry_after)
+            grant = yield from retry_safe(provider(scope), max_retry_after=max_retry_after)
             if grant.expires_at is not None:
                 until = (grant.expires_at - _EPOCH) / timedelta(milliseconds=1)
                 until -= _REFRESH_MARGIN_MILLIS
@@ -234,7 +235,7 @@ class Connector:
         ``uncertain``. A 429's ``Retry-After`` is waited out before a retry,
         unless it passes ``max_retry_after``: then the call fails at once."""
         once = self._once(method, path, body, write, service_url, query, op)
-        return retry_safe_within(once, self._max_retry_after) if retry else once
+        return retry_safe(once, max_retry_after=self._max_retry_after) if retry else once
 
     def _once(  # noqa: PLR0917
         self,

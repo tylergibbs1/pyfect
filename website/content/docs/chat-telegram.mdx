@@ -58,7 +58,11 @@ runs without a public URL. Updates run one at a time, in order, and each is conf
 after it ran. An update the handler does not accept is retried three times and then logged
 and skipped, so one bad update cannot stall the bot. Each `getUpdates` gets the long poll
 (`timeout`, 30 seconds) plus 3 seconds to answer, so a connection that died without a reset
-cannot stall it either: the call is given up and retried with a backoff. The layer fails with detail `conflict`
+cannot stall it either: the call is given up and retried with a backoff.
+
+A call Telegram answers 429 is retried after its `retry_after`, however long. Pass
+`max_retry_after` to `telegram_chat.layer`, such as `"1 minute"`, and a longer wait fails
+the op at once with `RateLimited`, its `retry_after` the wait Telegram asked for. The layer fails with detail `conflict`
 when a webhook is set or another process polls.
 
 ## Commands and buttons

@@ -38,6 +38,7 @@ from pyfect.chat.chat_handler import NotAccepted
 from pyfect.chat.telegram import telegram_chat
 from pyfect.chat.telegram.telegram_chat import Outcome, ReceiveOptions, TelegramChat
 from pyfect.deferred import Deferred
+from pyfect.duration import seconds
 from pyfect.exit import is_failure
 from pyfect.http import request as http_request
 from pyfect.http import router
@@ -674,3 +675,38 @@ def test_unescaped_user_text_forms_a_link():
     run(post("Deploy by [x](http://evil).").pipe(fx.provide(telegram_layer(api))))
     [sent] = api.sent("sendRichMessage")
     assert literal(sent["rich_message"]["markdown"]) is None
+
+
+# --- max_retry_after ----------------------------------------------------------------------
+
+
+def test_fails_at_once_with_the_wait_when_retry_after_passes_max_retry_after():
+    api = FakeApi()
+    api.next["sendRichMessage"] = api_error(
+        429, "Too Many Requests: retry after 3600", {"retry_after": 3600}
+    )
+    error = run(
+        post("alert").flip().pipe(fx.provide(telegram_layer(api, max_retry_after="1 minute")))
+    )
+    assert type(error.reason).__name__ == "RateLimited"
+    assert error.retry_after == seconds(3600)
+    assert len(api.sent("sendRichMessage")) == 1
+
+
+@testing.effect
+def test_waits_out_a_retry_after_within_max_retry_after():
+    api = FakeApi()
+    api.next["sendRichMessage"] = api_error(
+        429, "Too Many Requests: retry after 30", {"retry_after": 30}
+    )
+
+    @fx.gen
+    def program() -> Gen[None]:
+        fiber = yield from post("alert").fork()
+        yield from testing.adjust("29 seconds")
+        assert len(api.sent("sendRichMessage")) == 1
+        yield from testing.adjust("1 second")
+        yield from fiber.join()
+        assert len(api.sent("sendRichMessage")) == 2
+
+    return program.pipe(fx.provide(telegram_layer(api, max_retry_after="1 minute")))

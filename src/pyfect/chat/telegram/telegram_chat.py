@@ -193,6 +193,7 @@ def layer(
     unverified_files: bool = False,
     unverified_buttons: bool = False,
     unverified_commands: bool = False,
+    max_retry_after: DurationInput | None = None,
 ) -> Layer[TelegramChat | TelegramBotApi, ChatError, HttpClient | Registry]:
     """Registers the Telegram adapter in the ``Registry`` and provides
     ``TelegramChat`` and ``TelegramBotApi``.
@@ -210,6 +211,10 @@ def layer(
     - The bot's username, which commands and ``@`` mentions need, is read
       with ``getMe`` on the first message and kept. While it can't be read, a
       message update is ``invalid``, and Telegram sends it again.
+    - A call Telegram answers 429 is retried after its ``retry_after``,
+      however long, unless ``max_retry_after`` is set: a longer wait then
+      fails the op at once with ``RateLimited``, its ``retry_after`` the
+      wait asked for.
     """
     capabilities = capabilities_of(
         files=unverified_files, buttons=unverified_buttons, commands=unverified_commands
@@ -227,7 +232,14 @@ def layer(
         return TelegramChatService(api=api, env=env)
 
     return _layer_effect(TelegramChat, build).pipe(
-        _provide_merge(_bot_api_layer(token=token, environment=environment, api_url=api_url))
+        _provide_merge(
+            _bot_api_layer(
+                token=token,
+                environment=environment,
+                api_url=api_url,
+                max_retry_after=max_retry_after,
+            )
+        )
     )
 
 

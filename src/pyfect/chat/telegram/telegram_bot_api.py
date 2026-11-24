@@ -94,7 +94,9 @@ class TelegramBotApiService:
       body is multipart and each object is a JSON string part. A ``write``
       is never repeated once the request left, and a failure that may have
       landed is ``uncertain``; ``retry`` (default true) retries ``retry``
-      failures as ``chat_adapter.retry_safe`` does. ``timeout``, when given,
+      failures as ``chat_adapter.retry_safe`` does, waiting out a 429's
+      ``retry_after`` unless it passes ``max_retry_after``: then the call
+      fails ``RateLimited`` at once. ``timeout``, when given,
       bounds each request: one without an answer by then fails
       ``Transport`` with detail ``timeout``, ``uncertain`` for a write.
     - An answer with ``ok: false`` fails with the reason for its
@@ -116,7 +118,9 @@ class TelegramBotApiService:
         bot_id: str,
         environment: Environment,
         api_url: str,
+        max_retry_after: Duration | None = None,
     ) -> None:
+        self._max_retry_after = max_retry_after
         self._http = http
         self._token = token
         self._bot_id = bot_id
@@ -247,7 +251,7 @@ class TelegramBotApiService:
             return fx.fail(_errors.chat_error(method, _errors.invalid_request("invalid_method")))
         deadline = None if timeout is None else from_input_unsafe(timeout)
         once = self._once(method, params or {}, write, files, deadline)
-        return retry_safe(once) if retry else once
+        return retry_safe(once, max_retry_after=self._max_retry_after) if retry else once
 
     def file(self, file_path: str, *, max_bytes: int) -> Stream[bytes, ChatError]:
         """Streams the file at ``file_path``; see the class."""
@@ -307,11 +311,14 @@ def make(
     token: Redacted[str],
     environment: Environment = "production",
     api_url: str = DEFAULT_API_URL,
+    max_retry_after: DurationInput | None = None,
 ) -> Effect[TelegramBotApiService, ChatError, HttpClient]:
     """Builds the client from an ``HttpClient`` and a bot token. Fails
     ``Unauthenticated`` with detail ``invalid_token`` when the token has no
     numeric bot id in front of a colon. ``api_url`` is for a local Bot API
-    server and is privileged configuration."""
+    server and is privileged configuration. ``max_retry_after`` caps the
+    wait a retry takes; see ``TelegramBotApiService``."""
+    ceiling = None if max_retry_after is None else from_input_unsafe(max_retry_after)
 
     @fx.gen
     def body() -> Generator[Effect[Any, ChatError, HttpClient], Any, TelegramBotApiService]:
@@ -326,6 +333,7 @@ def make(
             bot_id=bot_id,
             environment=environment,
             api_url=api_url.rstrip("/"),
+            max_retry_after=ceiling,
         )
 
     return body
@@ -336,10 +344,17 @@ def layer(
     token: Redacted[str],
     environment: Environment = "production",
     api_url: str = DEFAULT_API_URL,
+    max_retry_after: DurationInput | None = None,
 ) -> Layer[TelegramBotApi, ChatError, HttpClient]:
     """The client as a layer."""
     return _layer_effect(
-        TelegramBotApi, make(token=token, environment=environment, api_url=api_url)
+        TelegramBotApi,
+        make(
+            token=token,
+            environment=environment,
+            api_url=api_url,
+            max_retry_after=max_retry_after,
+        ),
     )
 
 

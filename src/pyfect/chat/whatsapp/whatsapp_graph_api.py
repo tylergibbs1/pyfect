@@ -11,7 +11,8 @@ from typing import Any, Literal, Never
 import pyfect as fx
 from pyfect._core import Effect
 from pyfect._json_text import Json
-from pyfect.chat._capped_retry import parse_retry_after, retry_safe_within
+from pyfect.chat._retry_after import parse_retry_after
+from pyfect.chat.chat_adapter import retry_safe
 from pyfect.chat.chat_error import AnyReason, ChatError
 from pyfect.chat.whatsapp import _errors, _json
 from pyfect.context import Tag
@@ -81,7 +82,7 @@ class WhatsAppGraphApiService:
         """Calls ``{base_url}/{path}`` and succeeds with the JSON of a 2xx
         answer; see the class."""
         once = self._once(path, method, body, form, params, write)
-        return retry_safe_within(once, self._max_retry_after) if retry else once
+        return retry_safe(once, max_retry_after=self._max_retry_after) if retry else once
 
     def _once(  # noqa: PLR0917
         self,

@@ -172,7 +172,7 @@ class FakeApi:
         return client.layer_test(self._respond)
 
 
-def telegram_layer(api: FakeApi) -> layer.Layer[Any, Any]:
+def telegram_layer(api: FakeApi, **options: Any) -> layer.Layer[Any, Any]:
     """``Chat``, ``Registry`` and the adapter on a fake Bot API, with every
     capability on."""
     return (
@@ -181,6 +181,7 @@ def telegram_layer(api: FakeApi) -> layer.Layer[Any, Any]:
             unverified_files=True,
             unverified_buttons=True,
             unverified_commands=True,
+            **options,
         )
         .pipe(layer.provide_merge(chat.layer))
         .pipe(layer.provide(api.layer))
