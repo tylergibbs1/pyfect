@@ -50,6 +50,7 @@ from pyfect.http_api._handlers import (
     Handlers,
     HttpApiRequest,
     PayloadErrors,
+    Seal,
 )
 from pyfect.http_api._html import memoize_success
 from pyfect.http_api._payload import decode_payload, payload_decoders
@@ -285,20 +286,33 @@ def entry[P, Q, B, CB, H, S1, CS, E1](
     /,
     *,
     uninterruptible: bool = False,
-) -> EntrySlot[HttpApiRequest[P, Q, B, H], S1, E1, Never, Never]: ...
+) -> EntrySlot[HttpApiRequest[P, Q, B, H], S1, E1, Never, Never, Never, Seal]: ...
 @overload
-def entry[P, Q, B, CB, H, S1, CS, E1, MP, ME, MR, MT](
-    endpoint: HttpApiEndpoint[P, Q, B, CB, H, S1, CS, E1, HttpApiMiddleware[MP, ME, MR], MT],
+def entry[P, Q, B, CB, H, S1, CS, E1, MP, ME, MT, LP, LR, I](
+    endpoint: HttpApiEndpoint[
+        P,
+        Q,
+        B,
+        CB,
+        H,
+        S1,
+        CS,
+        E1,
+        HttpApiMiddleware[MP, ME, Any],
+        MT,
+        HttpApiMiddleware[LP, Any, LR],
+        I,
+    ],
     /,
     *,
     uninterruptible: bool = False,
-) -> EntrySlot[HttpApiRequest[P, Q, B, H], S1, E1 | ME, MP, MT | MR]: ...
+) -> EntrySlot[HttpApiRequest[P, Q, B, H], S1, E1 | ME, MP, MT | LR, LP, I | Seal]: ...
 def entry(endpoint: AnyEndpoint, /, *, uninterruptible: bool = False) -> Any:
     """The slot of ``endpoint``'s ``handle_all`` value (Effect's
     ``handleAll`` entry): ``entry(Users.get_user)(get_user)`` is typed as
     ``handle(Users.get_user)(get_user)`` is, its endpoint's middleware
     included; ``uninterruptible`` runs it uninterruptibly."""
-    return EntrySlot[Any, Any, Any, Any, Any](endpoint, uninterruptible)
+    return EntrySlot[Any, Any, Any, Any, Any, Any, Any](endpoint, uninterruptible)
 
 
 def handler_to_route(

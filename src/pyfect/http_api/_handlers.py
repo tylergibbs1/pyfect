@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Any, Generic, Never, TypeVar, cast, overload
 from warnings import deprecated
 
 from pyfect._core import Effect
+from pyfect.context import ServiceMarker
 from pyfect.http.router import Provided
 from pyfect.http.server_request import ServerRequest
 from pyfect.http.server_response import HttpServerResponse
@@ -45,10 +46,19 @@ GP = TypeVar("GP")
 GE = TypeVar("GE")
 R_co = TypeVar("R_co", covariant=True)
 EX_co = TypeVar("EX_co", covariant=True)
+LP_co = TypeVar("LP_co", covariant=True)
+LR_co = TypeVar("LR_co", covariant=True)
+I_co = TypeVar("I_co", covariant=True)
 
 type PayloadErrors = HttpApiSchemaError | HttpApiPayloadTooLarge
 """What reading a streamed payload may fail with; any handler may fail
 with them (they become defects)."""
+
+
+class Seal(ServiceMarker):
+    """Joined to the services ``Bound`` and ``EntrySlot`` take others off,
+    and taken off with them, so that what pyright subtracts from is never
+    ``Never`` (which would solve the rest as ``Unknown``)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -111,18 +121,20 @@ class EndpointEntry(Generic[EX_co, R_co]):
 
 
 @dataclass(frozen=True, slots=True)
-class EntrySlot(Generic[X_co, S, E, MP_co, R_co]):
+class EntrySlot(Generic[X_co, S, E, MP_co, R_co, LP_co, I_co]):
     """``builder.entry(endpoint)``: called with the handler, gives its
     ``EndpointEntry``. Two steps, as ``Bound``: ``R`` (the endpoint's
-    middleware and what it needs) and ``MP`` (what it provides) are fixed
-    before the handler's requirements are solved."""
+    middleware and what its outermost one needs), ``MP`` (what they
+    provide), ``LP`` (what the outermost one provides) and ``I`` (what
+    those inside it need, with ``Seal``) are fixed before the handler's
+    requirements and ``Exclude<I, LP>`` are solved."""
 
     endpoint: AnyEndpoint
     uninterruptible: bool
 
     @overload
     def __call__(
-        self,
+        self: EntrySlot[X_co, S, E, MP_co, R_co, LP_co, Seal],
         handler: Callable[
             [X_co], Effect[S | HttpServerResponse, E | PayloadErrors, MP_co | Provided]
         ],
@@ -130,15 +142,31 @@ class EntrySlot(Generic[X_co, S, E, MP_co, R_co]):
     ) -> EndpointEntry[Never, R_co]: ...
     @overload
     def __call__[R1](
-        self,
+        self: EntrySlot[X_co, S, E, MP_co, R_co, LP_co, Seal],
         handler: Callable[
             [X_co], Effect[S | HttpServerResponse, E | PayloadErrors, R1 | MP_co | Provided]
         ],
         /,
     ) -> EndpointEntry[Never, R_co | R1]: ...
     @overload
+    def __call__[RI = Never](
+        self: EntrySlot[X_co, S, E, MP_co, R_co, LP_co, RI | LP_co | Seal],
+        handler: Callable[
+            [X_co], Effect[S | HttpServerResponse, E | PayloadErrors, MP_co | Provided]
+        ],
+        /,
+    ) -> EndpointEntry[Never, R_co | RI]: ...
+    @overload
+    def __call__[R1, RI = Never](
+        self: EntrySlot[X_co, S, E, MP_co, R_co, LP_co, RI | LP_co | Seal],
+        handler: Callable[
+            [X_co], Effect[S | HttpServerResponse, E | PayloadErrors, R1 | MP_co | Provided]
+        ],
+        /,
+    ) -> EndpointEntry[Never, R_co | R1 | RI]: ...
+    @overload
     def __call__[EX](
-        self,
+        self: EntrySlot[X_co, S, E, MP_co, R_co, LP_co, Seal],
         handler: Callable[
             [X_co], Effect[S | HttpServerResponse, E | EX | PayloadErrors, MP_co | Provided]
         ],
@@ -146,12 +174,28 @@ class EntrySlot(Generic[X_co, S, E, MP_co, R_co]):
     ) -> EndpointEntry[EX, R_co]: ...
     @overload
     def __call__[EX, R1](
-        self,
+        self: EntrySlot[X_co, S, E, MP_co, R_co, LP_co, Seal],
         handler: Callable[
             [X_co], Effect[S | HttpServerResponse, E | EX | PayloadErrors, R1 | MP_co | Provided]
         ],
         /,
     ) -> EndpointEntry[EX, R_co | R1]: ...
+    @overload
+    def __call__[EX, RI = Never](
+        self: EntrySlot[X_co, S, E, MP_co, R_co, LP_co, RI | LP_co | Seal],
+        handler: Callable[
+            [X_co], Effect[S | HttpServerResponse, E | EX | PayloadErrors, MP_co | Provided]
+        ],
+        /,
+    ) -> EndpointEntry[EX, R_co | RI]: ...
+    @overload
+    def __call__[EX, R1, RI = Never](
+        self: EntrySlot[X_co, S, E, MP_co, R_co, LP_co, RI | LP_co | Seal],
+        handler: Callable[
+            [X_co], Effect[S | HttpServerResponse, E | EX | PayloadErrors, R1 | MP_co | Provided]
+        ],
+        /,
+    ) -> EndpointEntry[EX, R_co | R1 | RI]: ...
     def __call__(self, handler: Any, /) -> Any:
         return EndpointEntry[Any, Any](self.endpoint, handler, self.uninterruptible)
 
@@ -178,19 +222,45 @@ class Handlers(Generic[GP, GE, R_co]):
         /,
         *,
         uninterruptible: bool = False,
-    ) -> Bound[HttpApiRequest[P, Q, B, H], S1, E1 | GE, GP, GP, GE, R_co]: ...
+    ) -> Bound[HttpApiRequest[P, Q, B, H], S1, E1 | GE, GP, GP, GE, R_co, Never, Seal, Seal]: ...
     @overload
-    def handle[P, Q, B, CB, H, S1, CS, E1, MP, ME, MR, MT](
+    def handle[P, Q, B, CB, H, S1, CS, E1, MP, ME, MT, LP, LR, I](
         self,
-        endpoint: HttpApiEndpoint[P, Q, B, CB, H, S1, CS, E1, HttpApiMiddleware[MP, ME, MR], MT],
+        endpoint: HttpApiEndpoint[
+            P,
+            Q,
+            B,
+            CB,
+            H,
+            S1,
+            CS,
+            E1,
+            HttpApiMiddleware[MP, ME, Any],
+            MT,
+            HttpApiMiddleware[LP, Any, LR],
+            I,
+        ],
         /,
         *,
         uninterruptible: bool = False,
-    ) -> Bound[HttpApiRequest[P, Q, B, H], S1, E1 | ME | GE, MP | GP, GP, GE, R_co | MT | MR]: ...
+    ) -> Bound[
+        HttpApiRequest[P, Q, B, H],
+        S1,
+        E1 | ME | GE,
+        MP | GP,
+        GP,
+        GE,
+        R_co | MT,
+        LP,
+        LR | Seal,
+        I | Seal,
+    ]: ...
     def handle(self, endpoint: AnyEndpoint, /, *, uninterruptible: bool = False) -> Any:
         """The slot of ``endpoint``'s handler; ``uninterruptible`` runs it
         uninterruptibly."""
-        return Bound[Any, Any, Any, Any, Any, Any, Any](self, endpoint, False, uninterruptible)
+        return Bound[Any, Any, Any, Any, Any, Any, Any, Any, Any, Any](
+            self, endpoint, False, uninterruptible
+        )
 
     @overload
     def handle_raw[P, Q, B, CB, H, S1, CS, E1](
@@ -199,21 +269,45 @@ class Handlers(Generic[GP, GE, R_co]):
         /,
         *,
         uninterruptible: bool = False,
-    ) -> Bound[HttpApiRequest[P, Q, None, H], S1, E1 | GE, GP, GP, GE, R_co]: ...
+    ) -> Bound[HttpApiRequest[P, Q, None, H], S1, E1 | GE, GP, GP, GE, R_co, Never, Seal, Seal]: ...
     @overload
-    def handle_raw[P, Q, B, CB, H, S1, CS, E1, MP, ME, MR, MT](
+    def handle_raw[P, Q, B, CB, H, S1, CS, E1, MP, ME, MT, LP, LR, I](
         self,
-        endpoint: HttpApiEndpoint[P, Q, B, CB, H, S1, CS, E1, HttpApiMiddleware[MP, ME, MR], MT],
+        endpoint: HttpApiEndpoint[
+            P,
+            Q,
+            B,
+            CB,
+            H,
+            S1,
+            CS,
+            E1,
+            HttpApiMiddleware[MP, ME, Any],
+            MT,
+            HttpApiMiddleware[LP, Any, LR],
+            I,
+        ],
         /,
         *,
         uninterruptible: bool = False,
     ) -> Bound[
-        HttpApiRequest[P, Q, None, H], S1, E1 | ME | GE, MP | GP, GP, GE, R_co | MT | MR
+        HttpApiRequest[P, Q, None, H],
+        S1,
+        E1 | ME | GE,
+        MP | GP,
+        GP,
+        GE,
+        R_co | MT,
+        LP,
+        LR | Seal,
+        I | Seal,
     ]: ...
     def handle_raw(self, endpoint: AnyEndpoint, /, *, uninterruptible: bool = False) -> Any:
         """``handle`` without reading the payload: the handler reads the
         request's body itself."""
-        return Bound[Any, Any, Any, Any, Any, Any, Any](self, endpoint, True, uninterruptible)
+        return Bound[Any, Any, Any, Any, Any, Any, Any, Any, Any, Any](
+            self, endpoint, True, uninterruptible
+        )
 
     @property
     def handle_all(self) -> HandleAll[GP, GE, R_co]:
@@ -239,13 +333,16 @@ class Handlers(Generic[GP, GE, R_co]):
 
 
 @dataclass(frozen=True, slots=True)
-class Bound(Generic[X_co, S, E, MP_co, GP, GE, R_co]):
+class Bound(Generic[X_co, S, E, MP_co, GP, GE, R_co, LP_co, LR_co, I_co]):
     """The handler slot of one endpoint: its request ``X``, success ``S``,
     errors ``E`` and the services its middleware provides ``MP``; ``R``
     holds the group layer's requirements so far and the endpoint's
-    middleware. Both are computed in ``handle``: in one call the
-    middleware's services would be solved from the handler too, and a
-    union of two class TypeVars that are both ``Never`` is ``Unknown``."""
+    middleware. ``LP`` and ``LR`` are what the endpoint's outermost
+    middleware provides and needs, ``I`` what those inside it need (both
+    with ``Seal``). All are computed in ``handle``: in one call the
+    middleware's services would be solved from the handler too, and pyright
+    takes ``LP`` and ``GP`` off ``I`` and ``LR`` only once they are fixed in
+    class parameters (``research/typing/httpapi_3_middleware_chain.py``)."""
 
     handlers: Handlers[Any, Any, Any]
     endpoint: AnyEndpoint
@@ -254,7 +351,7 @@ class Bound(Generic[X_co, S, E, MP_co, GP, GE, R_co]):
 
     @overload
     def __call__(
-        self,
+        self: Bound[X_co, S, E, MP_co, GP, GE, R_co, LP_co, Seal, Seal],
         handler: Callable[
             [X_co], Effect[S | HttpServerResponse, E | PayloadErrors, MP_co | Provided]
         ],
@@ -262,12 +359,28 @@ class Bound(Generic[X_co, S, E, MP_co, GP, GE, R_co]):
     ) -> Handlers[GP, GE, R_co]: ...
     @overload
     def __call__[R1](
-        self,
+        self: Bound[X_co, S, E, MP_co, GP, GE, R_co, LP_co, Seal, Seal],
         handler: Callable[
             [X_co], Effect[S | HttpServerResponse, E | PayloadErrors, R1 | MP_co | Provided]
         ],
         /,
     ) -> Handlers[GP, GE, R_co | R1]: ...
+    @overload
+    def __call__[RL = Never, RI = Never](
+        self: Bound[X_co, S, E, MP_co, GP, GE, R_co, LP_co, RL | GP | Seal, RI | LP_co | GP | Seal],
+        handler: Callable[
+            [X_co], Effect[S | HttpServerResponse, E | PayloadErrors, MP_co | Provided]
+        ],
+        /,
+    ) -> Handlers[GP, GE, R_co | RL | RI]: ...
+    @overload
+    def __call__[R1, RL = Never, RI = Never](
+        self: Bound[X_co, S, E, MP_co, GP, GE, R_co, LP_co, RL | GP | Seal, RI | LP_co | GP | Seal],
+        handler: Callable[
+            [X_co], Effect[S | HttpServerResponse, E | PayloadErrors, R1 | MP_co | Provided]
+        ],
+        /,
+    ) -> Handlers[GP, GE, R_co | R1 | RL | RI]: ...
     def __call__(self, handler: Any, /) -> Any:
         return self.handlers._register(  # pyright: ignore[reportPrivateUsage]
             self.endpoint.identifier, handler, self.is_raw, self.uninterruptible
@@ -370,15 +483,32 @@ class GroupHandlers(Generic[G_co]):
         /,
         *,
         uninterruptible: bool = False,
-    ) -> Bound[HttpApiRequest[P, Q, B, H], S1, E1, Never, Never, Never, Never]: ...
+    ) -> Bound[
+        HttpApiRequest[P, Q, B, H], S1, E1, Never, Never, Never, Never, Never, Seal, Seal
+    ]: ...
     @overload
-    def handle[P, Q, B, CB, H, S1, CS, E1, MP, ME, MR, MT](
+    def handle[P, Q, B, CB, H, S1, CS, E1, MP, ME, MT, LP, LR, I](
         self: GroupHandlers[HttpApiGroup[Never, Never]],
-        endpoint: HttpApiEndpoint[P, Q, B, CB, H, S1, CS, E1, HttpApiMiddleware[MP, ME, MR], MT],
+        endpoint: HttpApiEndpoint[
+            P,
+            Q,
+            B,
+            CB,
+            H,
+            S1,
+            CS,
+            E1,
+            HttpApiMiddleware[MP, ME, Any],
+            MT,
+            HttpApiMiddleware[LP, Any, LR],
+            I,
+        ],
         /,
         *,
         uninterruptible: bool = False,
-    ) -> Bound[HttpApiRequest[P, Q, B, H], S1, E1 | ME, MP, Never, Never, MT | MR]: ...
+    ) -> Bound[
+        HttpApiRequest[P, Q, B, H], S1, E1 | ME, MP, Never, Never, MT, LP, LR | Seal, I | Seal
+    ]: ...
     @overload
     def handle[P, Q, B, CB, H, S1, CS, E1, GP1, GE1, GR1, GT1](
         self: GroupHandlers[HttpApiGroup[HttpApiMiddleware[GP1, GE1, GR1], GT1]],
@@ -386,16 +516,40 @@ class GroupHandlers(Generic[G_co]):
         /,
         *,
         uninterruptible: bool = False,
-    ) -> Bound[HttpApiRequest[P, Q, B, H], S1, E1 | GE1, GP1, GP1, GE1, GT1 | GR1]: ...
+    ) -> Bound[
+        HttpApiRequest[P, Q, B, H], S1, E1 | GE1, GP1, GP1, GE1, GT1 | GR1, Never, Seal, Seal
+    ]: ...
     @overload
-    def handle[P, Q, B, CB, H, S1, CS, E1, MP, ME, MR, MT, GP1, GE1, GR1, GT1](
+    def handle[P, Q, B, CB, H, S1, CS, E1, MP, ME, MT, LP, LR, I, GP1, GE1, GR1, GT1](
         self: GroupHandlers[HttpApiGroup[HttpApiMiddleware[GP1, GE1, GR1], GT1]],
-        endpoint: HttpApiEndpoint[P, Q, B, CB, H, S1, CS, E1, HttpApiMiddleware[MP, ME, MR], MT],
+        endpoint: HttpApiEndpoint[
+            P,
+            Q,
+            B,
+            CB,
+            H,
+            S1,
+            CS,
+            E1,
+            HttpApiMiddleware[MP, ME, Any],
+            MT,
+            HttpApiMiddleware[LP, Any, LR],
+            I,
+        ],
         /,
         *,
         uninterruptible: bool = False,
     ) -> Bound[
-        HttpApiRequest[P, Q, B, H], S1, E1 | ME | GE1, MP | GP1, GP1, GE1, MT | MR | GT1 | GR1
+        HttpApiRequest[P, Q, B, H],
+        S1,
+        E1 | ME | GE1,
+        MP | GP1,
+        GP1,
+        GE1,
+        MT | GT1 | GR1,
+        LP,
+        LR | Seal,
+        I | Seal,
     ]: ...
     def handle(self, endpoint: AnyEndpoint, /, *, uninterruptible: bool = False) -> Any:
         """The slot of ``endpoint``'s handler (see ``Handlers.handle``)."""
@@ -410,15 +564,32 @@ class GroupHandlers(Generic[G_co]):
         /,
         *,
         uninterruptible: bool = False,
-    ) -> Bound[HttpApiRequest[P, Q, None, H], S1, E1, Never, Never, Never, Never]: ...
+    ) -> Bound[
+        HttpApiRequest[P, Q, None, H], S1, E1, Never, Never, Never, Never, Never, Seal, Seal
+    ]: ...
     @overload
-    def handle_raw[P, Q, B, CB, H, S1, CS, E1, MP, ME, MR, MT](
+    def handle_raw[P, Q, B, CB, H, S1, CS, E1, MP, ME, MT, LP, LR, I](
         self: GroupHandlers[HttpApiGroup[Never, Never]],
-        endpoint: HttpApiEndpoint[P, Q, B, CB, H, S1, CS, E1, HttpApiMiddleware[MP, ME, MR], MT],
+        endpoint: HttpApiEndpoint[
+            P,
+            Q,
+            B,
+            CB,
+            H,
+            S1,
+            CS,
+            E1,
+            HttpApiMiddleware[MP, ME, Any],
+            MT,
+            HttpApiMiddleware[LP, Any, LR],
+            I,
+        ],
         /,
         *,
         uninterruptible: bool = False,
-    ) -> Bound[HttpApiRequest[P, Q, None, H], S1, E1 | ME, MP, Never, Never, MT | MR]: ...
+    ) -> Bound[
+        HttpApiRequest[P, Q, None, H], S1, E1 | ME, MP, Never, Never, MT, LP, LR | Seal, I | Seal
+    ]: ...
     @overload
     def handle_raw[P, Q, B, CB, H, S1, CS, E1, GP1, GE1, GR1, GT1](
         self: GroupHandlers[HttpApiGroup[HttpApiMiddleware[GP1, GE1, GR1], GT1]],
@@ -426,16 +597,40 @@ class GroupHandlers(Generic[G_co]):
         /,
         *,
         uninterruptible: bool = False,
-    ) -> Bound[HttpApiRequest[P, Q, None, H], S1, E1 | GE1, GP1, GP1, GE1, GT1 | GR1]: ...
+    ) -> Bound[
+        HttpApiRequest[P, Q, None, H], S1, E1 | GE1, GP1, GP1, GE1, GT1 | GR1, Never, Seal, Seal
+    ]: ...
     @overload
-    def handle_raw[P, Q, B, CB, H, S1, CS, E1, MP, ME, MR, MT, GP1, GE1, GR1, GT1](
+    def handle_raw[P, Q, B, CB, H, S1, CS, E1, MP, ME, MT, LP, LR, I, GP1, GE1, GR1, GT1](
         self: GroupHandlers[HttpApiGroup[HttpApiMiddleware[GP1, GE1, GR1], GT1]],
-        endpoint: HttpApiEndpoint[P, Q, B, CB, H, S1, CS, E1, HttpApiMiddleware[MP, ME, MR], MT],
+        endpoint: HttpApiEndpoint[
+            P,
+            Q,
+            B,
+            CB,
+            H,
+            S1,
+            CS,
+            E1,
+            HttpApiMiddleware[MP, ME, Any],
+            MT,
+            HttpApiMiddleware[LP, Any, LR],
+            I,
+        ],
         /,
         *,
         uninterruptible: bool = False,
     ) -> Bound[
-        HttpApiRequest[P, Q, None, H], S1, E1 | ME | GE1, MP | GP1, GP1, GE1, MT | MR | GT1 | GR1
+        HttpApiRequest[P, Q, None, H],
+        S1,
+        E1 | ME | GE1,
+        MP | GP1,
+        GP1,
+        GE1,
+        MT | GT1 | GR1,
+        LP,
+        LR | Seal,
+        I | Seal,
     ]: ...
     def handle_raw(self, endpoint: AnyEndpoint, /, *, uninterruptible: bool = False) -> Any:
         """``Handlers.handle_raw``."""

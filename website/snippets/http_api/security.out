@@ -1,2 +1,4 @@
 without a token: Unauthorized(message='a valid bearer token is needed')
-with a token: ada
+ada: ada
+ada, admin: welcome, ada
+bob, admin: Forbidden(message='bob is no admin')

@@ -249,7 +249,9 @@ class AtomHttpApiClient[T, G: HttpApiGroup[Any] = Any]:
     def mutation[P, Q, B, CB, H, S1, CS, E, ME](
         self,
         group: type[G],
-        endpoint: HttpApiEndpoint[P, Q, B, CB, H, S1, CS, E, HttpApiMiddleware[Any, ME, Any]],
+        endpoint: HttpApiEndpoint[
+            P, Q, B, CB, H, S1, CS, E, HttpApiMiddleware[Any, ME, Any], Any, Any, Any
+        ],
         /,
         *,
         response_mode: Literal["decoded-only"] = "decoded-only",
@@ -267,7 +269,9 @@ class AtomHttpApiClient[T, G: HttpApiGroup[Any] = Any]:
     def mutation[P, Q, B, CB, H, S1, CS, E, ME](
         self,
         group: type[G],
-        endpoint: HttpApiEndpoint[P, Q, B, CB, H, S1, CS, E, HttpApiMiddleware[Any, ME, Any]],
+        endpoint: HttpApiEndpoint[
+            P, Q, B, CB, H, S1, CS, E, HttpApiMiddleware[Any, ME, Any], Any, Any, Any
+        ],
         /,
         *,
         response_mode: Literal["decoded-and-response"],
@@ -285,7 +289,9 @@ class AtomHttpApiClient[T, G: HttpApiGroup[Any] = Any]:
     def mutation[P, Q, B, CB, H, S1, CS, E, ME](
         self,
         group: type[G],
-        endpoint: HttpApiEndpoint[P, Q, B, CB, H, S1, CS, E, HttpApiMiddleware[Any, ME, Any]],
+        endpoint: HttpApiEndpoint[
+            P, Q, B, CB, H, S1, CS, E, HttpApiMiddleware[Any, ME, Any], Any, Any, Any
+        ],
         /,
         *,
         response_mode: Literal["response-only"],
@@ -316,7 +322,9 @@ class AtomHttpApiClient[T, G: HttpApiGroup[Any] = Any]:
     def mutate[P, Q, B, CB, H, S1, CS, E, ME](
         self,
         group: type[G],
-        endpoint: HttpApiEndpoint[P, Q, B, CB, H, S1, CS, E, HttpApiMiddleware[Any, ME, Any]],
+        endpoint: HttpApiEndpoint[
+            P, Q, B, CB, H, S1, CS, E, HttpApiMiddleware[Any, ME, Any], Any, Any, Any
+        ],
         /,
         *,
         response_mode: Literal["decoded-only"] = "decoded-only",
@@ -334,7 +342,9 @@ class AtomHttpApiClient[T, G: HttpApiGroup[Any] = Any]:
     def mutate[P, Q, B, CB, H, S1, CS, E, ME](
         self,
         group: type[G],
-        endpoint: HttpApiEndpoint[P, Q, B, CB, H, S1, CS, E, HttpApiMiddleware[Any, ME, Any]],
+        endpoint: HttpApiEndpoint[
+            P, Q, B, CB, H, S1, CS, E, HttpApiMiddleware[Any, ME, Any], Any, Any, Any
+        ],
         /,
         *,
         response_mode: Literal["decoded-and-response"],
@@ -352,7 +362,9 @@ class AtomHttpApiClient[T, G: HttpApiGroup[Any] = Any]:
     def mutate[P, Q, B, CB, H, S1, CS, E, ME](
         self,
         group: type[G],
-        endpoint: HttpApiEndpoint[P, Q, B, CB, H, S1, CS, E, HttpApiMiddleware[Any, ME, Any]],
+        endpoint: HttpApiEndpoint[
+            P, Q, B, CB, H, S1, CS, E, HttpApiMiddleware[Any, ME, Any], Any, Any, Any
+        ],
         /,
         *,
         response_mode: Literal["response-only"],
@@ -412,7 +424,9 @@ class AtomHttpApiClient[T, G: HttpApiGroup[Any] = Any]:
     def query[P, Q, B, CB, H, S1, CS, E, ME](
         self,
         group: type[G],
-        endpoint: HttpApiEndpoint[P, Q, B, CB, H, S1, CS, E, HttpApiMiddleware[Any, ME, Any]],
+        endpoint: HttpApiEndpoint[
+            P, Q, B, CB, H, S1, CS, E, HttpApiMiddleware[Any, ME, Any], Any, Any, Any
+        ],
         /,
         *,
         params: P | None = None,
@@ -446,7 +460,9 @@ class AtomHttpApiClient[T, G: HttpApiGroup[Any] = Any]:
     def query[P, Q, B, CB, H, S1, CS, E, ME](
         self,
         group: type[G],
-        endpoint: HttpApiEndpoint[P, Q, B, CB, H, S1, CS, E, HttpApiMiddleware[Any, ME, Any]],
+        endpoint: HttpApiEndpoint[
+            P, Q, B, CB, H, S1, CS, E, HttpApiMiddleware[Any, ME, Any], Any, Any, Any
+        ],
         /,
         *,
         params: P | None = None,
@@ -480,7 +496,9 @@ class AtomHttpApiClient[T, G: HttpApiGroup[Any] = Any]:
     def query[P, Q, B, CB, H, S1, CS, E, ME](
         self,
         group: type[G],
-        endpoint: HttpApiEndpoint[P, Q, B, CB, H, S1, CS, E, HttpApiMiddleware[Any, ME, Any]],
+        endpoint: HttpApiEndpoint[
+            P, Q, B, CB, H, S1, CS, E, HttpApiMiddleware[Any, ME, Any], Any, Any, Any
+        ],
         /,
         *,
         params: P | None = None,
@@ -547,7 +565,9 @@ class AtomHttpApiClient[T, G: HttpApiGroup[Any] = Any]:
     def query_of[P, Q, B, CB, H, S1, CS, E, ME](
         self,
         group: type[G],
-        endpoint: HttpApiEndpoint[P, Q, B, CB, H, S1, CS, E, HttpApiMiddleware[Any, ME, Any]],
+        endpoint: HttpApiEndpoint[
+            P, Q, B, CB, H, S1, CS, E, HttpApiMiddleware[Any, ME, Any], Any, Any, Any
+        ],
         /,
         *,
         response_mode: Literal["decoded-only"] = "decoded-only",
@@ -565,7 +585,9 @@ class AtomHttpApiClient[T, G: HttpApiGroup[Any] = Any]:
     def query_of[P, Q, B, CB, H, S1, CS, E, ME](
         self,
         group: type[G],
-        endpoint: HttpApiEndpoint[P, Q, B, CB, H, S1, CS, E, HttpApiMiddleware[Any, ME, Any]],
+        endpoint: HttpApiEndpoint[
+            P, Q, B, CB, H, S1, CS, E, HttpApiMiddleware[Any, ME, Any], Any, Any, Any
+        ],
         /,
         *,
         response_mode: Literal["decoded-and-response"],
@@ -583,7 +605,9 @@ class AtomHttpApiClient[T, G: HttpApiGroup[Any] = Any]:
     def query_of[P, Q, B, CB, H, S1, CS, E, ME](
         self,
         group: type[G],
-        endpoint: HttpApiEndpoint[P, Q, B, CB, H, S1, CS, E, HttpApiMiddleware[Any, ME, Any]],
+        endpoint: HttpApiEndpoint[
+            P, Q, B, CB, H, S1, CS, E, HttpApiMiddleware[Any, ME, Any], Any, Any, Any
+        ],
         /,
         *,
         response_mode: Literal["response-only"],

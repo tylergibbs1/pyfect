@@ -176,7 +176,7 @@ def group[G: HttpApiGroup[Any, Any]](
 def endpoint[P, Q, B, CB, H, S1, CS, E, M](
     api: HttpApi[Any],
     group: AnyGroup,
-    endpoint: HttpApiEndpoint[P, Q, B, CB, H, S1, CS, E, M],
+    endpoint: HttpApiEndpoint[P, Q, B, CB, H, S1, CS, E, M, Any, Any, Any],
     *,
     http_client: HttpClientService[Any, Any],
     transform_client: Callable[[HttpClientService[Any, Any]], HttpClientService[Any, Any]]
@@ -352,7 +352,7 @@ class DecodeResponse(Generic[A_co, E_co]):
 def decode_response[P, Q, B, CB, H, S1, CS, E, M](
     api: HttpApi[Any],
     group: AnyGroup,
-    endpoint: HttpApiEndpoint[P, Q, B, CB, H, S1, CS, E, M],
+    endpoint: HttpApiEndpoint[P, Q, B, CB, H, S1, CS, E, M, Any, Any, Any],
 ) -> DecodeResponse[CS, E]:
     """Decodes raw responses of ``endpoint`` of ``group`` as its client
     method does in ``"decoded-only"`` mode (Effect's ``decodeResponse``),
@@ -501,7 +501,7 @@ class UrlBuilder:
 
     def __call__[P, Q](
         self,
-        endpoint: HttpApiEndpoint[P, Q, Any, Any, Any, Any, Any, Any, Any],
+        endpoint: HttpApiEndpoint[P, Q, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any],
         *,
         params: P | None = None,
         query: Q | None = None,

@@ -5,9 +5,11 @@ the schemas of a request and its responses.
 makes one. An endpoint is ``HttpApiEndpoint[P, Q, B, CB, H, S, CS, E, M]``:
 the decoded params, query, payload (as the handler gets it and as a client
 sends it), headers, success (as the handler returns it and as a client
-gets it), errors and middleware classes (a last parameter repeats ``M``
-so that the builder can read both the middleware and what it provides;
-leave it out). A slot the endpoint does not declare is ``None``. Declared
+gets it), errors and middleware classes. Three more parameters are the
+builder's (leave them out): ``M`` repeated, so that it can read both the
+middleware and what it provides; the outermost middleware; and what the
+middleware inside it need, less what their outer ones provide. A slot the
+endpoint does not declare is ``None``. Declared
 on a group class, an endpoint read from the class is the endpoint; read
 from a client's group it is the client method.
 """
@@ -42,6 +44,10 @@ CS_co = TypeVar("CS_co", covariant=True)
 E = TypeVar("E")
 M_co = TypeVar("M_co", covariant=True, default=Never)
 MT_co = TypeVar("MT_co", covariant=True, default=M_co)
+L_co = TypeVar("L_co", covariant=True, default=M_co)
+I_co = TypeVar("I_co", covariant=True, default=Never)
+LP_co = TypeVar("LP_co", covariant=True, default=Never)
+LR_co = TypeVar("LR_co", covariant=True, default=Never)
 
 
 type HttpMethod = Literal["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "QUERY", "HEAD"]
@@ -88,8 +94,82 @@ class _Payload[T, C](Protocol):
     def http_api_payload_client(self) -> C: ...
 
 
+class _MiddlewareMethod:
+    """``HttpApiEndpoint.middleware``. Reading it gives an ``AddMiddleware``
+    holding what the endpoint's outermost middleware provides and needs, so
+    that adding the next one takes what it provides off the services the
+    middleware inside need: pyright subtracts a type only once it is fixed
+    in a class parameter (``research/typing/httpapi_3_middleware_chain.py``)."""
+
+    @overload
+    def __get__(self, endpoint: None, owner: object, /) -> Self: ...
+    @overload
+    def __get__[P, Q, B, CB, H, S1, CS, E1](
+        self,
+        endpoint: HttpApiEndpoint[P, Q, B, CB, H, S1, CS, E1, Never],
+        owner: object,
+        /,
+    ) -> AddMiddleware[P, Q, B, CB, H, S1, CS, E1, Never, Never, Never, Never, Never]: ...
+    @overload
+    def __get__[P, Q, B, CB, H, S1, CS, E1, M, MT, LP, LR, I](
+        self,
+        endpoint: HttpApiEndpoint[
+            P, Q, B, CB, H, S1, CS, E1, M, MT, HttpApiMiddleware[LP, Any, LR], I
+        ],
+        owner: object,
+        /,
+    ) -> AddMiddleware[P, Q, B, CB, H, S1, CS, E1, M, MT, LP, LR, I]: ...
+    def __get__(self, endpoint: AnyEndpoint | None, owner: object, /) -> Any:
+        return (
+            self
+            if endpoint is None
+            else AddMiddleware[Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any](
+                endpoint
+            )
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class AddMiddleware(
+    Generic[P_co, Q_co, B_co, CB_co, H_co, S, CS_co, E, M_co, MT_co, LP_co, LR_co, I_co]
+):
+    """``endpoint.middleware``: called with a middleware class, gives the
+    endpoint wrapped by it. ``LP`` and ``LR`` are what the endpoint's
+    outermost middleware provides and needs, ``I`` what those inside it
+    need, less what their outer ones provide; the new endpoint's ``I`` is
+    ``Exclude<I, LP> | LR`` (Effect's ``ApplyServices``)."""
+
+    endpoint: AnyEndpoint
+
+    @overload
+    def __call__[T: HttpApiMiddleware[Any, Any, Any]](
+        self: AddMiddleware[
+            P_co, Q_co, B_co, CB_co, H_co, S, CS_co, E, M_co, MT_co, LP_co, LR_co, Never
+        ],
+        middleware: type[T],
+        /,
+    ) -> HttpApiEndpoint[
+        P_co, Q_co, B_co, CB_co, H_co, S, CS_co, E, M_co | T, MT_co | T, T, LR_co
+    ]: ...
+    @overload
+    def __call__[T: HttpApiMiddleware[Any, Any, Any], R1 = Never](
+        self: AddMiddleware[
+            P_co, Q_co, B_co, CB_co, H_co, S, CS_co, E, M_co, MT_co, LP_co, LR_co, R1 | LP_co
+        ],
+        middleware: type[T],
+        /,
+    ) -> HttpApiEndpoint[
+        P_co, Q_co, B_co, CB_co, H_co, S, CS_co, E, M_co | T, MT_co | T, T, R1 | LR_co
+    ]: ...
+    def __call__(self, middleware: AnyMiddleware, /) -> Any:
+        endpoint = self.endpoint
+        if middleware in endpoint.middlewares:
+            return endpoint
+        return replace(endpoint, middlewares=(*endpoint.middlewares, middleware))
+
+
 @dataclass(frozen=True, slots=True, eq=False)
-class HttpApiEndpoint(Generic[P_co, Q_co, B_co, CB_co, H_co, S, CS_co, E, M_co, MT_co]):
+class HttpApiEndpoint(Generic[P_co, Q_co, B_co, CB_co, H_co, S, CS_co, E, M_co, MT_co, L_co, I_co]):
     """An endpoint. ``params``, ``query`` and ``headers`` are the string
     tree codecs of their schemas, ``payload`` the payload schemas by
     content type, ``success`` and ``error`` the response schemas (their
@@ -127,7 +207,18 @@ class HttpApiEndpoint(Generic[P_co, Q_co, B_co, CB_co, H_co, S, CS_co, E, M_co, 
     @overload
     def __get__[ME](
         self: HttpApiEndpoint[
-            P_co, Q_co, B_co, CB_co, H_co, S, CS_co, E, HttpApiMiddleware[Any, ME, Any]
+            P_co,
+            Q_co,
+            B_co,
+            CB_co,
+            H_co,
+            S,
+            CS_co,
+            E,
+            HttpApiMiddleware[Any, ME, Any],
+            Any,
+            Any,
+            Any,
         ],
         instance: HttpApiGroup[Never],
         owner: type[object],
@@ -136,7 +227,18 @@ class HttpApiEndpoint(Generic[P_co, Q_co, B_co, CB_co, H_co, S, CS_co, E, M_co, 
     @overload
     def __get__[ME, GE](
         self: HttpApiEndpoint[
-            P_co, Q_co, B_co, CB_co, H_co, S, CS_co, E, HttpApiMiddleware[Any, ME, Any]
+            P_co,
+            Q_co,
+            B_co,
+            CB_co,
+            H_co,
+            S,
+            CS_co,
+            E,
+            HttpApiMiddleware[Any, ME, Any],
+            Any,
+            Any,
+            Any,
         ],
         instance: HttpApiGroup[HttpApiMiddleware[Any, GE, Any]],
         owner: type[object],
@@ -152,15 +254,11 @@ class HttpApiEndpoint(Generic[P_co, Q_co, B_co, CB_co, H_co, S, CS_co, E, M_co, 
         """This endpoint under ``prefix``."""
         return replace(self, path=prefix_path(self.path, prefix))
 
-    def middleware[T: HttpApiMiddleware[Any, Any, Any]](
-        self, middleware: type[T], /
-    ) -> HttpApiEndpoint[P_co, Q_co, B_co, CB_co, H_co, S, CS_co, E, M_co | T, MT_co | T]:
-        """This endpoint wrapped by ``middleware``: its handler may fail
-        with the middleware's errors, a client too, and the services it
-        provides are the handler's. The group layer needs the middleware."""
-        if middleware in self.middlewares:
-            return self
-        return replace(self, middlewares=(*self.middlewares, middleware))
+    middleware = _MiddlewareMethod()
+    """``endpoint.middleware(M)``: this endpoint wrapped by the middleware
+    ``M``, outside those it has. Its handler may fail with ``M``'s errors,
+    a client too, and the services ``M`` provides are the handler's and the
+    inner middleware's. The group layer needs ``M``."""
 
     def annotate[A, T](self, tag: TagLike[A, T], value: A) -> Self:
         """This endpoint with an annotation (``OpenApi.Summary``, ...)."""
@@ -173,7 +271,7 @@ class HttpApiEndpoint(Generic[P_co, Q_co, B_co, CB_co, H_co, S, CS_co, E, M_co, 
         return pipe_one(self, f, more)
 
 
-type AnyEndpoint = HttpApiEndpoint[Any, Any, Any, Any, Any, Any, Any, Any, Any, Any]
+type AnyEndpoint = HttpApiEndpoint[Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any]
 
 
 # --- schemas of an endpoint ----------------------------------------------------------
@@ -959,6 +1057,7 @@ def query(identifier: str, path: str, **options: Any) -> AnyEndpoint:
 
 
 __all__ = [
+    "AddMiddleware",
     "AnyEndpoint",
     "BufferedPayload",
     "HttpApiEndpoint",

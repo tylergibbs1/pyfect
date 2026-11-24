@@ -88,23 +88,37 @@ has the plain RFC 9457 schema for problems from other servers.
 ## Security
 
 A middleware runs around the handlers of the endpoints it is added to. Declare one as a
-class over what it gives the handlers and how it fails:
-`HttpApiMiddleware[Caller, Unauthorized]` provides a `Caller` and may fail with
-`Unauthorized`, whose schema is the class's `error`. For several errors give a tuple,
-`error = (Unauthorized, Forbidden)`, as for an endpoint's `error`: each member answers with
-its own `http_api_status`. `S.Union(Unauthorized, Forbidden)` is one schema with no status of
-its own, so either error answers 500 (with its body), unless the union itself is annotated, as
-in Effect. With
+class over what it gives the handlers, how it fails and what it needs:
+`HttpApiMiddleware[Caller, Unauthorized, Tokens]` provides a `Caller`, may fail with
+`Unauthorized`, whose schema is the class's `error`, and needs a `Tokens` service. Leave out
+what it doesn't use: `HttpApiMiddleware[Caller]` only provides, and
+`HttpApiMiddleware[Never, Forbidden, Caller]` provides nothing and needs a `Caller`. For
+several errors give a tuple, `error = (Unauthorized, Forbidden)`, as for an endpoint's
+`error`: each member answers with its own `http_api_status`. `S.Union(Unauthorized,
+Forbidden)` is one schema with no status of its own, so either error answers 500 (with its
+body), unless the union itself is annotated, as in Effect. With
 `security={"bearer": security.bearer}` it reads a bearer token; `security.basic` and
-`security.api_key(key=..., in_="header")` read the other kinds. A group declared
-`HttpApiGroup[Authorization]` puts every one of its endpoints behind it, and
-`endpoint.middleware(Authorization)` puts one endpoint behind it.
+`security.api_key(key=..., in_="header")` read the other kinds.
+
+A group declared `HttpApiGroup[Authorization]` puts every one of its endpoints behind it, and
+`endpoint.middleware(AdminOnly)` puts one endpoint behind it. Middleware wrap in the order
+they are added, each outside the last (`.middleware(A).middleware(B)` runs `B` around `A`), and a group's middleware wraps outside an endpoint's
+own, so what an outer middleware provides reaches the inner ones: `AdminOnly` gets the
+`Caller` that `Authorization` provides. Register the endpoints with
+`handle_all(builder.entry(Account.whoami)(...), builder.entry(Account.admin)(...))`; each entry
+is typed by its endpoint, so the group layer needs the middleware and what they need, less
+what an outer one provides. Here that is `Authorization | AdminOnly | Tokens`, and no
+`Caller`. `handle` types an endpoint the same way.
 
 The implementation is a layer: `layer.succeed(Authorization, {"bearer": bearer})` maps each
-security name to a function of the handler's effect and a `SecurityOptions`.
-`options.credential` is the decoded credential, a `Redacted` string for a token (empty when
-the request has none), and the function either fails or runs the handler with what it
-provides. Pyright checks that the handler's `Caller` is provided.
+security name to a function of the handler's effect and a `SecurityOptions`;
+`layer.succeed(AdminOnly, admin_only)` gives a plain middleware its function of the handler's
+effect and a `MiddlewareOptions`. `options.credential` is the decoded credential, a
+`Redacted` string for a token (empty when the request has none), and the function either
+fails or runs the handler with what it provides. Pyright checks that the handler's `Caller`
+is provided. The function's effect may read services, here `Tokens()`; it runs with the
+services of the group's layer, as a handler does, so provide `Tokens` to the group's layer
+(`AccountLive`), not to the middleware's own.
 
 On the client side, `middleware.layer_client(Authorization, send)` runs `send` around every
 request to the middleware's endpoints: it gets a `ClientMiddlewareOptions` and sends the
