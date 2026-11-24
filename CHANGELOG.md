@@ -1,8 +1,8 @@
 # Changelog
 
-## 0.6.25 (2026-11-24)
+## 0.6.26 (2026-11-24)
 
-0.6.24 was tagged but never published: a flaky test failed in its release run. 0.6.25 carries its changes.
+0.6.24 and 0.6.25 were tagged but never published: flaky tests failed in their release runs. 0.6.26 carries their changes.
 
 ### Added
 
@@ -31,6 +31,44 @@
 - `ClickhouseClientConfig(disable_initial_ping=True)` skips the `/ping` that `clickhouse.make`
   sends at startup, so the client builds without a server and a statement fails when it can't
   connect. The default still pings (Effect-TS/effect#10782).
+- `stale_time` on `atom_rpc` queries (not streaming ones) and on `atom_http_api` `query` and
+  `query_of`: the query goes through `atom.swr`, so a hydrated or retained result younger
+  than `stale_time` is reused on mount and an older one is revalidated once in the
+  background (Effect #9974).
+- `cluster_cron.CronSchedule`: a cron job's effective schedule (`cron`,
+  `calculate_next_run_from_previous` and `skip_if_older_than` as a `Duration`), provided to
+  `execute` and annotated on the job's entity, so code inspecting registered entities can read
+  it with `entity.annotations.get_option(cluster_cron.CronSchedule)` (Effect #10754).
+- `pyfect.crypto.password` stores passwords as PHC strings: the `Password` service from
+  `password.layer(algorithm=...)` hashes with Argon2id or PBKDF2 from `kdf`, verifies against
+  the algorithm and salt the stored hash records, and reports with `needs_rehash` when a hash
+  no longer matches the configured algorithm. `password.decode` and `password.encode` convert
+  between PHC strings and `PasswordHash` values. No new dependency: Argon2id comes from the
+  existing `crypto` extra through `native.layer` (Effect #10734).
+- `Rational.nth_root(degree)` and `nth_root_unsafe(degree)` (Effect's `Rational.nthRoot` and
+  `nthRootUnsafe`): the exact root, `None` (or a `ValueError`) when it is not rational or the
+  degree is even and the value negative. The degree must be a positive safe integer
+  (Effect #10555).
+- `find_my_way.RouterConfig` takes `use_semicolon_delimiter` and `decode_static_path`, and
+  `find_my_way.strict_config` turns every path normalization off, so route text without
+  parameters matches only as written (`/%73ecret` no longer reaches `/secret`). Pass it as
+  `router_config` to `router.serve` or `to_web_handler` when a proxy authorizes by path prefix.
+  With `use_semicolon_delimiter=False`, a prefixed router keeps a `;` inside the prefix it
+  strips (Effect #10616).
+- `case.is_well_formed` and `case.to_well_formed` (Effect's `String.isWellFormed` and
+  `String.toWellFormed`): whether a `str` holds no lone surrogate, and the same text with
+  each one replaced by U+FFFD, as a UTF-8 encoder would (Effect #10549).
+- `testing.warn_lines`, `info_lines`, `debug_lines` and `trace_lines`, and the same
+  properties on `TestConsole`: what a test wrote to `console.warn`, `info`, `debug` and
+  `trace`, in call order (Effect #10682).
+- `xml.decode` and `xml.decode_string` take `namespaces="strict"`, which adds the resolved
+  `namespace` and `local_name` to each `StartElement` and `EndElement` and fails with a
+  `"Syntax"` `XmlError` on a document that is not namespace-well-formed (an undeclared prefix
+  fails with `"Unsupported"` when the document has a DOCTYPE). The declarations of open elements
+  count against `max_token_size` (Effect #10635).
+- `xml.to_events(element)` turns an `xml.Element` tree, such as one `xml.elements` collected,
+  back into events for `xml.encode` and `xml.encode_string`. It walks the tree without
+  recursion, so a deep tree cannot overflow the stack (Effect #10687).
 
 ### Fixed
 
@@ -91,6 +129,15 @@
   starts one, and the end of a response wakes its reader at once. On
   `mcp_server.layer_http_request_scoped`, a `tools/call` whose handler waits took two rounds
   before its answer and now takes none (Effect-TS/effect#10753).
+- Atoms seeded with `skip_initial_run`: a hydrated seed that was still waiting runs the
+  atom's effect instead of being kept, a runtime that fails to build replaces a waiting seed
+  with its failure instead of leaving it waiting, and a refresh before mount while the
+  runtime builds keeps the seed shown, waiting. Refreshing one reader of a shared
+  serialization key refreshes the node every reader shares (Effect #9974).
+- `redis_py`: closing the client cancels the calls still running on its loop before it closes its connections. A subscriber still reading when the client closed reconnected inside redis-py's retry and was left open when the loop stopped (an unclosed `Connection` at garbage collection). The test suite now fails the test that leaves a socket for the garbage collector, and names the transport's owner.
+- `rpc.test.make_client(G)` makes a new client each time its effect runs, as Effect's
+  `RpcTest.makeClient` does. Every run sent its replies to the first run's client, so a second
+  run (another `atom_rpc` registry over the same client, say) waited forever for its answers.
 
 ### Docs
 
