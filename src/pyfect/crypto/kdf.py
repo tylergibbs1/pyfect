@@ -6,7 +6,8 @@
 
 HKDF and PBKDF2 run on the ``WebCrypto`` reference; Argon2id needs
 ``native.layer_kdf`` (``layer_web_crypto`` fails it with ``Unsupported``).
-Arguments are checked before Web Crypto sees them.
+Arguments are checked before Web Crypto sees them. To store passwords, use
+``password``, which records the algorithm and salt with the hash.
 """
 
 from __future__ import annotations

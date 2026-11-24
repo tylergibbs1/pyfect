@@ -5,12 +5,13 @@ from __future__ import annotations
 
 import pyfect as fx
 from pyfect import testing
-from pyfect.crypto import aead, digest, kdf, mac, native, secure_random
+from pyfect.crypto import aead, digest, kdf, mac, native, password, secure_random
 from pyfect.crypto._subtle import host
 from pyfect.crypto.aead import Aead
 from pyfect.crypto.digest import Digest
 from pyfect.crypto.kdf import Kdf
 from pyfect.crypto.mac import Mac
+from pyfect.crypto.password import Password
 from pyfect.crypto.web_crypto import Params
 
 from ._crypto import encode, from_hex
@@ -125,6 +126,28 @@ def test_layer_kdf_derives_argon2id_where_the_host_has_it_and_hkdf_through_the_c
         )
 
     return program.pipe(fx.provide(native.layer_kdf))
+
+
+@testing.effect
+def test_verifies_a_stored_argon2id_password_under_a_pbkdf2_policy():
+    """verifies a stored Argon2id password under a PBKDF2 policy"""
+    stored = (
+        "$argon2id$v=19$m=65536,t=2,p=1$c29tZXNhbHQ$CTFhFdXPJO1aFaMaO6Mm5c8y7cJHAph8ArZWb2GRPPc"
+    )
+
+    @fx.gen
+    def program():
+        passwords = yield from Password()
+        # Effect runs this only where node:crypto has argon2; elsewhere Kdf reports it Unsupported.
+        match (yield from passwords.verify("password", stored).result()):
+            case fx.Ok(valid):
+                assert valid is True
+            case fx.Err(error):
+                assert error.reason.tag == "Unsupported"
+
+    return program.pipe(
+        fx.provide(password.layer(algorithm=kdf.pbkdf2_sha256).pipe(fx.provide(native.layer)))
+    )
 
 
 @testing.effect

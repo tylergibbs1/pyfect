@@ -5,6 +5,7 @@ Each family is a service with its own opaque keys: ``secure_random``
 ``aead`` (AES-GCM, ChaCha20-Poly1305), ``cipher`` (AES-CTR / CBC), ``kdf``
 (HKDF, PBKDF2, Argon2id), ``signature`` (Ed25519, ECDSA, RSA),
 ``key_agreement`` (X25519, ECDH) and ``key_wrap`` (AES-KW, RSA-OAEP).
+``password`` stores passwords as PHC strings with Argon2id or PBKDF2.
 ``key_format`` reads and writes keys as SPKI, PKCS#8, JWK and PEM. Every
 failure is a ``crypto_error.CryptoError``.
 
@@ -25,6 +26,7 @@ from pyfect.crypto import (
     key_wrap,
     mac,
     native,
+    password,
     secure_random,
     signature,
     web_crypto,
@@ -41,6 +43,7 @@ __all__ = [
     "key_wrap",
     "mac",
     "native",
+    "password",
     "secure_random",
     "signature",
     "web_crypto",

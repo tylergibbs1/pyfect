@@ -12021,3 +12021,31 @@ def _find_my_way_strict(app: layer.Layer[Never, Never, http_router.HttpRouter]) 
 
 
 del _find_my_way_strict
+
+
+# --- Password: PHC password hashes (Effect #10734) -----------------------------------------
+def _password(stored: str) -> None:
+    from pyfect.crypto import kdf, password
+    from pyfect.crypto.crypto_error import CryptoError
+    from pyfect.crypto.secure_random import SecureRandom
+    from pyfect.redacted import make as redact
+
+    assert_type(
+        password.layer(algorithm=kdf.argon2id()),
+        layer.Layer[password.Password, Never, kdf.Kdf | SecureRandom],
+    )
+    assert_type(password.decode(stored), fx.Effect[password.PasswordHash, CryptoError])
+    assert_type(password.encode(password.PasswordHash(kdf.pbkdf2_sha256, b"", b"")), str)
+
+    @fx.gen
+    def program():
+        passwords = yield from password.Password()
+        hashed = yield from passwords.hash(redact("hunter2"))
+        return (yield from passwords.verify("hunter2", hashed))
+
+    assert_type(program, fx.Effect[bool, CryptoError, password.Password])
+    # Only Argon2id and PBKDF2 store passwords; HKDF is not a password hash.
+    password.layer(algorithm=kdf.hkdf_sha256)  # pyright: ignore[reportArgumentType]
+
+
+del _password

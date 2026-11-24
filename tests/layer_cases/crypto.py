@@ -21,6 +21,7 @@ from pyfect.crypto import (
     key_wrap,
     mac,
     native,
+    password,
     secure_random,
     signature,
     web_crypto,
@@ -67,6 +68,14 @@ def _cipher():
     key = yield from service.generate_key(cipher.aes256_cbc)
     sealed = yield from service.encrypt(key, b"data", iv=bytes(16))
     assert (yield from service.decrypt(key, sealed, iv=bytes(16))) == b"data"
+
+
+def _password() -> AnyEffect:
+    return password.Password().flat_map(lambda p: p.hash("hunter2")).map(lambda _: None)
+
+
+def _password_needs() -> L.Layer[Any, Any, Any]:
+    return L.merge(kdf.layer_web_crypto, secure_random.layer_web_crypto)
 
 
 def _kdf() -> AnyEffect:
@@ -158,6 +167,11 @@ CASES: dict[str, Case] = {
         layer=lambda: cipher.layer_web_crypto, needs=_random, use=lambda: _cipher
     ),
     "pyfect.crypto.kdf.layer_web_crypto": Case(layer=lambda: kdf.layer_web_crypto, use=_kdf),
+    "pyfect.crypto.password.layer": Case(
+        layer=lambda: password.layer(algorithm=kdf.pbkdf2(hash=digest.sha256, iterations=2)),
+        needs=_password_needs,
+        use=_password,
+    ),
     "pyfect.crypto.signature.layer_web_crypto": Case(
         layer=lambda: signature.layer_web_crypto, needs=_random, use=lambda: _signature
     ),

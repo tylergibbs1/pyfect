@@ -50,7 +50,7 @@ from pyfect.ai import mcp_schema, mcp_server
 from pyfect.ai import tool as ai_tool
 from pyfect.ai.chat import from_json as chat_from_json
 from pyfect.cluster import shard_id, snowflake
-from pyfect.crypto import key_format
+from pyfect.crypto import key_format, password
 from pyfect.effect import Effect
 from pyfect.encoding import (
     base64,
@@ -469,6 +469,18 @@ def _router_literal_malformed(n: int) -> Work:
     routes.on("GET", "/:a/:b", "pair")
     path = "/files/" + "%zz" * n
     return lambda: routes.find("GET", path)
+
+
+@case(password.decode, "password.decode: a PHC string with a long salt and hash")
+def _password_long_phc(n: int) -> Work:
+    phc = f"$pbkdf2-sha256$i=1,l={3 * n}$" + "QUJD" * n + "$" + "QUJD" * n
+    return lambda: settle(password.decode(phc))
+
+
+@case(password.decode, "password.decode: digits where a cost belongs")
+def _password_long_cost(n: int) -> Work:
+    phc = "$argon2id$v=19$m=" + "9" * n + ",t=2,p=1$c29tZXNhbHQ$c29tZXNhbHQ"
+    return lambda: settle(password.decode(phc))
 
 
 def _repeated_header(n: int) -> Work:

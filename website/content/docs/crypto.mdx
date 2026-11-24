@@ -39,7 +39,19 @@ what went wrong: `InvalidKey`, `InvalidArgument`, `DecryptionFailed`, `NotExtrac
 AEAD nonces must never repeat under one key. Draw them from `SecureRandom` for AES-GCM,
 or use `xchacha20_poly1305`, whose 24-byte nonces are safe to draw at random for any
 number of messages. Feed a `KeyAgreement` shared secret to `Kdf` (HKDF) before using it
-as a key, and store passwords with `kdf.argon2id()`.
+as a key, and store passwords with `password.layer`.
+
+## Passwords
+
+`password.layer(algorithm=kdf.argon2id())` provides the `Password` service, whose `hash`
+returns a PHC string such as `$argon2id$v=19$m=65536,t=3,p=4$<salt>$<hash>` that records the
+algorithm, its costs and a random 16-byte salt. `verify(password, stored)` reads them back, so
+hashes made under an older policy keep verifying, and `needs_rehash(stored)` says when a hash
+no longer matches the policy and should be replaced after the next successful login. PBKDF2
+(`kdf.pbkdf2_sha256`) works on `kdf.layer_web_crypto`; Argon2id needs `native.layer`.
+`password.decode` and `password.encode` read and write PHC strings without a service. `verify`
+runs whatever costs a stored hash names, so check the algorithm of a hash from an untrusted
+source first.
 
 ## Envelope encryption
 
