@@ -623,3 +623,24 @@ def test_preserves_traversal_order_across_every_node_kind() -> None:
     keys = list(m.keys())
     assert [k.name for k in keys] == [k for k, _ in expected]
     assert list(m.values()) == [v for _, v in expected]
+
+
+def test_handles_custom_hashes_that_are_not_32_bit_integers() -> None:
+    """handles custom hashes that are not 32-bit integers
+
+    ``__hash__`` returns an ``int``, so the fractional hashes of Effect's test are hashes past
+    32 bits and below zero here."""
+    wide, negative, large = (
+        FixedHashKey("wide", 2**40 + 5),
+        FixedHashKey("negative", -(2**33) - 3),
+        FixedHashKey("large", 2**32 + 1),
+    )
+    m = HashMap[FixedHashKey, str].make((wide, "a"), (negative, "b")).set(large, "c")
+    assert len(m) == 3
+    assert m.has(negative)
+    assert m.get(large) == Some("c")
+    assert m.get_hash(wide, 2**40 + 5) == Some("a")
+    assert m.has_hash(large, 2**32 + 1)
+    m = m.remove(wide)
+    assert not m.has(wide)
+    assert m.get(large) == Some("c")

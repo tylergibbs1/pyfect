@@ -531,3 +531,10 @@ def test_round_trips_preserve_schema_defects():
     schema = S.String.pipe(S.decode(T.Transformation(G.passthrough(), G.check_effect(die))))
     ex = yield from SchemaAsserts(schema).verify_round_trip_effect(runs=1, seed=1).exit()
     assert ex == die_exit(defect)
+
+
+@testing.effect
+def test_round_trips_accept_a_negative_zero_that_decodes_back_to_positive_zero():
+    """round trips accept a negative zero that decodes back to positive zero"""
+    drops_sign = S.Literal(-0.0).pipe(S.decode(T.Transformation(G.passthrough(), G.succeed(0.0))))
+    yield from SchemaAsserts(drops_sign).verify_round_trip_effect(runs=1)

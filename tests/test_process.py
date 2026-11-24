@@ -29,7 +29,7 @@ from pyfect.process import (
     StderrConfig,
     StdinConfig,
     StdoutConfig,
-    _live,  # pyright: ignore[reportPrivateUsage]
+    _live,
     _pipes,
     command_line,
     make,

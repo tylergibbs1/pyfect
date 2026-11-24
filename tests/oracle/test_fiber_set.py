@@ -9,7 +9,9 @@ are seconds rather than milliseconds. "identifies FiberSet in JSON" checks
 ``repr``: Python has no ``toJSON``.
 """
 
-from typing import Any
+from typing import Any, Never
+
+from _fork_registration import registers_during_startup
 
 import pyfect as fx
 from pyfect import schedule, testing
@@ -152,3 +154,29 @@ def test_records_external_interruption_when_enabled():
     yield from fiber.interrupt()
 
     assert (yield from fiber_set.deferred.is_done())
+
+
+@testing.effect
+def test_run_registers_a_fiber_even_when_it_interrupts_its_forker_during_startup():
+    """run registers a fiber even when it interrupts its forker during startup"""
+    yield from registers_during_startup(
+        lambda work, scope: (
+            fx.FiberSet[Never, Never]
+            .make()
+            .pipe(fx.scope.provide(scope))
+            .flat_map(lambda container: container.run(work, start_immediately=True))
+        )
+    )
+
+
+@testing.effect
+def test_join_reports_the_first_failure_without_interrupting_siblings_or_closing_the_set():
+    """join reports the first failure without interrupting siblings or closing the set"""
+    container = yield from fx.FiberSet[None, str].make()
+    release = fx.Deferred[None]()
+    sibling = yield from container.run(release.wait())
+    yield from container.run(fx.fail("fail"))
+    assert (yield from container.join().flip()) == "fail"
+    following = yield from container.run(release.succeed(None).as_void())
+    yield from following.join()
+    yield from sibling.join()

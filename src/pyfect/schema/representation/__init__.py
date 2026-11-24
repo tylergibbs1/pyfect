@@ -109,9 +109,12 @@ from pyfect.schema.representation._code import (
     ImportArtifact,
     NamedCode,
     TypedDictArtifact,
-    make_code,
+    make_code,  # pyright: ignore[reportDeprecated]
 )
-from pyfect.schema.representation._code_document import to_code_document, to_code_module
+from pyfect.schema.representation._code_document import (
+    to_code_document,  # pyright: ignore[reportDeprecated]
+    to_code_module,
+)
 from pyfect.schema.representation._from import (
     RepresentationError,
     from_representation,

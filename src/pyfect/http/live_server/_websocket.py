@@ -10,7 +10,8 @@ the client's messages (text as ``str``), pings are answered, and the
 client's close is answered and fails the pull with its code (1006 when the
 connection ends without one). As ``ws`` does, the connection is read while
 nothing pulls, so pings and the client's close are answered then too; Effect
-pauses ``ws`` once 64 KiB of messages wait for a pull, and so does this. The
+pauses ``ws`` once ``highWaterMark`` bytes of messages (64 KiB by default) wait for a pull,
+and so does this. The
 reader's scope closes the WebSocket with the handler's code (1000, 1001 when
 interrupted, 1011 on failure) unless a close was already sent. Writes wait
 for the reader to open the socket; a ``CloseEvent`` sends a close frame, and
@@ -50,7 +51,7 @@ from pyfect.http.live_server._ws_frames import (
 from pyfect.http.server_response import empty
 from pyfect.latch import Latch
 from pyfect.scope import Scope, acquire_release, fork_scoped
-from pyfect.socket._connection import HIGH_WATER_MARK, Signal
+from pyfect.socket._connection import Signal
 from pyfect.socket._errors import (
     CloseEvent,
     SocketCloseError,
@@ -157,6 +158,7 @@ class _Session:
         "_deflater",
         "_end_writing",
         "_error",
+        "_high_water_mark",
         "_incoming",
         "_leftover",
         "_lock",
@@ -171,11 +173,12 @@ class _Session:
     )
 
     def __init__(
-        self, exchange: Exchange, max_message_size: int, negotiated: Negotiated | None
+        self, exchange: Exchange, websocket: WebSocketConfig, negotiated: Negotiated | None
     ) -> None:
         self.exchange = exchange
+        self._high_water_mark = websocket.high_water_mark
         inflater = None if negotiated is None else negotiated.inflater()
-        self._parser = FrameParser(max_message_size, inflater)
+        self._parser = FrameParser(websocket.max_message_size, inflater)
         self._deflater = None if negotiated is None else negotiated.deflater()
         self._leftover = exchange.take_pending()
         self._lock = threading.Lock()
@@ -270,7 +273,8 @@ class _Session:
         with self._lock:
             if self._incoming:
                 self._ready.extend(self._incoming)
-                self._ready_size += sum(map(_byte_length, self._incoming))
+                # An empty message counts as a byte, as in Effect's ``Socket.fromWebSocket``.
+                self._ready_size += sum(_byte_length(data) or 1 for data in self._incoming)
                 self._incoming.clear()
             self._pull_error = self._error
             ended = self._error is not None
@@ -280,11 +284,11 @@ class _Session:
         return ended
 
     def _room(self) -> bool:
-        return self._ready_size < HIGH_WATER_MARK
+        return self._ready_size < self._high_water_mark
 
     def read(self) -> Effect[None]:
         """Read and parse the connection, answering pings and the client's
-        close, until it ends; paused while ``HIGH_WATER_MARK`` bytes of
+        close, until it ends; paused while ``high_water_mark`` bytes of
         messages wait for ``pull``."""
         return suspend(self._read_step)
 
@@ -426,7 +430,7 @@ def web_socket(exchange: Exchange, websocket: WebSocketConfig) -> SocketService:
                 lambda _: fail(_closed_before_upgrade())
             )
         exchange.upgraded = _SWITCHED
-        session = _Session(exchange, websocket.max_message_size, negotiated)
+        session = _Session(exchange, websocket, negotiated)
 
         return (
             exchange.write_switch(head, session.go_away)

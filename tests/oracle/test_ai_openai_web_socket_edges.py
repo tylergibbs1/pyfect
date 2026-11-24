@@ -1,7 +1,8 @@
 """WebSocket mode edges Effect's tests leave open, checked against Effect's
 ``makeSocket`` (the error event decoding run under Node): a connection the
 server closes or a consumer leaves mid-response is replaced, requests are
-sent one at a time, and an error event keeps every field of its details."""
+sent one at a time, and an error event keeps every field of its details
+(that title of ``ai/openai/test/OpenAiClient.test.ts``, new in Effect 4.1.5)."""
 
 from __future__ import annotations
 

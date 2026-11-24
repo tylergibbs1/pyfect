@@ -15,6 +15,7 @@ from typing import Literal
 
 from pyfect.http.live_server._ws_extensions import Params, parse_extensions
 from pyfect.http.live_server._ws_frames import ProtocolError
+from pyfect.socket._web_socket import DEFAULT_HIGH_WATER_MARK
 
 EXTENSION_NAME = "permessage-deflate"
 _TRAILER = b"\x00\x00\xff\xff"
@@ -46,11 +47,13 @@ class PerMessageDeflate:
 
 @dataclass(frozen=True, slots=True)
 class WebSocketConfig:
-    """The live server's WebSocket settings: the message size limit and, when set, the
-    ``permessage-deflate`` options it accepts offers with."""
+    """The live server's WebSocket settings: the message size limit, how many inbound bytes
+    may wait for a pull before reading pauses, and, when set, the ``permessage-deflate``
+    options it accepts offers with."""
 
     max_message_size: int
     per_message_deflate: PerMessageDeflate | None = None
+    high_water_mark: int = DEFAULT_HIGH_WATER_MARK
 
 
 def _token_number(value: str) -> float | None:

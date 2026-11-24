@@ -47,7 +47,7 @@ def test_nth_root_and_nth_root_unsafe_require_a_positive_safe_integer_degree(
 
 def test_nth_root_is_the_floor_of_the_real_root_on_both_sides_of_every_power() -> None:
     for degree in range(1, 9):
-        for base in range(0, 60):
+        for base in range(60):
             power = base**degree
             for n in (power - 1, power, power + 1):
                 if n >= 0:

@@ -11738,9 +11738,9 @@ def check_m17_eventlog_client(
 
 
 # --- McpServer middleware and visibility: what they provide and need, never Any ------
+from pyfect import codegen  # noqa: E402
 from pyfect.ai import mcp_server as mcp_server_module  # noqa: E402
 from pyfect.schema.representation._code_document import code_document  # noqa: E402
-from pyfect import codegen  # noqa: E402
 
 
 class McpUser(Tag[str], key="type_checks/McpUser"):

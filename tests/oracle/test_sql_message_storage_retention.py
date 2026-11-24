@@ -371,6 +371,46 @@ def test_clear_replies_does_not_deadlock_with_a_concurrent_delete_processed(pg_b
     yield from run(backend, body)
 
 
+@pytest.mark.parametrize("save_first", [False, True])
+@testing.live
+def test_guarded_clear_replies_preserves_a_concurrently_saved_reply_in_either_lock_order(
+    pg_backend: Backend, save_first: bool
+):
+    """guarded clearReplies preserves a concurrently saved reply in either lock order
+
+    Effect holds the first operation's lock with ``pg_sleep(2)``; a fifth of a second is
+    enough to have the second connection start while it is held."""
+    backend = pg_backend
+
+    def body(env: Env) -> Body:
+        sql, storage = env.sql, env.storage
+        message = yield from make_request()
+        old_reply = yield from make_reply(message)
+        new_reply = yield from make_reply(message)
+        yield from storage.save_request(message)
+        yield from storage.save_reply(old_reply)
+        reset = storage.clear_replies(
+            message.envelope.request_id, expected_reply_id=old_reply.reply.id
+        )
+        save = storage.save_reply(new_reply)
+        # A competing runner resets the old completion before saving its new reply.
+        first, second = (reset.and_then(save), reset) if save_first else (reset, save)
+        # Hold the first operation's lock while the second connection starts.
+        held: fx.Effect[Any, Any, Any] = first.and_then(sql("SELECT pg_sleep(0.2)")).pipe(
+            sql.with_transaction
+        )
+        fiber = yield from held.fork()
+        yield from _wait_for_pg_sleep(sql)
+        yield from second
+        yield from fiber.join()
+        replies = yield from storage.replies_for([message])
+        assert replies[-1].id == new_reply.reply.id
+        shards = [message.envelope.address.shard_id]
+        assert (yield from storage.unprocessed_messages(shards)) == []
+
+    yield from run(backend, body)
+
+
 # --- MySQL --------------------------------------------------------------------------------
 
 

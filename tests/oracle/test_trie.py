@@ -372,3 +372,18 @@ def test_equal_compares_tries_by_entries() -> None:
     """Equal compares tries by entries"""
     assert Trie[int].empty() == Trie[int].empty()
     assert Trie.make(("call", 0), ("me", 1)) == Trie.make(("call", 0), ("me", 1))
+
+
+def test_to_entries_with_prefix_preserves_prefix_boundaries_and_utf_16_order() -> None:
+    """toEntriesWithPrefix preserves prefix boundaries and UTF-16 order
+
+    A Python string holds code points, not UTF-16 units, so the half of a surrogate pair that
+    Effect matches as a prefix (``"a\\uD83D"``) is a code point of its own and prefixes nothing.
+    """
+    trie = Trie[int | None].make(("a", 2), ("a😀", 1), ("a", None), ("", 0))
+    matches: list[tuple[str, int | None]] = [("a", None), ("a😀", 1), ("a", 2)]
+    assert trie.to_entries_with_prefix("a") == matches
+    assert trie.to_entries_with_prefix("a\ud83d") == []
+    assert trie.to_entries_with_prefix("") == [("", 0), *matches]
+    assert trie.to_entries_with_prefix("ab") == []
+    assert Trie[int].empty().to_entries_with_prefix("a") == []

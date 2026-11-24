@@ -55,7 +55,7 @@ from pyfect.scope import Scope
 from pyfect.socket._loop import get_loop
 from pyfect.socket._socket import PemInput, TlsUpgradeOptions
 from pyfect.socket._tls import server_context
-from pyfect.socket._web_socket import DEFAULT_MAX_MESSAGE_SIZE
+from pyfect.socket._web_socket import DEFAULT_HIGH_WATER_MARK, DEFAULT_MAX_MESSAGE_SIZE
 from pyfect.socket.server import SocketServerError, SocketServerOpenError
 
 
@@ -79,6 +79,10 @@ class Options(TypedDict):
     websocket_max_message_size: NotRequired[int]
     """The longest WebSocket message a client may send (100 MiB, as `ws`'s
     ``maxPayload``); a longer one, sent or inflated, closes the connection with 1009."""
+    websocket_high_water_mark: NotRequired[int]
+    """How many inbound WebSocket bytes may wait for a reader's pull before the server stops
+    reading the connection, so the client is held back rather than disconnected (64 KiB, as
+    Effect's ``websocket.highWaterMark``; an empty message counts as one byte)."""
     websocket_per_message_deflate: NotRequired[bool | PerMessageDeflate]
     """Accept WebSocket clients' ``permessage-deflate`` offers (off by default, as
     ``ws``'s ``perMessageDeflate``); ``True`` takes ``ws``'s defaults."""
@@ -94,20 +98,25 @@ class TlsOptions(Options):
 
 def _websocket_config(options: Options) -> WebSocketConfig:
     deflate = options.get("websocket_per_message_deflate", False)
+    high_water_mark = options.get("websocket_high_water_mark", DEFAULT_HIGH_WATER_MARK)
+    if high_water_mark < 1:
+        raise ValueError(f"websocket_high_water_mark must be at least 1, got {high_water_mark}")
     return WebSocketConfig(
         options.get("websocket_max_message_size", DEFAULT_MAX_MESSAGE_SIZE),
         PerMessageDeflate() if deflate is True else deflate or None,
+        high_water_mark,
     )
 
 
-def _serve(listener: Listener, protocol: RequestProtocol, options: Options) -> HttpServerService:
+def _serve(
+    listener: Listener, protocol: RequestProtocol, options: Options, websocket: WebSocketConfig
+) -> HttpServerService:
     timeout = from_input_unsafe(options.get("graceful_shutdown_timeout", "20 seconds"))
     timeouts = Timeouts(
         keep_alive=from_input_unsafe(options.get("keep_alive_timeout", "5 seconds")),
         headers=from_input_unsafe(options.get("headers_timeout", "60 seconds")),
         request=from_input_unsafe(options.get("request_timeout", "300 seconds")),
     )
-    websocket = _websocket_config(options)
 
     def serve(app: HttpApp, middleware: Middleware | None) -> Effect[None, Any, Scope]:
         def handle(request: SourceRequest, exchange: Exchange) -> Effect[None]:
@@ -129,7 +138,10 @@ def _serve(listener: Listener, protocol: RequestProtocol, options: Options) -> H
 def _make(
     listen_with: Listen, protocol: RequestProtocol, options: Options, tls: Tls | None = None
 ) -> Effect[HttpServerService, SocketServerError, Scope]:
-    return listen(listen_with, tls).map(lambda listener: _serve(listener, protocol, options))
+    websocket = _websocket_config(options)
+    return listen(listen_with, tls).map(
+        lambda listener: _serve(listener, protocol, options, websocket)
+    )
 
 
 def make(**options: Unpack[Options]) -> Effect[HttpServerService, SocketServerError, Scope]:

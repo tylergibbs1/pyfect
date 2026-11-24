@@ -262,3 +262,34 @@ def test_an_interrupt_landing_anywhere_in_close_never_skips_the_finalizers(
         assert sorted(ran) == ["a", "b"]
     else:
         assert ran == []
+
+
+@testing.effect
+def test_runs_finalizers_one_at_a_time_in_reverse_registration_order_by_default():
+    """runs finalizers one at a time in reverse registration order by default"""
+    started = fx.Deferred[None]()
+    resume = fx.Deferred[None]()
+    order: list[str] = []
+
+    def record(name: str) -> fx.Effect[None]:
+        return fx.sync(lambda: order.append(name))
+
+    @fx.fn
+    def release(_: None, _exit: fx.Exit[Any, Any]):
+        yield from started.succeed(None)
+        yield from resume.wait()
+        yield from record("release")
+
+    @fx.fn
+    def body():
+        yield from fx.scope.add_finalizer(lambda _: record("scope"))
+        yield from fx.scope.add_finalizer(lambda _: record("effect"))
+        yield from fx.scope.acquire_release(fx.void, release)
+
+    closing = yield from fx.scope.scoped(body()).fork(start_immediately=True)
+    yield from started.wait()
+    while_blocked = list(order)
+    yield from resume.succeed(None)
+    yield from closing.join()
+    assert while_blocked == []
+    assert order == ["release", "effect", "scope"]

@@ -8,9 +8,10 @@ runner returning an asyncio future). Durations are seconds rather than
 milliseconds.
 """
 
-from typing import Any
+from typing import Any, Never
 
 import pytest
+from _fork_registration import registers_during_startup
 
 import pyfect as fx
 from pyfect import testing
@@ -276,3 +277,30 @@ def test_make_runtime_promise():
     run = yield from fx.FiberMap[str].make_runtime_async()
     result = yield from fx.from_async(lambda: run("a", fx.succeed("done")))
     assert result == "done"
+
+
+@testing.effect
+def test_run_registers_a_fiber_even_when_it_interrupts_its_forker_during_startup():
+    """run registers a fiber even when it interrupts its forker during startup"""
+    yield from registers_during_startup(
+        lambda work, scope: (
+            fx.FiberMap[str, Never, Never]
+            .make()
+            .pipe(fx.scope.provide(scope))
+            .flat_map(lambda container: container.run("key", work, start_immediately=True))
+        )
+    )
+
+
+@testing.effect
+def test_join_reports_the_first_failure_without_interrupting_siblings_or_closing_the_map():
+    """join reports the first failure without interrupting siblings or closing the map"""
+    container = yield from fx.FiberMap[str, None, str].make()
+    release = fx.Deferred[None]()
+    sibling = yield from container.run("a", release.wait())
+    yield from container.run("b", fx.fail("fail"))
+    yield from container.run("c", fx.fail("ignored"))
+    assert (yield from container.join().flip()) == "fail"
+    following = yield from container.run("d", release.succeed(None).as_void())
+    yield from following.join()
+    yield from sibling.join()

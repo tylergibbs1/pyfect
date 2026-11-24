@@ -272,6 +272,34 @@ OMISSIONS: tuple[Omission, ...] = (
             "effect/test/testing/TestSchema.test.ts",
         )
     ),
+    *_whole(
+        "Effect's own UTF-8 decoder for short byte slices, checked against `TextDecoder`; "
+        "Python decodes with `bytes.decode`",
+        "effect/test/internal/Utf8.test.ts",
+    ),
+    _some(
+        "effect/test/cli/Help.test.ts",
+        _JS_RUNTIME + ": `Intl.Segmenter`, built on first use; `display_width` reads `unicodedata`",
+        r"^constructs the segmenter only on the first width calculation$",
+    ),
+    _some(
+        "platform/node/test/NodeHttpServer.test.ts",
+        _NODE_STREAMS + ": the request's `error` listener after an aborted body (Effect #10794)",
+        r"^keeps an error listener on the request after a streamed body is aborted$",
+    ),
+    _some(
+        "chat/discord/test/interactions.test.ts",
+        "Effect's Discord adapter runs its HTTP calls through dfx, the JavaScript Discord library;"
+        " pyfect's port of the behaviour is \"followUp sends one HTTP request on a 429 just before"
+        " 15 minutes, and fails RateLimited\" (Effect 4.1.5 added dfx's layers to the title)",
+        r"^followUp sends one HTTP request through dfx's layers",
+    ),
+    _some(
+        "chat/slack/test/live.test.ts",
+        "runs only against a real Slack workspace, given `SLACK_LIVE_*` tokens CI never sets;"
+        " pyfect checks its Slack adapter against the fake of `tests/_slack_fake.py`",
+        r"^a post or edit stores no token unless allowed|^a stream split inside an allowed token",
+    ),
     _some(
         "effect/test/TestClock.test.ts",
         "section 4: `JSON.stringify` of a context and of a spread copy of the clock, JavaScript's "
