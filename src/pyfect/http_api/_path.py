@@ -15,20 +15,13 @@ _PARAM = re.compile(r":(\w+)", re.ASCII)
 _PARAMS = re.compile(r"::|:(\w+)", re.ASCII)
 
 
-def last_encoding(node: ast.AST) -> ast.AST:
-    """The node a value is finally encoded to."""
-    while node.encoding is not None:
-        node = node.encoding[-1].to
-    return node
-
-
 def param_names(schema: Top | None) -> AbstractSet[str] | None:
     """The keys of a params struct; ``None`` when the schema is not a plain
     struct (any parameter may be one)."""
     if schema is None:
         return _EMPTY
-    node = last_encoding(schema.__codec__().ast)
-    if isinstance(node, ast.Objects) and not node.index_signatures:
+    node = ast.encoded_objects(schema.__codec__().ast)
+    if node is not None and not node.index_signatures:
         return frozenset(str(p.name) for p in node.properties)
     return None
 

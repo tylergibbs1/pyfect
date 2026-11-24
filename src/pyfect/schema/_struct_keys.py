@@ -36,9 +36,9 @@ class EncodeKeys:
         self, schema: Codec[T, Mapping[str, object], RD, RE], /
     ) -> Bottom[T, Mapping[str, object], RD, RE]:
         node = schema.__codec__().ast
-        encoded = ast.encoded_structure(ast.to_encoded(node))
-        if not isinstance(encoded, ast.Objects):
-            msg = f"encode_keys needs a struct or class, got {encoded.tag}"
+        encoded = ast.encoded_objects(node)
+        if encoded is None:
+            msg = f"encode_keys needs a struct or class, got {ast.to_encoded(node).tag}"
             raise TypeError(msg)
         unknown = [key for key in self._mapping if all(p.name != key for p in encoded.properties)]
         if unknown:

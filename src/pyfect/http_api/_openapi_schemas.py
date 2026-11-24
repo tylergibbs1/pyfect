@@ -21,12 +21,14 @@ from pyfect.schema._jsonschema._annotations import Options, ReferencePolicy
 from pyfect.schema._jsonschema._compile import Compiler
 from pyfect.schema._jsonschema._references import References, encoded_node
 from pyfect.schema._to_codec_json import to_codec_json_asts
+from pyfect.schema.transformation import Transformation, passthrough
 
 type Json = dict[str, Any]
 type ApplyProperty = Callable[[str, bool, Json], None]
 
 _BINARY = S.String.annotate(format="binary").__codec__().ast
 _STRING = S.String.__codec__().ast
+_PASSTHROUGH: Transformation[object, object] = passthrough()
 
 
 @dataclass(frozen=True, slots=True)
@@ -156,8 +158,17 @@ def _files_as_binary(node: ast.AST) -> ast.AST:
             )
         case ast.Union():
             return replace(node, types=tuple(_files_as_binary(t) for t in node.types))
+        case ast.Class(side="decode"):
+            return _class_files_as_binary(node)
         case _:
             return node
+
+
+def _class_files_as_binary(node: ast.Class) -> ast.AST:
+    """A class read from its fields with each file a binary string: a link the document
+    follows, so the struct keeps the class's name (``<identifier>Encoded``)."""
+    fields = _files_as_binary(node.shape.fields)
+    return node if fields is node.shape.fields else ast.decode_to(fields, node, _PASSTHROUGH)
 
 
 __all__ = ["SchemaOps"]

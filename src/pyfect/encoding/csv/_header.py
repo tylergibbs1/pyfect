@@ -1,10 +1,11 @@
 """``header_codec``: a schema of header records whose empty cells of optional
 keys decode as missing keys (Effect's ``prepareHeader`` in ``Csv``).
 
-CSV cannot tell an empty cell from a missing one. Each struct, also inside
-a union or a suspend, gets its own copy of the row with those cells
-removed, before either its properties or its index signatures run, so a
-union applies the optional keys of the member it selects."""
+CSV cannot tell an empty cell from a missing one. Each struct or schema
+class (read through ``ast.encoded_objects``), also inside a union or a
+suspend, gets its own copy of the row with those cells removed, before
+either its properties or its index signatures run, so a union applies the
+optional keys of the member it selects."""
 
 from __future__ import annotations
 
@@ -67,15 +68,18 @@ class _Prepare:
                 return node
             case ast.Suspend():
                 return replace(node, thunk=_PreparedThunk(self, node))
-            case ast.Objects():
-                return _omit_empty_optional_cells(node)
             case _:
-                return node
+                row = ast.encoded_objects(node)
+                return node if row is None else _omit_empty_optional_cells(node, row)
 
 
-def _omit_empty_optional_cells(node: ast.Objects) -> ast.AST:
+def _omit_empty_optional_cells(node: ast.AST, structure: ast.Objects) -> ast.AST:
+    """``node`` read from a row with the empty cells of ``structure``'s
+    optional keys removed (``structure`` is the struct of ``node``'s rows)."""
     keys = tuple(
-        p.name for p in node.properties if isinstance(p.name, str) and p.optional_when_encoded()
+        p.name
+        for p in structure.properties
+        if isinstance(p.name, str) and p.optional_when_encoded()
     )
     if not keys:
         return node
@@ -89,7 +93,7 @@ def _omit_empty_optional_cells(node: ast.Objects) -> ast.AST:
         _is_mapping,
         # A one-member union describes the row by its discriminants, as union
         # errors do; the sentinels keep them visible to the union's parser.
-        expected=ast.Union((node,)).get_expected(),
-        **{ast.SENTINELS: ast.collect_sentinels(ast.to_encoded(node))},
+        expected=ast.Union((structure,)).get_expected(),
+        **{ast.SENTINELS: ast.collect_sentinels(structure)},
     )
     return ast.decode_to(row.ast, node, T.transform(decode=omit, encode=_same))

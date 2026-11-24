@@ -16,6 +16,7 @@ from pyfect.exit import fail as fail_exit
 from pyfect.schema._options import ParseOptions, is_constructing
 from pyfect.schema.ast._base import AST, Checks, invalid_type, parse_by_interpreting
 from pyfect.schema.ast._check import collect_issues
+from pyfect.schema.ast._encoding import to_encoded
 from pyfect.schema.ast._objects import Objects
 from pyfect.schema.ast._result import ParseResult, flat_map
 from pyfect.schema.issue import Composite, Issue, reported
@@ -155,6 +156,15 @@ def encoded_structure(ast: AST) -> AST:
     if isinstance(ast, Class) and ast.side == "encoded":
         return ast.shape.encoded
     return ast
+
+
+def encoded_objects(ast: AST) -> Objects | None:
+    """The struct ``ast``'s encoded values are read through: a struct's
+    encoded side, or a schema class's fields' struct; ``None`` for other
+    nodes. A walk that wants the keys of an encoded mapping reads them here,
+    so it meets classes and structs alike."""
+    structure = encoded_structure(to_encoded(ast))
+    return structure if isinstance(structure, Objects) else None
 
 
 def check_instance(

@@ -547,6 +547,7 @@ def _has_reserved_event(node: ast.AST, seen: set[int]) -> bool:
     if id(node) in seen:
         return False
     seen.add(id(node))
+    node = ast.encoded_structure(node)
     match node:
         case ast.Union():
             return any(_has_reserved_event(t, seen) for t in node.types)

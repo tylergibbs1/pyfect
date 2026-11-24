@@ -59,6 +59,7 @@ from pyfect.schema.ast._class import (
     ClassShape,
     ClassSide,
     check_instance,
+    encoded_objects,
     encoded_structure,
 )
 from pyfect.schema.ast._constructors import (
@@ -201,6 +202,7 @@ __all__ = [
     "collect_issues",
     "collect_sentinels",
     "decode_to",
+    "encoded_objects",
     "encoded_structure",
     "filter_of",
     "flat_map",
