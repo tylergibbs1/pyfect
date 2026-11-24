@@ -7,6 +7,9 @@ return type and must have an entry here, whose probe reads the defaults it actua
 with (no options given). Every limit must be finite and positive, and every WebSocket server
 must decline ``permessage-deflate`` unless asked (an inflated message costs the peer a
 thousandth of its size). A new server without an entry fails this test.
+
+The limits themselves are references named ``Max...``; each has a finite default, or names
+the finite limit around it in ``BOUNDED_BY``.
 """
 
 from __future__ import annotations
@@ -21,6 +24,7 @@ from _pyfect_modules import modules
 
 from pyfect.ai._mcp import sessions as mcp_sessions
 from pyfect.ai._mcp import stdio as mcp_stdio
+from pyfect.context import Reference
 from pyfect.http import multipart
 from pyfect.http.incoming_message import MaxBodySize
 from pyfect.http.live_server._serve import MAX_HEAD_SIZE
@@ -41,6 +45,8 @@ def _http_app() -> Limits:
         "body_bytes": MaxBodySize.default(),
         "multipart_parts": multipart.MaxParts.default(),
         "multipart_field_bytes": multipart.MaxFieldSize.default(),
+        "multipart_persisted_files": multipart.MaxPersistedFiles.default(),
+        "multipart_persisted_bytes": multipart.MaxPersistedSize.default(),
     }
 
 
@@ -181,3 +187,44 @@ def test_default_limits_are_finite(name: str):
             assert isinstance(value, int | float), (name, limit, value)
             assert not isinstance(value, bool), (name, limit)
             assert 0 < value < math.inf, (name, limit, value)
+
+
+BOUNDED_BY = {
+    # A file part is part of the body, which MaxBodySize bounds.
+    "pyfect.http.multipart.MaxFileSize": "pyfect.http.incoming_message.MaxBodySize",
+}
+
+
+def _limit_references() -> dict[str, type[Reference[object]]]:
+    found: dict[str, type[Reference[object]]] = {}
+    for module in modules(skip_missing_extras=True):
+        for value in vars(module).values():
+            if (
+                isinstance(value, type)
+                and issubclass(value, Reference)
+                and value.__name__.startswith("Max")
+                and value.__module__ == module.__name__
+            ):
+                found[f"{value.__module__}.{value.__qualname__}"] = value
+    return found
+
+
+def test_every_limit_reference_has_a_finite_default():
+    """multipart's ``MaxParts`` was unlimited (as in Effect) until 0.6.6, and one form within
+    the body limit could make tens of thousands of temporary files."""
+    limits = _limit_references()
+    assert {
+        "pyfect.http.multipart.MaxParts",
+        "pyfect.http.multipart.MaxPersistedFiles",
+        "pyfect.http.multipart.MaxPersistedSize",
+        "pyfect.http.incoming_message.MaxBodySize",
+    } <= limits.keys()
+    unbounded = sorted(
+        name
+        for name, limit in limits.items()
+        if limit.default() is None
+        and (name not in BOUNDED_BY or limits[BOUNDED_BY[name]].default() is None)
+    )
+    assert not unbounded, (
+        f"give these a finite default or name the limit bounding them: {unbounded}"
+    )

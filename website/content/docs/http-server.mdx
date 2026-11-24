@@ -236,9 +236,12 @@ app needs more room.
   at most two stacked codings. `router.cors(credentials=True)` needs a list of origins
   without `*`. A multipart boundary must follow RFC 2046 (1 to 70 characters). A multipart
   field is at most `MaxFieldSize` (10 MiB) and a file `MaxFileSize` (no limit but the body's);
-  a body has at most `MaxParts` (1000) parts (Effect has no default limit; set `None` for
-  none). A response
-  header with a control character is never sent.
+  a body has at most `MaxParts` (1000) parts, and a buffered form (`request.multipart`,
+  HttpApi's `as_multipart`) writes at most `MaxPersistedFiles` (100) files and
+  `MaxPersistedSize` (100 MiB) to its temporary directory. Effect has none of these three
+  limits; `multipart.limits_context(max_parts=..., max_persisted_files=...,
+  max_persisted_size=...)` or the same keywords on `as_multipart` raise them, and `None`
+  removes one. A response header with a control character is never sent.
 - Routes match a normalized path: case, duplicate and trailing slashes are ignored, a `;`
   ends the path, and escapes are decoded first, so `/%73ecret` reaches `/secret`. When a proxy
   in front authorizes by path prefix, pass `router_config=strict_config` (from
