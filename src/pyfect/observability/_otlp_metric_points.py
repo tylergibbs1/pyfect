@@ -35,10 +35,8 @@ _UCUM_UNITS: Final = {
 
 
 def _unit(attributes: Mapping[str, str] | None) -> str:
-    if attributes is None:
-        return "1"
-    unit = attributes.get("unit", attributes.get("time_unit"))
-    return "1" if unit is None else _UCUM_UNITS.get(unit, unit)
+    unit = "" if attributes is None else attributes.get("unit", attributes.get("time_unit", ""))
+    return _UCUM_UNITS.get(unit, unit)
 
 
 def _int64(value: int) -> int | str:

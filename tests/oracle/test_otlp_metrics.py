@@ -389,12 +389,16 @@ def test_maps_unit_attributes_to_ucum():
     def program():
         yield from metric.timer("unit_timer_test", boundaries=[10, 100]).update("5 millis")
         yield from metric.gauge("unit_custom_test", attributes={"unit": "{request}"}).update(1)
+        yield from metric.gauge("unit_dimensionless_test", attributes={"unit": "1"}).update(1)
+        yield from metric.gauge("unit_unspecified_test").update(1)
         yield from _trigger_export()
 
     seen = yield from _run(program, "cumulative")
     body = seen.json()[0]
     assert _find_metric(body, "unit_timer_test")["unit"] == "ms"
     assert _find_metric(body, "unit_custom_test")["unit"] == "{request}"
+    assert _find_metric(body, "unit_dimensionless_test")["unit"] == "1"
+    assert _find_metric(body, "unit_unspecified_test")["unit"] == ""
 
 
 @testing.effect

@@ -58,7 +58,7 @@ from opentelemetry.trace import (
 )
 
 import pyfect as fx
-from pyfect import exit, layer, otel, testing
+from pyfect import cause, exit, layer, otel, testing
 from pyfect.cause import Cause, Fail
 from pyfect.context import Context
 from pyfect.layer import Layer
@@ -390,6 +390,39 @@ def test_renders_nested_error_causes_in_the_stacktrace():
     stacktrace = event.attributes["exception.stacktrace"]
     assert isinstance(stacktrace, str)
     assert "ValueError: inner cause" in stacktrace
+
+
+@pytest.mark.parametrize(
+    ("effect", "status"),
+    [
+        (fx.void, None),
+        (fx.fail_cause(cause.empty), None),
+        (fx.void, StatusCode.OK),
+        (fx.void, StatusCode.ERROR),
+        (fx.fail_cause(cause.empty), StatusCode.ERROR),
+    ],
+    ids=[
+        "success",
+        "failure without errors",
+        "success with an application Ok",
+        "success with an application Error",
+        "failure without errors with an application Error",
+    ],
+)
+@testing.effect
+def test_keeps_the_status_of(effect: fx.Effect[None, Any], status: StatusCode | None):
+    """keeps the status of $name"""
+    exporter = InMemorySpanExporter()
+
+    @fx.gen
+    def program():
+        if status is not None:
+            span = yield from otel.tracer.current_otel_span()
+            span.set_status(Status(status))
+        yield from effect
+
+    finished = yield from _keep_exporter(program.with_span("test"), exporter)
+    assert finished.status.status_code is (StatusCode.UNSET if status is None else status)
 
 
 @testing.effect

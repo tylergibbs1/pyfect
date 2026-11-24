@@ -20,7 +20,6 @@ TITLES: dict[str, tuple[str, ...]] = {
         "preserves alignment calls in response error metadata",
     ),
     "effect/test/TestClock.test.ts": ("serializes a context containing a TestClock",),
-    "effect/test/Tracer.test.ts": ("leaves an empty cause Unset without a description",),
     "effect/test/ai/Chat.test.ts": ("exports tool results with non-JSON types through exportJson",),
     "effect/test/ai/LanguageModel.test.ts": (
         "validates locally handled provider-defined tool parameters in their JSON encoding",
@@ -43,6 +42,4 @@ TITLES: dict[str, tuple[str, ...]] = {
         "encodes a void result to null",
         "rejects a non-JSON result for a dynamic tool without a success schema",
     ),
-    "effect/test/observability/OtlpTracer.test.ts": ("leaves $name status Unset",),
-    "opentelemetry/test/OtelTracer.test.ts": ("keeps the status of $name",),
 }

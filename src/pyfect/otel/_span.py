@@ -149,9 +149,12 @@ class OtelSpan:
         if isinstance(self.status, Ended):
             return
         self.status = Ended(self.status.start_time, end_time, exit)
+        # A success, or a failure without errors, leaves the status as it is (Unset, or
+        # what the application set on the span), as in Effect 4.1.4.
         if isinstance(exit, Success):
-            self.span.set_status(Status(StatusCode.OK))
-        elif exit.cause.has_interrupts_only:
+            self.span.end(end_time)
+            return
+        if exit.cause.has_interrupts_only:
             self.span.set_attribute("effect.fiber.interrupted", True)
         else:
             errors = exit.cause.pretty_errors()
@@ -159,8 +162,6 @@ class OtelSpan:
                 self.span.record_exception(error, timestamp=end_time)
             if errors:
                 self.span.set_status(Status(StatusCode.ERROR, str(errors[0])))
-            else:
-                self.span.set_status(Status(StatusCode.OK))
         self.span.end(end_time)
 
 

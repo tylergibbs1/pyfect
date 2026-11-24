@@ -12,6 +12,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+import pytest
+
 import pyfect as fx
 from pyfect import cause, exit, layer
 from pyfect._version import VERSION
@@ -58,6 +60,24 @@ def test_uses_effect_as_the_instrumentation_scope_not_the_service_name() -> None
 
     fx.run_sync(program.pipe(layer.provide(tracing)))
     assert _scope_spans(seen)[0]["scope"] == {"name": "pyfect", "version": VERSION}
+
+
+@pytest.mark.parametrize(
+    "effect",
+    [fx.void, fx.fail_cause(cause.empty)],
+    ids=["success", "failure without errors"],
+)
+def test_leaves_status_unset(effect: fx.Effect[None, Any]) -> None:
+    """leaves $name status Unset"""
+    seen, tracing = _capture()
+
+    @fx.gen
+    def program():
+        yield from effect.with_span("test").exit()
+        yield from _flush()
+
+    fx.run_sync(program.pipe(layer.provide(tracing)))
+    assert _scope_spans(seen)[0]["spans"][0]["status"] == {"code": 0}
 
 
 def test_pads_64_bit_trace_ids_in_spans_and_links() -> None:
@@ -151,10 +171,10 @@ def _export_span(ended: fx.Exit[Any, Any], after_end: Any = None) -> OtlpSpan:
     return spans[0]
 
 
-def test_marks_an_empty_cause_ok_without_a_description() -> None:
-    """OtlpTracer span status marks an empty cause Ok without a description"""
+def test_leaves_an_empty_cause_unset_without_a_description() -> None:
+    """OtlpTracer span status leaves an empty cause Unset without a description"""
     span = _export_span(exit.fail_cause(cause.empty))
-    assert span["status"] == {"code": 1}
+    assert span["status"] == {"code": 0}
     assert span["events"] == []
     assert span["attributes"] == []
 
@@ -176,4 +196,4 @@ def test_exports_a_span_once_when_end_is_called_again() -> None:
         span.end(status.start_time + 2, exit.fail("late"))
 
     span = _export_span(exit.void, end_again)
-    assert span["status"] == {"code": 1}
+    assert span["status"] == {"code": 0}

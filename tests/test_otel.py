@@ -206,7 +206,7 @@ def test_logs_inside_a_span_are_its_events_and_links_are_exported():
             int("2" * 16, 16),
         )
         assert dict(link.attributes or {}) == {"a": 1}
-        assert span.status.status_code is StatusCode.OK
+        assert span.status.status_code is StatusCode.UNSET
 
     yield from program.pipe(fx.provide(tracing))
 

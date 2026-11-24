@@ -227,7 +227,7 @@ def _status_of(span: _OtlpTracerSpan, attributes: list[KeyValue], events: list[E
     assert isinstance(status, Ended)
     exit = status.exit
     if isinstance(exit, Success):
-        return {"code": 1}
+        return {"code": 0}
     if exit.cause.has_interrupts_only:
         attributes.append({"key": "effect.fiber.interrupted", "value": {"boolValue": True}})
         return {"code": 0}
@@ -245,7 +245,7 @@ def _status_of(span: _OtlpTracerSpan, attributes: list[KeyValue], events: list[E
         }
         for error in errors
     )
-    return {"code": 2, "message": errors[0].message} if errors else {"code": 1}
+    return {"code": 2, "message": errors[0].message} if errors else {"code": 0}
 
 
 def _otlp_span(span: _OtlpTracerSpan) -> OtlpSpan:
