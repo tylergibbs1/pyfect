@@ -30,13 +30,13 @@ type Page[A] = tuple[Sequence[A], int]
 
 def parse_poll_interval(poll_interval: DurationInput) -> Effect[Duration]:
     """``poll_interval`` as a ``Duration``. Dies with an
-    ``IllegalArgumentError`` unless it is positive; an infinite one never
-    polls, so readers see only the writes of their own server."""
+    ``IllegalArgumentError`` unless it is positive and finite: a reader
+    that never polls misses entries ``latest_sequence`` reports."""
 
     def parse() -> Effect[Duration]:
         parsed = from_input_unsafe(poll_interval)
-        if not parsed.is_positive():
-            return die(IllegalArgumentError("poll_interval must be positive"))
+        if not (parsed.is_positive() and parsed.is_finite()):
+            return die(IllegalArgumentError("poll_interval must be positive and finite"))
         return succeed(parsed)
 
     return suspend(parse)

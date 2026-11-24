@@ -148,9 +148,8 @@ def layer_storage(
     of its name had authenticated.
 
     A server streams to its clients the writes of every server on the
-    database: its own at once, the others' within ``poll_interval``, which
-    must be positive (``"infinity"`` streams only its own, as Effect's
-    does)."""
+    database (Effect's, only its own): its own at once, the others' within
+    ``poll_interval``, which must be positive and finite."""
     return layer_effect(
         Storage,
         make_storage(

@@ -150,7 +150,9 @@ A client that synced under another of those ids takes the lowest for a new log o
 sends its entries again, and the server keeps one copy of each, then reads the store from
 the start. To stop the warning, keep the lowest id and delete the rest. Servers of this
 version already serve the lowest, so they can keep running; stop any older one first, since
-it may be serving an id you delete. On PostgreSQL, MySQL and SQLite:
+it may be serving an id you delete. The statements below name the default table; if you
+passed `remote_id_table`, put that name in place of `effect_remote_id`. On PostgreSQL, MySQL
+and SQLite:
 
 ```sql
 DELETE FROM effect_remote_id
@@ -169,6 +171,15 @@ WITH ranked AS (
 )
 DELETE FROM ranked WHERE position > 1;
 ```
+
+Several servers can share one database, behind a load balancer for example, and a client
+may connect to any of them. Each server streams to its clients the writes of every server on
+the database: its own at once, the others' within `poll_interval` (1 second by default, an
+option of `layer_storage` in both SQL storages), when it next reads the table for them. So
+`log.synced` through one server also waits for the entries the others took, and a client
+sees them without reconnecting. Effect's servers stream only their own writes, so their
+clients get the other servers' entries only when they connect again. Up to 0.6.26 pyfect's
+did the same, and `synced` through one server never finished once another had taken a write.
 
 ## Remote compaction
 

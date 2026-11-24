@@ -103,9 +103,8 @@ def make_storage(
     or MySQL.
 
     A server streams to its clients the writes of every server on the
-    database: its own at once, the others' within ``poll_interval``, which
-    must be positive (``"infinity"`` streams only its own, as Effect's
-    does)."""
+    database (Effect's, only its own): its own at once, the others' within
+    ``poll_interval``, which must be positive and finite."""
 
     def build():
         poll = yield from parse_poll_interval(poll_interval)

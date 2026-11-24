@@ -9,7 +9,7 @@ from typing import Any, TypedDict
 import pytest
 
 import pyfect as fx
-from pyfect import layer
+from pyfect import duration, layer
 from pyfect import schema as S
 from pyfect.crypto import digest
 from pyfect.errors import IllegalArgumentError
@@ -385,14 +385,17 @@ def test_an_unencrypted_sql_storage_streams_what_another_storage_wrote(tmp_path:
 
 
 @pytest.mark.parametrize("make", [SqlServer.make_storage, SqlU.make_storage])
-def test_a_sql_storage_refuses_a_poll_interval_that_is_not_positive(
-    make: Callable[..., fx.Effect[Any, Any, Any]],
+@pytest.mark.parametrize("poll_interval", ["0 millis", "-1 second", duration.infinity])
+def test_a_sql_storage_refuses_a_poll_interval_that_is_not_positive_and_finite(
+    make: Callable[..., fx.Effect[Any, Any, Any]], poll_interval: duration.Input
 ) -> None:
+    # Without polling, a server reports entries another server took as its latest
+    # but never streams them, and synced waits for them forever.
     @fx.fn
     def body():
         client = yield from _sqlite()
         return (
-            yield from make(poll_interval="0 millis").pipe(fx.provide_service(SqlClient, client))
+            yield from make(poll_interval=poll_interval).pipe(fx.provide_service(SqlClient, client))
         )
 
     program = fx.scoped(body()).pipe(
@@ -400,4 +403,6 @@ def test_a_sql_storage_refuses_a_poll_interval_that_is_not_positive(
     )
     exit = fx.run_blocking_exit(program)
     assert isinstance(exit, fx.Failure)
-    assert repr(exit.cause.squash()) == repr(IllegalArgumentError("poll_interval must be positive"))
+    assert repr(exit.cause.squash()) == repr(
+        IllegalArgumentError("poll_interval must be positive and finite")
+    )
