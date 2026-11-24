@@ -366,21 +366,21 @@ class Bound(Generic[X_co, S, E, MP_co, GP, GE, R_co, LP_co, LR_co, I_co]):
         /,
     ) -> Handlers[GP, GE, R_co | R1]: ...
     @overload
-    def __call__[RL = Never, RI = Never](
-        self: Bound[X_co, S, E, MP_co, GP, GE, R_co, LP_co, RL | GP | Seal, RI | LP_co | GP | Seal],
+    def __call__[RR = Never](
+        self: Bound[X_co, S, E, MP_co, GP, GE, R_co, LP_co, RR | GP | Seal, RR | LP_co | GP | Seal],
         handler: Callable[
             [X_co], Effect[S | HttpServerResponse, E | PayloadErrors, MP_co | Provided]
         ],
         /,
-    ) -> Handlers[GP, GE, R_co | RL | RI]: ...
+    ) -> Handlers[GP, GE, R_co | RR]: ...
     @overload
-    def __call__[R1, RL = Never, RI = Never](
-        self: Bound[X_co, S, E, MP_co, GP, GE, R_co, LP_co, RL | GP | Seal, RI | LP_co | GP | Seal],
+    def __call__[R1, RR = Never](
+        self: Bound[X_co, S, E, MP_co, GP, GE, R_co, LP_co, RR | GP | Seal, RR | LP_co | GP | Seal],
         handler: Callable[
             [X_co], Effect[S | HttpServerResponse, E | PayloadErrors, R1 | MP_co | Provided]
         ],
         /,
-    ) -> Handlers[GP, GE, R_co | R1 | RL | RI]: ...
+    ) -> Handlers[GP, GE, R_co | R1 | RR]: ...
     def __call__(self, handler: Any, /) -> Any:
         return self.handlers._register(  # pyright: ignore[reportPrivateUsage]
             self.endpoint.identifier, handler, self.is_raw, self.uninterruptible

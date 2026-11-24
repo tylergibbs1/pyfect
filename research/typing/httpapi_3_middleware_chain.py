@@ -26,6 +26,9 @@ C5. A union of class TypeVars that are both ``Never`` is ``Unknown``, so the cas
 C6. A ``Never`` group middleware matches any ``HttpApiGroup[HttpApiMiddleware[GP1, ...]]``
     ``self`` pattern with ``GP1`` ``Unknown``; a parameter type built from ``GP1`` makes the
     whole bound method partially unknown, so ``GP`` comes off in ``Bound``, not ``handle``.
+C7. ``Bound`` takes ``GP`` off the outermost middleware's needs and ``LP | GP`` off the inner
+    ones' with one shared TypeVar for both rests (two ``Never``-defaulted ones in a union
+    widen to ``Unknown``, ``tests/test_typing_rules.py``); pyright joins the two solutions.
 """
 
 from __future__ import annotations
