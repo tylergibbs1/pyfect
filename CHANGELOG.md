@@ -1,5 +1,90 @@
 # Changelog
 
+## 0.6.31 (2026-11-24)
+
+### Added
+
+- `telegram_chat.escape_markdown(text)` and `teams_chat.escape_markdown(text)` turn text a user
+  wrote, such as a display name, into Markdown that shows it as typed, so a name like
+  `[x](https://evil.example)` is no longer a live link in a post. A dogfood app had that
+  injection. WhatsApp needs none: it has no link markup and no escape character, which its docs
+  page now says.
+- `teams_chat.layer`, `whatsapp_chat.layer` and `telegram_chat.layer` (and `whatsapp_graph_api`'s
+  and `telegram_bot_api`'s `make` and `layer`) take `max_retry_after`, passed to
+  `chat_adapter.retry_safe`. A 429 asking to wait longer fails the op at once with
+  `RateLimited`, its `retry_after` the wait the platform asked for, instead of holding the op,
+  and whatever queues behind it, for as long as the platform says; Teams can ask for an hour.
+  Without it any wait is waited out, as before and as in Effect. Every adapter now reads a
+  `Retry-After` (or Discord's and Telegram's `retry_after`) through one shared parser.
+- `chat_adapter.retry_safe` takes `max_retry_after`: a `retry_after` longer than it is not
+  waited out, and the `ChatError` comes back at once with the wait on it, for the caller to
+  decide. The default, `None`, waits out any wait, as Effect's `retrySafe` does.
+- `discord_chat.layer` takes `max_retry_after`: a 429 asking to wait longer fails `RateLimited`
+  at once, its `retry_after` on the error, instead of holding the request (and whatever queues
+  behind it) for as long as Discord asks; its shared limits can ask for over 20 minutes. By
+  default any wait is still waited out, as in Effect, whose Discord adapter and dfx's REST
+  client wait without a bound.
+
+### Fixed
+
+- `discord_chat.command_requests` raises `ValueError` naming a command or option whose name
+  Discord refuses (`^[-_ʼ\p{L}\p{N}\p{sc=Deva}\p{sc=Thai}]{1,32}$`, lowercase where a
+  letter has a lowercase), or whose description is not 1 to 100 characters, instead of
+  building a list Discord rejects as a whole when it is registered. Effect builds the list
+  unchecked.
+- The Discord gateway's websocket (`discord_gateway.layer_ws`) reconnects as soon as Discord
+  closes the connection, instead of only at the shard's next write, up to a heartbeat interval
+  (about 41 seconds) later: each connection's read and write loops now end at the first exit
+  (`race_first`), not the first success. dfx, which Effect's Discord adapter runs on, reads in
+  the connection's own loop and never had the delay. `tests/test_chat_race_guard.py` keeps
+  `race` out of the chat adapters.
+- A dispatch the Discord `DispatchHook` refused is no longer lost when the next dispatch was
+  already read: the shard used to hand that one to the hook and store its sequence, so the
+  RESUME asked for what came after it. As in dfx (which Effect's Discord adapter runs on), once
+  the shard drops a connection it skips whatever is still queued from it until the next HELLO,
+  sends no heartbeat in between, and stores a `READY`'s session only after the hook took it.
+- `telegram_chat.layer_polling` gives each `getUpdates` its long poll plus 3 seconds to answer,
+  then gives it up and retries it with `chat_adapter.retry_safe`'s backoff. A connection that died
+  without a reset (a NAT entry gone, a proxy that stopped answering) left the call waiting forever,
+  and the bot never read another update; Effect's adapter has the same hang. The layer's first
+  call has the 3 seconds too. `TelegramBotApiService.call` takes a `timeout` for this: a request
+  without an answer by then fails `Transport` with detail `timeout`.
+- A Telegram command answer refused for being private (`chat_interaction.respond` and `defer`
+  default to `visibility="ephemeral"`, which the adapter has no way to send) fails `Unsupported`
+  with detail `ephemeral`, so the `chat_interaction` log line reads
+  `telegram.respond: Unsupported: ephemeral` instead of a bare `Unsupported` that did not say what
+  was missing. The Telegram docs say to answer with `visibility="public"`.
+- `telegram_chat.layer_webhook` hands commands and button clicks to the `chat_interaction.Handler`
+  its layer was given. It read the handler from each request's context, where it is not, so a
+  command fell through to the `ChatHandler` as an ordinary message and a click was answered and
+  dropped, with nothing logged; polling, whose fiber is forked in the layer, worked. Both
+  transports now take the `ChatHandler` and the `chat_interaction.Handler` from the layer when it
+  is built, and run updates through one function that is given both.
+- The WhatsApp adapter waits out a rate-limited answer's `Retry-After` before it sends again, as
+  the Teams and Slack adapters do, and keeps it as the `RateLimited` error's `retry_after`. It
+  ignored the header and retried after its own backoff from half a second, while Meta still
+  refused.
+
+### Performance
+
+- The Telegram and WhatsApp webhooks count a body's nesting before parsing it about three times
+  faster on bracket-heavy bodies: the brackets are packed eight to a byte, so the running sum
+  takes one step per eight. The count now lives in one place, `pyfect.chat._json_depth`, shared
+  with the Discord adapter.
+- The Discord adapter's check that a gateway frame, interactions request or REST answer nests
+  at most 64 deep, made before each parse, no longer walks every character in Python: a body
+  with no more than 64 opening brackets (almost every frame) passes after two counts, about
+  25 times faster, and any other is counted with the shared `pyfect.chat._json_depth`, about 2
+  times faster on Discord's own payloads and 5 times on a 100 MiB frame of brackets. The result
+  is the same; `tests/test_chat_json_depth.py` checks it against the old count on random and
+  adversarial text. The 100 MiB frame limit is the one Effect's `ws` WebSocket has by default.
+
+### Docs
+
+- The Teams docs say that the key set is refetched for an unknown key at most once every 30
+  seconds, as in Effect's `Jwks`, so a token signed with a key Microsoft added within 30 seconds of
+  the last fetch is refused with 403 until those 30 seconds pass.
+
 ## 0.6.30 (2026-11-24)
 
 ### Added
