@@ -52,6 +52,7 @@
     "chat-teams",
     "chat-discord",
     "chat-whatsapp",
+    "chat-telegram",
     "models",
     "graphql",
     "eventlog",

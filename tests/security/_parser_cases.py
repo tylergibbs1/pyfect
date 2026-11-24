@@ -58,6 +58,9 @@ from pyfect.chat.teams import teams_chat
 from pyfect.chat.whatsapp import _json as whatsapp_json
 from pyfect.chat.whatsapp import _text as whatsapp_text
 from pyfect.chat.whatsapp import whatsapp_chat
+from pyfect.chat.telegram import _json as telegram_json
+from pyfect.chat.telegram import _markdown as telegram_markdown
+from pyfect.chat.telegram import telegram_chat
 from pyfect.cluster import shard_id, snowflake
 from pyfect.crypto import key_format, password
 from pyfect.effect import Effect
@@ -805,6 +808,66 @@ def _whatsapp_messages(n: int) -> Work:
         ],
     }
     return lambda: whatsapp_chat.normalize(envelope, phone_number_id="1")
+# ------------------------------------------------------------------------- Telegram
+
+# A Telegram update is peer input once its secret passes, and a post's Markdown often
+# echoes a user's text: the renderer looks ahead for code spans, definitions and
+# thematic breaks, so each is indexed or tested once per line. Entity offsets are UTF-16
+# units, read without slicing the text per entity.
+text(telegram_chat.parse_mention)
+text(telegram_markdown.render)
+text(telegram_markdown.measure)
+
+
+@case(
+    telegram_markdown.render, "telegram _markdown.render: backtick runs of every length", size=4000
+)
+def _telegram_backticks(n: int) -> Work:
+    value = "".join("`" * (1 + i % 7) + " a " for i in range(n // 7))
+    return lambda: telegram_markdown.render(value)
+
+
+@case(telegram_markdown.render, "telegram _markdown.render: spaced break markers", size=4000)
+def _telegram_breaks(n: int) -> Work:
+    value = "- " * (n // 2) + "x"
+    return lambda: telegram_markdown.render(value)
+
+
+@case(telegram_markdown.render, "telegram _markdown.render: unclosed angle brackets", size=4000)
+def _telegram_angles(n: int) -> Work:
+    value = "<a " * (n // 3)
+    return lambda: telegram_markdown.render(value)
+
+
+@case(telegram_markdown.render, "telegram _markdown.render: nested quotes", size=4000)
+def _telegram_quotes(n: int) -> Work:
+    value = "> " * (n // 2) + "x"
+    return lambda: telegram_markdown.render(value)
+
+
+@case(telegram_json.within_depth, "telegram _json.within_depth: unterminated escapes", size=40_000)
+def _telegram_depth_quotes(n: int) -> Work:
+    value = b'"\\"' * (n // 3)
+    return lambda: telegram_json.within_depth(value)
+
+
+@case(telegram_chat.normalize, "telegram_chat.normalize: many long mention entities", size=4000)
+def _telegram_entities(n: int) -> Work:
+    text_value = "@effect_bot " + "x" * n
+    entities = [{"type": "mention", "offset": 0, "length": n} for _ in range(n // 10)]
+    update = {
+        "update_id": 1,
+        "message": {
+            "message_id": 1,
+            "date": 1,
+            "chat": {"id": 1, "type": "group"},
+            "from": {"id": 2, "first_name": "a"},
+            "text": text_value,
+            "entities": entities,
+        },
+    }
+    context = telegram_chat.NormalizeContext(bot_id="1", bot_username="effect_bot")
+    return lambda: telegram_chat.normalize(update, context)
 
 
 # ------------------------------------------------------------------------- streaming decoders

@@ -28,6 +28,7 @@ from layer_cases import (
     chat_slack,
     chat_teams,
     chat_whatsapp,
+    chat_telegram,
     cluster,
     core,
     crypto,
@@ -61,6 +62,7 @@ _AREAS = (
     chat_slack,
     chat_teams,
     chat_whatsapp,
+    chat_telegram,
 )
 CASES: dict[str, Case] = {name: case for area in _AREAS for name, case in area.CASES.items()}
 SKIPPED: dict[str, str] = {name: why for area in _AREAS for name, why in area.SKIPPED.items()}

@@ -1108,6 +1108,9 @@ websockets = [
 [package.dev-dependencies]
 dev = [
     { name = "lefthook" },
+    { name = "linkify-it-py" },
+    { name = "markdown-it-py" },
+    { name = "mdit-py-plugins" },
     { name = "mutmut" },
     { name = "psycopg", extra = ["binary"] },
     { name = "py-spy", marker = "sys_platform == 'linux'" },
@@ -1156,6 +1159,9 @@ provides-extras = ["otel", "hypothesis", "pydantic", "msgspec", "httpx", "websoc
 [package.metadata.requires-dev]
 dev = [
     { name = "lefthook", specifier = ">=2.2.2" },
+    { name = "linkify-it-py", specifier = ">=2.0.3" },
+    { name = "markdown-it-py", specifier = ">=4.3.0" },
+    { name = "mdit-py-plugins", specifier = ">=0.7.0" },
     { name = "mutmut", specifier = ">=3.8.1" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.3" },
     { name = "py-spy", marker = "sys_platform == 'linux'", specifier = ">=0.4.3" },

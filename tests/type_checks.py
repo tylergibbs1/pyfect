@@ -116,6 +116,7 @@ from pyfect.chat.chat_thread import ChatThread
 from pyfect.chat.discord import discord_chat, discord_gateway, discord_rest
 from pyfect.chat.slack import slack_chat, slack_web_api
 from pyfect.chat.whatsapp import whatsapp_chat, whatsapp_graph_api
+from pyfect.chat.telegram import telegram_bot_api, telegram_chat
 from pyfect.cli import (
     Argument,
     CliError,
@@ -12284,6 +12285,10 @@ def _chat_whatsapp(effect: fx.Effect[int, ValueError, ChatService]) -> None:
     from pyfect.chat.chat_handler import ChatHandler, NotAccepted
     from pyfect.chat.chat_test import MentionToken
     from pyfect.crypto.mac import Mac
+def _chat_telegram(effect: fx.Effect[int, ValueError, ChatService]) -> None:
+    from pyfect.chat.chat_handler import ChatHandler
+    from pyfect.chat.chat_interaction import ButtonClicked, CommandInvoked, Group
+    from pyfect.chat.chat_test import MentionToken
     from pyfect.encoding import Json
     from pyfect.http.client import HttpClient
     from pyfect.http.router import HttpRouter
@@ -12376,6 +12381,28 @@ def _chat_discord(effect: fx.Effect[int, ValueError, ChatService]) -> None:
     assert_type(
         whatsapp_chat.layer_webhook(path="/w", app_secret=token, verify_token=token),
         fx.Layer[Never, Never, HttpRouter | whatsapp_chat.WhatsAppChat | ChatHandler | Mac],
+    token = redacted("1:AA")
+    # The adapter registers in the Registry and needs only an HttpClient besides.
+    assert_type(
+        telegram_chat.layer(token=token),
+        fx.Layer[
+            telegram_chat.TelegramChat | telegram_bot_api.TelegramBotApi,
+            ChatError,
+            HttpClient | ChatRegistry,
+        ],
+    )
+    # The webhook adds a POST route; polling needs the Bot API itself.
+    assert_type(
+        telegram_chat.layer_webhook(path="/t", secret_token=token),
+        fx.Layer[Never, ChatError, HttpRouter | telegram_chat.TelegramChat | ChatHandler],
+    )
+    assert_type(
+        telegram_chat.layer_polling(),
+        fx.Layer[
+            Never,
+            ChatError,
+            telegram_chat.TelegramChat | telegram_bot_api.TelegramBotApi | ChatHandler,
+        ],
     )
     # Scoped options leave the effect's type as it was.
     assert_type(
@@ -12419,3 +12446,37 @@ del _chat_discord
 
 
 del _chat_whatsapp
+            telegram_chat.with_post_options(telegram_chat.TelegramPostOptions(silent=True))
+        ),
+        fx.Effect[int, ValueError, ChatService],
+    )
+    telegram_chat.TelegramPostOptions(silent="yes")  # pyright: ignore[reportArgumentType]
+    assert_type(telegram_chat.parse_mention("@a"), MentionToken | None)
+    thread = telegram_chat.thread(-100, 7)
+    assert_type(telegram_chat.parts(thread), telegram_chat.Parts | None)
+    context = telegram_chat.NormalizeContext(bot_id="1")
+    assert_type(
+        telegram_chat.normalize_interaction({}, context), ButtonClicked | CommandInvoked | None
+    )
+    assert_type(telegram_chat.delivery_key({}, bot_id="1"), str | None)
+    telegram_chat.delivery_key({}, bot_id="1", environment="staging")  # pyright: ignore[reportArgumentType]
+    group: Group[str] = Group(definitions=())
+    assert_type(
+        telegram_chat.set_commands(group),
+        fx.Effect[None, ChatError, telegram_bot_api.TelegramBotApi],
+    )
+    assert_type(
+        telegram_chat.set_webhook(url="https://e.com", secret_token=token),
+        fx.Effect[None, ChatError, telegram_bot_api.TelegramBotApi],
+    )
+    assert_type(
+        telegram_chat.TelegramChat().flat_map(lambda service: service.receive({})),
+        fx.Effect[telegram_chat.Outcome, Never, telegram_chat.TelegramChat | ChatHandler],
+    )
+    assert_type(
+        telegram_bot_api.TelegramBotApi().flat_map(lambda api: api.call("getMe")),
+        fx.Effect[Json, ChatError, telegram_bot_api.TelegramBotApi],
+    )
+
+
+del _chat_telegram
