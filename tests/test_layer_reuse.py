@@ -24,6 +24,7 @@ from layer_cases import (
     ai_decisions,
     ai_otel,
     chat,
+    chat_discord,
     chat_slack,
     cluster,
     core,
@@ -54,6 +55,7 @@ _AREAS = (
     ai_bedrock,
     otlp,
     chat,
+    chat_discord,
     chat_slack,
 )
 CASES: dict[str, Case] = {name: case for area in _AREAS for name, case in area.CASES.items()}

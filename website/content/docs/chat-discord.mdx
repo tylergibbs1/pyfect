@@ -1,0 +1,82 @@
+---
+title: Discord
+description: "Run a pyfect.chat bot on Discord: the adapter, the Gateway, the signed interactions endpoint, and the options that decide who a post notifies."
+---
+
+`pyfect.chat.discord` is Effect's `@effect/chat-discord`, the Discord adapter for
+[Chat](/docs/chat). `discord_chat.layer(bot_token=...)` registers it and needs only an
+`HttpClient`: it calls Discord's REST API (v10) through `discord_rest`, a small client of
+its own, with no Discord SDK. A thread is `discord_chat.thread(channel_id)`, the id of a
+channel, a thread or a direct, and posts, edits, deletes, files, history, threads and
+users all work on it. A 429 or a failed read is retried as `chat_adapter.retry_safe`
+retries; a write that may have landed is not.
+
+## Messages from the Gateway
+
+Discord delivers messages and reactions over its Gateway, a websocket.
+`discord_gateway.layer(token=...)` runs one shard of it: it identifies, heartbeats,
+resumes after a dropped connection and hands every dispatch on. It runs on
+`discord_gateway.layer_ws`, which needs a `WebSocketConstructor` from
+`pyfect.socket.ws` (the `websockets` extra). `discord_chat.layer_gateway()` feeds each
+dispatch to the `ChatHandler`, one event at a time.
+
+A host that stops and starts again, a serverless worker for example, uses
+`discord_chat.layer_dispatch_hook()` instead, with a `ShardStateStore` over storage that
+outlives it. The hook runs before the shard stores a dispatch's sequence, so an event the
+handler refuses with `NotAccepted` comes back with the next RESUME, and a host built again
+resumes the stored session where the last one stopped. Use one of the two, never both.
+
+The adapter reads message text only with the privileged `MESSAGE_CONTENT` intent, which you
+switch on for the application in Discord's developer portal. Without it, `text` is empty on
+every message that does not mention the bot.
+
+## Interactions
+
+Buttons, selects, modals and slash commands arrive as interactions, which must be answered
+within three seconds. Over the Gateway, `discord_chat.layer_gateway_interactions()` hands each
+one to the `chat_interaction.Handler` and answers through Discord's callback endpoint. Over
+HTTP, `discord_chat.layer_interactions(path=..., public_key=...)` adds the Interactions
+Endpoint URL to an `HttpRouter`. Every request is untrusted until it passes Discord's Ed25519
+signature check over the timestamp and the body, with your application's public key, through
+`Signature` (`pyfect.crypto.native.layer_signature`, the `crypto` extra), and a timestamp at
+most five minutes from now. A request that fails it is answered 401, and one over
+`max_body_bytes` (256 KiB) is answered 413 before that. The handler's answer is the HTTP
+response.
+
+<CodeOutput>
+
+<include meta='title="discord_bot.py"'>../../snippets/chat/discord_bot.py</include>
+
+<include lang="text">../../snippets/chat/discord_bot.out</include>
+
+</CodeOutput>
+
+The adapter registers no commands, since Discord's bulk overwrite replaces the whole list:
+`discord_chat.command_requests(group)` gives the payload of each command in a group, to send
+with your others through `DiscordRestService.bulk_set_application_commands`.
+
+## Who a post notifies
+
+Every write sends `allowed_mentions` that notify nobody and the `SUPPRESS_EMBEDS` flag, and a
+reply does not ping its author. `discord_chat.with_post_options(DiscordPostOptions(...))` sets
+the options for every write inside an effect: `notify_users`, `notify_roles`,
+`notify_everyone` and `notify_replied_user` let those mentions notify, `suppress_embeds=False`
+allows link previews, `fail_if_not_exists=False` posts a reply whose message is gone, and
+`auto_archive_duration` sets how long a started thread stays open. Nested options merge, and
+the inner option wins. A command's answer always notifies nobody.
+
+The bot needs these permissions: View Channel, Send Messages, Send Messages in Threads,
+Create Public Threads, Read Message History and Attach Files, plus the
+`applications.commands` scope for slash commands.
+
+## Testing
+
+`discord_chat.normalize` and `discord_chat.normalize_interaction` are pure functions from
+Discord's JSON to events, so captured payloads test them directly. For the adapter's writes,
+provide an `HttpClient` from `pyfect.http.client.layer_test` that answers like Discord, as the
+example above does. Effect's conformance suite runs against the adapter this way in pyfect's
+own tests (`chat_test.conformance`).
+
+Reference: [`discord_chat`](/docs/reference/chat/discord/discord_chat),
+[`discord_gateway`](/docs/reference/chat/discord/discord_gateway),
+[`discord_rest`](/docs/reference/chat/discord/discord_rest).

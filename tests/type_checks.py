@@ -113,6 +113,7 @@ from pyfect.chat.chat_error import ChatError
 from pyfect.chat.chat_error import NotFound as ChatNotFound
 from pyfect.chat.chat_error import Retry as ChatRetry
 from pyfect.chat.chat_thread import ChatThread
+from pyfect.chat.discord import discord_chat, discord_gateway, discord_rest
 from pyfect.chat.slack import slack_chat, slack_web_api
 from pyfect.cli import (
     Argument,
@@ -12267,3 +12268,73 @@ def _chat_slack(effect: fx.Effect[int, ValueError, ChatService]) -> None:
 
 
 del _chat_slack
+
+
+def _chat_discord(effect: fx.Effect[int, ValueError, ChatService]) -> None:
+    from pyfect.chat.chat_event import ChatEvent
+    from pyfect.chat.chat_handler import ChatHandler, NotAccepted
+    from pyfect.chat.chat_test import MentionToken
+    from pyfect.crypto.signature import Signature
+    from pyfect.encoding import Json
+    from pyfect.http.client import HttpClient
+    from pyfect.redacted import make as redacted
+    from pyfect.result import Err, Ok
+
+    token = redacted("bot-token")
+    # The adapter registers in the Registry and needs only an HttpClient besides.
+    assert_type(
+        discord_chat.layer(bot_token=token),
+        fx.Layer[
+            discord_chat.DiscordChat | discord_rest.DiscordRest, Never, HttpClient | ChatRegistry
+        ],
+    )
+    # The interactions endpoint adds to a router and checks signatures with Signature.
+    assert_type(
+        discord_chat.layer_interactions(path="/i", public_key="00" * 32),
+        fx.Layer[Never, Never, HttpRouter | discord_chat.DiscordChat | chat_ci.Handler | Signature],
+    )
+    # The gateway runs on a DiscordWs, and the hook replaces layer_gateway.
+    assert_type(
+        discord_gateway.layer(token=token),
+        fx.Layer[discord_gateway.DiscordGateway, Never, discord_gateway.DiscordWs],
+    )
+    assert_type(
+        discord_gateway.layer_ws,
+        fx.Layer[discord_gateway.DiscordWs, Never, WebSocketConstructor],
+    )
+    assert_type(
+        discord_chat.layer_gateway(),
+        fx.Layer[
+            Never, Never, discord_gateway.DiscordGateway | discord_chat.DiscordChat | ChatHandler
+        ],
+    )
+    assert_type(
+        discord_chat.layer_dispatch_hook(),
+        fx.Layer[discord_gateway.DispatchHook, Never, discord_chat.DiscordChat | ChatHandler],
+    )
+    dispatch = discord_gateway.GatewayDispatch(t="MESSAGE_CREATE", d={})
+    assert_type(
+        discord_chat.DiscordChat().flat_map(lambda discord: discord.dispatch(dispatch)),
+        fx.Effect[None, NotAccepted, discord_chat.DiscordChat | ChatHandler],
+    )
+    assert_type(
+        discord_chat.normalize(dispatch, bot_user_id="1"),
+        Ok[tuple[ChatEvent, ...]] | Err[discord_chat.MissingChannelType],
+    )
+    # Scoped options leave the effect's type as it was.
+    assert_type(
+        effect.pipe(
+            discord_chat.with_post_options(discord_chat.DiscordPostOptions(suppress_embeds=False))
+        ),
+        fx.Effect[int, ValueError, ChatService],
+    )
+    discord_chat.DiscordPostOptions(auto_archive_duration=30)  # pyright: ignore[reportArgumentType]
+    assert_type(discord_chat.parse_mention("<@1>"), MentionToken | None)
+    assert_type(
+        discord_rest.DiscordRest().flat_map(lambda rest: rest.get_my_user()),
+        fx.Effect[Json, ChatError, discord_rest.DiscordRest],
+    )
+    assert_type(discord_chat.thread("1"), ChatThread)
+
+
+del _chat_discord
