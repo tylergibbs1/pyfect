@@ -38,7 +38,7 @@ from pyfect.redacted import Redacted as _Redacted
 from pyfect.schema import ast
 from pyfect.schema._arrays import Array, List, Tuple
 from pyfect.schema._assignable import assignable
-from pyfect.schema._check_guard import guard_check
+from pyfect.schema._check_guard import CheckRaisedError, guard_check, require_fitting
 from pyfect.schema._codecs import URL, Bytes
 from pyfect.schema._collections import FrozenSet
 from pyfect.schema._data import Redacted
@@ -115,19 +115,21 @@ def _of_annotated(
 ) -> AnyBottom:
     """``Annotated[T, ...]``: the last schema among the metadata (as pydantic reads
     ``Annotated[float, S.FiniteFromString]``), else ``T``'s, with the checks among the
-    metadata. pyright can't see that a check there fits the type, so one that raises names
-    the field (``guard_check``)."""
+    metadata. pyright can't see that a check there fits the type: one that can't check a
+    primitive the type holds fails here (``require_fitting``), and one that raises on a
+    value names the field (``guard_check``)."""
     schemas = [m for m in args[1:] if hasattr(m, "__codec__")]
     schema = (
         cast("Codec[Any, Any, Any, Any]", schemas[-1]).__codec__()
         if schemas
         else schema_of(args[0], expanding, field)
     )
-    checks = [
-        guard_check(cast("ast.Check[Any]", m), field)
-        for m in args[1:]
-        if isinstance(m, (ast.Filter, ast.FilterGroup))
+    found = [
+        cast("ast.Check[Any]", m) for m in args[1:] if isinstance(m, (ast.Filter, ast.FilterGroup))
     ]
+    for check in found:
+        require_fitting(check, schema.ast, field)
+    checks = [guard_check(check, field) for check in found]
     return schema.check(checks[0], *checks[1:]) if checks else schema
 
 
@@ -288,6 +290,8 @@ def _key_schema(typed_dict: type[Mapping[str, object]], name: str, annotation: o
     struct = typed_dict_name(typed_dict)
     try:
         return schema_of(annotation, field=f"{struct}[{name!r}]")
+    except CheckRaisedError:
+        raise  # names the key already
     except _KeyWithoutSchema as error:
         raise _KeyWithoutSchema(f"{struct}[{name!r}]: {error}") from None
     except TypeError as error:

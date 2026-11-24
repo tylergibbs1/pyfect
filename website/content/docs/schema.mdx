@@ -28,7 +28,9 @@ made.
 
 A check can also live in the annotation: `Annotated[int, S.is_between(minimum=1, maximum=99)]`
 is an `S.Int` with that check, in a TypedDict, a schema class, a container (`list[...]`) or a
-`type` alias. The checks run when decoding and when constructing a class. Metadata that is
+`type` alias. The checks run when decoding and when constructing a class. A check that can't
+check the type (a length check on an `int`) fails where the class is defined, naming the
+field, since pyright can't see inside the metadata. Metadata that is
 neither a check nor a schema is ignored, and a keyword argument or `S.field(schema)` replaces
 the annotation's schema.
 

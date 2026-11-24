@@ -56,6 +56,7 @@ from pyfect.exit import Failure, Success
 from pyfect.option import Option
 from pyfect.schema import ast
 from pyfect.schema._adapters import CONSTRUCTOR, raise_schema_failure
+from pyfect.schema._check_guard import CheckRaisedError
 from pyfect.schema._constructor_default import tag as tag_schema
 from pyfect.schema._derive import AnyBottom, schema_of
 from pyfect.schema._error import SchemaError
@@ -367,6 +368,8 @@ def _derived(cls: type, name: str) -> AnyBottom:
     """The schema of field ``name``'s annotation; ``TypeError`` naming the field when none."""
     try:
         return schema_of(_annotation(cls, name), field=f"{cls.__name__}.{name}")
+    except CheckRaisedError:
+        raise  # names the field already
     except TypeError as error:
         raise TypeError(f"{cls.__name__}.{name}: {error}") from None
 
