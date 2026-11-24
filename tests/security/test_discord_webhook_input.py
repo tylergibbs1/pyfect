@@ -282,7 +282,11 @@ def test_json_past_the_depth_cap_is_refused_in_linear_time() -> None:
     assert _json.parse("[" * _json.MAX_DEPTH + "]" * _json.MAX_DEPTH) is not None
     # Brackets inside strings do not count.
     assert _json.parse(json.dumps(["[" * 10_000])) == ["[" * 10_000]
-    assert _json.nesting_depth('"\\"[[[" [') == 1
+    # ... nor do those after an escaped quote: this nests exactly MAX_DEPTH deep.
+    assert (
+        _json.parse('["\\"[[[", ' + "[" * (_json.MAX_DEPTH - 1) + "]" * (_json.MAX_DEPTH - 1) + "]")
+        is not None
+    )
 
 
 @pytest.mark.parametrize(

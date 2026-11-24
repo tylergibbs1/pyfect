@@ -9,8 +9,10 @@ import math
 from collections.abc import Mapping
 from typing import cast
 
+from pyfect._js import text_encode
 from pyfect._json_text import PARSE_ERRORS
 from pyfect._json_text import parse as _parse
+from pyfect.chat._json_depth import within_depth
 
 type JsonObject = Mapping[str, object]
 
@@ -24,34 +26,10 @@ class Invalid(Exception):
     """A field of the wrong type: the decoder gives ``None``."""
 
 
-def nesting_depth(text: str) -> int:
-    """How deep the arrays and objects of JSON ``text`` nest, counted in one
-    pass that skips strings. Text that is not JSON gets some number, and the
-    parse refuses it after."""
-    depth = deepest = 0
-    in_string = escaped = False
-    for char in text:
-        if in_string:
-            if escaped:
-                escaped = False
-            elif char == "\\":
-                escaped = True
-            elif char == '"':
-                in_string = False
-        elif char == '"':
-            in_string = True
-        elif char in "[{":
-            depth += 1
-            deepest = max(depth, deepest)
-        elif char in "]}":
-            depth -= 1
-    return deepest
-
-
 def parse(text: str) -> object:
     """The parsed JSON, or ``None`` when ``text`` is not JSON or nests deeper
     than ``MAX_DEPTH``."""
-    if nesting_depth(text) > MAX_DEPTH:
+    if not within_depth(text_encode(text), MAX_DEPTH):
         return None
     try:
         return _parse(text)
