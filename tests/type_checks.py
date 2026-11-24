@@ -2719,6 +2719,15 @@ def check_logger_layer(make: fx.Effect[fx.Logger[str], NotFound, Primary]) -> No
     )
 
 
+def check_rational_nth_root() -> None:
+    from pyfect import rational
+
+    eight_27ths = rational.make_unsafe(8, 27)
+    assert_type(eight_27ths.nth_root(3), rational.Rational | None)
+    assert_type(eight_27ths.nth_root_unsafe(3), rational.Rational)
+    eight_27ths.nth_root(0.5)  # pyright: ignore[reportArgumentType]
+
+
 def check_console(eff: fx.Effect[int, NotFound, Primary]) -> None:
     assert_type(fx.console.log("a", 1), fx.Effect[None])
     assert_type(fx.console.clear, fx.Effect[None])

@@ -160,6 +160,27 @@ class Rational:
             raise ZeroDivisionError("Division by zero")
         return out
 
+    def nth_root(self, degree: int) -> Rational | None:
+        """The exact ``degree``-th root, or ``None`` when it is not rational (or the degree
+        is even and ``self`` negative). In lowest terms that is when the numerator and
+        denominator are both ``degree``-th powers. The degree must be a positive safe
+        integer."""
+        numerator = _exact_root(self.numerator, degree)
+        if numerator is None:
+            return None
+        denominator = _exact_root(self.denominator, degree)
+        if denominator is None:
+            return None
+        # Roots of coprime integers stay coprime, and the denominator stays positive.
+        return _canonical(numerator, denominator)
+
+    def nth_root_unsafe(self, degree: int) -> Rational:
+        """``nth_root``; raises ``ValueError`` when the root is not rational."""
+        out = self.nth_root(degree)
+        if out is None:
+            raise ValueError(f"Cannot take a rational root of degree {degree} of {self.format()}")
+        return out
+
     def negate(self) -> Rational:
         return _canonical(-self.numerator, self.denominator)
 
@@ -215,6 +236,51 @@ class Rational:
 
     def __ge__(self, other: Rational) -> bool:
         return self.compare(other) >= 0
+
+
+_MANTISSA_BITS = 53
+
+
+def _root_floor(n: int, degree: int) -> int:
+    """The largest ``r`` with ``r ** degree <= n``, for ``n >= 0``. Newton's method on
+    whole numbers, started from a float estimate rounded up, since a start below the root
+    overshoots it: the first step lands at or above the floor from any positive start and
+    later steps decrease to it (Brent and Zimmermann, Modern Computer Arithmetic, 1.5.2,
+    Algorithm 1.14)."""
+    if n < 2 or degree == 1:
+        return n
+    bits = n.bit_length()
+    # n < 2 ** bits <= 2 ** degree
+    if degree >= bits:
+        return 1
+    k1 = degree - 1
+
+    def step(x: int) -> int:
+        return (k1 * x + n // x**k1) // degree
+
+    shift = max(bits - _MANTISSA_BITS, 0)
+    exponent = (shift + math.log2(n >> shift)) / degree
+    scale = max(math.floor(exponent) - (_MANTISSA_BITS - 1), 0)
+    x = step(math.ceil(2 ** (exponent - scale)) << scale)
+    y = step(x)
+    while y < x:
+        x, y = y, step(y)
+    return x
+
+
+def _exact_root(n: int, degree: int) -> int | None:
+    """The integer ``degree``-th root of ``n`` when ``n`` is a ``degree``-th power."""
+    if type(degree) is not int or not 1 <= degree <= _MAX_SAFE:
+        raise ValueError(f"Degree must be a positive safe integer, got {js_number(degree)}")
+    if n < 0:
+        if degree % 2 == 0:
+            return None
+        root = -_root_floor(-n, degree)
+    else:
+        root = _root_floor(n, degree)
+    # A root of magnitude at most one is exact only when it equals n, which avoids raising
+    # it to a huge degree.
+    return root if (root if abs(root) <= 1 else root**degree) == n else None
 
 
 def _canonical(numerator: int, denominator: int) -> Rational:

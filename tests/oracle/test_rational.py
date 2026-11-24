@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import math
 import sys
+from typing import cast
 
 import pytest
 from hypothesis import given
@@ -26,6 +27,7 @@ third = _("1/3")
 one = rational.from_big_int(1)
 zero = rational.from_big_int(0)
 MIN_VALUE = 5e-324
+_MAX_SAFE_INTEGER = 2**53 - 1
 
 
 def assert_rational(actual: Rational, numerator: int, denominator: int) -> None:
@@ -109,6 +111,43 @@ def test_pow_takes_integer_exponents_inverting_for_negative_ones() -> None:
         ValueError, match=r"^Exponent must be a safe integer, got 9007199254740992$"
     ):
         third.pow(2**53)
+
+
+def test_nth_root_is_exact_and_none_when_the_root_is_not_rational() -> None:
+    """nthRoot is exact, and none when the root is not rational"""
+    assert _("8/27").nth_root(3) == _("2/3")
+    assert _("-8/27").nth_root(3) == _("-2/3")
+    assert_rational(_("-8/27").nth_root_unsafe(3), -2, 3)
+    assert _("2").nth_root(2) is None
+    assert _("1/2").nth_root(2) is None
+    assert zero.nth_root(_MAX_SAFE_INTEGER) == zero
+    assert one.nth_root(_MAX_SAFE_INTEGER) == one
+    assert _("-1").nth_root(_MAX_SAFE_INTEGER) == _("-1")
+    assert _("2").nth_root(_MAX_SAFE_INTEGER) is None
+    assert _("1/2").nth_root(_MAX_SAFE_INTEGER) is None
+    with pytest.raises(ValueError, match=r"^Cannot take a rational root of degree 2 of 2/1$"):
+        _("2").nth_root_unsafe(2)
+
+
+@pytest.mark.parametrize(
+    ("degree", "text"),
+    [
+        (0, "0"),
+        (-1, "-1"),
+        (0.5, "0.5"),
+        (math.nan, "NaN"),
+        (math.inf, "Infinity"),
+        (_MAX_SAFE_INTEGER + 1, "9007199254740992"),
+    ],
+)
+@pytest.mark.parametrize("unsafe", [False, True])
+def test_nth_root_and_nth_root_unsafe_require_a_positive_safe_integer_degree(
+    degree: float, text: str, unsafe: bool
+) -> None:
+    """nthRoot and nthRootUnsafe require a positive safe integer degree"""
+    root = zero.nth_root_unsafe if unsafe else zero.nth_root
+    with pytest.raises(ValueError, match=rf"^Degree must be a positive safe integer, got {text}$"):
+        root(cast("int", degree))
 
 
 def test_order_equivalence_equal_and_hash_compare_exact_values() -> None:
