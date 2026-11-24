@@ -122,10 +122,12 @@ class TelegramBotApiService:
 
     @property
     def bot_id(self) -> str:
+        """The numeric id in front of the token's colon."""
         return self._bot_id
 
     @property
     def environment(self) -> Environment:
+        """``"production"``, or ``"test"`` for Telegram's test environment."""
         return self._environment
 
     def _method_url(self, method: str) -> str:
