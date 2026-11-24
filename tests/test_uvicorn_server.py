@@ -59,6 +59,17 @@ def _get(path: str) -> fx.Effect[tuple[int, str], Any, HttpClient]:
     return body()
 
 
+def test_the_test_client_sends_absolute_urls_to_the_test_server() -> None:
+    """As Effect's ``layerTestClient`` (``prependUrl(origin)``): the origin goes in front of
+    the whole URL, so the request reaches the test server with that URL as its path."""
+    echo = HttpServerRequest().map(lambda request: server_response.text(request.url))
+    routes = router.add("*", "*", echo)
+    assert _run(_serving(routes, _get("http://api.example/graphql"))) == (
+        200,
+        "/http://api.example/graphql",
+    )
+
+
 def test_the_address_is_the_bound_socket() -> None:
     @fx.fn
     def program():
