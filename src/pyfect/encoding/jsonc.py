@@ -2,7 +2,8 @@
 dependencies: the [JSONC draft](https://jsonc.org/) with ``jsonc-parser``
 3.3.1's default profile, JSON plus line and block comments, no trailing
 commas. One leading byte order mark is skipped. Values are read as pyfect
-reads JSON (``JSON.parse``)::
+reads JSON (``JSON.parse``), but at any nesting depth, as in Effect (the
+rest of pyfect's JSON stops at 512 levels)::
 
     jsonc.parse('{ "port": 8080 } // comment')  # Ok({"port": 8080})
 """

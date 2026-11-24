@@ -14,6 +14,12 @@ from hypothesis import strategies as st
 
 from pyfect._json_depth import nesting_depth, within_depth
 
+# ``codecs.escape_decode`` warns about escapes it is unsure of; the count gives it none.
+pytestmark = pytest.mark.filterwarnings("error")
+
+_ESCAPE_DECODE_SPECIALS = "abfnrtvx01234567N'\"\\\n\r"
+"""Bytes ``codecs.escape_decode`` reads after a backslash as more than itself."""
+
 
 def walked_depth(text: str) -> int | None:
     """The depth counted one character at a time, or ``None`` for text with a
@@ -103,6 +109,25 @@ def test_text_built_to_trip_the_count_gets_the_depth_the_walk_gave(text: str) ->
     assert_counted(text)
 
 
+@pytest.mark.parametrize("after", [*map(chr, range(128)), "é", "€", "\U0001f600", "\ud800"])
+def test_any_character_after_a_backslash_gets_the_depth_the_walk_gave(after: str) -> None:
+    escaped = "\\" + after
+    for text in [
+        f'["{escaped}[", ["{escaped}"]]',
+        f'"{escaped}{escaped}"[[',
+        f'"\\{escaped}"[[',
+        f'[["x{escaped}',
+        f"[{escaped}[",
+    ]:
+        assert_counted(text)
+
+
+@settings(max_examples=200, deadline=None)
+@given(st.text(alphabet=_ESCAPE_DECODE_SPECIALS + '[]{}"', max_size=60))
+def test_text_full_of_escapes_gets_the_depth_the_walk_gave(text: str) -> None:
+    assert_counted(text)
+
+
 def test_every_length_around_a_packed_byte_gets_the_depth_the_walk_gave() -> None:
     picks = random.Random(629)
     for length in range(1, 40):
@@ -117,6 +142,33 @@ def test_within_depth_is_the_walked_depth_against_the_limit(text: str, limit: in
     walked = walked_depth(text)
     if walked is not None:
         assert within_depth(text, limit) == (walked <= limit)
+
+
+def _long_text(picks: random.Random, length: int, *, sparse: bool) -> str:
+    """Text with escapes only inside its strings, and brackets inside and out."""
+    inside = ["a", '\\"', "\\\\", "\\n"] + ([] if sparse else ["[", "]", "{", "}"])
+    outside = ["[", "]", "{", "}"] + [" ", ",", "1"] * (300 if sparse else 1)
+    parts: list[str] = []
+    while sum(map(len, parts)) < length:
+        if picks.random() < 0.2:
+            parts.append('"' + "".join(picks.choices(inside, k=picks.randrange(8))) + '"')
+        else:
+            parts.append(picks.choice(outside))
+    return "".join(parts)
+
+
+def test_within_depth_of_long_text_is_the_walked_depth_against_the_limit() -> None:
+    """Text over 128 characters a level is searched for brackets, not counted."""
+    picks = random.Random(634)
+    settled_by_search = 0
+    for _ in range(60):
+        limit = picks.randrange(1, 12)
+        text = _long_text(picks, 129 * limit, sparse=picks.random() < 0.5)
+        walked = walked_depth(text)
+        assert walked is not None
+        assert within_depth(text, limit) == (walked <= limit), text
+        settled_by_search += text.count("[") + text.count("{") <= limit
+    assert 10 < settled_by_search < 50
 
 
 def test_within_depth_compares_with_the_limit() -> None:

@@ -247,6 +247,8 @@ app needs more room.
   Parameter values are still decoded, and `dataclasses.replace` changes one field.
 - In [HttpApi](/docs/http-api), a body without a `Content-Type` gets a 415 instead of being
   read as JSON, and `security_set_cookie` sets `Secure`, `HttpOnly` and `SameSite=Lax`.
+- A JSON body nested more than 512 arrays and objects deep is a 400, before it is parsed
+  ([JSON nesting limit](/docs/schema#json-nesting-limit)).
 
 <CodeOutput>
 

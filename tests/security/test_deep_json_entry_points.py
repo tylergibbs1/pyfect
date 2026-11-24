@@ -255,3 +255,17 @@ def test_json_array_keeps_its_own_max_depth() -> None:
     assert isinstance(refused, Failure)
     found = refused.cause.find_error()
     assert isinstance(found, Ok) and found.value.kind == "Limit"
+
+
+def test_jsonc_and_json5_read_any_depth_as_effects_do() -> None:
+    """Their parser keeps its own stack, so the limit is not needed there."""
+    from pyfect.encoding import json5, jsonc
+
+    for parse in (jsonc.parse, json5.parse):
+        read = parse(nested(DEEP))
+        assert isinstance(read, Ok)
+        value = read.value
+        for _ in range(DEEP - 1):
+            assert isinstance(value, list) and len(value) == 1
+            value = value[0]
+        assert value == []

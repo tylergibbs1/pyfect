@@ -194,6 +194,39 @@ is an error class that is also a schema, so it can be sent over the wire.
 
 </CodeOutput>
 
+## JSON nesting limit
+
+pyfect reads JSON text nested at most 512 arrays and objects deep. Deeper text is refused
+before it is parsed, and brackets inside strings don't count. This is a deliberate difference
+from Effect, whose `JSON.parse` reads any depth: Python's `json.loads` reads about a hundred
+thousand levels, and code that walks such a value with plain recursion (`==`, `repr`, a
+reviver) then raises `RecursionError`.
+
+Every JSON parse in pyfect goes through this check, and the refusal is the error malformed
+JSON gets at that entry point:
+
+- `S.from_json_string`, `S.UnknownFromJsonString` and config values read through them: a
+  `SchemaError`.
+- `HttpServerRequest.json`, `schema_json`, `schema_body_json` and HttpApi JSON payloads: a 400.
+- HTTP client response bodies, persistence, cluster message storage, workflows and the SQL
+  drivers: the error each one gives malformed JSON.
+- RPC frames: a `ValueError` from `serialization.json` and `json_rpc()`, an
+  `NdjsonDecodeError` from `serialization.ndjson` and `nd_json_rpc()`.
+- `ndjson` decoders: a failure with reason `"InvalidJson"`.
+- AI provider responses and stream events, tool call parameters (a
+  `ToolParameterValidationError`) and MCP messages (a parse error).
+- The chat adapters for Teams (128 levels), Discord, Telegram and WhatsApp (64) stop sooner.
+
+`json_array.decode()` and `decode_string()` take their own `max_depth` (1000 by default) and
+fail with kind `"Limit"`. `jsonc.parse` and `json5.parse` have no limit, as in Effect: their
+parser keeps its own stack, so it reads any depth without recursion.
+
+An app that wraps parsed JSON in envelopes of its own before writing it again (an outbox row
+holding an event, a job holding a request) adds a level per envelope, and the limit applies
+when the outer text is read back. A record 511 levels deep, wrapped twice, is 513 deep and no
+longer reads. Leave headroom by refusing input at your edge a few levels below 512, for
+example with a schema whose nesting is bounded.
+
 ## JSON Schema
 
 `S.to_json_schema_document(schema)` describes the JSON that `S.to_codec_json(schema)` reads

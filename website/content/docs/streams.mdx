@@ -239,7 +239,9 @@ made.
 
 `jsonc.parse`, `json5.parse` and `toml.parse` return a `Result` whose error is an
 `EncodingError` with the line and column; `yaml.parse` raises `ValueError`, as Effect's throws.
-YAML merge keys (`<<`) are read.
+YAML merge keys (`<<`) are read. `jsonc.parse` and `json5.parse` read any nesting depth, as
+Effect's do; the rest of pyfect's JSON stops at 512 levels
+([JSON nesting limit](/docs/schema#json-nesting-limit)).
 
 <include meta='title="config_text.py"'>../../snippets/streams/config_text.py</include>
 

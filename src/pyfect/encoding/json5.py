@@ -5,7 +5,8 @@ package reads values, without its reviver.
 ``parse`` accepts comments, trailing commas, identifier keys, single-quoted
 strings, hexadecimal numbers, ``Infinity`` and ``NaN``. A repeated key keeps
 its last value; ``__proto__`` is an ordinary key. Numbers without a fraction
-or exponent are ``int``::
+or exponent are ``int``. Any nesting depth is read, as in Effect (the rest
+of pyfect's JSON stops at 512 levels)::
 
     json5.parse("{ port: 8080, }")  # Ok({"port": 8080})
 """
