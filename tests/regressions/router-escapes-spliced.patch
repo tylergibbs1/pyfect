@@ -1,7 +1,7 @@
 --- a/src/pyfect/http/find_my_way/_router.py
 +++ b/src/pyfect/http/find_my_way/_router.py
-@@ -78,13 +78,8 @@
-     ``?``, ``;`` or ``#``, and whether parameters must still be decoded."""
+@@ -111,13 +111,8 @@
+     still be decoded."""
      should_decode = should_decode_param = False
      query = ""
 -    # Each ``%25`` becomes ``%2525``, joined once: splicing the path per
@@ -15,7 +15,7 @@
          char = path[i]
          if char == "%":
              if _component_char(path[i + 1 : i + 3]) is None:
-@@ -93,17 +88,14 @@
+@@ -126,17 +121,14 @@
                  should_decode_param = True
                  if path[i + 1 : i + 3] == "25":
                      should_decode = True
@@ -25,7 +25,7 @@
 +                    path = path[: i + 1] + "25" + path[i + 1 :]
 +                    i += 2
                  i += 2
-         elif char in "?;#":
+         elif char in "?#" or (char == ";" and semicolon):
              query = path[i + 1 :]
 -            end = i
 +            path = path[:i]
