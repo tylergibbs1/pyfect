@@ -286,7 +286,7 @@ def test_aggregate_within_fails_fast():
     )
     result = yield from queue.take_all()
     yield from queue.shutdown()
-    assert result == [1, 2, 3, 4, 5]
+    assert result == (1, 2, 3, 4, 5)
 
 
 @testing.effect

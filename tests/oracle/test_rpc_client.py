@@ -615,7 +615,7 @@ def test_does_not_acknowledge_a_waiting_socket_chunk_when_its_stream_consumer_is
     yield from consuming.wait()
     yield from reader.interrupt()
     yield from effect.yield_now()
-    assert (yield from sent.take_all()) == [{"_tag": "Interrupt", "requestId": request_id}]
+    assert (yield from sent.take_all()) == ({"_tag": "Interrupt", "requestId": request_id},)
 
 
 def _routing_client(protocol: ClientProtocolService, client_id: int):

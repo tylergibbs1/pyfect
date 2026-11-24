@@ -118,7 +118,7 @@ def from_queue_array[A](queue: Dequeue[A, Done]) -> Source[tuple[A, ...]]: ...
 def from_queue_array[A, E](queue: Dequeue[A, E | Done]) -> Source[tuple[A, ...], E]: ...
 def from_queue_array(queue: Dequeue[Any, Any]) -> Source[tuple[Any, ...], Any]:
     """``from_queue``, writing every item waiting at once."""
-    return from_pull(_Succeed(queue.take_all().map(tuple)))
+    return from_pull(_Succeed(queue.take_all()))
 
 
 def from_subscription[A](subscription: Subscription[A]) -> Source[A]:
@@ -130,9 +130,7 @@ def from_subscription[A](subscription: Subscription[A]) -> Source[A]:
 
 def from_subscription_array[A](subscription: Subscription[A]) -> Source[tuple[A, ...]]:
     """``from_subscription``, writing every message waiting at once."""
-    take: Effect[tuple[A, ...], Done] = (
-        subscription.take_all().map(tuple).catch_cause(_end_on_interrupt)
-    )
+    take: Effect[tuple[A, ...], Done] = subscription.take_all().catch_cause(_end_on_interrupt)
     return from_pull(_Succeed(take))
 
 

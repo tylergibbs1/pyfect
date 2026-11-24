@@ -13,6 +13,7 @@ from typing import Any, Literal, Never, overload
 
 from pyfect import _tx_ops
 from pyfect._core import Effect
+from pyfect._non_empty import non_empty
 from pyfect.cause import Cause
 from pyfect.cause import fail as fail_cause
 from pyfect.cause import interrupt as interrupt_cause
@@ -211,10 +212,11 @@ class TxQueue[A, E = Never](TxEnqueue[A, E], TxDequeue[A, E]):
 
         return _tx_ops.decide(decide)
 
-    def take_all(self) -> Effect[list[A], E]:
-        """Wait for at least one item, then take them all."""
+    def take_all(self) -> Effect[tuple[A, *tuple[A, ...]], E]:
+        """Wait for at least one item, then take them all (Effect's
+        ``NonEmptyArray``)."""
 
-        def decide(meta: TransactionMeta) -> _Step[list[A], E]:
+        def decide(meta: TransactionMeta) -> _Step[tuple[A, *tuple[A, ...]], E]:
             state = _tx_ops.value(meta, self._state)
             if isinstance(state, _Done):
                 return fail_with(state.cause)
@@ -222,7 +224,7 @@ class TxQueue[A, E = Never](TxEnqueue[A, E], TxDequeue[A, E]):
             if not items:
                 return tx_retry
             self._remove(meta, state, items, len(items))
-            return succeed(list(items))
+            return succeed(non_empty(items[0], items[1:]))
 
         return _tx_ops.decide(decide)
 

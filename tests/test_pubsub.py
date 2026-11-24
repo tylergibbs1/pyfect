@@ -24,7 +24,7 @@ def test_a_message_published_to_a_waiting_subscriber_frees_its_room():
     assert results == [True, True, False]
     assert pubsub.size_unsafe() == 1
     assert (yield from fiber.join()) == 1
-    assert (yield from sub.take_all()) == [2]
+    assert (yield from sub.take_all()) == (2,)
 
 
 @testing.effect
@@ -36,7 +36,7 @@ def test_a_bounded_publish_does_not_wait_for_room_a_waiting_subscriber_freed():
     publisher = yield from pubsub.publish(2).fork(start_immediately=True)
     assert publisher.poll_unsafe() == fx.Success(True)
     assert (yield from taker.join()) == 1
-    assert (yield from sub.take_all()) == [2]
+    assert (yield from sub.take_all()) == (2,)
 
 
 @testing.effect
@@ -48,7 +48,7 @@ def test_a_parked_publish_all_fills_room_a_waiting_subscriber_freed():
     assert publisher.poll_unsafe() is None
     assert (yield from taker.join()) == 1
     assert pubsub.size_unsafe() == 2
-    assert (yield from sub.take_all()) == [2, 3]
+    assert (yield from sub.take_all()) == (2, 3)
 
 
 @testing.effect
@@ -56,10 +56,10 @@ def test_a_bounded_publish_all_waits_for_room_then_completes():
     pubsub = yield from PubSub[int].bounded(2)
     sub = yield from pubsub.subscribe()
     publisher = yield from pubsub.publish_all([1, 2, 3, 4, 5]).fork(start_immediately=True)
-    assert (yield from sub.take_all()) == [1, 2]
+    assert (yield from sub.take_all()) == (1, 2)
     assert publisher.poll_unsafe() is None
-    assert (yield from sub.take_all()) == [3, 4]
-    assert (yield from sub.take_all()) == [5]
+    assert (yield from sub.take_all()) == (3, 4)
+    assert (yield from sub.take_all()) == (5,)
     assert (yield from publisher.join()) is True
 
 
@@ -88,7 +88,7 @@ def test_dropping_publish_all_publishes_what_fits_and_returns_false():
     pubsub = yield from PubSub[int].dropping(2)
     sub = yield from pubsub.subscribe()
     assert (yield from pubsub.publish_all([1, 2, 3])) is False
-    assert (yield from sub.take_all()) == [1, 2]
+    assert (yield from sub.take_all()) == (1, 2)
 
 
 @testing.effect
@@ -98,7 +98,7 @@ def test_sliding_publish_drops_the_oldest_and_unsafe_publish_does_not_slide():
     results = yield from fx.for_each((1, 2, 3), pubsub.publish)
     assert results == [True, True, True]
     assert pubsub.publish_unsafe(4) is False
-    assert (yield from sub.take_all()) == [2, 3]
+    assert (yield from sub.take_all()) == (2, 3)
 
 
 @testing.effect
@@ -111,7 +111,7 @@ def test_sliding_publish_all_slides_before_each_surplus_message():
     taker = yield from sub.take().fork(start_immediately=True)
     yield from pubsub.publish_all([1, 2, 3, 4])
     assert (yield from taker.join()) == 1
-    assert (yield from sub.take_all()) == [4]
+    assert (yield from sub.take_all()) == (4,)
 
 
 @testing.effect
@@ -238,7 +238,7 @@ def test_take_all_behind_a_waiting_take_waits_its_turn():
     single = yield from sub.take().fork(start_immediately=True)
     batch = yield from sub.take_all().fork(start_immediately=True)
     yield from pubsub.publish_all([1, 2, 3])
-    assert [(yield from single.join()), (yield from batch.join())] == [1, [2, 3]]
+    assert [(yield from single.join()), (yield from batch.join())] == [1, (2, 3)]
 
 
 @testing.effect
@@ -270,7 +270,7 @@ def test_a_take_that_starts_waiting_after_end_gets_the_final_message(ops: int):
     )
     pubsub.end_unsafe(0)
     assert (yield from single.join()) == 0
-    assert (yield from batch.join()) == [0]
+    assert (yield from batch.join()) == (0,)
 
 
 @testing.effect
@@ -296,4 +296,4 @@ def test_a_take_woken_with_a_message_gets_it_when_the_pubsub_then_shuts_down():
     yield from pubsub.publish_all([1, 2, 3])
     yield from pubsub.shutdown()
     assert (yield from single.join()) == 1
-    assert (yield from batch.join()) == [2, 3]
+    assert (yield from batch.join()) == (2, 3)

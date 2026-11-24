@@ -1188,6 +1188,8 @@ def check_queue_views(
     # An Enqueue is contravariant, a Dequeue covariant.
     def consume(takes: fx.Dequeue[float, object]) -> None:
         assert_type(takes.take(), fx.Effect[float, object, Never])
+        # Effect's NonEmptyArray: take_all waits for at least one item.
+        assert_type(takes.take_all(), fx.Effect[tuple[float, *tuple[float, ...]], object, Never])
 
     consume(failing)
     offers: fx.Enqueue[bool, Never] = q
@@ -1234,7 +1236,7 @@ def check_pubsub(ps: fx.PubSub[int], sub: Subscription[int]) -> None:
     assert_type(ps.shutdown(), fx.Effect[None, Never, Never])
     assert_type(ps.capacity, int | None)
     assert_type(sub.take(), fx.Effect[int, Never, Never])
-    assert_type(sub.take_all(), fx.Effect[Sequence[int], Never, Never])
+    assert_type(sub.take_all(), fx.Effect[tuple[int, *tuple[int, ...]], Never, Never])
     assert_type(sub.take_up_to(2), fx.Effect[Sequence[int], Never, Never])
     assert_type(sub.take_between(1, 2), fx.Effect[Sequence[int], Never, Never])
     assert_type(sub.remaining_unsafe(), int | None)
@@ -5347,6 +5349,7 @@ def check_tx_queue(
     mixed: fx.TxQueue[int, str | fx.Done],
 ) -> None:
     assert_type(fx.TxQueue[int].bounded(2), fx.Effect[fx.TxQueue[int, Never], Never, Never])
+    assert_type(queue.take_all(), fx.Effect[tuple[int, *tuple[int, ...]], str, Never])
     assert_type(
         fx.TxQueue[int, fx.Done].unbounded(), fx.Effect[fx.TxQueue[int, fx.Done], Never, Never]
     )
@@ -5365,7 +5368,7 @@ def check_tx_queue(
     queue.offer("a")  # pyright: ignore[reportArgumentType]
 
     def drain(dequeue: fx.TxDequeue[float, object]) -> None:
-        assert_type(dequeue.take_all(), fx.Effect[Sequence[float], object, Never])
+        assert_type(dequeue.take_all(), fx.Effect[tuple[float, *tuple[float, ...]], object, Never])
 
     def clear_view(
         ended_view: fx.TxDequeue[int, fx.Done], mixed_view: fx.TxDequeue[int, str | fx.Done]

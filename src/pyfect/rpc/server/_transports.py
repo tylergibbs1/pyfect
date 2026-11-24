@@ -373,10 +373,10 @@ class _HttpHandler:
             # Dispatch concurrently, so the bounded queue can drain; a failed dispatch fails the
             # response.
             yield from dispatch.on_error(terminate).fork_in(scope, start_immediately=True)
-            take_all: Effect[list[Any], Never] = queue.take_all().catch_all(
-                lambda _: succeed(list[Any]())
+            take_all: Effect[tuple[Any, ...], Never] = queue.take_all().catch_all(
+                lambda _: succeed(())
             )
-            initial: list[Any] = yield from take_all.interruptible()
+            initial: tuple[Any, ...] = yield from take_all.interruptible()
             chunks = [encode_text(c) for c in initial]
             if queue.is_done_unsafe():
                 # A failed dispatch may have ended the queue after the initial chunk was taken.

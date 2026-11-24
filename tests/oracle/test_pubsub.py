@@ -122,7 +122,8 @@ def test_sliding_capacity_delivers_each_retained_message_once_per_subscriber(
     duplicate = yield from first.take_up_to(capacity)
     other = yield from second.take_up_to(capacity)
 
-    assert [received, duplicate, other] == [retained, [], retained]
+    expected = tuple(retained) if batch else retained
+    assert [received, duplicate, other] == [expected, [], retained]
 
 
 @pytest.mark.parametrize("capacity", [1, 2, 3])
@@ -154,7 +155,7 @@ def test_unsubscribing_after_a_slide_preserves_the_other_subscribers_messages(ca
 def test_publish_all(capacity: int):
     """publishAll - capacity 2 (BoundedPubSubPow2); publishAll - capacity 4
     (BoundedPubSubPow2); publishAll - capacity 3 (BoundedPubSubArb)"""
-    messages = [1, 2]
+    messages = (1, 2)
     pubsub = yield from PubSub[int].bounded(capacity)
     sub1 = yield from pubsub.subscribe()
     sub2 = yield from pubsub.subscribe()
@@ -312,15 +313,15 @@ def test_infinite_capacity_behaves_as_unbounded():
         pubsub = yield from make(None, replay=2)
         subscription = yield from pubsub.subscribe()
         yield from pubsub.publish_all(values)
-        assert (yield from subscription.take_all()) == values
+        assert (yield from subscription.take_all()) == tuple(values)
         late = yield from pubsub.subscribe()
-        assert (yield from late.take_all()) == [63, 64]
+        assert (yield from late.take_all()) == (63, 64)
 
 
 @testing.effect
 def test_null_values():
     """null values"""
-    messages = [1, None]
+    messages = (1, None)
     pubsub = yield from PubSub[int | None].unbounded()
     sub1 = yield from pubsub.subscribe()
     sub2 = yield from pubsub.subscribe()
@@ -469,7 +470,7 @@ def test_replay_unbounded():
     pubsub = yield from PubSub[int].unbounded(replay=3)
     yield from pubsub.publish_all([1, 2, 3, 4, 5])
     sub = yield from pubsub.subscribe()
-    assert (yield from sub.take_all()) == [3, 4, 5]
+    assert (yield from sub.take_all()) == (3, 4, 5)
 
 
 @testing.effect
@@ -518,19 +519,19 @@ def test_replay_dropping():
 
     yield from pubsub.publish_all([1, 2, 3, 4, 5])
     sub = yield from pubsub.subscribe()
-    assert (yield from sub.take_all()) == [3, 4, 5]
+    assert (yield from sub.take_all()) == (3, 4, 5)
     yield from pubsub.publish_all([6, 7])
-    assert (yield from sub.take_all()) == [6, 7]
+    assert (yield from sub.take_all()) == (6, 7)
 
     sub2 = yield from pubsub.subscribe()
-    assert (yield from sub2.take_all()) == [5, 6, 7]
+    assert (yield from sub2.take_all()) == (5, 6, 7)
 
     yield from pubsub.publish_all([8, 9, 10, 11])
-    assert (yield from sub.take_all()) == [8, 9]
-    assert (yield from sub2.take_all()) == [8, 9]
+    assert (yield from sub.take_all()) == (8, 9)
+    assert (yield from sub2.take_all()) == (8, 9)
 
     sub3 = yield from pubsub.subscribe()
-    assert (yield from sub3.take_all()) == [7, 8, 9]
+    assert (yield from sub3.take_all()) == (7, 8, 9)
 
 
 @testing.effect
@@ -542,17 +543,17 @@ def test_replay_sliding():
     sub = yield from pubsub.subscribe()
     assert (yield from sub.take()) == 3
     yield from pubsub.publish_all([6, 7, 8, 9, 10])
-    assert (yield from sub.take_all()) == [5, 6, 7, 8, 9, 10]
+    assert (yield from sub.take_all()) == (5, 6, 7, 8, 9, 10)
 
     sub2 = yield from pubsub.subscribe()
-    assert (yield from sub2.take_all()) == [8, 9, 10]
+    assert (yield from sub2.take_all()) == (8, 9, 10)
 
     yield from pubsub.publish_all([11, 12, 13, 14, 15, 16])
-    assert (yield from sub.take_all()) == [13, 14, 15, 16]
-    assert (yield from sub2.take_all()) == [13, 14, 15, 16]
+    assert (yield from sub.take_all()) == (13, 14, 15, 16)
+    assert (yield from sub2.take_all()) == (13, 14, 15, 16)
 
     sub3 = yield from pubsub.subscribe()
-    assert (yield from sub3.take_all()) == [14, 15, 16]
+    assert (yield from sub3.take_all()) == (14, 15, 16)
 
 
 @testing.effect
@@ -565,7 +566,7 @@ def test_replay_sliding_preserves_publish_order_with_a_lagging_subscriber():
     yield from pubsub.publish_all([3, 4, 5])
 
     values = yield from subscription.take_all()
-    assert values == sorted(values)
+    assert list(values) == sorted(values)
 
 
 # --- shutdown and interruption ------------------------------------------------------
@@ -711,7 +712,7 @@ def test_end_take_all_delivers_data_published_during_waiter_registration_before_
 
     first = yield from fiber.join()
     last = yield from subscription.take_all()
-    assert [first, last] == [[1], [0]]
+    assert [first, last] == [(1,), (0,)]
 
 
 @testing.effect
@@ -727,10 +728,10 @@ def test_end_delivers_buffered_messages_before_the_final_message_and_rejects_lat
     assert (yield from pubsub.publish_all([3])) is False
     assert pubsub.publish_unsafe(3) is False
 
-    assert (yield from subscription.take_all()) == [1, 2]
+    assert (yield from subscription.take_all()) == (1, 2)
     assert (yield from subscription.take()) == 0
     assert (yield from subscription.take()) == 0
-    assert (yield from subscription.take_all()) == [0]
+    assert (yield from subscription.take_all()) == (0,)
 
 
 @testing.effect
@@ -851,7 +852,7 @@ def test_applying_a_dropping_strategy():
     subscription = yield from pubsub.subscribe()
     published = yield from fx.for_each(("msg1", "msg2", "msg3"), pubsub.publish)
     messages = yield from subscription.take_all()
-    assert (published, messages) == ([True, True, False], ["msg1", "msg2"])
+    assert (published, messages) == ([True, True, False], ("msg1", "msg2"))
 
 
 @testing.effect
@@ -860,4 +861,4 @@ def test_applying_a_sliding_strategy():
     pubsub = yield from PubSub.make(lambda: Atomic[str].bounded(2), SlidingStrategy)
     subscription = yield from pubsub.subscribe()
     yield from fx.for_each(("msg1", "msg2", "msg3", "msg4"), pubsub.publish)
-    assert (yield from subscription.take_all()) == ["msg3", "msg4"]
+    assert (yield from subscription.take_all()) == ("msg3", "msg4")

@@ -25,6 +25,7 @@ from pyfect._core import (
 from pyfect._effect_args import require_effect
 from pyfect._effect_base import Decided
 from pyfect._fiber import FiberDispatcher, current_fiber
+from pyfect._non_empty import non_empty
 from pyfect._primitives import _SuspendTake
 from pyfect._waiters import WaitList
 from pyfect.cause import Cause
@@ -46,6 +47,11 @@ _FALSE: Effect[bool] = _FromExit(Success(False))
 # the one that added the item, made once, as this is the hot path.
 _ADDED: Exit[bool, Never] = Decided(True)
 _REFUSED: Exit[bool, Never] = Decided(False)
+
+
+def _non_empty_taken[A](items: list[A]) -> tuple[A, *tuple[A, ...]]:
+    """A take of at least one item (``take_all``), shaped in the step that takes it."""
+    return non_empty(items[0], items[1:])
 
 
 class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
@@ -344,9 +350,10 @@ class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
         """``take_between(n, n)``."""
         return self._take_between(n, n, list)
 
-    def take_all(self) -> Effect[list[A], E]:
-        """Wait for at least one item, then take everything."""
-        return self._take_between(1, None, list)
+    def take_all(self) -> Effect[tuple[A, *tuple[A, ...]], E]:
+        """Wait for at least one item, then take everything (Effect's
+        ``NonEmptyArray``)."""
+        return self._take_between(1, None, _non_empty_taken)
 
     def _take_chunk(self) -> Effect[tuple[A, ...], E]:
         """``take_all`` as a stream chunk, in the same op: Effect's channels
@@ -424,7 +431,7 @@ class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
         def body() -> Generator[Effect[Any, Any, Any], Any, list[Any]]:
             out: list[Any] = []
             while True:
-                taken: Exit[list[Any], Any] = yield self.take_all().exit()
+                taken: Exit[tuple[Any, ...], Any] = yield self.take_all().exit()
                 match taken:
                     case Success(value=items):
                         out.extend(items)

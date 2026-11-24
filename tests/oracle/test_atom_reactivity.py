@@ -82,11 +82,11 @@ def test_reruns_a_query_once_per_invalidation_with_matching_collection_and_membe
         return runs[0]
 
     results = yield from reactivity.query({"users": [1]}, fx.sync(run))
-    assert (yield from results.take_all()) == [1]
+    assert (yield from results.take_all()) == (1,)
     yield from reactivity.invalidate({"users": [1]})
-    assert (yield from results.take_all()) == [2]
+    assert (yield from results.take_all()) == (2,)
     yield from reactivity.invalidate({"users": [1]})
-    assert (yield from results.take_all()) == [3]
+    assert (yield from results.take_all()) == (3,)
 
 
 @testing.effect
@@ -100,7 +100,7 @@ def test_reruns_a_query_once_per_batch_with_multiple_matching_array_keys():
         return runs[0]
 
     results = yield from reactivity.query(["a", "b"], fx.sync(run))
-    assert (yield from results.take_all()) == [1]
+    assert (yield from results.take_all()) == (1,)
 
     @fx.gen
     def invalidations():
@@ -111,9 +111,9 @@ def test_reruns_a_query_once_per_batch_with_multiple_matching_array_keys():
 
     batch = reactivity.with_batch(invalidations)
     yield from batch
-    assert (yield from results.take_all()) == [2]
+    assert (yield from results.take_all()) == (2,)
     yield from batch
-    assert (yield from results.take_all()) == [3]
+    assert (yield from results.take_all()) == (3,)
 
 
 @testing.effect

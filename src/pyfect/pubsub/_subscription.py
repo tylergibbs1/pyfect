@@ -9,7 +9,7 @@ message, which gets it (Effect runs that take before the unsubscribe).
 
 The subscription only gives ``A``s, so it is covariant (Effect's ``out
 A``): its state is kept as ``Any`` and typed by the methods, and batches
-are typed ``Sequence`` (they are lists).
+are typed ``Sequence`` (they are lists), except ``take_all``'s non-empty tuple.
 """
 # pyright: reportPrivateUsage=false
 
@@ -32,6 +32,7 @@ from pyfect._core import (
     _Sync,
     _WithFiber,
 )
+from pyfect._non_empty import non_empty
 from pyfect._waiters import unlocked
 from pyfect.cause import Cause
 from pyfect.cause import interrupt as interrupt_cause
@@ -79,11 +80,12 @@ class Subscription[A]:
                 return _Succeed(hub.ended.value)
         return self._park(_identity, self._take_attempt)
 
-    def take_all(self) -> Effect[Sequence[A]]:
-        """Wait for at least one message, then take every one there is."""
+    def take_all(self) -> Effect[tuple[A, *tuple[A, ...]]]:
+        """Wait for at least one message, then take every one there is
+        (Effect's ``NonEmptyArray``)."""
         return _Suspend(self._take_all_attempt)
 
-    def _take_all_attempt(self) -> Effect[Sequence[A]]:
+    def _take_all_attempt(self) -> Effect[tuple[A, *tuple[A, ...]]]:
         reader = self._reader
         hub = self._hub
         with hub.lock:
@@ -91,12 +93,11 @@ class Subscription[A]:
                 return _interrupt()
             polled = reader.poll_up_to(reader.backing.size())
             hub.on_empty_space()
-            if reader.replay.remaining:
-                return _Succeed(reader.replay.take_all() + polled)
-            if polled:
-                return _Succeed(polled)
+            taken = reader.replay.take_all() + polled if reader.replay.remaining else polled
+            if taken:
+                return _Succeed(non_empty(taken[0], taken[1:]))
             if hub.ended is not None:
-                return _Succeed([hub.ended.value])
+                return _Succeed((hub.ended.value,))
         return self._park(partial(_take_all_more, self), self._take_all_attempt)
 
     def take_up_to(self, n: int) -> Effect[Sequence[A]]:
@@ -244,10 +245,10 @@ class _Collect[A, X](Frame):
         return Failure(cause)
 
 
-def _take_all_more[A](subscription: Subscription[A], first: A) -> Sequence[A]:
+def _take_all_more[A](subscription: Subscription[A], first: A) -> tuple[A, *tuple[A, ...]]:
     """Called by ``_Collect`` holding the hub's lock. Not a method: one taking
     an ``A`` would make ``Subscription`` invariant."""
     reader = subscription._reader
     rest = reader.poll_up_to(reader.backing.size())
     subscription._hub.on_empty_space()
-    return [first, *rest]
+    return non_empty(first, rest)
