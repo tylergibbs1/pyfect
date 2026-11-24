@@ -116,16 +116,16 @@ import threading
 import _stalls
 
 arm = _stalls._DumpTimer.arm
-late_next = threading.Event()
+late = threading.Event()
 armed_late = threading.Event()
 
 
 def arm_late(timer):
-    \"\"\"The watchdog's arming, noting the dump due 0.2 s before it fires: the dump then reads
-    0.2 s late, as a loaded host's signal delivery made it (CI, 3.14.0, load 8.7 on 4 CPUs).\"\"\"
+    \"\"\"The watchdog's arming, once ``late`` is set noting each dump due 0.2 s before it fires:
+    the dump then reads 0.2 s late, as a loaded host's signal delivery made it (CI, 3.14.0, load
+    8.7 on 4 CPUs).\"\"\"
     arm(timer)
-    if late_next.is_set():
-        late_next.clear()
+    if late.is_set():
         timer._current.due -= 0.2
         armed_late.set()
 
@@ -138,9 +138,40 @@ def sleep_on_purpose():
 
 
 def test_sleeps_holding_the_gil():
-    late_next.set()
-    armed_late.wait(timeout=2)
-    sleep_on_purpose()  # within a tick of the late arming: its dump comes during the read
+    late.set()
+    assert armed_late.wait(timeout=2)
+    sleep_on_purpose()  # whichever arming is current when the read starts, its dump reads late
+    assert False
+"""
+)
+
+GIL_HELD_SLEEP_JUDGED_SLOWLY = (
+    _SLEEP_HOLDING_THE_GIL
+    + """
+import time
+
+import _stalls
+
+judge = _stalls.Watchdog._process_stall
+
+
+def judge_slowly(watchdog, *args, **kwargs):
+    \"\"\"The watchdog's judging of a stall, done 0.5 s late: what a loaded host made of its
+    wait for a SIGCONT (1.2 s, 4 CPUs with 28 busy processes).\"\"\"
+    stall = judge(watchdog, *args, **kwargs)
+    time.sleep(0.5)
+    return stall
+
+
+_stalls.Watchdog._process_stall = judge_slowly
+
+
+def sleep_on_purpose():
+    ctypes.PyDLL(None).read(*a_pipe_written_in(1))  # the GIL stays held, no CPU used
+
+
+def test_sleeps_holding_the_gil():
+    sleep_on_purpose()
     assert False
 """
 )
@@ -344,11 +375,23 @@ def test_a_c_call_holding_the_gil_dumped_late_is_named_pyfect_not_host(
 ) -> None:
     """A loaded host delivers the dump's signal late (0.1 s on CI), but the dump still came
     while the call held the GIL, a threshold before the watchdog could tick: the process was
-    running, so the stall is the call's, as with a dump on time."""
+    running, so the stall is the call's, as with a dump on time. The read is one stall (the
+    GIL stays held, so the watchdog cannot tick in it): naming the call is its whole verdict,
+    and other stalls a loaded host adds to the run may rightly read "unexplained"."""
     out = _run(pytester, monkeypatch, GIL_HELD_SLEEP_DUMPED_LATE)
     assert "pyfect blocked in sleep_on_purpose (" in out, out
     assert ": host" not in out
-    assert "unexplained" not in out
+
+
+@pytest.mark.skipif(__import__("sys").platform == "win32", reason="libc read through ctypes")
+def test_a_stall_judged_slowly_is_in_the_failure_it_happened_in(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The v0.6.24 release run: judging the stall outlasted the failure report's wait for it,
+    and teardown disarmed the watchdog before it was recorded, so the failure had no stall
+    section. The report waits for the stall's judgment, however long it takes."""
+    out = _run(pytester, monkeypatch, GIL_HELD_SLEEP_JUDGED_SLOWLY)
+    assert re.search(r"-+ stall -+\nprocess stalled 1\.\d s: ", out), out
 
 
 def test_a_deadlock_is_no_stall(pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch) -> None:

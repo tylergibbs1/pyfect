@@ -638,11 +638,14 @@ class Watchdog:
     def take(self) -> list[str]:
         """The stalls seen since the last ``take``. A watchdog overdue for its tick has just
         been starved (the stall may have ended a moment ago, on this thread), so this waits
-        for its next tick first; otherwise it returns at once."""
+        for its next tick first; otherwise it returns at once. No timeout: judging a stall
+        waits for a dump and a SIGCONT (5 ticks), and a loaded host delays it more (1.2 s, 4
+        CPUs with 28 busy processes): a stall still being judged belongs to this take."""
         with self._ticked:
             if time.monotonic() - self._last > 2 * self.tick:
                 ticks = self._ticks
-                self._ticked.wait_for(lambda: self._ticks != ticks, timeout=4 * self.tick)
+                while self._ticks == ticks and self._thread.is_alive():
+                    self._ticked.wait(self.tick)
         self._write_sampled_head()
         with self._lock:
             stalls, self.stalls = self.stalls, []
@@ -1024,10 +1027,10 @@ def pytest_runtest_makereport(
     watchdog = item.config.stash.get(_WATCHDOG, None)
     if watchdog is None or _STALLS not in item.stash:
         return report
+    stalls = item.stash[_STALLS]
+    stalls.extend(watchdog.take())  # before disarming: a stall judged meanwhile is recorded
     if call.when == "teardown":
         watchdog.disarm()
-    stalls = item.stash[_STALLS]
-    stalls.extend(watchdog.take())
     if call.when == "call" and report.passed:
         blocked = _blocked_past_limit(item, watchdog, stalls)
         if blocked is not None and item.config.getini("blocked_past_limit") == "warn":
