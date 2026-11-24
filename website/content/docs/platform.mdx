@@ -193,10 +193,11 @@ runs the client span and adds the trace headers, so `send` only moves bytes.
 `signal` is the request's `AbortSignal` (`pyfect.http.abort`, the `AbortController` and
 `AbortSignal` pair Effect's clients use). It fires when the request is interrupted, and later
 when the response is done with: its body stream ends, it is dropped unread, or the scope of a
-`with_scope` client closes. `signal.add_listener(f)` runs `f` when it fires, at once if it has
+`with_scope` client closes. `signal.on_abort(f)` runs `f` when it fires, at once if it has
 fired already, and returns a function that removes `f`; `signal.aborted` says whether it has.
-A listener runs once, on the thread that aborts, so keep it short: cancel the work, close the
-connection.
+`signal.add_listener(f)` is a WHATWG `"abort"` listener: it never runs on a signal that has
+already fired. A listener runs once, on the thread that aborts, so keep it short: cancel the
+work, close the connection.
 
 <CodeOutput>
 

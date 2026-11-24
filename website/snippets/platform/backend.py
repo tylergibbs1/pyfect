@@ -24,7 +24,7 @@ def send(request: HttpClientRequest, url: fx.Url, signal: AbortSignal, _fiber: A
             print("aborted", url.pathname)
 
         # The signal fires when the request is interrupted: stop the work it started.
-        signal.add_listener(abort)
+        signal.on_abort(abort)
         timer.start()
 
     return fx.callback(register)

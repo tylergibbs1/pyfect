@@ -2,8 +2,8 @@
 without stopping the rest, and the client's abort paths keep that when a
 backend's listener raises. ``on_abort`` listens as Effect does, on a WHATWG
 ``AbortSignal``: once per listener, not when removed or added during the abort,
-and at once on a signal that already fired. ``add_listener`` keeps 0.6.10's
-behaviour until 0.7.0: it runs at once on a fired signal, and each add runs."""
+and at once on a signal that already fired. ``add_listener`` is the WHATWG
+listener itself: never on a signal that already fired."""
 
 import ast
 import gc
@@ -40,15 +40,15 @@ def test_a_raising_listener_is_logged_and_the_others_still_run(
     assert str(record.exc_info[1]) == "listener failed"
 
 
-def test_add_listener_runs_a_listener_added_after_the_abort_at_once_as_in_0_6_10() -> None:
+def test_add_listener_never_runs_a_listener_added_after_the_abort() -> None:
     controller = AbortController()
     controller.abort()
     runs: list[str] = []
     controller.signal.add_listener(lambda: runs.append("late"))()
-    assert runs == ["late"]
+    assert runs == []
 
 
-def test_add_listener_runs_each_add_and_one_removed_during_the_abort_as_in_0_6_10() -> None:
+def test_add_listener_runs_a_listener_once_and_not_when_removed_or_added_during_the_abort() -> None:
     controller = AbortController()
     runs: list[str] = []
     removers: list[Any] = []
@@ -66,7 +66,7 @@ def test_add_listener_runs_each_add_and_one_removed_during_the_abort_as_in_0_6_1
     controller.signal.add_listener(listener)
     controller.signal.add_listener(listener)
     controller.abort()
-    assert runs == ["first", "added during", "removed", "ran", "ran"]
+    assert runs == ["first", "ran"]
 
 
 def test_on_abort_runs_a_listener_added_after_the_abort_at_once() -> None:
@@ -150,8 +150,7 @@ _SRC = Path(__file__).resolve().parents[1] / "src" / "pyfect"
 
 
 def test_pyfect_listens_on_signals_with_on_abort() -> None:
-    """``on_abort`` is Effect's way to listen, and from 0.7.0 ``add_listener``
-    no longer runs for a signal that already fired, so a backend handed an
+    """``add_listener`` never runs for a signal that already fired, so a backend handed an
     aborted signal (``with_scope`` after its scope closed, an interrupt racing a
     response) would keep running: pyfect's own code uses ``on_abort``."""
     calls = [
