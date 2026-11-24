@@ -8,7 +8,7 @@ worker one value before any request: provide ``InitialMessage`` with
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Never
 
 from pyfect import schema as S
 from pyfect._core import Effect
@@ -30,15 +30,15 @@ class InitialMessage(Tag[Effect[Encoded]], key="effect/rpc/RpcWorker/InitialMess
     """Makes the value a worker client sends each worker first."""
 
 
-def make_initial_message[A, E = Any, R = Any](
-    schema: S.Codec[A, Any, Any, Any], eff: Effect[A, E, R]
-) -> Effect[Encoded, E | S.SchemaError, R]:
+def make_initial_message[A, E, RR](
+    schema: S.Codec[A, Any, Any, RR], eff: Effect[A, E, RR]
+) -> Effect[Encoded, E | S.SchemaError, RR]:
     """Run ``eff`` and encode its value with ``schema``'s JSON codec,
     collecting its transferables."""
     require_effect(eff, "eff")
     encode = S.encode_effect(S.to_codec_json(schema))
 
-    def encoded(value: A) -> Effect[Encoded, S.SchemaError, Any]:
+    def encoded(value: A) -> Effect[Encoded, S.SchemaError, RR]:
         collector = make_collector_unsafe()
         return (
             encode(value)
@@ -49,9 +49,9 @@ def make_initial_message[A, E = Any, R = Any](
     return eff.flat_map(encoded)
 
 
-def layer_initial_message[A, R = Any](
-    schema: S.Codec[A, Any, Any, Any], build: Effect[A, Any, R]
-) -> Layer[InitialMessage, Any, R]:
+def layer_initial_message[A, RR](
+    schema: S.Codec[A, Any, Any, RR], build: Effect[A, Never, RR]
+) -> Layer[InitialMessage, Never, RR]:
     """Provide ``InitialMessage`` from ``build``, run with the layer's
     services each time a worker spawns; an encoding failure is a defect."""
     require_effect(build, "build")
@@ -68,9 +68,9 @@ def _from_option(found: Option[object]) -> Effect[object, NoSuchElementException
     return succeed(found.value)
 
 
-def initial_message[A](
-    schema: S.Codec[A, Any, Any, Any],
-) -> Effect[A, NoSuchElementException | S.SchemaError, ServerProtocol]:
+def initial_message[A, RD](
+    schema: S.Codec[A, Any, RD, Any],
+) -> Effect[A, NoSuchElementException | S.SchemaError, ServerProtocol | RD]:
     """The initial message the client sent this worker, decoded with
     ``schema``'s JSON codec; fails when the protocol has none."""
     decode = S.decode_unknown_effect(S.to_codec_json(schema))

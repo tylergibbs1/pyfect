@@ -33,19 +33,25 @@ def to_iso_focus(_: Codec[object, object, object, object], /) -> optic.Iso[Any, 
     return optic.Id()
 
 
+class _OverrideToCodecIso[T]:
+    __slots__ = ("_link",)
+
+    def __init__(self, link: ast.Link) -> None:
+        self._link = link
+
+    def _get_link(self, _: tuple[ast.AST, ...]) -> ast.Link:
+        return self._link
+
+    def __call__[E, RD, RE](self, schema: Codec[T, E, RD, RE], /) -> Bottom[T, E, RD, RE]:
+        return Bottom(ast.annotate(schema.__codec__().ast, {"to_codec_iso": self._get_link}))
+
+
 def override_to_codec_iso[T, I](
     to: Codec[I, object, object, object], transformation: Transformation[T, I], /
-) -> Callable[[Codec[T, Any, Any, Any]], Bottom[T, Any, Any, Any]]:
-    """``schema`` whose plain form is ``to``, read through ``transformation``."""
-    link = ast.Link(to.__codec__().ast, transformation)
-
-    def get_link(_: tuple[ast.AST, ...]) -> ast.Link:
-        return link
-
-    def override(schema: Codec[T, Any, Any, Any]) -> Bottom[T, Any, Any, Any]:
-        return Bottom(ast.annotate(schema.__codec__().ast, {"to_codec_iso": get_link}))
-
-    return override
+) -> _OverrideToCodecIso[T]:
+    """``schema`` whose plain form is ``to``, read through ``transformation``;
+    it keeps ``schema``'s encoded type and services."""
+    return _OverrideToCodecIso(ast.Link(to.__codec__().ast, transformation))
 
 
 class _Derivation(CodecDerivation):

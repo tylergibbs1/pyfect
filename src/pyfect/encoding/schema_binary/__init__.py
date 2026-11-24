@@ -292,23 +292,29 @@ def _with_key_id(node: ast.AST, id: int) -> ast.AST:
     return ast.replace_context(node, key_annotations=annotations)
 
 
-def field_id(id: int, /) -> Callable[[S.Top], S.Bottom[Any, Any, Any, Any]]:
-    """Assigns a struct property's wire field id, an integer from 1 through
-    4294967295: to preserve it across a rename or resolve a hash collision.
-    Anything else raises ``ValueError``."""
-    if type(id) is not int or not 0 < id <= _MAX_FIELD_ID:
-        raise ValueError(f"Binary layout field id must be an integer in [1, 4294967295], got {id}")
+class _FieldId:
+    __slots__ = ("_id",)
 
-    def annotate(schema: S.Top) -> S.Bottom[Any, Any, Any, Any]:
+    def __init__(self, id: int) -> None:
+        self._id = id
+
+    def __call__[A, I, RD, RE](self, schema: S.Codec[A, I, RD, RE], /) -> S.Bottom[A, I, RD, RE]:
         codec = schema.__codec__()
-        node = _with_key_id(codec.ast, id)
+        node = _with_key_id(codec.ast, self._id)
         if node.encoding is not None:
             *init, last = node.encoding
-            link = ast.Link(_with_key_id(last.to, id), last.transformation)
+            link = ast.Link(_with_key_id(last.to, self._id), last.transformation)
             node = replace(node, encoding=(*init, link))
         return replace(codec, ast=node)
 
-    return annotate
+
+def field_id(id: int, /) -> _FieldId:
+    """Assigns a struct property's wire field id, an integer from 1 through
+    4294967295: to preserve it across a rename or resolve a hash collision.
+    Anything else raises ``ValueError``. The schema keeps its types."""
+    if type(id) is not int or not 0 < id <= _MAX_FIELD_ID:
+        raise ValueError(f"Binary layout field id must be an integer in [1, 4294967295], got {id}")
+    return _FieldId(id)
 
 
 __all__ = [

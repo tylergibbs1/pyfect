@@ -266,6 +266,10 @@ class _StatusAnnotate(_Annotate):
     def __init__(self, code: int) -> None:
         super().__init__({"http_api_status": code})
 
+    @overload
+    def __call__[B: Bottom[Any, Any, Any, Any]](self, schema: B, /) -> B: ...
+    @overload
+    def __call__[A, I, RD, RE](self, schema: Codec[A, I, RD, RE], /) -> Bottom[A, I, RD, RE]: ...
     def __call__(self, schema: Codec[Any, Any, Any, Any], /) -> Bottom[Any, Any, Any, Any]:
         codec = schema.__codec__()
         if _status_annotations(codec.ast) is None:

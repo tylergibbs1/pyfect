@@ -5013,6 +5013,42 @@ def check_schema_transformations(db: Db) -> None:
     )
     assert_type(transferable.getter_add_all(str.split), G.Getter[str, str, Never])
 
+    # The wrappers that annotate a schema keep its services.
+    from pyfect.encoding import schema_binary
+    from pyfect.http import problem_details
+
+    needs_primary = S.String.pipe(S.decode_to(S.Int, needs_db))
+    assert_type(problem_details.optional_member(needs_primary), S.Bottom[int, str, Primary, Never])
+    assert_type(problem_details.fixed_member(404), S.Bottom[int, int, Never, Never])
+    assert_type(
+        needs_primary.pipe(
+            S.override_to_codec_iso(S.Int, T.Transformation(G.passthrough(), G.passthrough()))
+        ),
+        S.Bottom[int, str, Primary, Never],
+    )
+    assert_type(needs_primary.pipe(schema_binary.field_id(7)), S.Bottom[int, str, Primary, Never])
+
+    # The RPC worker's initial message needs the services of its codec's side, and, as in
+    # Effect, its build cannot fail.
+    from pyfect.rpc import worker as rpc_worker_module
+
+    flipped = S.flip(needs_primary)
+    assert_type(
+        rpc_worker_module.make_initial_message(flipped, fx.succeed("1")),
+        fx.Effect[rpc_worker_module.Encoded, S.SchemaError, Primary],
+    )
+    assert_type(
+        rpc_worker_module.layer_initial_message(flipped, Port().map(str)),
+        fx.Layer[rpc_worker_module.InitialMessage, Never, Primary | Port],
+    )
+    rpc_worker_module.layer_initial_message(S.String, fx.fail(ValueError()))  # pyright: ignore[reportArgumentType]
+    assert_type(
+        rpc_worker_module.initial_message(needs_primary),
+        fx.Effect[
+            int, fx.NoSuchElementException | S.SchemaError, rpc_server.ServerProtocol | Primary
+        ],
+    )
+
     # A middleware replaces the services it provides; catching adds its own.
     def fallback(issue: Issue) -> fx.Effect[Option[str], Issue, Port]:
         return Port().map(lambda port: Some(str(port)))

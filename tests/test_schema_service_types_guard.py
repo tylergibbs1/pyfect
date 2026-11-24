@@ -44,12 +44,6 @@ ALLOWED: dict[str, str] = {
     "http_api/endpoint.py:__codec__": "an endpoint's payload, chosen at run time",
     "sql/model.py:id_schema": "the id field of a runtime model class",
     "schema/transformation/_transformation.py:is_transformation": "a TypeIs over any value",
-    # Keeping the wrapped schema's services can fail code that type-checked: 0.7.0.
-    "encoding/schema_binary/__init__.py:field_id": "0.7.0: layer-initial-message-070",
-    "http/problem_details.py:fixed_member": "0.7.0: layer-initial-message-070",
-    "http/problem_details.py:optional_member": "0.7.0: layer-initial-message-070",
-    "http_api/schema.py:__call__": "0.7.0: layer-initial-message-070 (_StatusAnnotate)",
-    "schema/_to_iso.py:override_to_codec_iso": "0.7.0: layer-initial-message-070",
 }
 
 

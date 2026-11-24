@@ -10,7 +10,7 @@ typed problem classes on the same members.
 
 from __future__ import annotations
 
-from typing import Any, Final, LiteralString, Never, NotRequired, cast
+from typing import Final, LiteralString, NotRequired, cast
 
 from typing_extensions import TypedDict
 
@@ -19,6 +19,7 @@ from pyfect._core import Effect
 from pyfect.effect import succeed
 from pyfect.http.server_response import HttpServerResponse, json_unsafe
 from pyfect.option import Option, Some
+from pyfect.schema.issue import Issue
 
 CONTENT_TYPE: Final = "application/problem+json"
 """The media type of a problem details body."""
@@ -38,26 +39,26 @@ class ProblemDetails(TypedDict, extra_items=object):
     instance: NotRequired[str]
 
 
-def optional_member[A, E](schema: S.Codec[A, E, Any, Any], /) -> S.Bottom[A, E, Any, Any]:
+def optional_member[A, E, RD, RE](schema: S.Codec[A, E, RD, RE], /) -> S.Bottom[A, E, RD, RE]:
     """A standard member left out when it has the wrong JSON type (RFC 9457
     section 3.1); its key must be optional (``NotRequired``, or a default)."""
 
-    def missing(_: object) -> Effect[Option[A], Any, Never]:
+    def missing(_: object) -> Effect[Option[A], Issue]:
         return succeed(None)
 
     return schema.__codec__().pipe(S.catch_decoding(missing))
 
 
-def fixed_member[L: str | int](value: L, /) -> S.Bottom[L, L, Any, Any]:
+def fixed_member[L: str | int](value: L, /) -> S.Bottom[L, L]:
     """A member that always decodes to ``value``, whatever (or whether) the
     body carries it; ``value`` is also its constructor default."""
     literal = cast("LiteralString | int", value)
     defaulted = S.with_decoding_default_key(succeed(literal))(S.tag(literal))
 
-    def fixed(_: object) -> Effect[Option[LiteralString | int], Any, Never]:
+    def fixed(_: object) -> Effect[Option[LiteralString | int], Issue]:
         return succeed(Some(literal))
 
-    return cast("S.Bottom[L, L, Any, Any]", defaulted.pipe(S.catch_decoding(fixed)))
+    return cast("S.Bottom[L, L]", defaulted.pipe(S.catch_decoding(fixed)))
 
 
 Schema: S.Bottom[ProblemDetails, dict[str, object]] = S.Struct(
