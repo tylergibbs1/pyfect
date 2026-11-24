@@ -340,7 +340,7 @@ class _HttpHandler:
             queue = yield from Queue[Any, Done].make(capacity)
             parser = serialization.make_unsafe()
             request_ids: list[RequestId] = []
-            client = _HttpClient(self._writer(queue, parser), queue.end().as_void())
+            client = _HttpClient(self._writer(queue, parser), queue.end().and_then(queue.flush()))
 
             write = self._writes[0]
             terminate = _terminator(queue, request_ids, lambda m: write(client_id, m))

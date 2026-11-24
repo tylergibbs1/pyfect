@@ -107,6 +107,7 @@ from pyfect.effect import (
     succeed,
     suspend,
     sync,
+    with_fiber,
 )
 from pyfect.exit import Success
 from pyfect.http.server_request import HttpServerRequest, ServerRequest
@@ -424,19 +425,21 @@ class Connection:
             .ensuring(sync(done))
         )
 
-        def track(fiber: Fiber[None, Never]) -> Fiber[None, Never]:
+        def track(fiber: Fiber[Any, Any]) -> None:
             self._inflight[id] = fiber
             self._liveness[id] = liveness
             if request.method == SUBSCRIPTIONS_LISTEN.name:
                 self._listening.add(id)
-            return fiber
 
         def begin() -> Effect[Fiber[None, Never]]:
             if id in self._inflight:
                 # As Effect's RpcServer: a request reusing an id still in
                 # flight is refused, unanswered, and the first keeps the id.
                 return _VOID.fork_daemon()
-            return served.fork_daemon().map(track)
+            # As Effect's RpcServer (``runForkWith``): the request runs at once,
+            # tracked before it starts, so it may end (or be cancelled) in this step.
+            tracked = with_fiber(lambda fiber: sync(lambda: track(fiber)).and_then(served))
+            return tracked.fork_daemon(start_immediately=True)
 
         return suspend(begin)
 

@@ -33,8 +33,10 @@ from pyfect.errors import IllegalArgumentError
 from pyfect.exit import Failure, Success
 from pyfect.http import request as R
 from pyfect.http import router
+from pyfect.scheduler import CurrentScheduler
 from pyfect.scope import CloseableScope, Scope
 
+from ._custom_scheduler import counting_rounds
 from ._mcp_features import MRTR_PROMPT, MRTR_TOOL, features_conformance
 from ._mcp_http import HttpHarness, Json, http_harness, read_message, server_layer, sse_reader
 
@@ -98,6 +100,32 @@ def _report_progress(server: M.McpServerService) -> fx.Effect[Any]:
 
 def _sse_messages(body: str) -> list[Json]:
     return [json.loads(line[6:]) for line in body.split("\n") if line.startswith("data: ")]
+
+
+def _rounds_of_a_second_call(
+    served: layer.Layer[Any, Any, Any], call: Callable[[int], tuple[Json, dict[str, str]]]
+) -> fx.Effect[tuple[int, Json], Any, Scope]:
+    """The rounds the second request runs before its response, and its message."""
+
+    @fx.gen
+    def run():
+        scheduler, rounds = counting_rounds()
+        harness = yield from http_harness(served)
+
+        def post(id: int) -> fx.Effect[Any]:
+            body, headers = call(id)
+            # The routes' services come from the request (``router.in_memory_client``).
+            return harness.post(body, headers).pipe(fx.provide_service(CurrentScheduler, scheduler))
+
+        # Build the server before measuring the request, and let the rounds it left run.
+        yield from read_message((yield from post(0)))
+        yield from fx.yield_now()
+        before = rounds[0]
+        response = yield from post(1)
+        taken = rounds[0] - before
+        return taken, (yield from read_message(response))
+
+    return run
 
 
 @testing.effect
@@ -350,6 +378,19 @@ def test_should_keep_layer_http_notifications_when_a_request_scoped_endpoint_sha
 
 
 # --- Not Effect titles ------------------------------------------------------------------------
+
+
+@testing.live
+def test_answers_an_asynchronous_tool_call_before_a_scheduler_round_runs():
+    """Effect's #10753 for a tool registered without a toolkit: the request starts at once and
+    the end of its response wakes the reader at once (Effect's ``runForkWith`` and the
+    ``Queue.flush`` after ``Queue.end``), so the answer takes no scheduler round."""
+    # Effect's ``Promise.resolve``: the handler waits, and a timer of the run, not a round of
+    # the server's scheduler, resumes it.
+    served = _tool_layer("Echo", lambda _, __: fx.sleep("1 millis").as_(CALL_RESULT))
+    rounds, message = yield from _rounds_of_a_second_call(served, lambda id: _call_tool("Echo", id))
+    assert rounds == 0
+    assert message["result"]["content"] == CALL_RESULT["content"]
 
 
 @testing.effect
