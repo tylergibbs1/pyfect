@@ -516,7 +516,11 @@ def command_requests(group: Group[Any]) -> list[dict[str, object]]:
     the definition's name and description, and one ``STRING`` option when it
     has an ``argument``. The adapter registers nothing: Discord's bulk
     overwrite replaces the application's whole list, so the consumer sends
-    these beside its other commands, in one call."""
+    these beside its other commands, in one call.
+
+    Raises ``ValueError`` for a command or option name Discord refuses (1 to
+    32 lowercase letters, digits, ``-`` or ``_``) or a description that is
+    not 1 to 100 characters, rather than Discord refusing the whole list."""
     return _interactions.command_requests(group)
 
 

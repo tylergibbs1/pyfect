@@ -5,6 +5,7 @@ and the ``INTERACTION_CREATE`` payloads read back."""
 from __future__ import annotations
 
 import re
+import unicodedata
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, cast
@@ -476,12 +477,52 @@ def _submitted(
     )
 
 
+_NAME_MARKS = frozenset("-_\u02bc")
+_NAME_SCRIPTS = ((0x0900, 0x097F), (0xA8E0, 0xA8FF), (0x0E00, 0x0E7F))
+"""Devanagari, Devanagari Extended and Thai, whose marks a name may hold."""
+
+
+def _name_char(char: str) -> bool:
+    """A character of ``[-_\u02bc\\p{L}\\p{N}\\p{sc=Deva}\\p{sc=Thai}]``, in
+    lowercase where it has a lowercase."""
+    if char in _NAME_MARKS:
+        return True
+    if char.lower() != char:
+        return False
+    if unicodedata.category(char)[0] in "LN":
+        return True
+    code = ord(char)
+    return any(low <= code <= high for low, high in _NAME_SCRIPTS)
+
+
+def _check_name(what: str, name: str) -> None:
+    if not (1 <= len(name) <= 32 and all(_name_char(char) for char in name)):
+        raise ValueError(
+            f"Discord refuses the {what} name {name!r}: 1 to 32 lowercase letters, digits,"
+            " '-' or '_'"
+        )
+
+
+def _check_description(what: str, description: str) -> None:
+    if not 1 <= len(description) <= 100:
+        raise ValueError(
+            f"Discord refuses the {what} description {description!r}: 1 to 100 characters"
+        )
+
+
 def command_requests(group: ci.Group[Any]) -> list[Payload]:
-    """The create payload of each command in ``group``, in the group's order."""
+    """The create payload of each command in ``group``, in the group's order.
+    Raises ``ValueError`` for a name or description Discord would refuse, which
+    would fail the whole list."""
     out: list[Payload] = []
     for definition in group.definitions:
         if not isinstance(definition, ci.Command):
             continue
+        _check_name("command", definition.id)
+        _check_description("command", definition.description)
+        if definition.argument is not None:
+            _check_name("option", definition.argument.name)
+            _check_description("option", definition.argument.description)
         request: Payload = {
             "type": _CHAT_INPUT,
             "name": definition.id,

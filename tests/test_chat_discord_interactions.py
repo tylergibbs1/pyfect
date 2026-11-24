@@ -7,6 +7,7 @@ from __future__ import annotations
 from collections.abc import Generator
 from typing import Any
 
+import pytest
 from _discord_fake import (
     BOT_USER_ID,
     GUILD,
@@ -272,6 +273,40 @@ def test_command_requests_gives_a_chat_input_command_per_definition() -> None:
             "options": [{"type": 3, "name": "text", "description": "The note", "required": False}],
         },
     ]
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["deploy", "ship-it", "ship_it", "a" * 32, "déployer", "部署", "तैनात", "ส่ง", "v2", "it\u02bcs"],
+)
+def test_command_requests_takes_the_names_discord_takes(name: str) -> None:
+    argument = ci.CommandArgument(name=name, description="d")
+    group = ci.group(ci.command(name, description="d", argument=argument))
+    assert discord_chat.command_requests(group)[0]["name"] == name
+
+
+@pytest.mark.parametrize(
+    "name", ["status | ack", "Deploy", "DÉPLOYER", "ship it", "a" * 33, "", "it's", "/deploy"]
+)
+def test_command_requests_refuses_a_name_discord_refuses(name: str) -> None:
+    with pytest.raises(ValueError, match="name"):
+        discord_chat.command_requests(ci.group(ci.command(name, description="d")))
+    argument = ci.CommandArgument(name=name, description="d")
+    with pytest.raises(ValueError, match="name"):
+        discord_chat.command_requests(
+            ci.group(ci.command("deploy", description="d", argument=argument))
+        )
+
+
+@pytest.mark.parametrize("description", ["", "x" * 101])
+def test_command_requests_refuses_a_description_discord_refuses(description: str) -> None:
+    with pytest.raises(ValueError, match="description"):
+        discord_chat.command_requests(ci.group(ci.command("deploy", description=description)))
+    argument = ci.CommandArgument(name="text", description=description)
+    with pytest.raises(ValueError, match="description"):
+        discord_chat.command_requests(
+            ci.group(ci.command("deploy", description="d", argument=argument))
+        )
 
 
 @testing.effect
