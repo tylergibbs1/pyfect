@@ -217,19 +217,26 @@ class CodecDerivation(ABC):
                     return node
                 return replace(node, shape=self._shape(shape, shape.fields))
             case "type":
-                # Instances read from the target form: as Effect's class
-                # declaration links its typed struct. Each type side of the
-                # class shares one derived shape (``to_type`` makes new nodes).
-                hit = self._typed.get(id(node.shape))
-                if hit is None:
-                    fields = cast("ast.Objects", node.shape.fields.to_type())
-                    hit = (node.shape, self._shape(node.shape, fields))
-                    self._typed[id(node.shape)] = hit
-                return replace(node, side="decode", shape=hit[1])
+                return self._class_type(node)
             case "encoded":
                 return self(node.shape.encoded)
             case "encode":
-                return replace(node, encoding=(self.opaque,))
+                return self._class_encode(node)
+
+    def _class_type(self, node: ast.Class) -> ast.AST:
+        """A class's type side: by default, instances read from the target form, as Effect's
+        class declaration links its typed struct. Each type side of the class shares one
+        derived shape (``to_type`` makes new nodes)."""
+        hit = self._typed.get(id(node.shape))
+        if hit is None:
+            fields = cast("ast.Objects", node.shape.fields.to_type())
+            hit = (node.shape, self._shape(node.shape, fields))
+            self._typed[id(node.shape)] = hit
+        return replace(node, side="decode", shape=hit[1])
+
+    def _class_encode(self, node: ast.Class) -> ast.AST:
+        """A class's encoding side: by default written through ``opaque``."""
+        return replace(node, encoding=(self.opaque,))
 
     def _shape(self, shape: ast.ClassShape, fields: ast.Objects) -> _DerivedShape:
         hit = self._shapes.get(id(fields))

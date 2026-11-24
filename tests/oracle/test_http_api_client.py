@@ -794,6 +794,28 @@ def test_decodes_single_value_form_response_arrays_with_headers_and_declared_err
     assert _run(decode(raw(400)).flip()) == {"tags": ("a",), "note": ("x",)}
 
 
+class _MissingFields(S.TaggedError, annotations={"http_api_status": 422}):
+    missing: tuple[str, ...] = S.field(S.Array(S.String))
+
+
+def test_decodes_a_declared_tagged_error_whose_form_array_arrives_as_one_key() -> None:
+    """A declared ``S.TaggedError`` read from a form body decodes an array given as one key."""
+    from pyfect.http import request as client_request
+
+    group = HttpApiGroup.make("test").add(
+        ep.get("form", "/form", error=_MissingFields.pipe(api_schema.as_form_url_encoded()))
+    )
+    api = HttpApi.make("Api").add(group)
+    decode = client.decode_response(api, group, group.endpoints["form"])
+    raw = response.make(
+        client_request.get("http://test/form"),
+        b"_tag=_MissingFields&missing=amount",
+        status=422,
+        headers={"content-type": "application/x-www-form-urlencoded"},
+    )
+    assert _run(decode(raw).flip()) == _MissingFields(missing=("amount",))
+
+
 def test_decodes_form_urlencoded_responses() -> None:
     """HttpApiClient / decodes form-urlencoded responses"""
     api = _api(
