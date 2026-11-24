@@ -9,9 +9,10 @@ from typing import Any, TypedDict
 import pytest
 
 import pyfect as fx
-from pyfect import layer
+from pyfect import duration, layer
 from pyfect import schema as S
 from pyfect.crypto import digest
+from pyfect.errors import IllegalArgumentError
 from pyfect.eventlog import event as Ev
 from pyfect.eventlog import event_group as G
 from pyfect.eventlog import event_journal as J
@@ -279,3 +280,129 @@ def test_a_storage_reports_the_sequence_of_its_last_entry(name: str) -> None:
         fx.provide(layer.merge(layer_subtle, reactivity_layer, digest.layer_web_crypto))
     )
     assert fx.run_blocking_exit(program) == fx.Success([None, first + 4, None])
+
+
+# --- servers sharing one database ---------------------------------------------------
+
+
+def _encrypted_server(database: str) -> fx.Layer[Any, Any, Any]:
+    """An encrypted server on its own port, its storage in the SQLite file ``database``."""
+    client = sqlite.layer(sqlite.SqliteClientConfig(filename=database))
+    storage = SqlServer.layer_storage_subtle().pipe(layer.provide(client))
+    protocol = rpc_server.layer_protocol_websocket("/sync").pipe(
+        layer.provide(serialization.layer_ndjson)
+    )
+    routes = Server.layer.pipe(layer.provide(layer.merge(protocol, storage)))
+    served = router.serve(routes, disable_logger=True, disable_listen_log=True)
+    return served.pipe(layer.provide_merge(uvicorn_server.layer_test()))
+
+
+@fx.fn
+def _url(server: fx.Context[Any]):
+    return (
+        yield from http_server.address_formatted_with(
+            lambda a: fx.succeed(a.replace("http://", "ws://") + "/sync")
+        ).pipe(fx.provide_context(server))
+    )
+
+
+def test_synced_sees_the_writes_another_server_on_the_database_took(tmp_path: Any) -> None:
+    # Two servers behind a load balancer share one database. The phone syncs through the
+    # first while the laptop writes through the second; the first server reports the
+    # laptop's entry as its latest, so it has to stream it to the phone too.
+    database = str(tmp_path / "server.db")
+
+    @fx.fn
+    def body():
+        first = yield from _encrypted_server(database).build()
+        second = yield from _encrypted_server(database).build()
+        identity = yield from L.make_identity
+        phone = (yield from _device(identity, (yield from _url(first))).build()).get(L.EventLog)
+        laptop = (yield from _device(identity, (yield from _url(second))).build()).get(L.EventLog)
+        yield from phone.synced
+        yield from laptop.write(NoteAdded, {"id": "n1", "text": "milk"})
+        yield from laptop.synced
+        yield from phone.synced
+        return _texts((yield from phone.entries))
+
+    program = fx.scoped(body()).pipe(fx.provide(layer_subtle))
+    assert fx.run_blocking_exit(program.timeout("20 seconds")) == fx.Success(["n1"])
+
+
+def _shared_sqlite(database: str) -> fx.Effect[Any, Any, Any]:
+    return sqlite.make(sqlite.SqliteClientConfig(filename=database))
+
+
+def test_an_encrypted_sql_storage_streams_what_another_storage_wrote(tmp_path: Any) -> None:
+    database = str(tmp_path / "server.db")
+
+    @fx.fn
+    def body():
+        storages: list[Server.StorageService] = []
+        for _ in range(2):
+            client = yield from _shared_sqlite(database)
+            storages.append(
+                (yield from SqlServer.make_storage().pipe(fx.provide_service(SqlClient, client)))
+            )
+        first, second = storages
+        yield from first.write("pk", store, [_batch(1)])
+        changes = yield from first.changes("pk", store, 1).to_queue(capacity="unbounded")
+        seen = [(yield from changes.take()).sequence]
+        yield from second.write("pk", store, [_batch(2)])
+        latest = yield from first.latest_sequence("pk", store)
+        seen.append((yield from changes.take()).sequence)
+        return latest, seen
+
+    program = fx.scoped(body()).pipe(
+        fx.provide(layer.merge(digest.layer_web_crypto, reactivity_layer))
+    )
+    assert fx.run_blocking_exit(program.timeout("10 seconds")) == fx.Success((3, [1, 2]))
+
+
+def test_an_unencrypted_sql_storage_streams_what_another_storage_wrote(tmp_path: Any) -> None:
+    database = str(tmp_path / "server.db")
+
+    @fx.fn
+    def body():
+        storages: list[U.StorageService] = []
+        for _ in range(2):
+            client = yield from _shared_sqlite(database)
+            storages.append(
+                (yield from SqlU.make_storage().pipe(fx.provide_service(SqlClient, client)))
+            )
+        first, second = storages
+        yield from first.write(store, [_entry(1)])
+        changes = yield from first.changes(store, 1, {}).to_queue(capacity="unbounded")
+        seen = [(yield from changes.take()).remote_sequence]
+        yield from second.write(store, [_entry(2), _entry(3)])
+        latest = yield from first.latest_sequence(store)
+        second_entry = yield from changes.take()
+        third_entry = yield from changes.take()
+        return latest, [*seen, second_entry.remote_sequence, third_entry.remote_sequence]
+
+    program = fx.scoped(body()).pipe(fx.provide(reactivity_layer))
+    assert fx.run_blocking_exit(program.timeout("10 seconds")) == fx.Success((3, [1, 2, 3]))
+
+
+@pytest.mark.parametrize("make", [SqlServer.make_storage, SqlU.make_storage])
+@pytest.mark.parametrize("poll_interval", ["0 millis", "-1 second", duration.infinity])
+def test_a_sql_storage_refuses_a_poll_interval_that_is_not_positive_and_finite(
+    make: Callable[..., fx.Effect[Any, Any, Any]], poll_interval: duration.Input
+) -> None:
+    # Without polling, a server reports entries another server took as its latest
+    # but never streams them, and synced waits for them forever.
+    @fx.fn
+    def body():
+        client = yield from _sqlite()
+        return (
+            yield from make(poll_interval=poll_interval).pipe(fx.provide_service(SqlClient, client))
+        )
+
+    program = fx.scoped(body()).pipe(
+        fx.provide(layer.merge(digest.layer_web_crypto, reactivity_layer))
+    )
+    exit = fx.run_blocking_exit(program)
+    assert isinstance(exit, fx.Failure)
+    assert repr(exit.cause.squash()) == repr(
+        IllegalArgumentError("poll_interval must be positive and finite")
+    )

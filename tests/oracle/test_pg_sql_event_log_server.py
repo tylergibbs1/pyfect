@@ -21,11 +21,14 @@ pytest.importorskip("psycopg")
 
 import pyfect as fx
 from pyfect import testing
+from pyfect.crypto import digest
+from pyfect.eventlog import event_journal as J
+from pyfect.eventlog import sql_event_log_server_encrypted as SqlServer
 from pyfect.eventlog.event_journal import StoreId
-from pyfect.eventlog.event_log_encryption import layer_subtle
+from pyfect.eventlog.event_log_encryption import EncryptedBatch, layer_subtle
 from pyfect.reactivity import layer as reactivity_layer
 from pyfect.sql import pg
-from pyfect.sql.client import SqlClientService
+from pyfect.sql.client import SqlClient, SqlClientService
 
 from ._postgres import PgServer
 from .test_sql_event_log_server_unencrypted import (
@@ -151,5 +154,60 @@ def test_streams_a_write_committed_after_the_startup_backlog_read_exactly_once(
         assert third.remote_sequence == 3
         assert third.entry.id_string == live_entry.id_string
         yield from assert_drained(changes)
+
+    yield from _run(body)
+
+
+# --- servers sharing one database (pyfect: Effect streams only a server's own writes) ---
+
+
+@testing.live
+def test_an_unencrypted_storage_streams_what_another_storage_on_the_database_wrote(
+    pg_server: PgServer,
+):
+    def body():
+        options = make_options("shared_database")
+        first = yield from make_storage((yield from _client(pg_server)), **options)
+        second = yield from make_storage((yield from _client(pg_server)), **options)
+        store = make_store_id("shared_database")
+        yield from first.write(store, [make_entry("Ada")])
+        changes = yield from open_changes(first, store)
+        assert (yield from changes.take()).remote_sequence == 1
+        yield from second.write(store, [make_entry("Grace")])
+        assert (yield from first.latest_sequence(store)) == 2
+        assert (yield from changes.take()).remote_sequence == 2
+        yield from assert_drained(changes)
+
+    yield from _run(body)
+
+
+@testing.live
+def test_an_encrypted_storage_streams_what_another_storage_on_the_database_wrote(
+    pg_server: PgServer,
+):
+    prefix = f"effect_events_shared_{next(_namespaces)}"
+
+    def storage():
+        sql = yield from _client(pg_server)
+        return (
+            yield from SqlServer.make_storage(entry_table_prefix=prefix)
+            .pipe(fx.provide_service(SqlClient, sql))
+            .pipe(fx.provide(digest.layer_web_crypto))
+        )
+
+    def batch() -> EncryptedBatch:
+        return EncryptedBatch(
+            entry_ids=(J.make_entry_id_unsafe(),), iv=bytes(12), encrypted_batch=b"x"
+        )
+
+    def body():
+        first = yield from fx.gen(storage)
+        second = yield from fx.gen(storage)
+        yield from first.write("pk", store_id, [batch()])
+        changes = yield from first.changes("pk", store_id, 1).to_queue(capacity="unbounded")
+        assert (yield from changes.take()).sequence == 1
+        yield from second.write("pk", store_id, [batch()])
+        assert (yield from first.latest_sequence("pk", store_id)) == 2
+        assert (yield from changes.take()).sequence == 2
 
     yield from _run(body)
