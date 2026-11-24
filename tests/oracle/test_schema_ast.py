@@ -26,10 +26,6 @@ Omitted:
   without literals", "... should reuse non-discriminated candidates of a
   tagged union": identity and freezing of Effect's cached arrays; each call
   returns a new list here.
-- "toType / preserves annotations on decoded checks when promoting encoding checks", "toType /
-  reports promoted encoding check failures first": Effect 4.1.4 (#10453) puts promoted
-  encoding checks before the decoded ones, which changes which failure is reported first and
-  which title wins, so it waits for the 0.7.0 minor release (docs/VERSIONING.md).
 """
 
 from collections.abc import Callable

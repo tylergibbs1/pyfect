@@ -319,8 +319,8 @@ def test_to_type_keeps_only_structural_encoding_checks_when_outer_encoding_and_c
     assert projected.encoding_checks is None
     assert projected.checks is not None
     assert len(projected.checks) == 2
-    assert projected.checks[0] is decoded
-    assert projected.checks[1] is structural
+    assert projected.checks[0] is structural
+    assert projected.checks[1] is decoded
     assert projected.properties[0].type is S.NumberFromString.ast.to_type()
     assert node.encoding is encoding
     assert node.properties[0].type is S.NumberFromString.ast
@@ -396,6 +396,32 @@ def test_to_type_promotes_encoding_checks_when_contained_type_shape_is_preserved
     assert node.checks is not None
     assert len(node.checks) == 1
     assert node.encoding_checks is None
+
+
+class _Empty(TypedDict):
+    pass
+
+
+def _flipped_check[T](schema: S.Codec[T, Any], check: Any) -> S.Codec[T, Any]:
+    """``schema.pipe(flip, check(check), flip)``: a check on the encoded side."""
+    return S.flip(S.flip(schema).check(check))
+
+
+def test_to_type_preserves_annotations_on_decoded_checks_when_promoting_encoding_checks():
+    """toType / preserves annotations on decoded checks when promoting encoding checks"""
+    decoded = S.Struct(_Empty).check(S.make_filter(lambda _: True, title="Decoded"))
+    schema = _flipped_check(decoded, S.make_filter(lambda _: True, title="Encoded"))
+
+    assert (S.resolve_annotations(S.to_type(schema)) or {}).get("title") == "Decoded"
+
+
+def test_to_type_reports_promoted_encoding_check_failures_first():
+    """toType / reports promoted encoding check failures first"""
+    decoded = S.Struct(_Empty).check(S.make_filter(lambda _: "decoded failure"))
+    schema = _flipped_check(decoded, S.make_filter(lambda _: "encoded failure"))
+
+    with pytest.raises(S.SchemaError, match=r"^encoded failure$"):
+        S.decode_unknown_sync(S.to_type(schema))({})
 
 
 class _Xs(TypedDict):

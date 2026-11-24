@@ -234,7 +234,9 @@ class AST(ABC):
             encoding_checks = typed.encoding_checks
             if encoding_checks is not None:
                 # Checks of the encoded side hold for the decoded one when no
-                # part transforms; else only those of the shape (a size).
+                # part transforms; else only those of the shape (a size). They go
+                # first, as parsing runs them first, and the decoded checks keep
+                # the last word on annotations (Effect's toType, #10453).
                 if _preserves_encoding_checks(base):
                     promoted = encoding_checks
                 elif typed._keeps_structural_checks():
@@ -242,7 +244,7 @@ class AST(ABC):
                 else:
                     promoted = None
                 typed = copy(
-                    typed, encoding_checks=None, checks=join_checks(typed.checks, promoted)
+                    typed, encoding_checks=None, checks=join_checks(promoted, typed.checks)
                 )
             self._type_side.append(typed)
             if typed is not self and not typed._type_side:  # pragma: no mutate, memo only
