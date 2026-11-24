@@ -8473,7 +8473,9 @@ def check_mcp() -> None:
     _june: mcp_c.ClientProtocol = mcp_p.v2025_06_18  # pyright: ignore[reportAssignmentType]
 
 
-def check_mcp_content() -> None:
+def check_mcp_content(
+    handled: layer.Layer[ai_toolkit.Handlers[Literal["Weather", "preview"]]],
+) -> None:
     from pyfect.ai import mcp_server as mcp_m
 
     weather = ai_tool.make(
@@ -8500,8 +8502,40 @@ def check_mcp_content() -> None:
         ],
     )
     mcp_m.toolkit(previews, content=[mcp_m.tool_content(preview, png)])
-    mcp_m.register_toolkit(kit, content=[mcp_m.tool_content(preview, png)])  # pyright: ignore[reportArgumentType]
-    mcp_m.toolkit(previews, content=[mcp_m.tool_content(elsewhere, lambda _: [])])  # pyright: ignore[reportArgumentType]
+    # A list built first passes too: it holds mappers for some of the toolkit's tools.
+    mappers = [mcp_m.tool_content(preview, png)]
+    assert_type(mappers, list[mcp_m.ToolContent[Literal["preview"]]])
+    mcp_m.toolkit(previews, content=mappers)
+    mcp_m.register_toolkit(previews, content=mappers)
+    # A mapper for a tool outside the toolkit adds that tool's handler to the requirements,
+    # which the toolkit's own handlers layer cannot provide, so the program never type-checks.
+    strays = [mcp_m.tool_content(elsewhere, lambda _: [])]
+    assert_type(
+        mcp_m.toolkit(previews, content=strays),
+        layer.Layer[
+            Never,
+            Never,
+            mcp_m.McpServer | ai_toolkit.Handlers[Literal["Weather", "preview", "unknown"]],
+        ],
+    )
+    assert_type(
+        mcp_m.register_toolkit(kit, content=[mcp_m.tool_content(preview, png)]),
+        fx.Effect[
+            None, Never, mcp_m.McpServer | ai_toolkit.Handlers[Literal["Weather", "preview"]]
+        ],
+    )
+    assert_type(
+        mcp_m.register_toolkit(previews, content=mappers).pipe(fx.provide(handled)),
+        fx.Effect[None, Never, mcp_m.McpServer],
+    )
+    assert_type(
+        mcp_m.register_toolkit(previews, content=strays).pipe(fx.provide(handled)),
+        fx.Effect[
+            None,
+            Never,
+            mcp_m.McpServer | ai_toolkit.Handlers[Literal["Weather", "preview", "unknown"]],
+        ],
+    )
     mcp_m.tool_content(preview, lambda data: [{"type": "text", "text": data}])  # pyright: ignore[reportArgumentType]
 
 
@@ -9418,7 +9452,7 @@ def eventlog_typed_api_checks() -> None:
     assert_type(needs_db, Layer[Never, Never, EvDb | ev_log.Registry])
     assert_type(
         ev_log.layer(ev_log.schema(group), needs_db),
-        Layer[
+        layer.Layer[
             ev_log.EventLog | ev_log.Registry,
             Never,
             EvDb | ev_journal.EventJournal | ev_log.Identity,
@@ -9426,7 +9460,7 @@ def eventlog_typed_api_checks() -> None:
     )
     assert_type(
         ev_unencrypted.layer(ev_log.schema(group), handlers),
-        Layer[
+        layer.Layer[
             Never,
             Never,
             ev_unencrypted.EventLogServerAuthorization
