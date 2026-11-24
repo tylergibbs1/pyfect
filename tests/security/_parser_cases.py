@@ -580,6 +580,20 @@ def _xml_positions_lines(n: int) -> Work:
     return run_channel(chunks, xml.decode(positions=True))
 
 
+@case(xml.decode_string, 'xml.decode_string: namespaces="strict", declarations opened and released')
+def _xml_namespace_churn(n: int) -> Work:
+    released = "".join(f'<c xmlns:q{i}="urn:q{i}" xmlns="urn:d"/>' for i in range(n))
+    document = f'<r xmlns:p="urn:x"><a xmlns:p="urn:y">{released}</a></r>'
+    return run_channel([document], xml.decode_string(namespaces="strict"))
+
+
+@case(xml.decode_string, 'xml.decode_string: namespaces="strict", prefixed attributes of one tag')
+def _xml_namespace_attributes(n: int) -> Work:
+    attributes = "".join(f' p:a{i}="1" q:a{i}="2"' for i in range(n))
+    document = f'<r xmlns:p="urn:x" xmlns:q="urn:y"{attributes}/>'
+    return run_channel([document], xml.decode_string(namespaces="strict"))
+
+
 def _xml_events(n: int) -> tuple[xml.Event, ...]:
     events: list[xml.Event] = [xml.StartElement("r", {})]
     for _ in range(n):

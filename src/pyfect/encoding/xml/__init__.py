@@ -8,14 +8,15 @@ document is processed one record at a time.
 The decoder checks that documents are well-formed. It never reads external
 resources and never expands entities declared in a DOCTYPE, so external entity
 (XXE) and entity expansion attacks do not apply. It does not validate against a
-DTD or schema, and reports names as written, without resolving namespaces.
+DTD or schema, and reports names as written, resolving namespaces only when
+asked to (``namespaces="strict"``).
 """
 # pyright: reportUnknownVariableType=false, reportUnknownArgumentType=false, reportUnknownMemberType=false
 
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from typing import Any, Never, TypeIs
+from typing import Any, Literal, Never, TypeIs
 
 from pyfect._js import text_encode
 from pyfect._primitives import _FailCause, _Succeed, _Suspend  # pyright: ignore[reportPrivateUsage]
@@ -132,11 +133,18 @@ class _DecodePull:
 
 
 def _make_parser(
-    max_token_size: float | None, max_depth: float | None, is_bytes: bool, positions: bool
+    max_token_size: float | None,
+    max_depth: float | None,
+    is_bytes: bool,
+    positions: bool,
+    namespaces: Literal["strict"] | None,
 ) -> Callable[[], Parser]:
     token = _check_limit("maxTokenSize", max_token_size, _DEFAULT_MAX_TOKEN_SIZE)
     depth = _check_limit("maxDepth", max_depth, _DEFAULT_MAX_DEPTH)
-    return lambda: Parser(token, depth, is_bytes, positions)
+    if namespaces not in (None, "strict"):
+        raise ValueError(f'Xml: namespaces must be "strict", got {quoted(str(namespaces))}')
+    strict = namespaces == "strict"
+    return lambda: Parser(token, depth, is_bytes, positions, strict)
 
 
 def decode_string[IE = Never, D = None](
@@ -144,6 +152,7 @@ def decode_string[IE = Never, D = None](
     max_token_size: float | None = None,
     max_depth: float | None = None,
     positions: bool = False,
+    namespaces: Literal["strict"] | None = None,
 ) -> Channel[tuple[Event, ...], XmlError | IE, D, tuple[str, ...], IE, D]:
     """A channel decoding XML text chunks into events.
 
@@ -161,10 +170,17 @@ def decode_string[IE = Never, D = None](
     ``positions=True`` adds the ``line`` and ``column`` of each start tag's ``<`` to
     its ``StartElement``, counted as for ``XmlError``; otherwise they are ``None``.
 
+    ``namespaces="strict"`` checks the document against Namespaces in XML 1.0 and
+    adds ``namespace`` and ``local_name`` to ``StartElement`` and ``EndElement``.
+    A violation fails with ``"Syntax"`` at the start tag or processing
+    instruction, but an undeclared prefix fails with ``"Unsupported"`` when the
+    document has a DOCTYPE, whose declarations are never applied. The
+    declarations of open elements count against ``max_token_size``.
+
     A DOCTYPE is reported, its internal subset skipped and never applied. An
     entity other than the five predefined ones fails with ``"Unsupported"`` when
     the document has a DOCTYPE and ``"Syntax"`` otherwise."""
-    parser = _make_parser(max_token_size, max_depth, False, positions)
+    parser = _make_parser(max_token_size, max_depth, False, positions, namespaces)
     return _make_channel(lambda: TextInput(parser()))
 
 
@@ -173,6 +189,7 @@ def decode[IE = Never, D = None](
     max_token_size: float | None = None,
     max_depth: float | None = None,
     positions: bool = False,
+    namespaces: Literal["strict"] | None = None,
 ) -> Channel[tuple[Event, ...], XmlError | IE, D, tuple[bytes, ...], IE, D]:
     """``decode_string`` for UTF-8 bytes. Multi-byte characters can be split
     between chunks. Invalid or truncated UTF-8 fails with ``"Syntax"``; a UTF-16
@@ -181,7 +198,7 @@ def decode[IE = Never, D = None](
     ``decode_string``). A declaration the bytes contradict fails with ``"Syntax"``
     instead: UTF-16, UTF-32, UCS-2 and UCS-4, and US-ASCII or ISO-8859-1 after a
     UTF-8 byte order mark."""
-    parser = _make_parser(max_token_size, max_depth, True, positions)
+    parser = _make_parser(max_token_size, max_depth, True, positions, namespaces)
     return _make_channel(lambda: Utf8Input(parser()))
 
 

@@ -295,6 +295,11 @@ being expanded, so a document cannot read local files or expand into gigabytes; 
 undeclared entity is a `"Syntax"` error, as in Effect. `max_token_size`, `max_depth` and
 `max_element_size` bound what one document can hold in memory.
 
+Names are reported as written, prefix and all. With `namespaces="strict"`, `decode` and
+`decode_string` also give each `StartElement` and `EndElement` its `namespace` and `local_name`,
+and fail with a `"Syntax"` error on a document that is not namespace-well-formed, such as one
+using an undeclared prefix. The declarations of open elements count against `max_token_size`.
+
 ## Zip and tar
 
 `pyfect.encoding.zip` and `pyfect.encoding.tar` read an archive as a stream of entries, each with a

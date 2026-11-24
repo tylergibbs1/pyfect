@@ -32,6 +32,7 @@ from pyfect.encoding.xml._model import (
     XmlError,
     XmlErrorKind,
 )
+from pyfect.encoding.xml._namespaces import NamespaceError, Scopes, check_target
 from pyfect.encoding.xml._scanner import (
     S_AFTER_SUBSET,
     S_DOCTYPE,
@@ -108,7 +109,12 @@ def _describe_token(s: str, i: int) -> str:
 
 class Parser:
     def __init__(
-        self, max_token_size: float, max_depth: float, is_bytes: bool, positions: bool
+        self,
+        max_token_size: float,
+        max_depth: float,
+        is_bytes: bool,
+        positions: bool,
+        namespaces: bool = False,
     ) -> None:
         self.out: list[Event] = []
         # The text being parsed, which starts at document offset ``_base``
@@ -148,6 +154,8 @@ class Parser:
         self._max_depth = max_depth
         self._is_bytes = is_bytes
         self._positions = positions
+        # With ``namespaces="strict"``, the bindings of open elements
+        self._scopes = Scopes(max_token_size, _limit(max_token_size)) if namespaces else None
         self._ascii = False
 
     def feed(self, chunk: str, force: bool = False) -> None:
@@ -576,19 +584,29 @@ class Parser:
                 f"open element names exceed maxTokenSize of {_limit(self._max_token_size)}",
                 self._base + i,
             )
-        self._flush_text()
         event_name = from_units(name)
+        resolved = None
+        if self._scopes is not None:
+            try:
+                resolved = self._scopes.open(event_name, attributes, self_closing, self._doctype)
+            except NamespaceError as error:
+                raise self.error(error.kind, error.message, self._base + i) from None
+        self._flush_text()
+        line = column = None
         if self._positions:
             self._count(i)
+            line = self._line
+            column = self._base + i - self._line_start + 1
+        if resolved is None:
+            self.out.append(StartElement(event_name, attributes, line, column))
+        else:
             self.out.append(
                 StartElement(
-                    event_name, attributes, self._line, self._base + i - self._line_start + 1
+                    event_name, attributes, line, column, resolved.namespace, resolved.local_name
                 )
             )
-        else:
-            self.out.append(StartElement(event_name, attributes))
         if self_closing:
-            self.out.append(EndElement(event_name))
+            self.out.append(self._end_element(event_name))
             if not self._stack:
                 self._state = EPILOG
         else:
@@ -596,6 +614,12 @@ class Parser:
             self._open_name_size += len(name)
             self._state = CONTENT
         return j
+
+    def _end_element(self, name: str) -> EndElement:
+        if self._scopes is None:
+            return EndElement(name)
+        resolved = self._scopes.close()
+        return EndElement(name, resolved.namespace, resolved.local_name)
 
     def _attribute_value(self, s: str, i: int, j: int) -> str:
         raw = s[i:j]
@@ -629,7 +653,7 @@ class Parser:
         self._flush_text()
         self._stack.pop()
         self._open_name_size -= len(open_name)
-        self.out.append(EndElement(from_units(open_name)))
+        self.out.append(self._end_element(from_units(open_name)))
         if not self._stack:
             self._state = EPILOG
         return k + 1
@@ -663,6 +687,11 @@ class Parser:
                 else f"processing instruction target {target} is reserved",
                 i,
             )
+        if self._scopes is not None:
+            try:
+                check_target(from_units(target))
+            except NamespaceError as error:
+                raise self._syntax(error.message, i) from None
         data = ""
         if t < end:
             if s[t] not in SPACE:

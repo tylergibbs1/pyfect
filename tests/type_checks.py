@@ -11037,6 +11037,14 @@ def xml_zip_tar_channels(
     )
     assert_type(events.pipe_through_channel(xml.encode_string()), _St[str, xml.XmlError])
     assert_type(events.pipe_through_channel(xml.encode()), _St[bytes, xml.XmlError])
+    # Strict namespaces (Effect #10635): the resolved names are absent without them.
+    assert_type(
+        text.pipe_through_channel(xml.decode_string(namespaces="strict")),
+        _St[xml.Event, xml.XmlError],
+    )
+    assert_type(xml.StartElement("a").namespace, str | None)
+    assert_type(xml.EndElement("a").local_name, str | None)
+    xml.decode(namespaces="lenient")  # pyright: ignore[reportArgumentType]
 
     # Entry bodies carry the archive's errors, and read from the channel's input.
     assert_type(data.pipe_through_channel(tar.decode()), _St[tar.Entry[tar.TarError], tar.TarError])

@@ -52,6 +52,14 @@ _NAME = re.compile(
 accepted by their surrogates, which are paired once input is validated."""
 
 
+_NAME_START_CHAR = re.compile(f"[{_NAME_START}]")
+
+
+def is_name_start(char: str) -> bool:
+    """Whether the character ``char`` can start a name."""
+    return _NAME_START_CHAR.match(to_units(char)) is not None
+
+
 def scan_name(s: str, i: int, end: int) -> int:
     """The end of the name starting at ``i``, or ``i`` when there is none."""
     if i >= end:

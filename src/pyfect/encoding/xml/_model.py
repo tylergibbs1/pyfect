@@ -15,7 +15,8 @@ type XmlErrorKind = Literal["Syntax", "Unsupported", "Limit", "InvalidEvent"]
 class XmlError(TaggedError):
     """XML could not be decoded or encoded.
 
-    - ``"Syntax"``: the input is not well-formed XML or not valid UTF-8.
+    - ``"Syntax"``: the input is not well-formed XML or not valid UTF-8, or, with
+      ``namespaces="strict"``, not namespace-well-formed.
     - ``"Unsupported"``: the input uses a feature this module does not process,
       such as an entity declared in a DOCTYPE or a byte encoding other than UTF-8.
     - ``"Limit"``: the input exceeds ``max_token_size``, ``max_depth`` or
@@ -58,23 +59,38 @@ class StartElement:
     ``EndElement``.
 
     With ``positions=True``, ``line`` and ``column`` locate the tag's ``<`` as an
-    ``XmlError`` would. Otherwise they are ``None``. The encoders ignore them."""
+    ``XmlError`` would. With ``namespaces="strict"``, ``namespace`` (``""`` for
+    none) and ``local_name`` are the resolved name; attributes stay keyed as
+    written, and ``xmlns`` declarations stay attributes. Otherwise these fields
+    are ``None``. The encoders ignore them."""
 
     name: str
     attributes: Mapping[str, str] = field(default_factory=dict[str, str], hash=False)
     line: int | None = None
     column: int | None = None
+    namespace: str | None = None
+    local_name: str | None = None
 
     def __repr__(self) -> str:
         position = "" if self.line is None else f", line={self.line}, column={self.column}"
-        return f"StartElement(name={self.name!r}, attributes={self.attributes!r}{position})"
+        resolved = (
+            ""
+            if self.local_name is None
+            else f", namespace={self.namespace!r}, local_name={self.local_name!r}"
+        )
+        return (
+            f"StartElement(name={self.name!r}, attributes={self.attributes!r}{position}{resolved})"
+        )
 
 
 @dataclass(frozen=True, slots=True)
 class EndElement:
-    """An end tag."""
+    """An end tag. With ``namespaces="strict"``, ``namespace`` and
+    ``local_name`` repeat those of the start tag; otherwise they are ``None``."""
 
     name: str
+    namespace: str | None = None
+    local_name: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

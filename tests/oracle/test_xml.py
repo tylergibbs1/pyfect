@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Iterator
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -418,6 +418,115 @@ def test_rejects_invalid_options_at_construction() -> None:
         xml.elements([])
     with pytest.raises(ValueError):
         xml.elements(["a b"])
+    with pytest.raises(ValueError):
+        xml.decode_string(namespaces=cast("Any", "lenient"))
+
+
+# --- namespaces ------------------------------------------------------------------------
+
+
+def _names(events: list[Event]) -> list[tuple[str | None, ...]]:
+    return [
+        (type(event).__name__, event.name, event.namespace, event.local_name)
+        if isinstance(event, StartElement | EndElement)
+        else (type(event).__name__,)
+        for event in events
+    ]
+
+
+@testing.effect
+def test_resolves_element_names_in_nested_scopes() -> Any:
+    """resolves element names in nested scopes"""
+    document = (
+        '<r xmlns:p="urn:a" xmlns="urn:d"><p:s xmlns:p="urn:b" a="1" p:a="2">'
+        '<u xmlns="" xml:lang="en"/><v/></p:s><p:s/></r>'
+    )
+    expected = [
+        ("StartElement", "r", "urn:d", "r"),
+        ("StartElement", "p:s", "urn:b", "s"),
+        ("StartElement", "u", "", "u"),
+        ("EndElement", "u", "", "u"),
+        ("StartElement", "v", "urn:d", "v"),
+        ("EndElement", "v", "urn:d", "v"),
+        ("EndElement", "p:s", "urn:b", "s"),
+        ("StartElement", "p:s", "urn:a", "s"),
+        ("EndElement", "p:s", "urn:a", "s"),
+        ("EndElement", "r", "urn:d", "r"),
+    ]
+    for chunks in splits(document):
+        assert _names((yield from decode_string(chunks, namespaces="strict"))) == expected
+    # Attributes stay keyed as written, including declarations
+    [root, *_] = yield from decode_string([document], namespaces="strict", positions=True)
+    assert root == StartElement(
+        name="r",
+        attributes={"xmlns:p": "urn:a", "xmlns": "urn:d"},
+        line=1,
+        column=1,
+        namespace="urn:d",
+        local_name="r",
+    )
+
+
+@testing.effect
+def test_rejects_documents_that_are_not_namespace_well_formed() -> Any:
+    """rejects documents that are not namespace-well-formed"""
+    cases = [
+        ('<a b:c="1"/>', 1),
+        ('<r><a xmlns:p="urn:p"/><p:b/></r>', 24),
+        ('<a:b:c xmlns:a="urn:a"/>', 1),
+        ('<a xmlns:1="urn:a"/>', 1),
+        # Fails as Syntax even though a DTD could declare other prefixes
+        ("<!DOCTYPE a><xmlns:a/>", 13),
+        ('<a xmlns:xmlns="urn:x"/>', 1),
+        ('<a xmlns:b=""/>', 1),
+        ('<a xmlns:xml="urn:x"/>', 1),
+        ('<a xmlns="http://www.w3.org/XML/1998/namespace"/>', 1),
+        ('<r xmlns:p="urn:x" xmlns:q="urn:x"><e p:a="1" q:a="2"/></r>', 36),
+        ("<a><?b:c?></a>", 4),
+    ]
+    for document, column in cases:
+        for chunks in splits(document):
+            assert (yield from failure(decode_string(chunks, namespaces="strict"))) == (
+                "Syntax",
+                1,
+                column,
+            ), document
+        assert len((yield from decode_string([document]))) > 0
+    # Enough released declarations that the bindings are compacted while p
+    # is shadowed
+    released = "".join(f'<c xmlns:q{i}="urn:q"/>' for i in range(1000))
+    shadowed = (
+        f'<r xmlns:p="urn:x"><a xmlns:p="urn:y">{released}</a>'
+        '<b xmlns:s="urn:x" p:x="1" s:x="2"/></r>'
+    )
+    assert (yield from failure(decode_string([shadowed], namespaces="strict"))) == (
+        "Syntax",
+        1,
+        shadowed.rfind("<b") + 1,
+    )
+    # A DTD could declare the prefix with a default attribute value
+    assert (
+        yield from failure(decode_string(['<!DOCTYPE a><a p:x="1"/>'], namespaces="strict"))
+    ) == ("Unsupported", 1, 13)
+
+
+@testing.effect
+def test_bounds_the_declarations_of_open_elements() -> Any:
+    """bounds the declarations of open elements"""
+
+    def tag(name: str) -> str:
+        return f'<{name} xmlns:{name}="0123456789">'
+
+    # Each tag declares 11 characters, so three open tags fit
+    siblings = "<a>" + tag("p") + tag("q") + "</q>" + tag("r") + "</r>" + tag("s") + "</s></p></a>"
+    nested = "<a>" + tag("p") + tag("q") + tag("r") + tag("s") + "</s></r></q></p></a>"
+    for chunks in splits(siblings):
+        events = yield from decode_string(chunks, namespaces="strict", max_token_size=40)
+        assert len(events) > 0
+    for chunks in splits(nested):
+        assert (
+            yield from failure(decode_string(chunks, namespaces="strict", max_token_size=40))
+        ) == ("Limit", 1, 76)
 
 
 @testing.effect
