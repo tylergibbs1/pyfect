@@ -8,11 +8,14 @@ Each test's docstring is the Effect test title (Effect's ``Latch.await`` is
   interruptibility" is ported in ``tests/oracle/test_effect_combinators.py``.
 """
 
+from collections.abc import Callable
 from typing import Any, Never
 
 import pyfect as fx
 from pyfect import testing
 from pyfect.tracer import CurrentStackFrame, InterruptorStackTrace, StackFrame, StackTrace
+
+from ._custom_scheduler import Custom
 
 
 def _interrupted(ex: fx.Exit[Any, Any] | None) -> bool:
@@ -193,6 +196,30 @@ def test_runs_an_async_interrupt_finalizer_exactly_once_in_order():
     events.append("awaited")
     assert _interrupted(ex)
     assert events == ["acquired", "finalizer-start", "finalizer-end", "awaited"]
+
+
+def test_does_not_lose_interruption_on_a_deferred_fiber_when_interrupt_evaluation_yields():
+    """does not lose interruption on a deferred fiber when interrupt evaluation yields"""
+    tasks: list[Callable[[], None]] = []
+    scheduler = Custom(lambda fiber: fiber.current_op_count == 1, tasks)
+    scheduler.execution_mode = "sync"
+    child_ran = [False]
+    children: list[fx.Fiber[None, Never]] = []
+
+    @fx.gen
+    def program():
+        child = yield from fx.sync(lambda: child_ran.__setitem__(0, True)).fork()
+        children.append(child)
+        yield from child.interrupt()
+
+    main = fx.run_fork(program, scheduler=scheduler)
+
+    while tasks:
+        tasks.pop(0)()
+
+    assert not child_ran[0]
+    assert _interrupted(children[0].poll_unsafe())
+    assert main.poll_unsafe() == fx.exit.void
 
 
 def test_get_current_is_none_outside_a_fiber():
