@@ -79,6 +79,7 @@ class _Rewrite:
         self._suspended: dict[int, A.Suspend] = {}
 
     def __call__(self, node: A.AST) -> A.AST:
+        node = A.encoded_structure(node)
         match node:
             case A.Union():
                 mode = "any_of" if node.mode == "one_of" else node.mode

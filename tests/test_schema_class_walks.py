@@ -11,7 +11,12 @@ from typing import Any
 
 import pytest
 
+import pyfect as fx
 from pyfect import schema as S
+from pyfect import stream
+from pyfect.ai.anthropic_structured_output import to_codec_anthropic
+from pyfect.ai.openai_structured_output import to_codec_openai
+from pyfect.encoding import csv
 
 
 class Plain(S.Class):
@@ -57,3 +62,97 @@ def test_to_codec_array_from_single_keeps_encoding_and_is_idempotent(cls: Any) -
     schema = S.to_codec_array_from_single(cls)
     assert S.encode_sync(schema)(cls(tags=("a",))) == _encoded(cls, ("a",))
     assert S.to_codec_array_from_single(schema).ast is schema.ast
+
+
+class Row(S.Class):
+    id: str
+    n: float = S.field(S.Finite)
+
+
+class RowError(S.Error):
+    id: str
+    n: float = S.field(S.Finite)
+
+
+class TaggedRow(S.TaggedClass):
+    id: str
+    n: float = S.field(S.Finite)
+
+
+class TaggedRowError(S.TaggedError):
+    id: str
+    n: float = S.field(S.Finite)
+
+
+ROW_KINDS: list[Any] = [Row, RowError, TaggedRow, TaggedRowError]
+
+
+def _row_text(cls: Any, n: str) -> str:
+    tag = getattr(cls, "_tag", None)
+    return f"id,n\r\na,{n}\r\n" if tag is None else f"_tag,id,n\r\n{tag},a,{n}\r\n"
+
+
+def _csv_decoded(schema: Any, text: str) -> object:
+    channel = csv.decode_schema_string(schema, headers=True)
+    return fx.run_blocking(
+        stream.from_iterable([text]).pipe_through_channel(channel).run_collect().or_die()
+    )
+
+
+@pytest.mark.parametrize("cls", ROW_KINDS, ids=lambda cls: cls.__name__)
+def test_csv_decodes_and_encodes_every_class_kind(cls: Any) -> None:
+    assert _csv_decoded(cls, _row_text(cls, "1.5")) == [cls(id="a", n=1.5)]
+    channel = csv.encode_schema_string(cls, headers=True)
+    written = fx.run_blocking(
+        stream.make(cls(id="a", n=1.5)).pipe_through_channel(channel).run_string().or_die()
+    )
+    assert written == _row_text(cls, "1.5")
+
+
+@pytest.mark.parametrize("cls", ROW_KINDS, ids=lambda cls: cls.__name__)
+def test_csv_decodes_a_union_of_classes(cls: Any) -> None:
+    class Other(S.TaggedClass):
+        id: str
+
+    schema = S.Union(cls, Other)
+    text = _row_text(cls, "2")
+    assert _csv_decoded(schema, text) == [cls(id="a", n=2)]
+
+
+@pytest.mark.parametrize("cls", ROW_KINDS, ids=lambda cls: cls.__name__)
+def test_csv_still_refuses_a_class_whose_field_is_not_one_cell(cls: Any) -> None:
+    class Nested(S.Class):
+        row: Any = S.field(cls)
+
+    with pytest.raises(ValueError, match='column "row" encodes to'):
+        csv.decode_schema_string(Nested, headers=True)
+
+
+class Pair(S.Class):
+    pair: tuple[str, float] = S.field(S.Tuple(S.String, S.Finite))
+
+
+class PairError(S.Error):
+    pair: tuple[str, float] = S.field(S.Tuple(S.String, S.Finite))
+
+
+class TaggedPair(S.TaggedClass):
+    pair: tuple[str, float] = S.field(S.Tuple(S.String, S.Finite))
+
+
+class TaggedPairError(S.TaggedError):
+    pair: tuple[str, float] = S.field(S.Tuple(S.String, S.Finite))
+
+
+@pytest.mark.parametrize("to_codec", [to_codec_openai, to_codec_anthropic])
+@pytest.mark.parametrize(
+    "cls", [Pair, PairError, TaggedPair, TaggedPairError], ids=lambda cls: cls.__name__
+)
+def test_structured_output_rewrites_the_fields_of_every_class_kind(cls: Any, to_codec: Any) -> None:
+    codec = to_codec(cls).codec
+    tag = getattr(cls, "_tag", None)
+    output: dict[str, object] = {"pair": {"0": "a", "1": 1}}
+    if tag is not None:
+        output["_tag"] = tag
+    assert S.decode_unknown_sync(codec)(output) == cls(pair=("a", 1))
+    assert S.encode_sync(codec)(cls(pair=("a", 1))) == output

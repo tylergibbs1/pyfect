@@ -148,6 +148,15 @@ class Class(AST):
                 return self
 
 
+def encoded_structure(ast: AST) -> AST:
+    """``ast`` as Effect's ``toEncoded`` leaves it: an encoded-side class is
+    its fields' struct, any other node itself. A walk that looks into the
+    fields of an encoded node reads each node through this."""
+    if isinstance(ast, Class) and ast.side == "encoded":
+        return ast.shape.encoded
+    return ast
+
+
 def check_instance(
     shape: ClassShape, instance: object, options: ParseOptions
 ) -> Exit[object, Issue]:

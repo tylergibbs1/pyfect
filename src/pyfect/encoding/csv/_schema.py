@@ -71,15 +71,18 @@ def _is_string_leaf(node: ast.AST) -> bool:
             return False
 
 
-def _resolve_suspend(node: ast.AST) -> ast.AST:
-    while isinstance(node, ast.Suspend):
-        node = node.target
-    return node
+def _resolve(node: ast.AST) -> ast.AST:
+    """The structure the cells come from: through suspends, and a class's fields."""
+    while True:
+        structure = ast.encoded_structure(node)
+        if not isinstance(structure, ast.Suspend):
+            return structure
+        node = structure.target
 
 
 def _check_cells(node: ast.AST, columns: Sequence[str] | None) -> None:
     """Raises unless every selected cell of an encoded struct or tuple is a string."""
-    node = _resolve_suspend(node)
+    node = _resolve(node)
 
     def check(name: str, type: ast.AST) -> None:
         if not _is_string_leaf(type):
@@ -177,6 +180,7 @@ def _schema_columns(
     """The columns to write: ``columns``, else a struct's encoded keys in
     order; tuples and arrays write by position. Other schemas, records among
     them, need explicit columns."""
+    node = _resolve(node)
     if columns is not None:
         _check_cells(node, columns)
         return columns
