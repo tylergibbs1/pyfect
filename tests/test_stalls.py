@@ -108,6 +108,51 @@ def test_sleeps_holding_the_gil():
 """
 )
 
+GIL_HELD_SLEEP_DUMPED_IN_THE_RUNNER = (
+    _SLEEP_HOLDING_THE_GIL
+    + """
+import inspect
+
+import _pytest._code.code
+import _pytest.nodes
+import _stalls
+import pluggy._callers
+
+take = _stalls._DumpTimer.take
+
+# Where release 0.6.25's loop caught the test thread: pytest reading a failed test's source
+# for its report, with no frame of the test or of pyfect left on the stack.
+REPORTING = tuple(
+    _stalls.Frame(module.__file__, line, func)
+    for module, line, func in (
+        (inspect, 1021, "getmodule"),
+        (inspect, 1074, "findsource"),
+        (_pytest._code.code, 926, "_getentrysource"),
+        (_pytest._code.code, 1243, "repr_excinfo"),
+        (_pytest.nodes, 477, "_repr_failure_py"),
+        (pluggy._callers, 121, "_multicall"),
+    )
+)
+
+
+def dumped_in_the_runner(self, *, stalled):
+    \"\"\"The stalled tick's dump, on time, with every thread in pytest's report.\"\"\"
+    dump = take(self, stalled=stalled)
+    if not stalled or dump is None:
+        return dump
+    threads = [_stalls.DumpedThread(t.ident, t.current, REPORTING) for t in dump.threads]
+    return _stalls._Dump(threads, dump.at, 0.0, _stalls._Timing.ON_TIME)
+
+
+_stalls._DumpTimer.take = dumped_in_the_runner
+
+
+def test_stalls_in_the_runner():
+    ctypes.PyDLL(None).read(*a_pipe_written_in(1))  # the GIL held 1 s
+    assert False
+"""
+)
+
 GIL_HELD_SLEEP_DUMPED_LATE = (
     _SLEEP_HOLDING_THE_GIL
     + """
@@ -358,6 +403,18 @@ def test_a_freeze_right_after_the_dump_is_armed_is_a_host_stall(
 
 
 @_NEEDS_STACK_DUMPS
+def test_a_stall_with_only_the_runner_on_the_stack_is_not_named_pyfect(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Release 0.6.25's loop: the process stalled while pytest built a failure's report, and
+    the dump's busy thread, all pytest and standard library frames, read "pyfect blocked in
+    getmodule (inspect.py)". The stall is the runner's."""
+    out = _run(pytester, monkeypatch, GIL_HELD_SLEEP_DUMPED_IN_THE_RUNNER)
+    assert re.search(r"process stalled 1\.\d s: the test runner busy in getmodule \(", out), out
+    assert "pyfect blocked" not in out
+
+
+@_NEEDS_STACK_DUMPS
 def test_a_c_call_sleeping_with_the_gil_held_is_named_pyfect_not_host(
     pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -604,72 +661,101 @@ def test_after_it():
     assert signal.getsignal(signal.SIGPROF) is signal.SIG_DFL
 """
 
-BUSY_UNTIL_SAMPLED = """
-import signal
+_SAMPLED_BUSY_STEPS = """
+import sys
 import time
 
+import _stalls
 import pyfect as fx
+import pytest
+
+SAMPLED_CPU = 0.1
+\"\"\"Seconds of the busy thread's own CPU spun while it is sampled: one sample per 10 ms of
+it (``_stalls._PROFILE_INTERVAL``), however starved the host leaves the process.\"\"\"
 
 
-def spin_on_purpose(n):
-    return sum(range(n))  # one C call: holds the GIL throughout
-
-
-def step():
-    spin_on_purpose(10**5)  # about 1 ms
-    time.sleep(0.0002)  # room for the watchdog to take the GIL, so its ticks keep time
-
-
-def sampling():
-    return signal.getitimer(signal.ITIMER_PROF) != (0.0, 0.0)
-
-
-@fx.fn
-def steps():
-    start = time.process_time()
-    while not sampling() and time.process_time() - start < 2:
-        yield from fx.sync(step)
-    # About 0.1 s with no tick: the CPU samples go on, the stall ends before the next tick.
-    yield from fx.sync(lambda: spin_on_purpose(10**7))
-
-
-def test_busy_until_sampled():
-    fx.run_blocking(steps())
-"""
-
-OWN_PROFILING_TIMER = """
-import signal
-import time
-
-import pyfect as fx
-
-fired = []
-
-
-def spin_on_purpose():
-    return sum(range(10**5))
+def spin_on_purpose(n=10**5):
+    return sum(range(n))  # one C call: holds the GIL throughout (10**5: about 1 ms)
 
 
 def step():
     spin_on_purpose()
-    time.sleep(0.0002)
+    time.sleep(0.0002)  # releases the GIL: with no forced switch, the only place a tick lands
 
 
-@fx.fn
-def steps():
-    start = time.process_time()
-    while time.process_time() - start < 2:  # 2 s of CPU, however fast the machine
+@pytest.fixture
+def sampler(request):
+    \"\"\"The watchdog's CPU sampler, with the GIL switched only where a step releases it.
+    Forced switches, which a starved host lets the watchdog ask for anywhere, would put its
+    ticks at different lines of the same busy loop, cutting one stall into several, the first
+    with a sample or none.\"\"\"
+    interval = sys.getswitchinterval()
+    sys.setswitchinterval(60)
+    try:
+        yield request.config.stash[_stalls._WATCHDOG]._cpu
+    finally:
+        sys.setswitchinterval(interval)
+
+
+def busy_until_sampled(sampler):
+    \"\"\"Busy steps until the watchdog names them a busy stall and samples the thread.\"\"\"
+    while sampler.thread is None:
         yield from fx.sync(step)
 
 
-def test_profiles_itself():
+def spun(cpu):
+    \"\"\"Whether ``cpu`` seconds of this thread's CPU have passed (``time.thread_time``).\"\"\"
+    end = time.thread_time() + cpu
+    return lambda: time.thread_time() >= end
+"""
+
+BUSY_UNTIL_SAMPLED = (
+    _SAMPLED_BUSY_STEPS
+    + """
+
+def spin_until_sampled():
+    # No tick until it returns (the GIL stays held): the stall's only head written meanwhile
+    # came before the first sample, and the samples go on.
+    done = spun(SAMPLED_CPU)
+    while not done():
+        spin_on_purpose()
+
+
+@fx.fn
+def steps(sampler):
+    yield from busy_until_sampled(sampler)
+    yield from fx.sync(spin_until_sampled)  # the stall ends before the next tick
+
+
+def test_busy_until_sampled(sampler):
+    fx.run_blocking(steps(sampler))
+"""
+)
+
+OWN_PROFILING_TIMER = (
+    _SAMPLED_BUSY_STEPS
+    + """
+import signal
+
+fired = []
+
+
+@fx.fn
+def steps(sampler):
+    yield from busy_until_sampled(sampler)
+    done = spun(SAMPLED_CPU)
+    while not done():
+        yield from fx.sync(step)
+
+
+def test_profiles_itself(sampler):
     def on_prof(signum, frame):
         fired.append(signum)
 
     signal.signal(signal.SIGPROF, on_prof)
     signal.setitimer(signal.ITIMER_PROF, 0.05, 0.05)
     try:
-        fx.run_blocking(steps())  # a busy stall, past the threshold
+        fx.run_blocking(steps(sampler))  # a busy stall, sampled
         assert signal.getitimer(signal.ITIMER_PROF)[1] == 0.05
         assert signal.getsignal(signal.SIGPROF) is on_prof
         assert fired  # its timer kept firing into its own handler
@@ -677,6 +763,7 @@ def test_profiles_itself():
         signal.setitimer(signal.ITIMER_PROF, 0, 0)
         signal.signal(signal.SIGPROF, signal.SIG_DFL)
 """
+)
 
 
 def _outcomes(
