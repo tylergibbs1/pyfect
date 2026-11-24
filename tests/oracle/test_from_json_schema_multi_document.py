@@ -15,7 +15,7 @@ from pyfect.testing import SchemaAsserts
 
 from ._effect_code import effect_code
 
-make_code = R.make_code
+make_code = R.Code
 
 
 def from_schema(js: Any) -> Any:

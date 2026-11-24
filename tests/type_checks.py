@@ -10790,10 +10790,13 @@ def schema_representation_types() -> None:
         R.to_json_schema_multi_document(R.to_multi_document(document))
     )
     assert_type(root, R.ImportedSchema)
-    code = R.to_code_document(R.to_multi_document(document))
+    code = code_document(R.to_multi_document(document))
     assert_type(code, R.CodeDocument)
     assert_type(code.codes[0], R.Code)
     assert_type(R.to_code_module(code), str)
+    R.to_code_document(R.to_multi_document(document))  # pyright: ignore[reportDeprecated]
+    R.make_code("S.String", "str")  # pyright: ignore[reportDeprecated]
+    assert_type(codegen.Module().add_schemas({"A": document.representation}).print(), str)
     assert_type(S.is_ecma_pattern("^a"), S.Filter[str])
     assert_type(S.is_ecma_pattern("^a", "iu"), S.Filter[str])
     # Without a reviver ``parse_json`` gives JSON; a reviver may return anything.
@@ -11736,6 +11739,8 @@ def check_m17_eventlog_client(
 
 # --- McpServer middleware and visibility: what they provide and need, never Any ------
 from pyfect.ai import mcp_server as mcp_server_module  # noqa: E402
+from pyfect.schema.representation._code_document import code_document  # noqa: E402
+from pyfect import codegen  # noqa: E402
 
 
 class McpUser(Tag[str], key="type_checks/McpUser"):

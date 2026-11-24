@@ -270,15 +270,15 @@ def effect_code(document: R.MultiDocument) -> dict[str, Any]:
     for key in sorted.recursives:
         writer.identifier(key)
     non_recursives = [
-        {"$ref": writer.identifier(key), "code": R.make_code(*writer.recur(node, ()))}
+        {"$ref": writer.identifier(key), "code": R.Code(*writer.recur(node, ()))}
         for key, node in sorted.non_recursives
     ]
     recursives: dict[str, R.Code] = {}
     for key, node in sorted.recursives.items():
         writer.compiling_recursive = True
-        recursives[writer.identifier(key)] = R.make_code(*writer.recur(node, ()))
+        recursives[writer.identifier(key)] = R.Code(*writer.recur(node, ()))
         writer.compiling_recursive = False
     return {
-        "codes": [R.make_code(*writer.recur(r, ())) for r in document.representations],
+        "codes": [R.Code(*writer.recur(r, ())) for r in document.representations],
         "references": {"nonRecursives": non_recursives, "recursives": recursives},
     }

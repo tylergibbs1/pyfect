@@ -244,7 +244,7 @@ def test_preserves_declaration_code_callbacks():
     """schema annotations and declarations / preserves declaration code callbacks"""
 
     def to_code(_: object) -> R.Code:
-        return R.make_code("Custom", "str")
+        return R.Code("Custom", "str")
 
     schema = S.declare(
         _is_str,

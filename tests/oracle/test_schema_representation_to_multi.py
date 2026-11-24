@@ -222,7 +222,7 @@ def test_wraps_the_root_representation_and_preserves_references():
 
 def test_constructs_runtime_and_type_source():
     """SchemaRepresentation.makeCode / constructs runtime and type source"""
-    assert R.make_code("S.String", "str") == R.Code("S.String", "str")
+    assert R.Code("S.String", "str") == R.Code("S.String", "str")
 
 
 class _Shared(TypedDict):

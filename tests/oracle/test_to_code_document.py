@@ -13,6 +13,7 @@ import pytest
 from pyfect import json_schema as JS
 from pyfect import schema as S
 from pyfect.schema import representation as R
+from pyfect.schema.representation._code_document import code_document
 
 from ._code_document_cases import CASES, Point, sample_document, sample_document_representations
 
@@ -20,7 +21,7 @@ _SAMPLE = Path(__file__).with_name("_generated_code_sample.py")
 
 
 def _module(schema: Any) -> dict[str, Any]:
-    source = R.to_code_module(R.to_code_document(R.to_representations((schema,))))
+    source = R.to_code_module(code_document(R.to_representations((schema,))))
     namespace: dict[str, Any] = {"__name__": "generated"}
     exec(source, namespace)
     return namespace
@@ -37,7 +38,7 @@ def test_generated_code_runs_and_round_trips(name: str) -> None:
     for value in rejected:
         assert not is_source(value)
         assert not is_generated(value)
-    assert R.to_code_document(R.to_representations((generated,))) == R.to_code_document(
+    assert code_document(R.to_representations((generated,))) == code_document(
         R.to_representations((schema,))
     )
 
@@ -56,7 +57,7 @@ def test_every_builtin_reviver_has_a_case() -> None:
 
 
 def _code(schema: Any) -> R.CodeDocument:
-    return R.to_code_document(R.to_representations((schema,)))
+    return code_document(R.to_representations((schema,)))
 
 
 @pytest.mark.parametrize(
@@ -107,7 +108,7 @@ def _code(schema: Any) -> R.CodeDocument:
 )
 def test_code_of_each_node(schema: Any, runtime: str, type: str) -> None:
     code = _code(schema).codes[0]
-    assert code == R.make_code(runtime, type)
+    assert code == R.Code(runtime, type)
 
 
 def test_a_struct_is_a_typed_dict_artifact_with_its_fields_as_keywords() -> None:
@@ -138,16 +139,16 @@ def test_references_come_in_dependency_order_with_sanitized_unique_names() -> No
     inner = S.String.annotate(identifier="a-b")
     other = S.Number.annotate(identifier="a_b")
     outer = S.Array(inner).annotate(identifier="None")
-    document = R.to_code_document(R.to_representations((outer, other)))
+    document = code_document(R.to_representations((outer, other)))
     assert [named.identifier for named in document.references.non_recursives] == [
         "A_b",
         "A_b1",
         "None1",
     ]
-    assert document.references.non_recursives[2].code == R.make_code(
+    assert document.references.non_recursives[2].code == R.Code(
         'S.Array(A_b).annotate(identifier="None")', "tuple[A_bType, ...]"
     )
-    assert document.codes == (R.make_code("None1", "None1Type"), R.make_code("A_b1", "A_b1Type"))
+    assert document.codes == (R.Code("None1", "None1Type"), R.Code("A_b1", "A_b1Type"))
 
 
 def test_a_recursive_reference_goes_through_suspend() -> None:
@@ -185,13 +186,13 @@ def test_a_to_code_annotation_gives_a_declaration_its_source() -> None:
         return True
 
     schema = S.declare(is_anything, to_code=to_code)
-    assert _code(schema).codes[0] == R.make_code("MySchema", "MyType")
+    assert _code(schema).codes[0] == R.Code("MySchema", "MyType")
 
 
 def test_an_invalid_reference_is_an_error_naming_its_path() -> None:
     document = R.MultiDocument((R.Reference("Missing"),), {})
     with pytest.raises(R.RepresentationError) as caught:
-        R.to_code_document(document)
+        code_document(document)
     assert str(caught.value) == 'Invalid reference Missing\n  at ["representations"][0]["ref"]'
 
 
@@ -201,7 +202,7 @@ def test_a_non_string_property_name_has_no_typed_dict_key() -> None:
         {},
     )
     with pytest.raises(R.RepresentationError):
-        R.to_code_document(document)
+        code_document(document)
 
 
 def test_a_struct_from_a_module_keeps_decoding_through_the_generated_typed_dict() -> None:
@@ -264,7 +265,7 @@ def test_a_reference_cannot_take_the_name_of_a_type_alias_or_of_a_root() -> None
 
 @pytest.mark.parametrize("names", [("A",), ("x", "x"), ("not a name",), ("class",), ("S",)])
 def test_a_root_name_that_would_break_the_module_is_refused(names: tuple[str, ...]) -> None:
-    document = R.to_code_document(
+    document = code_document(
         R.to_representations((S.Array(S.String.annotate(identifier="A")), S.Number))
     )
     with pytest.raises(ValueError, match="root name"):
@@ -277,5 +278,5 @@ def test_a_module_imports_only_the_typing_names_it_uses() -> None:
     schema = S.StructWithRest(
         S.Struct(Point), S.Record(S.String, S.Union([S.Never, S.Literal("a")]))
     )
-    source = R.to_code_module(R.to_code_document(R.to_representations((schema,))))
+    source = R.to_code_module(code_document(R.to_representations((schema,))))
     assert "from typing import NotRequired, TypedDict\n" in source

@@ -1,4 +1,5 @@
-"""``toCodeDocument.annotations.test.ts``, title by title, with the expected code in Python.
+"""``schema/representation/codegen.annotations.test.ts`` (``toCodeDocument.annotations.test.ts``
+until Effect 4.1.5), title by title, with the expected code in Python.
 
 Omitted:
 
@@ -20,10 +21,11 @@ import pytest
 
 from pyfect import schema as S
 from pyfect.schema import representation as R
+from pyfect.schema.representation._code_document import code_document
 
 
 def _document(*roots: Any, references: dict[str, Any] | None = None) -> R.CodeDocument:
-    return R.to_code_document(R.MultiDocument(tuple(roots), references or {}))
+    return code_document(R.MultiDocument(tuple(roots), references or {}))
 
 
 def _check_code(make: Callable[[R.CheckCodeInput], R.GeneratedCheck]) -> dict[str, object]:
@@ -48,7 +50,7 @@ def _ref_name(ref: str) -> str:
 def test_preserves_explicit_options_on_an_empty_union() -> None:
     """toCodeDocument annotations / preserves explicit options on an empty
     union"""
-    assert _document(R.Union((), mode="one_of")).codes[0] == R.make_code(
+    assert _document(R.Union((), mode="one_of")).codes[0] == R.Code(
         'S.Union([], mode="one_of")', "Never"
     )
 
@@ -60,19 +62,19 @@ def test_preserves_top_level_and_nested_proto_annotations_in_generated_code() ->
     annotations: dict[str, object] = {**value, "examples": [value]}
     schema = S.Unknown.annotate(**annotations)
     namespace: dict[str, Any] = {"__name__": "generated"}
-    exec(R.to_code_module(R.to_code_document(R.to_representations((schema,)))), namespace)
+    exec(R.to_code_module(code_document(R.to_representations((schema,)))), namespace)
     assert S.resolve_annotations(namespace["Schema0"]) == annotations
 
 
 def test_compiles_the_is_pattern_and_option_vertical_slice() -> None:
     """toCodeDocument annotations / compiles the isPattern and Option vertical
     slice"""
-    out = R.to_code_document(
+    out = code_document(
         R.to_representations((S.String.check(S.is_pattern(re.compile("^a+$"))), S.Option(S.String)))
     )
     assert out.codes[0].type == "str"
     assert out.codes[0].runtime.startswith('S.String.check(S.is_pattern(re.compile("^a+$", 32))')
-    assert out.codes[1] == R.make_code(
+    assert out.codes[1] == R.Code(
         'S.Option(S.String).annotate(expected="Option")', "fx.Option[str]"
     )
     assert R.ImportArtifact("import re") in out.artifacts
@@ -103,7 +105,7 @@ def test_passes_compiled_dependencies_to_checks_and_deduplicates_imports() -> No
 def test_emits_supported_annotation_trees_atomically() -> None:
     """toCodeDocument annotations / emits supported annotation trees atomically"""
     runtime = (
-        R.to_code_document(
+        code_document(
             R.to_representations(
                 (
                     S.String.annotate(
@@ -161,7 +163,7 @@ def test_omits_unsupported_object_annotations_atomically() -> None:
         nested={"value": 1, "map": collections.OrderedDict[str, int](a=1)},
         array=[1, {1}],
     )
-    runtime = R.to_code_document(R.to_representations((schema,))).codes[0].runtime
+    runtime = code_document(R.to_representations((schema,))).codes[0].runtime
     assert runtime == 'S.String.annotate(kept={"value": 1})'
 
 
@@ -188,10 +190,10 @@ def test_emits_tuple_element_and_property_annotations() -> None:
             )
         ),
     )
-    assert out.codes[0] == R.make_code(
+    assert out.codes[0] == R.Code(
         'S.Tuple(S.String.annotate_key(element={"value": 1}))', "tuple[str]"
     )
-    assert out.codes[1] == R.make_code(
+    assert out.codes[1] == R.Code(
         "S.Struct(_Struct, value=S.Number.annotate_key(property=True))", "_Struct"
     )
 
@@ -235,7 +237,7 @@ def test_passes_type_parameters_to_declaration_callbacks() -> None:
         type_parameters=(_STRING,),
         representation=R.RepresentationAnnotation("acme/schema/Box"),
     )
-    assert _document(declaration).codes == (R.make_code("custom.box(S.String)", "custom.Box[str]"),)
+    assert _document(declaration).codes == (R.Code("custom.box(S.String)", "custom.Box[str]"),)
 
 
 def test_reports_missing_to_code_callbacks_and_preserves_callback_exceptions() -> None:
@@ -267,8 +269,8 @@ def test_generates_content_media_types_optional_pre_rest_elements_and_numeric_pr
         R.Arrays(elements=(R.Element(_STRING, is_optional=True),), rest=(_NUMBER,)),
     )
     assert out.codes == (
-        R.make_code('S.String.annotate(contentMediaType="text/plain")', "str"),
-        R.make_code(
+        R.Code('S.String.annotate(contentMediaType="text/plain")', "str"),
+        R.Code(
             "S.TupleWithRest(S.Tuple(S.optional_key(S.String)), S.Number)",
             "tuple[*tuple[str | float, ...]]",
         ),
@@ -280,7 +282,7 @@ def test_emits_references_that_are_not_reachable_from_a_root() -> None:
     """toCodeDocument annotations / emits references that are not reachable from
     a root"""
     assert _document(_STRING, references={"Unused": _NUMBER}).references == R.CodeReferences(
-        (R.NamedCode("Unused", R.make_code("S.Number", "float")),), {}
+        (R.NamedCode("Unused", R.Code("S.Number", "float")),), {}
     )
 
 
@@ -315,11 +317,11 @@ def test_reference_identifiers(ref: str, identifier: str) -> None:
 
 def test_preserves_a_lowercase_identifier_annotation() -> None:
     """toCodeDocument annotations / preserves a lowercase identifier annotation"""
-    out = R.to_code_document(
+    out = code_document(
         R.to_multi_document(R.to_representation(S.String.annotate(identifier="hello")))
     )
     assert out.references.non_recursives[0] == R.NamedCode(
-        "Hello", R.make_code('S.String.annotate(identifier="hello")', "str")
+        "Hello", R.Code('S.String.annotate(identifier="hello")', "str")
     )
 
 
@@ -402,7 +404,7 @@ def test_preserves_explicit_options_on_a_single_literal_union() -> None:
     """toCodeDocument annotations / preserves explicit options on a single-literal
     Union"""
     out = _document(R.Union((R.Literal("a"),), mode="one_of"))
-    assert out.codes[0] == R.make_code('S.Union([S.Literal("a")], mode="one_of")', 'Literal["a"]')
+    assert out.codes[0] == R.Code('S.Union([S.Literal("a")], mode="one_of")', 'Literal["a"]')
 
 
 def test_emits_every_member_of_a_mutually_recursive_reference_cycle() -> None:
@@ -412,8 +414,8 @@ def test_emits_every_member_of_a_mutually_recursive_reference_cycle() -> None:
     assert out.references == R.CodeReferences(
         (),
         {
-            "A": R.make_code("S.suspend(lambda: B)", "BType"),
-            "B": R.make_code("S.suspend(lambda: A)", "AType"),
+            "A": R.Code("S.suspend(lambda: B)", "BType"),
+            "B": R.Code("S.suspend(lambda: A)", "AType"),
         },
     )
 
@@ -423,8 +425,8 @@ def test_emits_a_non_recursive_definition_that_depends_on_a_recursive_definition
     on a recursive definition"""
     out = _document(R.Reference("B"), references={"A": R.Reference("A"), "B": R.Reference("A")})
     assert out.references == R.CodeReferences(
-        (R.NamedCode("B", R.make_code("A", "AType")),),
-        {"A": R.make_code("S.suspend(lambda: A)", "AType")},
+        (R.NamedCode("B", R.Code("A", "AType")),),
+        {"A": R.Code("S.suspend(lambda: A)", "AType")},
     )
 
 
