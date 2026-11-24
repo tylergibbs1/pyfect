@@ -973,7 +973,7 @@ def test_reads_writes_replaces_and_clears_message_set_extension(number: int, typ
     decoded = protobuf_message.decode(container)(wire).get_or_raise()
     assert get_extension(decoded, extension) == Ok({"x": 7})
     set_ = set_extension({U: hexb(other)}, extension, {"x": 7}).get_or_raise()
-    assert protobuf_message.encode(container)(set_) == Ok(wire)  # pyright: ignore[reportArgumentType]
+    assert protobuf_message.encode(container)(set_) == Ok(wire)
     assert get_extension(set_, extension) == Ok({"x": 7})
     replaced = set_extension(decoded, extension, {"x": 8}).get_or_raise()
     assert replaced[U] == hexb(f"{other} 0b 10{type_id} 1a020808 0c")

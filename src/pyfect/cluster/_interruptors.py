@@ -5,26 +5,30 @@ Keys are reference counted, so overlapping holders compose."""
 
 from __future__ import annotations
 
+import threading
+
 from pyfect._core import Effect
 from pyfect.cluster.entity_address import EntityAddress
 from pyfect.cluster.shard_id import ShardId
 from pyfect.effect import suspend, sync
 
 _counts: dict[str, int] = {}
+_counts_lock = threading.Lock()
+"""Held around each change of ``_counts``: runs on several threads hold keys at once."""
 
 
 def _acquire(key: str) -> None:
-    _counts[key] = _counts.get(key, 0) + 1
+    with _counts_lock:
+        _counts[key] = _counts.get(key, 0) + 1
 
 
 def _release(key: str) -> None:
-    n = _counts.get(key)
-    if n is None:
-        return
-    if n <= 1:
-        del _counts[key]
-    else:
-        _counts[key] = n - 1
+    with _counts_lock:
+        n = _counts.get(key, 0)
+        if n > 1:
+            _counts[key] = n - 1
+        elif n == 1:
+            del _counts[key]
 
 
 def _around[A, E, R](key: str, effect: Effect[A, E, R]) -> Effect[A, E, R]:

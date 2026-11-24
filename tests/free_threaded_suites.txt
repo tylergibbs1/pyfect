@@ -21,3 +21,4 @@ tests/test_fiber_profiler.py
 tests/test_on_thread.py
 tests/test_interpreter_pool.py
 tests/test_native_stacks.py
+tests/test_stable_caches.py

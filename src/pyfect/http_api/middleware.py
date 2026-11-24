@@ -26,8 +26,8 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, ClassVar, Generic, Never, TypeVar
 
+from pyfect import _stable_cache, error_reporter
 from pyfect import cause as _cause
-from pyfect import error_reporter
 from pyfect._core import Effect
 from pyfect._effect_args import require_effect
 from pyfect.context import Context, ServiceMarker, Tag
@@ -259,18 +259,14 @@ def layer_client_effect[M: HttpApiMiddleware[Any, Any, Any], E, R, EX, RX](
     return layer_effect_context(made.flat_map(build))
 
 
-_client_tags: dict[str, type[Tag[Any]]] = {}
+_client_tags = _stable_cache.StableCache[str, type[Tag[Any]]]()
 
 
 def client_tag(middleware: AnyMiddleware) -> type[Tag[Any]]:
     """The tag holding ``middleware``'s client function: one per middleware,
     keyed ``<key>/Client`` (Effect's ``ForClient`` key)."""
     key = client_key(middleware)
-    found = _client_tags.get(key)
-    if found is None:
-        found = type(f"{middleware.__name__}Client", (Tag,), {}, key=key)
-        _client_tags[key] = found
-    return found
+    return _client_tags.get(key, lambda: type(f"{middleware.__name__}Client", (Tag,), {}, key=key))
 
 
 __all__ = [

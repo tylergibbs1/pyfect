@@ -29,6 +29,7 @@ from typing import (
     overload,
 )
 
+from pyfect import _stable_cache
 from pyfect import schema as S
 from pyfect._core import Effect
 from pyfect._effect_base import Step
@@ -547,18 +548,14 @@ class HandlerEntry:
     context: Context[Any]
 
 
-_handler_tags: dict[str, type[Tag[HandlerEntry]]] = {}
+_handler_tags = _stable_cache.StableCache[str, type[Tag[HandlerEntry]]]()
 
 
 def handler_tag(rpc: AnyRpc) -> type[Tag[HandlerEntry]]:
     """The tag holding ``rpc``'s handler: one per tag, keyed as Effect keys
     it (``effect/rpc/Rpc/<tag>``)."""
     key = rpc.key
-    found = _handler_tags.get(key)
-    if found is None:
-        found = type(f"RpcHandler[{rpc.tag}]", (Tag,), {}, key=key)
-        _handler_tags[key] = found
-    return found
+    return _handler_tags.get(key, lambda: type(f"RpcHandler[{rpc.tag}]", (Tag,), {}, key=key))
 
 
 __all__ = [

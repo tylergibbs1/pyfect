@@ -43,6 +43,7 @@ from typing import (
     overload,
 )
 
+from pyfect import _stable_cache
 from pyfect._core import Effect, Step, _FailCause, _Succeed
 from pyfect._pipe import pipe_one
 from pyfect.cause import Cause, Die
@@ -395,20 +396,12 @@ class _Omit[T]:
 
 
 _EMPTY: Context[Never] = Context()
-_defaults: dict[type[Reference[Any]], Any] = {}
-
-
-_NO_DEFAULT = object()
+_defaults = _stable_cache.StableCache[type[Reference[Any]], Any]()
 
 
 def _default_of(tag: type[Reference[Any]]) -> Any:
-    """Each reference's default is built once, on first use. Runs on other
-    threads may build it at the same time; the first stored is the one all
-    of them get (``setdefault`` is atomic)."""
-    found = _defaults.get(tag, _NO_DEFAULT)
-    if found is _NO_DEFAULT:
-        found = _defaults.setdefault(tag, tag.default())
-    return found
+    """Each reference's default is built on first use, the same one for runs on every thread."""
+    return _defaults.get(tag, tag.default)
 
 
 def tag_class[S, T](tag: TagLike[S, T]) -> type[Tag[S]]:
