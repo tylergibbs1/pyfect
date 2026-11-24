@@ -213,12 +213,19 @@ class _Inline:
     position past either end reads as ``None``, as JavaScript's
     ``undefined``."""
 
-    __slots__ = ("budget", "depth", "s")
+    __slots__ = ("budget", "closes", "dead", "depth", "s")
 
     def __init__(self, s: str, depth: int, budget: _Budget) -> None:
         self.s = s
         self.depth = depth
         self.budget = budget
+        # The delimiter runs a closer search walked through and found no closer after,
+        # by delimiter and length: a search from one of them walks the same positions,
+        # so it is not made again.
+        self.dead: dict[tuple[str, int], set[int]] = {}
+        # The ``]`` (or -1) each ``[`` a bracket search walked through closes at: a search
+        # from one of them walks the same positions.
+        self.closes: dict[int, int] = {}
 
     def at(self, k: int) -> str | None:
         return self.s[k] if 0 <= k < len(self.s) else None
@@ -260,7 +267,11 @@ class _Inline:
         """The index of the ``]`` closing the ``[`` at ``i``, skipping escapes
         and code spans."""
         s = self.s
-        depth = 0
+        closes = self.closes
+        known = closes.get(i)
+        if known is not None:
+            return known
+        opened: list[int] = []
         j = i
         while j < len(s):
             self.budget.spend()
@@ -271,12 +282,14 @@ class _Inline:
                 j = self.code_span(j).end
             else:
                 if char == "[":
-                    depth += 1
-                elif char == "]":
-                    depth -= 1
-                    if depth == 0:
+                    opened.append(j)
+                elif char == "]" and opened:
+                    closes[opened.pop()] = j
+                    if not opened:
                         return j
                 j += 1
+        for k in opened:
+            closes[k] = -1
         return -1
 
     def destination(self, i: int) -> tuple[str, int] | None:  # noqa: PLR0912
@@ -409,6 +422,10 @@ class _Inline:
         n = self.run_length(i, char)
         if n > 2 or not self.can_open(i, n):
             return None
+        dead = self.dead.setdefault((char, n), set())
+        if i in dead:
+            return None
+        walked = [i]
         j = i + n
         while j < len(s):
             self.budget.spend()
@@ -424,7 +441,9 @@ class _Inline:
                 marker = "~" if char == "~" else "*" if n == 2 else "_"
                 candidate = marker + self.nested(s[i + n : j]) + marker
                 return _Atom(j + m, _pick(candidate, s[i : j + m]))
+            walked.append(j)
             j += m
+        dead.update(walked)
         return None
 
     def render(self) -> str:

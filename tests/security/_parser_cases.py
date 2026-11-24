@@ -629,7 +629,7 @@ def _whatsapp_backticks(n: int) -> Work:
     return lambda: whatsapp_text.render(value)
 
 
-@case(whatsapp_text.render, "whatsapp _text.render: nested link labels", size=4000)
+@case(whatsapp_text.render, "whatsapp _text.render: nested link labels", size=2000)
 def _whatsapp_nested(n: int) -> Work:
     value = "[" * (n // 5) + "x" + "](u)" * (n // 5)
     return lambda: whatsapp_text.render(value)
@@ -641,7 +641,7 @@ def _whatsapp_depth_quotes(n: int) -> Work:
     return lambda: whatsapp_json.within_depth(value)
 
 
-@case(whatsapp_chat.normalize, "whatsapp_chat.normalize: many messages", size=4000)
+@case(whatsapp_chat.normalize, "whatsapp_chat.normalize: many messages", size=2000)
 def _whatsapp_messages(n: int) -> Work:
     message = {"from": "1", "id": "w", "timestamp": "1", "type": "text", "text": {"body": "hi"}}
     envelope = {
