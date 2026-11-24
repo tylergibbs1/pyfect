@@ -24,8 +24,11 @@ import pytest
 
 import pyfect as fx
 from pyfect import layer, testing
+from pyfect import schema as S
 from pyfect.ai import mcp_protocol as P
 from pyfect.ai import mcp_server as M
+from pyfect.ai import tool as T
+from pyfect.ai import toolkit as K
 from pyfect.ai._mcp.core import ToolEntry
 from pyfect.context import Context, Reference
 from pyfect.deferred import Deferred
@@ -126,6 +129,24 @@ def _rounds_of_a_second_call(
         return taken, (yield from read_message(response))
 
     return run
+
+
+@testing.live
+def test_answers_an_asynchronous_tools_call_before_a_scheduler_round_runs():
+    """McpServer.layerHttpRequestScoped / answers an asynchronous tools/call before a scheduler round runs"""  # noqa: E501
+    echo = T.make("Echo", success=S.String)
+    tools = K.make(echo)
+    # Effect's ``Promise.resolve``: the handler waits, and a timer of the run, not a round of
+    # the server's scheduler, resumes it.
+    handlers = tools.to_layer(echo.handler(lambda _, __: fx.sleep("1 millis").as_("hi")))
+    served = (
+        M.toolkit(tools)
+        .pipe(layer.provide(handlers))
+        .pipe(layer.provide_merge(server_layer("Echo", (PROTOCOL,), mode="request")))
+    )
+    rounds, message = yield from _rounds_of_a_second_call(served, lambda id: _call_tool("Echo", id))
+    assert rounds == 0
+    assert message["result"]["content"][0]["text"] == json.dumps("hi")
 
 
 @testing.effect

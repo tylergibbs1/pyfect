@@ -302,10 +302,17 @@ def _handle(
                 on_failure=queue.fail_cause,
                 on_success=lambda _: queue.end(),
             )
-            return worker.fork().map(lambda fiber: results(queue, fiber))
+            return worker.fork(start_immediately=True).map(
+                lambda fiber: results(queue, flushed_on_exit(fiber, queue))
+            )
 
         # Counted in the budgets before the handler runs (pyfect.ai.budget).
         return tool_call(tool_call_id).and_then(PreliminaryBuffer().flat_map(with_capacity))
+
+    def flushed_on_exit(fiber: Fiber[Any, Any], queue: Queue[_Output, Any]) -> Fiber[Any, Any]:
+        # Drain the last offer only once stream cleanup can no longer interrupt the producer.
+        fiber.add_observer_unsafe(lambda _: queue.flush_unsafe())
+        return fiber
 
     def results(queue: Queue[_Output, Any], fiber: Any) -> Stream[HandlerResult, Any, Any]:
         source: Stream[_Output, Any, Any] = StreamSources.from_queue(queue)
