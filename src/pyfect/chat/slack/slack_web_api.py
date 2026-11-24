@@ -16,6 +16,8 @@ from pyfect.chat.chat_adapter import retry_safe
 from pyfect.chat.chat_error import AnyReason, ChatError
 from pyfect.chat.slack import _errors
 from pyfect.context import Tag
+from pyfect.duration import Duration, from_input_unsafe
+from pyfect.duration import Input as DurationInput
 from pyfect.http import request as http_request
 from pyfect.http.client import HttpClient, HttpClientService
 from pyfect.http.error import HttpClientError
@@ -47,7 +49,9 @@ class SlackWebApiService:
       429 give ``RateLimited`` with the ``Retry-After`` wait.
     - A ``write`` never repeats once the request left: a transport failure,
       a server error or an unreadable answer is ``uncertain``. A read
-      retries ``retry`` failures unless ``retry=False``.
+      retries ``retry`` failures unless ``retry=False``, waiting out a
+      429's ``Retry-After`` unless it passes ``max_retry_after``: then the
+      call fails at once with ``RateLimited``.
     - The error's ``op`` is the method name.
     """
 
@@ -56,10 +60,12 @@ class SlackWebApiService:
         http: HttpClientService[HttpClientError, Never],
         bot_token: Redacted[str],
         base_url: str,
+        max_retry_after: Duration | None = None,
     ) -> None:
         self._http = http
         self._bot_token = bot_token
         self._base_url = base_url
+        self._max_retry_after = max_retry_after
 
     def call(
         self, method: str, body: Mapping[str, object], *, write: bool = False, retry: bool = True
@@ -69,7 +75,7 @@ class SlackWebApiService:
         land without an answer, so a failure is ``uncertain`` rather than
         retried; ``retry`` retries a safe failure, as ``retry_safe`` does."""
         once = self._once(method, body, write)
-        return retry_safe(once) if retry else once
+        return retry_safe(once, max_retry_after=self._max_retry_after) if retry else once
 
     def _once(
         self, method: str, body: Mapping[str, object], write: bool
@@ -122,23 +128,35 @@ class SlackWebApi(Tag[SlackWebApiService], key="@effect/chat-slack/SlackWebApi")
 
 
 def make(
-    *, bot_token: Redacted[str], base_url: str = DEFAULT_BASE_URL
+    *,
+    bot_token: Redacted[str],
+    base_url: str = DEFAULT_BASE_URL,
+    max_retry_after: DurationInput | None = None,
 ) -> Effect[SlackWebApiService, Never, HttpClient]:
-    """Builds the client from an ``HttpClient`` and a bot token."""
+    """Builds the client from an ``HttpClient`` and a bot token.
+    ``max_retry_after`` caps the ``Retry-After`` a retried call waits out;
+    ``None`` waits out any."""
+    ceiling = None if max_retry_after is None else from_input_unsafe(max_retry_after)
 
     @fx.gen
     def body() -> Generator[Effect[Any, Never, HttpClient], Any, SlackWebApiService]:
         http = yield from HttpClient()
-        return SlackWebApiService(http, bot_token, base_url)
+        return SlackWebApiService(http, bot_token, base_url, ceiling)
 
     return body
 
 
 def layer(
-    *, bot_token: Redacted[str], base_url: str = DEFAULT_BASE_URL
+    *,
+    bot_token: Redacted[str],
+    base_url: str = DEFAULT_BASE_URL,
+    max_retry_after: DurationInput | None = None,
 ) -> Layer[SlackWebApi, Never, HttpClient]:
-    """The client as a layer."""
-    return _layer_effect(SlackWebApi, make(bot_token=bot_token, base_url=base_url))
+    """The client as a layer; see ``make``."""
+    return _layer_effect(
+        SlackWebApi,
+        make(bot_token=bot_token, base_url=base_url, max_retry_after=max_retry_after),
+    )
 
 
 __all__ = ["DEFAULT_BASE_URL", "ChatError", "SlackWebApi", "SlackWebApiService", "layer", "make"]

@@ -17,10 +17,11 @@ formatting (`*bold*`, `_italic_`, `~strike~`, a link as `label (url)`), and each
 replacement is used only when it is no longer than what it replaces, so a post that fits
 before rendering still fits after.
 
-There is no `escape_markdown` for WhatsApp, as there is for Telegram and Teams. WhatsApp
+There is no `escape_markdown` for WhatsApp, as there is for Slack, Telegram and Teams. WhatsApp
 has no link markup, so a link always shows its URL and text a user wrote cannot hide one,
 and it has no escape character: `*bold*` in a display name is bold in WhatsApp however it
-is sent.
+is sent. A backslash is sent as it is and shows to the user, so escaping with one only adds
+a `\` to the message.
 
 ## The webhook
 

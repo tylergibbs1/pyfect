@@ -102,6 +102,15 @@ class RateLimited(ChatErrorReason, tag="RateLimited", identifier=f"{_ID}/RateLim
     def retry(self) -> Retry:
         return "retry"
 
+    @property
+    def message(self) -> str:
+        """The tag and ``detail``, then the wait when there is one:
+        ``RateLimited: ratelimited; retry after 1h``."""
+        base = super().message
+        return (
+            base if self.retry_after is None else f"{base}; retry after {self.retry_after.format()}"
+        )
+
 
 class Unsupported(ChatErrorReason, tag="Unsupported", identifier=f"{_ID}/Unsupported"):
     """The platform has no equivalent for the op (``"denied"``);

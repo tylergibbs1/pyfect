@@ -87,6 +87,8 @@ Branches never edit CHANGELOG.md. A branch that changes `src/` adds one, or
 `changes/<slug>.none.md` giving the reason it needs none, which a release deletes (CI's lint job
 runs `scripts/changelog_fragment.py`). A release is `uv run python scripts/release.py X.Y.Z`: it
 moves the fragments under `## X.Y.Z (date)`, sets pyproject's version and runs `uv lock`.
+When the newest tag never published, `--carry W.V.U --reason "..."` folds its section into
+X.Y.Z's under a note saying so, and then X.Y.Z needs no fragments of its own.
 If main gains fragments before the release PR lands, reset those three files to main's and
 run it again.
 

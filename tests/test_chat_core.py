@@ -34,7 +34,7 @@ from pyfect.chat.chat_error import (
 )
 from pyfect.chat.chat_event import StopRequested
 from pyfect.chat.chat_test import ChatTest
-from pyfect.duration import seconds
+from pyfect.duration import hours, millis, seconds
 from pyfect.tracer import NativeSpan, SpanRequest, Tracer
 
 type Gen[A] = Generator[Effect[Any, Any, Any], Any, A]
@@ -172,6 +172,17 @@ def test_delegates_retry_after_to_the_reason():
     """ChatError / delegates retryAfter to the reason"""
     error = ChatError(platform="slack", op="post", reason=REASONS[0])
     assert error.retry_after == seconds(3)
+
+
+def test_a_rate_limited_message_says_how_long_to_wait():
+    """A log line of the error alone tells when to retry; Effect's message
+    leaves the wait out."""
+    error = ChatError(
+        platform="slack", op="post", reason=RateLimited(detail="ratelimited", retry_after=hours(1))
+    )
+    assert error.message == "slack.post: RateLimited: ratelimited; retry after 1h"
+    assert RateLimited(retry_after=millis(1500)).message == "RateLimited; retry after 1s 500ms"
+    assert RateLimited().message == "RateLimited"
 
 
 # --- ChatEvent -----------------------------------------------------------------------

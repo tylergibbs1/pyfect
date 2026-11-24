@@ -378,3 +378,84 @@ def test_a_release_refuses_an_old_version_or_no_fragments(
 def test_a_version_is_three_numbers(text: str):
     with pytest.raises(release.ReleaseError, match="is not a version"):
         Version.parse(text)
+
+
+def test_a_carry_rebuilds_0_6_32_from_the_unpublished_0_6_31(tmp_path: Path):
+    """0.6.31 was tagged but never published; 0.6.32, folded together by hand, is what
+    ``--carry`` writes from 0.6.31's section and only a note that a change needs no entry."""
+    text = _text()
+    section = _sections(text)[Version(0, 6, 32)]
+    older = text[text.index(section) + len(section) :]
+    note = (
+        "0.6.31 was tagged but never published: a test timed out in its release run. 0.6.32"
+        " carries its changes.\n\n"
+    )
+    unpublished = section.replace("## 0.6.32", "## 0.6.31", 1).replace(note, "", 1)
+    repo = _repo(tmp_path, "# Changelog\n\n" + unpublished + older, {})
+    (repo / "changes" / "tests.none.md").write_text("- test speed\n")
+    carry = release.Carry(Version(0, 6, 31), "a test timed out in its release run")
+    release.release(repo, Version(0, 6, 32), date(2026, 11, 24), carry)
+    assert (repo / "CHANGELOG.md").read_text() == "# Changelog\n\n" + section + older
+    assert list((repo / "changes").iterdir()) == []
+    assert 'version = "0.6.32"' in (repo / "pyproject.toml").read_text()
+
+
+_UNPUBLISHED = (
+    "# Changelog\n\n## 0.6.13 (2026-11-19)\n\n### Fixed\n\n- old fix\n  more\n\n"
+    "### Docs\n\n- old doc\n\n## 0.6.12 (2026-11-18)\n\n### Fixed\n\n- b\n"
+)
+
+
+def test_a_carry_merges_the_sections_in_order_with_the_note_first(tmp_path: Path):
+    repo = _repo(tmp_path, _UNPUBLISHED, {"a.added.md": "- new\n", "f.fixed.md": "- new fix\n"})
+    carry = release.Carry(Version(0, 6, 13), "its release run failed.")
+    released = release.release(repo, Version(0, 6, 14), date(2026, 11, 20), carry)
+    assert len(released) == 4
+    assert (repo / "CHANGELOG.md").read_text() == (
+        "# Changelog\n\n## 0.6.14 (2026-11-20)\n\n"
+        "0.6.13 was tagged but never published: its release run failed. 0.6.14 carries its"
+        " changes.\n\n"
+        "### Added\n\n- new\n\n"
+        "### Fixed\n\n- old fix\n  more\n- new fix\n\n"
+        "### Docs\n\n- old doc\n\n"
+        "## 0.6.12 (2026-11-18)\n\n### Fixed\n\n- b\n"
+    )
+    assert list((repo / "changes").iterdir()) == []
+
+
+def test_a_carry_needs_only_notes_without_an_entry(tmp_path: Path):
+    repo = _repo(tmp_path, _UNPUBLISHED, {"r.none.md": "- a refactor\n"})
+    carry = release.Carry(Version(0, 6, 13), "a test timed out")
+    release.release(repo, Version(0, 6, 14), date(2026, 11, 20), carry)
+    assert (
+        (repo / "CHANGELOG.md")
+        .read_text()
+        .startswith(
+            "# Changelog\n\n## 0.6.14 (2026-11-20)\n\n0.6.13 was tagged but never published:"
+            " a test timed out. 0.6.14 carries its changes.\n\n### Fixed\n\n- old fix\n  more\n\n"
+            "### Docs\n\n- old doc\n\n## 0.6.12"
+        )
+    )
+    assert list((repo / "changes").iterdir()) == []
+
+
+@pytest.mark.parametrize(
+    ("carried", "reason", "message"),
+    [
+        ("0.6.12", "x", "--carry 0.6.12 is not the newest release, 0.6.13"),
+        ("0.6.13", " ", "say why 0.6.13 was never published"),
+    ],
+)
+def test_a_carry_refuses_an_older_version_or_no_reason(
+    tmp_path: Path, carried: str, reason: str, message: str
+):
+    repo = _repo(tmp_path, _UNPUBLISHED, {})
+    carry = release.Carry(Version.parse(carried), reason)
+    with pytest.raises(release.ReleaseError, match=re.escape(message)):
+        release.release(repo, Version(0, 6, 14), date(2026, 11, 20), carry)
+    assert (repo / "CHANGELOG.md").read_text() == _UNPUBLISHED
+
+
+def test_carry_and_reason_go_together():
+    with pytest.raises(SystemExit):
+        release.main(["0.6.14", "--carry", "0.6.13"])

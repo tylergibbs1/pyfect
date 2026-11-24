@@ -62,6 +62,17 @@ through, and `unfurl`, `native_stream` and `session_status_at_end` turn link pre
 Slack's native streaming and the agent session status on or off. Nested options merge,
 and the inner option wins.
 
+Text a user wrote still forms syntax inside your Markdown: a display name of `<!channel>`
+notifies the channel when the options allow broadcasts, and `[x](https://evil.example)` is a
+live link. Put such text through `slack_chat.escape_markdown` first, within a line, as in
+`f"Approved by {slack_chat.escape_markdown(name)}"`. It writes `&`, `<` and `>` as entities,
+as Slack's formatting rules ask, and backslash-escapes Markdown syntax, so the text shows as
+typed and no token in it notifies, whatever the options allow.
+
+A call Slack answers 429 is retried after its `Retry-After`, however long Slack asks for.
+Pass `max_retry_after` to `slack_chat.layer`, such as `"1 minute"`, and a longer wait fails
+the op at once with `RateLimited`, its `retry_after` the wait Slack asked for.
+
 <CodeOutput>
 
 <include meta='title="slack_bot.py"'>../../snippets/chat/slack_bot.py</include>

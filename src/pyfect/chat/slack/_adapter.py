@@ -56,7 +56,7 @@ from pyfect.chat.slack._address import Parts
 from pyfect.chat.slack._escape import Notify
 from pyfect.chat.slack._options import CurrentPostOptions, SessionStatus
 from pyfect.chat.slack.slack_web_api import SlackWebApiService
-from pyfect.duration import millis, minutes, seconds
+from pyfect.duration import Duration, millis, minutes, seconds
 from pyfect.http import request as http_request
 from pyfect.http.client import HttpClientService
 from pyfect.http.error import HttpClientError
@@ -233,6 +233,7 @@ class SlackAdapter:
         team_id: str,
         bot_user_id: Effect[str, ChatError],
         attach_failed: AttachFailed,
+        max_retry_after: Duration | None = None,
     ) -> None:
         self._api = api
         self._http = http
@@ -240,6 +241,7 @@ class SlackAdapter:
         self._team_id = team_id
         self._bot_user_id = bot_user_id
         self._attach_failed = attach_failed
+        self._max_retry_after = max_retry_after
         self._streams: dict[str, _StreamState] = {}
         self._backoffs: dict[str, _Backoff] = {}
         self._next_edit: dict[str, float] = {}
@@ -590,7 +592,8 @@ class SlackAdapter:
                             _errors.transport(False, "timeout"),
                         ),
                         "edit",
-                    )
+                    ),
+                    max_retry_after=self._max_retry_after,
                 )
                 .timeout_or_else(
                     _ATTACH_DEADLINE,
@@ -695,7 +698,8 @@ class SlackAdapter:
                         retry=False,
                     ),
                     "edit",
-                )
+                ),
+                max_retry_after=self._max_retry_after,
             )
 
         return run

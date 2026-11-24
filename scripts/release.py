@@ -2,12 +2,17 @@
 
     uv run python scripts/release.py 0.6.19            # dated today (UTC)
     uv run python scripts/release.py 0.7.0 --date 2026-12-01
+    uv run python scripts/release.py 0.6.33 --carry 0.6.32 --reason "its release run failed."
 
 A fragment is one changelog entry, ``changes/<slug>.<section>.md``, its body the entry's
 Markdown starting with ``- ``. Branches add fragments and never edit CHANGELOG.md, so a release
 merged in the meantime can't move their entries into the version it shipped. A change no user
 can see adds ``changes/<slug>.none.md`` instead, its body the reason; a release deletes it
 without an entry (scripts/changelog_fragment.py wants one or the other for a change to src/).
+
+``--carry`` folds the newest section, a version that was tagged but never published, into the
+new one, section by section, under a note that says so; the new release then needs no fragments
+of its own.
 """
 
 import argparse
@@ -126,8 +131,11 @@ def read_changes(root: Path) -> Changes:
     )
 
 
-def render(version: Version, day: date, fragments: Iterable[Fragment]) -> str:
-    """The release's section of CHANGELOG.md, ending in the blank line before the next one."""
+def render(
+    version: Version, day: date, fragments: Iterable[Fragment], preamble: Sequence[str] = ()
+) -> str:
+    """The release's section of CHANGELOG.md, ending in the blank line before the next one:
+    the ``preamble`` paragraphs, then the entries under their section headings."""
     by_section: dict[Section, list[str]] = {}
     for fragment in fragments:
         by_section.setdefault(fragment.section, []).append(fragment.body)
@@ -136,7 +144,59 @@ def render(version: Version, day: date, fragments: Iterable[Fragment]) -> str:
         for section in SECTIONS
         if section in by_section
     ]
-    return f"## {version} ({day.isoformat()})\n\n" + "".join(blocks)
+    notes = "".join(f"{paragraph}\n\n" for paragraph in preamble)
+    return f"## {version} ({day.isoformat()})\n\n" + notes + "".join(blocks)
+
+
+@dataclass(frozen=True)
+class Carry:
+    """A version that was tagged but never published, and why, for the next release to carry."""
+
+    version: Version
+    reason: str
+
+    def note(self, version: Version) -> str:
+        reason = self.reason.strip()
+        if not reason:
+            raise ReleaseError(f"say why {self.version} was never published: --reason")
+        if reason[-1] not in ".!?":
+            reason += "."
+        return (
+            f"{self.version} was tagged but never published: {reason}"
+            f" {version} carries its changes."
+        )
+
+
+@dataclass(frozen=True)
+class ReleasedSection:
+    """A released section of CHANGELOG.md, read back: its notes and its entries."""
+
+    preamble: tuple[str, ...]
+    entries: tuple[Fragment, ...]
+
+
+_TITLE_SECTION: dict[str, Section] = {title: section for section, title in TITLES.items()}
+
+
+def read_section(version: Version, text: str) -> ReleasedSection:
+    """``text``, a version's section without its ``## `` heading, as notes and entries."""
+    preamble: list[str] = []
+    entries: list[Fragment] = []
+    section: Section | None = None
+    for chunk in re.split(r"(?m)^(?=### |- )", text.strip("\n") + "\n"):
+        if not chunk.strip():
+            continue
+        if chunk.startswith("### "):
+            title = chunk[4:].split("\n", 1)[0]
+            if title not in _TITLE_SECTION:
+                raise ReleaseError(f"{version} has a section {title!r}, not one of {SECTIONS}")
+            section = _TITLE_SECTION[title]
+        elif section is None:
+            preamble.extend(p for p in chunk.strip("\n").split("\n\n") if p.strip())
+        else:
+            body = chunk.rstrip("\n") + "\n"
+            entries.append(Fragment(f"{version}#{len(entries)}", "", section, body))
+    return ReleasedSection(tuple(preamble), tuple(entries))
 
 
 def released_versions(changelog: str) -> list[Version]:
@@ -151,10 +211,14 @@ def too_early_for_a_minor(fragments: Iterable[Fragment], version: Version) -> li
     return [f.name for f in fragments if f.section not in PATCH_SECTIONS]
 
 
-def release(root: Path, version: Version, day: date) -> tuple[Fragment, ...]:
+def release(
+    root: Path, version: Version, day: date, carry: Carry | None = None
+) -> tuple[Fragment, ...]:
     """Write ``version``'s section from the fragments into CHANGELOG.md, delete them and set
     pyproject's version; delete the notes of changes that need none. Returns the fragments it
-    released."""
+    released. With ``carry``, the newest section, which must be ``carry.version``'s, is
+    replaced: its entries go first in each section of the new one, under ``carry``'s note,
+    and the new one needs no fragments."""
     changelog_path = root / "CHANGELOG.md"
     pyproject_path = root / "pyproject.toml"
     changelog = changelog_path.read_text(encoding="utf-8")
@@ -165,6 +229,23 @@ def release(root: Path, version: Version, day: date) -> tuple[Fragment, ...]:
         raise ReleaseError(f"{version} is not after the newest release, {released[0]}")
     changes = read_changes(root)
     fragments = changes.entries
+    preamble: tuple[str, ...] = ()
+    if carry is not None:
+        if not released or released[0] != carry.version:
+            newest = released[0] if released else "none"
+            raise ReleaseError(f"--carry {carry.version} is not the newest release, {newest}")
+        headings = list(_VERSION_HEADING.finditer(changelog))
+        start = changelog.index("\n", headings[0].start()) + 1
+        end = headings[1].start() if len(headings) > 1 else len(changelog)
+        carried = read_section(carry.version, changelog[start:end])
+        changelog = changelog[: headings[0].start()] + changelog[end:]
+        preamble = (carry.note(version), *carried.preamble)
+        fragments = tuple(
+            sorted(
+                (*carried.entries, *fragments),
+                key=lambda f: SECTIONS.index(f.section),
+            )
+        )
     if not fragments:
         raise ReleaseError(f"{CHANGES}/ holds no fragments: there is nothing to release")
     early = too_early_for_a_minor(fragments, version)
@@ -177,7 +258,7 @@ def release(root: Path, version: Version, day: date) -> tuple[Fragment, ...]:
     updated, count = _PYPROJECT_VERSION.subn(f'version = "{version}"', pyproject, count=1)
     if count != 1:
         raise ReleaseError('pyproject.toml has no version = "..." line')
-    section = render(version, day, fragments)
+    section = render(version, day, fragments, preamble)
     changelog_path.write_text(_HEADER + section + changelog[len(_HEADER) :], encoding="utf-8")
     pyproject_path.write_text(updated, encoding="utf-8")
     for name in changes.names():
@@ -189,11 +270,20 @@ def main(argv: Sequence[str]) -> int:
     parser = argparse.ArgumentParser(description="Release the fragments in changes/")
     parser.add_argument("version", help="the version to release, such as 0.6.19")
     parser.add_argument("--date", help="the release date, YYYY-MM-DD (default: today, UTC)")
+    parser.add_argument(
+        "--carry",
+        metavar="X.Y.Z",
+        help="the newest release, tagged but never published, to fold into this one",
+    )
+    parser.add_argument("--reason", help="with --carry: why it was never published")
     args = parser.parse_args(argv)
+    if (args.carry is None) != (args.reason is None):
+        parser.error("--carry and --reason go together")
     try:
         version = Version.parse(args.version)
         day = date.fromisoformat(args.date) if args.date else datetime.now(UTC).date()
-        fragments = release(ROOT, version, day)
+        carry = None if args.carry is None else Carry(Version.parse(args.carry), args.reason)
+        fragments = release(ROOT, version, day, carry)
     except (ReleaseError, ValueError) as error:
         print(f"release.py: {error}", file=sys.stderr)
         return 1

@@ -44,6 +44,7 @@ from pyfect.chat.slack import (
     _json,
     _mentions,
     _normalize,
+    _rich_text,
     _webhook,
 )
 from pyfect.chat.slack._adapter import SlackAdapter, SlackUser
@@ -148,7 +149,11 @@ class SlackAttachFailed(
 
 
 def layer(
-    *, bot_token: Redacted[str], team_id: str, base_url: str = DEFAULT_BASE_URL
+    *,
+    bot_token: Redacted[str],
+    team_id: str,
+    base_url: str = DEFAULT_BASE_URL,
+    max_retry_after: DurationInput | None = None,
 ) -> Layer[SlackChat | SlackWebApi, Never, HttpClient | Registry]:
     """Registers the Slack adapter in the ``Registry``, for one workspace,
     and provides ``SlackChat`` and ``SlackWebApi``.
@@ -173,7 +178,12 @@ def layer(
     - Edits to one message are at least 3 seconds apart; after a 429 a
       reply's writes back off.
     - ``replyTo`` is not supported.
+    - A call Slack answers 429 is retried after its ``Retry-After``, however
+      long, unless ``max_retry_after`` is set: a longer wait then fails the
+      op at once with ``RateLimited``, its ``retry_after`` the wait asked
+      for.
     """
+    retry_ceiling = None if max_retry_after is None else from_input_unsafe(max_retry_after)
 
     @fx.gen
     def build() -> Generator[Effect[Any, Never, Any], Any, SlackChatService]:
@@ -213,6 +223,7 @@ def layer(
             attach_failed=lambda thread, message_id, file_ids, reason: SlackAttachFailed(
                 thread=thread, message_id=message_id, file_ids=file_ids, reason=reason
             ),
+            max_retry_after=retry_ceiling,
         )
         yield from registry.register(adapter)
         interaction = _interactions.make(
@@ -225,7 +236,9 @@ def layer(
         )
 
     return _layer_effect(SlackChat, build).pipe(
-        _provide_merge(_web_api_layer(bot_token=bot_token, base_url=base_url))
+        _provide_merge(
+            _web_api_layer(bot_token=bot_token, base_url=base_url, max_retry_after=retry_ceiling)
+        )
     )
 
 
@@ -395,6 +408,17 @@ def with_post_options[A, E, R](
     return apply
 
 
+_CONTROL = str.maketrans({"&": "&amp;", "<": "&lt;", ">": "&gt;"})
+
+
+def escape_markdown(text: str) -> str:
+    """``text``, such as a display name, as Markdown that shows it as typed:
+    no mention, link, emphasis, code or block forms from it, whatever the
+    post options let notify. Escape what users write before putting it into
+    a post's Markdown, within a line."""
+    return _rich_text.escape_markdown(text.translate(_CONTROL))
+
+
 def emoji_from_name(name: str) -> str | None:
     """A Slack emoji name, with or without colons and with at most one skin
     tone suffix (``+1::skin-tone-4``), as Unicode; ``None`` for a name the
@@ -426,6 +450,7 @@ __all__ = [
     "SlackUser",
     "emoji_from_name",
     "emoji_to_name",
+    "escape_markdown",
     "layer",
     "layer_interactivity",
     "layer_webhook",
