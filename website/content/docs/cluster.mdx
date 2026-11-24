@@ -231,7 +231,9 @@ across the whole cluster: each run is a persisted message delivered at its insta
 schedules the next one, so a run is not lost while runners come and go. The job reads its
 instant from `CurrentScheduledTime`. With `calculate_next_run_from_previous=True` one entity
 runs the instants in order and catches up on missed ones; runs older than
-`skip_if_older_than` (a day) are skipped.
+`skip_if_older_than` (a day) are skipped. `CronSchedule` holds the job's cron and these two
+settings: `execute` can read it, and it annotates the job's entity, so a tool listing
+registered entities finds it with `entity.annotations.get_option(CronSchedule)`.
 
 <CodeOutput>
 

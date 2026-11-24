@@ -6,7 +6,7 @@ from __future__ import annotations
 import itertools
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
-from typing import Any, Never
+from typing import Any, Never, cast
 
 import pyfect as fx
 from pyfect import testing
@@ -30,10 +30,11 @@ from pyfect.cluster.message_storage import (
     SaveResult,
     StorageBase,
 )
+from pyfect.cluster.sharding import Sharding, ShardingService
 from pyfect.cron import next as cron_next
 from pyfect.cron import parse_unsafe
 from pyfect.date_time import format_iso, now
-from pyfect.duration import millis
+from pyfect.duration import days, hours, millis
 from pyfect.rpc import make as make_rpc
 from pyfect.schema import Class, DateTimeUtc, field
 from pyfect.scope import scoped
@@ -110,6 +111,49 @@ def _sharding_with_saves(save: Any) -> fx.Layer[Any, Never, Any]:
         .pipe(fx.layer.provide(updated))
         .pipe(fx.layer.provide(config))
     )
+
+
+@dataclass
+class _RecordingSharding:
+    """Records each registered entity's ``CronSchedule`` annotation."""
+
+    schedules: dict[str, cluster_cron.CronScheduleService | None]
+
+    def register_entity(self, entity: type[Entity], *_: Any) -> fx.Effect[None]:
+        def record() -> None:
+            self.schedules[entity.type] = entity.annotations.get_or_none(cluster_cron.CronSchedule)
+
+        return fx.sync(record)
+
+    def register_singleton(self, *_: Any) -> fx.Effect[None]:
+        return fx.void
+
+
+@testing.effect
+def test_annotates_its_entity_with_its_schedule():
+    """annotates its entity with its schedule"""
+    cron = parse_unsafe("0 9 * * 1-5", "Europe/London")
+    recording = _RecordingSharding(schedules={})
+    layer = fx.layer.merge(
+        cluster_cron.make(name="weekdays", cron=cron, execute=fx.void),
+        cluster_cron.make(
+            name="chained",
+            cron=cron,
+            execute=fx.void,
+            calculate_next_run_from_previous=True,
+            skip_if_older_than="1 hour",
+        ),
+    ).pipe(fx.layer.provide(fx.layer.succeed(Sharding, cast("ShardingService", recording))))
+    yield from scoped(layer.build())
+    weekdays = recording.schedules["ClusterCron/weekdays"]
+    assert weekdays is not None
+    assert weekdays.cron is cron
+    assert weekdays.calculate_next_run_from_previous is False
+    assert weekdays.skip_if_older_than == days(1)
+    chained = recording.schedules["ClusterCron/chained"]
+    assert chained is not None
+    assert chained.calculate_next_run_from_previous is True
+    assert chained.skip_if_older_than == hours(1)
 
 
 class LegacyCronPayload(Class, identifier="LegacyCronPayload"):
@@ -326,9 +370,11 @@ def test_replays_an_interrupted_run_with_calculate_next_run_from_previous_when_f
 def test_runs_each_instant_once_across_a_legacy_pending_run_and_a_redeploy():
     """runs each instant once across a legacy pending run and a redeploy"""
     scheduled: list[str] = []
+    observed_schedule: list[cluster_cron.CronScheduleService] = []
 
     @fx.gen
     def execute():
+        observed_schedule[:] = [(yield from cluster_cron.CronSchedule())]
         scheduled.append(format_iso((yield from cluster_cron.CurrentScheduledTime())))
 
     cron = cluster_cron.make(
@@ -362,5 +408,9 @@ def test_runs_each_instant_once_across_a_legacy_pending_run_and_a_redeploy():
         # Redeploy while the chain has a healthy pending run.
         yield from deploy(cron, 2500)
         assert_each_instant_once(format_iso(legacy))
+        [schedule] = observed_schedule
+        assert schedule.cron is EVERY_SECOND
+        assert schedule.calculate_next_run_from_previous is True
+        assert schedule.skip_if_older_than == days(1)
 
     yield from body.pipe(fx.provide(message_storage.memory_driver_layer))

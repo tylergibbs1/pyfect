@@ -9749,6 +9749,29 @@ def cluster_cron_workflow_types() -> None:
         ),
         fx.Layer[Never, Never, Sharding | Mailer],
     )
+    # So is the job's schedule.
+    assert_type(
+        cluster_cron.CronSchedule(),
+        TagEffect[
+            cluster_cron.CronScheduleService, cluster_cron.CronSchedule, cluster_cron.CronSchedule
+        ],
+    )
+    assert_type(
+        cluster_cron.make(
+            name="schedule",
+            cron=parse_unsafe("* * * * *"),
+            execute=cluster_cron.CronSchedule().flat_map(lambda _: Mailer()).as_void(),
+        ),
+        fx.Layer[Never, Never, Sharding | Mailer],
+    )
+    assert_type(
+        cluster_cron.CronScheduleService(
+            cron=parse_unsafe("* * * * *"),
+            calculate_next_run_from_previous=False,
+            skip_if_older_than=fx.duration.days(1),
+        ).skip_if_older_than,
+        fx.duration.Duration,
+    )
     assert_type(
         cluster_workflow_engine.layer,
         fx.Layer[WorkflowEngine, Never, Sharding | MessageStorage],

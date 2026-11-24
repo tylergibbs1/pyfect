@@ -5,12 +5,14 @@ the cluster: a singleton schedules the first run, and each run is a
 persisted message to an entity, delivered at its instant, that schedules
 the next. With ``calculate_next_run_from_previous`` every run goes to one
 executor entity, so runs never overlap and missed runs are caught up in
-order. A run reads its instant from ``CurrentScheduledTime``."""
+order. A run reads its instant from ``CurrentScheduledTime`` and its
+schedule from ``CronSchedule``, which also annotates the entity."""
 
 from __future__ import annotations
 
 import builtins
 from collections.abc import Callable, Generator
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, Never, cast, overload
 
@@ -32,8 +34,8 @@ from pyfect.context import Context, Tag
 from pyfect.cron import Cron
 from pyfect.cron import next as cron_next
 from pyfect.date_time import format_iso, now
+from pyfect.duration import Duration, from_input_unsafe
 from pyfect.duration import Input as DurationInput
-from pyfect.duration import from_input_unsafe
 from pyfect.effect import fail_cause, gen, provide_service, void
 from pyfect.exit import Exit, Failure, Success
 from pyfect.layer import Layer
@@ -48,6 +50,23 @@ from pyfect.scope import Scope
 class CurrentScheduledTime(Tag[datetime], key="effect/cluster/ClusterCron/CurrentScheduledTime"):
     """The instant the running cron job was scheduled for (a UTC
     ``datetime``), inside ``make``'s ``execute``."""
+
+
+@dataclass(frozen=True, slots=True)
+class CronScheduleService:
+    """A cron job's effective schedule: its ``cron``, whether the next run
+    follows the previous run's instant, and how old a run may be before it
+    is skipped."""
+
+    cron: Cron
+    calculate_next_run_from_previous: bool
+    skip_if_older_than: Duration
+
+
+class CronSchedule(Tag[CronScheduleService], key="effect/cluster/ClusterCron/CronSchedule"):
+    """The schedule of the running cron job, inside ``make``'s ``execute``,
+    and the annotation carrying it on the job's entity (read it with
+    ``entity.annotations.get_option(CronSchedule)``)."""
 
 
 class CronPayload(Class, identifier="effect/cluster/ClusterCron/CronPayload"):
@@ -81,7 +100,7 @@ def make[E](
     *,
     name: str,
     cron: Cron,
-    execute: Effect[None, E, CurrentScheduledTime | Scope],
+    execute: Effect[None, E, CronSchedule | CurrentScheduledTime | Scope],
     shard_group: str | None = None,
     calculate_next_run_from_previous: bool = False,
     skip_if_older_than: DurationInput | None = None,
@@ -91,7 +110,7 @@ def make[E, R](
     *,
     name: str,
     cron: Cron,
-    execute: Effect[None, E, R | CurrentScheduledTime | Scope],
+    execute: Effect[None, E, R | CronSchedule | CurrentScheduledTime | Scope],
     shard_group: str | None = None,
     calculate_next_run_from_previous: bool = False,
     skip_if_older_than: DurationInput | None = None,
@@ -116,8 +135,12 @@ def make(
     ``execute`` is logged as a warning; the next run is scheduled anyway."""
     require_effect(execute, "execute")
     from_previous = calculate_next_run_from_previous
-    skip_after = from_input_unsafe(
-        timedelta(days=1) if skip_if_older_than is None else skip_if_older_than
+    cron_schedule = CronScheduleService(
+        cron=cron,
+        calculate_next_run_from_previous=from_previous,
+        skip_if_older_than=from_input_unsafe(
+            timedelta(days=1) if skip_if_older_than is None else skip_if_older_than
+        ),
     )
     group = "default" if shard_group is None else shard_group
 
@@ -140,7 +163,9 @@ def make(
             (Entity,),
             {"run": run_rpc, "start": start_rpc},
             type=f"ClusterCron/{name}",
-            annotations=Context.make(ShardGroup, shard_group_of).add(ClientTracingEnabled, False),
+            annotations=Context.make(ShardGroup, shard_group_of)
+            .add(ClientTracingEnabled, False)
+            .add(CronSchedule, cron_schedule),
         ),
     )
 
@@ -173,9 +198,11 @@ def make(
 
     def run_execute(date_time: datetime) -> Effect[None, Never, Any]:
         def check(at: datetime) -> Effect[None, Any, Any]:
-            if date_time < at - skip_after.to_timedelta():
+            if date_time < at - cron_schedule.skip_if_older_than.to_timedelta():
                 return void
-            return execute.pipe(provide_service(CurrentScheduledTime, date_time))
+            return execute.pipe(provide_service(CurrentScheduledTime, date_time)).pipe(
+                provide_service(CronSchedule, cron_schedule)
+            )
 
         return now().flat_map(check).or_die()
 
@@ -230,4 +257,10 @@ def make(
     return layer_.merge(initial_run, entity_layer)
 
 
-__all__ = ["CronPayload", "CurrentScheduledTime", "make"]
+__all__ = [
+    "CronPayload",
+    "CronSchedule",
+    "CronScheduleService",
+    "CurrentScheduledTime",
+    "make",
+]
