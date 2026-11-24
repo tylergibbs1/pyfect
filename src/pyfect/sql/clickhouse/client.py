@@ -3,7 +3,8 @@
 with typed parameters (``param``), commands (``as_command``), inserts in any
 format (``insert_query``) and per-effect query ids and settings.
 
-``make`` checks the server with ``/ping`` (within five seconds). Statements
+``make`` checks the server with ``/ping`` (within five seconds), unless
+``disable_initial_ping`` is set. Statements
 compile to ``{p1: Type}`` placeholders, the type inferred from the value
 (``params.type_of``) unless ``param`` names it, and ``"quoted"`` names::
 
@@ -25,7 +26,7 @@ from pyfect._core import Effect
 from pyfect._effect_args import require_effect
 from pyfect.config import Config, ConfigError, unwrap
 from pyfect.context import Context, Tag
-from pyfect.effect import fail, provide_service, succeed, with_fiber
+from pyfect.effect import fail, provide_service, succeed, void, with_fiber
 from pyfect.layer import Layer, provide
 from pyfect.layer import effect_context as layer_effect_context
 from pyfect.logger import log_warning
@@ -275,7 +276,9 @@ def make(
     def build(http: Any) -> Effect[ClickhouseClientService, SqlError, Reactivity]:
         driver = ClickhouseDriver(http, config.connection)
         connected = (
-            driver.ping()
+            void
+            if config.disable_initial_ping
+            else driver.ping()
             .map_error(catch("ClickhouseClient: Failed to connect", "connect", "connection"))
             .timeout_or_else(CONNECT_TIMEOUT, _connect_timed_out)
         )

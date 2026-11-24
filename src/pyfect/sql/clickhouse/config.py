@@ -240,6 +240,8 @@ class ClickhouseClientConfig:
       ``make`` creates one on httpx (``pyfect-dev[httpx]``), closed with
       the client (``keep_alive``, ``max_open_connections`` and ``tls``
       configure that one only)
+    - ``disable_initial_ping``: ``make`` skips its ``/ping``, so it needs no
+      server; a statement fails when it cannot connect (default ``False``)
     - ``span_attributes``: added to every statement's span
     - ``transform_result_names`` / ``transform_query_names``: rename result
       columns / identifiers (``fx.case`` has the usual ones)
@@ -266,6 +268,7 @@ class ClickhouseClientConfig:
     use_multipart_params: bool = False
     use_multipart_params_auto: bool = False
     http_client: HttpClientService[HttpClientError] | None = field(default=None, compare=False)
+    disable_initial_ping: bool = False
     span_attributes: Mapping[str, object] = field(default_factory=dict[str, object])
     transform_result_names: Callable[[str], str] | None = None
     transform_query_names: Callable[[str], str] | None = None
