@@ -68,7 +68,8 @@ keys refreshes those queries once it succeeds. A query also takes `headers`,
 `atom.swr` (stale-while-revalidate): a result younger than that, hydrated or kept by
 `time_to_live`, is shown on mount without a new call, and an older one is shown while it is
 fetched again in the background. HTTP API queries take `stale_time` too; a streaming RPC's
-query does not.
+query does not. A result's age is measured with the wall clock, not the `TestClock`, as in
+Effect, so `testing.adjust` does not make a result stale.
 
 <CodeOutput>
 
