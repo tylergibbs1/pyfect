@@ -1,0 +1,1 @@
+- `Redis.reserve`: a reserved connection held in a scope that outlives the `Redis` service (or the `redis_py` layer) no longer deadlocks its shutdown. The pool waited for the connection to come back, which happened only when that scope closed, after the service's. Closing the service now closes the connection, and a later command on it fails with a `RedisError`.

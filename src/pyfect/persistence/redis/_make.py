@@ -9,6 +9,7 @@ from typing import Any, Never
 from pyfect._concurrency import for_each
 from pyfect._core import Effect
 from pyfect._effect_args import require_effect
+from pyfect._released import Released
 from pyfect._subscriber_queue import FellBehind, check_capacity
 from pyfect._subscriber_queue import offer as offer_to_subscriber
 from pyfect.cache import Cache
@@ -30,7 +31,7 @@ from pyfect.persistence.redis._service import (
 )
 from pyfect.pool import Pool
 from pyfect.queue import Dequeue, Queue
-from pyfect.scope import Scope, acquire_release, add_finalizer
+from pyfect.scope import Scope, acquire_release, add_finalizer, provide
 
 
 class _Pooled:
@@ -176,9 +177,12 @@ def make(
             load, capacity=None, time_to_live=_kept_while_loaded
         )
 
-        # Closing a connection fails its command still running, which ends
-        # its reservation; the pool waits for reservations when it shuts
-        # down, so connections are closed before it does.
+        # The pool waits for the connections it lent when it shuts down. A
+        # reservation holds its connection in a lease, a scope of the
+        # service's own that its scope closes, or the service's first if
+        # that outlives it: the service never waits for a scope closed after
+        # it. Closing a connection fails its command still running.
+        service_scope = yield from Scope()
         connections: set[_Pooled] = set()
 
         def opened(connection: OpenConnection) -> _Pooled:
@@ -208,8 +212,11 @@ def make(
         reserved_get = get
 
         def reserve() -> Generator[Effect[Any, Any, Any], Any, RedisConnection]:
-            pooled = yield from reserved_get
-            yield from add_finalizer(
+            lease = yield from (
+                service_scope.fork().tap(lambda lease: add_finalizer(lease.close)).uninterruptible()
+            )
+            pooled = yield from reserved_get.pipe(provide(lease))
+            yield from lease.add_finalizer(
                 lambda _: (
                     void
                     if pooled.healthy and pooled.active == 0
@@ -219,6 +226,8 @@ def make(
 
             def send_reserved(command: str, *args: str) -> Effect[RedisReply, RedisError]:
                 def run() -> Effect[RedisReply, RedisError]:
+                    if lease.is_closed:
+                        return fail(RedisError(cause=Released("reserved Redis connection")))
                     pooled.active += 1
 
                     def settle(ex: Exit[RedisReply, RedisError]) -> Effect[None]:

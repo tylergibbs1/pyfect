@@ -58,7 +58,8 @@ class RedisService(RedisConnection, Protocol):
         """A connection for this scope alone, for blocking commands
         (``XREAD BLOCK``, ``BLPOP``) that would hold up the shared ones.
         One released with a command still running, or after a failed
-        command, is closed instead of reused."""
+        command, is closed instead of reused. One still held when the
+        service closes is closed with it, and a later command fails."""
         ...
 
 
