@@ -1,0 +1,1 @@
+- Tests: the generated Slack text tests run in round-robin slices of their inputs, each well under a quarter of a second, so none nears the 5 s per-test timeout on a loaded CI runner (the 0.6.28 release run's timeout).
