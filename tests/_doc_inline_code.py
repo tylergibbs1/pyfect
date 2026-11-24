@@ -38,3 +38,5 @@ S.HashSet(S.Int)
 S.field(S.String, key="primaryKey")
 # testing.mdx
 fx.sleep("10 seconds")
+# testing.mdx
+testing.count_scheduler_rounds()

@@ -210,6 +210,12 @@ class MixedScheduler(EffectScheduler):
         self.execution_mode = execution_mode
         self._set_immediate = set_immediate
 
+    @property
+    def set_immediate(self) -> Callable[[Task], Cancel]:
+        """How a dispatcher asks for its next round (Effect's ``setImmediate``): wrap it to
+        build a ``MixedScheduler`` that watches its rounds."""
+        return self._set_immediate
+
     def should_yield(self, fiber: Fiber[Any, Any]) -> bool:
         return fiber.current_op_count >= fiber.get_ref(MaxOpsBeforeYield)
 

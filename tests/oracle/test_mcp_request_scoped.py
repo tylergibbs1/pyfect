@@ -36,7 +36,6 @@ from pyfect.http import router
 from pyfect.scheduler import CurrentScheduler
 from pyfect.scope import CloseableScope, Scope
 
-from ._custom_scheduler import counting_rounds
 from ._mcp_features import MRTR_PROMPT, MRTR_TOOL, features_conformance
 from ._mcp_http import HttpHarness, Json, http_harness, read_message, server_layer, sse_reader
 
@@ -109,20 +108,22 @@ def _rounds_of_a_second_call(
 
     @fx.gen
     def run():
-        scheduler, rounds = counting_rounds()
+        rounds = testing.count_scheduler_rounds()
         harness = yield from http_harness(served)
 
         def post(id: int) -> fx.Effect[Any]:
             body, headers = call(id)
             # The routes' services come from the request (``router.in_memory_client``).
-            return harness.post(body, headers).pipe(fx.provide_service(CurrentScheduler, scheduler))
+            return harness.post(body, headers).pipe(
+                fx.provide_service(CurrentScheduler, rounds.scheduler)
+            )
 
         # Build the server before measuring the request, and let the rounds it left run.
         yield from read_message((yield from post(0)))
         yield from fx.yield_now()
-        before = rounds[0]
+        before = rounds.count
         response = yield from post(1)
-        taken = rounds[0] - before
+        taken = rounds.count - before
         return taken, (yield from read_message(response))
 
     return run
