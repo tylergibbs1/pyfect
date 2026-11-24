@@ -100,14 +100,17 @@ class TeamsChatService:
 
     @property
     def app_id(self) -> str:
+        """The bot's Microsoft App id."""
         return self._app_id
 
     @property
     def tenant_id(self) -> str:
+        """The tenant the layer works in."""
         return self._tenant_id
 
     @property
     def cloud(self) -> Cloud:
+        """The cloud the layer talks to."""
         return self._cloud
 
     def call(
