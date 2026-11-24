@@ -1,0 +1,90 @@
+---
+title: Chat
+description: "Post, edit and stream Markdown to chat platforms through one interface, with typed buttons and commands and an in-memory platform for tests."
+---
+
+`pyfect.chat` is Effect's `effect/chat`: one `Chat` service in front of any number of
+chat platforms. Each platform is an adapter registered with `chat_adapter.layer(...)`,
+and every call names its target with a `ChatThread`, so a thread on one platform routes
+to that platform's adapter. A thread on a platform with no adapter fails with a
+`ChatError` whose reason is `NoAdapter`.
+
+Every call fails with `ChatError`. Its `reason` says what happened (`RateLimited`,
+`Forbidden`, `TooLarge`, `Unsupported` and the rest) and `retry` says whether trying
+again is safe: `"retry"` when nothing happened, `"uncertain"` when the write may have
+landed, `"denied"` when it will fail again. Adapters retry `"retry"` failures up to three times,
+after the platform's `retry_after` or a backoff (`chat_adapter.retry_safe`). A
+`ChatError` prints only the platform, op, reason and redacted detail, never the cause, so
+a URL or token in an HTTP error stays out of logs.
+
+## Replies that fit
+
+Platforms cap a message's length, and a model's answer often runs past it.
+`chat_markdown.post(thread, markdown)` splits Markdown at block boundaries so each part
+fits, closes a code fence at the end of a part and reopens it at the start of the next,
+and never cuts inside a grapheme cluster. `max_parts` bounds the number of messages;
+past it the call fails with `ChatMarkdownError`, whose `posted`, `remaining` and
+`remaining_fence` say what was sent and what was not, or `overflow=OverflowFile(...)`
+attaches the rest as a file.
+
+`chat_markdown.stream(thread, deltas)` writes a stream of deltas as they arrive. With a
+`recipient` it uses the platform's native streaming, where it has one; otherwise it posts
+a message and edits it as it grows, at most once per `min_write_interval`. When the
+deltas fail or the call is interrupted, what was received is finished and the error says
+which text is posted, uncertain or never sent.
+
+Events from the platform go to the `ChatHandler`, built with `chat_handler.layer(handle)`.
+It skips the bot's own messages unless `deliver_self=True`, and runs each event in its
+own scope.
+
+<CodeOutput>
+
+<include meta='title="replies.py"'>../../snippets/chat/replies.py</include>
+
+<include lang="text">../../snippets/chat/replies.out</include>
+
+</CodeOutput>
+
+## Buttons, selects, modals and commands
+
+`chat_interaction` defines interactive elements with typed values. `ci.button(id,
+label=..., value=schema)` defines a button; `.of(value)` encodes the value into the
+element to post, and the click handler gets it decoded. `ci.modal` defines a dialog of
+`text_input`, `choice` and `select_input` fields whose submit handler gets each field's
+value decoded, and `ci.command` a slash command. A `group(...)` of definitions becomes a
+layer with `.to_layer(*handlers)`, each handler made by its definition's `.handler(fn)`,
+so a handler that takes the wrong value type does not type-check.
+
+Platforms want an answer to an interaction within 3 seconds. `ci.handle` gives the
+handler that long and answers `Late` past it; a late click that opens a modal reports the
+modal as refused instead of opening it. A click with an unknown id, or a value that no
+longer decodes, is answered without calling a handler, and `ci.layer(unhandled=...)` sees
+it.
+
+<CodeOutput>
+
+<include meta='title="interactions.py"'>../../snippets/chat/interactions.py</include>
+
+<include lang="text">../../snippets/chat/interactions.out</include>
+
+</CodeOutput>
+
+## Testing
+
+`chat_test.layer()` registers an in-memory platform and provides `ChatTest`, which plays
+the users: `user_posts`, `click`, `submit`, `command`, `click_stop` and `close_stream`
+make events, and `messages(thread)` and `calls` show what the bot did. `fail_next(op,
+reason)` makes the next call fail, with `landed=True` for a write that went through
+anyway, and keyword limits such as `message_length` or `min_write_interval` set the
+platform's limits. Its time runs on the test clock.
+
+`chat_test.conformance(...)` is the suite Effect's adapters pass: a dict of named rules,
+each an effect, run against an adapter with its own hooks for posting as a user and
+injecting failures. Run each rule as a test to check an adapter you write.
+
+The Slack adapter has its own page: [Slack](/docs/chat-slack).
+
+Reference: [`chat`](/docs/reference/chat/chat),
+[`chat_markdown`](/docs/reference/chat/chat_markdown),
+[`chat_interaction`](/docs/reference/chat/chat_interaction),
+[`chat_test`](/docs/reference/chat/chat_test).

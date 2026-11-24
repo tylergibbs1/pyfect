@@ -3,6 +3,9 @@
 
 from __future__ import annotations
 
+import re
+from functools import cache
+
 from pyfect._js import text_encode
 
 _HEX = frozenset("0123456789abcdefABCDEF")
@@ -18,21 +21,29 @@ COMPONENT = USERINFO | frozenset("$%&+,")
 FORM = COMPONENT | frozenset("!'()~")
 
 
+_PAST_TILDE = re.compile("[\x7f-\U0010ffff]+")
+
+
+@cache
+def _ascii_table(encode_set: frozenset[str], space_as_plus: bool) -> dict[int, str]:
+    """What each ASCII character of ``encode_set`` becomes, for ``str.translate``."""
+    table = {ord(ch): f"%{ord(ch):02X}" for ch in encode_set}
+    if space_as_plus:
+        table[ord(" ")] = "+"
+    return table
+
+
+def _escape_run(match: re.Match[str]) -> str:
+    return "%" + text_encode(match[0]).hex("%").upper()
+
+
 def encode(text: str, encode_set: frozenset[str], space_as_plus: bool = False) -> str:
     """``text`` with the characters of ``encode_set`` (and every non-ASCII
     one) percent-encoded as UTF-8 (a lone surrogate as U+FFFD, as the URL
     Standard's UTF-8 encode writes it)."""
-    if not any(ch in encode_set or ch > "~" for ch in text):
-        return text
-    out: list[str] = []
-    for ch in text:
-        if space_as_plus and ch == " ":
-            out.append("+")
-        elif ch in encode_set or ch > "~":
-            out.extend(f"%{b:02X}" for b in text_encode(ch))
-        else:
-            out.append(ch)
-    return "".join(out)
+    # The ASCII characters first, which leaves only ASCII behind them, then
+    # each run of characters past ``~``: two passes in C, not one per character.
+    return _PAST_TILDE.sub(_escape_run, text.translate(_ascii_table(encode_set, space_as_plus)))
 
 
 def decode(text: str) -> bytes:

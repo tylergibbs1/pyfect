@@ -19,6 +19,7 @@ _KEPT: dict[tuple[str, str], str] = {
     ("http/multipart.py", "persisted_file_name"): "a byte count: three bytes either way",
     ("persistence/persisted_queue/_sql_statements.py", "offer"): "a byte count, as above",
     ("sql/pg/error.py", "validate_channel_name"): "a byte count, as above",
+    ("chat/slack/_text.py", "utf8_bytes"): "a byte count, as above",
 }
 
 _UTF8 = frozenset({"utf-8", "utf8", "UTF-8", "UTF8"})
