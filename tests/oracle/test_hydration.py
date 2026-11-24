@@ -17,11 +17,12 @@ from typing import Any, Literal, cast
 import pytest
 
 import pyfect as fx
+from pyfect import cause, layer
 from pyfect import schema as S
 from pyfect.deferred import Deferred
 from pyfect.exit import Success as ExitSuccess
 from pyfect.reactivity import async_result, atom, hydration
-from pyfect.reactivity.async_result import AsyncResult, Success
+from pyfect.reactivity.async_result import AsyncResult, Failure, Success
 from pyfect.reactivity.hydration import DehydratedAtom
 
 from ._atom_timers import FakeTimers, timers
@@ -36,6 +37,80 @@ def _result_atom[A](_: type[A]) -> atom.Writable[AsyncResult[A], AsyncResult[A]]
 
 def _count_schema(success: Any = S.Number) -> Any:
     return async_result.Schema(success=success)
+
+
+@pytest.mark.parametrize("refresh", [False, True])
+def test_runs_a_hydrated_waiting_seed_with_skip_initial_run(
+    timers: FakeTimers, refresh: bool
+) -> None:
+    """runs a hydrated waiting seed with skipInitialRun (refresh before mount: %s)"""
+    server = timers.registry()
+    client = timers.registry()
+    try:
+        waiting: AsyncResult[int] = async_result.success(10, waiting=True)
+        seed = atom.make(waiting)
+        server.mount(seed.serializable(key="count", schema=_count_schema(), skip_initial_run=True))
+        hydration.hydrate(client, hydration.dehydrate(server))
+        count = atom.make(fx.succeed(20)).serializable(
+            key="count", schema=_count_schema(), skip_initial_run=True
+        )
+        if refresh:
+            client.refresh(count)
+        client.mount(count)
+        result = client.get(count)
+        assert isinstance(result, Success)
+        assert result.value == 20
+        assert result.waiting is False
+    finally:
+        server.dispose()
+        client.dispose()
+
+
+def test_keeps_a_seeded_success_while_a_pre_mount_refresh_waits_for_the_runtime(
+    timers: FakeTimers,
+) -> None:
+    """keeps a seeded success while a pre-mount refresh waits for the runtime"""
+    resolved: Deferred[None] = Deferred()
+    runtime = atom.runtime(layer.effect_discard(resolved.wait()))
+    count = runtime.atom(fx.succeed(20))
+    seeded: AsyncResult[int] = async_result.success(10)
+    client = timers.registry(
+        initial_values=[atom.initial_value(count, seeded, skip_initial_run=True)]
+    )
+    try:
+        client.refresh(count)
+        client.mount(count)
+
+        pending = client.get(count)
+        assert isinstance(pending, Success)
+        assert pending.value == 10
+        assert pending.waiting is True
+
+        resolved.done_unsafe(ExitSuccess(None))
+        timers.flush()
+        result = client.get(count)
+        assert isinstance(result, Success)
+        assert result.value == 20
+    finally:
+        client.dispose()
+
+
+def test_publishes_runtime_acquisition_failure_over_a_waiting_seed(timers: FakeTimers) -> None:
+    """publishes runtime acquisition failure over a waiting seed"""
+    runtime = atom.runtime(layer.effect_discard(fx.fail("offline")))
+    count = runtime.atom(fx.succeed(20))
+    seeded: AsyncResult[int] = async_result.success(10, waiting=True)
+    registry = timers.registry(
+        initial_values=[atom.initial_value(count, seeded, skip_initial_run=True)]
+    )
+    try:
+        registry.mount(count)
+        result = registry.get(count)
+        assert isinstance(result, Failure)
+        assert result.cause == cause.fail("offline")
+        assert result.waiting is False
+    finally:
+        registry.dispose()
 
 
 def test_runs_a_plain_hydrated_effect_atom_on_mount_and_tracks_factory_dependencies(

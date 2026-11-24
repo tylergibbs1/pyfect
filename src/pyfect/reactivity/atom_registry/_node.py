@@ -13,11 +13,11 @@ from __future__ import annotations
 
 import contextlib
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from pyfect.option import Option, Some
 from pyfect.reactivity._live import live_keys
-from pyfect.reactivity.async_result import Initial
+from pyfect.reactivity.async_result import Failure, Initial, is_async_result
 from pyfect.reactivity.atom_registry import _batch
 from pyfect.reactivity.atom_registry._batch import run_all
 
@@ -155,6 +155,15 @@ class Node[A]:
                 if not read:
                     self.fail()
         if self.lifetime is lifetime and self.state & WAITING_FOR_VALUE:
+            if (
+                self.skip_initial_run
+                and is_async_result(self._value)
+                and self._value.waiting
+                and isinstance(cast("object", value), Failure)
+            ):
+                # The runtime can fail to build before the effect takes its seed.
+                self.preserve_initial_value_on_build = False
+                self.skip_initial_run = False
             if self.preserve_initial_value_on_build:
                 self.preserve_initial_value_on_build = False
                 if self.skip_initial_run:

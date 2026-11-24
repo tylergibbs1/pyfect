@@ -23,7 +23,7 @@ from pyfect.errors import NoSuchElementException
 from pyfect.layer import Layer, provide, provide_merge
 from pyfect.reactivity import _reactivity, async_result
 from pyfect.reactivity._reactivity import Keys, Reactivity
-from pyfect.reactivity.async_result import AsyncResult, Success
+from pyfect.reactivity.async_result import AsyncResult, Initial, Success
 from pyfect.reactivity.atom._combinators import remove_ttl, transform
 from pyfect.reactivity.atom._effect import MISSING, initial_option, make_effect, make_read, state
 from pyfect.reactivity.atom._fn import (
@@ -127,6 +127,8 @@ class AtomRuntime(Atom[AsyncResult[Context[Any], Any]], Generic[R_co, ER_co]):
 
         def read_with_runtime(get: AtomContext) -> Any:
             services = get(self)
+            if isinstance(services, Initial) and services.waiting:
+                return async_result.waiting_from(cast("Any", get.self()))
             if not isinstance(services, Success):
                 return _replace_previous(services, get)
             return read(get, services.value)

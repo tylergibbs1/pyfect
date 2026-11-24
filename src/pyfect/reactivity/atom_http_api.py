@@ -57,6 +57,7 @@ from pyfect.reactivity.atom._conversions import get_result
 from pyfect.reactivity.atom._conversions import set as set_atom
 from pyfect.reactivity.atom._fn import AtomResultFn
 from pyfect.reactivity.atom._runtime import AtomRuntime, RuntimeFactory, runtime
+from pyfect.reactivity.atom._swr import swr
 from pyfect.reactivity.atom._types import Atom, AtomContext, FnContext, Writable
 from pyfect.reactivity.atom_registry import AtomRegistry
 
@@ -94,6 +95,7 @@ class _QueryKey(NamedTuple):
     request: tuple[tuple[str, object], ...]
     response_mode: ResponseMode
     reactivity_keys: Keys | None
+    stale_time: Duration | None
     time_to_live: Duration | None
     serialization_key: str | None
 
@@ -170,6 +172,7 @@ class Query[P, Q, B, H, A, E]:
         headers: H | None = None,
         sse_options: SseOptions | None = None,
         reactivity_keys: Keys | None = None,
+        stale_time: DurationInput | None = None,
         time_to_live: DurationInput | None = None,
         serialization_key: str | None = None,
     ) -> Atom[AsyncResult[A, E]]:
@@ -180,6 +183,7 @@ class Query[P, Q, B, H, A, E]:
             headers=headers,
             sse_options=sse_options,
             reactivity_keys=reactivity_keys,
+            stale_time=stale_time,
             time_to_live=time_to_live,
             serialization_key=serialization_key,
         )
@@ -405,6 +409,7 @@ class AtomHttpApiClient[T, G: HttpApiGroup[Any] = Any]:
         response_mode: Literal["decoded-only"] = "decoded-only",
         sse_options: SseOptions | None = None,
         reactivity_keys: Keys | None = None,
+        stale_time: DurationInput | None = None,
         time_to_live: DurationInput | None = None,
         serialization_key: str | None = None,
     ) -> Atom[AsyncResult[CS, E]]: ...
@@ -422,6 +427,7 @@ class AtomHttpApiClient[T, G: HttpApiGroup[Any] = Any]:
         response_mode: Literal["decoded-only"] = "decoded-only",
         sse_options: SseOptions | None = None,
         reactivity_keys: Keys | None = None,
+        stale_time: DurationInput | None = None,
         time_to_live: DurationInput | None = None,
         serialization_key: str | None = None,
     ) -> Atom[AsyncResult[CS, E | ME]]: ...
@@ -439,6 +445,7 @@ class AtomHttpApiClient[T, G: HttpApiGroup[Any] = Any]:
         response_mode: Literal["decoded-and-response"],
         sse_options: SseOptions | None = None,
         reactivity_keys: Keys | None = None,
+        stale_time: DurationInput | None = None,
         time_to_live: DurationInput | None = None,
         serialization_key: str | None = None,
     ) -> Atom[AsyncResult[tuple[CS, HttpClientResponse], E]]: ...
@@ -456,6 +463,7 @@ class AtomHttpApiClient[T, G: HttpApiGroup[Any] = Any]:
         response_mode: Literal["decoded-and-response"],
         sse_options: SseOptions | None = None,
         reactivity_keys: Keys | None = None,
+        stale_time: DurationInput | None = None,
         time_to_live: DurationInput | None = None,
         serialization_key: str | None = None,
     ) -> Atom[AsyncResult[tuple[CS, HttpClientResponse], E | ME]]: ...
@@ -473,6 +481,7 @@ class AtomHttpApiClient[T, G: HttpApiGroup[Any] = Any]:
         response_mode: Literal["response-only"],
         sse_options: SseOptions | None = None,
         reactivity_keys: Keys | None = None,
+        stale_time: DurationInput | None = None,
         time_to_live: DurationInput | None = None,
         serialization_key: str | None = None,
     ) -> Atom[AsyncResult[HttpClientResponse]]: ...
@@ -490,6 +499,7 @@ class AtomHttpApiClient[T, G: HttpApiGroup[Any] = Any]:
         response_mode: Literal["response-only"],
         sse_options: SseOptions | None = None,
         reactivity_keys: Keys | None = None,
+        stale_time: DurationInput | None = None,
         time_to_live: DurationInput | None = None,
         serialization_key: str | None = None,
     ) -> Atom[AsyncResult[HttpClientResponse, ME]]: ...
@@ -506,14 +516,17 @@ class AtomHttpApiClient[T, G: HttpApiGroup[Any] = Any]:
         response_mode: ResponseMode = "decoded-only",
         sse_options: SseOptions | None = None,
         reactivity_keys: Keys | None = None,
+        stale_time: DurationInput | None = None,
         time_to_live: DurationInput | None = None,
         serialization_key: str | None = None,
     ) -> Atom[Any]:
         """An atom holding the result of calling ``endpoint`` of ``group``
         with the given request parts. ``reactivity_keys`` refresh it when
-        invalidated, ``time_to_live`` keeps it that long after its last use
-        (infinite: always), and ``serialization_key`` makes a decoded-only
-        query serializable."""
+        invalidated, ``stale_time`` reuses a result that young on mount and
+        revalidates an older one in the background (``swr``),
+        ``time_to_live`` keeps it that long after its last use (infinite:
+        always), and ``serialization_key`` makes a decoded-only query
+        serializable."""
         group_id, endpoint_id = self._own(group, endpoint)
         given = {
             "params": params,
@@ -529,6 +542,7 @@ class AtomHttpApiClient[T, G: HttpApiGroup[Any] = Any]:
             request,
             response_mode,
             reactivity_keys,
+            None if stale_time is None else from_input_unsafe(stale_time),
             None if time_to_live is None else from_input_unsafe(time_to_live),
             serialization_key,
         )
@@ -619,10 +633,11 @@ class AtomHttpApiClient[T, G: HttpApiGroup[Any] = Any]:
             made = made.serializable(
                 key=f"AtomHttpApi:{key.group}:{key.endpoint}:{key.serialization_key}",
                 schema=_result_schema(definition),
+                skip_initial_run=key.stale_time is not None,
             )
         if key.time_to_live is not None:
             made = set_idle_ttl(made, key.time_to_live)
-        return made
+        return made if key.stale_time is None else swr(made, stale_time=key.stale_time)
 
 
 def make[G: HttpApiGroup[Any], T](

@@ -190,6 +190,9 @@ class AtomRegistryService:
         Raises ``RegistryThreadError`` off the scheduler's thread and
         ``RegistryDisposedError`` for a new node once disposed."""
         self.check_thread()
+        if atom.serializable_info is not None:
+            # Readers of a serialization key share the first node, and its refresh.
+            atom = self.ensure_node(atom).atom
         if atom.refresh is not None:
             atom.refresh(self.refresh)
         else:
@@ -287,6 +290,8 @@ class AtomRegistryService:
         Raises ``RegistryThreadError`` off the scheduler's thread and
         ``RegistryDisposedError`` for a new node once disposed."""
         node = self.ensure_node(atom)
+        if node.skip_initial_run:
+            node.preserve_initial_value_on_build = False
         node.skip_initial_run = False
         node.invalidate()
 

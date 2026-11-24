@@ -9961,6 +9961,12 @@ def atom_rpc_types() -> None:
         client.query(Group.events, None),
         atom.Writable[atom.PullResult[str, Failure | RpcClientError], None],
     )
+    # stale_time reuses a fresh result; a stream has none to reuse
+    assert_type(
+        client.query(Group.get_user, 1, stale_time="1 minute", serialization_key="user"),
+        atom.Atom[AsyncResult[str, RpcClientError]],
+    )
+    client.query(Group.events, None, stale_time="1 minute")  # pyright: ignore[reportCallIssue, reportArgumentType]
     assert_type(
         async_result.Schema(success=fx.schema.Number, error=fx.schema.String),
         async_result.AsyncResultSchema[float, str, float, str, Never, Never],
@@ -9994,6 +10000,14 @@ def atom_http_api_types() -> None:
     assert_type(
         client.query(Users, Users.create, payload="x", response_mode="response-only"),
         atom.Atom[AsyncResult[HttpClientResponse, Never]],
+    )
+    assert_type(
+        client.query(Users, Users.create, payload="x", stale_time="30 seconds"),
+        atom.Atom[AsyncResult[float, Never]],
+    )
+    assert_type(
+        client.query_of(Users, Users.create)(payload="x", stale_time="30 seconds"),
+        atom.Atom[AsyncResult[float, Never]],
     )
     assert_type(
         client.mutation(Users, Users.create),

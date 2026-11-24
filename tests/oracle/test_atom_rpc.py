@@ -87,6 +87,53 @@ def _tag[G](id: str, _group: type[G]) -> type[Tag[G]]:
     return types.new_class(id, (Tag,), {"key": id})
 
 
+class _Fresh(RpcGroup):
+    get = make("get", success=S.Number)
+
+
+@testing.effect
+def test_reuses_fresh_hydration_and_revalidates_stale_hydration_once():
+    """reuses fresh hydration and revalidates stale hydration once"""
+    requests = [0]
+
+    def get(_: Any) -> fx.Effect[int]:
+        def run() -> int:
+            requests[0] += 1
+            return requests[0]
+
+        return fx.sync(run)
+
+    client_api = atom_rpc.make(
+        _tag("FreshClient", _Fresh),
+        group=_Fresh,
+        protocol=_Fresh.to_layer(_Fresh.handlers().handle(_Fresh.get)(get)),
+        make_effect=rpc_test.make_client(_Fresh),
+    )
+
+    def query(stale_time: float) -> atom.Atom[async_result.AsyncResult[float, Any]]:
+        return client_api.query(_Fresh.get, None, serialization_key="value", stale_time=stale_time)
+
+    fresh = query(float("inf"))
+    server = atom_registry.make()
+    yield from fx.add_finalizer(lambda _: fx.sync(server.dispose))
+    yield from atom_registry.mount(server, fresh)
+    assert (yield from atom_registry.get_result(server, fresh)) == 1
+    state = hydration.dehydrate(server)
+
+    for reader, expected in [(fresh, 1), (query(0), 2)]:
+        client = atom_registry.make()
+        yield from fx.add_finalizer(lambda _, client=client: fx.sync(client.dispose))
+        hydration.hydrate(client, state)
+        yield from atom_registry.mount(client, reader)
+        seed = client.get(reader)
+        assert isinstance(seed, async_result.Success)
+        assert seed.value == 1
+        yield from fx.yield_now()
+        result = yield from atom_registry.get_result(client, reader, suspend_on_waiting=True)
+        assert result == expected
+        assert requests[0] == expected
+
+
 @pytest.mark.parametrize(
     ("id_a", "tag_a", "id_b", "tag_b"),
     [("RpcA", "create", "RpcB", "create"), ("Tenant:User", "create", "Tenant", "User:create")],

@@ -76,6 +76,10 @@ def transform(
     def read(get: AtomContext) -> Any:
         return f(get, atom)
 
+    # Forward through the registry, so a serializable source resolves to its shared node.
+    def refresh(refresh: Callable[[Atom[Any]], None]) -> None:
+        refresh(atom)
+
     derived: Atom[Any]
     if isinstance(atom, Writable):
         source = cast("Writable[Any, Any]", atom)
@@ -83,9 +87,9 @@ def transform(
         def write(ctx: WriteContext[Any], value: Any) -> None:
             ctx.set(source, value)
 
-        derived = Writable(read, write, _refresh_of(source))
+        derived = Writable(read, write, refresh)
     else:
-        derived = readable(read, _refresh_of(atom))
+        derived = readable(read, refresh)
     derived = remove_ttl(derived)
     if initial_value_target is not None:
         derived.initial_value_target = _target(initial_value_target)
@@ -176,7 +180,8 @@ def refresh_on_window_focus(atom: Atom[Any]) -> Atom[Any]:
 def initial_value[A](atom: Atom[A], value: A, *, skip_initial_run: bool = False) -> InitialValue[A]:
     """A value to start a registry with (``atom_registry.make(
     initial_values=[...])``); with ``skip_initial_run`` an effect atom
-    keeps it instead of running its effect, until refreshed."""
+    keeps it instead of running its effect, until refreshed. An ``Initial``
+    or waiting seed never skips the effect."""
     return InitialValue(atom, value, skip_initial_run)
 
 

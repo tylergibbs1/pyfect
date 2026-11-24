@@ -64,7 +64,11 @@ The effects `atom.get`, `atom.set` and `atom.get_result` use the registry that
 `client.mutation(rpc)` a function atom taking a `MutationRequest`. A query's
 `reactivity_keys` tie it to the mutations that change it: a mutation written with the same
 keys refreshes those queries once it succeeds. A query also takes `headers`,
-`time_to_live` and a `serialization_key` for hydration.
+`time_to_live` and a `serialization_key` for hydration. With `stale_time` it goes through
+`atom.swr` (stale-while-revalidate): a result younger than that, hydrated or kept by
+`time_to_live`, is shown on mount without a new call, and an older one is shown while it is
+fetched again in the background. HTTP API queries take `stale_time` too; a streaming RPC's
+query does not.
 
 <CodeOutput>
 

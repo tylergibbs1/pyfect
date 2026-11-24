@@ -192,6 +192,10 @@ def consume_skip_initial_run(ctx: AtomContext) -> bool:
     kept = node.kept_parents
     node.skip_initial_run = False
     node.kept_parents = None
+    if async_result.is_async_result(node._value) and node._value.waiting:
+        # No local request owns the seed: commit the replacement even if it is synchronous.
+        node.preserve_initial_value_on_build = False
+        return False
     return (
         not lifetime.is_fn
         and not isinstance(node._value, Initial)

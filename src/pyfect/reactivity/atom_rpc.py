@@ -41,6 +41,7 @@ from pyfect.reactivity.async_result import AsyncResult
 from pyfect.reactivity.atom._combinators import family, set_idle_ttl
 from pyfect.reactivity.atom._fn import AtomResultFn, PullResult
 from pyfect.reactivity.atom._runtime import AtomRuntime, RuntimeFactory, runtime
+from pyfect.reactivity.atom._swr import swr
 from pyfect.reactivity.atom._types import Atom, AtomContext, FnContext, Writable
 from pyfect.rpc import client as rpc_client
 from pyfect.rpc._rpc import AnyRpc, Rpc, StreamRpc
@@ -72,6 +73,7 @@ class _QueryKey(NamedTuple):
     payload: object
     headers: Headers | None
     reactivity_keys: Keys | None
+    stale_time: Duration | None
     time_to_live: Duration | None
     serialization_key: str | None
 
@@ -147,6 +149,7 @@ class AtomRpcClient[G: RpcGroup, T]:
         *,
         headers: HeadersInput | None = None,
         reactivity_keys: Keys | None = None,
+        stale_time: DurationInput | None = None,
         time_to_live: DurationInput | None = None,
         serialization_key: str | None = None,
     ) -> Atom[AsyncResult[A, E | RpcClientError]]: ...
@@ -159,6 +162,7 @@ class AtomRpcClient[G: RpcGroup, T]:
         *,
         headers: HeadersInput | None = None,
         reactivity_keys: Keys | None = None,
+        stale_time: DurationInput | None = None,
         time_to_live: DurationInput | None = None,
         serialization_key: str | None = None,
     ) -> Atom[AsyncResult[A, E | ME | RpcClientError]]: ...
@@ -194,19 +198,23 @@ class AtomRpcClient[G: RpcGroup, T]:
         *,
         headers: HeadersInput | None = None,
         reactivity_keys: Keys | None = None,
+        stale_time: DurationInput | None = None,
         time_to_live: DurationInput | None = None,
         serialization_key: str | None = None,
     ) -> Atom[Any]:
         """An atom holding the result of calling ``rpc`` with ``payload``
         (for a streaming RPC, a pull atom reading its stream).
-        ``reactivity_keys`` refresh it when invalidated, ``time_to_live``
-        keeps it that long after its last use (infinite: always), and
-        ``serialization_key`` makes it serializable."""
+        ``reactivity_keys`` refresh it when invalidated, ``stale_time``
+        (not for a streaming RPC) reuses a result that young on mount and
+        revalidates an older one in the background (``swr``),
+        ``time_to_live`` keeps it that long after its last use (infinite:
+        always), and ``serialization_key`` makes it serializable."""
         key = _QueryKey(
             self._own(rpc).tag,
             payload,
             None if headers is None else http_headers.from_input(headers),
             reactivity_keys,
+            None if stale_time is None else from_input_unsafe(stale_time),
             None if time_to_live is None else from_input_unsafe(time_to_live),
             serialization_key,
         )
@@ -225,15 +233,18 @@ class AtomRpcClient[G: RpcGroup, T]:
             made = self.runtime.pull(unwrap(opened))
         else:
             made = self.runtime.atom(service().flat_map(call))
+        stale_time = None if rpc.is_stream else key.stale_time
         if key.reactivity_keys is not None:
             made = self.runtime.factory.with_reactivity(key.reactivity_keys)(made)
         if not rpc.is_stream and key.serialization_key:
             made = made.serializable(
-                key=f"AtomRpc:{key.tag}:{key.serialization_key}", schema=_result_schema(rpc)
+                key=f"AtomRpc:{key.tag}:{key.serialization_key}",
+                schema=_result_schema(rpc),
+                skip_initial_run=stale_time is not None,
             )
         if key.time_to_live is not None:
             made = set_idle_ttl(made, key.time_to_live)
-        return made
+        return made if stale_time is None else swr(made, stale_time=stale_time)
 
     def _own(self, rpc: AnyRpc) -> AnyRpc:
         if self.group.rpcs.get(rpc.tag) is not rpc:

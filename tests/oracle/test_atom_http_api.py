@@ -10,6 +10,7 @@ derives their string codec). ``timeToLive: "1 minute"`` is ``60``;
 
 import json
 import types
+from collections.abc import Callable
 from typing import Any, TypedDict
 
 import pytest
@@ -34,7 +35,7 @@ from pyfect.http_api import endpoint as ep
 from pyfect.http_api import schema as api_schema
 from pyfect.http_api.api import HttpApi
 from pyfect.http_api.group import HttpApiGroup
-from pyfect.reactivity import atom, atom_http_api, atom_registry, hydration
+from pyfect.reactivity import _time, async_result, atom, atom_http_api, atom_registry, hydration
 from pyfect.stream import Stream
 
 from ._http_api import struct
@@ -70,6 +71,109 @@ def _http_layer(
 
     service: HttpClientService[Any] = make_http_client(send)
     return layer.succeed(HttpClient, service)
+
+
+_FRESH_GET = ep.get("get", "/value", success=S.Number)
+_FRESH_GROUP: Any = HttpApiGroup.make("group").add(_FRESH_GET)
+
+
+def _make_counting_client(next: Callable[[], int]) -> Any:
+    def answer(request: HttpClientRequest) -> HttpClientResponse:
+        return response.make(
+            request, json.dumps(next()), headers={"content-type": "application/json"}
+        )
+
+    return atom_http_api.make(
+        _tag("FreshClient"),
+        api=HttpApi.make("FreshApi").add(_FRESH_GROUP),
+        base_url="https://example.test",
+        http_client=_http_layer(answer),
+    )
+
+
+def _counter() -> tuple[list[int], Callable[[], int]]:
+    requests = [0]
+
+    def next() -> int:
+        requests[0] += 1
+        return requests[0]
+
+    return requests, next
+
+
+@testing.effect
+def test_reuses_fresh_hydration_and_revalidates_stale_hydration_once(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """reuses fresh hydration and revalidates stale hydration once"""
+    requests, next = _counter()
+    client_api = _make_counting_client(next)
+    query = client_api.query(
+        _FRESH_GROUP,
+        _FRESH_GET,
+        serialization_key="value",
+        stale_time="1 second",
+        reactivity_keys=["value"],
+    )
+    clock = [10_000]
+    monkeypatch.setattr(_time, "time", types.SimpleNamespace(time_ns=lambda: clock[0] * 1_000_000))
+    server = atom_registry.make()
+    yield from fx.add_finalizer(lambda _: fx.sync(server.dispose))
+    yield from atom_registry.mount(server, query)
+    assert (yield from atom_registry.get_result(server, query)) == 1
+    state = hydration.dehydrate(server)
+
+    for age, refresh, expected in [(500, False, 1), (1_500, False, 2), (500, True, 3)]:
+        clock[0] = 10_000 + age
+        client = atom_registry.make()
+        yield from fx.add_finalizer(lambda _, client=client: fx.sync(client.dispose))
+        hydration.hydrate(client, state)
+        if refresh:
+            client.refresh(query)
+        yield from atom_registry.mount(client, query)
+        if not refresh:
+            seed = client.get(query)
+            assert isinstance(seed, async_result.Success)
+            assert seed.value == 1  # pyright: ignore[reportUnknownMemberType]
+        yield from fx.yield_now()
+        result = yield from atom_registry.get_result(client, query, suspend_on_waiting=True)
+        assert result == expected
+        assert requests[0] == expected
+
+
+@pytest.mark.parametrize("legacy_first", [False, True])
+@testing.effect
+def test_refreshes_a_shared_key_for_both_readers(legacy_first: bool):
+    """refreshes a shared key for both readers (legacy first: %s)"""
+    requests, next = _counter()
+    client_api = _make_counting_client(next)
+    legacy = client_api.query(
+        _FRESH_GROUP, _FRESH_GET, serialization_key="value", reactivity_keys=["value"]
+    )
+    stale = client_api.query(
+        _FRESH_GROUP,
+        _FRESH_GET,
+        serialization_key="value",
+        reactivity_keys=["value"],
+        stale_time=0,
+    )
+    registry = atom_registry.make()
+    yield from fx.add_finalizer(lambda _: fx.sync(registry.dispose))
+    first, second = (legacy, stale) if legacy_first else (stale, legacy)
+    yield from atom_registry.mount(registry, first)
+    yield from atom_registry.get_result(registry, first, suspend_on_waiting=True)
+    yield from atom_registry.mount(registry, second)
+    yield from fx.yield_now()
+
+    def read(query: Any) -> Effect[float, Any, Any]:
+        return atom_registry.get_result(registry, query, suspend_on_waiting=True)
+
+    before = yield from read(stale)
+    if legacy_first:
+        assert before == 2
+    registry.refresh(second)
+    assert (yield from read(first)) == before + 1
+    assert requests[0] == before + 1
 
 
 @pytest.mark.parametrize(
