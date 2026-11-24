@@ -4,9 +4,9 @@ asking the client for input (``elicit``)."""
 from __future__ import annotations
 
 import base64
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Literal, LiteralString, Never, cast, overload
+from typing import Any, Generic, Literal, LiteralString, Never, TypeVar, cast, overload
 
 import pyfect as fx
 from pyfect import _json_text, error_reporter
@@ -65,7 +65,7 @@ from pyfect.ai.toolkit import (
 )
 from pyfect.cause import Cause, Fail, UnhandledError
 from pyfect.context import Context
-from pyfect.effect import fail, fail_cause, gen, succeed, suspend
+from pyfect.effect import fail, fail_cause, gen, succeed, suspend, sync
 from pyfect.errors import TaggedError
 from pyfect.http.find_my_way import Router, RouterConfig
 
@@ -175,8 +175,30 @@ def _is_parameter_error(error: object) -> bool:
     )
 
 
+# Invariant: a covariant name would let pyright widen a toolkit's names to admit any tool.
+_N = TypeVar("_N", bound=LiteralString)
+
+
+@dataclass(frozen=True)
+class ToolContent(Generic[_N]):
+    """A tool's content mapper, made by ``tool_content``."""
+
+    name: _N
+    mapper: Callable[[Any], Sequence[ContentBlock]]
+
+
+def tool_content[NN: LiteralString, SS](
+    tool: Tool.Tool[NN, Any, SS, Any, Any, Any], mapper: Callable[[SS], Sequence[ContentBlock]]
+) -> ToolContent[NN]:
+    """``mapper`` as ``tool`` 's content in ``register_toolkit``: it turns
+    the decoded success into the call's MCP content blocks."""
+    return ToolContent(tool.name, mapper)
+
+
 def register_toolkit[N: LiteralString, RP, HE, R](
     toolkit: Toolkit[N, RP, HE, R],
+    *,
+    content: Iterable[ToolContent[N]] = (),
 ) -> Effect[None, Never, McpServer | Handlers[N] | R]:
     """Serve every tool of ``toolkit`` (Effect's ``registerToolkit``).
 
@@ -184,7 +206,11 @@ def register_toolkit[N: LiteralString, RP, HE, R](
     an object; a success is the call's ``structuredContent`` and its JSON
     text. Invalid parameters are a JSON-RPC invalid-params error, a declared
     failure an ``isError`` result, and anything else is logged, reported and
-    answered with a generic ``isError`` result."""
+    answered with a generic ``isError`` result.
+
+    A tool with a ``content`` mapper (``tool_content``) answers a success with
+    the mapper's blocks, and lists no ``outputSchema``."""
+    mappers = {entry.name: entry.mapper for entry in content}
 
     @gen
     def register():
@@ -222,8 +248,10 @@ def register_toolkit[N: LiteralString, RP, HE, R](
                 "inputSchema": input_schema,
                 "annotations": _tool_annotations(tool.annotations),
             }
-            # Revisions before 2026-07-28 list it only for an object (projection).
-            mcp_tool["outputSchema"] = tool_json_schema(tool.success_schema, strict=False)
+            mapper = mappers.get(tool.name)
+            if mapper is None:
+                # Revisions before 2026-07-28 list it only for an object (projection).
+                mcp_tool["outputSchema"] = tool_json_schema(tool.success_schema, strict=False)
             description = Tool.get_description(tool)
             if description is not None:
                 mcp_tool["description"] = description
@@ -234,7 +262,7 @@ def register_toolkit[N: LiteralString, RP, HE, R](
                 ToolEntry(
                     mcp_tool,
                     tool.annotations,
-                    _tool_handler(kit, tool, internal_tool_error),
+                    _tool_handler(kit, tool, internal_tool_error, mapper),
                     services,
                 )
             )
@@ -271,6 +299,7 @@ def _tool_handler(
     kit: Any,
     tool: Tool.AnyTool,
     internal_tool_error: Callable[[Cause[object]], Effect[CallToolResult, InvalidParams]],
+    mapper: Callable[[Any], Sequence[ContentBlock]] | None,
 ) -> Callable[[JsonObject | None], Effect[CallToolResult, InvalidParams, RequestServices]]:
     encode_failure = _json_encoder(tool, tool.failure_schema)
     # Successes and returned failures come encoded by the toolkit: only their JSON form is left.
@@ -298,6 +327,9 @@ def _tool_handler(
         out["structuredContent"] = cast("Any", encoded)
         return out
 
+    def mapped_result(blocks: Sequence[ContentBlock]) -> CallToolResult:
+        return {"isError": False, "content": list(blocks)}
+
     def handle_cause(cause: Cause[object]) -> Effect[CallToolResult, InvalidParams]:
         found = cause.find_recoverable_error()
         if isinstance(found, Fail):
@@ -313,6 +345,10 @@ def _tool_handler(
 
     def to_result(result: HandlerResult) -> Effect[CallToolResult, Any]:
         if not result.is_failure:
+            if mapper is not None:
+                # A raising mapper is a defect: logged, and answered with the generic error.
+                to_blocks = mapper
+                return sync(lambda: mapped_result(to_blocks(result.result)))
             if void and result.encoded_result is None:
                 # An absent result has no structured form.
                 return succeed({"isError": False, "content": []})

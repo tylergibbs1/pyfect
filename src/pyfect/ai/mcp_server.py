@@ -20,7 +20,7 @@ user for input and ``McpServerService.notify`` sends notifications.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import Any, Literal, LiteralString, Never
 
 from pyfect import byte_size
@@ -60,6 +60,7 @@ from pyfect.ai._mcp.register import (
     INTERNAL_TOOL_ERROR_MESSAGE,
     CompletionFunction,
     ResourceContent,
+    ToolContent,
     UriTemplate,
     client_capabilities,
     elicit,
@@ -67,6 +68,7 @@ from pyfect.ai._mcp.register import (
     register_resource,
     register_resource_template,
     register_toolkit,
+    tool_content,
     uri_template,
 )
 from pyfect.ai._mcp.register_skill import register_skill
@@ -434,11 +436,13 @@ def layer_http_request_scoped[RE = Never, RR = Never](
 
 def toolkit[N: LiteralString, RP, HE, R](
     toolkit: Toolkit[N, RP, HE, R],
+    *,
+    content: Iterable[ToolContent[N]] = (),
 ) -> Layer[Never, Never, McpServer | Handlers[N] | R]:
     """A layer registering ``toolkit`` (see ``register_toolkit``). It needs
     the ``McpServer``: pass it to a transport as ``registrations``, or
     provide the transport to it."""
-    return effect_discard(register_toolkit(toolkit))
+    return effect_discard(register_toolkit(toolkit, content=content))
 
 
 def resource[E = Never, R = Never](
@@ -573,6 +577,7 @@ __all__ = [
     "ResourceTemplateEntry",
     "SkillFile",
     "SkillFileInput",
+    "ToolContent",
     "ToolEntry",
     "UriTemplate",
     "VisibilityCheck",
@@ -597,6 +602,7 @@ __all__ = [
     "run",
     "run_stdio",
     "skill",
+    "tool_content",
     "toolkit",
     "uri_template",
     "visibility",

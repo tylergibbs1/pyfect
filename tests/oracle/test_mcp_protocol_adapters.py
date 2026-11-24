@@ -25,6 +25,7 @@ Omitted, with the reason:
 
 from __future__ import annotations
 
+import base64
 import json
 from typing import Any, TypedDict, cast
 
@@ -355,10 +356,25 @@ class Answer(TypedDict):
     answer: str
 
 
+class Caption(TypedDict):
+    caption: str
+
+
+class Picture(TypedDict):
+    caption: str
+    png: bytes
+
+
 Str = T.make("Str", success=S.String)
 Untyped = T.make("Untyped")
 Obj = T.make("Obj", success=S.Struct(Answer))
 Arr = T.make("Arr", success=S.Array(S.Int))
+Preview = T.make(
+    "preview",
+    parameters=S.Struct(Caption),
+    success=S.Struct(Picture, png=S.BytesFromBase64),
+    failure=S.String,
+)
 _outputs = K.make(Str, Untyped, Obj, Arr)
 _output_handlers = _outputs.to_layer(
     Str.handler(lambda _, __: fx.succeed("hi")),
@@ -366,6 +382,42 @@ _output_handlers = _outputs.to_layer(
     Obj.handler(lambda _, __: fx.succeed(Answer(answer="a"))),
     Arr.handler(lambda _, __: fx.succeed((1, 2))),
 )
+_previews = K.make(Preview)
+_preview_handlers = _previews.to_layer(
+    Preview.handler(
+        lambda params, _: (
+            fx.fail("not found")
+            if params["caption"] == "missing"
+            else fx.succeed(Picture(caption=params["caption"], png=bytes((137, 80, 78, 71))))
+        )
+    )
+)
+
+
+def _preview_blocks(picture: Picture) -> list[MS.ContentBlock]:
+    caption = picture["caption"]
+    if caption == "broken":
+        raise RuntimeError("private renderer error")
+    return [
+        {"type": "text", "text": caption},
+        {
+            "type": "image",
+            "data": base64.b64encode(picture["png"]).decode(),
+            "mimeType": "image/png",
+        },
+        {"type": "resource", "resource": {"uri": "test://preview", "text": caption}},
+    ]
+
+
+_preview_registration = M.register_toolkit(
+    _previews, content=[M.tool_content(Preview, _preview_blocks)]
+).pipe(fx.provide(_preview_handlers))
+PREVIEW_PARAMS = {"name": "preview", "arguments": {"caption": "example"}}
+PREVIEW_CONTENT = [
+    {"type": "text", "text": "example"},
+    {"type": "image", "data": "iVBORw==", "mimeType": "image/png"},
+    {"type": "resource", "resource": {"uri": "test://preview", "text": "example"}},
+]
 OBJECT_SCHEMA = {
     "type": "object",
     "properties": {"answer": {"type": "string"}},
@@ -375,8 +427,36 @@ OBJECT_SCHEMA = {
 
 
 @testing.effect
+def test_preserves_declared_failures_and_scrubs_content_mapper_defects():
+    """McpServer protocol adapters / should preserve declared failures and scrub content mapper defects"""  # noqa: E501
+    harness = yield from stdio_harness(P.v2025_11_25, None, _preview_registration)
+    yield from harness.initialize()
+    cases = [("missing", '"not found"'), ("broken", M.INTERNAL_TOOL_ERROR_MESSAGE)]
+    for caption, text in cases:
+        params = {"name": "preview", "arguments": {"caption": caption}}
+        result = (yield from harness.send_request("tools/call", params))["result"]
+        assert result["isError"] is True, caption
+        assert result["content"] == [{"type": "text", "text": text}], caption
+
+
+@testing.effect
+def test_preserves_mapped_content_blocks_on_every_revision():
+    """McpServer protocol adapters / should project ordinary toolkit outputs per revision and preserve mapped content blocks: the mapped half"""  # noqa: E501
+    for protocol in (P.v2024_11_05, P.v2025_03_26, P.v2025_06_18, P.v2025_11_25, P.v2026_07_28):
+        harness = yield from stdio_harness(protocol, None, _preview_registration)
+        if protocol is not P.v2026_07_28:
+            yield from harness.initialize()
+        listed = (yield from harness.send_request("tools/list", {}))["result"]["tools"]
+        assert [tool["name"] for tool in listed] == ["preview"]
+        assert "outputSchema" not in listed[0], protocol.protocol_version
+        result = (yield from harness.send_request("tools/call", PREVIEW_PARAMS))["result"]
+        assert result["content"] == PREVIEW_CONTENT, protocol.protocol_version
+        assert "structuredContent" not in result, protocol.protocol_version
+
+
+@testing.effect
 def test_projects_non_object_toolkit_outputs_only_for_the_july_protocol():
-    """McpServer protocol adapters / should project non-object JSON Toolkit outputs only for the July protocol"""  # noqa: E501
+    """McpServer protocol adapters / should project non-object JSON Toolkit outputs only for the July protocol / should project ordinary toolkit outputs per revision and preserve mapped content blocks: the ordinary half"""  # noqa: E501
     registration = M.register_toolkit(_outputs).pipe(fx.provide(_output_handlers))
     expected_calls: dict[str, Any] = {
         "Str": ({"content": [{"type": "text", "text": "hi"}], "isError": False}),
