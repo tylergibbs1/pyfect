@@ -1,7 +1,7 @@
 """A schema class field's schema comes from its annotation: ``Annotated``
 carries checks and may carry the schema itself, and an annotation with no
-schema fails on first use, naming the field. String annotations (this
-module's ``from __future__``) are read the same way."""
+schema fails where the class is defined, naming the field. String annotations
+(this module's ``from __future__``) are read the same way."""
 
 from __future__ import annotations
 
@@ -88,22 +88,18 @@ def test_a_struct_of_a_typed_dict_reads_annotated_checks_too():
     )
 
 
-class Unsupported(S.Class):
-    value: complex
-
-
-class Nested(S.TaggedError):
-    values: list[complex]
-
-
-def test_an_annotation_with_no_schema_fails_on_first_use_naming_the_field():
+def test_an_annotation_with_no_schema_fails_where_the_class_is_defined():
     with pytest.raises(TypeError, match=r"Unsupported\.value: No schema for the annotation"):
-        Unsupported(value=1j)
+
+        class Unsupported(S.Class):  # pyright: ignore[reportUnusedClass]
+            value: complex
 
 
-def test_an_unsupported_annotation_inside_a_container_names_the_field():
+def test_an_unsupported_annotation_inside_a_container_fails_at_definition():
     with pytest.raises(TypeError, match=r"Nested\.values: No schema for the annotation"):
-        S.decode_unknown_sync(Nested)({"values": []})
+
+        class Nested(S.TaggedError):  # pyright: ignore[reportUnusedClass]
+            values: list[complex]
 
 
 def _is_complex(value: object) -> TypeIs[complex]:
