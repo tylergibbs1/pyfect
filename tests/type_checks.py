@@ -197,6 +197,11 @@ from pyfect.persistence import rate_limiter as rl
 from pyfect.persistence import redis as redis_module
 from pyfect.pool import PoolStats
 from pyfect.pool._state import Strategy
+from pyfect.protobuf import descriptor as protobuf_descriptor
+from pyfect.protobuf import descriptor_proto
+from pyfect.protobuf import message as protobuf_message
+from pyfect.protobuf import reader as protobuf_reader
+from pyfect.protobuf import writer as protobuf_writer
 from pyfect.pubsub import Atomic, BackPressureStrategy, SlidingStrategy, Subscription
 from pyfect.pubsub import Strategy as PubSubStrategy
 from pyfect.queue import Dequeue
@@ -8261,6 +8266,30 @@ def check_ai_response_covariant(
 
     assert_type(wider(weather).tool_calls[0].name, Literal["Weather", "Clock"])
     assert_type(either(obj).value, int | str)
+
+
+def check_protobuf() -> None:
+    from pyfect.result import Result
+
+    registry = protobuf_descriptor.make([{"name": "a.proto", "syntax": "proto3"}])
+    assert_type(
+        registry,
+        Result[protobuf_descriptor.Registry, protobuf_descriptor.ProtobufDescriptorError],
+    )
+    shape = descriptor_proto.FILE_DESCRIPTOR_PROTO
+    decoded = protobuf_message.decode(shape, max_size=1024)(b"")
+    assert_type(decoded, Result[protobuf_message.Message, protobuf_message.ProtobufMessageError])
+    encoded = protobuf_message.encode(shape)({"name": "a.proto"})
+    assert_type(encoded, Result[bytes, protobuf_message.ProtobufMessageError])
+    w = protobuf_writer.make().tag(1, protobuf_writer.WireType.Len).string("a")
+    assert_type(w, protobuf_writer.ProtobufWriter)
+    r = protobuf_reader.make(w.finish())
+    assert_type(r.int64(), int)
+    assert_type(r.int64_number(), float)
+    assert_type(r.bytes_view(), memoryview)
+    # A FileDescriptorProto's keys and value types are checked.
+    protobuf_descriptor.make([{"name": 1}])  # pyright: ignore[reportArgumentType]
+    w.string(b"a")  # pyright: ignore[reportArgumentType]
 
 
 def check_mcp() -> None:

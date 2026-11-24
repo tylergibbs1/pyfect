@@ -1,6 +1,6 @@
 ---
 title: Data formats
-description: "Parse TOML, YAML and INI files, compare semantic versions and match ranges, and compute with exact decimals."
+description: "Parse TOML, YAML and INI files, compare semantic versions and match ranges, compute with exact decimals, and encode and decode Protocol Buffers."
 ---
 
 These modules are plain functions and values, with no services to provide. Each follows
@@ -96,10 +96,42 @@ the exact root, or `None` when it is irrational (`make_unsafe(531441, 4096).nth_
 
 </CodeOutput>
 
+## Protocol Buffers
+
+`pyfect.protobuf` reads and writes protobuf messages in pure Python, with no generated code
+and no `protobuf` package, as Effect's `effect/protobuf` does. `descriptor.make` resolves
+the `FileDescriptorProto`s that `protoc --descriptor_set_out` writes (or
+`descriptor.from_file_descriptor_set` reads them from its bytes) into a registry of message
+descriptors. `message.encode(descriptor)` and `message.decode(descriptor)` then turn dicts
+into bytes and back, returning a `Result`.
+
+A message is a dict keyed by the field names of the `.proto` file. A oneof is one key holding
+`{"_tag": field, "value": value}`, map keys are strings, and 64-bit integers are `int`s (or a
+`float` or a decimal `str` when the field sets `jstype`). Fields the descriptor doesn't know
+are kept as bytes under `message.unknown_fields` and written back on encode;
+`message.get_extension` and `set_extension` read and write extensions there. proto2, proto3
+and editions 2023, 2024 and 2026 are supported, with groups, closed enums and MessageSet.
+
+Decoding treats its input as untrusted. Messages nest at most `max_depth` deep (100 by
+default), varints are at most ten bytes, and a length never reaches past its message. Pass
+`max_size` to bound the input as well. Effect has no such option; without one, the input's
+length is the only limit. `reader.ProtobufReader` and `writer.ProtobufWriter` are the wire
+format on its own, for code that writes messages field by field, like the OTLP exporter.
+
+<CodeOutput>
+
+<include meta='title="protobuf.py"'>../../snippets/data_formats/protobuf.py</include>
+
+<include lang="text">../../snippets/data_formats/protobuf.out</include>
+
+</CodeOutput>
+
 Reference: [`pyfect.encoding.toml`](/docs/reference/encoding/toml),
 [`pyfect.encoding.yaml`](/docs/reference/encoding/yaml),
 [`pyfect.encoding.ini`](/docs/reference/encoding/ini),
 [`pyfect.semver`](/docs/reference/semver),
 [`pyfect.semver_range`](/docs/reference/semver_range),
 [`pyfect.big_decimal`](/docs/reference/big_decimal),
-[`pyfect.rational`](/docs/reference/rational).
+[`pyfect.rational`](/docs/reference/rational),
+[`pyfect.protobuf.message`](/docs/reference/protobuf/message),
+[`pyfect.protobuf.descriptor`](/docs/reference/protobuf/descriptor).

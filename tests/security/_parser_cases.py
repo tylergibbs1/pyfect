@@ -90,6 +90,10 @@ from pyfect.http.multipart_parser import PartInfo
 from pyfect.http.web import WebRequest
 from pyfect.jose import jwe, jwks, jws, jwt
 from pyfect.net import dns, host, ip_interface, ip_network, net_address
+from pyfect.protobuf import descriptor as protobuf_descriptor
+from pyfect.protobuf import descriptor_proto
+from pyfect.protobuf import message as protobuf_message
+from pyfect.protobuf.writer import ProtobufWriter, WireType
 from pyfect.rpc import serialization
 from pyfect.sql.clickhouse import driver as clickhouse
 from pyfect.sql.libsql import config as libsql_config
@@ -874,6 +878,176 @@ _amplified(
 
 
 # ------------------------------------------------------------------------- not measured
+
+# ------------------------------------------------------------------------- protobuf
+
+_PROTOBUF = protobuf_descriptor.make(
+    [
+        {
+            "name": "security.proto",
+            "syntax": "proto2",
+            "message_type": [
+                {
+                    "name": "Node",
+                    "field": [
+                        {
+                            "name": "child",
+                            "number": 1,
+                            "label": 1,
+                            "type": 11,
+                            "type_name": ".Node",
+                        },
+                        {"name": "mode", "number": 2, "label": 3, "type": 14, "type_name": ".Mode"},
+                        {
+                            "name": "items",
+                            "number": 3,
+                            "label": 3,
+                            "type": 11,
+                            "type_name": ".Node.ItemsEntry",
+                        },
+                        {
+                            "name": "left",
+                            "number": 4,
+                            "label": 1,
+                            "type": 11,
+                            "type_name": ".Node",
+                            "oneof_index": 0,
+                        },
+                        {
+                            "name": "right",
+                            "number": 5,
+                            "label": 1,
+                            "type": 11,
+                            "type_name": ".Node",
+                            "oneof_index": 0,
+                        },
+                        {"name": "required", "number": 6, "label": 2, "type": 5},
+                    ],
+                    "oneof_decl": [{"name": "side"}],
+                    "nested_type": [
+                        {
+                            "name": "ItemsEntry",
+                            "options": {"map_entry": True},
+                            "field": [
+                                {"name": "key", "number": 1, "label": 1, "type": 9},
+                                {
+                                    "name": "value",
+                                    "number": 2,
+                                    "label": 1,
+                                    "type": 11,
+                                    "type_name": ".Node",
+                                },
+                            ],
+                        }
+                    ],
+                }
+            ],
+            "enum_type": [{"name": "Mode", "value": [{"name": "A", "number": 1}]}],
+        }
+    ]
+).get_or_raise()
+_NODE = _PROTOBUF.get_message("Node")
+assert _NODE is not None
+_decode_node = protobuf_message.decode(_NODE)
+_decode_set = protobuf_message.decode(descriptor_proto.FILE_DESCRIPTOR_SET)
+
+data(protobuf_message.decode, _decode_set)
+
+
+def _protobuf(name: str, unit: Callable[[int], bytes], *, size: int = 1000) -> None:
+    """``message.decode`` of a ``Node`` from ``unit(n)``."""
+
+    def make(n: int) -> Work:
+        value = unit(n)
+        return ignoring(lambda: _decode_node(value))
+
+    CASES.append(Case(f"message.decode: {name}", protobuf_message.decode, make, size))
+
+
+def _nested_nodes(n: int) -> bytes:
+    """``n`` levels of ``child``, built inside out in linear time."""
+    headers: list[bytes] = []
+    size = 0
+    for _ in range(n):
+        header = ProtobufWriter().tag(1, WireType.Len).uint32(size).finish()
+        headers.append(header)
+        size += len(header)
+    return b"".join(reversed(headers))
+
+
+# Each `Node` nests one level deeper, to far past max_depth: refused at the limit.
+_protobuf("messages nested past max_depth", _nested_nodes)
+# Unknown groups nested past the skip bound, then closed.
+_protobuf("unknown groups nested past the bound", lambda n: b"\x3b" * n + b"\x3c" * n)
+# Unknown fields, each retained.
+_protobuf("many unknown fields", lambda n: b"\x38\x01" * n + b"\x30\x01")
+# A packed closed enum of unknown numbers, each retained as its own field.
+_protobuf(
+    "unknown numbers of a packed closed enum",
+    lambda n: (
+        ProtobufWriter()
+        .tag(2, WireType.Len)
+        .fork()
+        .raw(b"\x07" * n)
+        .join()
+        .tag(6, WireType.Varint)
+        .uint32(1)
+        .finish()
+    ),
+)
+# One map key, its entry replaced over and over.
+_protobuf(
+    "a map entry replaced n times",
+    lambda n: b"\x1a\x05\x0a\x01\x61\x12\x00" * n + b"\x30\x01",
+    size=500,
+)
+# A oneof switching between its two message cases.
+_protobuf("a oneof switching cases", lambda n: b"\x22\x00\x2a\x00" * n + b"\x30\x01", size=500)
+# Occurrences of one message field, merged into one value.
+_protobuf("a message merged n times", lambda n: b"\x0a\x02\x30\x01" * n + b"\x30\x01", size=500)
+# Overlong varints where tags belong.
+_protobuf("overlong tag varints", lambda n: b"\xff" * n)
+
+
+@case(
+    protobuf_descriptor.from_file_descriptor_set,
+    "descriptor.from_file_descriptor_set: an import chain",
+)
+def _protobuf_import_chain(n: int) -> Work:
+    files = [
+        {"name": f"f{i}.proto", "dependency": [f"f{i - 1}.proto"] if i else []} for i in range(n)
+    ]
+    value = protobuf_message.encode(descriptor_proto.FILE_DESCRIPTOR_SET)(
+        {"file": files}
+    ).get_or_raise()
+    return ignoring(lambda: protobuf_descriptor.from_file_descriptor_set(value))
+
+
+@case(
+    protobuf_descriptor.from_file_descriptor_set,
+    "descriptor.from_file_descriptor_set: many messages",
+)
+def _protobuf_many_messages(n: int) -> Work:
+    messages = [
+        {
+            "name": f"M{i}",
+            "field": [
+                {
+                    "name": "x",
+                    "number": 1,
+                    "label": 1,
+                    "type": 11,
+                    "type_name": f".M{i - 1 if i else 0}",
+                }
+            ],
+        }
+        for i in range(n)
+    ]
+    value = protobuf_message.encode(descriptor_proto.FILE_DESCRIPTOR_SET)(
+        {"file": [{"name": "m.proto", "message_type": messages}]}
+    ).get_or_raise()
+    return ignoring(lambda: protobuf_descriptor.from_file_descriptor_set(value))
+
 
 _REASONS: dict[str, list[str]] = {
     "runs a schema; schemas of text are measured": [

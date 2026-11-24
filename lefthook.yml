@@ -22,6 +22,7 @@ pre-commit:
         - "research/**"
         - "src/pyfect/ai/openai/generated/**"
         - "src/pyfect/ai/openrouter/generated/**"
+        - "src/pyfect/protobuf/descriptor_proto.py"
         - "tests/oracle/_generated_code_sample.py"
       group:
         # In order, not parallel: a fix can leave code unformatted (removing an import leaves a
