@@ -51,12 +51,14 @@ stubs only what it uses. Any other member is an effect, and a method returning o
 with `UnimplementedError`. pyright doesn't check the member names: a misspelt one leaves the
 real member unmocked, and the defect names the close match.
 
-The snippet declares its tag with `key="Mail"`. A tag's key is the name pyfect shows for it: in
-`Service not found: Mail`, in a context's repr, and in the defects `layer.mock` raises below.
-Without `key=` it is the class's module and name, such as `app.mail.Mail`. In Effect the key
-string is also the tag's identity, so two tags with the same key are one service. In pyfect
-the class is the identity: two tags that share a key are still two services, and the key only
-makes messages easier to read.
+The snippet declares its tag with `key="Mail"`. A tag's key is its identity, as in Effect: two
+tag classes with the same key are one service, whichever of them provides it or reads it. The
+key is also the name pyfect shows: in `Service not found: Mail`, in a context's repr, and in the
+defects `layer.mock` raises below. Without `key=` it is the class's module and name, such as
+`app.mail.Mail`, so tags declared in different places stay apart. A short key like `"Mail"` is
+shared by any library that picks it too: declaring a second tag class with a key another
+declaration holds warns with `DuplicateTagKeyWarning`, and giving one of them a different key
+keeps them apart.
 
 <include meta='title="mock.py"'>../../snippets/services/mock.py</include>
 

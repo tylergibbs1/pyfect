@@ -60,7 +60,7 @@ def _check[R](asserts: SchemaAsserts[R, R], method: Method) -> SchemaCheck[R]:
     return getattr(asserts, method)()
 
 
-class Service(fx.Tag[str], key="Service"):
+class Service(fx.Tag[str], key="TestSchema/Service"):
     pass
 
 

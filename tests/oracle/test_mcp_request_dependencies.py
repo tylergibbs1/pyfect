@@ -24,7 +24,7 @@ from ._mcp import stdio_harness
 PROTOCOLS = (P.v2025_11_25,)
 
 
-class CurrentUser(Tag[str], key="test/CurrentUser"):
+class CurrentUser(Tag[str], key="test/McpRequestDependencies/CurrentUser"):
     pass
 
 

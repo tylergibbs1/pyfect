@@ -77,7 +77,9 @@ class HttpApiGroup(Tag[GroupService], Generic[M_co, MT_co], base=True):
             if own:
                 cls.endpoints = _wrapped(cls, {**cls.endpoints, **own})
             return
-        super().__init_subclass__(key=_KEY_PREFIX + identifier, **kwargs)
+        # Groups sharing an identifier are one service, as in Effect; the key is derived from
+        # a route name, so it doesn't warn as a chosen key does.
+        super().__init_subclass__(key=_KEY_PREFIX + identifier, _derived_key=True, **kwargs)
         cls.identifier = identifier
         cls.top_level = top_level
         cls.annotations = annotations if annotations is not None else Context.empty()

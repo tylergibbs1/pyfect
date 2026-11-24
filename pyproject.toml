@@ -156,6 +156,8 @@ filterwarnings = [
     "error::ResourceWarning",
     # run_blocking freezing a running asyncio loop; a test doing it on purpose says so.
     "error::pyfect.run.RunBlockingInEventLoopWarning",
+    # Two test tags declared with one key are one service; a test doing it on purpose says so.
+    "error::pyfect.context.DuplicateTagKeyWarning",
     # A tests/ plugin imported before pytest registers it, so its asserts are not rewritten.
     "error::pytest.PytestAssertRewriteWarning",
 ]

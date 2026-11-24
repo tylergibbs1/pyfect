@@ -634,7 +634,7 @@ def test_length_0():
 # --- map, flatMap, gen ------------------------------------------------------------
 
 
-class ATag(fx.Tag[str], key="ATag"): ...
+class ATag(fx.Tag[str], key="EffectLongTail/ATag"): ...
 
 
 @testing.effect

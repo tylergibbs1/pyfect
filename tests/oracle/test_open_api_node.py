@@ -249,7 +249,7 @@ def test_catch_all_path() -> None:
 def test_middleware_error() -> None:
     """OpenAPI spec / endpoint / middleware error"""
 
-    class M(HttpApiMiddleware[Never, str], key="Http/Logger"):
+    class M(HttpApiMiddleware[Never, str], key="OpenApi/Http/Logger"):
         error = api_schema.as_text()(api_schema.status(405)(S.String))
 
     group = HttpApiGroup.make("group").add(ep.get("a", "/a", success=S.Finite)).middleware(M)

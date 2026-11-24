@@ -56,7 +56,7 @@ class User(S.Class):
     name: str
 
 
-class CurrentUser(Tag[User], key="CurrentUser"):
+class CurrentUser(Tag[User], key="Rpc/CurrentUser"):
     pass
 
 

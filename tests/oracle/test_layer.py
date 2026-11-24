@@ -22,11 +22,12 @@ data-last ones). Effect's ``captureStackTrace`` option is
 """
 # pyright: reportPrivateUsage=false
 
+import warnings
 from typing import Never
 
 import pyfect as fx
 from pyfect import layer, schedule, testing
-from pyfect.context import Provides
+from pyfect.context import DuplicateTagKeyWarning, Provides
 from pyfect.tracer import AnySpan, CurrentStackFrame, ExternalSpan, ParentSpan, Span, StackFrame
 
 ACQUIRE1, ACQUIRE2, ACQUIRE3 = "Acquiring Module 1", "Acquiring Module 2", "Acquiring Module 3"
@@ -127,7 +128,7 @@ def test_sharing_with_merge():
 def test_preserves_a_failure_when_a_shared_layer_build_is_interrupted():
     """preserves a failure when a shared layer build is interrupted"""
 
-    class Shared(fx.Tag[int], key="Shared"): ...
+    class Shared(fx.Tag[int], key="SharedInterrupted"): ...
 
     class Dying(fx.Tag[int], key="Dying"): ...
 
@@ -425,7 +426,11 @@ class _Mocked:
         return fx.succeed(2)
 
 
-class MockedTag(fx.Tag[_Mocked], key="Service1"): ...
+# Effect mocks Service1 itself: the same key, so the same service, on purpose.
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore", DuplicateTagKeyWarning)
+
+    class MockedTag(fx.Tag[_Mocked], key="Service1"): ...
 
 
 @testing.effect

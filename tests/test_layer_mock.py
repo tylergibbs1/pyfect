@@ -14,7 +14,7 @@ class Shape:
         return fx.succeed(1)
 
 
-class Mocked(fx.Tag[Shape], key="Mocked"): ...
+class Mocked(fx.Tag[Shape], key="LayerMock/Mocked"): ...
 
 
 @testing.effect

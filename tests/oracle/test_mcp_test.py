@@ -22,7 +22,7 @@ from pyfect.layer import provide
 from ._held_scheduler import held_scheduler
 
 
-class CurrentUser(Tag[str], key="test/CurrentUser"):
+class CurrentUser(Tag[str], key="test/McpTest/CurrentUser"):
     pass
 
 

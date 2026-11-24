@@ -1,7 +1,8 @@
 """Services: tags, references, and the context that holds them.
 
-A tag names a service. Its identity is the class, and its type parameter
-is the service's shape, so two tags can share a shape and stay distinct::
+A tag names a service. Its identity is its key, as in Effect, and its type
+parameter is the service's shape, so two tags can share a shape and stay
+distinct::
 
     class Database(Protocol):
         def find(self, key: str) -> str | None: ...
@@ -15,6 +16,11 @@ is the service's shape, so two tags can share a shape and stay distinct::
 Calling a tag class does not construct anything: it gives the effect that
 reads the service from the running fiber's context.
 
+The key defaults to the class's module and qualified name; ``key=`` sets it.
+Two tag classes with one key are one service (the first class declared with
+a key stands for it in contexts), so a second declaration taking a key that
+another holds warns with ``DuplicateTagKeyWarning``.
+
 A ``Reference`` is a tag with a default value. Effects that read a
 reference do not need it provided, so it never appears in ``R``::
 
@@ -27,6 +33,8 @@ reference do not need it provided, so it never appears in ``R``::
 
 from __future__ import annotations
 
+import threading
+import warnings
 from collections.abc import Callable, Mapping
 from types import MappingProxyType
 from typing import (
@@ -42,6 +50,7 @@ from typing import (
     final,
     overload,
 )
+from weakref import WeakValueDictionary
 
 from pyfect import _stable_cache
 from pyfect._core import Effect, Step, _FailCause, _Succeed
@@ -58,6 +67,38 @@ T_inv = TypeVar("T_inv")
 # A bare ``Context`` is ``Context[Any]``: the runtime's own contexts are
 # untyped; contexts handed to users and taken from them carry their tags.
 R_contra = TypeVar("R_contra", contravariant=True, default=Any)
+
+
+class DuplicateTagKeyWarning(UserWarning):
+    """A tag class was declared with a key another declaration holds, so the two are one
+    service (Effect's identity is the key). Give one a different key to keep them apart."""
+
+
+_by_key: WeakValueDictionary[str, type[Tag[Any]]] = WeakValueDictionary()
+"""The class standing for each key: the first declared with it while it lives."""
+_by_key_lock = threading.Lock()
+
+
+def _identity_of(cls: type[Tag[Any]], warn: bool) -> type[Tag[Any]]:
+    """The class standing for ``cls``'s key, which ``cls`` becomes if no live class holds it.
+    Another declaration holding it warns, unless ``warn`` is off (a key the framework derives
+    from a name, such as an ``HttpApiGroup``'s identifier); the same declaration made again
+    (a class in a function called twice) doesn't."""
+    with _by_key_lock:
+        held = _by_key.get(cls.key)
+        if held is None:
+            _by_key[cls.key] = cls
+            return cls
+    if warn and (held.__module__, held.__qualname__) != (cls.__module__, cls.__qualname__):
+        warnings.warn(
+            DuplicateTagKeyWarning(
+                f"{cls.__module__}.{cls.__qualname__} has the key {cls.key!r} of "
+                f"{held.__module__}.{held.__qualname__}, so they are one service (a tag's key is "
+                "its identity, as in Effect): give one a different key to keep them apart"
+            ),
+            stacklevel=4,
+        )
+    return held
 
 
 class MissingServiceError(Exception):
@@ -126,19 +167,28 @@ class Tag[S]:
     each subclass is a tag of its own."""
 
     key: ClassVar[str]
+    __tag_identity__: ClassVar[type[Tag[Any]]]
+    """The class standing for this tag's key in contexts (``_identity_of``)."""
     __tag_base__: ClassVar[bool] = True
     # Noted on a ``MissingServiceError`` raised while this tag's service is in the context:
     # where a service missing there should have come from.
     __missing_service_hint__: ClassVar[str | None] = None
 
     def __init_subclass__(
-        cls, *, key: str | None = None, base: bool = False, _alias: bool = False, **kwargs: Any
+        cls,
+        *,
+        key: str | None = None,
+        base: bool = False,
+        _alias: bool = False,
+        _derived_key: bool = False,
+        **kwargs: Any,
     ) -> None:
         super().__init_subclass__(**kwargs)
         if not _alias:
             _require_base_parents(cls)
         cls.key = key or f"{cls.__module__}.{cls.__qualname__}"
         cls.__tag_base__ = base
+        cls.__tag_identity__ = _identity_of(cls, warn=not (_alias or _derived_key))
 
     def __new__(cls) -> TagEffect[S, Self, Self]:
         _require_subclass(cls)
@@ -199,7 +249,8 @@ class Provides[S, T](Protocol):
 
 @final
 class Context(Generic[R_contra]):
-    """An immutable map from tag to service. ``Context[R]`` holds the
+    """An immutable map from tag to service, keyed by the tag's key (the class
+    standing for it, ``Tag.__tag_identity__``). ``Context[R]`` holds the
     services of the tags ``R``, so a context with more services stands in
     for one with fewer (``Context[A | B]`` is a ``Context[A]``).
 
@@ -209,8 +260,18 @@ class Context(Generic[R_contra]):
     __slots__ = ("_derivations", "_services")
 
     def __init__(self, services: Mapping[type[Tag[Any]], Any] | None = None) -> None:
-        self._services: dict[type[Tag[Any]], Any] = dict(services or {})
+        self._services: dict[type[Tag[Any]], Any] = {
+            tag.__tag_identity__: service for tag, service in (services or {}).items()
+        }
         self._derivations: dict[object, Any] | None = None
+
+    @staticmethod
+    def _of(services: dict[type[Tag[Any]], Any]) -> Context[Any]:
+        """A context over ``services``, already keyed by identity and not shared."""
+        made = Context.__new__(Context)
+        made._services = services
+        made._derivations = None
+        return made
 
     if TYPE_CHECKING:
         # The tags seen covariantly, for ``omit`` (see ``_Holding``).
@@ -224,7 +285,7 @@ class Context(Generic[R_contra]):
     @staticmethod
     def make[S, T](tag: TagLike[S, T], service: S) -> Context[T]:
         """A context holding one service."""
-        return Context({tag_class(tag): service})
+        return Context._of({_identity(tag): service})
 
     @overload
     @staticmethod
@@ -249,25 +310,25 @@ class Context(Generic[R_contra]):
         merged: dict[type[Tag[Any]], Any] = {}
         for ctx in contexts:
             merged.update(ctx._services)
-        return Context(merged)
+        return Context._of(merged)
 
     @staticmethod
     def pick[T = Never](*tags: TagLike[Any, T]) -> _Pick[T]:
         """Keep only ``tags``' services, in this context's order. Use with
         ``.pipe``; the context must hold every tag."""
-        return _Pick(frozenset(map(tag_class, tags)))
+        return _Pick(frozenset(map(_identity, tags)))
 
     @staticmethod
     def omit[T = Never](*tags: TagLike[Any, T]) -> _Omit[T]:
         """Drop ``tags``' services and remove them from the type. Use with
         ``.pipe``."""
-        return _Omit(frozenset(map(tag_class, tags)))
+        return _Omit(frozenset(map(_identity, tags)))
 
     @staticmethod
     def add_or_omit[S, T](tag: TagLike[S, T], service: Option[S]) -> _Omit[T]:
         """``add`` for ``Some(service)``, ``omit`` for ``None``. Either way the
         tag leaves the type. Use with ``.pipe``."""
-        cls = tag_class(tag)
+        cls = _identity(tag)
         if service is None:
             return _Omit(frozenset((cls,)))
         return _Omit(frozenset(), (cls, service.value))
@@ -276,6 +337,7 @@ class Context(Generic[R_contra]):
         return pipe_one(self, f, more)
 
     def lookup(self, tag: type[Tag[Any]]) -> tuple[bool, Any]:
+        tag = tag.__tag_identity__
         if tag in self._services:
             return True, self._services[tag]
         if issubclass(tag, Reference):
@@ -309,11 +371,11 @@ class Context(Generic[R_contra]):
     def get_or_none[S, T](self, tag: TagLike[S, T]) -> S | None:
         """The service, or ``None`` if absent. Unlike ``get_option``, an absent
         reference gives ``None``, not its default (Effect's ``getOrUndefined``)."""
-        return self._services.get(tag_class(tag))
+        return self._services.get(_identity(tag))
 
     def add[S, T](self, tag: TagLike[S, T], service: S) -> Context[R_contra | T]:
         """A copy with ``service`` added. Replacing a tag keeps its place."""
-        return Context({**self._services, tag_class(tag): service})
+        return Context._of({**self._services, _identity(tag): service})
 
     def merge[R2](self, other: Context[R2]) -> Context[R_contra | R2]:
         """Both contexts' services; ``other`` wins where both have a tag.
@@ -322,7 +384,7 @@ class Context(Generic[R_contra]):
             return cast("Context[Any]", self)
         if not self._services:
             return cast("Context[Any]", other)
-        return Context({**self._services, **other._services})
+        return Context._of({**self._services, **other._services})
 
     def tags(self) -> tuple[type[Tag[Any]], ...]:
         return tuple(self._services)
@@ -362,7 +424,7 @@ class _Pick[T]:
         self.keep = keep
 
     def __call__(self, ctx: Context[T]) -> Context[T]:
-        return Context({t: s for t, s in ctx._services.items() if t in self.keep})
+        return Context._of({t: s for t, s in ctx._services.items() if t in self.keep})
 
 
 class _Holding(Protocol[T_co]):
@@ -392,7 +454,7 @@ class _Omit[T]:
         kept = {t: s for t, s in ctx._services.items() if t not in self.drop}
         if self.added is not None:
             kept[self.added[0]] = self.added[1]
-        return Context(kept)
+        return Context._of(kept)
 
 
 _EMPTY: Context[Never] = Context()
@@ -402,6 +464,11 @@ _defaults = _stable_cache.StableCache[type[Reference[Any]], Any]()
 def _default_of(tag: type[Reference[Any]]) -> Any:
     """Each reference's default is built on first use, the same one for runs on every thread."""
     return _defaults.get(tag, tag.default)
+
+
+def _identity(tag: TagLike[Any, Any]) -> type[Tag[Any]]:
+    """The class standing for ``tag``'s key in contexts."""
+    return tag_class(tag).__tag_identity__
 
 
 def tag_class[S, T](tag: TagLike[S, T]) -> type[Tag[S]]:
@@ -416,6 +483,7 @@ def tag_class[S, T](tag: TagLike[S, T]) -> type[Tag[S]]:
 
 __all__ = [
     "Context",
+    "DuplicateTagKeyWarning",
     "MissingServiceError",
     "Provides",
     "Reference",

@@ -17,6 +17,7 @@ _SRC = _source.SRC
 
 CHECKED = {
     "ai/durable.py": "test_ai_durable.py: a run's step counters, ints and names",
+    "context.py": "key strings to tag classes; a class's key is a str, not a weak key",
     "crypto/_key.py": "the CryptoKey value holds the algorithm and handle, not the KeyBase",
     "eventlog/_identity_derivation.py": "derived bytes and keys, not the identity service",
     "graphql/resolver.py": "the URL effect is made from the URL alone",

@@ -56,7 +56,7 @@ class MultiplierService:
         return self.counter.get.map(lambda value: value * n)
 
 
-class Multiplier(fx.Tag[MultiplierService], key="Multiplier"):
+class Multiplier(fx.Tag[MultiplierService], key="Atom/Multiplier"):
     pass
 
 
