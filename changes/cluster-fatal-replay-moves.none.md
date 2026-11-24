@@ -1,0 +1,1 @@
+- Tests: the fatal-defect replay test of the cluster allows a build more for each time lock storage moved the entity's shard, and a new test stalls SQLite until it does, which made the flake hunt's third build certain.

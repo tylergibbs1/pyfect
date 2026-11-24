@@ -17,13 +17,12 @@ on ARM) containers; skipped without Docker.
 
 from __future__ import annotations
 
-import itertools
-import os
 from collections.abc import Generator, Sequence
 from dataclasses import replace
 from typing import Any
 
 import pytest
+from _db_names import fresh_name
 
 import pyfect as fx
 from pyfect import schema as S
@@ -64,11 +63,9 @@ SERVERS = {
     "mssql-ci-ai": "Latin1_General_100_CI_AI",
 }
 
-_prefixes = itertools.count()
-
 
 def _prefix() -> str:
-    return f"xk_{os.getpid()}_{next(_prefixes)}"
+    return fresh_name("xk")
 
 
 def _mysql(request: pytest.FixtureRequest, collation: str | None) -> fx.Layer[Any, Any]:

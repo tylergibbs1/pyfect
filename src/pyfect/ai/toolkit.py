@@ -156,6 +156,9 @@ class WithHandler(Generic[N_co, RP_co, HE_co, R_co]):
 
     tools: Mapping[str, AnyTool]
     services: Context[Any] = field(repr=False)
+    _call_schemas: dict[tuple[str, str], S.Top] = field(
+        default_factory=lambda: {}, init=False, repr=False, compare=False
+    )
 
     def handle(
         self,

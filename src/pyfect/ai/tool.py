@@ -29,6 +29,7 @@ from __future__ import annotations
 import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
+from functools import cached_property
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -128,6 +129,12 @@ class Tool(Generic[N_co, P_co, S_co, F_co, HE_co, R_co]):
     @property
     def id(self) -> str:
         return f"effect/ai/Tool/{self.name}"
+
+    @cached_property
+    def _failure_result_schema(self) -> S.Top:
+        # One node per tool, so its codecs are derived once (they are memoized by node),
+        # not on every call that encodes or stores a failed result.
+        return S.Union(cast("Any", AiError), self.failure_schema, EXECUTION_FAILURE)
 
     def handler[NN: LiteralString, PP, SS, FF, RR](
         self: Tool[NN, PP, SS, FF, Any, RR],
@@ -267,7 +274,7 @@ first (Effect's ``ExecutionFailure``)."""
 def failure_result_schema(tool: AnyTool) -> S.Top:
     """What a tool's failed result can be: an ``AiError``, the tool's
     failure or an ``EXECUTION_FAILURE``."""
-    return S.Union(cast("Any", AiError), tool.failure_schema, EXECUTION_FAILURE)
+    return tool._failure_result_schema  # pyright: ignore[reportPrivateUsage]
 
 
 # Constructors ------------------------------------------------------------------------

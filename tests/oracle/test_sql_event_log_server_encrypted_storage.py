@@ -9,13 +9,12 @@ Each test's docstring is the Effect test title, ``{dialect}`` standing for
 the suite's name (``pg``, ``mysql2``, ``mssql``).
 """
 
-import itertools
-import os
 import uuid
 from collections.abc import Callable, Generator, Sequence
 from typing import Any
 
 import pytest
+from _db_names import fresh_name
 
 import pyfect as fx
 from pyfect import testing
@@ -28,7 +27,6 @@ from pyfect.eventlog.event_log_encryption import EncryptedBatch, layer_subtle
 from pyfect.reactivity import layer as reactivity_layer
 from pyfect.sql.client import SqlClient, SqlClientService
 
-_namespaces = itertools.count()
 store_id = StoreId("store-a")
 
 type Connect = Callable[[], fx.Effect[SqlClientService, Any, Any]]
@@ -81,7 +79,7 @@ def ids(batches: Sequence[Any]) -> list[list[bytes]]:
 
 def _encrypted_options(prefix: str) -> dict[str, str]:
     # Own tables, so other suites sharing the database don't race on creating them.
-    namespace = f"{prefix}_{os.getpid()}_{next(_namespaces)}"
+    namespace = fresh_name(prefix)
     return {
         "entry_table_prefix": f"{namespace}_events",
         "remote_id_table": f"{namespace}_remote_id",

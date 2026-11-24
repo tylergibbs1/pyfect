@@ -3,13 +3,12 @@ suite on the memory and SQLite storages (``sql-sqlite-node``'s
 ``RegressionTest.suite("SQLite", ...)``), and of ``EventLogServerUnencrypted.test.ts``.
 Each test's docstring is the Effect test title."""
 
-import itertools
-import os
 import uuid
 from collections.abc import Generator, Sequence
 from typing import Any, TypedDict
 
 import pytest
+from _db_names import fresh_name
 
 import pyfect as fx
 from pyfect import schema as S
@@ -146,12 +145,9 @@ def make_client(name: str) -> Generator[Any, Any, Client]:
     return Client(write, handled)
 
 
-_namespaces = itertools.count()
-
-
 def _sql_storage(client: fx.Layer[SqlClient, Any]) -> fx.Layer[U.Storage, Any]:
     # Own tables: the PostgreSQL server is shared by the session.
-    namespace = f"unencrypted_{os.getpid()}_{next(_namespaces)}"
+    namespace = fresh_name("unencrypted")
     return (
         SqlU.layer_storage(
             entry_table_prefix=f"effect_events_{namespace}",

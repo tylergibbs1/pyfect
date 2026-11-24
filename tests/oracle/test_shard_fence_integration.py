@@ -11,13 +11,12 @@ sessions are terminated."""
 from __future__ import annotations
 
 import copy
-import itertools
-import os
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from typing import Any, Never
 
 import pytest
+from _db_names import fresh_name
 
 import pyfect as fx
 from pyfect import reactivity, testing
@@ -44,8 +43,6 @@ from pyfect.rpc import make as make_rpc
 from pyfect.sql.client import SqlClient, SqlClientService
 
 from . import _cluster_workflows as W
-
-_prefixes = itertools.count()
 
 
 class Hold(Entity, type="Hold"):
@@ -170,7 +167,7 @@ def _pg_client(pg_server: Any) -> fx.Effect[SqlClientService, Any, fx.Scope]:
 
 
 def _stale_owner_test(pg_server: Any, *, advisory: bool) -> fx.Effect[None, Any, Any]:
-    prefix = f"fence_{os.getpid()}_{next(_prefixes)}"
+    prefix = fresh_name("fence")
 
     @fx.gen
     def body():
@@ -243,7 +240,7 @@ def _stale_owner_test(pg_server: Any, *, advisory: bool) -> fx.Effect[None, Any,
 
 
 def _reset_overlap(pg_server: Any) -> fx.Effect[None, Any, Any]:
-    prefix = f"fence_{os.getpid()}_{next(_prefixes)}"
+    prefix = fresh_name("fence")
     probe = _Probe(1234)
     deny_once = [True]
 

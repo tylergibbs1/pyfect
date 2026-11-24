@@ -11,12 +11,11 @@ rewrites an entry id's base64 text rather than its raw bytes.
 """
 
 import base64
-import itertools
-import os
 from collections.abc import Callable, Generator, Sequence
 from typing import Any
 
 import pytest
+from _db_names import fresh_name
 
 import pyfect as fx
 from pyfect import schema as S
@@ -177,12 +176,9 @@ def expected(entries: Sequence[Entry], first_sequence: int) -> dict[str, list[An
     }
 
 
-_namespaces = itertools.count()
-
-
 def _sql_storage(client: fx.Layer[SqlClient, Any]) -> fx.Layer[Server.Storage, Any]:
     # Own tables: the PostgreSQL server is shared by the session.
-    namespace = f"encrypted_{os.getpid()}_{next(_namespaces)}"
+    namespace = fresh_name("encrypted")
     return (
         SqlServer.layer_storage(
             entry_table_prefix=f"effect_events_{namespace}",

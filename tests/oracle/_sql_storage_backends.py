@@ -6,14 +6,13 @@ hands the test body its storage and client."""
 
 from __future__ import annotations
 
-import itertools
-import os
 from collections.abc import Callable, Generator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import pytest
+from _db_names import fresh_name
 
 import pyfect as fx
 from pyfect import reactivity
@@ -24,12 +23,10 @@ from pyfect.sql.client import SqlClient, SqlClientService
 
 from ._sqlite import make_client, make_unsynced_client
 
-_prefixes = itertools.count()
-
 
 def fresh_prefix(name: str) -> str:
     """A table prefix no other test of this run uses."""
-    return f"{name}_{os.getpid()}_{next(_prefixes)}"
+    return fresh_name(name)
 
 
 type ClientMaker = Callable[[], fx.Effect[SqlClientService, Any, fx.Scope]]

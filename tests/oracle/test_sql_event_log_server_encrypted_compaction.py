@@ -9,13 +9,12 @@ tables, the global ones included, so stores and sweeps from other tests
 stay out of its way.
 """
 
-import itertools
-import os
 import uuid
 from collections.abc import Callable, Generator, Sequence
 from typing import Any
 
 import pytest
+from _db_names import fresh_name
 
 import pyfect as fx
 from pyfect import testing
@@ -32,7 +31,6 @@ from pyfect.sql.client import SqlClient, SqlClientService
 from pyfect.sql.statement import CurrentTransformer
 
 store_id = StoreId("store-a")
-_namespaces = itertools.count()
 SNAPSHOT_MARKER = 99
 
 type Connect = Callable[[], fx.Effect[SqlClientService, Any, Any]]
@@ -102,7 +100,7 @@ class Namespace:
     def __init__(
         self, sql: SqlClientService, scope_hash: str, compaction: Server.CompactionOptions | None
     ) -> None:
-        namespace = f"compaction_{os.getpid()}_{next(_namespaces)}"
+        namespace = fresh_name("compaction")
         self.sql = sql
         self.public_key = str(uuid.uuid4())
         self.prefix = f"{namespace}_events"

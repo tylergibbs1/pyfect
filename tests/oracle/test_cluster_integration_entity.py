@@ -35,13 +35,17 @@ Adapted, with the reason:
   expects the interrupted request to fail with the interrupt, as it does in
   Effect 4.1.2 (on pg and mysql): its request is not persisted, so nothing
   retries it on the new owner, where Effect's test expects a second attempt.
+- "rebuilds an entity after a fatal defect and replays in-flight requests"
+  expects Effect's two builds unless lock storage moved the entity's shard,
+  each move allowing one more (``FatalReplay.check``): under CI load a lock
+  refresh overran its 500 ms and a third build answered ``Crash``.
 """
 
 from __future__ import annotations
 
 from collections.abc import Generator
 from dataclasses import dataclass, field
-from typing import Any, TypedDict
+from typing import Any, Never, TypedDict
 
 import pytest
 
@@ -55,6 +59,7 @@ from pyfect.cluster.cluster_schema import Persisted, ShardGroup
 from pyfect.cluster.entity import CurrentAddress, CurrentRunnerAddress, Entity, Request
 from pyfect.cluster.entity_id import EntityId
 from pyfect.cluster.runner_address import RunnerAddress
+from pyfect.cluster.shard_id import ShardId
 from pyfect.context import Context
 from pyfect.latch import Latch
 from pyfect.layer import Layer
@@ -416,6 +421,98 @@ class ReplayEntity(Entity, type="ClusterIntegrationFatalReplay"):
     crash = make_rpc("Crash", success=S.Number).annotate(Persisted, True)
 
 
+@dataclass
+class FatalReplay:
+    generation: float
+    """The build that answered ``Crash``."""
+    builds: int
+    replay_attempts: int
+    moves: int
+    """The acquisitions of the entity's shard after its first (pyfect-only)."""
+
+    def check(self) -> None:
+        """Effect's counts, two builds of two attempts each answered by the
+        second, unless lock storage moved the entity's shard: each later
+        acquisition of it may build the entity once more, which then runs
+        the requests still pending (pyfect-only: on a loaded CI runner the
+        SQLite lock refreshes overran their 500 ms, the runner marked its lock
+        storage unhealthy and gave its shards up, Effect's
+        ``markShardLocksUnhealthy``, and ``Crash`` was answered by a third
+        build)."""
+        assert 2 <= self.generation <= self.builds <= 2 + self.moves, self
+        assert 2 <= self.replay_attempts <= self.builds, self
+
+
+def fatal_replay(
+    cluster_db: ClusterDatabase, stalled_build: int | None = None
+) -> Generator[fx.Effect[Any, Any, Any], Any, FatalReplay]:
+    """Effect's test. Build ``stalled_build`` (pyfect-only) answers ``Crash``
+    by holding the database's write lock until it is interrupted."""
+    first_attempt_entered, replay_entered = Latch(), Latch()
+    replay_gate, replay_completed = Latch(), Latch()
+    counts = {"builds": 0, "replay_attempts": 0}
+    shards: list[ShardId] = []
+
+    def build() -> Any:
+        counts["builds"] += 1
+        generation = counts["builds"]
+
+        @fx.gen
+        def hold_body():
+            counts["replay_attempts"] += 1
+            if counts["replay_attempts"] == 1:
+                first_attempt_entered.open_unsafe()
+            else:
+                replay_entered.open_unsafe()
+            yield from replay_gate.wait()
+            replay_completed.open_unsafe()
+
+        def hold(_: Any) -> fx.Effect[Any, Never, Any]:
+            def note(address: Any) -> None:
+                shards[:] = [address.shard_id]
+
+            return fork(CurrentAddress().map(note).and_then(hold_body))
+
+        def crash(_: Any) -> fx.Effect[float]:
+            if generation == 1:
+                return fx.die(RuntimeError("fatal replay defect"))
+            if generation == stalled_build:
+                return cluster_db.write_locked()
+            return fx.succeed(generation)
+
+        return (
+            ReplayEntity.handlers()
+            .handle(ReplayEntity.crash)(crash)
+            .handle(ReplayEntity.hold)(hold)
+        )
+
+    entities: Layer[Any, Any, Any] = ReplayEntity.to_layer_effect(fx.sync(build))
+    cluster = yield from make(cluster_db, entities=entities)
+    yield from cluster.start(1)
+    yield from cluster.wait_for_stable_assignments()
+    client = yield from cluster.get_client(ReplayEntity)
+
+    held = yield from client("replay").hold().fork(start_immediately=True)
+    yield from cluster.wait_until(
+        "The in-flight request did not start before the defect",
+        first_attempt_entered.wait().as_(True),
+    )
+    generation = yield from client("replay").crash()
+    yield from cluster.wait_until(
+        "The in-flight request was not replayed after the defect",
+        replay_entered.wait().as_(True),
+    )
+    replay_gate.open_unsafe()
+    yield from cluster.wait_until(
+        "The replayed request did not complete", replay_completed.wait().as_(True)
+    )
+    yield from held.join()
+    acquisitions = [e for e in cluster.events.lock_events if shards[0] in e.acquired]
+    return FatalReplay(
+        generation, counts["builds"], counts["replay_attempts"], len(acquisitions) - 1
+    )
+
+
 @testing.live(timeout="1 minute")
 def test_rebuilds_an_entity_after_a_fatal_defect_and_replays_in_flight_requests(
     cluster_db: ClusterDatabase,
@@ -423,61 +520,24 @@ def test_rebuilds_an_entity_after_a_fatal_defect_and_replays_in_flight_requests(
     """rebuilds an entity after a fatal defect and replays in-flight requests"""
 
     def body() -> Body:
-        first_attempt_entered, replay_entered = Latch(), Latch()
-        replay_gate, replay_completed = Latch(), Latch()
-        counts = {"builds": 0, "replay_attempts": 0}
+        (yield from fatal_replay(cluster_db)).check()
 
-        def build() -> Any:
-            counts["builds"] += 1
-            generation = counts["builds"]
+    yield from run(body)
 
-            @fx.gen
-            def hold_body():
-                counts["replay_attempts"] += 1
-                if counts["replay_attempts"] == 1:
-                    first_attempt_entered.open_unsafe()
-                else:
-                    replay_entered.open_unsafe()
-                yield from replay_gate.wait()
-                replay_completed.open_unsafe()
 
-            return (
-                ReplayEntity.handlers()
-                .handle(ReplayEntity.crash)(
-                    lambda _: (
-                        fx.die(RuntimeError("fatal replay defect"))
-                        if generation == 1
-                        else fx.succeed(generation)
-                    )
-                )
-                .handle(ReplayEntity.hold)(lambda _: fork(hold_body))
-            )
+@pytest.mark.parametrize("cluster_db", ["sqlite"], indirect=True)
+@testing.live(timeout="1 minute")
+def test_a_rebuilt_entity_whose_shard_moves_is_built_again_and_still_replays(
+    cluster_db: ClusterDatabase,
+):
+    """Pyfect-only, the flake hunt's failure made certain: the build after
+    the defect stalls the database until lock storage is marked unhealthy and
+    the shard is given up, so a third build answers ``Crash``."""
 
-        entities: Layer[Any, Any, Any] = ReplayEntity.to_layer_effect(fx.sync(build))
-        cluster = yield from make(cluster_db, entities=entities)
-        yield from cluster.start(1)
-        yield from cluster.wait_for_stable_assignments()
-        client = yield from cluster.get_client(ReplayEntity)
-
-        held = yield from client("replay").hold().fork(start_immediately=True)
-        yield from cluster.wait_until(
-            "The in-flight request did not start before the defect",
-            first_attempt_entered.wait().as_(True),
-        )
-        generation = yield from client("replay").crash()
-        yield from cluster.wait_until(
-            "The in-flight request was not replayed after the defect",
-            replay_entered.wait().as_(True),
-        )
-        replay_gate.open_unsafe()
-        yield from cluster.wait_until(
-            "The replayed request did not complete", replay_completed.wait().as_(True)
-        )
-        yield from held.join()
-
-        assert generation == 2
-        assert counts["builds"] == 2
-        assert counts["replay_attempts"] == 2
+    def body() -> Body:
+        replay = yield from fatal_replay(cluster_db, stalled_build=2)
+        replay.check()
+        assert replay.moves >= 1 and replay.generation >= 3, replay
 
     yield from run(body)
 
