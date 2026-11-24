@@ -50,13 +50,14 @@ def make_client(
 
 
 def _make_client(group: type[RpcGroup], disable_fatal_defects: bool) -> Effect[Any, Never, Any]:
-    cores: list[ClientCore] = []
-
-    def on_from_server(response: FromServer) -> Effect[None]:
-        return cores[0].write(response)
-
     @gen
     def make():
+        # Each run pairs a server with its own client.
+        cores: list[ClientCore] = []
+
+        def on_from_server(response: FromServer) -> Effect[None]:
+            return cores[0].write(response)
+
         server = yield from make_server_core(
             group, on_from_server, ServerOptions(disable_fatal_defects=disable_fatal_defects)
         )
