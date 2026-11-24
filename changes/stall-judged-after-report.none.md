@@ -1,1 +1,0 @@
-- Tests: the stall detector no longer drops a stall that it is still judging when the failure report is written. Under CI load, judging took longer than the report waited (0.3 s), and teardown then disarmed the watchdog before the stall was recorded. The late-dump stall test now makes every arming late, so it always takes the late path.

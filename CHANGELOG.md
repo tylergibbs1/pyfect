@@ -1,6 +1,8 @@
 # Changelog
 
-## 0.6.24 (2026-11-24)
+## 0.6.25 (2026-11-24)
+
+0.6.24 was tagged but never published: a flaky test failed in its release run. 0.6.25 carries its changes.
 
 ### Added
 
@@ -26,6 +28,9 @@
   (`error=S.Union(tool_ledger.ToolOutcomeUnknown, tool_ledger.ToolLedgerError)`) and a
   failing ledger store reaches the workflow's caller as a typed error. Its `cause` comes back
   as an `ErrorInstance`.
+- `ClickhouseClientConfig(disable_initial_ping=True)` skips the `/ping` that `clickhouse.make`
+  sends at startup, so the client builds without a server and a statement fails when it can't
+  connect. The default still pings (Effect-TS/effect#10782).
 
 ### Fixed
 
@@ -81,6 +86,11 @@
   stalled it.
 - An RPC client sends no span in its requests when the calling fiber has tracing disabled
   (`TracerEnabled`) or `DisablePropagation` set, as Effect's (Effect #10780).
+- An MCP request over HTTP, and an `RpcServer` request over framed HTTP, are answered without
+  waiting for scheduler rounds first. An MCP request starts at once, as Effect's `RpcServer`
+  starts one, and the end of a response wakes its reader at once. On
+  `mcp_server.layer_http_request_scoped`, a `tools/call` whose handler waits took two rounds
+  before its answer and now takes none (Effect-TS/effect#10753).
 
 ### Docs
 
@@ -89,6 +99,11 @@
   those rows once no older execution is running; each guarded call in a workflow does one extra
   lookup for it. With `on_unknown="fail"`, `ToolOutcomeUnknown` reaches a workflow's caller only
   when its `error=` schema lists it, and pyright rejects a missing one at `to_layer`.
+- `Stream.group_by` and `group_by_key` no longer say a group ends after `idle_time_to_live`
+  only when nobody reads it: the time counts from the last value the group took, so a group
+  being read still ends when no new value comes. `sse.make_parser`, `sse.decode` and the
+  streams guide now say `max_event_size` bounds only the event left unfinished at the end of a
+  chunk; a complete event that arrives in one read is accepted at any size.
 
 ## 0.6.23 (2026-11-23)
 
