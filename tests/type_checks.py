@@ -11045,6 +11045,14 @@ def xml_zip_tar_channels(
     assert_type(xml.StartElement("a").namespace, str | None)
     assert_type(xml.EndElement("a").local_name, str | None)
     xml.decode(namespaces="lenient")  # pyright: ignore[reportArgumentType]
+    # toEvents (Effect #10687) returns a non-empty tuple, as Effect's NonEmptyReadonlyArray.
+    assert_type(xml.to_events(xml.Element("a")), tuple[xml.Event, *tuple[xml.Event, ...]])
+    assert_type(
+        stream.from_iterable(xml.to_events(xml.Element("a"))).pipe_through_channel(
+            xml.encode_string()
+        ),
+        _St[str, xml.XmlError],
+    )
 
     # Entry bodies carry the archive's errors, and read from the channel's input.
     assert_type(data.pipe_through_channel(tar.decode()), _St[tar.Entry[tar.TarError], tar.TarError])

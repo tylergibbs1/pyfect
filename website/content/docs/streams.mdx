@@ -284,7 +284,8 @@ Reference: [`pyfect.stream`](/docs/reference/stream), [`pyfect.sink`](/docs/refe
 
 `pyfect.encoding.xml` reads a document as a stream of events, so a large one never has to fit in
 memory. `decode_string()` takes text and `decode()` takes UTF-8 bytes. `elements(path)` turns events
-back into one small tree per record, and `encode_string()` and `encode()` write events out.
+back into one small tree per record, `to_events(element)` turns a tree back into events, and
+`encode_string()` and `encode()` write events out.
 
 <include meta='title="xml_feed.py"'>../../snippets/streams/xml_feed.py</include>
 

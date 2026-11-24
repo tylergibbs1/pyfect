@@ -668,6 +668,32 @@ def test_fails_on_oversized_elements_and_unbalanced_events() -> Any:
         assert (error.line, error.column) == (None, None)
 
 
+# --- toEvents --------------------------------------------------------------------------
+
+
+def test_preserves_child_order_attributes_and_empty_text_nodes() -> None:
+    """preserves child order, attributes and empty text nodes"""
+    element = Element("a", {"x": "1"}, ("", "t", "u", Element("b", {}, ()), "v"))
+    assert xml.to_events(element) == (
+        start("a", {"x": "1"}),
+        text(""),
+        text("t"),
+        text("u"),
+        start("b"),
+        end("b"),
+        text("v"),
+        end("a"),
+    )
+
+
+def test_converts_deep_trees_without_overflowing_the_stack() -> None:
+    """converts deep trees without overflowing the stack"""
+    element = Element("a", {}, ())
+    for _ in range(100_000):
+        element = Element("a", {}, (element,))
+    assert len(xml.to_events(element)) == 200_002
+
+
 @testing.effect
 def test_propagate_upstream_errors_and_done_values() -> Any:
     """propagate upstream errors and done values"""

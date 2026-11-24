@@ -3,7 +3,8 @@
 ``decode`` and ``decode_string`` turn UTF-8 bytes or text into events, and
 ``encode`` and ``encode_string`` write events back as XML. ``elements`` collects
 repeated elements, such as the items of a feed, into small trees, so that a large
-document is processed one record at a time.
+document is processed one record at a time. ``to_events`` turns such a tree back
+into events for the encoders.
 
 The decoder checks that documents are well-formed. It never reads external
 resources and never expands entities declared in a DOCTYPE, so external entity
@@ -64,6 +65,7 @@ __all__ = [
     "encode",
     "encode_string",
     "is_xml_error",
+    "to_events",
 ]
 
 _DEFAULT_MAX_TOKEN_SIZE = 10 * 1024 * 1024
@@ -254,6 +256,38 @@ def encode[IE = Never, D = None]() -> Channel[
         return tuple(text_encode(text) for text in chunk)
 
     return channel.map(to_bytes)
+
+
+def to_events(element: Element) -> tuple[Event, *tuple[Event, ...]]:
+    """``element`` as events: its start tag, the events of its children in
+    order, and its end tag. Each string child is one ``Text``, even an empty one.
+    Names and characters are not checked; the encoders check them.
+
+    A collected subtree does not carry the ``xmlns`` declarations it inherited,
+    so supply the same bindings on it, or around it, when writing it elsewhere::
+
+        note = Element("note", {"id": "1"}, ("Hi ", Element("b", {}, ("there",))))
+        stream.from_iterable(to_events(note)).pipe_through_channel(encode_string())
+        # '<note id="1">Hi <b>there</b></note>'
+    """
+    first: Event = StartElement(element.name, element.attributes)
+    out: list[Event] = []
+    # Each open element and the index of its next child, so depth costs no stack
+    stack: list[tuple[Element, int]] = [(element, 0)]
+    while stack:
+        current, index = stack[-1]
+        if index == len(current.children):
+            out.append(EndElement(current.name))
+            stack.pop()
+            continue
+        stack[-1] = (current, index + 1)
+        child = current.children[index]
+        if isinstance(child, str):
+            out.append(Text(child))
+        else:
+            out.append(StartElement(child.name, child.attributes))
+            stack.append((child, 0))
+    return (first, *out)
 
 
 publish(globals())
