@@ -13,7 +13,7 @@ from pyfect.context import Tag
 from pyfect.errors import Done
 from pyfect.queue import Dequeue
 from pyfect.reactivity import Keys, Reactivity, ReactivityService
-from pyfect.scope import Scope
+from pyfect.scope import CloseableScope, Scope, add_finalizer, provide
 from pyfect.sql.client._transaction import (
     TransactionConnection,
     TransactionOptions,
@@ -106,8 +106,10 @@ class SqlClientService(Constructor):
     def reserve(self) -> Acquirer:
         """Leases a connection of its own (the driver's transaction
         acquirer, never the open transaction's connection) until the
-        current scope closes. Fails with an ``SqlError`` when no connection
-        can be acquired."""
+        current scope closes, or the client's scope if that closes first;
+        the driver then closes the connection, and a later statement on it
+        fails. Fails with an ``SqlError`` when no connection can be
+        acquired."""
         return self._reserve
 
     @property
@@ -304,7 +306,7 @@ def make(
 
         client_borrower = borrow
 
-    def build(reactivity: ReactivityService) -> SqlClientService:
+    def build(reserve: Acquirer, reactivity: ReactivityService) -> SqlClientService:
         return SqlClientService(
             acquirer=get_connection,
             compiler=compiler,
@@ -312,7 +314,7 @@ def make(
             transform_rows=transform_rows,
             borrower=client_borrower,
             driver=driver,
-            reserve=tx_acquirer,
+            reserve=reserve,
             transaction_service=service,
             with_transaction=with_transaction,
             after_commit=make_after_commit(service),
@@ -320,7 +322,22 @@ def make(
             reactive_queue=reactive_queue,
         )
 
-    return Reactivity().map(build)
+    def with_scope(fiber: Fiber[Any, Any]) -> Effect[SqlClientService, Never, Reactivity]:
+        found, owner = fiber._context.lookup(Scope)
+        reserve = _leased(owner, tx_acquirer) if found else tx_acquirer
+        return Reactivity().map(lambda reactivity: build(reserve, reactivity))
+
+    return _WithFiber(with_scope)
+
+
+def _leased(owner: CloseableScope, acquirer: Acquirer) -> Acquirer:
+    """``acquirer``, holding its connection in a child of ``owner`` (the
+    scope the client was made in) that the caller's scope closes, or
+    ``owner`` first if it closes before. A driver's pool waits for the
+    connections it lent when it shuts down, so it must never wait for a
+    scope closed after it."""
+    lease = owner.fork().tap(lambda lease: add_finalizer(lease.close)).uninterruptible()
+    return lease.flat_map(lambda lease: acquirer.pipe(provide(lease)))
 
 
 __all__ = ["ClientFields", "ReactiveQueue", "SqlClient", "SqlClientService", "make"]

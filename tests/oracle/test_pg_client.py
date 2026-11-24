@@ -995,3 +995,29 @@ def test_ends_transactions_whose_prepared_statements_went_missing(pg_server: PgS
         assert (yield from sql.with_transaction(select)) == [{"value": 1}]
 
     yield from fx.scoped(fx.gen(body)).pipe(fx.provide(fx.reactivity.layer))
+
+
+# --- a reservation outliving the client ------------------------------------------
+
+
+@testing.effect
+def test_a_reservation_held_past_the_client_layer_is_closed_with_it(pg_server: PgServer):
+    """(pyfect) a reservation made in a scope that outlives the client's
+    layer: closing the layer closes its connection instead of waiting for
+    it, and a later statement on it fails"""
+
+    def reserve():
+        sql = yield from SqlClient()
+        conn = yield from sql.reserve
+        yield from conn.execute_unprepared("SELECT 1", (), None)
+        return conn
+
+    def body():
+        conn = yield from fx.gen(reserve).pipe(
+            fx.provide(pg.layer(pg.PgPoolConfig(url=pg_server.url)))
+        )
+        error = yield from conn.execute_unprepared("SELECT 1", (), None).flip()
+        assert isinstance(error, SqlError)
+        assert error.reason.message == "PgConnection: Pinned connection was released"
+
+    yield from fx.scoped(fx.gen(body))

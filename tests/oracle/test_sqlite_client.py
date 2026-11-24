@@ -22,6 +22,7 @@ import pytest
 import pyfect as fx
 from pyfect import testing
 from pyfect.scheduler import MaxOpsBeforeYield
+from pyfect.sql import SqlClient, sqlite
 from pyfect.sql.connection import Row
 from pyfect.sql.error import ConnectionError, ConstraintError, LockTimeoutError, SqlError
 from pyfect.sql.sqlite import RunResult
@@ -609,3 +610,29 @@ def test_releases_the_connection_when_a_queued_transaction_is_interrupted():
             assert isinstance(leaked, fx.Success), f"connection leaked at delay {delay}"
 
         yield from fx.scoped(fx.gen(attempt))
+
+
+# --- a reservation outliving the client ------------------------------------------
+
+
+@testing.effect
+def test_a_reservation_held_past_the_client_layer_is_closed_with_it(tmp_path: Path):
+    """(pyfect) a reservation made in a scope that outlives the client's
+    layer: closing the layer closes its connection instead of waiting for
+    it, and a later statement on it fails"""
+
+    def reserve():
+        sql = yield from SqlClient()
+        conn = yield from sql.reserve
+        yield from conn.execute_unprepared("SELECT 1", (), None)
+        return conn
+
+    def body():
+        conn = yield from fx.gen(reserve).pipe(
+            fx.provide(sqlite.layer(sqlite.SqliteClientConfig(filename=str(tmp_path / "test.db"))))
+        )
+        error = yield from conn.execute_unprepared("SELECT 1", (), None).flip()
+        assert isinstance(error, SqlError)
+        assert "connection is closed" in str(error.reason.message)
+
+    yield from fx.scoped(fx.gen(body))

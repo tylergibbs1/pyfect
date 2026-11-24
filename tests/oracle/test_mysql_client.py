@@ -690,3 +690,27 @@ def test_non_utf8_bytes_selected_on_the_prepared_path_keep_the_connection(
         assert (yield from sql("SELECT 1 AS one").timeout("5 seconds")) == [{"one": 1}]
 
     yield from _with_client(mysql_server, body, max_connections=1)
+
+
+# --- a reservation outliving the client ------------------------------------------
+
+
+@testing.effect
+def test_a_reservation_held_past_the_client_layer_is_closed_with_it(mysql_server: MysqlServer):
+    """(pyfect) a reservation made in a scope that outlives the client's
+    layer: closing the layer closes its connection instead of waiting for
+    it, and a later statement on it fails"""
+
+    def reserve():
+        sql = yield from SqlClient()
+        conn = yield from sql.reserve
+        yield from conn.execute_unprepared("SELECT 1", (), None)
+        return conn
+
+    def body():
+        conn = yield from fx.gen(reserve).pipe(fx.provide(mysql.layer(_config(mysql_server))))
+        error = yield from conn.execute_unprepared("SELECT 1", (), None).flip()
+        assert isinstance(error, SqlError)
+        assert "Not connected" in str(error.reason.cause)
+
+    yield from fx.scoped(fx.gen(body))
