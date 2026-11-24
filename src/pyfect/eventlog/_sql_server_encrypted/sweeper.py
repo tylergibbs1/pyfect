@@ -78,7 +78,7 @@ class Sweeper:
             )
             return Some(value)
 
-        return db.sql.with_transaction(gen(body))
+        return db.transaction(gen(body))
 
     def _plan(self, scope: str, now: int, owner: str) -> Effect[_Plan | None, SqlError]:
         """Claims the store and marks what this prune removes before
@@ -132,7 +132,7 @@ class Sweeper:
                 pruned_through=store.pruned_through,
             )
 
-        return sql.with_transaction(gen(body))
+        return db.transaction(gen(body))
 
     def prune_store(self, scope: str, now: int) -> Effect[None, SqlError]:
         """Prunes the batch sets of generations past their grace, and the
@@ -183,7 +183,7 @@ class Sweeper:
                 if held is None:
                     return
                 start += PRUNE_CHUNK_SEQUENCES
-            yield from sql.with_transaction(gen(lambda: self._finish(scope, owner)))
+            yield from db.transaction(gen(lambda: self._finish(scope, owner)))
 
         return gen(body)
 
@@ -217,7 +217,7 @@ class Sweeper:
 
         def body():
             while (
-                yield from db.sql.with_transaction(
+                yield from db.transaction(
                     db.lock_store(scope).and_then(db.delete_chunk(table, key, where))
                 )
             ):
@@ -246,7 +246,7 @@ class Sweeper:
             )
             for row in expired:
                 scope, stage_id = column_text(row["scope"]), column_text(row["id"])
-                yield from sql.with_transaction(gen(lambda s=scope, i=stage_id: close(s, i)))
+                yield from db.transaction(gen(lambda s=scope, i=stage_id: close(s, i)))
             closed = yield from sql(
                 "SELECT id, scope FROM {} WHERE state = {}", db.stages, "closed"
             )
@@ -258,7 +258,7 @@ class Sweeper:
                     "batch_position",
                     sql("batch_set = {}", stage_id),
                 )
-                yield from sql.with_transaction(
+                yield from db.transaction(
                     db.lock_store(scope).and_then(
                         sql("DELETE FROM {} WHERE id = {}", db.stages, stage_id)
                     )

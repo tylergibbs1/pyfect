@@ -4,6 +4,15 @@ compaction primitives and sweep (Effect's helpers inside
 
 Lock order is store row, then stage row, then snapshot rows. SQLite
 transactions take the database write lock instead of row locks.
+
+Every transaction runs through ``Db.transaction``: on PostgreSQL at READ
+COMMITTED, whatever the database's default. Its locks then wait for a
+concurrent writer and the next statement reads what it committed; at
+REPEATABLE READ or SERIALIZABLE, PostgreSQL aborts the waiter instead
+(``could not serialize access due to concurrent update``), and an
+``INSERT ... ON CONFLICT DO NOTHING`` that meets a row it cannot see.
+MySQL's locking reads read the latest rows at any level and SQL Server's
+default is READ COMMITTED, so both keep the session's level.
 """
 
 from __future__ import annotations
@@ -16,7 +25,7 @@ from typing import Any, Never, TypedDict
 from pyfect._catch import catch_tag
 from pyfect._core import Effect
 from pyfect.clock import Clock, now_millis_unsafe
-from pyfect.effect import die, gen, succeed
+from pyfect.effect import die, gen, provide_service, succeed
 from pyfect.errors import NoSuchElementException
 from pyfect.eventlog._server_encrypted.audit import hour_of
 from pyfect.eventlog._server_encrypted.models import CompactionConfig
@@ -26,7 +35,7 @@ from pyfect.option import Some
 from pyfect.persistence._columns import column_int
 from pyfect.pubsub import PubSub
 from pyfect.semaphore import Semaphore
-from pyfect.sql.client import SqlClientService
+from pyfect.sql.client import BeginTransaction, SqlClientService
 from pyfect.sql.connection import Row
 from pyfect.sql.error import SqlError
 from pyfect.sql.result import affected_rows
@@ -146,6 +155,15 @@ class Db:
         self.chunk = sql.on_dialect_or_else(
             mssql=lambda: RowCap(sql.literal("TOP (200)"), none),
             or_else=lambda: RowCap(none, sql.literal("LIMIT 200")),
+        )
+
+    def transaction[A, E, R](self, effect: Effect[A, E, R]) -> Effect[A, E | SqlError, R]:
+        """``effect`` in a transaction, at READ COMMITTED on PostgreSQL."""
+        transaction = self.sql.with_transaction(effect)
+        if self.sql.dialect != "pg":
+            return transaction
+        return transaction.pipe(
+            provide_service(BeginTransaction, "BEGIN ISOLATION LEVEL READ COMMITTED")
         )
 
     def scope_tables(self, scope: str) -> ScopeTables:
@@ -351,7 +369,7 @@ class Db:
             if existing:
                 return
             now = yield from Clock().map(now_millis_unsafe)
-            yield from sql.with_transaction(gen(lambda: seed(now)))
+            yield from self.transaction(gen(lambda: seed(now)))
 
         return gen(body)
 

@@ -326,7 +326,7 @@ def _migrate(
         yield from record_alias(db, legacy_scope, scope, "operator")
         return (True, moved)
 
-    return sql.with_transaction(gen(body))
+    return db.transaction(gen(body))
 
 
 def migrate_legacy_store(

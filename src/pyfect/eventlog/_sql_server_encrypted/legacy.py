@@ -340,9 +340,7 @@ def _unclaimed(
             return Resolved(scope, "beside")
         automatic = migration == "when_server_written"
         if automatic and stand == "pending":
-            given = yield from db.sql.with_transaction(
-                record_alias(db, legacy_scope, scope, "server")
-            )
+            given = yield from db.transaction(record_alias(db, legacy_scope, scope, "server"))
             return Resolved(legacy_scope, "migrated") if given else Resolved(scope, "beside")
         if automatic and stand == "unbound" and others and evidence.automatic:
             # Only keys bound before the upgrade can have written them.
