@@ -1,0 +1,4 @@
+0a 03 41 2d 31 12 03 03 ac 02
+Ok(value={'id': 'A-1', 'items': [3, 300]})
+b'\x18\x07'
+Err(error=ProtobufMessageError(message='id: Expected a complete value at offset 2', path=('id',)))

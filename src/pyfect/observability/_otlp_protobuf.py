@@ -2,327 +2,413 @@
 ``observability/internal/otlpProtobuf``), field for field and in Effect's
 field order, from the OTLP/JSON-shaped payloads.
 
-The message definitions are those of ``opentelemetry-proto``; each
-encoder's docstring names its message.
+Writes the messages of ``opentelemetry-proto`` with a
+``pyfect.protobuf.writer.ProtobufWriter``. Each ``_write_*`` function writes
+the fields of one message, whose definition its docstring gives, and
+returns the writer, so nested messages chain:
+``_write_status(w.tag(15, LEN).fork(), status).join()``.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+import binascii
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
-from pyfect.observability._protobuf import (
-    bool_field,
-    bytes_field_from_hex,
-    double_field,
-    fixed32_field,
-    fixed64_field,
-    length_delimited_field,
-    message_field,
-    optional_string_field,
-    repeated_field,
-    string_field,
-    varint_field,
-)
+from pyfect._js import trim_start
+from pyfect.protobuf.writer import ProtobufWriter, WireType
 
 type Message = Mapping[str, Any]
+type _Write = Callable[[ProtobufWriter, Message], ProtobufWriter]
+
+VARINT = WireType.Varint
+I64 = WireType.I64
+LEN = WireType.Len
+I32 = WireType.I32
+
+_HEX_DIGITS = frozenset("0123456789abcdefABCDEF")
+
+
+def _parse_hex_pair(pair: str) -> int:
+    """``parseInt(pair, 16)`` stored in a ``Uint8Array``: the leading hex
+    digits after leading space and an optional sign, wrapped to a byte;
+    ``NaN`` is 0."""
+    pair = trim_start(pair)
+    sign = -1 if pair[:1] == "-" else 1
+    digits = pair[1:] if pair[:1] in "+-" else pair
+    run = ""
+    for char in digits:
+        if char not in _HEX_DIGITS:
+            break
+        run += char
+    return sign * int(run, 16) % 256 if run else 0
+
+
+def _hex_bytes(hex_text: str) -> bytes:
+    """The bytes of a hex id. An id that is not valid hex is read pair by
+    pair with ``parseInt``, and a trailing odd character is ignored."""
+    if len(hex_text) % 2 == 0 and all(char in _HEX_DIGITS for char in hex_text):
+        return binascii.unhexlify(hex_text)
+    return bytes(_parse_hex_pair(hex_text[i : i + 2]) for i in range(0, len(hex_text) - 1, 2))
+
+
+def _id_bytes(value: str | bytes) -> bytes:
+    """A log record id: a hex string or the bytes themselves."""
+    return _hex_bytes(value) if isinstance(value, str) else value
 
 
 def _present(message: Message, key: str) -> bool:
     return message.get(key) is not None
 
 
-def encode_any_value(value: Message) -> bytes:  # noqa: PLR0911
-    """``AnyValue``: the first field set, in the order string, bool, int,
-    double, array, key/value list, bytes; nothing when none is."""
+def _each(w: ProtobufWriter, field_number: int, items: Sequence[Message], write: _Write) -> None:
+    for item in items:
+        write(w.tag(field_number, LEN).fork(), item).join()
+
+
+# Common types (opentelemetry.proto.common.v1)
+
+
+def _write_any_value(w: ProtobufWriter, value: Message) -> ProtobufWriter:
+    """``message AnyValue { oneof value { string string_value = 1; bool
+    bool_value = 2; int64 int_value = 3; double double_value = 4; ArrayValue
+    array_value = 5; KeyValueList kvlist_value = 6; bytes bytes_value = 7; } }``"""
     if _present(value, "stringValue"):
-        return string_field(1, value["stringValue"])
-    if _present(value, "boolValue"):
-        return bool_field(2, value["boolValue"])
-    if _present(value, "intValue"):
-        return varint_field(3, int(value["intValue"]))
-    if _present(value, "doubleValue"):
-        return double_field(4, value["doubleValue"])
-    if "arrayValue" in value:
-        return message_field(5, encode_array_value(value["arrayValue"]))
-    if "kvlistValue" in value:
-        return message_field(6, encode_key_value_list(value["kvlistValue"]))
-    if "bytesValue" in value:
-        return length_delimited_field(7, bytes(value["bytesValue"]))
-    return b""
+        w.tag(1, LEN).string(value["stringValue"])
+    elif _present(value, "boolValue"):
+        w.tag(2, VARINT).bool(value["boolValue"])
+    elif _present(value, "intValue"):
+        w.tag(3, VARINT).int64(value["intValue"])
+    elif _present(value, "doubleValue"):
+        w.tag(4, I64).double(value["doubleValue"])
+    elif "arrayValue" in value:
+        _each(w.tag(5, LEN).fork(), 1, value["arrayValue"]["values"], _write_any_value)
+        w.join()
+    elif "kvlistValue" in value:
+        _each(w.tag(6, LEN).fork(), 1, value["kvlistValue"]["values"], _write_key_value)
+        w.join()
+    elif "bytesValue" in value:
+        w.tag(7, LEN).bytes(bytes(value["bytesValue"]))
+    return w
 
 
-def encode_array_value(value: Message) -> bytes:
-    """``ArrayValue``."""
-    return repeated_field(1, value["values"], encode_any_value)
+def encode_any_value(value: Message) -> bytes:
+    """An ``AnyValue`` on its own."""
+    return _write_any_value(ProtobufWriter(), value).finish()
 
 
-def encode_key_value_list(value: Message) -> bytes:
-    """``KeyValueList``."""
-    return repeated_field(1, value["values"], encode_key_value)
+def _write_key_value(w: ProtobufWriter, kv: Message) -> ProtobufWriter:
+    """``message KeyValue { string key = 1; AnyValue value = 2; }``"""
+    w.tag(1, LEN).string(kv["key"])
+    return _write_any_value(w.tag(2, LEN).fork(), kv["value"]).join()
 
 
-def encode_key_value(kv: Message) -> bytes:
-    """``KeyValue``."""
-    return string_field(1, kv["key"]) + message_field(2, encode_any_value(kv["value"]))
-
-
-def _attributes(field_number: int, attributes: Sequence[Message]) -> bytes:
-    return repeated_field(field_number, attributes, encode_key_value)
-
-
-def _count(field_number: int, count: int | None) -> bytes:
-    """A ``uint32`` dropped count, written only when positive."""
-    return varint_field(field_number, count) if count is not None and count > 0 else b""
-
-
-def encode_instrumentation_scope(scope: Message) -> bytes:
-    """``InstrumentationScope``."""
+def _write_instrumentation_scope(w: ProtobufWriter, scope: Message) -> ProtobufWriter:
+    """``message InstrumentationScope { string name = 1; string version = 2;
+    repeated KeyValue attributes = 3; uint32 dropped_attributes_count = 4; }``"""
+    w.tag(1, LEN).string(scope["name"])
+    if scope.get("version"):
+        w.tag(2, LEN).string(scope["version"])
     attributes = scope.get("attributes")
-    dropped = scope.get("droppedAttributesCount")
-    return (
-        string_field(1, scope["name"])
-        + optional_string_field(2, scope.get("version"))
-        + (_attributes(3, attributes) if attributes is not None else b"")
-        + (varint_field(4, dropped) if dropped else b"")
-    )
+    if attributes is not None:
+        _each(w, 3, attributes, _write_key_value)
+    if scope.get("droppedAttributesCount"):
+        w.tag(4, VARINT).uint32(scope["droppedAttributesCount"])
+    return w
 
 
-def encode_resource(resource: Message) -> bytes:
-    """``Resource``."""
-    return _attributes(1, resource["attributes"]) + _count(2, resource["droppedAttributesCount"])
+def _count(w: ProtobufWriter, field_number: int, count: int | None) -> None:
+    """A ``uint32`` dropped count, written only when positive."""
+    if count is not None and count > 0:
+        w.tag(field_number, VARINT).uint32(count)
 
 
-def encode_status(status: Message) -> bytes:
-    """``Status``."""
-    return optional_string_field(2, status.get("message")) + varint_field(3, status["code"])
+# Resource types (opentelemetry.proto.resource.v1)
 
 
-def encode_event(event: Message) -> bytes:
-    """``Span.Event``."""
-    return (
-        fixed64_field(1, int(event["timeUnixNano"]))
-        + string_field(2, event["name"])
-        + _attributes(3, event["attributes"])
-        + _count(4, event["droppedAttributesCount"])
-    )
+def _write_resource(w: ProtobufWriter, resource: Message) -> ProtobufWriter:
+    """``message Resource { repeated KeyValue attributes = 1; uint32
+    dropped_attributes_count = 2; }``"""
+    _each(w, 1, resource["attributes"], _write_key_value)
+    _count(w, 2, resource["droppedAttributesCount"])
+    return w
 
 
-def _flags(field_number: int, message: Message) -> bytes:
-    flags = message.get("flags")
-    return fixed32_field(field_number, flags) if flags is not None else b""
+# Trace types (opentelemetry.proto.trace.v1)
 
 
-def encode_link(link: Message) -> bytes:
-    """``Span.Link``."""
-    return (
-        bytes_field_from_hex(1, link["traceId"])
-        + bytes_field_from_hex(2, link["spanId"])
-        + optional_string_field(3, link.get("traceState"))
-        + _attributes(4, link["attributes"])
-        + _count(5, link["droppedAttributesCount"])
-        + _flags(6, link)
-    )
+def _write_status(w: ProtobufWriter, status: Message) -> ProtobufWriter:
+    """``message Status { string message = 2; StatusCode code = 3; }``"""
+    if status.get("message"):
+        w.tag(2, LEN).string(status["message"])
+    return w.tag(3, VARINT).int32(status["code"])
 
 
-def encode_span(span: Message) -> bytes:
-    """``Span``."""
-    parent = span.get("parentSpanId")
-    return (
-        bytes_field_from_hex(1, span["traceId"])
-        + bytes_field_from_hex(2, span["spanId"])
-        + optional_string_field(3, span.get("traceState"))
-        + (bytes_field_from_hex(4, parent) if parent is not None else b"")
-        + string_field(5, span["name"])
-        + varint_field(6, span["kind"])
-        + fixed64_field(7, int(span["startTimeUnixNano"]))
-        + fixed64_field(8, int(span["endTimeUnixNano"]))
-        + _attributes(9, span["attributes"])
-        + _count(10, span["droppedAttributesCount"])
-        + repeated_field(11, span["events"], encode_event)
-        + _count(12, span["droppedEventsCount"])
-        + repeated_field(13, span["links"], encode_link)
-        + _count(14, span["droppedLinksCount"])
-        + message_field(15, encode_status(span["status"]))
-        + _flags(16, span)
-    )
+def _write_event(w: ProtobufWriter, event: Message) -> ProtobufWriter:
+    """``message Event { fixed64 time_unix_nano = 1; string name = 2; repeated
+    KeyValue attributes = 3; uint32 dropped_attributes_count = 4; }``"""
+    w.tag(1, I64).fixed64(event["timeUnixNano"])
+    w.tag(2, LEN).string(event["name"])
+    _each(w, 3, event["attributes"], _write_key_value)
+    _count(w, 4, event["droppedAttributesCount"])
+    return w
 
 
-def _scoped(scoped: Message, items_key: str, encode_item: Any) -> bytes:
-    """``ScopeSpans`` / ``ScopeMetrics`` / ``ScopeLogs``."""
-    return (
-        message_field(1, encode_instrumentation_scope(scoped["scope"]))
-        + repeated_field(2, scoped[items_key], encode_item)
-        + optional_string_field(3, scoped.get("schemaUrl"))
-    )
+def _flags(w: ProtobufWriter, field_number: int, message: Message) -> None:
+    if message.get("flags") is not None:
+        w.tag(field_number, I32).fixed32(message["flags"])
 
 
-def _resourced(resourced: Message, scopes_key: str, encode_scope: Any) -> bytes:
-    """``ResourceSpans`` / ``ResourceMetrics`` / ``ResourceLogs``."""
-    return (
-        message_field(1, encode_resource(resourced["resource"]))
-        + repeated_field(2, resourced[scopes_key], encode_scope)
-        + optional_string_field(3, resourced.get("schemaUrl"))
-    )
+def _write_link(w: ProtobufWriter, link: Message) -> ProtobufWriter:
+    """``message Link { bytes trace_id = 1; bytes span_id = 2; string
+    trace_state = 3; repeated KeyValue attributes = 4; uint32
+    dropped_attributes_count = 5; fixed32 flags = 6; }``"""
+    w.tag(1, LEN).bytes(_hex_bytes(link["traceId"]))
+    w.tag(2, LEN).bytes(_hex_bytes(link["spanId"]))
+    if link.get("traceState"):
+        w.tag(3, LEN).string(link["traceState"])
+    _each(w, 4, link["attributes"], _write_key_value)
+    _count(w, 5, link["droppedAttributesCount"])
+    _flags(w, 6, link)
+    return w
 
 
-def encode_scope_spans(scope_spans: Message) -> bytes:
-    return _scoped(scope_spans, "spans", encode_span)
+def _write_span(w: ProtobufWriter, span: Message) -> ProtobufWriter:
+    """``message Span``: ``bytes trace_id = 1; bytes span_id = 2; string
+    trace_state = 3; bytes parent_span_id = 4; string name = 5; SpanKind kind
+    = 6; fixed64 start_time_unix_nano = 7; fixed64 end_time_unix_nano = 8;
+    repeated KeyValue attributes = 9; uint32 dropped_attributes_count = 10;
+    repeated Event events = 11; uint32 dropped_events_count = 12; repeated
+    Link links = 13; uint32 dropped_links_count = 14; Status status = 15;
+    fixed32 flags = 16``."""
+    w.tag(1, LEN).bytes(_hex_bytes(span["traceId"]))
+    w.tag(2, LEN).bytes(_hex_bytes(span["spanId"]))
+    if span.get("traceState"):
+        w.tag(3, LEN).string(span["traceState"])
+    if span.get("parentSpanId") is not None:
+        w.tag(4, LEN).bytes(_hex_bytes(span["parentSpanId"]))
+    w.tag(5, LEN).string(span["name"])
+    w.tag(6, VARINT).int32(span["kind"])
+    w.tag(7, I64).fixed64(span["startTimeUnixNano"])
+    w.tag(8, I64).fixed64(span["endTimeUnixNano"])
+    _each(w, 9, span["attributes"], _write_key_value)
+    _count(w, 10, span["droppedAttributesCount"])
+    _each(w, 11, span["events"], _write_event)
+    _count(w, 12, span["droppedEventsCount"])
+    _each(w, 13, span["links"], _write_link)
+    _count(w, 14, span["droppedLinksCount"])
+    _write_status(w.tag(15, LEN).fork(), span["status"]).join()
+    _flags(w, 16, span)
+    return w
 
 
-def encode_resource_spans(resource_spans: Message) -> bytes:
-    return _resourced(resource_spans, "scopeSpans", encode_scope_spans)
+def _scoped(items_key: str, write_item: _Write) -> _Write:
+    """``message ScopeSpans`` / ``ScopeMetrics`` / ``ScopeLogs``:
+    ``InstrumentationScope scope = 1; repeated ... = 2; string schema_url = 3``."""
+
+    def write(w: ProtobufWriter, scoped: Message) -> ProtobufWriter:
+        _write_instrumentation_scope(w.tag(1, LEN).fork(), scoped["scope"]).join()
+        _each(w, 2, scoped[items_key], write_item)
+        if scoped.get("schemaUrl"):
+            w.tag(3, LEN).string(scoped["schemaUrl"])
+        return w
+
+    return write
+
+
+def _resourced(scopes_key: str, write_scope: _Write) -> _Write:
+    """``message ResourceSpans`` / ``ResourceMetrics`` / ``ResourceLogs``:
+    ``Resource resource = 1; repeated ... = 2; string schema_url = 3``."""
+
+    def write(w: ProtobufWriter, resourced: Message) -> ProtobufWriter:
+        _write_resource(w.tag(1, LEN).fork(), resourced["resource"]).join()
+        _each(w, 2, resourced[scopes_key], write_scope)
+        if resourced.get("schemaUrl"):
+            w.tag(3, LEN).string(resourced["schemaUrl"])
+        return w
+
+    return write
+
+
+def _encode(items: Sequence[Message], write: _Write) -> bytes:
+    w = ProtobufWriter()
+    _each(w, 1, items, write)
+    return w.finish()
+
+
+_write_resource_spans = _resourced("scopeSpans", _scoped("spans", _write_span))
 
 
 def encode_traces_data(data: Message) -> bytes:
-    """``TracesData``, the body of a traces export."""
-    return repeated_field(1, data["resourceSpans"], encode_resource_spans)
+    """``message TracesData { repeated ResourceSpans resource_spans = 1; }``,
+    the body of a traces export."""
+    return _encode(data["resourceSpans"], _write_resource_spans)
 
 
-def _times(point: Message) -> bytes:
+# Metric types (opentelemetry.proto.metrics.v1)
+
+
+def _times(w: ProtobufWriter, point: Message) -> None:
     """A data point's start time (omitted when absent) and time."""
-    start = point.get("startTimeUnixNano")
-    return (b"" if start is None else fixed64_field(2, int(start))) + fixed64_field(
-        3, int(point["timeUnixNano"])
-    )
+    if point.get("startTimeUnixNano") is not None:
+        w.tag(2, I64).fixed64(point["startTimeUnixNano"])
+    w.tag(3, I64).fixed64(point["timeUnixNano"])
 
 
-def _varint_flags(field_number: int, message: Message) -> bytes:
-    flags = message.get("flags")
-    return varint_field(field_number, flags) if flags is not None else b""
+def _double(w: ProtobufWriter, field_number: int, message: Message, key: str) -> None:
+    if message.get(key) is not None:
+        w.tag(field_number, I64).double(message[key])
 
 
-def _optional_double(field_number: int, message: Message, key: str) -> bytes:
-    return double_field(field_number, message[key]) if message.get(key) is not None else b""
+def _varint_flags(w: ProtobufWriter, field_number: int, message: Message) -> None:
+    if message.get("flags") is not None:
+        w.tag(field_number, VARINT).uint32(message["flags"])
 
 
-def encode_number_data_point(point: Message) -> bytes:
-    """``NumberDataPoint``."""
-    as_int = point.get("asInt")
-    return (
-        _times(point)
-        + _optional_double(4, point, "asDouble")
-        + (fixed64_field(6, int(as_int)) if as_int is not None else b"")
-        + _attributes(7, point["attributes"])
-        + _varint_flags(8, point)
-    )
+def _write_number_data_point(w: ProtobufWriter, point: Message) -> ProtobufWriter:
+    """``message NumberDataPoint { repeated KeyValue attributes = 7; fixed64
+    start_time_unix_nano = 2; fixed64 time_unix_nano = 3; oneof value { double
+    as_double = 4; sfixed64 as_int = 6; } uint32 flags = 8; }``"""
+    _times(w, point)
+    _double(w, 4, point, "asDouble")
+    if point.get("asInt") is not None:
+        w.tag(6, I64).fixed64(point["asInt"])
+    _each(w, 7, point["attributes"], _write_key_value)
+    _varint_flags(w, 8, point)
+    return w
 
 
-def encode_histogram_data_point(point: Message) -> bytes:
-    """``HistogramDataPoint``; bucket counts and bounds unpacked, as
-    Effect writes them."""
-    return (
-        _times(point)
-        + fixed64_field(4, int(point["count"]))
-        + _optional_double(5, point, "sum")
-        + b"".join(fixed64_field(6, int(count)) for count in point["bucketCounts"])
-        + b"".join(double_field(7, bound) for bound in point["explicitBounds"])
-        + _attributes(9, point["attributes"])
-        + _varint_flags(10, point)
-        + _optional_double(11, point, "min")
-        + _optional_double(12, point, "max")
-    )
+def _write_histogram_data_point(w: ProtobufWriter, point: Message) -> ProtobufWriter:
+    """``message HistogramDataPoint { repeated KeyValue attributes = 9; fixed64
+    start_time_unix_nano = 2; fixed64 time_unix_nano = 3; fixed64 count = 4;
+    optional double sum = 5; repeated fixed64 bucket_counts = 6; repeated
+    double explicit_bounds = 7; optional double min = 11; optional double max
+    = 12; uint32 flags = 10; }``. Bucket counts and bounds are written
+    unpacked, one field per value, as Effect writes them."""
+    _times(w, point)
+    w.tag(4, I64).fixed64(point["count"])
+    _double(w, 5, point, "sum")
+    for count in point["bucketCounts"]:
+        w.tag(6, I64).fixed64(count)
+    for bound in point["explicitBounds"]:
+        w.tag(7, I64).double(bound)
+    _each(w, 9, point["attributes"], _write_key_value)
+    _varint_flags(w, 10, point)
+    _double(w, 11, point, "min")
+    _double(w, 12, point, "max")
+    return w
 
 
-def _value_at_quantile(value: Message) -> bytes:
-    return double_field(1, value["quantile"]) + double_field(2, value["value"])
+def _write_value_at_quantile(w: ProtobufWriter, value: Message) -> ProtobufWriter:
+    """``message ValueAtQuantile { double quantile = 1; double value = 2; }``"""
+    return w.tag(1, I64).double(value["quantile"]).tag(2, I64).double(value["value"])
 
 
-def encode_summary_data_point(point: Message) -> bytes:
-    """``SummaryDataPoint``."""
-    return (
-        _times(point)
-        + fixed64_field(4, int(point["count"]))
-        + double_field(5, point["sum"])
-        + repeated_field(6, point["quantileValues"], _value_at_quantile)
-        + _attributes(7, point["attributes"])
-        + _varint_flags(8, point)
-    )
+def _write_summary_data_point(w: ProtobufWriter, point: Message) -> ProtobufWriter:
+    """``message SummaryDataPoint { repeated KeyValue attributes = 7; fixed64
+    start_time_unix_nano = 2; fixed64 time_unix_nano = 3; fixed64 count = 4;
+    double sum = 5; repeated ValueAtQuantile quantile_values = 6; uint32 flags
+    = 8; }``"""
+    _times(w, point)
+    w.tag(4, I64).fixed64(point["count"])
+    w.tag(5, I64).double(point["sum"])
+    _each(w, 6, point["quantileValues"], _write_value_at_quantile)
+    _each(w, 7, point["attributes"], _write_key_value)
+    _varint_flags(w, 8, point)
+    return w
 
 
-def encode_gauge(gauge: Message) -> bytes:
-    return repeated_field(1, gauge["dataPoints"], encode_number_data_point)
+def _write_gauge(w: ProtobufWriter, gauge: Message) -> ProtobufWriter:
+    """``message Gauge { repeated NumberDataPoint data_points = 1; }``"""
+    _each(w, 1, gauge["dataPoints"], _write_number_data_point)
+    return w
 
 
-def encode_sum(sum: Message) -> bytes:
-    return (
-        repeated_field(1, sum["dataPoints"], encode_number_data_point)
-        + varint_field(2, sum["aggregationTemporality"])
-        + bool_field(3, sum["isMonotonic"])
-    )
+def _write_sum(w: ProtobufWriter, sum: Message) -> ProtobufWriter:
+    """``message Sum { repeated NumberDataPoint data_points = 1;
+    AggregationTemporality aggregation_temporality = 2; bool is_monotonic = 3; }``"""
+    _each(w, 1, sum["dataPoints"], _write_number_data_point)
+    w.tag(2, VARINT).int32(sum["aggregationTemporality"])
+    return w.tag(3, VARINT).bool(sum["isMonotonic"])
 
 
-def encode_histogram(histogram: Message) -> bytes:
-    return repeated_field(1, histogram["dataPoints"], encode_histogram_data_point) + varint_field(
-        2, histogram["aggregationTemporality"]
-    )
+def _write_histogram(w: ProtobufWriter, histogram: Message) -> ProtobufWriter:
+    """``message Histogram { repeated HistogramDataPoint data_points = 1;
+    AggregationTemporality aggregation_temporality = 2; }``"""
+    _each(w, 1, histogram["dataPoints"], _write_histogram_data_point)
+    return w.tag(2, VARINT).int32(histogram["aggregationTemporality"])
 
 
-def encode_summary(summary: Message) -> bytes:
-    return repeated_field(1, summary["dataPoints"], encode_summary_data_point)
+def _write_summary(w: ProtobufWriter, summary: Message) -> ProtobufWriter:
+    """``message Summary { repeated SummaryDataPoint data_points = 1; }``"""
+    _each(w, 1, summary["dataPoints"], _write_summary_data_point)
+    return w
 
 
-def encode_metric(metric: Message) -> bytes:
-    """``Metric``: one of gauge, sum, histogram or summary."""
-    data = b""
-    for field_number, key, encode in (
-        (5, "gauge", encode_gauge),
-        (7, "sum", encode_sum),
-        (9, "histogram", encode_histogram),
-        (11, "summary", encode_summary),
-    ):
-        if key in metric:
-            data += message_field(field_number, encode(metric[key]))
-    return (
-        string_field(1, metric["name"])
-        + optional_string_field(2, metric.get("description"))
-        + optional_string_field(3, metric.get("unit"))
-        + data
-    )
+_METRIC_DATA: tuple[tuple[int, str, _Write], ...] = (
+    (5, "gauge", _write_gauge),
+    (7, "sum", _write_sum),
+    (9, "histogram", _write_histogram),
+    (11, "summary", _write_summary),
+)
 
 
-def encode_scope_metrics(scope_metrics: Message) -> bytes:
-    return _scoped(scope_metrics, "metrics", encode_metric)
+def _write_metric(w: ProtobufWriter, metric: Message) -> ProtobufWriter:
+    """``message Metric { string name = 1; string description = 2; string unit
+    = 3; oneof data { Gauge gauge = 5; Sum sum = 7; Histogram histogram = 9;
+    Summary summary = 11; } }``"""
+    w.tag(1, LEN).string(metric["name"])
+    if metric.get("description"):
+        w.tag(2, LEN).string(metric["description"])
+    if metric.get("unit"):
+        w.tag(3, LEN).string(metric["unit"])
+    for field_number, key, write in _METRIC_DATA:
+        if metric.get(key) is not None:
+            write(w.tag(field_number, LEN).fork(), metric[key]).join()
+    return w
 
 
-def encode_resource_metrics(resource_metrics: Message) -> bytes:
-    return _resourced(resource_metrics, "scopeMetrics", encode_scope_metrics)
+_write_resource_metrics = _resourced("scopeMetrics", _scoped("metrics", _write_metric))
 
 
 def encode_metrics_data(data: Message) -> bytes:
-    """``MetricsData``, the body of a metrics export."""
-    return repeated_field(1, data["resourceMetrics"], encode_resource_metrics)
+    """``message MetricsData { repeated ResourceMetrics resource_metrics = 1; }``,
+    the body of a metrics export."""
+    return _encode(data["resourceMetrics"], _write_resource_metrics)
 
 
-def encode_log_record(record: Message) -> bytes:
-    """``LogRecord``."""
-    severity = record.get("severityNumber")
-    body = record.get("body")
-    trace_id = record.get("traceId")
-    span_id = record.get("spanId")
-    observed = record.get("observedTimeUnixNano")
-    return (
-        fixed64_field(1, int(record["timeUnixNano"]))
-        + (varint_field(2, severity) if severity is not None else b"")
-        + optional_string_field(3, record.get("severityText"))
-        + (message_field(5, encode_any_value(body)) if body is not None else b"")
-        + _attributes(6, record["attributes"])
-        + _count(7, record.get("droppedAttributesCount"))
-        + _flags(8, record)
-        + (bytes_field_from_hex(9, trace_id) if trace_id else b"")
-        + (bytes_field_from_hex(10, span_id) if span_id else b"")
-        + (fixed64_field(11, int(observed)) if observed is not None else b"")
-    )
+# Log types (opentelemetry.proto.logs.v1)
 
 
-def encode_scope_logs(scope_logs: Message) -> bytes:
-    return _scoped(scope_logs, "logRecords", encode_log_record)
+def _write_log_record(w: ProtobufWriter, record: Message) -> ProtobufWriter:
+    """``message LogRecord { fixed64 time_unix_nano = 1; fixed64
+    observed_time_unix_nano = 11; SeverityNumber severity_number = 2; string
+    severity_text = 3; AnyValue body = 5; repeated KeyValue attributes = 6;
+    uint32 dropped_attributes_count = 7; fixed32 flags = 8; bytes trace_id =
+    9; bytes span_id = 10; }``"""
+    w.tag(1, I64).fixed64(record["timeUnixNano"])
+    if record.get("severityNumber") is not None:
+        w.tag(2, VARINT).int32(record["severityNumber"])
+    if record.get("severityText"):
+        w.tag(3, LEN).string(record["severityText"])
+    if record.get("body") is not None:
+        _write_any_value(w.tag(5, LEN).fork(), record["body"]).join()
+    _each(w, 6, record["attributes"], _write_key_value)
+    _count(w, 7, record.get("droppedAttributesCount"))
+    _flags(w, 8, record)
+    if record.get("traceId"):
+        w.tag(9, LEN).bytes(_id_bytes(record["traceId"]))
+    if record.get("spanId"):
+        w.tag(10, LEN).bytes(_id_bytes(record["spanId"]))
+    if record.get("observedTimeUnixNano") is not None:
+        w.tag(11, I64).fixed64(record["observedTimeUnixNano"])
+    return w
 
 
-def encode_resource_logs(resource_logs: Message) -> bytes:
-    return _resourced(resource_logs, "scopeLogs", encode_scope_logs)
+_write_resource_logs = _resourced("scopeLogs", _scoped("logRecords", _write_log_record))
 
 
 def encode_logs_data(data: Message) -> bytes:
-    """``LogsData``, the body of a logs export."""
-    return repeated_field(1, data["resourceLogs"], encode_resource_logs)
+    """``message LogsData { repeated ResourceLogs resource_logs = 1; }``, the
+    body of a logs export."""
+    return _encode(data["resourceLogs"], _write_resource_logs)
