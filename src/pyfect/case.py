@@ -1,4 +1,5 @@
-"""Case conversion: the case functions of Effect's ``String`` module.
+"""Case conversion and well-formedness: the case functions of Effect's
+``String`` module, and its ``is_well_formed`` / ``to_well_formed``.
 
 The word-based converters split their input into words at case changes
 (``"camelCase"``, ``"CAMELCase"``, also in other scripts: ``"CaféÜber"``), letter/digit
@@ -12,6 +13,13 @@ numbers, then join the words again. No Unicode normalization is applied::
 
 The ``snake_to_*``, ``*_to_snake`` and ``kebab_to_snake`` functions only
 swap separators or split at capitals, for input known to be in that case.
+
+A ``str`` can hold lone surrogates (from ``surrogateescape``, say), which
+``str.encode()`` refuses. ``is_well_formed`` checks for them and
+``to_well_formed`` replaces each with U+FFFD, as a UTF-8 encoder would::
+
+    case.is_well_formed("a\\udc00b")  # False
+    case.to_well_formed("a\\udc00b")  # "a\\ufffdb"
 """
 
 from __future__ import annotations
@@ -19,6 +27,8 @@ from __future__ import annotations
 import re
 from collections.abc import Callable, Sequence
 from functools import cache
+
+from pyfect import _js
 
 type Patterns = re.Pattern[str] | Sequence[re.Pattern[str]]
 """A pattern or several, applied in order. Each replaces every match."""
@@ -176,12 +186,27 @@ def kebab_to_snake(text: str) -> str:
     return text.replace("-", "_")
 
 
+def is_well_formed(text: str) -> bool:
+    """Whether ``text`` has no lone surrogate, so it encodes as UTF-8
+    without loss. A high surrogate followed by a low one counts as the
+    character they pair into, as in a JavaScript string."""
+    return _js.is_well_formed(text)
+
+
+def to_well_formed(text: str) -> str:
+    """``text`` with each lone surrogate replaced by U+FFFD; a surrogate
+    pair becomes the character it encodes. Well-formed text is returned
+    as is."""
+    return _js.to_well_formed(text)
+
+
 __all__ = [
     "Patterns",
     "camel_case",
     "camel_to_snake",
     "config_case",
     "constant_case",
+    "is_well_formed",
     "kebab_case",
     "kebab_to_snake",
     "no_case",
@@ -191,4 +216,5 @@ __all__ = [
     "snake_to_camel",
     "snake_to_kebab",
     "snake_to_pascal",
+    "to_well_formed",
 ]

@@ -1,6 +1,7 @@
-"""Ports of the case-function tests of Effect's ``String.test.ts``
-(``pyfect.case``). Each test's docstring is the Effect test title, prefixed
-by its ``describe`` block.
+"""Ports of the case-function and well-formedness tests of Effect's
+``String.test.ts`` (``pyfect.case``). Each test's docstring is the Effect
+test title, prefixed by its ``describe`` block. A JavaScript string's
+unpaired surrogate is the same lone surrogate in a Python ``str``.
 
 The rest of ``String.test.ts`` is Python's ``str`` and is not ported.
 Within ``noCase``: ``data-last with options`` is a keyword call (the module
@@ -8,6 +9,8 @@ has no curried form), and the ``transform`` callback takes the word only.
 """
 
 import re
+
+import pytest
 
 from pyfect import case
 
@@ -272,3 +275,37 @@ def test_case_unicode_classes_match_unicodedata() -> None:
             if category == "Cn" or char == "\u0295":
                 continue
             assert (char in matched) == (category in wanted), (name, hex(ord(char)), category)
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("", True),
+        ("abc", True),
+        ("\U0001f600", True),
+        ("\ud83d\ude00", True),
+        ("\ud800", False),
+        ("a\udc00b", False),
+        ("\ude00\ud83d", False),
+    ],
+)
+def test_is_well_formed(text: str, expected: bool) -> None:
+    """isWellFormed: %j → %s"""
+    assert case.is_well_formed(text) is expected
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("", ""),
+        ("abc", "abc"),
+        ("\U0001f600", "\U0001f600"),
+        ("\ud83d\ude00", "\U0001f600"),
+        ("\ud800", "\ufffd"),
+        ("a\udc00b", "a\ufffdb"),
+        ("\ude00\ud83d", "\ufffd\ufffd"),
+    ],
+)
+def test_to_well_formed(text: str, expected: str) -> None:
+    """toWellFormed: %j → %j"""
+    assert case.to_well_formed(text) == expected

@@ -4267,6 +4267,8 @@ def check_case() -> None:
     from pyfect import case
 
     assert_type(case.snake_case("helloWorld"), str)
+    assert_type(case.is_well_formed("a"), bool)
+    assert_type(case.to_well_formed("a"), str)
     assert_type(case.no_case("a", split=[re.compile("(a)(b)")], transform=str.upper), str)
     case.no_case("a", split="(a)(b)")  # pyright: ignore[reportArgumentType]
 
