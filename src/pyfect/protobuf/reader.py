@@ -59,7 +59,8 @@ class ProtobufReader:
     __slots__ = ("_buf", "_limit", "_pos")
 
     def __init__(self, data: _Bytes | bytearray | memoryview) -> None:
-        self._buf = memoryview(data).cast("B")
+        # The input itself, not a view of it: a view belongs to the thread that made it.
+        self._buf = data
         self._pos = 0
         self._limit = len(self._buf)
 
@@ -195,12 +196,16 @@ class ProtobufReader:
 
     def bytes(self) -> _Bytes:
         """A length-delimited value, copied."""
-        return _Bytes(self.bytes_view())
+        end = self._end()
+        out = _Bytes(self._buf[self._pos : end])
+        self._pos = end
+        return out
 
     def bytes_view(self) -> memoryview:
         """A length-delimited value, borrowed: a view of the input."""
         end = self._end()
-        out = self._buf[self._pos : end]
+        with memoryview(self._buf) as view:
+            out = view[self._pos : end]
         self._pos = end
         return out
 

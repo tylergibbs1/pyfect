@@ -10,16 +10,16 @@ by number, in number order, its defaults) is worked out once.
 
 from __future__ import annotations
 
-import json
 import math
 import re
 import struct
-import weakref
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from enum import Enum
 from typing import Any, Final, NoReturn, cast
 
+from pyfect._digits import is_digits
+from pyfect._json_text import quote
 from pyfect.protobuf._descriptors import (
     EnumDescriptor,
     EnumValueType,
@@ -64,7 +64,6 @@ _INT64_MIN: Final = -(1 << 63)
 _INT64_MAX: Final = (1 << 63) - 1
 _UINT64_MAX: Final = (1 << 64) - 1
 _SAFE_INTEGER: Final = (1 << 53) - 1
-_DECIMAL = re.compile(r"-?[0-9]+")
 _IDENTIFIER = re.compile(r"[A-Za-z_$][A-Za-z0-9_$]*")
 _SIXTY_FOUR: Final = frozenset(("int64", "uint64", "sint64", "fixed64", "sfixed64"))
 _UNSIGNED: Final = frozenset(("uint32", "fixed32", "uint64", "fixed64"))
@@ -93,7 +92,7 @@ def format_path(path: Sequence[str | int]) -> str:
         elif _IDENTIFIER.fullmatch(key):
             out += key if out == "" else f".{key}"
         else:
-            out += f"[{json.dumps(key, ensure_ascii=False)}]"
+            out += f"[{quote(key)}]"
     return out
 
 
@@ -109,6 +108,11 @@ def _rethrow(error: Exception, key: str | int) -> NoReturn:
     if isinstance(error, ProtobufReaderError):
         raise Failure(error.message, [key]) from None
     raise error
+
+
+def _is_decimal(text: str) -> bool:
+    """An integer in decimal: ASCII digits after an optional ``-``."""
+    return is_digits(text.removeprefix("-"))
 
 
 def _is_bytes(value: object) -> bool:
@@ -128,7 +132,7 @@ def _is_integer(value: object) -> bool:
 def show(value: object) -> str:
     match value:
         case str():
-            return json.dumps(value, ensure_ascii=False)
+            return quote(value)
         case bytes() | bytearray() | memoryview():
             return "bytes"
         case list() | tuple():
@@ -199,18 +203,13 @@ def _packable(type: ValueType) -> bool:
     )
 
 
-_enum_numbers: weakref.WeakKeyDictionary[EnumDescriptor, frozenset[int]] = (
-    weakref.WeakKeyDictionary()
-)
-
-
 def _accepts_enum(descriptor: EnumDescriptor, value: object) -> bool:
     if descriptor.open:
         return True
-    numbers = _enum_numbers.get(descriptor)
+    numbers = descriptor.numbers
     if numbers is None:
         numbers = frozenset(v.number for v in descriptor.values)
-        _enum_numbers[descriptor] = numbers
+        descriptor.numbers = numbers
     return value in numbers
 
 
@@ -247,9 +246,6 @@ class _Layout:
     required: bool
 
 
-_layouts: weakref.WeakKeyDictionary[MessageDescriptor, _Layout] = weakref.WeakKeyDictionary()
-
-
 def _key(field: FieldDescriptor) -> str:
     return field.name if field.oneof is None else field.oneof.name
 
@@ -264,8 +260,8 @@ def _zero_of(field: FieldDescriptor) -> Callable[[], object]:
 
 
 def _layout_of(descriptor: MessageDescriptor) -> _Layout:
-    layout = _layouts.get(descriptor)
-    if layout is not None:
+    layout = descriptor.layout
+    if isinstance(layout, _Layout):
         return layout
     by_number: dict[int, _ReadField] = {}
     defaults: list[tuple[str, Callable[[], object]]] = []
@@ -293,7 +289,7 @@ def _layout_of(descriptor: MessageDescriptor) -> _Layout:
         tuple(finish),
         required,
     )
-    _layouts[descriptor] = layout
+    descriptor.layout = layout
     return layout
 
 
@@ -302,7 +298,7 @@ def _layout_of(descriptor: MessageDescriptor) -> _Layout:
 
 @dataclass(slots=True)
 class _DecodeContext:
-    input: memoryview
+    input: _Bytes
     max_depth: int
     keep_unknown: bool
     needs_finish: bool = False
@@ -340,9 +336,8 @@ def _decode_message(
     read_unknown_fields: bool = True,
     max_depth: object = DEFAULT_MAX_DEPTH,
 ) -> Message:
-    view = memoryview(data).cast("B")
-    context = _DecodeContext(view, _depth_limit(max_depth), read_unknown_fields)
-    target = _read_fields(context, ProtobufReader(view), descriptor, None, 0)
+    context = _DecodeContext(data, _depth_limit(max_depth), read_unknown_fields)
+    target = _read_fields(context, ProtobufReader(data), descriptor, None, 0)
     if context.needs_finish or context.unknown:
         _finish_message(context, descriptor, target)
     return target
@@ -876,7 +871,7 @@ def _to_int64(scalar: str, value: object) -> int:
         n = int(value)
     elif isinstance(value, int):
         n = value
-    elif isinstance(value, str) and _DECIMAL.fullmatch(value):
+    elif isinstance(value, str) and _is_decimal(value):
         if len(value) > 21:
             _out_of_range(scalar, value)
         n = int(value)
@@ -982,7 +977,7 @@ def _write_map_key(w: ProtobufWriter, type: ScalarValueType, key: object) -> Non
                 _expected("a boolean key", key)
             w.bool(key == "true")
         case scalar:
-            if not _DECIMAL.fullmatch(key):
+            if not _is_decimal(key):
                 _expected(f"an integer key for {_a(scalar)}", key)
             value: object = key if scalar in _SIXTY_FOUR or len(key) > 20 else int(key)
             _SCALAR_WRITERS[scalar](w, value)
@@ -1020,7 +1015,7 @@ def _split_extension(message: object, extension: ExtensionDescriptor) -> _Split:
         return out
     if not _is_bytes(data):
         _expected("bytes of unknown fields", data)
-    view = memoryview(cast("_Bytes", data)).cast("B")
+    view = cast("_Bytes", data)
     number = extension.field.number
     message_set = extension.extendee.message_set_wire_format
     r = ProtobufReader(view)
@@ -1079,17 +1074,12 @@ def _read_item(r: ProtobufReader, type_id: int) -> _Bytes | None:
     return payload if found == type_id else None
 
 
-_holders: weakref.WeakKeyDictionary[ExtensionDescriptor, MessageDescriptor] = (
-    weakref.WeakKeyDictionary()
-)
-
-
 def _holder_of(extension: ExtensionDescriptor) -> MessageDescriptor:
     """A message of one field, an ordinary extension, its occurrences decode into."""
-    descriptor = _holders.get(extension)
+    descriptor = extension.holder
     if descriptor is None:
         descriptor = replace(extension.extendee, fields=[extension.field], oneofs=[])
-        _holders[extension] = descriptor
+        extension.holder = descriptor
     return descriptor
 
 
@@ -1108,10 +1098,10 @@ def _read_message_set(extension: ExtensionDescriptor, occurrences: Sequence[_Byt
     """Merges at least one payload. Each reader is bounded to its occurrence;
     the merged value and its unknown fields last until the final walk."""
     descriptor = _message_set_descriptor(extension)
-    context = _DecodeContext(memoryview(occurrences[0]).cast("B"), DEFAULT_MAX_DEPTH, True)
+    context = _DecodeContext(occurrences[0], DEFAULT_MAX_DEPTH, True)
     target = _create_message(context, _layout_of(descriptor))
     for occurrence in occurrences:
-        context.input = memoryview(occurrence).cast("B")
+        context.input = occurrence
         # The payload is nested one level inside the extended message.
         _read_fields(context, ProtobufReader(context.input), descriptor, target, 1)
     if context.needs_finish or context.unknown:

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from dataclasses import field as dataclass_field
 from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
@@ -121,6 +122,8 @@ class MessageDescriptor:
     messages: list[MessageDescriptor] = field(default_factory=lambda: [])
     enums: list[EnumDescriptor] = field(default_factory=lambda: [])
     extensions: list[ExtensionDescriptor] = field(default_factory=lambda: [])
+    layout: object = field(default=None, init=False)
+    """``message``'s layout of the fields, worked out on first use."""
 
     def __repr__(self) -> str:
         return f"MessageDescriptor({self.type_name!r})"
@@ -197,6 +200,8 @@ class EnumDescriptor:
     open: bool
     proto: EnumDescriptorProto
     values: list[EnumValueDescriptor] = field(default_factory=lambda: [])
+    numbers: frozenset[int] | None = field(default=None, init=False)
+    """The numbers of ``values``, worked out on first use."""
 
     def __repr__(self) -> str:
         return f"EnumDescriptor({self.type_name!r})"
@@ -213,7 +218,7 @@ class EnumValueDescriptor:
         return f"EnumValueDescriptor({self.parent.type_name}.{self.name})"
 
 
-@dataclass(frozen=True, eq=False, repr=False)
+@dataclass(eq=False, repr=False)
 class ExtensionDescriptor:
     """A field of ``extendee`` declared outside of it."""
 
@@ -225,6 +230,8 @@ class ExtensionDescriptor:
     extendee: MessageDescriptor
     field: SingularFieldDescriptor | ListFieldDescriptor
     proto: FieldDescriptorProto
+    holder: MessageDescriptor | None = dataclass_field(default=None, init=False)
+    """A message of ``field`` alone, which ``message`` decodes occurrences into."""
 
     def __repr__(self) -> str:
         return f"ExtensionDescriptor({self.type_name!r})"
