@@ -7047,6 +7047,197 @@ def check_http_api_handle_all_entries(
     _without_sessions: fx.Layer[ApiSessionUsers, Never, ApiSession | ApiDb] = session_layer  # pyright: ignore[reportAssignmentType]
 
 
+# Chained middleware: `.middleware(Inner).middleware(Outer)` puts Outer outside, so what
+# Outer provides reaches Inner (Effect's `ApplyServices`); a group's middleware wraps
+# outside the endpoint's own, so what it provides reaches them all.
+class ApiChainSession(Tag[str]): ...
+
+
+class ApiChainOther(Tag[str]): ...
+
+
+class ApiChainThird(Tag[str]): ...
+
+
+class ApiChainOuter(HttpApiMiddleware[ApiChainSession]):
+    """Provides ApiChainSession."""
+
+
+class ApiChainInner(HttpApiMiddleware[Never, Never, ApiChainSession]):
+    """Needs ApiChainSession."""
+
+
+class ApiChainNeedsBoth(HttpApiMiddleware[Never, Never, ApiChainSession | ApiChainOther]):
+    """Needs ApiChainSession and ApiChainOther."""
+
+
+class ApiChainGivesOther(HttpApiMiddleware[ApiChainOther, Never, ApiChainThird]):
+    """Provides ApiChainOther, needs ApiChainThird."""
+
+
+api_chain_ping = api_endpoint.get("ping", "/ping", success=S.String)
+
+
+class ApiChain(HttpApiGroup, identifier="chain"):
+    inner_outer = api_chain_ping.middleware(ApiChainInner).middleware(ApiChainOuter)
+    outer_inner = api_chain_ping.middleware(ApiChainOuter).middleware(ApiChainInner)
+    three = (
+        api_chain_ping.middleware(ApiChainNeedsBoth)
+        .middleware(ApiChainOuter)
+        .middleware(ApiChainGivesOther)
+    )
+    three_swapped = (
+        api_chain_ping.middleware(ApiChainNeedsBoth)
+        .middleware(ApiChainGivesOther)
+        .middleware(ApiChainOuter)
+    )
+
+
+class ApiChainLogin(HttpApiGroup[ApiChainOuter], identifier="chainLogin"):
+    needs_both = api_chain_ping.middleware(ApiChainNeedsBoth)
+    gives_other = api_chain_ping.middleware(ApiChainNeedsBoth).middleware(ApiChainGivesOther)
+
+
+def check_http_api_middleware_chain(
+    ping: Callable[[HttpApiRequest[None, None, None, None]], fx.Effect[str]],
+    chain_client: ApiChain,
+) -> None:
+    from pyfect.http_api import builder as api_builder
+    from pyfect.http_api._handlers import GroupHandlers
+
+    # The endpoint holds its outermost middleware and what those inside it need.
+    assert_type(
+        ApiChain.inner_outer,
+        HttpApiEndpoint[
+            None,
+            None,
+            None,
+            None,
+            None,
+            str,
+            str,
+            Never,
+            ApiChainInner | ApiChainOuter,
+            ApiChainInner | ApiChainOuter,
+            ApiChainOuter,
+            ApiChainSession,
+        ],
+    )
+    assert_type(chain_client.three(), fx.Effect[str, ApiClientErrors])
+    chain: GroupHandlers[ApiChain] = GroupHandlers(ApiChain)
+    assert_type(
+        chain.handle_raw(ApiChain.inner_outer)(ping),
+        Handlers[Never, Never, ApiChainInner | ApiChainOuter],
+    )
+    # Outer's ApiChainSession reaches Inner: only the middleware are needed.
+    assert_type(
+        chain.handle(ApiChain.inner_outer)(ping),
+        Handlers[Never, Never, ApiChainInner | ApiChainOuter],
+    )
+    assert_type(
+        chain.handle_all(api_builder.entry(ApiChain.inner_outer)(ping)),
+        Handlers[Never, Never, ApiChainInner | ApiChainOuter],
+    )
+    # The other way round Inner runs outside Outer, so ApiChainSession is needed.
+    assert_type(
+        chain.handle_all(api_builder.entry(ApiChain.outer_inner)(ping)),
+        Handlers[Never, Never, ApiChainOuter | ApiChainInner | ApiChainSession],
+    )
+    _outer_inner: Handlers[Never, Never, ApiChainOuter | ApiChainInner] = chain.handle(  # pyright: ignore[reportAssignmentType]
+        ApiChain.outer_inner
+    )(ping)
+    # Each step takes off what the middleware it adds provides from what those inside need.
+    assert_type(
+        chain.handle(ApiChain.three)(ping),
+        Handlers[
+            Never, Never, ApiChainNeedsBoth | ApiChainOuter | ApiChainGivesOther | ApiChainThird
+        ],
+    )
+    assert_type(
+        chain.handle_all(api_builder.entry(ApiChain.three_swapped)(ping)),
+        Handlers[
+            Never, Never, ApiChainNeedsBoth | ApiChainGivesOther | ApiChainOuter | ApiChainThird
+        ],
+    )
+    chain_api = HttpApi.make("chain").add(ApiChain)
+    chain_layer = api_builder.group(
+        chain_api,
+        ApiChain,
+        lambda h: h.handle_all(
+            api_builder.entry(ApiChain.inner_outer)(ping),
+            api_builder.entry(ApiChain.outer_inner)(ping),
+            api_builder.entry(ApiChain.three)(ping),
+            api_builder.entry(ApiChain.three_swapped)(ping),
+        ),
+    )
+    assert_type(
+        chain_layer,
+        fx.Layer[
+            ApiChain,
+            Never,
+            ApiChainInner
+            | ApiChainOuter
+            | ApiChainSession
+            | ApiChainNeedsBoth
+            | ApiChainGivesOther
+            | ApiChainThird,
+        ],
+    )
+
+    # The group's middleware provides ApiChainSession to the endpoint's own: handle and
+    # handle_all agree, and ApiChainOther, which nothing provides, is still needed.
+    login: GroupHandlers[ApiChainLogin] = GroupHandlers(ApiChainLogin)
+    assert_type(
+        login.handle(ApiChainLogin.needs_both)(ping),
+        Handlers[ApiChainSession, Never, ApiChainOuter | ApiChainNeedsBoth | ApiChainOther],
+    )
+    assert_type(
+        login.handle_all(api_builder.entry(ApiChainLogin.needs_both)(ping)),
+        Handlers[ApiChainSession, Never, ApiChainOuter | ApiChainNeedsBoth | ApiChainOther],
+    )
+    _needs_both: Handlers[ApiChainSession, Never, ApiChainOuter | ApiChainNeedsBoth] = login.handle(  # pyright: ignore[reportAssignmentType]
+        ApiChainLogin.needs_both
+    )(ping)
+    assert_type(
+        login.handle(ApiChainLogin.gives_other)(ping),
+        Handlers[
+            ApiChainSession,
+            Never,
+            ApiChainOuter | ApiChainNeedsBoth | ApiChainGivesOther | ApiChainThird,
+        ],
+    )
+    login_api = HttpApi.make("login").add(ApiChainLogin)
+    by_handle = api_builder.group(
+        login_api,
+        ApiChainLogin,
+        lambda h: h.handle(ApiChainLogin.needs_both)(ping).handle(ApiChainLogin.gives_other)(ping),
+    )
+    by_entry = api_builder.group(
+        login_api,
+        ApiChainLogin,
+        lambda h: h.handle_all(
+            api_builder.entry(ApiChainLogin.needs_both)(ping),
+            api_builder.entry(ApiChainLogin.gives_other)(ping),
+        ),
+    )
+    assert_type(
+        by_handle,
+        fx.Layer[
+            ApiChainLogin,
+            Never,
+            ApiChainOuter | ApiChainNeedsBoth | ApiChainOther | ApiChainGivesOther | ApiChainThird,
+        ],
+    )
+    assert_type(
+        by_entry,
+        fx.Layer[
+            ApiChainLogin,
+            Never,
+            ApiChainOuter | ApiChainNeedsBoth | ApiChainOther | ApiChainGivesOther | ApiChainThird,
+        ],
+    )
+
+
 def check_http_api_clients() -> None:
     from pyfect.http_api import builder as api_builder
     from pyfect.http_api import client as api_client
