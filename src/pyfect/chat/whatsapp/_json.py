@@ -3,13 +3,12 @@ and the parse of a webhook body with its nesting capped."""
 
 from __future__ import annotations
 
-import re
 from collections.abc import Mapping
-from itertools import accumulate
 from typing import cast
 
 from pyfect._json_text import PARSE_ERRORS
 from pyfect._json_text import parse as _parse
+from pyfect.chat._json_depth import within_depth as _within_depth
 
 type JsonObject = Mapping[str, object]
 
@@ -49,23 +48,10 @@ def code(value: object) -> int | None:
     return field if isinstance(field, int) and not isinstance(field, bool) else None
 
 
-_STRINGS = re.compile(rb'"(?:[^"\\]++|\\.)*+(?:"|\Z)', re.DOTALL)
-"""A JSON string, or an unterminated one to the end, taken whole so that no
-quote inside it starts another match: one pass, also over ``"\\"\\"\\"``."""
-_NOT_BRACKETS = bytes(b for b in range(256) if b not in b"[]{}")
-_STEPS = bytes.maketrans(b"[{]}", b"\x01\x01\xff\xff")
-"""An opening bracket as +1 and a closing one as -1, read as signed bytes."""
-
-
 def within_depth(body: bytes, limit: int = MAX_DEPTH) -> bool:
-    """Whether the JSON text ``body`` nests at most ``limit`` deep: strings
-    dropped, then the running sum of the brackets, in one pass each. Text
-    that is not JSON may pass; the parse refuses it."""
-    steps = _STRINGS.sub(b"", body).translate(_STEPS, _NOT_BRACKETS)
-    if not steps:
-        return True
-    with memoryview(steps) as view, view.cast("b") as signed:
-        return max(accumulate(signed)) <= limit
+    """Whether the JSON text ``body`` nests at most ``limit`` deep, strings
+    skipped. Text that is not JSON may pass; the parse refuses it."""
+    return _within_depth(body, limit)
 
 
 def parse(body: bytes) -> object:
