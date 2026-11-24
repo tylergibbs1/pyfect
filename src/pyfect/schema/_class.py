@@ -51,7 +51,7 @@ from typing import (
 from pyfect import errors
 from pyfect._core import Effect
 from pyfect._pipe import pipe_one
-from pyfect.exit import Success
+from pyfect.exit import Failure, Success
 from pyfect.option import Option
 from pyfect.schema import ast
 from pyfect.schema._adapters import CONSTRUCTOR, raise_schema_failure
@@ -63,6 +63,7 @@ from pyfect.schema._options import ParseOptions
 from pyfect.schema._schema import Bottom, Codec
 from pyfect.schema._undefined import is_undefined
 from pyfect.schema.ast import Check, FilterOutput, filter_of
+from pyfect.schema.ast._base import copy as copy_node
 from pyfect.schema.issue import Issue
 
 _SCHEMA = "pyfect.schema"
@@ -156,6 +157,22 @@ def _is_undefined_or(node: ast.AST) -> bool:
     return isinstance(node, ast.Union) and any(is_undefined(m) for m in node.types)
 
 
+def _hinting_none_default(schema: AnyBottom) -> AnyBottom:
+    """A field defaulting to ``None``: when its schema refuses ``None``, the
+    field's type error says what the field needs, as constructing or encoding
+    the default fails."""
+    if not isinstance(schema.ast.to_type().parse(None, {}), Failure):
+        return schema
+    hint = (
+        f"Expected {schema.ast.expected()}, and the default None is not one: write "
+        "S.NullOr(schema) for a field that may be None, or S.Union(schema, S.Undefined) to "
+        "leave the key out while it is None"
+    )
+    # On the node itself: ``ast.annotate`` would give it to the last check.
+    node = schema.ast
+    return Bottom(copy_node(node, annotations={**(node.annotations or {}), "message": hint}))
+
+
 def _defaults_to_none(cls: type, name: str) -> bool:
     return next(f for f in dataclasses.fields(cast("Any", cls)) if f.name == name).default is None
 
@@ -208,7 +225,10 @@ class _Shape:
 
     def _build(self) -> _Built:
         if self._built is None:
-            schemas = _field_schemas(self.cls, self.field_names)
+            schemas = {
+                name: _hinting_none_default(schema) if _defaults_to_none(self.cls, name) else schema
+                for name, schema in _field_schemas(self.cls, self.field_names).items()
+            }
             defaults = {name: _default_of(self.cls, name) for name in schemas}
             absent = frozenset(
                 self.keys[name]
