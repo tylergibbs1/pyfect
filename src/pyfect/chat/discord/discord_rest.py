@@ -23,6 +23,7 @@ from urllib.parse import quote
 
 import pyfect as fx
 from pyfect._core import Effect
+from pyfect._effect_args import require_effect
 from pyfect._json_text import Json, stringify
 from pyfect._version import VERSION
 from pyfect.chat.chat_adapter import File
@@ -90,6 +91,7 @@ def read_answer(
 ) -> Effect[Json, ChatError]:
     """Discord's answer to ``sent``: its JSON (``None`` for an empty body), or
     the ``ChatError`` of ``op`` for a failure."""
+    require_effect(sent, "sent")
 
     def fail(reason: AnyReason) -> Effect[Never, ChatError]:
         return fx.fail(_errors.chat_error(op, reason))
@@ -153,15 +155,19 @@ class DiscordRestService:
     # The routes the adapter uses, named as dfx names them.
 
     def get_my_user(self) -> Effect[Json, ChatError]:
+        """``GET /users/@me``: the bot's own user."""
         return self.request("GET", path("users", "@me"), op="getMyUser")
 
     def get_user(self, user_id: str) -> Effect[Json, ChatError]:
+        """``GET /users/{id}``: a user."""
         return self.request("GET", path("users", user_id), op="getUser")
 
     def get_channel(self, channel_id: str) -> Effect[Json, ChatError]:
+        """``GET /channels/{id}``: a channel, thread or direct."""
         return self.request("GET", path("channels", channel_id), op="getChannel")
 
     def get_message(self, channel_id: str, message_id: str) -> Effect[Json, ChatError]:
+        """``GET /channels/{id}/messages/{id}``: one message."""
         return self.request(
             "GET", path("channels", channel_id, "messages", message_id), op="getMessage"
         )
@@ -174,6 +180,8 @@ class DiscordRestService:
         after: str | None = None,
         limit: int = 50,
     ) -> Effect[Json, ChatError]:
+        """``GET /channels/{id}/messages``: up to ``limit`` messages before or after an id,
+        newest first."""
         query = {"limit": str(limit)}
         if before is not None:
             query["before"] = before
@@ -186,6 +194,7 @@ class DiscordRestService:
     def create_message(
         self, channel_id: str, body: Mapping[str, object], files: Sequence[File] = ()
     ) -> Effect[Json, ChatError]:
+        """``POST /channels/{id}/messages``: a write, multipart when there are files."""
         return self.request(
             "POST",
             path("channels", channel_id, "messages"),
@@ -198,6 +207,7 @@ class DiscordRestService:
     def update_message(
         self, channel_id: str, message_id: str, body: Mapping[str, object]
     ) -> Effect[Json, ChatError]:
+        """``PATCH /channels/{id}/messages/{id}``: a write."""
         return self.request(
             "PATCH",
             path("channels", channel_id, "messages", message_id),
@@ -207,6 +217,7 @@ class DiscordRestService:
         )
 
     def delete_message(self, channel_id: str, message_id: str) -> Effect[Json, ChatError]:
+        """``DELETE /channels/{id}/messages/{id}``: a write."""
         return self.request(
             "DELETE",
             path("channels", channel_id, "messages", message_id),
@@ -217,6 +228,7 @@ class DiscordRestService:
     def create_thread_from_message(
         self, channel_id: str, message_id: str, body: Mapping[str, object]
     ) -> Effect[Json, ChatError]:
+        """``POST /channels/{id}/messages/{id}/threads``: a write."""
         return self.request(
             "POST",
             path("channels", channel_id, "messages", message_id, "threads"),
@@ -226,6 +238,7 @@ class DiscordRestService:
         )
 
     def get_guild_member(self, guild_id: str, user_id: str) -> Effect[Json, ChatError]:
+        """``GET /guilds/{id}/members/{id}``: a member, with their nick and roles."""
         return self.request(
             "GET", path("guilds", guild_id, "members", user_id), op="getGuildMember"
         )
@@ -233,6 +246,7 @@ class DiscordRestService:
     def create_interaction_response(
         self, interaction_id: str, token: str, body: Mapping[str, object]
     ) -> Effect[Json, ChatError]:
+        """``POST /interactions/{id}/{token}/callback``: an interaction's answer."""
         return self.request(
             "POST",
             path("interactions", interaction_id, token, "callback"),
@@ -242,6 +256,7 @@ class DiscordRestService:
         )
 
     def get_my_application(self) -> Effect[Json, ChatError]:
+        """``GET /applications/@me``: the bot's application."""
         return self.request("GET", path("applications", "@me"), op="getMyApplication")
 
     def bulk_set_application_commands(
