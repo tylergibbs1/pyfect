@@ -170,7 +170,8 @@ def _answer_on_stream(
 
     def finished() -> Effect[None]:
         connection.streams.remove(out)
-        return messages.end().as_void()
+        # The reader takes the answer now, not after a scheduler round.
+        return messages.end().and_then(messages.flush())
 
     def abandon(serving: Fiber[None, Never]) -> Effect[None]:
         """No reader is left: release the broadcasts waiting for room as well."""
@@ -184,7 +185,9 @@ def _answer_on_stream(
         if scope is not None:
             yield from scope.value.add_finalizer(lambda _: abandon(serving))
         # The stream ends with the work: after its answer, or empty when cancelled.
-        yield from serving.await_exit().ensuring(suspend(finished)).fork_daemon()
+        yield from (
+            serving.await_exit().ensuring(suspend(finished)).fork_daemon(start_immediately=True)
+        )
         return serving
 
     def reply(serving: Fiber[None, Never]) -> Effect[HttpServerResponse]:

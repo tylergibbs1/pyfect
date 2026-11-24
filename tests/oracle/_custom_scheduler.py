@@ -8,11 +8,14 @@ from typing import Any
 import pyfect as fx
 from pyfect._fiber import Fiber
 from pyfect.scheduler import (
+    Cancel,
     CurrentScheduler,
     EffectScheduler,
     ExecutionMode,
     MixedScheduler,
     SchedulerDispatcher,
+    Task,
+    _run_soon,
 )
 
 
@@ -63,3 +66,18 @@ def drain(tasks: list[Callable[[], None]]) -> None:
 
 def never_yields(_: Fiber[Any, Any]) -> bool:
     return False
+
+
+def counting_rounds() -> tuple[MixedScheduler, list[int]]:
+    """Effect's ``MixedScheduler`` over a ``setImmediate`` counting the rounds it runs (the
+    count is ``rounds[0]``)."""
+    rounds = [0]
+
+    def set_immediate(task: Task) -> Cancel:
+        def counted() -> None:
+            rounds[0] += 1
+            task()
+
+        return _run_soon(counted)
+
+    return MixedScheduler("async", set_immediate), rounds

@@ -24,7 +24,10 @@ from pyfect.queue import Queue
 from pyfect.rpc import RpcGroup, make
 from pyfect.rpc import serialization as rs
 from pyfect.rpc import server as rpc_server
+from pyfect.scheduler import CurrentScheduler
 from pyfect.scope import CloseableScope, Scope
+
+from ._custom_scheduler import counting_rounds
 
 
 class Events(RpcGroup):
@@ -291,3 +294,38 @@ def _chain(error: object) -> list[object]:
         found.append(error)
         error = getattr(error, "cause", None) or getattr(error, "__cause__", None)
     return found
+
+
+class Echo(RpcGroup):
+    echo = make("echo", success=S.String)
+
+
+@testing.live
+def test_answers_a_framed_http_request_before_a_scheduler_round_runs():
+    """Effect's #10753, which covers this path without a test of its own: the
+    server's answer reaches the response at once, not a scheduler round later."""
+    scheduler, rounds = counting_rounds()
+    # Waits, and a timer of the run, not a round of the server's scheduler, resumes it.
+    handlers = Echo.to_layer(
+        Echo.handlers().handle(Echo.echo)(lambda _: fx.sleep("1 millis").as_("hi"))
+    )
+    client = yield from router.in_memory_client(_framed_server(Echo, handlers))
+    yield from _start_server(client)
+
+    def call(request_id: int) -> fx.Effect[Any, Any]:
+        line = f'{{"_tag":"Request","id":{request_id},"tag":"echo","payload":null,"headers":[]}}\n'
+        # The routes' services come from the request (``router.in_memory_client``).
+        return client.execute(_post_text(line)).pipe(
+            fx.provide_service(CurrentScheduler, scheduler)
+        )
+
+    # Serve one request before measuring, and let the rounds it left run.
+    yield from call(1).flat_map(lambda r: r.text)
+    yield from effect.yield_now()
+    before = rounds[0]
+    response = yield from call(2)
+    assert rounds[0] == before
+    text = yield from response.text
+    assert [json.loads(line) for line in text.splitlines()] == [
+        {"_tag": "Exit", "requestId": 2, "exit": {"_tag": "Success", "value": "hi"}}
+    ]
