@@ -1,5 +1,95 @@
 # Changelog
 
+## 0.6.24 (2026-11-24)
+
+### Added
+
+- `pyfect.ai.skill` (Effect's `effect/ai/Skill`): an Agent Skill as a value. `skill.make`
+  checks the frontmatter and file paths, `to_files` writes it as a `SKILL.md` and its
+  files, and `from_files` reads one back, failing with `IllegalArgumentError`. Its JSON
+  codec keeps a file's bytes as `{"base64": ...}`. `mcp_server.skill` and
+  `mcp_server.register_skill` take a `Skill` in place of the files.
+- `Link` headers (RFC 8288): `headers.Link`, `headers.parse_link`, `headers.format_link`,
+  `http.schema.LinkHeaderFromString`, and `response.links` / `response.link(res, rel)`, which
+  resolve targets against the response URL and skip anchored links. `Headers.append`,
+  `HttpClientRequest.append_header` and `HttpServerResponse.append_header` add to a header
+  without replacing it (Effect #10817).
+- `redacted_params` on `router.route`, `router.add` and `HttpRouterService.add`, and `params` on
+  `http_api.RedactedNames`: the server span and the `middleware.logger` entry record the matched
+  path with those params' values replaced by `REDACTED` (Effect #10790).
+- `rpc.TracingEnabled`: an RPC annotation choosing which sides make automatic spans
+  (`"client"`, `"server"`, `"both"`, the default, or `"none"`), and `remote_parent_span` on
+  `RpcRequest` and `MiddlewareOptions`, the span the client sent, to parent a handler's own
+  spans. An RPC without a client span still sends its caller's span (Effect #10780).
+- AI tool ledger: `ToolLedgerError` is a schema, so a durable workflow can list it in its
+  `error=` as it does `ToolOutcomeUnknown`
+  (`error=S.Union(tool_ledger.ToolOutcomeUnknown, tool_ledger.ToolLedgerError)`) and a
+  failing ledger store reaches the workflow's caller as a typed error. Its `cause` comes back
+  as an `ErrorInstance`.
+
+### Fixed
+
+- Amazon Bedrock: a conversation whose earlier tool call returned a list, number or boolean
+  no longer fails. Such a result was sent as a Converse `json` block, which Bedrock rejects
+  for anything but an object; it now goes as its JSON text. Object results are still `json`
+  blocks, and a `None` result is still empty text (Effect-TS/effect#10767).
+- `csv.decode_schema_string` and `csv.decode_schema` with `headers=True` treat an empty cell
+  of an optional key as a missing key for every struct of a union (and behind `S.suspend`),
+  using the optional keys of the member the row selects, and before a struct's index
+  signatures check the row. Only a plain struct got this before, so a union schema kept `""`
+  and failed to decode it as, say, a number. Port of Effect #10759.
+- The SQL encrypted event log server works on a PostgreSQL database whose transactions default
+  to REPEATABLE READ or SERIALIZABLE (`default_transaction_isolation`). Of two servers starting
+  together on a new database, one died with `could not serialize access due to concurrent
+  update` while recording the upgrade, and had it got past that, would have stored a second
+  remote id: its read after waiting for the other's lock still saw the empty table. Writes to
+  one store from two servers failed the same way, as defects. The storage now runs every
+  transaction at READ COMMITTED on PostgreSQL, which its locks rely on. MySQL (REPEATABLE READ
+  by default) and SQL Server were not affected: their locking reads see the latest rows.
+- A SQL encrypted event log server whose remote id table holds several ids (servers that
+  started together on a new database under 0.6.22 or earlier, or under Effect, could each
+  store one) now always serves the lowest in byte order and logs a warning naming the table
+  and how many ids it holds. It served whichever row the database returned first, so servers
+  could disagree. Clients that synced under another id sync again once. The event log docs
+  show how to delete the extra ids:
+  [One remote id per database](https://pyfect.dev/docs/eventlog#one-remote-id-per-database).
+- A derived `HttpApiClient` decodes a form-urlencoded response or declared error whose array
+  field arrived as a single key (`tags=a`) into a one-element array. It failed with
+  `SchemaError: Expected array` before, also under `WithHeaders`; payloads and query strings
+  already did this. Port of Effect #10699.
+- `mcp_server.register_toolkit` lists a tool annotated `tool.Readonly` and not `Destructive`
+  with `destructiveHint: false`. It used to list such a tool as both read-only and destructive.
+  A `Destructive` annotation still sets the hint, and a tool that isn't read-only is still
+  destructive unless annotated otherwise. The MCP spec reads `destructiveHint` only when
+  `readOnlyHint` is false, so clients that follow it see no change (Effect-TS/effect#10752).
+- OpenAI `stream_text` keeps the model's refusal explanations. A refused message's
+  `text-end` part carries them in `metadata["openai"]["refusal"]`, joined by a blank line when
+  there are several, and a prompt built from the streamed parts keeps them in the text part's
+  options. Before, a streamed refusal reached the caller as empty text with no explanation;
+  `generate_text` already kept it (Effect-TS/effect#10702).
+- The PostgreSQL `PersistedQueue` store (`make_store_sql` / `layer_store_sql`) keeps taking
+  offers past 2,147,483,647 rows. Migration `0002` widened the `sequence` column to `BIGINT`
+  but left its `SERIAL` sequence a 32-bit integer, so offers failed once the sequence reached
+  its maximum. A new PostgreSQL-only migration, `0004_widen_sequence`, widens the sequence;
+  it runs once when the store starts. Port of Effect #10781, whose migration is `0003`;
+  pyfect's `0003` is already `0003_exact_ids`.
+- The request URL of a server span's synthesized 5xx error hides the query names an HttpApi
+  endpoint's `RedactedNames` declares, as the span's URL attributes already did (Effect #10790).
+- `redis_py`: `Redis.subscribe` returns once the server has confirmed `SUBSCRIBE`, as
+  Effect's `NodeRedis` does. It returned once redis-py had sent the command, so a message
+  published right after it returned could be lost, and an unanswered `SUBSCRIBE` never
+  stalled it.
+- An RPC client sends no span in its requests when the calling fiber has tracing disabled
+  (`TracerEnabled`) or `DisablePropagation` set, as Effect's (Effect #10780).
+
+### Docs
+
+- Tool ledger and durable agents: a bare-id ledger record from 0.6.22 or earlier answers every
+  later workflow execution that reuses its `tool_call_id`, with the SQL statement that clears
+  those rows once no older execution is running; each guarded call in a workflow does one extra
+  lookup for it. With `on_unknown="fail"`, `ToolOutcomeUnknown` reaches a workflow's caller only
+  when its `error=` schema lists it, and pyright rejects a missing one at `to_layer`.
+
 ## 0.6.23 (2026-11-23)
 
 ### Added
