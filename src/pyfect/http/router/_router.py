@@ -82,10 +82,12 @@ def count_segments(prefix: str, ignore_duplicate_slashes: bool) -> int:
 
 
 def slice_request_url(
-    request: ServerRequest, prefix_segments: int, ignore_duplicate_slashes: bool
+    request: ServerRequest, prefix_segments: int, config: find_my_way.RouterConfig
 ) -> ServerRequest:
     """``request`` with its first ``prefix_segments`` path segments
     removed from the URL."""
+    ignore_duplicate_slashes = config.ignore_duplicate_slashes
+    segment_end = "/?;#" if config.use_semicolon_delimiter else "/?#"
     url = request.url
     index = 0
     for _ in range(prefix_segments):
@@ -94,7 +96,7 @@ def slice_request_url(
                 index += 1
         elif url[index : index + 1] == "/":
             index += 1
-        while index < len(url) and url[index] not in "/?;#":
+        while index < len(url) and url[index] not in segment_end:
             index += 1
     rest = url[index:]
     return request.modify(url=rest if rest.startswith("/") else "/" + rest)
@@ -158,11 +160,7 @@ class _Core:
             return fail(HttpServerError(RouteNotFound(request, description)))
         route = result.handler.route
         segments = result.handler.prefix_segments
-        routed = (
-            request
-            if segments is None
-            else slice_request_url(request, segments, self.config.ignore_duplicate_slashes)
-        )
+        routed = request if segments is None else slice_request_url(request, segments, self.config)
         template = result.handler.redacted_path
         if template is not None:
             state = _request_state.get(fiber._context)

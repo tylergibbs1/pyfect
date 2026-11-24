@@ -5,6 +5,7 @@ from pyfect.http.find_my_way._router import (
     FindResult,
     Router,
     RouterConfig,
+    strict_config,
 )
 
-__all__ = ["HTTP_METHODS", "FindResult", "Router", "RouterConfig"]
+__all__ = ["HTTP_METHODS", "FindResult", "Router", "RouterConfig", "strict_config"]

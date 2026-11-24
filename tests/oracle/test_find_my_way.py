@@ -19,7 +19,7 @@ from collections.abc import Callable
 import pytest
 from _growth import assert_near_linear
 
-from pyfect.http.find_my_way import FindResult, Router, RouterConfig
+from pyfect.http.find_my_way import FindResult, Router, RouterConfig, strict_config
 
 
 def _insensitive() -> Router[bool]:
@@ -404,6 +404,121 @@ def test_decodes_percent_heavy_parameters_exactly_once_without_changing_query_bo
     assert found is not None
     assert found.params == {"id": decoded}
     assert router.find("GET", "/test/" + encoded + "%zz") is None
+
+
+def test_keeps_semicolon_in_the_path_when_use_semicolon_delimiter_is_false() -> None:
+    """keeps ; in the path when useSemicolonDelimiter is false"""
+    router = Router[str](RouterConfig(use_semicolon_delimiter=False))
+    router.on("GET", "/test", "static")
+    router.on("GET", "/test/:id", "param")
+    assert router.find("GET", "/test;jsessionid=123456") is None
+    assert router.find("GET", "/test/a;v=1?x=1;y=2") == FindResult(
+        "param", {"id": "a;v=1"}, {"x": "1;y=2"}
+    )
+
+
+def _find_literal(route: str, url: str) -> FindResult[bool] | None:
+    router = Router[bool](RouterConfig(decode_static_path=False, max_param_length=8))
+    router.on("GET", route, True)
+    return router.find("GET", url)
+
+
+def test_matches_static_segments_literally_when_decode_static_path_is_false() -> None:
+    """matches static segments literally when decodeStaticPath is false"""
+    for route, url in [
+        ("/internal/signing/submit", "/internal/%73igning/submit"),
+        ("/internal/keys/:id", "/internal/%6Beys/abc"),
+        ("/internal/:a/keys/:b", "/internal/x/%6Beys/y"),
+        ("/files/*", "/%66iles/a"),
+        ("/files/:name.png", "/%66iles/a.png"),
+        ("/files/pre-:name.png", "/files/%70re-a.png"),
+        ("/files/pre-:name", "/files/pre%2Dx"),
+        ("/files/pre*", "/files/%70rex"),
+        ("/caf%C3%A9", "/caf%25C3%25A9"),
+        ("/café", "/caf%C3%A9"),
+    ]:
+        assert _find_literal(route, url) is None, url
+    assert _find_literal("/internal/signing/submit", "/internal/signing/submit") is not None
+    assert _find_literal("/caf%C3%A9", "/caf%C3%A9") is not None
+    assert _find_literal("/caf%C3%A9", "/caf%c3%a9") is not None
+
+
+def test_decodes_parameters_once_when_decode_static_path_is_false() -> None:
+    """decodes parameters once when decodeStaticPath is false"""
+    assert _params(_find_literal("/keys/:id", "/keys/a%2Fb%20caf%C3%A9")) == {"id": "a/b café"}
+    assert _params(_find_literal("/keys/:id", "/keys/%252f")) == {"id": "%2f"}
+    assert _params(_find_literal("/a/:a/b/:b", "/a/x%20y/b/c%2Fd")) == {"a": "x y", "b": "c/d"}
+    assert _params(_find_literal("/files/*", "/files/a%2Fb/c%20d")) == {"*": "a/b/c d"}
+    assert _params(_find_literal("/files/:name.png", "/files/a%2Epng")) == {"name": "a"}
+    assert _params(_find_literal("/files/pre-:name.png", "/files/pre-a%2Epng")) == {"name": "a"}
+    assert _params(_find_literal("/files/pre*", "/files/prex%2Fy")) == {"*": "x/y"}
+    assert _params(_find_literal(r"/n/:id(^\d+$)", "/n/%31%32")) == {"id": "12"}
+    assert _find_literal("/slugs/:slug([^.]+)", "/slugs/a%2Eb") is None
+
+
+def test_applies_max_param_length_to_decoded_parameters_when_decode_static_path_is_false() -> None:
+    """applies maxParamLength to decoded parameters when decodeStaticPath is false"""
+    eight = "%41%42%43%44%45%46%47%48"
+    assert _params(_find_literal("/keys/:id", "/keys/" + eight)) == {"id": "ABCDEFGH"}
+    assert _find_literal("/keys/:id", "/keys/" + eight + "%49") is None
+    assert _params(_find_literal(r"/n/:id(^\w+$)", "/n/" + eight)) == {"id": "ABCDEFGH"}
+    assert _find_literal(r"/n/:id(^\w+$)", "/n/" + eight + "%49") is None
+
+
+def test_treats_malformed_escapes_in_parameters_as_a_miss_when_decode_static_path_is_false() -> (
+    None
+):
+    """treats malformed escapes in parameters as a miss when decodeStaticPath is false"""
+    for route, url in [
+        ("/keys/:id", "/keys/%zz"),
+        ("/keys/:id", "/keys/%C3"),
+        ("/files/*", "/files/a/%zz"),
+    ]:
+        assert _find_literal(route, url) is None, url
+    # A literal % before the parameter is route text, not part of the decoded value.
+    assert _params(_find_literal("/files/100%:id", "/files/100%a")) == {"id": "a"}
+    assert _find_literal("/files/100%:id", "/files/100%%zz") is None
+
+    router = Router[str](RouterConfig(decode_static_path=False))
+    router.on("GET", "/en/:page", "page")
+    router.on("GET", "/:lang/100%", "percent")
+    assert _params(router.find("GET", "/en/100%")) == {"lang": "en"}
+
+
+def test_applies_each_path_option_independently() -> None:
+    """applies each path option independently"""
+    literal = Router[bool](RouterConfig(decode_static_path=False))
+    literal.on("GET", "/internal/signing", True)
+    assert literal.find("GET", "/INTERNAL//signing/;v=1") is not None
+    assert literal.find("GET", "/internal/%73igning") is None
+
+    semicolon = Router[bool](RouterConfig(use_semicolon_delimiter=False))
+    semicolon.on("GET", "/internal/signing", True)
+    assert semicolon.find("GET", "/INTERNAL//%73igning/") is not None
+    assert semicolon.find("GET", "/internal/signing;v=1") is None
+
+    # Effect passes ``undefined`` for both options; a dataclass field has its default.
+    defaults = Router[bool](RouterConfig())
+    defaults.on("GET", "/internal/signing", True)
+    assert defaults.find("GET", "/internal/%73igning;v=1") is not None
+
+
+def test_strict_config_only_matches_the_registered_path() -> None:
+    """strictConfig only matches the registered path"""
+    router = Router[bool](strict_config)
+    router.on("GET", "/internal/signing/submit", True)
+    router.on("GET", "/caf%C3%A9", True)
+    assert router.find("GET", "/internal/signing/submit?x=1") is not None
+    assert router.find("GET", "/caf%C3%A9") is not None
+    for url in [
+        "/internal/SIGNING/submit",
+        "/internal//signing/submit",
+        "/internal/signing/submit/",
+        "/internal/%73igning/submit",
+        "/internal/signing/submit;v=1",
+        "/caf%c3%a9",
+    ]:
+        assert router.find("GET", url) is None, url
 
 
 # --- regex ---------------------------------------------------------------------------

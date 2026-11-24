@@ -453,6 +453,24 @@ CASES.append(
 )
 
 
+@case(find_my_way.Router.find, "find_my_way.Router.find: strict_config, a path of escapes")
+def _router_literal_escapes(n: int) -> Work:
+    routes: find_my_way.Router[str] = find_my_way.Router(find_my_way.strict_config)
+    routes.on("GET", "/notes/:id", "note")
+    routes.on("GET", "/:lang/100%", "percent")
+    path = "/notes/" + "%41" * n + ";" * n
+    return lambda: routes.find("GET", path)
+
+
+@case(find_my_way.Router.find, "find_my_way.Router.find: strict_config, malformed escapes")
+def _router_literal_malformed(n: int) -> Work:
+    routes: find_my_way.Router[str] = find_my_way.Router(find_my_way.strict_config)
+    routes.on("GET", "/files/*", "files")
+    routes.on("GET", "/:a/:b", "pair")
+    path = "/files/" + "%zz" * n
+    return lambda: routes.find("GET", path)
+
+
 def _repeated_header(n: int) -> Work:
     lines = [("x", "a")] * n
     return lambda: WebRequest("http://test/", headers=lines).headers

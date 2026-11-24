@@ -11990,3 +11990,18 @@ def _rpc_tracing(request: rpc.RpcRequest[str], options: rpc.middleware.Middlewar
 
 
 del _rpc_tracing
+
+
+# --- FindMyWay literal static paths and semicolon options (Effect #10616) ------------------
+def _find_my_way_strict(app: layer.Layer[Never, Never, http_router.HttpRouter]) -> None:
+    from pyfect.http import find_my_way
+
+    assert_type(find_my_way.strict_config, find_my_way.RouterConfig)
+    assert_type(find_my_way.strict_config.decode_static_path, bool)
+    assert_type(find_my_way.RouterConfig().use_semicolon_delimiter, bool)
+    http_router.to_web_handler(app, router_config=find_my_way.strict_config)
+    # Effect's ``undefined`` means the default; here the default is the omitted field.
+    find_my_way.RouterConfig(decode_static_path=None)  # pyright: ignore[reportArgumentType]
+
+
+del _find_my_way_strict

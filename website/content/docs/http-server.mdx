@@ -239,6 +239,12 @@ app needs more room.
   a body has at most `MaxParts` (1000) parts (Effect has no default limit; set `None` for
   none). A response
   header with a control character is never sent.
+- Routes match a normalized path: case, duplicate and trailing slashes are ignored, a `;`
+  ends the path, and escapes are decoded first, so `/%73ecret` reaches `/secret`. When a proxy
+  in front authorizes by path prefix, pass `router_config=strict_config` (from
+  `pyfect.http.find_my_way`) to `serve` or `to_web_handler`, and route text then matches only
+  as written.
+  Parameter values are still decoded, and `dataclasses.replace` changes one field.
 - In [HttpApi](/docs/http-api), a body without a `Content-Type` gets a 415 instead of being
   read as JSON, and `security_set_cookie` sets `Secure`, `HttpOnly` and `SameSite=Lax`.
 

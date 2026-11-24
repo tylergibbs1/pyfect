@@ -4,16 +4,17 @@ found by method and URL."""
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from typing import Generic, TypeVar, cast
 
-from pyfect._js import decode_uri
+from pyfect._js import decode_uri, decode_uri_component
 from pyfect.http.find_my_way import _query_string
 from pyfect.http.find_my_way._nodes import (
     Brother,
     Handler,
     Node,
+    ParametricNode,
     StaticNode,
     WildcardNode,
 )
@@ -39,10 +40,34 @@ HTTP_METHODS: tuple[str, ...] = (
 
 @dataclass(frozen=True, slots=True)
 class RouterConfig:
+    """How request paths are normalized before matching.
+
+    ``use_semicolon_delimiter`` ends the path at the first ``;`` as well as at
+    ``?`` and ``#``. ``decode_static_path`` percent-decodes the whole path
+    before matching; without it, route text without parameters only matches
+    the same characters as received, and parameter values are decoded once
+    (a malformed escape in one does not match). ``strict_config`` turns every
+    normalization off."""
+
     ignore_trailing_slash: bool = True
     ignore_duplicate_slashes: bool = True
     case_sensitive: bool = False
     max_param_length: int = 100
+    use_semicolon_delimiter: bool = True
+    decode_static_path: bool = True
+
+
+strict_config = RouterConfig(
+    case_sensitive=True,
+    ignore_trailing_slash=False,
+    ignore_duplicate_slashes=False,
+    use_semicolon_delimiter=False,
+    decode_static_path=False,
+)
+"""A ``RouterConfig`` that matches static route text literally, for when a
+proxy authorizes requests by path prefix. Parameter values are still decoded,
+so ``/files/:name`` is reached by ``/files/%73ecret``. Override a field with
+``dataclasses.replace``."""
 
 
 A_co = TypeVar("A_co", covariant=True)
@@ -80,9 +105,10 @@ def _component_char(escape: str) -> str | None:
     return _COMPONENT_ESCAPES.get(escape.upper())
 
 
-def _safe_decode_uri(path: str) -> tuple[str, str, bool]:
+def _safe_decode_uri(path: str, semicolon: bool = True) -> tuple[str, str, bool]:
     """The path decoded but for component escapes, the query split off at
-    ``?``, ``;`` or ``#``, and whether parameters must still be decoded."""
+    ``?``, ``#`` or (with ``semicolon``) ``;``, and whether parameters must
+    still be decoded."""
     should_decode = should_decode_param = False
     query = ""
     # Each ``%25`` becomes ``%2525``, joined once: splicing the path per
@@ -104,7 +130,7 @@ def _safe_decode_uri(path: str) -> tuple[str, str, bool]:
                     pieces.append("25")
                     start = i + 1
                 i += 2
-        elif char in "?;#":
+        elif char in "?#" or (char == ";" and semicolon):
             query = path[i + 1 :]
             end = i
             break
@@ -114,6 +140,26 @@ def _safe_decode_uri(path: str) -> tuple[str, str, bool]:
     return (decode_uri(path) if should_decode else path), query, should_decode_param
 
 
+type _DecodeParam = Callable[[str], str | None]
+"""Decodes a parameter value; ``None`` for a malformed escape, which does not match."""
+
+
+def _path_end(path: str, semicolon: bool) -> int:
+    for i in range(1, len(path)):
+        char = path[i]
+        if char in "?#" or (char == ";" and semicolon):
+            return i
+    return len(path)
+
+
+def _try_decode_component(text: str) -> str | None:
+    try:
+        return decode_uri_component(text)
+    except ValueError:
+        return None
+
+
+# Second decoding pass: expects ``_safe_decode_uri`` to have decoded every other escape.
 def _safe_decode_component(text: str) -> str:
     start = text.find("%")
     if start == -1:
@@ -131,13 +177,18 @@ def _safe_decode_component(text: str) -> str:
     return text[:start] + "".join(decoded) + text[last:]
 
 
-def _is_clean(path: str) -> bool:
+def _is_clean(path: str, semicolon: bool) -> bool:
     """A canonical lowercase path needs no normalization."""
     if not path.startswith("/") or (len(path) > 1 and path.endswith("/")):
         return False
     for i in range(1, len(path)):
         char = path[i]
-        if char in "%?;#" or "A" <= char <= "Z" or (char == "/" and path[i - 1] == "/"):
+        if (
+            char in "%?#"
+            or (char == ";" and semicolon)
+            or "A" <= char <= "Z"
+            or (char == "/" and path[i - 1] == "/")
+        ):
             return False
     return True
 
@@ -198,7 +249,7 @@ class Router[A]:
         tree = self._trees.get(method)
         if tree is None:
             tree = self._trees[method] = StaticNode("/")
-        pattern = path
+        pattern: str = path
         if pattern == "*" and tree.prefix:
             root = StaticNode("")
             root.static_children["/"] = tree
@@ -207,6 +258,8 @@ class Router[A]:
         current: Node = tree
         params: list[str] = []
         lower = not self.config.case_sensitive
+        # Decoded lookups see a literal % in the request as %25.
+        escape = self.config.decode_static_path
         i = 0
         while i <= len(pattern):
             char = pattern[i : i + 1]
@@ -219,7 +272,9 @@ class Router[A]:
                 static_path = pattern[parent_index:i]
                 if lower:
                     static_path = static_path.lower()
-                static_path = static_path.replace("::", ":").replace("%", "%25")
+                static_path = static_path.replace("::", ":")
+                if escape:
+                    static_path = static_path.replace("%", "%25")
                 assert not isinstance(current, WildcardNode)
                 current = current.create_static_child(static_path)
             if is_param:
@@ -261,7 +316,9 @@ class Router[A]:
                             j += 1
                         static_part = pattern[static_start:j]
                         if static_part:
-                            static_part = static_part.replace("::", ":").replace("%", "%25")
+                            static_part = static_part.replace("::", ":")
+                            if escape:
+                                static_part = static_part.replace("%", "%25")
                             backtrack = re.escape(static_part)
                             regexps.append(backtrack)
                         last_start = j + 1
@@ -312,18 +369,22 @@ class Router[A]:
         assert stored is not None
         self._routes[route] = _Registered(current, stored, fallback)
         if not params:
-            key = pattern.replace("::", ":").replace("%", "%25")
+            key = self._escape_percent(pattern.replace("::", ":"))
             self._static.setdefault(method, {}).setdefault(key, stored)
         elif _CLEAN_SINGLE_PARAM.match(path):
             if method not in self._single_param_disabled:
                 prefix = path[: path.index(":")]
                 if lower:
                     prefix = prefix.lower()
-                prefix = prefix.replace("%", "%25")
+                prefix = self._escape_percent(prefix)
                 self._single_param.setdefault(method, {}).setdefault(prefix, stored)
         elif _COMPLEX_PARAM.search(path):
             self._single_param_disabled.add(method)
             self._single_param.pop(method, None)
+
+    def _escape_percent(self, path: str) -> str:
+        # Decoded lookups see a literal % in the request as %25.
+        return path.replace("%", "%25") if self.config.decode_static_path else path
 
     def has(self, method: str, path: str) -> bool:
         tree = self._trees.get(method)
@@ -332,29 +393,22 @@ class Router[A]:
         node = tree.get_static_child(path)
         return node is not None and node.is_leaf
 
-    def find(self, method: str, path: str) -> FindResult[A] | None:  # noqa: PLR0911, PLR0912, PLR0915
+    def find(self, method: str, path: str) -> FindResult[A] | None:
         self.max_param_length_exceeded = False
         current: Node | None = self._trees.get(method)
         if current is None:
             return None
         query = ""
-        decode_param = False
-        clean = _is_clean(path)
+        decode_param: _DecodeParam | None = None
+        clean = _is_clean(path, self.config.use_semicolon_delimiter)
         if not clean:
-            if not path.startswith("/"):
-                path = _FULL_PATH.sub("/", path, count=1)
-            try:
-                path, query, decode_param = _safe_decode_uri(path)
-            except ValueError:
+            normalized = self._normalize(path)
+            if normalized is None:
                 return None
-            if self.config.ignore_duplicate_slashes:
-                path = remove_duplicate_slashes(path)
-            if self.config.ignore_trailing_slash:
-                path = trim_last_slash(path)
+            path, query, decode_param = normalized
         origin = path
         if not clean and not self.config.case_sensitive:
             path = path.lower()
-        max_length = self.config.max_param_length
 
         def result(handle: Handler[object], values: list[str]) -> FindResult[A]:
             return FindResult(
@@ -371,73 +425,105 @@ class Router[A]:
             prefix_length = path.rfind("/") + 1
             handle = single.get(path[:prefix_length])
             if handle is not None and len(path) > prefix_length:
-                param = origin[prefix_length:]
-                if decode_param:
-                    param = _safe_decode_component(param)
-                if len(param) <= max_length:
-                    return result(handle, [param])
-                self.max_param_length_exceeded = True
+                param: str | None = origin[prefix_length:]
+                if decode_param is not None:
+                    param = decode_param(param)
+                # A malformed escape falls through to the tree, where another route may match.
+                if param is not None:
+                    if len(param) <= self.config.max_param_length:
+                        return result(handle, [param])
+                    self.max_param_length_exceeded = True
 
+        assert isinstance(current, StaticNode)
+        found = self._walk(current, path, origin, decode_param)
+        return None if found is None else result(*found)
+
+    def _walk(
+        self, current: Node, path: str, origin: str, decode_param: _DecodeParam | None
+    ) -> tuple[Handler[object], list[str]] | None:
+        """The tree search: the handler matching ``path`` and its parameter values."""
         assert isinstance(current, StaticNode)
         index = len(current.prefix)
         params: list[str] = []
         length = len(path)
         stack: list[Brother] = []
-        node: Node | None
         while True:
             if index == length and current.handler is not None:
-                return result(current.handler, params)
-            node = current.next_node(path, index, stack, len(params))
-            if node is None:
-                if not stack:
-                    return None
-                brother = stack.pop()
-                index = brother.path_index
-                del params[brother.params_count :]
-                node = brother.node
-            current = node
+                return current.handler, params
+            node: Node | None = current.next_node(path, index, stack, len(params))
             while True:
-                if isinstance(current, StaticNode):
-                    index += len(current.prefix)
-                    break
-                if isinstance(current, WildcardNode):
-                    param = origin[index:]
-                    params.append(_safe_decode_component(param) if decode_param else param)
-                    index = length
-                    break
-                end = origin.find("/", index)
-                if end == -1:
-                    end = length
-                param = origin[index:end]
-                if decode_param:
-                    param = _safe_decode_component(param)
-                retry = False
-                if current.regex is not None:
-                    matched = current.regex.match(param)
-                    if matched is None:
-                        retry = True
-                    else:
-                        groups = [group or "" for group in matched.groups()]
-                        if any(len(group) > max_length for group in groups):
-                            self.max_param_length_exceeded = True
-                            retry = True
-                        else:
-                            params.extend(groups)
-                elif len(param) > max_length:
-                    self.max_param_length_exceeded = True
-                    retry = True
-                else:
-                    params.append(param)
-                if retry:
+                # No child matched, or its parameter did not: resume from the next brother node.
+                if node is None:
                     if not stack:
                         return None
                     brother = stack.pop()
                     index = brother.path_index
                     del params[brother.params_count :]
-                    current = brother.node
-                    continue
-                index = end
-                break
+                    node = brother.node
+                if isinstance(node, StaticNode):
+                    index += len(node.prefix)
+                    break
+                is_wildcard = isinstance(node, WildcardNode)
+                end = length if is_wildcard else origin.find("/", index)
+                if end == -1:
+                    end = length
+                param = origin[index:end]
+                if decode_param is not None:
+                    param = decode_param(param)
+                if param is not None and self._push_param(node, param, params):
+                    index = end
+                    break
+                node = None
+            current = node
+
+    def _normalize(self, path: str) -> tuple[str, str, _DecodeParam | None] | None:
+        """The path to match, its query, and how to decode its parameters;
+        ``None`` when a malformed escape makes the path unmatchable."""
+        semicolon = self.config.use_semicolon_delimiter
+        decode_param: _DecodeParam | None = None
+        if not path.startswith("/"):
+            path = _FULL_PATH.sub("/", path, count=1)
+        if self.config.decode_static_path:
+            try:
+                path, query, should_decode_param = _safe_decode_uri(path, semicolon)
+            except ValueError:
+                return None
+            if should_decode_param:
+                decode_param = _safe_decode_component
+        else:
+            end = _path_end(path, semicolon)
+            query = path[end + 1 :]
+            path = path[:end]
+            if "%" in path:
+                decode_param = _try_decode_component
+        if self.config.ignore_duplicate_slashes:
+            path = remove_duplicate_slashes(path)
+        if self.config.ignore_trailing_slash:
+            path = trim_last_slash(path)
+        return path, query, decode_param
+
+    def _push_param(
+        self, node: ParametricNode | WildcardNode, param: str, params: list[str]
+    ) -> bool:
+        if isinstance(node, WildcardNode):
+            params.append(param)
+            return True
+        max_length = self.config.max_param_length
+        if node.regex is None:
+            if len(param) > max_length:
+                self.max_param_length_exceeded = True
+                return False
+            params.append(param)
+            return True
+        matched = node.regex.match(param)
+        if matched is None:
+            return False
+        groups = [group or "" for group in matched.groups()]
+        if any(len(group) > max_length for group in groups):
+            self.max_param_length_exceeded = True
+            return False
+        params.extend(groups)
+        return True
 
 
-__all__ = ["HTTP_METHODS", "FindResult", "Router", "RouterConfig"]
+__all__ = ["HTTP_METHODS", "FindResult", "Router", "RouterConfig", "strict_config"]

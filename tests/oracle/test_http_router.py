@@ -41,9 +41,13 @@ def _layer_prefixed(prefix: str) -> fx.Layer[HttpRouter, Never, HttpRouter]:
     return layer.effect(HttpRouter, HttpRouter().map(lambda service: service.prefixed(prefix)))
 
 
-def _fetch_text(app: fx.Layer[Any, Any, Any], path: str) -> str:
+def _fetch_text(
+    app: fx.Layer[Any, Any, Any],
+    path: str,
+    router_config: find_my_way.RouterConfig | None = None,
+) -> str:
     async def main() -> str:
-        made = router.to_web_handler(app, disable_logger=True)
+        made = router.to_web_handler(app, disable_logger=True, router_config=router_config)
         try:
             response = await made.handler(WebRequest(f"http://localhost{path}"))
             return await response.text()
@@ -263,9 +267,20 @@ def test_preserves_the_local_url_with_ignore_duplicate_slashes(
     config = find_my_way.RouterConfig(ignore_duplicate_slashes=ignore_duplicate_slashes)
     routes = router.use(
         lambda service: service.prefixed("/api//v1").add("GET", "/users", _echo_url)
-    ).pipe(layer.provide(layer.succeed(RouterConfig, config)))
+    )
     path = "/api/v1/users?x=1" if ignore_duplicate_slashes else "/api//v1/users?x=1"
-    assert _fetch_text(routes, path) == "/users?x=1"
+    assert _fetch_text(routes, path, config) == "/users?x=1"
+
+
+def test_removes_a_matched_prefix_containing_semicolon_when_use_semicolon_delimiter_is_false() -> (
+    None
+):
+    """removes a matched prefix containing ; when useSemicolonDelimiter is false"""
+    routes = router.use(
+        lambda service: service.prefixed("/tenants/:tenant").add("GET", "/users", _echo_url)
+    )
+    config = find_my_way.RouterConfig(use_semicolon_delimiter=False)
+    assert _fetch_text(routes, "/tenants/acme;v=1/users?x=1", config) == "/users?x=1"
 
 
 def test_nests_a_prefixed_sub_router_beneath_a_prefixed_parent_router() -> None:
