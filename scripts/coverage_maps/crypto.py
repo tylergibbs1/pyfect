@@ -26,6 +26,7 @@ CLUSTER = Cluster(
         # The family dispatch is two functions: a key from bytes and back.
         _crypto("KeyWrap", "key_wrap", {"secretFamily": "pyfect.crypto.key_wrap.secret_key"}),
         _crypto("Mac", "mac"),
+        _crypto("Password", "password"),
         _crypto("SecureRandom", "secure_random"),
         _crypto("Signature", "signature"),
         _crypto("WebCrypto", "web_crypto"),

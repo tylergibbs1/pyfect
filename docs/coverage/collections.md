@@ -13,10 +13,10 @@ Coverage counts ported, renamed and §4 exports.
 | Tuple | 17 | 0 | 0 | 17 | 0 | 100% |
 | Struct | 18 | 0 | 0 | 18 | 0 | 100% |
 | Number | 30 | 0 | 0 | 30 | 0 | 100% |
-| BigInt | 35 | 0 | 0 | 35 | 0 | 100% |
+| BigInt | 37 | 2 | 0 | 35 | 0 | 100% |
 | BigDecimal | 46 | 35 | 1 | 10 | 0 | 100% |
 | Boolean | 17 | 0 | 0 | 17 | 0 | 100% |
-| String | 60 | 13 | 0 | 47 | 0 | 100% |
+| String | 62 | 15 | 0 | 47 | 0 | 100% |
 | RegExp | 3 | 0 | 0 | 3 | 0 | 100% |
 | Bytes | 3 | 0 | 0 | 3 | 0 | 100% |
 | Ordering | 3 | 0 | 0 | 3 | 0 | 100% |
@@ -37,12 +37,12 @@ Coverage counts ported, renamed and §4 exports.
 | HashRing | 8 | 6 | 1 | 1 | 0 | 100% |
 | SemVer | 41 | 28 | 0 | 13 | 0 | 100% |
 | SemVerRange | 18 | 16 | 1 | 1 | 0 | 100% |
-| TextDiff | 10 | 0 | 0 | 10 | 0 | 100% |
-| Base64 | 3 | 3 | 0 | 0 | 0 | 100% |
+| TextDiff | 11 | 0 | 0 | 11 | 0 | 100% |
+| Base64 | 5 | 5 | 0 | 0 | 0 | 100% |
 | Base64Url | 4 | 4 | 0 | 0 | 0 | 100% |
 | Hex | 4 | 4 | 0 | 0 | 0 | 100% |
 | EncodingError | 3 | 2 | 0 | 1 | 0 | 100% |
-| **All** | 989 | | | | 0 | 100% |
+| **All** | 996 | | | | 0 | 100% |
 
 ## Array
 
@@ -483,6 +483,8 @@ Coverage counts ported, renamed and §4 exports.
 | `lcm` | §4 | `math.lcm(a, b)` (§4: Number, BigInt, Boolean, String, RegExp, Bytes) |
 | `sqrtUnsafe` | §4 | `math.isqrt(n)` (§4: Number, BigInt, Boolean, String, RegExp, Bytes) |
 | `sqrt` | §4 | `math.isqrt(n) if n >= 0 else None` (§4: Number, BigInt, Boolean, String, RegExp, Bytes) |
+| `nthRoot` | ported | `pyfect.big_int.nth_root` |
+| `nthRootUnsafe` | ported | `pyfect.big_int.nth_root_unsafe` |
 | `sumAll` | §4 | `sum(xs)` (§4: Number, BigInt, Boolean, String, RegExp, Bytes) |
 | `multiplyAll` | §4 | `math.prod(xs)` (§4: Number, BigInt, Boolean, String, RegExp, Bytes) |
 | `toNumber` | §4 | `float(n)` (§4: Number, BigInt, Boolean, String, RegExp, Bytes) |
@@ -588,6 +590,7 @@ Coverage counts ported, renamed and §4 exports.
 | `slice` | §4 | `s[start:end]` (§4: Number, BigInt, Boolean, String, RegExp, Bytes) |
 | `isEmpty` | §4 | `not s` (§4: Number, BigInt, Boolean, String, RegExp, Bytes) |
 | `isNonEmpty` | §4 | `bool(s)` (§4: Number, BigInt, Boolean, String, RegExp, Bytes) |
+| `isWellFormed` | ported | `pyfect.case.is_well_formed` |
 | `length` | §4 | `len(s)` (§4: Number, BigInt, Boolean, String, RegExp, Bytes) |
 | `split` | §4 | `s.split(sep)` / `re.split` (§4: Number, BigInt, Boolean, String, RegExp, Bytes) |
 | `includes` | §4 | `sub in s` (§4: Number, BigInt, Boolean, String, RegExp, Bytes) |
@@ -604,6 +607,7 @@ Coverage counts ported, renamed and §4 exports.
 | `match` | §4 | `re.search(pattern, s)` (§4: Number, BigInt, Boolean, String, RegExp, Bytes) |
 | `matchAll` | §4 | `re.finditer(pattern, s)` (§4: Number, BigInt, Boolean, String, RegExp, Bytes) |
 | `normalize` | §4 | `unicodedata.normalize(form, s)` (§4: Number, BigInt, Boolean, String, RegExp, Bytes) |
+| `toWellFormed` | ported | `pyfect.case.to_well_formed` |
 | `padEnd` | §4 | `s.ljust(n, fill)` (§4: Number, BigInt, Boolean, String, RegExp, Bytes) |
 | `padStart` | §4 | `s.rjust(n, fill)` (§4: Number, BigInt, Boolean, String, RegExp, Bytes) |
 | `repeat` | §4 | `s * n` (§4: Number, BigInt, Boolean, String, RegExp, Bytes) |
@@ -1182,6 +1186,7 @@ Coverage counts ported, renamed and §4 exports.
 | `apply` | §4 | `difflib.restore(delta, 2)` (§4: TextDiff, Path, net) |
 | `applyText` | §4 | `''.join(difflib.restore(delta, 2))` (§4: TextDiff, Path, net) |
 | `invert` | §4 | `difflib.restore(delta, 1)` (§4: TextDiff, Path, net) |
+| `hunks` | §4 | `difflib.SequenceMatcher(None, a, b).get_grouped_opcodes(context)` (§4: TextDiff, Path, net) |
 | `unified` | §4 | `difflib.unified_diff(a, b)` (§4: TextDiff, Path, net) |
 
 ## Base64
@@ -1191,6 +1196,8 @@ Coverage counts ported, renamed and §4 exports.
 | `encode` | ported | `pyfect.encoding.base64.encode` |
 | `decode` | ported | `pyfect.encoding.base64.decode` |
 | `decodeString` | ported | `pyfect.encoding.base64.decode_string` |
+| `encodeUnpadded` | ported | `pyfect.encoding.base64.encode_unpadded` |
+| `decodeLenient` | ported | `pyfect.encoding.base64.decode_lenient` |
 
 ## Base64Url
 

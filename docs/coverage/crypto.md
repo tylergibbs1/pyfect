@@ -14,6 +14,7 @@ Coverage counts ported, renamed and §4 exports.
 | KeyFormat | 10 | 10 | 0 | 0 | 0 | 100% |
 | KeyWrap | 17 | 16 | 1 | 0 | 0 | 100% |
 | Mac | 12 | 12 | 0 | 0 | 0 | 100% |
+| Password | 4 | 4 | 0 | 0 | 0 | 100% |
 | SecureRandom | 7 | 7 | 0 | 0 | 0 | 100% |
 | Signature | 22 | 22 | 0 | 0 | 0 | 100% |
 | WebCrypto | 2 | 2 | 0 | 0 | 0 | 100% |
@@ -24,7 +25,7 @@ Coverage counts ported, renamed and §4 exports.
 | Jws | 5 | 5 | 0 | 0 | 0 | 100% |
 | Jwt | 7 | 7 | 0 | 0 | 0 | 100% |
 | NodeCrypto | 10 | 10 | 0 | 0 | 0 | 100% |
-| **All** | 193 | | | | 0 | 100% |
+| **All** | 197 | | | | 0 | 100% |
 
 ## Aead
 
@@ -170,6 +171,15 @@ Coverage counts ported, renamed and §4 exports.
 | `fromCryptoKey` | ported | `pyfect.crypto.mac.from_crypto_key` |
 | `toBytes` | ported | `pyfect.crypto.mac.to_bytes` |
 | `timingSafeEqual` | ported | `pyfect.crypto.mac.timing_safe_equal` |
+
+## Password
+
+| Effect | Status | pyfect |
+|---|---|---|
+| `decode` | ported | `pyfect.crypto.password.decode` |
+| `encode` | ported | `pyfect.crypto.password.encode` |
+| `Password` | ported | `pyfect.crypto.password.Password` |
+| `layer` | ported | `pyfect.crypto.password.layer` |
 
 ## SecureRandom
 

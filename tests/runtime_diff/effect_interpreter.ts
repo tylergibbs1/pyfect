@@ -1,4 +1,4 @@
-// Effect 4.1.4's side of the runtime differential tester (tests/runtime_diff):
+// Effect 4.1.5's side of the runtime differential tester (tests/runtime_diff):
 //   node tests/runtime_diff/effect_interpreter.ts PROGRAMS.json > ANSWERS.json
 //   node tests/runtime_diff/effect_interpreter.ts --serve   (a program per stdin line, an answer per line)
 // PROGRAMS.json is a list of cases, {"program": ..., "budget": n}: a program in program.py's
@@ -14,31 +14,32 @@ const EFFECT = process.env.PYFECT_EFFECT_REF
 if (!EFFECT) throw new Error("set PYFECT_EFFECT_REF=$(uv run python tests/_effect_ref.py), the pinned Effect checkout")
 const R = `${EFFECT}/packages/effect/src/`
 
-// Effect's internal/effect.ts as pyfect runs it: each patch replaces text that must occur
-// exactly once, so a changed source stops the interpreter before it answers anything, naming
+// Effect's sources as pyfect runs them: each patch replaces text that must occur exactly once
+// in its file, so a changed source stops the interpreter before it answers anything, naming
 // every patch to update, instead of comparing against the wrong runtime.
-type Patch = { why: string; from: string; to: string }
+type Patch = { why: string; file: string; from: string; to: string }
 const PATCHES: Array<Patch> = [
   {
-    // One Effect bug pyfect does not copy (docs/PARITY.md §4, §5 item 14): a fiber ending while
-    // interrupted, with a child that does not end at once when interrupted, waits for it
-    // interruptibly, so the wait is cut short and the fiber's exit is replaced by the bare
-    // interruption (a finalizer's defect is lost). pyfect waits for its children uninterruptibly.
-    why: "EXIT_WAIT",
-    from: "return this.evaluate(flatMap(interruptChildren, () => exit) as any)",
-    to: "this.interruptible = false; return this.evaluate(flatMap(interruptChildren, () => exit) as any)"
+    // Effect #10857 (0d2bb4a4b, on Effect main after the 4.1.5 tag): Stream.merge forks both
+    // sides with startImmediately, as pyfect's Channel.merge does. Comes out when the pin
+    // (EFFECT_COMMIT) includes 0d2bb4a4b.
+    why: "MERGE_START",
+    file: "Channel.ts",
+    from: "        Effect.forkIn(forkedScope)\n      )\n    yield* runSide(\"left\"",
+    to: "        Effect.forkIn(forkedScope, { startImmediately: true })\n      )\n    yield* runSide(\"left\""
   }
 ]
 registerHooks({
   load(url, context, nextLoad) {
     const loaded = nextLoad(url, context)
-    if (!url.endsWith("/packages/effect/src/internal/effect.ts")) return loaded
+    const patches = PATCHES.filter(({ file }) => url.endsWith(`/packages/effect/src/${file}`))
+    if (patches.length === 0) return loaded
     let source = String(loaded.source)
-    const stale = PATCHES.filter(({ from }) => source.split(from).length !== 2).map(({ why }) => why)
+    const stale = patches.filter(({ from }) => source.split(from).length !== 2).map(({ why }) => why)
     if (stale.length > 0) {
       throw new Error(`${url} changed: update the patches ${stale.join(", ")} in effect_interpreter.ts`)
     }
-    for (const { from, to } of PATCHES) source = source.replace(from, () => to)
+    for (const { from, to } of patches) source = source.replace(from, () => to)
     return { ...loaded, source }
   }
 })

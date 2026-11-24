@@ -1,5 +1,5 @@
-"""Ports of Effect's ``packages/chat/slack/test`` ``normalize.test.ts``,
-``richText.test.ts`` and ``events.test.ts``: the pure normaliser, the bot's
+"""Ports of Effect's ``slack/test/normalize.test.ts``, and of ``richText.test.ts`` and
+``events.test.ts`` in ``packages/chat/slack/test``: the pure normaliser, the bot's
 own messages read back as the Markdown they were posted with, and Events API
 deliveries captured from Slack, run through the webhook on their real bytes."""
 

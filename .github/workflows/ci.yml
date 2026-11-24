@@ -21,7 +21,7 @@ concurrency:
 # tests/test_ci_workflows.py keeps them equal), as parallel jobs: `lint` (ruff), `types`
 # (pyright strict), `collect` (every test id) and `test` (the tests split across shard runners,
 # tests/_shards.py). `check`, the job branch protection requires, passes only if they all passed
-# and the shards together ran exactly the tests `collect` found. The tests read the Effect 4.1.4
+# and the shards together ran exactly the tests `collect` found. The tests read the Effect 4.1.5
 # checkout; server-backed tests start their databases themselves.
 #
 # Each Python is an exact CPython patch, the newest 3.13's and 3.14's (python-build-standalone's
@@ -94,7 +94,7 @@ jobs:
     timeout-minutes: 3
     env:
       UV_PYTHON: ${{ matrix.python }}
-      EFFECT_COMMIT: 289a53f7b1fc40049219c6e69022db2fb859c356 # Effect 4.1.4; tests/_effect_ref.py checks local checkouts against it
+      EFFECT_COMMIT: e3aca1f1484e623cee09b7f3fa18d6ff5d66c0e8 # Effect 4.1.5; tests/_effect_ref.py checks local checkouts against it
       PYFECT_EFFECT_REF: ${{ github.workspace }}/.effect
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -145,7 +145,7 @@ jobs:
     timeout-minutes: 14
     env:
       UV_PYTHON: ${{ matrix.python }}
-      EFFECT_COMMIT: 289a53f7b1fc40049219c6e69022db2fb859c356 # Effect 4.1.4; tests/_effect_ref.py checks local checkouts against it
+      EFFECT_COMMIT: e3aca1f1484e623cee09b7f3fa18d6ff5d66c0e8 # Effect 4.1.5; tests/_effect_ref.py checks local checkouts against it
       PYFECT_EFFECT_REF: ${{ github.workspace }}/.effect
       # A test skipped for a missing server, binary or interpreter fails the run (tests/_skips.py).
       PYFECT_REQUIRE_ALL_TESTS: "1"

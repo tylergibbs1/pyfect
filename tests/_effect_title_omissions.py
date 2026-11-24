@@ -15,7 +15,10 @@ import re
 from dataclasses import dataclass
 from fnmatch import fnmatch
 
-from _effect_titles_m18 import M18_REASON, TITLES
+from _effect_titles_m18 import M18_REASON
+from _effect_titles_m18 import TITLES as M18_TITLES
+from _effect_titles_m19 import M19_REASON
+from _effect_titles_m19 import TITLES as M19_TITLES
 
 
 @dataclass(frozen=True)
@@ -56,8 +59,9 @@ NOT_PORTED_HTTP2 = "NOT_PORTED HTTP/2 on Node's server: `http.hypercorn_server` 
 
 OMISSIONS: tuple[Omission, ...] = (
     *(
-        Omission(path, M18_REASON, re.compile("|".join(f"^{re.escape(t)}$" for t in titles)))
-        for path, titles in TITLES.items()
+        Omission(path, reason, re.compile("|".join(f"^{re.escape(t)}$" for t in titles)))
+        for reason, listed in ((M18_REASON, M18_TITLES), (M19_REASON, M19_TITLES))
+        for path, titles in listed.items()
         if titles
     ),
     *_whole(
@@ -249,6 +253,37 @@ OMISSIONS: tuple[Omission, ...] = (
         "effect/test/httpapi/HttpApiBuilder.test.ts",
         "a memo of a transformation by source AST, an identity not observable in Python",
         r"reuses response schema",
+    ),
+    # Effect 4.1.5 (#10704) reads enumerable own symbol keys of a record argument and skips
+    # non-enumerable and inherited ones; a Python mapping has neither.
+    *(
+        _some(path, _SYMBOLS, r"symbol fields|symbol values|symbol entries|non-enumerable")
+        for path in (
+            "effect/test/cli/Command.test.ts",
+            "effect/test/cli/Prompt.test.ts",
+            "effect/test/Config.test.ts",
+            "effect/test/Effect.test.ts",
+            "effect/test/LayerMap.test.ts",
+            "effect/test/Option.test.ts",
+            "effect/test/reactivity/AsyncResult.test.ts",
+            "effect/test/Request.test.ts",
+            "effect/test/Result.test.ts",
+            "effect/test/schema/VariantSchema.test.ts",
+            "effect/test/testing/TestSchema.test.ts",
+        )
+    ),
+    _some(
+        "effect/test/TestClock.test.ts",
+        "section 4: `JSON.stringify` of a context and of a spread copy of the clock, JavaScript's "
+        "object model; a Python context is not JSON and a service is not copied by spreading",
+        r"^serializes a context containing a TestClock$",
+    ),
+    _some(
+        "platform/node/test/RpcServer.test.ts",
+        "pyfect shares the array across processes: a process worker's message carries the "
+        "segment's name, so the child maps the caller's memory and writes into it "
+        "(`test_workers_shared_memory.py`)",
+        r"^a child process rejects a shared array instead of copying it$",
     ),
     # --- Schema: the module docstrings of tests/oracle/test_schema*.py give these groups.
     *_whole(

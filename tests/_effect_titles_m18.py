@@ -19,7 +19,6 @@ TITLES: dict[str, tuple[str, ...]] = {
         "preserves composed reasoning options",
         "preserves alignment calls in response error metadata",
     ),
-    "effect/test/TestClock.test.ts": ("serializes a context containing a TestClock",),
     "effect/test/Tracer.test.ts": ("leaves an empty cause Unset without a description",),
     "effect/test/ai/Chat.test.ts": ("exports tool results with non-JSON types through exportJson",),
     "effect/test/ai/LanguageModel.test.ts": (
