@@ -115,8 +115,8 @@ from pyfect.chat.chat_error import Retry as ChatRetry
 from pyfect.chat.chat_thread import ChatThread
 from pyfect.chat.discord import discord_chat, discord_gateway, discord_rest
 from pyfect.chat.slack import slack_chat, slack_web_api
-from pyfect.chat.whatsapp import whatsapp_chat, whatsapp_graph_api
 from pyfect.chat.telegram import telegram_bot_api, telegram_chat
+from pyfect.chat.whatsapp import whatsapp_chat, whatsapp_graph_api
 from pyfect.cli import (
     Argument,
     CliError,
@@ -12272,51 +12272,6 @@ def _chat_slack(effect: fx.Effect[int, ValueError, ChatService]) -> None:
 del _chat_slack
 
 
-def _chat_teams() -> None:
-    from pyfect.chat.chat_event import ChatEvent
-    from pyfect.chat.chat_handler import ChatHandler
-    from pyfect.chat.chat_test import MentionToken
-    from pyfect.chat.teams import teams_chat
-    from pyfect.crypto.digest import Digest
-    from pyfect.crypto.mac import Mac
-    from pyfect.crypto.signature import Signature
-def _chat_whatsapp(effect: fx.Effect[int, ValueError, ChatService]) -> None:
-    from pyfect.chat.chat_adapter import Posted
-    from pyfect.chat.chat_handler import ChatHandler, NotAccepted
-    from pyfect.chat.chat_test import MentionToken
-    from pyfect.crypto.mac import Mac
-def _chat_telegram(effect: fx.Effect[int, ValueError, ChatService]) -> None:
-    from pyfect.chat.chat_handler import ChatHandler
-    from pyfect.chat.chat_interaction import ButtonClicked, CommandInvoked, Group
-    from pyfect.chat.chat_test import MentionToken
-    from pyfect.encoding import Json
-    from pyfect.http.client import HttpClient
-    from pyfect.http.router import HttpRouter
-    from pyfect.redacted import make as redacted
-
-    # Interaction tokens sign with Mac and hash with Digest.
-    assert_type(
-        teams_chat.layer(app_id="a", tenant_id="t", credentials=redacted("secret")),
-        fx.Layer[teams_chat.TeamsChat, Never, HttpClient | ChatRegistry | Mac | Digest],
-    )
-    # The endpoint fetches the key set with the HttpClient and checks tokens with Signature.
-    assert_type(
-        teams_chat.layer_webhook(path="/api/messages"),
-        fx.Layer[
-            Never, Never, HttpRouter | teams_chat.TeamsChat | ChatHandler | HttpClient | Signature
-        ],
-    )
-    teams_chat.layer(app_id="a", tenant_id="t", credentials="secret")  # pyright: ignore[reportArgumentType]
-    assert_type(
-        teams_chat.TeamsChat().flat_map(lambda teams: teams.call("GET", "/v3/conversations")),
-        fx.Effect[JsonValue | None, ChatError, teams_chat.TeamsChat],
-    )
-    assert_type(teams_chat.normalize({}, app_id="a"), list[ChatEvent])
-    assert_type(teams_chat.parse_mention("<at>A</at>"), MentionToken | None)
-    assert_type(teams_chat.parts(teams_chat.thread("a:1")), teams_chat.Parts | None)
-
-
-del _chat_teams
 def _chat_discord(effect: fx.Effect[int, ValueError, ChatService]) -> None:
     from pyfect.chat.chat_event import ChatEvent
     from pyfect.chat.chat_handler import ChatHandler, NotAccepted
@@ -12367,6 +12322,36 @@ def _chat_discord(effect: fx.Effect[int, ValueError, ChatService]) -> None:
     assert_type(
         discord_chat.normalize(dispatch, bot_user_id="1"),
         Ok[tuple[ChatEvent, ...]] | Err[discord_chat.MissingChannelType],
+    )
+    # Scoped options leave the effect's type as it was.
+    assert_type(
+        effect.pipe(
+            discord_chat.with_post_options(discord_chat.DiscordPostOptions(suppress_embeds=False))
+        ),
+        fx.Effect[int, ValueError, ChatService],
+    )
+    discord_chat.DiscordPostOptions(auto_archive_duration=30)  # pyright: ignore[reportArgumentType]
+    assert_type(discord_chat.parse_mention("<@1>"), MentionToken | None)
+    assert_type(
+        discord_rest.DiscordRest().flat_map(lambda rest: rest.get_my_user()),
+        fx.Effect[Json, ChatError, discord_rest.DiscordRest],
+    )
+    assert_type(discord_chat.thread("1"), ChatThread)
+
+
+del _chat_discord
+
+
+def _chat_whatsapp(effect: fx.Effect[int, ValueError, ChatService]) -> None:
+    from pyfect.chat.chat_adapter import Posted
+    from pyfect.chat.chat_handler import ChatHandler, NotAccepted
+    from pyfect.chat.chat_test import MentionToken
+    from pyfect.crypto.mac import Mac
+    from pyfect.encoding import Json
+    from pyfect.http.client import HttpClient
+    from pyfect.http.router import HttpRouter
+    from pyfect.redacted import make as redacted
+
     token = redacted("EAAG")
     # The adapter registers in the Registry and needs only an HttpClient besides.
     assert_type(
@@ -12381,6 +12366,46 @@ def _chat_discord(effect: fx.Effect[int, ValueError, ChatService]) -> None:
     assert_type(
         whatsapp_chat.layer_webhook(path="/w", app_secret=token, verify_token=token),
         fx.Layer[Never, Never, HttpRouter | whatsapp_chat.WhatsAppChat | ChatHandler | Mac],
+    )
+    # Scoped options leave the effect's type as it was.
+    assert_type(
+        effect.pipe(
+            whatsapp_chat.with_post_options(whatsapp_chat.WhatsAppPostOptions(link_preview=True))
+        ),
+        fx.Effect[int, ValueError, ChatService],
+    )
+    whatsapp_chat.WhatsAppPostOptions(link_preview="yes")  # pyright: ignore[reportArgumentType]
+    assert_type(whatsapp_chat.parse_mention("@1"), MentionToken | None)
+    thread = whatsapp_chat.thread(phone_number_id="1", user="2")
+    assert_type(whatsapp_chat.parts(thread), whatsapp_chat.Parts | None)
+    assert_type(
+        whatsapp_chat.WhatsAppChat().flat_map(
+            lambda service: service.send_template(thread, whatsapp_chat.Template("t", "en"))
+        ),
+        fx.Effect[Posted, ChatError, whatsapp_chat.WhatsAppChat],
+    )
+    assert_type(
+        whatsapp_chat.WhatsAppChat().flat_map(lambda service: service.receive({})),
+        fx.Effect[None, NotAccepted, whatsapp_chat.WhatsAppChat | ChatHandler],
+    )
+    assert_type(
+        whatsapp_graph_api.WhatsAppGraphApi().flat_map(lambda api: api.call("me")),
+        fx.Effect[Json, ChatError, whatsapp_graph_api.WhatsAppGraphApi],
+    )
+
+
+del _chat_whatsapp
+
+
+def _chat_telegram(effect: fx.Effect[int, ValueError, ChatService]) -> None:
+    from pyfect.chat.chat_handler import ChatHandler
+    from pyfect.chat.chat_interaction import ButtonClicked, CommandInvoked, Group
+    from pyfect.chat.chat_test import MentionToken
+    from pyfect.encoding import Json
+    from pyfect.http.client import HttpClient
+    from pyfect.http.router import HttpRouter
+    from pyfect.redacted import make as redacted
+
     token = redacted("1:AA")
     # The adapter registers in the Registry and needs only an HttpClient besides.
     assert_type(
@@ -12407,45 +12432,6 @@ def _chat_discord(effect: fx.Effect[int, ValueError, ChatService]) -> None:
     # Scoped options leave the effect's type as it was.
     assert_type(
         effect.pipe(
-            discord_chat.with_post_options(discord_chat.DiscordPostOptions(suppress_embeds=False))
-        ),
-        fx.Effect[int, ValueError, ChatService],
-    )
-    discord_chat.DiscordPostOptions(auto_archive_duration=30)  # pyright: ignore[reportArgumentType]
-    assert_type(discord_chat.parse_mention("<@1>"), MentionToken | None)
-    assert_type(
-        discord_rest.DiscordRest().flat_map(lambda rest: rest.get_my_user()),
-        fx.Effect[Json, ChatError, discord_rest.DiscordRest],
-    )
-    assert_type(discord_chat.thread("1"), ChatThread)
-
-
-del _chat_discord
-            whatsapp_chat.with_post_options(whatsapp_chat.WhatsAppPostOptions(link_preview=True))
-        ),
-        fx.Effect[int, ValueError, ChatService],
-    )
-    whatsapp_chat.WhatsAppPostOptions(link_preview="yes")  # pyright: ignore[reportArgumentType]
-    assert_type(whatsapp_chat.parse_mention("@1"), MentionToken | None)
-    thread = whatsapp_chat.thread(phone_number_id="1", user="2")
-    assert_type(whatsapp_chat.parts(thread), whatsapp_chat.Parts | None)
-    assert_type(
-        whatsapp_chat.WhatsAppChat().flat_map(
-            lambda service: service.send_template(thread, whatsapp_chat.Template("t", "en"))
-        ),
-        fx.Effect[Posted, ChatError, whatsapp_chat.WhatsAppChat],
-    )
-    assert_type(
-        whatsapp_chat.WhatsAppChat().flat_map(lambda service: service.receive({})),
-        fx.Effect[None, NotAccepted, whatsapp_chat.WhatsAppChat | ChatHandler],
-    )
-    assert_type(
-        whatsapp_graph_api.WhatsAppGraphApi().flat_map(lambda api: api.call("me")),
-        fx.Effect[Json, ChatError, whatsapp_graph_api.WhatsAppGraphApi],
-    )
-
-
-del _chat_whatsapp
             telegram_chat.with_post_options(telegram_chat.TelegramPostOptions(silent=True))
         ),
         fx.Effect[int, ValueError, ChatService],
@@ -12480,3 +12466,40 @@ del _chat_whatsapp
 
 
 del _chat_telegram
+
+
+def _chat_teams() -> None:
+    from pyfect.chat.chat_event import ChatEvent
+    from pyfect.chat.chat_handler import ChatHandler
+    from pyfect.chat.chat_test import MentionToken
+    from pyfect.chat.teams import teams_chat
+    from pyfect.crypto.digest import Digest
+    from pyfect.crypto.mac import Mac
+    from pyfect.crypto.signature import Signature
+    from pyfect.http.client import HttpClient
+    from pyfect.http.router import HttpRouter
+    from pyfect.redacted import make as redacted
+
+    # Interaction tokens sign with Mac and hash with Digest.
+    assert_type(
+        teams_chat.layer(app_id="a", tenant_id="t", credentials=redacted("secret")),
+        fx.Layer[teams_chat.TeamsChat, Never, HttpClient | ChatRegistry | Mac | Digest],
+    )
+    # The endpoint fetches the key set with the HttpClient and checks tokens with Signature.
+    assert_type(
+        teams_chat.layer_webhook(path="/api/messages"),
+        fx.Layer[
+            Never, Never, HttpRouter | teams_chat.TeamsChat | ChatHandler | HttpClient | Signature
+        ],
+    )
+    teams_chat.layer(app_id="a", tenant_id="t", credentials="secret")  # pyright: ignore[reportArgumentType]
+    assert_type(
+        teams_chat.TeamsChat().flat_map(lambda teams: teams.call("GET", "/v3/conversations")),
+        fx.Effect[JsonValue | None, ChatError, teams_chat.TeamsChat],
+    )
+    assert_type(teams_chat.normalize({}, app_id="a"), list[ChatEvent])
+    assert_type(teams_chat.parse_mention("<at>A</at>"), MentionToken | None)
+    assert_type(teams_chat.parts(teams_chat.thread("a:1")), teams_chat.Parts | None)
+
+
+del _chat_teams

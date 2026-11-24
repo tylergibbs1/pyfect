@@ -27,11 +27,11 @@ from hypothesis import strategies as st
 from pyfect import _js
 from pyfect._js import SPACE
 from pyfect.ai._mcp import skill_rules
+from pyfect.chat.telegram import _markdown as telegram_markdown
+from pyfect.chat.telegram import telegram_bot_api
 from pyfect.chat.whatsapp import _address as whatsapp_address
 from pyfect.chat.whatsapp import _text as whatsapp_text
 from pyfect.chat.whatsapp import _webhook as whatsapp_webhook
-from pyfect.chat.telegram import _markdown as telegram_markdown
-from pyfect.chat.telegram import telegram_bot_api
 from pyfect.cli.prompt import _date_parts
 from pyfect.config_provider import _dotenv, from_dot_env_contents
 from pyfect.encoding import _json_array_scanner, _json_parser, json5, json_array, jsonc, toml
@@ -286,6 +286,7 @@ _REWRITES = {
         r"(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*)>",
         whatsapp_text._EMAIL_AUTOLINK,
         "<>@.-a",
+    ),
     "telegram _markdown._QUOTES": Rewrite(
         r"(?: {0,3}> ?)* {0,3}", telegram_markdown._QUOTES, "> a"
     ),

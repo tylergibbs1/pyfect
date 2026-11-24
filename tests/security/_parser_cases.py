@@ -55,12 +55,12 @@ from pyfect.chat.discord.discord_gateway import GatewayDispatch
 from pyfect.chat.slack import slack_chat
 from pyfect.chat.teams import _render as _teams_render
 from pyfect.chat.teams import teams_chat
-from pyfect.chat.whatsapp import _json as whatsapp_json
-from pyfect.chat.whatsapp import _text as whatsapp_text
-from pyfect.chat.whatsapp import whatsapp_chat
 from pyfect.chat.telegram import _json as telegram_json
 from pyfect.chat.telegram import _markdown as telegram_markdown
 from pyfect.chat.telegram import telegram_chat
+from pyfect.chat.whatsapp import _json as whatsapp_json
+from pyfect.chat.whatsapp import _text as whatsapp_text
+from pyfect.chat.whatsapp import whatsapp_chat
 from pyfect.cluster import shard_id, snowflake
 from pyfect.crypto import key_format, password
 from pyfect.effect import Effect
@@ -679,6 +679,8 @@ def _teams_backtick_runs(n: int) -> Work:
 def _teams_delimiter_spaces(n: int) -> Work:
     markdown = "| a |\n" + " " * n + "|"
     return lambda: _teams_render.blocks(markdown)
+
+
 # ------------------------------------------------------------------------- Discord inbound
 
 # A Discord dispatch or interaction is peer input: any member of a guild posts
@@ -808,6 +810,8 @@ def _whatsapp_messages(n: int) -> Work:
         ],
     }
     return lambda: whatsapp_chat.normalize(envelope, phone_number_id="1")
+
+
 # ------------------------------------------------------------------------- Telegram
 
 # A Telegram update is peer input once its secret passes, and a post's Markdown often
