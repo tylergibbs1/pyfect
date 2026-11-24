@@ -331,22 +331,38 @@ _MAX_RETRIES = 3
 _BASE_DELAY = millis(500)
 
 
-def _retrying[A, R](effect: Effect[A, ChatError, R], attempt: int) -> Effect[A, ChatError, R]:
+def _retrying[A, R](
+    effect: Effect[A, ChatError, R], attempt: int, max_retry_after: Duration | None
+) -> Effect[A, ChatError, R]:
+    def retried(error: ChatError) -> bool:
+        if error.retry != "retry" or attempt >= _MAX_RETRIES:
+            return False
+        wait = error.retry_after
+        return wait is None or max_retry_after is None or wait <= max_retry_after
+
     return effect.catch_if(
-        lambda error: error.retry == "retry" and attempt < _MAX_RETRIES,
+        retried,
         lambda error: fx.sleep(
             error.retry_after if error.retry_after is not None else _BASE_DELAY.times(2**attempt)
-        ).and_then(fx.suspend(lambda: _retrying(effect, attempt + 1))),
+        ).and_then(fx.suspend(lambda: _retrying(effect, attempt + 1, max_retry_after))),
     )
 
 
-def retry_safe[A, R](effect: Effect[A, ChatError, R]) -> Effect[A, ChatError, R]:
+def retry_safe[A, R](
+    effect: Effect[A, ChatError, R], *, max_retry_after: Duration | None = None
+) -> Effect[A, ChatError, R]:
     """Retries an adapter request with the shared policy: only ``"retry"``
     failures, up to three times, after the error's ``retry_after`` or an
     exponential backoff from 500 milliseconds. Inside
-    ``chat.without_retries`` the request runs once."""
+    ``chat.without_retries`` the request runs once.
+
+    A ``retry_after`` longer than ``max_retry_after`` is not waited out: the
+    error comes back at once, the wait on it. ``None``, the default, waits
+    out any, as Effect does."""
     require_effect(effect, "effect")
-    return RetriesDisabled().flat_map(lambda disabled: effect if disabled else _retrying(effect, 0))
+    return RetriesDisabled().flat_map(
+        lambda disabled: effect if disabled else _retrying(effect, 0, max_retry_after)
+    )
 
 
 __all__ = [
