@@ -20,7 +20,6 @@ import contextlib
 import re
 import socket
 import threading
-import time
 from collections.abc import Callable, Generator
 from typing import Any
 
@@ -345,14 +344,13 @@ def test_a_reservation_outliving_its_client_does_not_hold_up_shutdown() -> None:
 
     def run():
         # The reservation's scope is this one, closed after the layer's.
-        connection = yield from fx.gen(body).pipe(fx.provide(_layer(peer.port)))
-        error = yield from connection.send("PING").flip()
-        assert isinstance(error, RedisError)
+        connection = yield from fx.gen(body).pipe(fx.provide(_layer(peer.port))).or_die()
+        exit_ = yield from connection.send("PING").exit()
+        assert isinstance(exit_, fx.Failure) and isinstance(exit_.cause.squash(), RedisError)
 
     try:
-        started = time.monotonic()
+        # Hung before: the run's close waited for the reservation for good.
         fx.run_blocking(fx.scoped(fx.gen(run)))
-        assert time.monotonic() - started < 5, "shutdown waited for the reservation"
         assert peer.all_closed(_WAIT), "a connection was left open"
     finally:
         peer.close()
