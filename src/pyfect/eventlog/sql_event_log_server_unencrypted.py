@@ -3,9 +3,9 @@
 
 Entries of every store share ``entry_table_prefix``, numbered per store
 from 1 by ``<entry_table_prefix>_stores``. Writes lock their store's row,
-so writers in other processes queue; changes are published once the
-outermost transaction commits, and storage-owned transactions hold a
-permit through commit and publication so changes stream in commit order.
+so writers in other processes queue and sequences commit in order. Changes
+stream from the entries table, so they hold the writes of every server on
+the database (``_table_tail``).
 
 On MySQL store ids, events, primary keys and public keys are in a binary
 collation, so they compare exactly whatever the database's
@@ -20,8 +20,11 @@ from typing import Any, Literal, Never, cast
 
 from pyfect._context_effects import service_option
 from pyfect._core import Effect
+from pyfect.duration import Duration
+from pyfect.duration import Input as DurationInput
 from pyfect.effect import die, fail, gen, succeed
 from pyfect.eventlog._sql_exact_keys import MYSQL_KEY, MYSQL_TEXT, mysql_exact_columns
+from pyfect.eventlog._table_tail import Page, make_wakes, parse_poll_interval, tail
 from pyfect.eventlog.event_journal import (
     Entry,
     EntryId,
@@ -38,13 +41,13 @@ from pyfect.persistence._columns import column_bytes, column_int
 from pyfect.pubsub import PubSub
 from pyfect.rc_map import RcMap
 from pyfect.schema import new
-from pyfect.scope import Scope, acquire_release, scoped
+from pyfect.scope import Scope, scoped
 from pyfect.semaphore import Semaphore
 from pyfect.sql.client import SqlClient, SqlClientService
 from pyfect.sql.connection import Row
 from pyfect.sql.error import ConstraintError, SqlError, UniqueViolation
 from pyfect.sql.statement import Fragment, Identifier, Statement
-from pyfect.stream import Stream, from_iterable, from_subscription
+from pyfect.stream import Stream
 from pyfect.stream import unwrap as stream_unwrap
 
 __all__ = ["SqlError", "layer_storage", "make_storage"]
@@ -78,8 +81,8 @@ def _to_remote_entry(row: Row) -> RemoteEntry:
     )
 
 
-def _open_pubsub(_store_id: str) -> Effect[PubSub[RemoteEntry], Never, Scope]:
-    return acquire_release(PubSub[RemoteEntry].unbounded(), lambda p, _: p.shutdown())
+def _open_wakes(_store_id: str) -> Effect[PubSub[None], Never, Scope]:
+    return make_wakes()
 
 
 def _is_constraint_conflict(error: SqlError) -> bool:
@@ -91,29 +94,37 @@ def make_storage(
     entry_table_prefix: str = "effect_events",
     remote_id_table: str = "effect_remote_id",
     insert_batch_size: int = 200,
+    poll_interval: DurationInput = "1 second",
 ) -> Effect[StorageService, SqlError, SqlClient | Scope]:
     """Storage in the ``SqlClient``'s database, creating its tables
     (Effect's ``makeStorage``). ``insert_batch_size`` rows go in one
     ``INSERT`` (one, if that is below 1, as Effect flushes at the size). Fails
     with ``ValueError`` as a defect on a dialect other than SQLite, PostgreSQL
-    or MySQL."""
+    or MySQL.
+
+    A server streams to its clients the writes of every server on the
+    database: its own at once, the others' within ``poll_interval``, which
+    must be positive (``"infinity"`` streams only its own, as Effect's
+    does)."""
 
     def build():
+        poll = yield from parse_poll_interval(poll_interval)
         sql = (yield from SqlClient()).without_transforms()
         dialect = _dialect(sql)
         tables = _Tables(sql, entry_table_prefix, remote_id_table)
         yield from _create_tables(sql, dialect, tables)
         remote_id = yield from _remote_id(sql, tables.remote_id)
-        pubsubs = yield from RcMap.make(_open_pubsub, idle_time_to_live="5 minutes")
+        wakes = yield from RcMap.make(_open_wakes, idle_time_to_live="5 minutes")
         semaphore = yield from Semaphore.make(1)
         return _SqlStorage(
             sql=sql,
             dialect=dialect,
             tables=tables,
             remote_id=remote_id,
-            pubsubs=pubsubs,
+            wakes=wakes,
             semaphore=semaphore,
             insert_batch_size=insert_batch_size,
+            poll_interval=poll,
         )
 
     return gen(build).with_tracer_enabled(False)
@@ -124,6 +135,7 @@ def layer_storage(
     entry_table_prefix: str = "effect_events",
     remote_id_table: str = "effect_remote_id",
     insert_batch_size: int = 200,
+    poll_interval: DurationInput = "1 second",
 ) -> Layer[Storage, SqlError, SqlClient]:
     """The ``Storage`` of ``make_storage``."""
     return layer_effect(
@@ -132,6 +144,7 @@ def layer_storage(
             entry_table_prefix=entry_table_prefix,
             remote_id_table=remote_id_table,
             insert_batch_size=insert_batch_size,
+            poll_interval=poll_interval,
         ),
     )
 
@@ -327,28 +340,27 @@ class _SqlStorage(StorageService):
         dialect: _Dialect,
         tables: _Tables,
         remote_id: RemoteId,
-        pubsubs: RcMap[str, PubSub[RemoteEntry]],
+        wakes: RcMap[str, PubSub[None]],
         semaphore: Semaphore,
         insert_batch_size: int,
+        poll_interval: Duration,
     ) -> None:
         self._sql = sql
         self._dialect = dialect
         self._t = tables
         self._remote_id = remote_id
-        self._pubsubs = pubsubs
+        self._wakes = wakes
         self._semaphore = semaphore
         self._insert_batch_size = insert_batch_size
+        self._poll_interval = poll_interval
 
     # --- statements -----------------------------------------------------------------
 
-    def _publish(self, store_id: str, entries: Sequence[RemoteEntry]) -> Effect[None]:
-        return scoped(
-            self._pubsubs.get(store_id).flat_map(lambda p: p.publish_all(entries)).as_void()
-        )
+    def _wake(self, store_id: str) -> Effect[None]:
+        return scoped(self._wakes.get(store_id).flat_map(lambda p: p.publish(None)).as_void())
 
     def _transaction[A, E, R](self, effect: Effect[A, E, R]) -> Effect[A, E | SqlError, R]:
-        # Hold the permit through commit and publication to preserve commit
-        # order for storage-owned transactions.
+        # Storage-owned transactions of this instance take turns.
         sql = self._sql
 
         def run(transaction: object) -> Effect[A, E | SqlError, R]:
@@ -556,7 +568,7 @@ class _SqlStorage(StorageService):
                 current + len(entries),
                 store_id,
             )
-            yield from sql.after_commit(self._publish(store_id, committed))
+            yield from sql.after_commit(self._wake(store_id))
             return committed
 
         return self._transaction(gen(body)).with_tracer_enabled(False).or_die()
@@ -568,30 +580,43 @@ class _SqlStorage(StorageService):
         compactors: Mapping[str, RegisteredCompactor],
         /,
     ) -> Stream[RemoteEntry]:
+        """Read from the table that ``latest_sequence`` reads; only the
+        backlog is compacted."""
         sql = self._sql
 
-        def body():
-            pubsub = yield from self._pubsubs.get(store_id)
-            subscription = yield from pubsub.subscribe()
-            rows = yield from sql(
+        def read_from(start: int) -> Effect[list[RemoteEntry], SqlError]:
+            return sql(
                 "SELECT sequence, entry_id, event, primary_key, payload FROM {} "
                 "WHERE store_id = {} AND sequence >= {} ORDER BY sequence ASC",
                 self._t.entries,
                 store_id,
-                start_sequence,
+                start,
+            ).map(lambda rows: [_to_remote_entry(r) for r in rows])
+
+        def page(start: int, read: Sequence[RemoteEntry]) -> int:
+            return read[-1].remote_sequence + 1 if read else start
+
+        def backlog():
+            remote_entries = yield from read_from(start_sequence)
+            compacted = yield from compact_backlog(remote_entries, compactors)
+            # Compaction can drop trailing entries, so read on after the last
+            # uncompacted one.
+            return compacted, page(start_sequence, remote_entries)
+
+        def after(start: int) -> Effect[Page[RemoteEntry]]:
+            return read_from(start).map(lambda read: (read, page(start, read))).or_die()
+
+        def body():
+            wakes = yield from self._wakes.get(store_id)
+            subscription = yield from wakes.subscribe()
+            return tail(
+                wakes=subscription,
+                poll_interval=self._poll_interval,
+                first=gen(backlog).or_die(),
+                after=after,
             )
-            remote_entries = [_to_remote_entry(r) for r in rows]
-            backlog = yield from compact_backlog(remote_entries, compactors)
-            # Compaction can drop trailing entries, so skip live entries up to
-            # the last uncompacted one.
-            watermark = remote_entries[-1].remote_sequence if remote_entries else start_sequence - 1
 
-            def keep(remote_entry: RemoteEntry) -> bool:
-                return remote_entry.remote_sequence > watermark
-
-            return from_iterable(backlog).concat(from_subscription(subscription).filter(keep))
-
-        return stream_unwrap(gen(body).or_die().with_tracer_enabled(False))
+        return stream_unwrap(gen(body).with_tracer_enabled(False))
 
     def _with_transaction[A, E, R](self, effect: Effect[A, E, R], /) -> Effect[A, E, R]:
         def defect(error: object) -> Effect[Any]:

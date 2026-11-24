@@ -30,7 +30,6 @@ from pyfect.errors import NoSuchElementException
 from pyfect.eventlog._server_encrypted.audit import hour_of
 from pyfect.eventlog._server_encrypted.models import CompactionConfig
 from pyfect.eventlog._sql_server_encrypted.rows import ActivationRow, StageRow, StoreRow
-from pyfect.eventlog.event_log_encryption import EncryptedRemoteBatch
 from pyfect.option import Some
 from pyfect.persistence._columns import column_int
 from pyfect.pubsub import PubSub
@@ -562,11 +561,11 @@ def die_on_sql_error[A, E, R](effect: Effect[A, E | SqlError, R]) -> Effect[A, E
 
 @dataclass(frozen=True, slots=True)
 class StoreResources:
-    """An opened store: its tables, the pubsub of its live readers and the
-    semaphore that orders this instance's writes."""
+    """An opened store: its tables, the wakes of its live readers
+    (``_table_tail``) and the semaphore that orders this instance's writes."""
 
     tables: ScopeTables
-    pubsub: PubSub[EncryptedRemoteBatch]
+    wakes: PubSub[None]
     semaphore: Semaphore
 
     @property

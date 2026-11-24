@@ -13,7 +13,9 @@ from typing import Any
 from pyfect._core import Effect
 from pyfect.clock import Clock, now_millis_unsafe
 from pyfect.crypto.digest import Digest, DigestService
-from pyfect.effect import gen, succeed
+from pyfect.duration import Duration
+from pyfect.duration import Input as DurationInput
+from pyfect.effect import die, gen, succeed
 from pyfect.eventlog._server_encrypted.audit import hour_of
 from pyfect.eventlog._server_encrypted.models import CompactionOptions, make_compaction_config
 from pyfect.eventlog._server_encrypted.storage import StorageService
@@ -39,21 +41,21 @@ from pyfect.eventlog._sql_server_encrypted.legacy import (
 from pyfect.eventlog._sql_server_encrypted.rows import to_batch
 from pyfect.eventlog._sql_server_encrypted.sweeper import Sweeper
 from pyfect.eventlog._sql_server_encrypted.tables import create_scope_tables
+from pyfect.eventlog._table_tail import Page, make_wakes, parse_poll_interval, tail
 from pyfect.eventlog.event_journal import EntryId, RemoteId, StoreId
 from pyfect.eventlog.event_log_encryption import EncryptedBatch, EncryptedRemoteBatch
 from pyfect.eventlog.event_log_message import WriteAck
 from pyfect.logger import log_info, log_warning
 from pyfect.persistence._columns import column_bytes, column_int
 from pyfect.persistence._sql_keys import key_equals
-from pyfect.pubsub import PubSub
 from pyfect.rc_map import RcMap
 from pyfect.schedule import fixed
-from pyfect.scope import Scope, acquire_release, fork_scoped, scoped
+from pyfect.scope import Scope, fork_scoped, scoped
 from pyfect.semaphore import Semaphore
 from pyfect.sql.client import SqlClient
+from pyfect.sql.connection import Row
 from pyfect.sql.error import SqlError
-from pyfect.stream import Stream, from_iterable, from_subscription
-from pyfect.stream import die as stream_die
+from pyfect.stream import Stream
 from pyfect.stream import unwrap as stream_unwrap
 
 type _Pair = tuple[str, str]
@@ -150,10 +152,8 @@ def _make_lookup(db: Db, digest: DigestService, migration: LegacyMigration):
                 yield from create_scope_tables(db.sql, f"{db.prefix}_{scope}")
                 yield from db.ensure_store(scope, tables.table)
                 ensured.add(scope)
-            pubsub = yield from acquire_release(
-                PubSub[EncryptedRemoteBatch].unbounded(), lambda p, _: p.shutdown()
-            )
-            return StoreResources(tables, pubsub, Semaphore(1))
+            wakes = yield from make_wakes()
+            return StoreResources(tables, wakes, Semaphore(1))
 
         return gen(body).with_tracer_enabled(False)
 
@@ -201,12 +201,16 @@ def make_storage(
     remote_id_table: str = "effect_remote_id",
     compaction: CompactionOptions | None = None,
     migrate_legacy_stores: LegacyMigration = "never",
+    poll_interval: DurationInput = "1 second",
 ) -> Effect[StorageService, SqlError, SqlClient | Digest | Scope]:
     """Storage in the ``SqlClient``'s database, creating its tables, with
     compaction and its sweep (Effect's ``makeStorage``).
-    ``migrate_legacy_stores``: see ``LegacyMigration``."""
+    ``migrate_legacy_stores``: see ``LegacyMigration``. Change streams read
+    the writes of other servers on the database every ``poll_interval``
+    (see ``_table_tail``)."""
 
     def build():
+        poll = yield from parse_poll_interval(poll_interval)
         digest = yield from Digest()
         sql = (yield from SqlClient()).without_transforms()
         config = yield from make_compaction_config(compaction)
@@ -221,7 +225,7 @@ def make_storage(
         yield from fork_scoped(
             sweeper.sweep.repeat(fixed(config.sweep_interval)).delay(config.sweep_interval)
         )
-        return _SqlStorage(db, remote_id, _Stores(stores, db, digest))
+        return _SqlStorage(db, remote_id, _Stores(stores, db, digest), poll)
 
     return gen(build).with_tracer_enabled(False)
 
@@ -235,10 +239,12 @@ class _SqlStorage(StorageService):
         db: Db,
         remote_id: RemoteId,
         stores: _Stores,
+        poll_interval: Duration,
     ) -> None:
         self._db = db
         self._remote_id = remote_id
         self._stores = stores
+        self._poll_interval = poll_interval
         self.compaction = SqlCompaction(db, self._get_store)
 
     def _get_store(self, public_key: str, store_id: StoreId) -> Effect[StoreResources, Any, Scope]:
@@ -355,8 +361,8 @@ class _SqlStorage(StorageService):
                     store.scope,
                 )
                 yield from db.upsert_bucket(store.scope, hour_of(now), next_sequence - 1)
-                # Published after the outermost commit, as ``rollback`` publishes.
-                yield from sql.after_commit(store.pubsub.publish_all(stored).as_(None))
+                # After the outermost commit, so readers find the batches.
+                yield from sql.after_commit(store.wakes.publish(None).as_(None))
             return stored
 
         def attempt():
@@ -404,51 +410,80 @@ class _SqlStorage(StorageService):
     def changes(
         self, public_key: str, store_id: StoreId, start_sequence: int, /
     ) -> Stream[EncryptedRemoteBatch]:
-        """Reads the store row, the active set and the tail as separate
-        statements: a transaction would take the SQLite write lock on every
-        stream open, and set rows never change before they are pruned."""
-        db = self._db
-        sql = db.sql
+        """Every page is what a reader starting there would read, from the
+        table that ``latest_sequence`` reads."""
 
         def body():
             store = yield from self._stores.open(public_key, store_id)
-            tables = store.tables
-            subscription = yield from store.pubsub.subscribe()
-            live = from_subscription(subscription)
+            wakes = yield from store.wakes.subscribe()
+
+            def read(start: int) -> Effect[Page[EncryptedRemoteBatch]]:
+                return self._read_from(store, store_id, start).or_die()
+
+            return tail(
+                wakes=wakes,
+                poll_interval=self._poll_interval,
+                first=read(start_sequence),
+                after=read,
+            )
+
+        return stream_unwrap(gen(body).with_tracer_enabled(False).or_die())
+
+    def _read_from(
+        self, store: StoreResources, store_id: StoreId, start: int
+    ) -> Effect[Page[EncryptedRemoteBatch], SqlError]:
+        """The batches whose last sequence is at or after ``start``. Reads
+        the store row, the active set and the tail as separate statements:
+        a transaction would take the SQLite write lock on every read, and
+        set rows never change before they are pruned."""
+        db = self._db
+        sql = db.sql
+        tables = store.tables
+
+        def page(rows: Sequence[Row]) -> Page[EncryptedRemoteBatch]:
+            following = max((column_int(r["last_sequence"]) + 1 for r in rows), default=start)
+            return [to_batch(r) for r in rows], following
+
+        def body():
             row = yield from db.select_store(store.scope)
             # Below the base an active snapshot replaces the originals.
-            if row.active_batch_set is not None and start_sequence <= row.base:
+            if row.active_batch_set is not None and start <= row.base:
                 snapshot = yield from sql(
-                    "SELECT sequence, iv, entry_ids, encrypted_batch FROM {} "
+                    "SELECT sequence, last_sequence, iv, entry_ids, encrypted_batch FROM {} "
                     "WHERE batch_set = {} AND last_sequence >= {} ORDER BY batch_position ASC",
                     tables.snapshot_table,
                     row.active_batch_set,
-                    start_sequence,
+                    start,
                 )
                 # The final batch ends at the base, so only an empty set reads
                 # nothing.
                 if not snapshot:
-                    return stream_die(
-                        RuntimeError(
-                            f"The active compaction snapshot of store {store_id} has no batches"
+                    return (
+                        yield from die(
+                            RuntimeError(
+                                f"The active compaction snapshot of store {store_id} has no batches"
+                            )
                         )
                     )
-                tail = yield from sql(
-                    "SELECT sequence, iv, entry_ids, encrypted_batch FROM {} "
+                originals = yield from sql(
+                    "SELECT sequence, last_sequence, iv, entry_ids, encrypted_batch FROM {} "
                     "WHERE sequence > {} ORDER BY sequence ASC",
                     tables.table,
                     row.base,
                 )
-                return from_iterable([to_batch(r) for r in [*snapshot, *tail]]).concat(live)
-            initial = yield from sql(
-                "SELECT sequence, iv, entry_ids, encrypted_batch FROM {} "
-                "WHERE last_sequence >= {} ORDER BY sequence ASC",
-                tables.table,
-                start_sequence,
+                return page([*snapshot, *originals])
+            return page(
+                (
+                    yield from sql(
+                        "SELECT sequence, last_sequence, iv, entry_ids, encrypted_batch FROM {} "
+                        "WHERE last_sequence >= {} ORDER BY sequence ASC",
+                        tables.table,
+                        start,
+                    )
+                )
             )
-            return from_iterable([to_batch(r) for r in initial]).concat(live)
 
-        return stream_unwrap(gen(body).with_tracer_enabled(False).or_die())
+        return gen(body)
 
     def latest_sequence(self, public_key: str, store_id: StoreId, /) -> Effect[int | None]:
         """The store's head, which survives pruning."""

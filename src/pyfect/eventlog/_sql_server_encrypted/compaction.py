@@ -665,7 +665,7 @@ class SqlCompaction(StorageCompaction):
                     scope,
                 )
                 yield from db.upsert_bucket(scope, hour_of(now), next_sequence - 1)
-                yield from sql.after_commit(store.pubsub.publish_all(reappended).as_(None))
+                yield from sql.after_commit(store.wakes.publish(None).as_(None))
             return activation_id, target, withdrawn
 
         return db.transaction(gen(run))
@@ -674,10 +674,6 @@ class SqlCompaction(StorageCompaction):
         self, public_key: str, store_id: StoreId, expected_activation_id: str, /
     ) -> Effect[str, CompactionRollbackError]:
         def run(store: StoreResources, now: int):
-            # The re-appended batches are published after the outermost
-            # commit. When the storage owns the transaction, that happens
-            # before the semaphore is released, so live readers get them in
-            # sequence order.
             return store.semaphore.with_permits(
                 self._rollback_transaction(store, now, expected_activation_id)
             )

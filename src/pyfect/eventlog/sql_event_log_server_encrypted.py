@@ -31,6 +31,7 @@ from pyfect._core import Effect
 from pyfect._public import publish
 from pyfect.crypto.digest import Digest
 from pyfect.crypto.digest import layer_web_crypto as digest_layer_web_crypto
+from pyfect.duration import Input as DurationInput
 from pyfect.eventlog._server_encrypted.models import CompactionOptions
 from pyfect.eventlog._server_encrypted.storage import Storage
 from pyfect.eventlog._sql_server_encrypted import legacy, legacy_report, migrate
@@ -136,6 +137,7 @@ def layer_storage(
     remote_id_table: str = "effect_remote_id",
     compaction: CompactionOptions | None = None,
     migrate_legacy_stores: LegacyMigration = "never",
+    poll_interval: DurationInput = "1 second",
 ) -> Layer[Storage, SqlError, SqlClient | Digest]:
     """The ``Storage`` of ``make_storage``. ``migrate_legacy_stores``:
     ``"never"`` leaves every store with 0.6.5 tables under a shared name to
@@ -143,7 +145,12 @@ def layer_storage(
     one pair whose key alone had authenticated before the upgrade; set it
     only when every write under 0.6.5 went through a server, since a store
     written straight through the storage would go to whichever other pair
-    of its name had authenticated."""
+    of its name had authenticated.
+
+    A server streams to its clients the writes of every server on the
+    database: its own at once, the others' within ``poll_interval``, which
+    must be positive (``"infinity"`` streams only its own, as Effect's
+    does)."""
     return layer_effect(
         Storage,
         make_storage(
@@ -151,6 +158,7 @@ def layer_storage(
             remote_id_table=remote_id_table,
             compaction=compaction,
             migrate_legacy_stores=migrate_legacy_stores,
+            poll_interval=poll_interval,
         ),
     )
 
@@ -161,6 +169,7 @@ def layer_storage_subtle(
     remote_id_table: str = "effect_remote_id",
     compaction: CompactionOptions | None = None,
     migrate_legacy_stores: LegacyMigration = "never",
+    poll_interval: DurationInput = "1 second",
 ) -> Layer[Storage, SqlError, SqlClient]:
     """``layer_storage`` with the Web Crypto ``Digest``."""
     return layer_storage(
@@ -168,6 +177,7 @@ def layer_storage_subtle(
         remote_id_table=remote_id_table,
         compaction=compaction,
         migrate_legacy_stores=migrate_legacy_stores,
+        poll_interval=poll_interval,
     ).pipe(layer_provide(digest_layer_web_crypto))
 
 
