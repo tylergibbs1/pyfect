@@ -965,12 +965,14 @@ def _protobuf(name: str, unit: Callable[[int], bytes], *, size: int = 1000) -> N
 
 
 def _nested_nodes(n: int) -> bytes:
-    w = ProtobufWriter()
+    """``n`` levels of ``child``, built inside out in linear time."""
+    headers: list[bytes] = []
+    size = 0
     for _ in range(n):
-        w.tag(1, WireType.Len).fork()
-    for _ in range(n):
-        w.join()
-    return w.finish()
+        header = ProtobufWriter().tag(1, WireType.Len).uint32(size).finish()
+        headers.append(header)
+        size += len(header)
+    return b"".join(reversed(headers))
 
 
 # Each `Node` nests one level deeper, to far past max_depth: refused at the limit.
