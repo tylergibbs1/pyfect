@@ -23,6 +23,7 @@ from layer_cases import (
     ai_bedrock,
     ai_decisions,
     ai_otel,
+    chat,
     cluster,
     core,
     crypto,
@@ -39,7 +40,20 @@ from pyfect.duration import seconds
 from pyfect.exit import Success
 from pyfect.layer import Layer
 
-_AREAS = (core, crypto, rpc, http, data, cluster, ai_otel, ai_decisions, ai_auth, ai_bedrock, otlp)
+_AREAS = (
+    core,
+    crypto,
+    rpc,
+    http,
+    data,
+    cluster,
+    ai_otel,
+    ai_decisions,
+    ai_auth,
+    ai_bedrock,
+    otlp,
+    chat,
+)
 CASES: dict[str, Case] = {name: case for area in _AREAS for name, case in area.CASES.items()}
 SKIPPED: dict[str, str] = {name: why for area in _AREAS for name, why in area.SKIPPED.items()}
 

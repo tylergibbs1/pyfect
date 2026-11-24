@@ -49,6 +49,7 @@ from pyfect import schema as S
 from pyfect.ai import mcp_schema, mcp_server
 from pyfect.ai import tool as ai_tool
 from pyfect.ai.chat import from_json as chat_from_json
+from pyfect.chat import chat_interaction, chat_thread
 from pyfect.cluster import shard_id, snowflake
 from pyfect.crypto import key_format, password
 from pyfect.effect import Effect
@@ -313,6 +314,7 @@ for _target in (
     mcp_server.decode_name_header,
     mcp_schema.parse_request_id,
     chat_from_json,
+    chat_thread.from_string,
     event_log.decode_identity_string,
     event_log.base64_decode,
     event_log.base64_url_decode,
@@ -451,6 +453,18 @@ CASES.append(
         guards=Guard("09a13966", "router-escapes-spliced"),
     )
 )
+
+
+# A JSON value schema, so decoding goes through the JSON parser.
+_CHAT_VALUE = S.Array(S.String)
+
+for _kind, _make_input in ADVERSARIES.items():
+
+    @case(chat_interaction.decode_value, f"chat_interaction.decode_value: {_kind}")
+    def _chat_value(n: int, make_input: Callable[[int], str] = _make_input) -> Work:
+        # A button's value comes back from the platform in a click: peer input.
+        value = make_input(n)
+        return lambda: chat_interaction.decode_value(_CHAT_VALUE, value)
 
 
 @case(find_my_way.Router.find, "find_my_way.Router.find: strict_config, a path of escapes")

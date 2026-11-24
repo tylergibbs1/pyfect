@@ -103,6 +103,16 @@ from pyfect.ai.typesafe import client as typesafe_client
 from pyfect.ai.typesafe import decision_model as typesafe_dm
 from pyfect.batching import Entry
 from pyfect.cause import Die, Fail, Interrupt, done
+from pyfect.chat import chat_handler as chat_h
+from pyfect.chat import chat_interaction as chat_ci
+from pyfect.chat import chat_markdown as chat_md
+from pyfect.chat import chat_test as chat_t
+from pyfect.chat.chat import Chat as ChatService
+from pyfect.chat.chat_adapter import Registry as ChatRegistry
+from pyfect.chat.chat_error import ChatError
+from pyfect.chat.chat_error import NotFound as ChatNotFound
+from pyfect.chat.chat_error import Retry as ChatRetry
+from pyfect.chat.chat_thread import ChatThread
 from pyfect.cli import (
     Argument,
     CliError,
@@ -12078,3 +12088,52 @@ def _shared_memory(unknown: object) -> None:
 
 
 del _shared_memory
+
+
+class _ChatDeploy(TypedDict):
+    version: str
+
+
+def _chat(thread: ChatThread, deltas: fx.Stream[str, ValueError]) -> None:
+    # A reply's error names the upstream's errors; posting needs only Chat.
+    assert_type(
+        chat_md.post(thread, "hi"),
+        fx.Effect[chat_md.Result, chat_md.ChatMarkdownError, ChatService],
+    )
+    assert_type(
+        chat_md.stream(thread, deltas),
+        fx.Effect[
+            chat_md.Result, chat_md.ChatMarkdownError[ValueError], ChatService | ChatRegistry
+        ],
+    )
+    # A button's value type follows its schema: of() takes it, the handler gets it decoded.
+    approve = chat_ci.button("approve", label="Go", value=S.Struct(_ChatDeploy))
+    plain = chat_ci.button("plain", label="Go")
+    assert_type(approve, chat_ci.Button[str, _ChatDeploy])
+    assert_type(plain, chat_ci.Button[str, None])
+    approve.of({"version": "v1"})
+    approve.of({"name": "v1"})  # pyright: ignore[reportArgumentType]
+    plain.of()
+
+    def on_click(click: chat_ci.Click[_ChatDeploy]) -> fx.Effect[chat_ci.ClickReply]:
+        return fx.succeed(chat_ci.ack)
+
+    def on_text(click: chat_ci.Click[str]) -> fx.Effect[chat_ci.ClickReply]:
+        return fx.succeed(chat_ci.ack)
+
+    approve.handler(on_click)
+    approve.handler(on_text)  # pyright: ignore[reportArgumentType]
+    assert_type(
+        chat_ci.group(approve).to_layer(approve.handler(on_click)),
+        fx.Layer[Never, Never, chat_ci.Registry],
+    )
+    # A handler layer keeps what its function needs, but not the Scope each event runs in.
+    assert_type(
+        chat_h.layer(lambda _: ChatService().as_void()),
+        fx.Layer[chat_h.ChatHandler, Never, ChatService],
+    )
+    assert_type(chat_t.layer(), fx.Layer[ChatService | ChatRegistry | chat_t.ChatTest])
+    assert_type(ChatError(platform="p", op="post", reason=ChatNotFound()).retry, ChatRetry)
+
+
+del _chat

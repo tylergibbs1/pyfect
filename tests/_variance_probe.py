@@ -28,6 +28,10 @@ import pyfect.batching
 import pyfect.brand
 import pyfect.byte_size
 import pyfect.cause
+import pyfect.chat.chat_interaction
+import pyfect.chat.chat_markdown
+import pyfect.chat.chat_thread
+import pyfect.chat.chat_ui
 import pyfect.cli
 import pyfect.cli._command
 import pyfect.cli._config
@@ -2958,139 +2962,241 @@ def v91_1_in(x: pyfect.brand.Brand[Any, _Super]) -> pyfect.brand.Brand[Any, _Sub
     return x  # pyright: ignore[reportReturnType]
 
 
-# pyfect.cli.Action
+# pyfect.chat.chat_interaction.Button
 
 
-def v92_0_out(x: pyfect.cli.Action[_Sub]) -> pyfect.cli.Action[_Super]:
+def v92_0_out(
+    x: pyfect.chat.chat_interaction.Button[Never, Any],
+) -> pyfect.chat.chat_interaction.Button[str, Any]:
+    return x
+
+
+def v92_0_in(
+    x: pyfect.chat.chat_interaction.Button[str, Any],
+) -> pyfect.chat.chat_interaction.Button[Never, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v92_0_in(x: pyfect.cli.Action[_Super]) -> pyfect.cli.Action[_Sub]:
+def v92_1_out(
+    x: pyfect.chat.chat_interaction.Button[Any, _Sub],
+) -> pyfect.chat.chat_interaction.Button[Any, _Super]:
+    return x
+
+
+def v92_1_in(
+    x: pyfect.chat.chat_interaction.Button[Any, _Super],
+) -> pyfect.chat.chat_interaction.Button[Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-# pyfect.cli.Argument
+T92_0_co = TypeVar("T92_0_co", covariant=True, bound=str)
+T92_1_co = TypeVar("T92_1_co", covariant=True)
 
 
-def v93_0_out(x: pyfect.cli.Argument[_Sub]) -> pyfect.cli.Argument[_Super]:
+class Fields92(Protocol[T92_0_co, T92_1_co]):
+    @property
+    def id(self) -> T92_0_co: ...
+    @property
+    def label(self) -> str: ...
+    @property
+    def style(self) -> pyfect.chat.chat_ui.ButtonStyle | None: ...
+    @property
+    def value(self) -> pyfect.chat.chat_interaction.ValueSchema[typing.Any] | None: ...
+    @property
+    def kind(self) -> typing.Literal["button"]: ...
+    def declared(self) -> tuple[T92_0_co, T92_1_co]: ...
+
+
+# pyfect.chat.chat_interaction.Click
+
+
+def v93_0_out(
+    x: pyfect.chat.chat_interaction.Click[_Sub],
+) -> pyfect.chat.chat_interaction.Click[_Super]:
+    return x
+
+
+def v93_0_in(
+    x: pyfect.chat.chat_interaction.Click[_Super],
+) -> pyfect.chat.chat_interaction.Click[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v93_0_in(x: pyfect.cli.Argument[_Super]) -> pyfect.cli.Argument[_Sub]:
-    return x  # pyright: ignore[reportReturnType]
+T93_0_co = TypeVar("T93_0_co", covariant=True)
 
 
-# pyfect.cli.Command
+class Fields93(Protocol[T93_0_co]):
+    @property
+    def id(self) -> str: ...
+    @property
+    def value(self) -> T93_0_co: ...
+    @property
+    def thread(self) -> pyfect.chat.chat_thread.ChatThread: ...
+    @property
+    def message_id(self) -> str: ...
+    @property
+    def user_id(self) -> str: ...
+    @property
+    def raw(self) -> pyfect._json_value.JsonValue: ...
+    def declared(self) -> tuple[T93_0_co]: ...
+
+
+# pyfect.chat.chat_interaction.Command
 
 
 def v94_0_out(
-    x: pyfect.cli.Command[_Sub, Any, Any, Any],
-) -> pyfect.cli.Command[_Super, Any, Any, Any]:
-    return x  # pyright: ignore[reportReturnType]
+    x: pyfect.chat.chat_interaction.Command[Never],
+) -> pyfect.chat.chat_interaction.Command[str]:
+    return x
 
 
 def v94_0_in(
-    x: pyfect.cli.Command[_Super, Any, Any, Any],
-) -> pyfect.cli.Command[_Sub, Any, Any, Any]:
-    return x
-
-
-def v94_1_out(
-    x: pyfect.cli.Command[Any, _Sub, Any, Any],
-) -> pyfect.cli.Command[Any, _Super, Any, Any]:
-    return x
-
-
-def v94_1_in(
-    x: pyfect.cli.Command[Any, _Super, Any, Any],
-) -> pyfect.cli.Command[Any, _Sub, Any, Any]:
+    x: pyfect.chat.chat_interaction.Command[str],
+) -> pyfect.chat.chat_interaction.Command[Never]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v94_2_out(
-    x: pyfect.cli.Command[Any, Any, _Sub, Any],
-) -> pyfect.cli.Command[Any, Any, _Super, Any]:
-    return x
+T94_0_co = TypeVar("T94_0_co", covariant=True, bound=str)
 
 
-def v94_2_in(
-    x: pyfect.cli.Command[Any, Any, _Super, Any],
-) -> pyfect.cli.Command[Any, Any, _Sub, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v94_3_out(
-    x: pyfect.cli.Command[Any, Any, Any, _Sub],
-) -> pyfect.cli.Command[Any, Any, Any, _Super]:
-    return x
-
-
-def v94_3_in(
-    x: pyfect.cli.Command[Any, Any, Any, _Super],
-) -> pyfect.cli.Command[Any, Any, Any, _Sub]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-T94_0_contra = TypeVar("T94_0_contra", contravariant=True)
-T94_1_co = TypeVar("T94_1_co", covariant=True)
-T94_2_co = TypeVar("T94_2_co", covariant=True)
-T94_3_co = TypeVar("T94_3_co", covariant=True)
-
-
-class Fields94(Protocol[T94_0_contra, T94_1_co, T94_2_co, T94_3_co]):
-    def declared(self, _0: T94_0_contra) -> tuple[T94_1_co, T94_2_co, T94_3_co]: ...
-
-
-# pyfect.cli.CommandContext
-
-
-def v95_0_out(x: pyfect.cli.CommandContext[_Sub]) -> pyfect.cli.CommandContext[_Super]:
-    return x
-
-
-def v95_0_in(x: pyfect.cli.CommandContext[_Super]) -> pyfect.cli.CommandContext[_Sub]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-# pyfect.cli.Flag
-
-
-def v96_0_out(x: pyfect.cli.Flag[_Sub]) -> pyfect.cli.Flag[_Super]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v96_0_in(x: pyfect.cli.Flag[_Super]) -> pyfect.cli.Flag[_Sub]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-# pyfect.cli.Nested
-
-
-def v97_0_out(x: pyfect.cli.Nested[Never]) -> pyfect.cli.Nested[pyfect.cli._config.Config]:
-    return x
-
-
-def v97_0_in(x: pyfect.cli.Nested[pyfect.cli._config.Config]) -> pyfect.cli.Nested[Never]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-T97_0_co = TypeVar("T97_0_co", covariant=True, bound=pyfect.cli._config.Config)
-
-
-class Fields97(Protocol[T97_0_co]):
+class Fields94(Protocol[T94_0_co]):
     @property
-    def config(self) -> type[T97_0_co]: ...
-    def declared(self) -> tuple[T97_0_co]: ...
+    def id(self) -> T94_0_co: ...
+    @property
+    def description(self) -> str: ...
+    @property
+    def argument(self) -> pyfect.chat.chat_interaction.CommandArgument | None: ...
+    @property
+    def kind(self) -> typing.Literal["command"]: ...
+    def declared(self) -> tuple[T94_0_co]: ...
 
 
-# pyfect.cli.Prompt
+# pyfect.chat.chat_interaction.Group
 
 
-def v98_0_out(x: pyfect.cli.Prompt[_Sub]) -> pyfect.cli.Prompt[_Super]:
+def v95_0_out(
+    x: pyfect.chat.chat_interaction.Group[Never],
+) -> pyfect.chat.chat_interaction.Group[str]:
     return x
 
 
-def v98_0_in(x: pyfect.cli.Prompt[_Super]) -> pyfect.cli.Prompt[_Sub]:
+def v95_0_in(
+    x: pyfect.chat.chat_interaction.Group[str],
+) -> pyfect.chat.chat_interaction.Group[Never]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+T95_0_co = TypeVar("T95_0_co", covariant=True, bound=str)
+
+
+class Fields95(Protocol[T95_0_co]):
+    @property
+    def definitions(self) -> tuple[pyfect.chat.chat_interaction.Definition, ...]: ...
+    def declared(self) -> tuple[T95_0_co]: ...
+
+
+# pyfect.chat.chat_interaction.Handled
+
+
+def v96_0_out(
+    x: pyfect.chat.chat_interaction.Handled[Never, Any],
+) -> pyfect.chat.chat_interaction.Handled[str, Any]:
+    return x
+
+
+def v96_0_in(
+    x: pyfect.chat.chat_interaction.Handled[str, Any],
+) -> pyfect.chat.chat_interaction.Handled[Never, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v96_1_out(
+    x: pyfect.chat.chat_interaction.Handled[Any, _Sub],
+) -> pyfect.chat.chat_interaction.Handled[Any, _Super]:
+    return x
+
+
+def v96_1_in(
+    x: pyfect.chat.chat_interaction.Handled[Any, _Super],
+) -> pyfect.chat.chat_interaction.Handled[Any, _Sub]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+T96_0_co = TypeVar("T96_0_co", covariant=True, bound=str)
+T96_1_co = TypeVar("T96_1_co", covariant=True)
+
+
+class Fields96(Protocol[T96_0_co, T96_1_co]):
+    @property
+    def definition(self) -> pyfect.chat.chat_interaction.Definition: ...
+    @property
+    def run(
+        self,
+    ) -> collections.abc.Callable[
+        [typing.Any], pyfect._core.Effect[typing.Any, typing.Never, typing.Any]
+    ]: ...
+    def declared(self) -> tuple[T96_0_co, T96_1_co]: ...
+
+
+# pyfect.chat.chat_interaction.Modal
+
+
+def v97_0_out(
+    x: pyfect.chat.chat_interaction.Modal[Never, Any],
+) -> pyfect.chat.chat_interaction.Modal[str, Any]:
+    return x
+
+
+def v97_0_in(
+    x: pyfect.chat.chat_interaction.Modal[str, Any],
+) -> pyfect.chat.chat_interaction.Modal[Never, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v97_1_out(
+    x: pyfect.chat.chat_interaction.Modal[Any, _Sub],
+) -> pyfect.chat.chat_interaction.Modal[Any, _Super]:
+    return x
+
+
+def v97_1_in(
+    x: pyfect.chat.chat_interaction.Modal[Any, _Super],
+) -> pyfect.chat.chat_interaction.Modal[Any, _Sub]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+T97_0_co = TypeVar("T97_0_co", covariant=True, bound=str)
+T97_1_co = TypeVar("T97_1_co", covariant=True)
+
+
+class Fields97(Protocol[T97_0_co, T97_1_co]):
+    @property
+    def id(self) -> T97_0_co: ...
+    @property
+    def title(self) -> str: ...
+    @property
+    def submit_label(self) -> str | None: ...
+    @property
+    def metadata(self) -> pyfect.chat.chat_interaction.ValueSchema[typing.Any] | None: ...
+    @property
+    def fields(self) -> collections.abc.Mapping[str, pyfect.chat.chat_interaction.Field]: ...
+    @property
+    def kind(self) -> typing.Literal["modal"]: ...
+    def declared(self) -> tuple[T97_0_co, T97_1_co]: ...
+
+
+# pyfect.chat.chat_interaction.OptionOf
+
+
+def v98_0_out(
+    x: pyfect.chat.chat_interaction.OptionOf[_Sub],
+) -> pyfect.chat.chat_interaction.OptionOf[_Super]:
+    return x
+
+
+def v98_0_in(
+    x: pyfect.chat.chat_interaction.OptionOf[_Super],
+) -> pyfect.chat.chat_interaction.OptionOf[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
@@ -3098,141 +3204,153 @@ T98_0_co = TypeVar("T98_0_co", covariant=True)
 
 
 class Fields98(Protocol[T98_0_co]):
+    @property
+    def label(self) -> str: ...
+    @property
+    def value(self) -> T98_0_co: ...
     def declared(self) -> tuple[T98_0_co]: ...
 
 
-# pyfect.cli.Setting
+# pyfect.chat.chat_interaction.Select
 
 
-def v99_0_out(x: pyfect.cli.Setting[_Sub]) -> pyfect.cli.Setting[_Super]:
+def v99_0_out(
+    x: pyfect.chat.chat_interaction.Select[Never, Any],
+) -> pyfect.chat.chat_interaction.Select[str, Any]:
     return x
 
 
-def v99_0_in(x: pyfect.cli.Setting[_Super]) -> pyfect.cli.Setting[_Sub]:
+def v99_0_in(
+    x: pyfect.chat.chat_interaction.Select[str, Any],
+) -> pyfect.chat.chat_interaction.Select[Never, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-# pyfect.cli.SubcommandGroup
-
-
-def v100_0_out(x: pyfect.cli.SubcommandGroup[_Sub, Any]) -> pyfect.cli.SubcommandGroup[_Super, Any]:
+def v99_1_out(
+    x: pyfect.chat.chat_interaction.Select[Any, _Sub],
+) -> pyfect.chat.chat_interaction.Select[Any, _Super]:
     return x
 
 
-def v100_0_in(x: pyfect.cli.SubcommandGroup[_Super, Any]) -> pyfect.cli.SubcommandGroup[_Sub, Any]:
+def v99_1_in(
+    x: pyfect.chat.chat_interaction.Select[Any, _Super],
+) -> pyfect.chat.chat_interaction.Select[Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v100_1_out(x: pyfect.cli.SubcommandGroup[Any, _Sub]) -> pyfect.cli.SubcommandGroup[Any, _Super]:
+T99_0_co = TypeVar("T99_0_co", covariant=True, bound=str)
+T99_1_co = TypeVar("T99_1_co", covariant=True)
+
+
+class Fields99(Protocol[T99_0_co, T99_1_co]):
+    @property
+    def id(self) -> T99_0_co: ...
+    @property
+    def placeholder(self) -> str | None: ...
+    @property
+    def value(self) -> pyfect.chat.chat_interaction.ValueSchema[typing.Any] | None: ...
+    @property
+    def kind(self) -> typing.Literal["select"]: ...
+    def declared(self) -> tuple[T99_0_co, T99_1_co]: ...
+
+
+# pyfect.chat.chat_interaction.Selected
+
+
+def v100_0_out(
+    x: pyfect.chat.chat_interaction.Selected[_Sub],
+) -> pyfect.chat.chat_interaction.Selected[_Super]:
     return x
 
 
-def v100_1_in(x: pyfect.cli.SubcommandGroup[Any, _Super]) -> pyfect.cli.SubcommandGroup[Any, _Sub]:
+def v100_0_in(
+    x: pyfect.chat.chat_interaction.Selected[_Super],
+) -> pyfect.chat.chat_interaction.Selected[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
 T100_0_co = TypeVar("T100_0_co", covariant=True)
-T100_1_co = TypeVar("T100_1_co", covariant=True)
 
 
-class Fields100(Protocol[T100_0_co, T100_1_co]):
+class Fields100(Protocol[T100_0_co]):
     @property
-    def group(self) -> str: ...
+    def id(self) -> str: ...
     @property
-    def commands(
-        self,
-    ) -> tuple[pyfect.cli._command.Command[typing.Any, typing.Any, T100_0_co, T100_1_co], ...]: ...
-    def declared(self) -> tuple[T100_0_co, T100_1_co]: ...
+    def value(self) -> T100_0_co: ...
+    @property
+    def thread(self) -> pyfect.chat.chat_thread.ChatThread: ...
+    @property
+    def message_id(self) -> str: ...
+    @property
+    def user_id(self) -> str: ...
+    @property
+    def raw(self) -> pyfect._json_value.JsonValue: ...
+    def declared(self) -> tuple[T100_0_co]: ...
 
 
-# pyfect.cli.param.EffectBase
+# pyfect.chat.chat_interaction.Submit
 
 
 def v101_0_out(
-    x: pyfect.cli.param.EffectBase[_Sub, Any, Any],
-) -> pyfect.cli.param.EffectBase[_Super, Any, Any]:
+    x: pyfect.chat.chat_interaction.Submit[_Sub],
+) -> pyfect.chat.chat_interaction.Submit[_Super]:
     return x
 
 
 def v101_0_in(
-    x: pyfect.cli.param.EffectBase[_Super, Any, Any],
-) -> pyfect.cli.param.EffectBase[_Sub, Any, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v101_1_out(
-    x: pyfect.cli.param.EffectBase[Any, _Sub, Any],
-) -> pyfect.cli.param.EffectBase[Any, _Super, Any]:
-    return x
-
-
-def v101_1_in(
-    x: pyfect.cli.param.EffectBase[Any, _Super, Any],
-) -> pyfect.cli.param.EffectBase[Any, _Sub, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v101_2_out(
-    x: pyfect.cli.param.EffectBase[Any, Any, _Sub],
-) -> pyfect.cli.param.EffectBase[Any, Any, _Super]:
-    return x
-
-
-def v101_2_in(
-    x: pyfect.cli.param.EffectBase[Any, Any, _Super],
-) -> pyfect.cli.param.EffectBase[Any, Any, _Sub]:
+    x: pyfect.chat.chat_interaction.Submit[_Super],
+) -> pyfect.chat.chat_interaction.Submit[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
 T101_0_co = TypeVar("T101_0_co", covariant=True)
-T101_1_co = TypeVar("T101_1_co", covariant=True)
-T101_2_co = TypeVar("T101_2_co", covariant=True)
 
 
-class Fields101(Protocol[T101_0_co, T101_1_co, T101_2_co]):
-    def declared(self) -> tuple[T101_0_co, T101_1_co, T101_2_co]: ...
+class Fields101(Protocol[T101_0_co]):
+    @property
+    def id(self) -> str: ...
+    @property
+    def metadata(self) -> T101_0_co: ...
+    @property
+    def values(self) -> collections.abc.Mapping[str, typing.Any]: ...
+    @property
+    def thread(self) -> pyfect.chat.chat_thread.ChatThread: ...
+    @property
+    def message_id(self) -> str | None: ...
+    @property
+    def user_id(self) -> str: ...
+    @property
+    def raw(self) -> pyfect._json_value.JsonValue: ...
+    def declared(self) -> tuple[T101_0_co]: ...
 
 
-# pyfect.cli.param.Mapped
+# pyfect.chat.chat_markdown.ChatMarkdownError
 
 
-def v102_0_out(x: pyfect.cli.param.Mapped[_Sub, Any]) -> pyfect.cli.param.Mapped[_Super, Any]:
+def v102_0_out(
+    x: pyfect.chat.chat_markdown.ChatMarkdownError[_Sub],
+) -> pyfect.chat.chat_markdown.ChatMarkdownError[_Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v102_0_in(x: pyfect.cli.param.Mapped[_Super, Any]) -> pyfect.cli.param.Mapped[_Sub, Any]:
+def v102_0_in(
+    x: pyfect.chat.chat_markdown.ChatMarkdownError[_Super],
+) -> pyfect.chat.chat_markdown.ChatMarkdownError[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v102_1_out(x: pyfect.cli.param.Mapped[Any, _Sub]) -> pyfect.cli.param.Mapped[Any, _Super]:
+# pyfect.chat.chat_markdown.UpstreamCause
+
+
+def v103_0_out(
+    x: pyfect.chat.chat_markdown.UpstreamCause[_Sub],
+) -> pyfect.chat.chat_markdown.UpstreamCause[_Super]:
     return x
 
 
-def v102_1_in(x: pyfect.cli.param.Mapped[Any, _Super]) -> pyfect.cli.param.Mapped[Any, _Sub]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-T102_1_co = TypeVar("T102_1_co", covariant=True)
-
-
-class Fields102(Protocol[T102_1_co]):
-    @property
-    def param(self) -> pyfect.cli.param.Param[Any]: ...
-    @property
-    def f(self) -> collections.abc.Callable[[Any], T102_1_co]: ...
-    @property
-    def kind(self) -> pyfect.cli.param.Kind: ...
-    def declared(self) -> tuple[T102_1_co]: ...
-
-
-# pyfect.cli.param.Optional
-
-
-def v103_0_out(x: pyfect.cli.param.Optional[_Sub]) -> pyfect.cli.param.Optional[_Super]:
-    return x
-
-
-def v103_0_in(x: pyfect.cli.param.Optional[_Super]) -> pyfect.cli.param.Optional[_Sub]:
+def v103_0_in(
+    x: pyfect.chat.chat_markdown.UpstreamCause[_Super],
+) -> pyfect.chat.chat_markdown.UpstreamCause[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
@@ -3241,74 +3359,361 @@ T103_0_co = TypeVar("T103_0_co", covariant=True)
 
 class Fields103(Protocol[T103_0_co]):
     @property
-    def param(self) -> pyfect.cli.param.Param[T103_0_co]: ...
+    def error(self) -> T103_0_co: ...
+    def declared(self) -> tuple[T103_0_co]: ...
+
+
+# pyfect.cli.Action
+
+
+def v104_0_out(x: pyfect.cli.Action[_Sub]) -> pyfect.cli.Action[_Super]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v104_0_in(x: pyfect.cli.Action[_Super]) -> pyfect.cli.Action[_Sub]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+# pyfect.cli.Argument
+
+
+def v105_0_out(x: pyfect.cli.Argument[_Sub]) -> pyfect.cli.Argument[_Super]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v105_0_in(x: pyfect.cli.Argument[_Super]) -> pyfect.cli.Argument[_Sub]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+# pyfect.cli.Command
+
+
+def v106_0_out(
+    x: pyfect.cli.Command[_Sub, Any, Any, Any],
+) -> pyfect.cli.Command[_Super, Any, Any, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v106_0_in(
+    x: pyfect.cli.Command[_Super, Any, Any, Any],
+) -> pyfect.cli.Command[_Sub, Any, Any, Any]:
+    return x
+
+
+def v106_1_out(
+    x: pyfect.cli.Command[Any, _Sub, Any, Any],
+) -> pyfect.cli.Command[Any, _Super, Any, Any]:
+    return x
+
+
+def v106_1_in(
+    x: pyfect.cli.Command[Any, _Super, Any, Any],
+) -> pyfect.cli.Command[Any, _Sub, Any, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v106_2_out(
+    x: pyfect.cli.Command[Any, Any, _Sub, Any],
+) -> pyfect.cli.Command[Any, Any, _Super, Any]:
+    return x
+
+
+def v106_2_in(
+    x: pyfect.cli.Command[Any, Any, _Super, Any],
+) -> pyfect.cli.Command[Any, Any, _Sub, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v106_3_out(
+    x: pyfect.cli.Command[Any, Any, Any, _Sub],
+) -> pyfect.cli.Command[Any, Any, Any, _Super]:
+    return x
+
+
+def v106_3_in(
+    x: pyfect.cli.Command[Any, Any, Any, _Super],
+) -> pyfect.cli.Command[Any, Any, Any, _Sub]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+T106_0_contra = TypeVar("T106_0_contra", contravariant=True)
+T106_1_co = TypeVar("T106_1_co", covariant=True)
+T106_2_co = TypeVar("T106_2_co", covariant=True)
+T106_3_co = TypeVar("T106_3_co", covariant=True)
+
+
+class Fields106(Protocol[T106_0_contra, T106_1_co, T106_2_co, T106_3_co]):
+    def declared(self, _0: T106_0_contra) -> tuple[T106_1_co, T106_2_co, T106_3_co]: ...
+
+
+# pyfect.cli.CommandContext
+
+
+def v107_0_out(x: pyfect.cli.CommandContext[_Sub]) -> pyfect.cli.CommandContext[_Super]:
+    return x
+
+
+def v107_0_in(x: pyfect.cli.CommandContext[_Super]) -> pyfect.cli.CommandContext[_Sub]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+# pyfect.cli.Flag
+
+
+def v108_0_out(x: pyfect.cli.Flag[_Sub]) -> pyfect.cli.Flag[_Super]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v108_0_in(x: pyfect.cli.Flag[_Super]) -> pyfect.cli.Flag[_Sub]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+# pyfect.cli.Nested
+
+
+def v109_0_out(x: pyfect.cli.Nested[Never]) -> pyfect.cli.Nested[pyfect.cli._config.Config]:
+    return x
+
+
+def v109_0_in(x: pyfect.cli.Nested[pyfect.cli._config.Config]) -> pyfect.cli.Nested[Never]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+T109_0_co = TypeVar("T109_0_co", covariant=True, bound=pyfect.cli._config.Config)
+
+
+class Fields109(Protocol[T109_0_co]):
+    @property
+    def config(self) -> type[T109_0_co]: ...
+    def declared(self) -> tuple[T109_0_co]: ...
+
+
+# pyfect.cli.Prompt
+
+
+def v110_0_out(x: pyfect.cli.Prompt[_Sub]) -> pyfect.cli.Prompt[_Super]:
+    return x
+
+
+def v110_0_in(x: pyfect.cli.Prompt[_Super]) -> pyfect.cli.Prompt[_Sub]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+T110_0_co = TypeVar("T110_0_co", covariant=True)
+
+
+class Fields110(Protocol[T110_0_co]):
+    def declared(self) -> tuple[T110_0_co]: ...
+
+
+# pyfect.cli.Setting
+
+
+def v111_0_out(x: pyfect.cli.Setting[_Sub]) -> pyfect.cli.Setting[_Super]:
+    return x
+
+
+def v111_0_in(x: pyfect.cli.Setting[_Super]) -> pyfect.cli.Setting[_Sub]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+# pyfect.cli.SubcommandGroup
+
+
+def v112_0_out(x: pyfect.cli.SubcommandGroup[_Sub, Any]) -> pyfect.cli.SubcommandGroup[_Super, Any]:
+    return x
+
+
+def v112_0_in(x: pyfect.cli.SubcommandGroup[_Super, Any]) -> pyfect.cli.SubcommandGroup[_Sub, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v112_1_out(x: pyfect.cli.SubcommandGroup[Any, _Sub]) -> pyfect.cli.SubcommandGroup[Any, _Super]:
+    return x
+
+
+def v112_1_in(x: pyfect.cli.SubcommandGroup[Any, _Super]) -> pyfect.cli.SubcommandGroup[Any, _Sub]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+T112_0_co = TypeVar("T112_0_co", covariant=True)
+T112_1_co = TypeVar("T112_1_co", covariant=True)
+
+
+class Fields112(Protocol[T112_0_co, T112_1_co]):
+    @property
+    def group(self) -> str: ...
+    @property
+    def commands(
+        self,
+    ) -> tuple[pyfect.cli._command.Command[typing.Any, typing.Any, T112_0_co, T112_1_co], ...]: ...
+    def declared(self) -> tuple[T112_0_co, T112_1_co]: ...
+
+
+# pyfect.cli.param.EffectBase
+
+
+def v113_0_out(
+    x: pyfect.cli.param.EffectBase[_Sub, Any, Any],
+) -> pyfect.cli.param.EffectBase[_Super, Any, Any]:
+    return x
+
+
+def v113_0_in(
+    x: pyfect.cli.param.EffectBase[_Super, Any, Any],
+) -> pyfect.cli.param.EffectBase[_Sub, Any, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v113_1_out(
+    x: pyfect.cli.param.EffectBase[Any, _Sub, Any],
+) -> pyfect.cli.param.EffectBase[Any, _Super, Any]:
+    return x
+
+
+def v113_1_in(
+    x: pyfect.cli.param.EffectBase[Any, _Super, Any],
+) -> pyfect.cli.param.EffectBase[Any, _Sub, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v113_2_out(
+    x: pyfect.cli.param.EffectBase[Any, Any, _Sub],
+) -> pyfect.cli.param.EffectBase[Any, Any, _Super]:
+    return x
+
+
+def v113_2_in(
+    x: pyfect.cli.param.EffectBase[Any, Any, _Super],
+) -> pyfect.cli.param.EffectBase[Any, Any, _Sub]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+T113_0_co = TypeVar("T113_0_co", covariant=True)
+T113_1_co = TypeVar("T113_1_co", covariant=True)
+T113_2_co = TypeVar("T113_2_co", covariant=True)
+
+
+class Fields113(Protocol[T113_0_co, T113_1_co, T113_2_co]):
+    def declared(self) -> tuple[T113_0_co, T113_1_co, T113_2_co]: ...
+
+
+# pyfect.cli.param.Mapped
+
+
+def v114_0_out(x: pyfect.cli.param.Mapped[_Sub, Any]) -> pyfect.cli.param.Mapped[_Super, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v114_0_in(x: pyfect.cli.param.Mapped[_Super, Any]) -> pyfect.cli.param.Mapped[_Sub, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v114_1_out(x: pyfect.cli.param.Mapped[Any, _Sub]) -> pyfect.cli.param.Mapped[Any, _Super]:
+    return x
+
+
+def v114_1_in(x: pyfect.cli.param.Mapped[Any, _Super]) -> pyfect.cli.param.Mapped[Any, _Sub]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+T114_1_co = TypeVar("T114_1_co", covariant=True)
+
+
+class Fields114(Protocol[T114_1_co]):
+    @property
+    def param(self) -> pyfect.cli.param.Param[Any]: ...
+    @property
+    def f(self) -> collections.abc.Callable[[Any], T114_1_co]: ...
     @property
     def kind(self) -> pyfect.cli.param.Kind: ...
-    def declared(self) -> tuple[T103_0_co]: ...
+    def declared(self) -> tuple[T114_1_co]: ...
+
+
+# pyfect.cli.param.Optional
+
+
+def v115_0_out(x: pyfect.cli.param.Optional[_Sub]) -> pyfect.cli.param.Optional[_Super]:
+    return x
+
+
+def v115_0_in(x: pyfect.cli.param.Optional[_Super]) -> pyfect.cli.param.Optional[_Sub]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+T115_0_co = TypeVar("T115_0_co", covariant=True)
+
+
+class Fields115(Protocol[T115_0_co]):
+    @property
+    def param(self) -> pyfect.cli.param.Param[T115_0_co]: ...
+    @property
+    def kind(self) -> pyfect.cli.param.Kind: ...
+    def declared(self) -> tuple[T115_0_co]: ...
 
 
 # pyfect.cli.param.Param
 
 
-def v104_0_out(x: pyfect.cli.param.Param[_Sub]) -> pyfect.cli.param.Param[_Super]:
+def v116_0_out(x: pyfect.cli.param.Param[_Sub]) -> pyfect.cli.param.Param[_Super]:
     return x
 
 
-def v104_0_in(x: pyfect.cli.param.Param[_Super]) -> pyfect.cli.param.Param[_Sub]:
+def v116_0_in(x: pyfect.cli.param.Param[_Super]) -> pyfect.cli.param.Param[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
 # pyfect.cli.param.Primitive
 
 
-def v105_0_out(x: pyfect.cli.param.Primitive[_Sub]) -> pyfect.cli.param.Primitive[_Super]:
+def v117_0_out(x: pyfect.cli.param.Primitive[_Sub]) -> pyfect.cli.param.Primitive[_Super]:
     return x
 
 
-def v105_0_in(x: pyfect.cli.param.Primitive[_Super]) -> pyfect.cli.param.Primitive[_Sub]:
+def v117_0_in(x: pyfect.cli.param.Primitive[_Super]) -> pyfect.cli.param.Primitive[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T105_0_co = TypeVar("T105_0_co", covariant=True)
+T117_0_co = TypeVar("T117_0_co", covariant=True)
 
 
-class Fields105(Protocol[T105_0_co]):
+class Fields117(Protocol[T117_0_co]):
     @property
     def tag(self) -> str: ...
     @property
     def parse(
         self,
     ) -> collections.abc.Callable[
-        [str], pyfect.effect.Effect[T105_0_co, str, pyfect.cli._environment.Environment]
+        [str], pyfect.effect.Effect[T117_0_co, str, pyfect.cli._environment.Environment]
     ]: ...
     @property
     def choice_keys(self) -> tuple[str, ...] | None: ...
     @property
     def path_type(self) -> pyfect.cli.primitive.PathType | None: ...
-    def declared(self) -> tuple[T105_0_co]: ...
+    def declared(self) -> tuple[T117_0_co]: ...
 
 
 # pyfect.cli.param.Single
 
 
-def v106_0_out(x: pyfect.cli.param.Single[_Sub]) -> pyfect.cli.param.Single[_Super]:
+def v118_0_out(x: pyfect.cli.param.Single[_Sub]) -> pyfect.cli.param.Single[_Super]:
     return x
 
 
-def v106_0_in(x: pyfect.cli.param.Single[_Super]) -> pyfect.cli.param.Single[_Sub]:
+def v118_0_in(x: pyfect.cli.param.Single[_Super]) -> pyfect.cli.param.Single[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T106_0_co = TypeVar("T106_0_co", covariant=True)
+T118_0_co = TypeVar("T118_0_co", covariant=True)
 
 
-class Fields106(Protocol[T106_0_co]):
+class Fields118(Protocol[T118_0_co]):
     @property
     def kind(self) -> pyfect.cli.param.Kind: ...
     @property
     def name(self) -> str: ...
     @property
-    def primitive(self) -> pyfect.cli.primitive.Primitive[T106_0_co]: ...
+    def primitive(self) -> pyfect.cli.primitive.Primitive[T118_0_co]: ...
     @property
     def description(self) -> str | None: ...
     @property
@@ -3323,40 +3728,40 @@ class Fields106(Protocol[T106_0_co]):
     def negation(self) -> str | typing.Literal[False] | None: ...
     @property
     def annotations(self) -> pyfect.context.Context[typing.Any]: ...
-    def declared(self) -> tuple[T106_0_co]: ...
+    def declared(self) -> tuple[T118_0_co]: ...
 
 
 # pyfect.cli.param.Transformed
 
 
-def v107_0_out(
+def v119_0_out(
     x: pyfect.cli.param.Transformed[_Sub, Any],
 ) -> pyfect.cli.param.Transformed[_Super, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v107_0_in(
+def v119_0_in(
     x: pyfect.cli.param.Transformed[_Super, Any],
 ) -> pyfect.cli.param.Transformed[_Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v107_1_out(
+def v119_1_out(
     x: pyfect.cli.param.Transformed[Any, _Sub],
 ) -> pyfect.cli.param.Transformed[Any, _Super]:
     return x
 
 
-def v107_1_in(
+def v119_1_in(
     x: pyfect.cli.param.Transformed[Any, _Super],
 ) -> pyfect.cli.param.Transformed[Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T107_1_co = TypeVar("T107_1_co", covariant=True)
+T119_1_co = TypeVar("T119_1_co", covariant=True)
 
 
-class Fields107(Protocol[T107_1_co]):
+class Fields119(Protocol[T119_1_co]):
     @property
     def param(self) -> pyfect.cli.param.Param[Any]: ...
     @property
@@ -3367,7 +3772,7 @@ class Fields107(Protocol[T107_1_co]):
             pyfect.cli.param.Parse[Any],
             tuple[collections.abc.Callable[[], pyfect.cli.param.Parse[typing.Any]], ...],
         ],
-        pyfect.cli.param.Parse[T107_1_co],
+        pyfect.cli.param.Parse[T119_1_co],
     ]: ...
     @property
     def alternatives(self) -> tuple[pyfect.cli.param.Alternative, ...]: ...
@@ -3375,126 +3780,126 @@ class Fields107(Protocol[T107_1_co]):
     def fallback(self) -> pyfect.cli.param.Fallback | None: ...
     @property
     def kind(self) -> pyfect.cli.param.Kind: ...
-    def declared(self) -> tuple[T107_1_co]: ...
+    def declared(self) -> tuple[T119_1_co]: ...
 
 
 # pyfect.cli.param.Variadic
 
 
-def v108_0_out(x: pyfect.cli.param.Variadic[_Sub]) -> pyfect.cli.param.Variadic[_Super]:
+def v120_0_out(x: pyfect.cli.param.Variadic[_Sub]) -> pyfect.cli.param.Variadic[_Super]:
     return x
 
 
-def v108_0_in(x: pyfect.cli.param.Variadic[_Super]) -> pyfect.cli.param.Variadic[_Sub]:
+def v120_0_in(x: pyfect.cli.param.Variadic[_Super]) -> pyfect.cli.param.Variadic[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T108_0_co = TypeVar("T108_0_co", covariant=True)
+T120_0_co = TypeVar("T120_0_co", covariant=True)
 
 
-class Fields108(Protocol[T108_0_co]):
+class Fields120(Protocol[T120_0_co]):
     @property
-    def param(self) -> pyfect.cli.param.Param[T108_0_co]: ...
+    def param(self) -> pyfect.cli.param.Param[T120_0_co]: ...
     @property
     def min(self) -> int | None: ...
     @property
     def max(self) -> int | None: ...
     @property
     def kind(self) -> pyfect.cli.param.Kind: ...
-    def declared(self) -> tuple[T108_0_co]: ...
+    def declared(self) -> tuple[T120_0_co]: ...
 
 
 # pyfect.cli.prompt.Choice
 
 
-def v109_0_out(x: pyfect.cli.prompt.Choice[_Sub]) -> pyfect.cli.prompt.Choice[_Super]:
+def v121_0_out(x: pyfect.cli.prompt.Choice[_Sub]) -> pyfect.cli.prompt.Choice[_Super]:
     return x
 
 
-def v109_0_in(x: pyfect.cli.prompt.Choice[_Super]) -> pyfect.cli.prompt.Choice[_Sub]:
+def v121_0_in(x: pyfect.cli.prompt.Choice[_Super]) -> pyfect.cli.prompt.Choice[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T109_0_co = TypeVar("T109_0_co", covariant=True)
+T121_0_co = TypeVar("T121_0_co", covariant=True)
 
 
-class Fields109(Protocol[T109_0_co]):
+class Fields121(Protocol[T121_0_co]):
     @property
     def title(self) -> str: ...
     @property
-    def value(self) -> T109_0_co: ...
+    def value(self) -> T121_0_co: ...
     @property
     def description(self) -> str | None: ...
     @property
     def disabled(self) -> bool: ...
     @property
     def selected(self) -> bool: ...
-    def declared(self) -> tuple[T109_0_co]: ...
+    def declared(self) -> tuple[T121_0_co]: ...
 
 
 # pyfect.cli.prompt.Event
 
 
-def v110_0_out(x: pyfect.cli.prompt.Event[_Sub]) -> pyfect.cli.prompt.Event[_Super]:
+def v122_0_out(x: pyfect.cli.prompt.Event[_Sub]) -> pyfect.cli.prompt.Event[_Super]:
     return x
 
 
-def v110_0_in(x: pyfect.cli.prompt.Event[_Super]) -> pyfect.cli.prompt.Event[_Sub]:
+def v122_0_in(x: pyfect.cli.prompt.Event[_Super]) -> pyfect.cli.prompt.Event[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T110_0_co = TypeVar("T110_0_co", covariant=True)
+T122_0_co = TypeVar("T122_0_co", covariant=True)
 
 
-class Fields110(Protocol[T110_0_co]):
+class Fields122(Protocol[T122_0_co]):
     @property
-    def value(self) -> T110_0_co: ...
-    def declared(self) -> tuple[T110_0_co]: ...
+    def value(self) -> T122_0_co: ...
+    def declared(self) -> tuple[T122_0_co]: ...
 
 
 # pyfect.cli.prompt.Handlers
 
 
-def v111_0_out(
+def v123_0_out(
     x: pyfect.cli.prompt.Handlers[_Sub, Any, Any],
 ) -> pyfect.cli.prompt.Handlers[_Super, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v111_0_in(
+def v123_0_in(
     x: pyfect.cli.prompt.Handlers[_Super, Any, Any],
 ) -> pyfect.cli.prompt.Handlers[_Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v111_1_out(
+def v123_1_out(
     x: pyfect.cli.prompt.Handlers[Any, _Sub, Any],
 ) -> pyfect.cli.prompt.Handlers[Any, _Super, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v111_1_in(
+def v123_1_in(
     x: pyfect.cli.prompt.Handlers[Any, _Super, Any],
 ) -> pyfect.cli.prompt.Handlers[Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v111_2_out(
+def v123_2_out(
     x: pyfect.cli.prompt.Handlers[Any, Any, _Sub],
 ) -> pyfect.cli.prompt.Handlers[Any, Any, _Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v111_2_in(
+def v123_2_in(
     x: pyfect.cli.prompt.Handlers[Any, Any, _Super],
 ) -> pyfect.cli.prompt.Handlers[Any, Any, _Sub]:
     return x
 
 
-T111_2_contra = TypeVar("T111_2_contra", contravariant=True)
+T123_2_contra = TypeVar("T123_2_contra", contravariant=True)
 
 
-class Fields111(Protocol[T111_2_contra]):
+class Fields123(Protocol[T123_2_contra]):
     @property
     def render(
         self,
@@ -3506,7 +3911,7 @@ class Fields111(Protocol[T111_2_contra]):
     def process(
         self,
     ) -> collections.abc.Callable[
-        [T111_2_contra, Any],
+        [T123_2_contra, Any],
         pyfect.effect.Effect[
             pyfect.cli.prompt._core.Action[Any, Any],
             typing.Never,
@@ -3520,403 +3925,403 @@ class Fields111(Protocol[T111_2_contra]):
         [Any, pyfect.cli.prompt._core.Action[Any, Any]],
         pyfect.effect.Effect[str, typing.Never, pyfect.cli.prompt._core.PromptEnvironment],
     ]: ...
-    def declared(self, _0: T111_2_contra) -> tuple[()]: ...
+    def declared(self, _0: T123_2_contra) -> tuple[()]: ...
 
 
 # pyfect.cli.prompt.NextFrame
 
 
-def v112_0_out(x: pyfect.cli.prompt.NextFrame[_Sub]) -> pyfect.cli.prompt.NextFrame[_Super]:
+def v124_0_out(x: pyfect.cli.prompt.NextFrame[_Sub]) -> pyfect.cli.prompt.NextFrame[_Super]:
     return x
 
 
-def v112_0_in(x: pyfect.cli.prompt.NextFrame[_Super]) -> pyfect.cli.prompt.NextFrame[_Sub]:
+def v124_0_in(x: pyfect.cli.prompt.NextFrame[_Super]) -> pyfect.cli.prompt.NextFrame[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T112_0_co = TypeVar("T112_0_co", covariant=True)
+T124_0_co = TypeVar("T124_0_co", covariant=True)
 
 
-class Fields112(Protocol[T112_0_co]):
+class Fields124(Protocol[T124_0_co]):
     @property
-    def state(self) -> T112_0_co: ...
-    def declared(self) -> tuple[T112_0_co]: ...
+    def state(self) -> T124_0_co: ...
+    def declared(self) -> tuple[T124_0_co]: ...
 
 
 # pyfect.cli.prompt.Submit
 
 
-def v113_0_out(x: pyfect.cli.prompt.Submit[_Sub]) -> pyfect.cli.prompt.Submit[_Super]:
+def v125_0_out(x: pyfect.cli.prompt.Submit[_Sub]) -> pyfect.cli.prompt.Submit[_Super]:
     return x
 
 
-def v113_0_in(x: pyfect.cli.prompt.Submit[_Super]) -> pyfect.cli.prompt.Submit[_Sub]:
+def v125_0_in(x: pyfect.cli.prompt.Submit[_Super]) -> pyfect.cli.prompt.Submit[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T113_0_co = TypeVar("T113_0_co", covariant=True)
+T125_0_co = TypeVar("T125_0_co", covariant=True)
 
 
-class Fields113(Protocol[T113_0_co]):
+class Fields125(Protocol[T125_0_co]):
     @property
-    def value(self) -> T113_0_co: ...
-    def declared(self) -> tuple[T113_0_co]: ...
+    def value(self) -> T125_0_co: ...
+    def declared(self) -> tuple[T125_0_co]: ...
 
 
 # pyfect.cluster.Entity
 
 
-def v114_0_out(x: pyfect.cluster.Entity[Never]) -> pyfect.cluster.Entity[str]:
+def v126_0_out(x: pyfect.cluster.Entity[Never]) -> pyfect.cluster.Entity[str]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v114_0_in(x: pyfect.cluster.Entity[str]) -> pyfect.cluster.Entity[Never]:
+def v126_0_in(x: pyfect.cluster.Entity[str]) -> pyfect.cluster.Entity[Never]:
     return x
 
 
-T114_0_contra = TypeVar("T114_0_contra", contravariant=True, bound=str)
+T126_0_contra = TypeVar("T126_0_contra", contravariant=True, bound=str)
 
 
-class Fields114(Protocol[T114_0_contra]):
-    def declared(self, _0: T114_0_contra) -> tuple[()]: ...
+class Fields126(Protocol[T126_0_contra]):
+    def declared(self, _0: T126_0_contra) -> tuple[()]: ...
 
 
 # pyfect.cluster.entity.Bound
 
 
-def v115_0_out(
+def v127_0_out(
     x: pyfect.cluster.entity.Bound[_Sub, Any, Any, Any, Any, Any, Any, Any],
 ) -> pyfect.cluster.entity.Bound[_Super, Any, Any, Any, Any, Any, Any, Any]:
     return x
 
 
-def v115_0_in(
+def v127_0_in(
     x: pyfect.cluster.entity.Bound[_Super, Any, Any, Any, Any, Any, Any, Any],
 ) -> pyfect.cluster.entity.Bound[_Sub, Any, Any, Any, Any, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v115_1_out(
+def v127_1_out(
     x: pyfect.cluster.entity.Bound[Any, _Sub, Any, Any, Any, Any, Any, Any],
 ) -> pyfect.cluster.entity.Bound[Any, _Super, Any, Any, Any, Any, Any, Any]:
     return x
 
 
-def v115_1_in(
+def v127_1_in(
     x: pyfect.cluster.entity.Bound[Any, _Super, Any, Any, Any, Any, Any, Any],
 ) -> pyfect.cluster.entity.Bound[Any, _Sub, Any, Any, Any, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v115_2_out(
+def v127_2_out(
     x: pyfect.cluster.entity.Bound[Any, Any, _Sub, Any, Any, Any, Any, Any],
 ) -> pyfect.cluster.entity.Bound[Any, Any, _Super, Any, Any, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v115_2_in(
+def v127_2_in(
     x: pyfect.cluster.entity.Bound[Any, Any, _Super, Any, Any, Any, Any, Any],
 ) -> pyfect.cluster.entity.Bound[Any, Any, _Sub, Any, Any, Any, Any, Any]:
     return x
 
 
-def v115_3_out(
+def v127_3_out(
     x: pyfect.cluster.entity.Bound[Any, Any, Any, _Sub, Any, Any, Any, Any],
 ) -> pyfect.cluster.entity.Bound[Any, Any, Any, _Super, Any, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v115_3_in(
+def v127_3_in(
     x: pyfect.cluster.entity.Bound[Any, Any, Any, _Super, Any, Any, Any, Any],
 ) -> pyfect.cluster.entity.Bound[Any, Any, Any, _Sub, Any, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v115_4_out(
+def v127_4_out(
     x: pyfect.cluster.entity.Bound[Any, Any, Any, Any, _Sub, Any, Any, Any],
 ) -> pyfect.cluster.entity.Bound[Any, Any, Any, Any, _Super, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v115_4_in(
+def v127_4_in(
     x: pyfect.cluster.entity.Bound[Any, Any, Any, Any, _Super, Any, Any, Any],
 ) -> pyfect.cluster.entity.Bound[Any, Any, Any, Any, _Sub, Any, Any, Any]:
     return x
 
 
-def v115_5_out(
+def v127_5_out(
     x: pyfect.cluster.entity.Bound[Any, Any, Any, Any, Any, _Sub, Any, Any],
 ) -> pyfect.cluster.entity.Bound[Any, Any, Any, Any, Any, _Super, Any, Any]:
     return x
 
 
-def v115_5_in(
+def v127_5_in(
     x: pyfect.cluster.entity.Bound[Any, Any, Any, Any, Any, _Super, Any, Any],
 ) -> pyfect.cluster.entity.Bound[Any, Any, Any, Any, Any, _Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v115_6_out(
+def v127_6_out(
     x: pyfect.cluster.entity.Bound[Any, Any, Any, Any, Any, Any, _Sub, Any],
 ) -> pyfect.cluster.entity.Bound[Any, Any, Any, Any, Any, Any, _Super, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v115_6_in(
+def v127_6_in(
     x: pyfect.cluster.entity.Bound[Any, Any, Any, Any, Any, Any, _Super, Any],
 ) -> pyfect.cluster.entity.Bound[Any, Any, Any, Any, Any, Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v115_7_out(
+def v127_7_out(
     x: pyfect.cluster.entity.Bound[Any, Any, Any, Any, Any, Any, Any, _Sub],
 ) -> pyfect.cluster.entity.Bound[Any, Any, Any, Any, Any, Any, Any, _Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v115_7_in(
+def v127_7_in(
     x: pyfect.cluster.entity.Bound[Any, Any, Any, Any, Any, Any, Any, _Super],
 ) -> pyfect.cluster.entity.Bound[Any, Any, Any, Any, Any, Any, Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T115_0_co = TypeVar("T115_0_co", covariant=True)
-T115_1_co = TypeVar("T115_1_co", covariant=True)
-T115_2_contra = TypeVar("T115_2_contra", contravariant=True)
-T115_4_contra = TypeVar("T115_4_contra", contravariant=True)
-T115_5_co = TypeVar("T115_5_co", covariant=True)
+T127_0_co = TypeVar("T127_0_co", covariant=True)
+T127_1_co = TypeVar("T127_1_co", covariant=True)
+T127_2_contra = TypeVar("T127_2_contra", contravariant=True)
+T127_4_contra = TypeVar("T127_4_contra", contravariant=True)
+T127_5_co = TypeVar("T127_5_co", covariant=True)
 
 
-class Fields115(Protocol[T115_0_co, T115_1_co, T115_2_contra, T115_4_contra, T115_5_co]):
+class Fields127(Protocol[T127_0_co, T127_1_co, T127_2_contra, T127_4_contra, T127_5_co]):
     def declared(
-        self, _2: T115_2_contra, _3: T115_4_contra
-    ) -> tuple[T115_0_co, T115_1_co, T115_5_co]: ...
+        self, _2: T127_2_contra, _3: T127_4_contra
+    ) -> tuple[T127_0_co, T127_1_co, T127_5_co]: ...
 
 
 # pyfect.cluster.entity.EntityHandlers
 
 
-def v116_0_out(
+def v128_0_out(
     x: pyfect.cluster.entity.EntityHandlers[_Sub, Any, Any],
 ) -> pyfect.cluster.entity.EntityHandlers[_Super, Any, Any]:
     return x
 
 
-def v116_0_in(
+def v128_0_in(
     x: pyfect.cluster.entity.EntityHandlers[_Super, Any, Any],
 ) -> pyfect.cluster.entity.EntityHandlers[_Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v116_1_out(
+def v128_1_out(
     x: pyfect.cluster.entity.EntityHandlers[Any, _Sub, Any],
 ) -> pyfect.cluster.entity.EntityHandlers[Any, _Super, Any]:
     return x
 
 
-def v116_1_in(
+def v128_1_in(
     x: pyfect.cluster.entity.EntityHandlers[Any, _Super, Any],
 ) -> pyfect.cluster.entity.EntityHandlers[Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v116_2_out(
+def v128_2_out(
     x: pyfect.cluster.entity.EntityHandlers[Any, Any, _Sub],
 ) -> pyfect.cluster.entity.EntityHandlers[Any, Any, _Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v116_2_in(
+def v128_2_in(
     x: pyfect.cluster.entity.EntityHandlers[Any, Any, _Super],
 ) -> pyfect.cluster.entity.EntityHandlers[Any, Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T116_0_co = TypeVar("T116_0_co", covariant=True)
-T116_1_co = TypeVar("T116_1_co", covariant=True)
+T128_0_co = TypeVar("T128_0_co", covariant=True)
+T128_1_co = TypeVar("T128_1_co", covariant=True)
 
 
-class Fields116(Protocol[T116_0_co, T116_1_co]):
-    def declared(self) -> tuple[T116_0_co, T116_1_co]: ...
+class Fields128(Protocol[T128_0_co, T128_1_co]):
+    def declared(self) -> tuple[T128_0_co, T128_1_co]: ...
 
 
 # pyfect.cluster.entity.Request
 
 
-def v117_0_out(x: pyfect.cluster.entity.Request[_Sub]) -> pyfect.cluster.entity.Request[_Super]:
+def v129_0_out(x: pyfect.cluster.entity.Request[_Sub]) -> pyfect.cluster.entity.Request[_Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v117_0_in(x: pyfect.cluster.entity.Request[_Super]) -> pyfect.cluster.entity.Request[_Sub]:
+def v129_0_in(x: pyfect.cluster.entity.Request[_Super]) -> pyfect.cluster.entity.Request[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
 # pyfect.cluster.entity.StreamBound
 
 
-def v118_0_out(
+def v130_0_out(
     x: pyfect.cluster.entity.StreamBound[_Sub, Any, Any, Any, Any, Any, Any, Any],
 ) -> pyfect.cluster.entity.StreamBound[_Super, Any, Any, Any, Any, Any, Any, Any]:
     return x
 
 
-def v118_0_in(
+def v130_0_in(
     x: pyfect.cluster.entity.StreamBound[_Super, Any, Any, Any, Any, Any, Any, Any],
 ) -> pyfect.cluster.entity.StreamBound[_Sub, Any, Any, Any, Any, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v118_1_out(
+def v130_1_out(
     x: pyfect.cluster.entity.StreamBound[Any, _Sub, Any, Any, Any, Any, Any, Any],
 ) -> pyfect.cluster.entity.StreamBound[Any, _Super, Any, Any, Any, Any, Any, Any]:
     return x
 
 
-def v118_1_in(
+def v130_1_in(
     x: pyfect.cluster.entity.StreamBound[Any, _Super, Any, Any, Any, Any, Any, Any],
 ) -> pyfect.cluster.entity.StreamBound[Any, _Sub, Any, Any, Any, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v118_2_out(
+def v130_2_out(
     x: pyfect.cluster.entity.StreamBound[Any, Any, _Sub, Any, Any, Any, Any, Any],
 ) -> pyfect.cluster.entity.StreamBound[Any, Any, _Super, Any, Any, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v118_2_in(
+def v130_2_in(
     x: pyfect.cluster.entity.StreamBound[Any, Any, _Super, Any, Any, Any, Any, Any],
 ) -> pyfect.cluster.entity.StreamBound[Any, Any, _Sub, Any, Any, Any, Any, Any]:
     return x
 
 
-def v118_3_out(
+def v130_3_out(
     x: pyfect.cluster.entity.StreamBound[Any, Any, Any, _Sub, Any, Any, Any, Any],
 ) -> pyfect.cluster.entity.StreamBound[Any, Any, Any, _Super, Any, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v118_3_in(
+def v130_3_in(
     x: pyfect.cluster.entity.StreamBound[Any, Any, Any, _Super, Any, Any, Any, Any],
 ) -> pyfect.cluster.entity.StreamBound[Any, Any, Any, _Sub, Any, Any, Any, Any]:
     return x
 
 
-def v118_4_out(
+def v130_4_out(
     x: pyfect.cluster.entity.StreamBound[Any, Any, Any, Any, _Sub, Any, Any, Any],
 ) -> pyfect.cluster.entity.StreamBound[Any, Any, Any, Any, _Super, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v118_4_in(
+def v130_4_in(
     x: pyfect.cluster.entity.StreamBound[Any, Any, Any, Any, _Super, Any, Any, Any],
 ) -> pyfect.cluster.entity.StreamBound[Any, Any, Any, Any, _Sub, Any, Any, Any]:
     return x
 
 
-def v118_5_out(
+def v130_5_out(
     x: pyfect.cluster.entity.StreamBound[Any, Any, Any, Any, Any, _Sub, Any, Any],
 ) -> pyfect.cluster.entity.StreamBound[Any, Any, Any, Any, Any, _Super, Any, Any]:
     return x
 
 
-def v118_5_in(
+def v130_5_in(
     x: pyfect.cluster.entity.StreamBound[Any, Any, Any, Any, Any, _Super, Any, Any],
 ) -> pyfect.cluster.entity.StreamBound[Any, Any, Any, Any, Any, _Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v118_6_out(
+def v130_6_out(
     x: pyfect.cluster.entity.StreamBound[Any, Any, Any, Any, Any, Any, _Sub, Any],
 ) -> pyfect.cluster.entity.StreamBound[Any, Any, Any, Any, Any, Any, _Super, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v118_6_in(
+def v130_6_in(
     x: pyfect.cluster.entity.StreamBound[Any, Any, Any, Any, Any, Any, _Super, Any],
 ) -> pyfect.cluster.entity.StreamBound[Any, Any, Any, Any, Any, Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v118_7_out(
+def v130_7_out(
     x: pyfect.cluster.entity.StreamBound[Any, Any, Any, Any, Any, Any, Any, _Sub],
 ) -> pyfect.cluster.entity.StreamBound[Any, Any, Any, Any, Any, Any, Any, _Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v118_7_in(
+def v130_7_in(
     x: pyfect.cluster.entity.StreamBound[Any, Any, Any, Any, Any, Any, Any, _Super],
 ) -> pyfect.cluster.entity.StreamBound[Any, Any, Any, Any, Any, Any, Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T118_0_co = TypeVar("T118_0_co", covariant=True)
-T118_1_co = TypeVar("T118_1_co", covariant=True)
-T118_2_contra = TypeVar("T118_2_contra", contravariant=True)
-T118_3_contra = TypeVar("T118_3_contra", contravariant=True)
-T118_4_contra = TypeVar("T118_4_contra", contravariant=True)
-T118_5_co = TypeVar("T118_5_co", covariant=True)
+T130_0_co = TypeVar("T130_0_co", covariant=True)
+T130_1_co = TypeVar("T130_1_co", covariant=True)
+T130_2_contra = TypeVar("T130_2_contra", contravariant=True)
+T130_3_contra = TypeVar("T130_3_contra", contravariant=True)
+T130_4_contra = TypeVar("T130_4_contra", contravariant=True)
+T130_5_co = TypeVar("T130_5_co", covariant=True)
 
 
-class Fields118(
-    Protocol[T118_0_co, T118_1_co, T118_2_contra, T118_3_contra, T118_4_contra, T118_5_co]
+class Fields130(
+    Protocol[T130_0_co, T130_1_co, T130_2_contra, T130_3_contra, T130_4_contra, T130_5_co]
 ):
     def declared(
-        self, _2: T118_2_contra, _3: T118_3_contra, _4: T118_4_contra
-    ) -> tuple[T118_0_co, T118_1_co, T118_5_co]: ...
+        self, _2: T130_2_contra, _3: T130_3_contra, _4: T130_4_contra
+    ) -> tuple[T130_0_co, T130_1_co, T130_5_co]: ...
 
 
 # pyfect.cluster.entity_proxy.EntityEndpoints
 
 
-def v119_0_out(
+def v131_0_out(
     x: pyfect.cluster.entity_proxy.EntityEndpoints[_Sub, Any, Any],
 ) -> pyfect.cluster.entity_proxy.EntityEndpoints[_Super, Any, Any]:
     return x
 
 
-def v119_0_in(
+def v131_0_in(
     x: pyfect.cluster.entity_proxy.EntityEndpoints[_Super, Any, Any],
 ) -> pyfect.cluster.entity_proxy.EntityEndpoints[_Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v119_1_out(
+def v131_1_out(
     x: pyfect.cluster.entity_proxy.EntityEndpoints[Any, _Sub, Any],
 ) -> pyfect.cluster.entity_proxy.EntityEndpoints[Any, _Super, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v119_1_in(
+def v131_1_in(
     x: pyfect.cluster.entity_proxy.EntityEndpoints[Any, _Super, Any],
 ) -> pyfect.cluster.entity_proxy.EntityEndpoints[Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v119_2_out(
+def v131_2_out(
     x: pyfect.cluster.entity_proxy.EntityEndpoints[Any, Any, _Sub],
 ) -> pyfect.cluster.entity_proxy.EntityEndpoints[Any, Any, _Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v119_2_in(
+def v131_2_in(
     x: pyfect.cluster.entity_proxy.EntityEndpoints[Any, Any, _Super],
 ) -> pyfect.cluster.entity_proxy.EntityEndpoints[Any, Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T119_0_co = TypeVar("T119_0_co", covariant=True)
+T131_0_co = TypeVar("T131_0_co", covariant=True)
 
 
-class Fields119(Protocol[T119_0_co]):
+class Fields131(Protocol[T131_0_co]):
     @property
     def call(
         self,
     ) -> pyfect.http_api.endpoint.HttpApiEndpoint[
         pyfect.cluster.entity_proxy.EntityIdParams,
         None,
-        T119_0_co,
-        T119_0_co,
+        T131_0_co,
+        T131_0_co,
         None,
         Any,
         Any,
@@ -3928,65 +4333,65 @@ class Fields119(Protocol[T119_0_co]):
     ) -> pyfect.http_api.endpoint.HttpApiEndpoint[
         pyfect.cluster.entity_proxy.EntityIdParams,
         None,
-        T119_0_co,
-        T119_0_co,
+        T131_0_co,
+        T131_0_co,
         None,
         None,
         None,
         pyfect.cluster.entity_proxy.ClientError,
     ]: ...
-    def declared(self) -> tuple[T119_0_co]: ...
+    def declared(self) -> tuple[T131_0_co]: ...
 
 
 # pyfect.cluster.entity_resource.EntityResource
 
 
-def v120_0_out(
+def v132_0_out(
     x: pyfect.cluster.entity_resource.EntityResource[_Sub, Any],
 ) -> pyfect.cluster.entity_resource.EntityResource[_Super, Any]:
     return x
 
 
-def v120_0_in(
+def v132_0_in(
     x: pyfect.cluster.entity_resource.EntityResource[_Super, Any],
 ) -> pyfect.cluster.entity_resource.EntityResource[_Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v120_1_out(
+def v132_1_out(
     x: pyfect.cluster.entity_resource.EntityResource[Any, _Sub],
 ) -> pyfect.cluster.entity_resource.EntityResource[Any, _Super]:
     return x
 
 
-def v120_1_in(
+def v132_1_in(
     x: pyfect.cluster.entity_resource.EntityResource[Any, _Super],
 ) -> pyfect.cluster.entity_resource.EntityResource[Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T120_0_co = TypeVar("T120_0_co", covariant=True)
-T120_1_co = TypeVar("T120_1_co", covariant=True)
+T132_0_co = TypeVar("T132_0_co", covariant=True)
+T132_1_co = TypeVar("T132_1_co", covariant=True)
 
 
-class Fields120(Protocol[T120_0_co, T120_1_co]):
+class Fields132(Protocol[T132_0_co, T132_1_co]):
     @property
-    def get(self) -> pyfect._core.Effect[T120_0_co, T120_1_co, pyfect.scope.Scope]: ...
+    def get(self) -> pyfect._core.Effect[T132_0_co, T132_1_co, pyfect.scope.Scope]: ...
     @property
     def close(self) -> pyfect._core.Effect[None]: ...
-    def declared(self) -> tuple[T120_0_co, T120_1_co]: ...
+    def declared(self) -> tuple[T132_0_co, T132_1_co]: ...
 
 
 # pyfect.cluster.message.IncomingRequestLocal
 
 
-def v121_0_out(
+def v133_0_out(
     x: pyfect.cluster.message.IncomingRequestLocal[_Sub],
 ) -> pyfect.cluster.message.IncomingRequestLocal[_Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v121_0_in(
+def v133_0_in(
     x: pyfect.cluster.message.IncomingRequestLocal[_Super],
 ) -> pyfect.cluster.message.IncomingRequestLocal[_Sub]:
     return x  # pyright: ignore[reportReturnType]
@@ -3995,13 +4400,13 @@ def v121_0_in(
 # pyfect.cluster.message.OutgoingRequest
 
 
-def v122_0_out(
+def v134_0_out(
     x: pyfect.cluster.message.OutgoingRequest[_Sub],
 ) -> pyfect.cluster.message.OutgoingRequest[_Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v122_0_in(
+def v134_0_in(
     x: pyfect.cluster.message.OutgoingRequest[_Super],
 ) -> pyfect.cluster.message.OutgoingRequest[_Sub]:
     return x  # pyright: ignore[reportReturnType]
@@ -4010,29 +4415,29 @@ def v122_0_in(
 # pyfect.cluster.message.Request
 
 
-def v123_0_out(x: pyfect.cluster.message.Request[_Sub]) -> pyfect.cluster.message.Request[_Super]:
+def v135_0_out(x: pyfect.cluster.message.Request[_Sub]) -> pyfect.cluster.message.Request[_Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v123_0_in(x: pyfect.cluster.message.Request[_Super]) -> pyfect.cluster.message.Request[_Sub]:
+def v135_0_in(x: pyfect.cluster.message.Request[_Super]) -> pyfect.cluster.message.Request[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
 # pyfect.cluster.reply.Chunk
 
 
-def v124_0_out(x: pyfect.cluster.reply.Chunk[_Sub]) -> pyfect.cluster.reply.Chunk[_Super]:
+def v136_0_out(x: pyfect.cluster.reply.Chunk[_Sub]) -> pyfect.cluster.reply.Chunk[_Super]:
     return x
 
 
-def v124_0_in(x: pyfect.cluster.reply.Chunk[_Super]) -> pyfect.cluster.reply.Chunk[_Sub]:
+def v136_0_in(x: pyfect.cluster.reply.Chunk[_Super]) -> pyfect.cluster.reply.Chunk[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T124_0_co = TypeVar("T124_0_co", covariant=True)
+T136_0_co = TypeVar("T136_0_co", covariant=True)
 
 
-class Fields124(Protocol[T124_0_co]):
+class Fields136(Protocol[T136_0_co]):
     @property
     def request_id(self) -> pyfect.cluster.snowflake.Snowflake: ...
     @property
@@ -4040,102 +4445,102 @@ class Fields124(Protocol[T124_0_co]):
     @property
     def sequence(self) -> int: ...
     @property
-    def values(self) -> tuple[T124_0_co, ...]: ...
-    def declared(self) -> tuple[T124_0_co]: ...
+    def values(self) -> tuple[T136_0_co, ...]: ...
+    def declared(self) -> tuple[T136_0_co]: ...
 
 
 # pyfect.cluster.reply.ReplyWithContext
 
 
-def v125_0_out(
+def v137_0_out(
     x: pyfect.cluster.reply.ReplyWithContext[_Sub, Any],
 ) -> pyfect.cluster.reply.ReplyWithContext[_Super, Any]:
     return x
 
 
-def v125_0_in(
+def v137_0_in(
     x: pyfect.cluster.reply.ReplyWithContext[_Super, Any],
 ) -> pyfect.cluster.reply.ReplyWithContext[_Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v125_1_out(
+def v137_1_out(
     x: pyfect.cluster.reply.ReplyWithContext[Any, _Sub],
 ) -> pyfect.cluster.reply.ReplyWithContext[Any, _Super]:
     return x
 
 
-def v125_1_in(
+def v137_1_in(
     x: pyfect.cluster.reply.ReplyWithContext[Any, _Super],
 ) -> pyfect.cluster.reply.ReplyWithContext[Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T125_0_co = TypeVar("T125_0_co", covariant=True)
-T125_1_co = TypeVar("T125_1_co", covariant=True)
+T137_0_co = TypeVar("T137_0_co", covariant=True)
+T137_1_co = TypeVar("T137_1_co", covariant=True)
 
 
-class Fields125(Protocol[T125_0_co, T125_1_co]):
+class Fields137(Protocol[T137_0_co, T137_1_co]):
     @property
-    def reply(self) -> pyfect.cluster.reply.Reply[T125_0_co, T125_1_co]: ...
+    def reply(self) -> pyfect.cluster.reply.Reply[T137_0_co, T137_1_co]: ...
     @property
     def context(self) -> pyfect.context.Context[typing.Any]: ...
     @property
     def rpc(self) -> pyfect.rpc.AnyRpc: ...
-    def declared(self) -> tuple[T125_0_co, T125_1_co]: ...
+    def declared(self) -> tuple[T137_0_co, T137_1_co]: ...
 
 
 # pyfect.cluster.reply.WithExit
 
 
-def v126_0_out(
+def v138_0_out(
     x: pyfect.cluster.reply.WithExit[_Sub, Any],
 ) -> pyfect.cluster.reply.WithExit[_Super, Any]:
     return x
 
 
-def v126_0_in(
+def v138_0_in(
     x: pyfect.cluster.reply.WithExit[_Super, Any],
 ) -> pyfect.cluster.reply.WithExit[_Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v126_1_out(
+def v138_1_out(
     x: pyfect.cluster.reply.WithExit[Any, _Sub],
 ) -> pyfect.cluster.reply.WithExit[Any, _Super]:
     return x
 
 
-def v126_1_in(
+def v138_1_in(
     x: pyfect.cluster.reply.WithExit[Any, _Super],
 ) -> pyfect.cluster.reply.WithExit[Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T126_0_co = TypeVar("T126_0_co", covariant=True)
-T126_1_co = TypeVar("T126_1_co", covariant=True)
+T138_0_co = TypeVar("T138_0_co", covariant=True)
+T138_1_co = TypeVar("T138_1_co", covariant=True)
 
 
-class Fields126(Protocol[T126_0_co, T126_1_co]):
+class Fields138(Protocol[T138_0_co, T138_1_co]):
     @property
     def request_id(self) -> pyfect.cluster.snowflake.Snowflake: ...
     @property
     def id(self) -> pyfect.cluster.snowflake.Snowflake: ...
     @property
-    def exit(self) -> pyfect.exit.Exit[T126_0_co, T126_1_co]: ...
-    def declared(self) -> tuple[T126_0_co, T126_1_co]: ...
+    def exit(self) -> pyfect.exit.Exit[T138_0_co, T138_1_co]: ...
+    def declared(self) -> tuple[T138_0_co, T138_1_co]: ...
 
 
 # pyfect.cluster.sql_runner_storage.ResourceRef
 
 
-def v127_0_out(
+def v139_0_out(
     x: pyfect.cluster.sql_runner_storage.ResourceRef[_Sub],
 ) -> pyfect.cluster.sql_runner_storage.ResourceRef[_Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v127_0_in(
+def v139_0_in(
     x: pyfect.cluster.sql_runner_storage.ResourceRef[_Super],
 ) -> pyfect.cluster.sql_runner_storage.ResourceRef[_Sub]:
     return x  # pyright: ignore[reportReturnType]
@@ -4144,93 +4549,93 @@ def v127_0_in(
 # pyfect.context.ServiceEffect
 
 
-def v128_0_out(
+def v140_0_out(
     x: pyfect.context.ServiceEffect[_Sub, Any],
 ) -> pyfect.context.ServiceEffect[_Super, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v128_0_in(
+def v140_0_in(
     x: pyfect.context.ServiceEffect[_Super, Any],
 ) -> pyfect.context.ServiceEffect[_Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v128_1_out(
+def v140_1_out(
     x: pyfect.context.ServiceEffect[Any, _Sub],
 ) -> pyfect.context.ServiceEffect[Any, _Super]:
     return x
 
 
-def v128_1_in(
+def v140_1_in(
     x: pyfect.context.ServiceEffect[Any, _Super],
 ) -> pyfect.context.ServiceEffect[Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T128_1_co = TypeVar("T128_1_co", covariant=True)
+T140_1_co = TypeVar("T140_1_co", covariant=True)
 
 
-class Fields128(Protocol[T128_1_co]):
-    def declared(self) -> tuple[T128_1_co]: ...
+class Fields140(Protocol[T140_1_co]):
+    def declared(self) -> tuple[T140_1_co]: ...
 
 
 # pyfect.context.TagEffect
 
 
-def v129_0_out(
+def v141_0_out(
     x: pyfect.context.TagEffect[_Sub, Any, Any],
 ) -> pyfect.context.TagEffect[_Super, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v129_0_in(
+def v141_0_in(
     x: pyfect.context.TagEffect[_Super, Any, Any],
 ) -> pyfect.context.TagEffect[_Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v129_1_out(
+def v141_1_out(
     x: pyfect.context.TagEffect[Any, _Sub, Any],
 ) -> pyfect.context.TagEffect[Any, _Super, Any]:
     return x
 
 
-def v129_1_in(
+def v141_1_in(
     x: pyfect.context.TagEffect[Any, _Super, Any],
 ) -> pyfect.context.TagEffect[Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v129_2_out(
+def v141_2_out(
     x: pyfect.context.TagEffect[Any, Any, _Sub],
 ) -> pyfect.context.TagEffect[Any, Any, _Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v129_2_in(
+def v141_2_in(
     x: pyfect.context.TagEffect[Any, Any, _Super],
 ) -> pyfect.context.TagEffect[Any, Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T129_1_co = TypeVar("T129_1_co", covariant=True)
+T141_1_co = TypeVar("T141_1_co", covariant=True)
 
 
-class Fields129(Protocol[T129_1_co]):
-    def declared(self) -> tuple[T129_1_co]: ...
+class Fields141(Protocol[T141_1_co]):
+    def declared(self) -> tuple[T141_1_co]: ...
 
 
 # pyfect.crypto.aead.Key
 
 
-def v130_0_out(
+def v142_0_out(
     x: pyfect.crypto.aead.Key[Never],
 ) -> pyfect.crypto.aead.Key[pyfect.crypto.aead.Algorithm]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v130_0_in(
+def v142_0_in(
     x: pyfect.crypto.aead.Key[pyfect.crypto.aead.Algorithm],
 ) -> pyfect.crypto.aead.Key[Never]:
     return x  # pyright: ignore[reportReturnType]
@@ -4239,13 +4644,13 @@ def v130_0_in(
 # pyfect.crypto.cipher.Key
 
 
-def v131_0_out(
+def v143_0_out(
     x: pyfect.crypto.cipher.Key[Never],
 ) -> pyfect.crypto.cipher.Key[pyfect.crypto.cipher.Algorithm]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v131_0_in(
+def v143_0_in(
     x: pyfect.crypto.cipher.Key[pyfect.crypto.cipher.Algorithm],
 ) -> pyfect.crypto.cipher.Key[Never]:
     return x  # pyright: ignore[reportReturnType]
@@ -4254,275 +4659,15 @@ def v131_0_in(
 # pyfect.crypto.key_agreement.Ecdh
 
 
-def v132_0_out(
+def v144_0_out(
     x: pyfect.crypto.key_agreement.Ecdh[Never],
 ) -> pyfect.crypto.key_agreement.Ecdh[pyfect.crypto._asymmetric.Curve]:
     return x
 
 
-def v132_0_in(
+def v144_0_in(
     x: pyfect.crypto.key_agreement.Ecdh[pyfect.crypto._asymmetric.Curve],
 ) -> pyfect.crypto.key_agreement.Ecdh[Never]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-T132_0_co = TypeVar("T132_0_co", covariant=True, bound=pyfect.crypto._asymmetric.Curve)
-
-
-class Fields132(Protocol[T132_0_co]):
-    @property
-    def name(self) -> typing.Literal["ecdhP256", "ecdhP384", "ecdhP521"]: ...
-    @property
-    def named_curve(self) -> T132_0_co: ...
-    def declared(self) -> tuple[T132_0_co]: ...
-
-
-# pyfect.crypto.key_agreement.KeyPair
-
-
-def v133_0_out(
-    x: pyfect.crypto.key_agreement.KeyPair[Never],
-) -> pyfect.crypto.key_agreement.KeyPair[pyfect.crypto.key_agreement.Algorithm]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v133_0_in(
-    x: pyfect.crypto.key_agreement.KeyPair[pyfect.crypto.key_agreement.Algorithm],
-) -> pyfect.crypto.key_agreement.KeyPair[Never]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-# pyfect.crypto.key_agreement.PrivateKey
-
-
-def v134_0_out(
-    x: pyfect.crypto.key_agreement.PrivateKey[Never],
-) -> pyfect.crypto.key_agreement.PrivateKey[pyfect.crypto.key_agreement.Algorithm]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v134_0_in(
-    x: pyfect.crypto.key_agreement.PrivateKey[pyfect.crypto.key_agreement.Algorithm],
-) -> pyfect.crypto.key_agreement.PrivateKey[Never]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-# pyfect.crypto.key_agreement.PublicKey
-
-
-def v135_0_out(
-    x: pyfect.crypto.key_agreement.PublicKey[Never],
-) -> pyfect.crypto.key_agreement.PublicKey[pyfect.crypto.key_agreement.Algorithm]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v135_0_in(
-    x: pyfect.crypto.key_agreement.PublicKey[pyfect.crypto.key_agreement.Algorithm],
-) -> pyfect.crypto.key_agreement.PublicKey[Never]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-# pyfect.crypto.key_format.Format
-
-
-def v136_0_out(
-    x: pyfect.crypto.key_format.Format[_Sub, Any, Any],
-) -> pyfect.crypto.key_format.Format[_Super, Any, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v136_0_in(
-    x: pyfect.crypto.key_format.Format[_Super, Any, Any],
-) -> pyfect.crypto.key_format.Format[_Sub, Any, Any]:
-    return x
-
-
-def v136_1_out(
-    x: pyfect.crypto.key_format.Format[Any, _Sub, Any],
-) -> pyfect.crypto.key_format.Format[Any, _Super, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v136_1_in(
-    x: pyfect.crypto.key_format.Format[Any, _Super, Any],
-) -> pyfect.crypto.key_format.Format[Any, _Sub, Any]:
-    return x
-
-
-def v136_2_out(
-    x: pyfect.crypto.key_format.Format[Any, Any, _Sub],
-) -> pyfect.crypto.key_format.Format[Any, Any, _Super]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v136_2_in(
-    x: pyfect.crypto.key_format.Format[Any, Any, _Super],
-) -> pyfect.crypto.key_format.Format[Any, Any, _Sub]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-T136_0_contra = TypeVar("T136_0_contra", contravariant=True)
-T136_1_contra = TypeVar("T136_1_contra", contravariant=True)
-
-
-class Fields136(Protocol[T136_0_contra, T136_1_contra]):
-    @property
-    def tag(self) -> pyfect.crypto.key_format.FormatTag: ...
-    @property
-    def pem(self) -> bool: ...
-    def declared(self, _0: T136_0_contra, _1: T136_1_contra) -> tuple[()]: ...
-
-
-# pyfect.crypto.key_wrap.Key
-
-
-def v137_0_out(
-    x: pyfect.crypto.key_wrap.Key[Never],
-) -> pyfect.crypto.key_wrap.Key[pyfect.crypto.key_wrap.AesKw]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v137_0_in(
-    x: pyfect.crypto.key_wrap.Key[pyfect.crypto.key_wrap.AesKw],
-) -> pyfect.crypto.key_wrap.Key[Never]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-# pyfect.crypto.key_wrap.KeyPair
-
-
-def v138_0_out(
-    x: pyfect.crypto.key_wrap.KeyPair[Never],
-) -> pyfect.crypto.key_wrap.KeyPair[pyfect.crypto.key_wrap.RsaOaep]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v138_0_in(
-    x: pyfect.crypto.key_wrap.KeyPair[pyfect.crypto.key_wrap.RsaOaep],
-) -> pyfect.crypto.key_wrap.KeyPair[Never]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-# pyfect.crypto.key_wrap.PrivateKey
-
-
-def v139_0_out(
-    x: pyfect.crypto.key_wrap.PrivateKey[Never],
-) -> pyfect.crypto.key_wrap.PrivateKey[pyfect.crypto.key_wrap.RsaOaep]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v139_0_in(
-    x: pyfect.crypto.key_wrap.PrivateKey[pyfect.crypto.key_wrap.RsaOaep],
-) -> pyfect.crypto.key_wrap.PrivateKey[Never]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-# pyfect.crypto.key_wrap.PublicKey
-
-
-def v140_0_out(
-    x: pyfect.crypto.key_wrap.PublicKey[Never],
-) -> pyfect.crypto.key_wrap.PublicKey[pyfect.crypto.key_wrap.RsaOaep]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v140_0_in(
-    x: pyfect.crypto.key_wrap.PublicKey[pyfect.crypto.key_wrap.RsaOaep],
-) -> pyfect.crypto.key_wrap.PublicKey[Never]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-# pyfect.crypto.mac.Key
-
-
-def v141_0_out(
-    x: pyfect.crypto.mac.Key[Never],
-) -> pyfect.crypto.mac.Key[pyfect.crypto.mac.Algorithm]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v141_0_in(
-    x: pyfect.crypto.mac.Key[pyfect.crypto.mac.Algorithm],
-) -> pyfect.crypto.mac.Key[Never]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-# pyfect.crypto.mac.KeyBase
-
-
-def v142_0_out(
-    x: pyfect.crypto.mac.KeyBase[Never],
-) -> pyfect.crypto.mac.KeyBase[pyfect.crypto._key.Named]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v142_0_in(
-    x: pyfect.crypto.mac.KeyBase[pyfect.crypto._key.Named],
-) -> pyfect.crypto.mac.KeyBase[Never]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-# pyfect.crypto.schema.Getter
-
-
-def v143_0_out(
-    x: pyfect.crypto.schema.Getter[_Sub, Any, Any],
-) -> pyfect.crypto.schema.Getter[_Super, Any, Any]:
-    return x
-
-
-def v143_0_in(
-    x: pyfect.crypto.schema.Getter[_Super, Any, Any],
-) -> pyfect.crypto.schema.Getter[_Sub, Any, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v143_1_out(
-    x: pyfect.crypto.schema.Getter[Any, _Sub, Any],
-) -> pyfect.crypto.schema.Getter[Any, _Super, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v143_1_in(
-    x: pyfect.crypto.schema.Getter[Any, _Super, Any],
-) -> pyfect.crypto.schema.Getter[Any, _Sub, Any]:
-    return x
-
-
-def v143_2_out(
-    x: pyfect.crypto.schema.Getter[Any, Any, _Sub],
-) -> pyfect.crypto.schema.Getter[Any, Any, _Super]:
-    return x
-
-
-def v143_2_in(
-    x: pyfect.crypto.schema.Getter[Any, Any, _Super],
-) -> pyfect.crypto.schema.Getter[Any, Any, _Sub]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-T143_0_co = TypeVar("T143_0_co", covariant=True)
-T143_1_contra = TypeVar("T143_1_contra", contravariant=True)
-T143_2_co = TypeVar("T143_2_co", covariant=True)
-
-
-class Fields143(Protocol[T143_0_co, T143_1_contra, T143_2_co]):
-    def declared(self, _1: T143_1_contra) -> tuple[T143_0_co, T143_2_co]: ...
-
-
-# pyfect.crypto.signature.Ecdsa
-
-
-def v144_0_out(
-    x: pyfect.crypto.signature.Ecdsa[Never],
-) -> pyfect.crypto.signature.Ecdsa[pyfect.crypto._asymmetric.Curve]:
-    return x
-
-
-def v144_0_in(
-    x: pyfect.crypto.signature.Ecdsa[pyfect.crypto._asymmetric.Curve],
-) -> pyfect.crypto.signature.Ecdsa[Never]:
     return x  # pyright: ignore[reportReturnType]
 
 
@@ -4531,24 +4676,284 @@ T144_0_co = TypeVar("T144_0_co", covariant=True, bound=pyfect.crypto._asymmetric
 
 class Fields144(Protocol[T144_0_co]):
     @property
-    def name(self) -> typing.Literal["ecdsaP256", "ecdsaP384", "ecdsaP521"]: ...
+    def name(self) -> typing.Literal["ecdhP256", "ecdhP384", "ecdhP521"]: ...
     @property
     def named_curve(self) -> T144_0_co: ...
+    def declared(self) -> tuple[T144_0_co]: ...
+
+
+# pyfect.crypto.key_agreement.KeyPair
+
+
+def v145_0_out(
+    x: pyfect.crypto.key_agreement.KeyPair[Never],
+) -> pyfect.crypto.key_agreement.KeyPair[pyfect.crypto.key_agreement.Algorithm]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v145_0_in(
+    x: pyfect.crypto.key_agreement.KeyPair[pyfect.crypto.key_agreement.Algorithm],
+) -> pyfect.crypto.key_agreement.KeyPair[Never]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+# pyfect.crypto.key_agreement.PrivateKey
+
+
+def v146_0_out(
+    x: pyfect.crypto.key_agreement.PrivateKey[Never],
+) -> pyfect.crypto.key_agreement.PrivateKey[pyfect.crypto.key_agreement.Algorithm]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v146_0_in(
+    x: pyfect.crypto.key_agreement.PrivateKey[pyfect.crypto.key_agreement.Algorithm],
+) -> pyfect.crypto.key_agreement.PrivateKey[Never]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+# pyfect.crypto.key_agreement.PublicKey
+
+
+def v147_0_out(
+    x: pyfect.crypto.key_agreement.PublicKey[Never],
+) -> pyfect.crypto.key_agreement.PublicKey[pyfect.crypto.key_agreement.Algorithm]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v147_0_in(
+    x: pyfect.crypto.key_agreement.PublicKey[pyfect.crypto.key_agreement.Algorithm],
+) -> pyfect.crypto.key_agreement.PublicKey[Never]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+# pyfect.crypto.key_format.Format
+
+
+def v148_0_out(
+    x: pyfect.crypto.key_format.Format[_Sub, Any, Any],
+) -> pyfect.crypto.key_format.Format[_Super, Any, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v148_0_in(
+    x: pyfect.crypto.key_format.Format[_Super, Any, Any],
+) -> pyfect.crypto.key_format.Format[_Sub, Any, Any]:
+    return x
+
+
+def v148_1_out(
+    x: pyfect.crypto.key_format.Format[Any, _Sub, Any],
+) -> pyfect.crypto.key_format.Format[Any, _Super, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v148_1_in(
+    x: pyfect.crypto.key_format.Format[Any, _Super, Any],
+) -> pyfect.crypto.key_format.Format[Any, _Sub, Any]:
+    return x
+
+
+def v148_2_out(
+    x: pyfect.crypto.key_format.Format[Any, Any, _Sub],
+) -> pyfect.crypto.key_format.Format[Any, Any, _Super]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v148_2_in(
+    x: pyfect.crypto.key_format.Format[Any, Any, _Super],
+) -> pyfect.crypto.key_format.Format[Any, Any, _Sub]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+T148_0_contra = TypeVar("T148_0_contra", contravariant=True)
+T148_1_contra = TypeVar("T148_1_contra", contravariant=True)
+
+
+class Fields148(Protocol[T148_0_contra, T148_1_contra]):
+    @property
+    def tag(self) -> pyfect.crypto.key_format.FormatTag: ...
+    @property
+    def pem(self) -> bool: ...
+    def declared(self, _0: T148_0_contra, _1: T148_1_contra) -> tuple[()]: ...
+
+
+# pyfect.crypto.key_wrap.Key
+
+
+def v149_0_out(
+    x: pyfect.crypto.key_wrap.Key[Never],
+) -> pyfect.crypto.key_wrap.Key[pyfect.crypto.key_wrap.AesKw]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v149_0_in(
+    x: pyfect.crypto.key_wrap.Key[pyfect.crypto.key_wrap.AesKw],
+) -> pyfect.crypto.key_wrap.Key[Never]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+# pyfect.crypto.key_wrap.KeyPair
+
+
+def v150_0_out(
+    x: pyfect.crypto.key_wrap.KeyPair[Never],
+) -> pyfect.crypto.key_wrap.KeyPair[pyfect.crypto.key_wrap.RsaOaep]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v150_0_in(
+    x: pyfect.crypto.key_wrap.KeyPair[pyfect.crypto.key_wrap.RsaOaep],
+) -> pyfect.crypto.key_wrap.KeyPair[Never]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+# pyfect.crypto.key_wrap.PrivateKey
+
+
+def v151_0_out(
+    x: pyfect.crypto.key_wrap.PrivateKey[Never],
+) -> pyfect.crypto.key_wrap.PrivateKey[pyfect.crypto.key_wrap.RsaOaep]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v151_0_in(
+    x: pyfect.crypto.key_wrap.PrivateKey[pyfect.crypto.key_wrap.RsaOaep],
+) -> pyfect.crypto.key_wrap.PrivateKey[Never]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+# pyfect.crypto.key_wrap.PublicKey
+
+
+def v152_0_out(
+    x: pyfect.crypto.key_wrap.PublicKey[Never],
+) -> pyfect.crypto.key_wrap.PublicKey[pyfect.crypto.key_wrap.RsaOaep]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v152_0_in(
+    x: pyfect.crypto.key_wrap.PublicKey[pyfect.crypto.key_wrap.RsaOaep],
+) -> pyfect.crypto.key_wrap.PublicKey[Never]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+# pyfect.crypto.mac.Key
+
+
+def v153_0_out(
+    x: pyfect.crypto.mac.Key[Never],
+) -> pyfect.crypto.mac.Key[pyfect.crypto.mac.Algorithm]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v153_0_in(
+    x: pyfect.crypto.mac.Key[pyfect.crypto.mac.Algorithm],
+) -> pyfect.crypto.mac.Key[Never]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+# pyfect.crypto.mac.KeyBase
+
+
+def v154_0_out(
+    x: pyfect.crypto.mac.KeyBase[Never],
+) -> pyfect.crypto.mac.KeyBase[pyfect.crypto._key.Named]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v154_0_in(
+    x: pyfect.crypto.mac.KeyBase[pyfect.crypto._key.Named],
+) -> pyfect.crypto.mac.KeyBase[Never]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+# pyfect.crypto.schema.Getter
+
+
+def v155_0_out(
+    x: pyfect.crypto.schema.Getter[_Sub, Any, Any],
+) -> pyfect.crypto.schema.Getter[_Super, Any, Any]:
+    return x
+
+
+def v155_0_in(
+    x: pyfect.crypto.schema.Getter[_Super, Any, Any],
+) -> pyfect.crypto.schema.Getter[_Sub, Any, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v155_1_out(
+    x: pyfect.crypto.schema.Getter[Any, _Sub, Any],
+) -> pyfect.crypto.schema.Getter[Any, _Super, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v155_1_in(
+    x: pyfect.crypto.schema.Getter[Any, _Super, Any],
+) -> pyfect.crypto.schema.Getter[Any, _Sub, Any]:
+    return x
+
+
+def v155_2_out(
+    x: pyfect.crypto.schema.Getter[Any, Any, _Sub],
+) -> pyfect.crypto.schema.Getter[Any, Any, _Super]:
+    return x
+
+
+def v155_2_in(
+    x: pyfect.crypto.schema.Getter[Any, Any, _Super],
+) -> pyfect.crypto.schema.Getter[Any, Any, _Sub]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+T155_0_co = TypeVar("T155_0_co", covariant=True)
+T155_1_contra = TypeVar("T155_1_contra", contravariant=True)
+T155_2_co = TypeVar("T155_2_co", covariant=True)
+
+
+class Fields155(Protocol[T155_0_co, T155_1_contra, T155_2_co]):
+    def declared(self, _1: T155_1_contra) -> tuple[T155_0_co, T155_2_co]: ...
+
+
+# pyfect.crypto.signature.Ecdsa
+
+
+def v156_0_out(
+    x: pyfect.crypto.signature.Ecdsa[Never],
+) -> pyfect.crypto.signature.Ecdsa[pyfect.crypto._asymmetric.Curve]:
+    return x
+
+
+def v156_0_in(
+    x: pyfect.crypto.signature.Ecdsa[pyfect.crypto._asymmetric.Curve],
+) -> pyfect.crypto.signature.Ecdsa[Never]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+T156_0_co = TypeVar("T156_0_co", covariant=True, bound=pyfect.crypto._asymmetric.Curve)
+
+
+class Fields156(Protocol[T156_0_co]):
+    @property
+    def name(self) -> typing.Literal["ecdsaP256", "ecdsaP384", "ecdsaP521"]: ...
+    @property
+    def named_curve(self) -> T156_0_co: ...
     @property
     def hash(self) -> pyfect.crypto.digest.Algorithm: ...
-    def declared(self) -> tuple[T144_0_co]: ...
+    def declared(self) -> tuple[T156_0_co]: ...
 
 
 # pyfect.crypto.signature.KeyPair
 
 
-def v145_0_out(
+def v157_0_out(
     x: pyfect.crypto.signature.KeyPair[Never],
 ) -> pyfect.crypto.signature.KeyPair[pyfect.crypto.signature.Algorithm]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v145_0_in(
+def v157_0_in(
     x: pyfect.crypto.signature.KeyPair[pyfect.crypto.signature.Algorithm],
 ) -> pyfect.crypto.signature.KeyPair[Never]:
     return x  # pyright: ignore[reportReturnType]
@@ -4557,13 +4962,13 @@ def v145_0_in(
 # pyfect.crypto.signature.PrivateKey
 
 
-def v146_0_out(
+def v158_0_out(
     x: pyfect.crypto.signature.PrivateKey[Never],
 ) -> pyfect.crypto.signature.PrivateKey[pyfect.crypto.signature.Algorithm]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v146_0_in(
+def v158_0_in(
     x: pyfect.crypto.signature.PrivateKey[pyfect.crypto.signature.Algorithm],
 ) -> pyfect.crypto.signature.PrivateKey[Never]:
     return x  # pyright: ignore[reportReturnType]
@@ -4572,13 +4977,13 @@ def v146_0_in(
 # pyfect.crypto.signature.PublicKey
 
 
-def v147_0_out(
+def v159_0_out(
     x: pyfect.crypto.signature.PublicKey[Never],
 ) -> pyfect.crypto.signature.PublicKey[pyfect.crypto.signature.Algorithm]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v147_0_in(
+def v159_0_in(
     x: pyfect.crypto.signature.PublicKey[pyfect.crypto.signature.Algorithm],
 ) -> pyfect.crypto.signature.PublicKey[Never]:
     return x  # pyright: ignore[reportReturnType]
@@ -4587,80 +4992,80 @@ def v147_0_in(
 # pyfect.effect.TagLike
 
 
-def v148_0_out(x: pyfect.effect.TagLike[_Sub, Any]) -> pyfect.effect.TagLike[_Super, Any]:
+def v160_0_out(x: pyfect.effect.TagLike[_Sub, Any]) -> pyfect.effect.TagLike[_Super, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v148_0_in(x: pyfect.effect.TagLike[_Super, Any]) -> pyfect.effect.TagLike[_Sub, Any]:
+def v160_0_in(x: pyfect.effect.TagLike[_Super, Any]) -> pyfect.effect.TagLike[_Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v148_1_out(x: pyfect.effect.TagLike[Any, _Sub]) -> pyfect.effect.TagLike[Any, _Super]:
+def v160_1_out(x: pyfect.effect.TagLike[Any, _Sub]) -> pyfect.effect.TagLike[Any, _Super]:
     return x
 
 
-def v148_1_in(x: pyfect.effect.TagLike[Any, _Super]) -> pyfect.effect.TagLike[Any, _Sub]:
+def v160_1_in(x: pyfect.effect.TagLike[Any, _Super]) -> pyfect.effect.TagLike[Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
 # pyfect.effectable.Class
 
 
-def v149_0_out(
+def v161_0_out(
     x: pyfect.effectable.Class[_Sub, Any, Any],
 ) -> pyfect.effectable.Class[_Super, Any, Any]:
     return x
 
 
-def v149_0_in(
+def v161_0_in(
     x: pyfect.effectable.Class[_Super, Any, Any],
 ) -> pyfect.effectable.Class[_Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v149_1_out(
+def v161_1_out(
     x: pyfect.effectable.Class[Any, _Sub, Any],
 ) -> pyfect.effectable.Class[Any, _Super, Any]:
     return x
 
 
-def v149_1_in(
+def v161_1_in(
     x: pyfect.effectable.Class[Any, _Super, Any],
 ) -> pyfect.effectable.Class[Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v149_2_out(
+def v161_2_out(
     x: pyfect.effectable.Class[Any, Any, _Sub],
 ) -> pyfect.effectable.Class[Any, Any, _Super]:
     return x
 
 
-def v149_2_in(
+def v161_2_in(
     x: pyfect.effectable.Class[Any, Any, _Super],
 ) -> pyfect.effectable.Class[Any, Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T149_0_co = TypeVar("T149_0_co", covariant=True)
-T149_1_co = TypeVar("T149_1_co", covariant=True)
-T149_2_co = TypeVar("T149_2_co", covariant=True)
+T161_0_co = TypeVar("T161_0_co", covariant=True)
+T161_1_co = TypeVar("T161_1_co", covariant=True)
+T161_2_co = TypeVar("T161_2_co", covariant=True)
 
 
-class Fields149(Protocol[T149_0_co, T149_1_co, T149_2_co]):
-    def declared(self) -> tuple[T149_0_co, T149_1_co, T149_2_co]: ...
+class Fields161(Protocol[T161_0_co, T161_1_co, T161_2_co]):
+    def declared(self) -> tuple[T161_0_co, T161_1_co, T161_2_co]: ...
 
 
 # pyfect.encoding.schema_binary.Parser
 
 
-def v150_0_out(
+def v162_0_out(
     x: pyfect.encoding.schema_binary.Parser[_Sub],
 ) -> pyfect.encoding.schema_binary.Parser[_Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v150_0_in(
+def v162_0_in(
     x: pyfect.encoding.schema_binary.Parser[_Super],
 ) -> pyfect.encoding.schema_binary.Parser[_Sub]:
     return x  # pyright: ignore[reportReturnType]
@@ -4669,67 +5074,67 @@ def v150_0_in(
 # pyfect.encoding.sse.DataEvent
 
 
-def v151_0_out(x: pyfect.encoding.sse.DataEvent[_Sub]) -> pyfect.encoding.sse.DataEvent[_Super]:
+def v163_0_out(x: pyfect.encoding.sse.DataEvent[_Sub]) -> pyfect.encoding.sse.DataEvent[_Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v151_0_in(x: pyfect.encoding.sse.DataEvent[_Super]) -> pyfect.encoding.sse.DataEvent[_Sub]:
+def v163_0_in(x: pyfect.encoding.sse.DataEvent[_Super]) -> pyfect.encoding.sse.DataEvent[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
 # pyfect.encoding.tar.Entry
 
 
-def v152_0_out(x: pyfect.encoding.tar.Entry[_Sub, Any]) -> pyfect.encoding.tar.Entry[_Super, Any]:
+def v164_0_out(x: pyfect.encoding.tar.Entry[_Sub, Any]) -> pyfect.encoding.tar.Entry[_Super, Any]:
     return x
 
 
-def v152_0_in(x: pyfect.encoding.tar.Entry[_Super, Any]) -> pyfect.encoding.tar.Entry[_Sub, Any]:
+def v164_0_in(x: pyfect.encoding.tar.Entry[_Super, Any]) -> pyfect.encoding.tar.Entry[_Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v152_1_out(x: pyfect.encoding.tar.Entry[Any, _Sub]) -> pyfect.encoding.tar.Entry[Any, _Super]:
+def v164_1_out(x: pyfect.encoding.tar.Entry[Any, _Sub]) -> pyfect.encoding.tar.Entry[Any, _Super]:
     return x
 
 
-def v152_1_in(x: pyfect.encoding.tar.Entry[Any, _Super]) -> pyfect.encoding.tar.Entry[Any, _Sub]:
+def v164_1_in(x: pyfect.encoding.tar.Entry[Any, _Super]) -> pyfect.encoding.tar.Entry[Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T152_0_co = TypeVar("T152_0_co", covariant=True)
-T152_1_co = TypeVar("T152_1_co", covariant=True)
+T164_0_co = TypeVar("T164_0_co", covariant=True)
+T164_1_co = TypeVar("T164_1_co", covariant=True)
 
 
-class Fields152(Protocol[T152_0_co, T152_1_co]):
+class Fields164(Protocol[T164_0_co, T164_1_co]):
     @property
     def header(self) -> pyfect.encoding.tar._model.Header: ...
     @property
-    def body(self) -> pyfect.stream.Stream[bytes, T152_0_co, T152_1_co]: ...
-    def declared(self) -> tuple[T152_0_co, T152_1_co]: ...
+    def body(self) -> pyfect.stream.Stream[bytes, T164_0_co, T164_1_co]: ...
+    def declared(self) -> tuple[T164_0_co, T164_1_co]: ...
 
 
 # pyfect.encoding.xml.Machine
 
 
-def v153_0_out(
+def v165_0_out(
     x: pyfect.encoding.xml.Machine[_Sub, Any],
 ) -> pyfect.encoding.xml.Machine[_Super, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v153_0_in(
+def v165_0_in(
     x: pyfect.encoding.xml.Machine[_Super, Any],
 ) -> pyfect.encoding.xml.Machine[_Sub, Any]:
     return x
 
 
-def v153_1_out(
+def v165_1_out(
     x: pyfect.encoding.xml.Machine[Any, _Sub],
 ) -> pyfect.encoding.xml.Machine[Any, _Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v153_1_in(
+def v165_1_in(
     x: pyfect.encoding.xml.Machine[Any, _Super],
 ) -> pyfect.encoding.xml.Machine[Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
@@ -4738,71 +5143,71 @@ def v153_1_in(
 # pyfect.encoding.zip.Entry
 
 
-def v154_0_out(x: pyfect.encoding.zip.Entry[_Sub, Any]) -> pyfect.encoding.zip.Entry[_Super, Any]:
+def v166_0_out(x: pyfect.encoding.zip.Entry[_Sub, Any]) -> pyfect.encoding.zip.Entry[_Super, Any]:
     return x
 
 
-def v154_0_in(x: pyfect.encoding.zip.Entry[_Super, Any]) -> pyfect.encoding.zip.Entry[_Sub, Any]:
+def v166_0_in(x: pyfect.encoding.zip.Entry[_Super, Any]) -> pyfect.encoding.zip.Entry[_Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v154_1_out(x: pyfect.encoding.zip.Entry[Any, _Sub]) -> pyfect.encoding.zip.Entry[Any, _Super]:
+def v166_1_out(x: pyfect.encoding.zip.Entry[Any, _Sub]) -> pyfect.encoding.zip.Entry[Any, _Super]:
     return x
 
 
-def v154_1_in(x: pyfect.encoding.zip.Entry[Any, _Super]) -> pyfect.encoding.zip.Entry[Any, _Sub]:
+def v166_1_in(x: pyfect.encoding.zip.Entry[Any, _Super]) -> pyfect.encoding.zip.Entry[Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T154_0_co = TypeVar("T154_0_co", covariant=True)
-T154_1_co = TypeVar("T154_1_co", covariant=True)
+T166_0_co = TypeVar("T166_0_co", covariant=True)
+T166_1_co = TypeVar("T166_1_co", covariant=True)
 
 
-class Fields154(Protocol[T154_0_co, T154_1_co]):
+class Fields166(Protocol[T166_0_co, T166_1_co]):
     @property
     def header(self) -> pyfect.encoding.zip._model.Header: ...
     @property
-    def body(self) -> pyfect.stream.Stream[bytes, T154_0_co, T154_1_co]: ...
-    def declared(self) -> tuple[T154_0_co, T154_1_co]: ...
+    def body(self) -> pyfect.stream.Stream[bytes, T166_0_co, T166_1_co]: ...
+    def declared(self) -> tuple[T166_0_co, T166_1_co]: ...
 
 
 # pyfect.eventlog.Event
 
 
-def v155_0_out(x: pyfect.eventlog.Event[_Sub, Any, Any]) -> pyfect.eventlog.Event[_Super, Any, Any]:
+def v167_0_out(x: pyfect.eventlog.Event[_Sub, Any, Any]) -> pyfect.eventlog.Event[_Super, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v155_0_in(x: pyfect.eventlog.Event[_Super, Any, Any]) -> pyfect.eventlog.Event[_Sub, Any, Any]:
+def v167_0_in(x: pyfect.eventlog.Event[_Super, Any, Any]) -> pyfect.eventlog.Event[_Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v155_1_out(x: pyfect.eventlog.Event[Any, _Sub, Any]) -> pyfect.eventlog.Event[Any, _Super, Any]:
+def v167_1_out(x: pyfect.eventlog.Event[Any, _Sub, Any]) -> pyfect.eventlog.Event[Any, _Super, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v155_1_in(x: pyfect.eventlog.Event[Any, _Super, Any]) -> pyfect.eventlog.Event[Any, _Sub, Any]:
+def v167_1_in(x: pyfect.eventlog.Event[Any, _Super, Any]) -> pyfect.eventlog.Event[Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v155_2_out(x: pyfect.eventlog.Event[Any, Any, _Sub]) -> pyfect.eventlog.Event[Any, Any, _Super]:
+def v167_2_out(x: pyfect.eventlog.Event[Any, Any, _Sub]) -> pyfect.eventlog.Event[Any, Any, _Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v155_2_in(x: pyfect.eventlog.Event[Any, Any, _Super]) -> pyfect.eventlog.Event[Any, Any, _Sub]:
+def v167_2_in(x: pyfect.eventlog.Event[Any, Any, _Super]) -> pyfect.eventlog.Event[Any, Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
 # pyfect.eventlog.EventGroup
 
 
-def v156_0_out(
+def v168_0_out(
     x: pyfect.eventlog.EventGroup[Never],
 ) -> pyfect.eventlog.EventGroup[pyfect.eventlog.event.AnyEvent]:
     return x
 
 
-def v156_0_in(
+def v168_0_in(
     x: pyfect.eventlog.EventGroup[pyfect.eventlog.event.AnyEvent],
 ) -> pyfect.eventlog.EventGroup[Never]:
     return x  # pyright: ignore[reportReturnType]
@@ -4811,49 +5216,49 @@ def v156_0_in(
 # pyfect.eventlog.EventRow
 
 
-def v157_0_out(
+def v169_0_out(
     x: pyfect.eventlog.EventRow[Never, Any, Any, Any],
 ) -> pyfect.eventlog.EventRow[pyfect.eventlog.event_row.Row, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v157_0_in(
+def v169_0_in(
     x: pyfect.eventlog.EventRow[pyfect.eventlog.event_row.Row, Any, Any, Any],
 ) -> pyfect.eventlog.EventRow[Never, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v157_1_out(
+def v169_1_out(
     x: pyfect.eventlog.EventRow[Any, _Sub, Any, Any],
 ) -> pyfect.eventlog.EventRow[Any, _Super, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v157_1_in(
+def v169_1_in(
     x: pyfect.eventlog.EventRow[Any, _Super, Any, Any],
 ) -> pyfect.eventlog.EventRow[Any, _Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v157_2_out(
+def v169_2_out(
     x: pyfect.eventlog.EventRow[Any, Any, _Sub, Any],
 ) -> pyfect.eventlog.EventRow[Any, Any, _Super, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v157_2_in(
+def v169_2_in(
     x: pyfect.eventlog.EventRow[Any, Any, _Super, Any],
 ) -> pyfect.eventlog.EventRow[Any, Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v157_3_out(
+def v169_3_out(
     x: pyfect.eventlog.EventRow[Any, Any, Any, Never],
 ) -> pyfect.eventlog.EventRow[Any, Any, Any, pyfect.eventlog.event_row.Row]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v157_3_in(
+def v169_3_in(
     x: pyfect.eventlog.EventRow[Any, Any, Any, pyfect.eventlog.event_row.Row],
 ) -> pyfect.eventlog.EventRow[Any, Any, Any, Never]:
     return x
@@ -4862,120 +5267,120 @@ def v157_3_in(
 # pyfect.eventlog.Write
 
 
-def v158_0_out(x: pyfect.eventlog.Write[_Sub, Any, Any]) -> pyfect.eventlog.Write[_Super, Any, Any]:
+def v170_0_out(x: pyfect.eventlog.Write[_Sub, Any, Any]) -> pyfect.eventlog.Write[_Super, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v158_0_in(x: pyfect.eventlog.Write[_Super, Any, Any]) -> pyfect.eventlog.Write[_Sub, Any, Any]:
+def v170_0_in(x: pyfect.eventlog.Write[_Super, Any, Any]) -> pyfect.eventlog.Write[_Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v158_1_out(x: pyfect.eventlog.Write[Any, _Sub, Any]) -> pyfect.eventlog.Write[Any, _Super, Any]:
+def v170_1_out(x: pyfect.eventlog.Write[Any, _Sub, Any]) -> pyfect.eventlog.Write[Any, _Super, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v158_1_in(x: pyfect.eventlog.Write[Any, _Super, Any]) -> pyfect.eventlog.Write[Any, _Sub, Any]:
+def v170_1_in(x: pyfect.eventlog.Write[Any, _Super, Any]) -> pyfect.eventlog.Write[Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v158_2_out(x: pyfect.eventlog.Write[Any, Any, _Sub]) -> pyfect.eventlog.Write[Any, Any, _Super]:
+def v170_2_out(x: pyfect.eventlog.Write[Any, Any, _Sub]) -> pyfect.eventlog.Write[Any, Any, _Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v158_2_in(x: pyfect.eventlog.Write[Any, Any, _Super]) -> pyfect.eventlog.Write[Any, Any, _Sub]:
+def v170_2_in(x: pyfect.eventlog.Write[Any, Any, _Super]) -> pyfect.eventlog.Write[Any, Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
 # pyfect.eventlog.event_log.Conflict
 
 
-def v159_0_out(
+def v171_0_out(
     x: pyfect.eventlog.event_log.Conflict[_Sub],
 ) -> pyfect.eventlog.event_log.Conflict[_Super]:
     return x
 
 
-def v159_0_in(
+def v171_0_in(
     x: pyfect.eventlog.event_log.Conflict[_Super],
 ) -> pyfect.eventlog.event_log.Conflict[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T159_0_co = TypeVar("T159_0_co", covariant=True)
+T171_0_co = TypeVar("T171_0_co", covariant=True)
 
 
-class Fields159(Protocol[T159_0_co]):
+class Fields171(Protocol[T171_0_co]):
     @property
     def entry(self) -> pyfect.eventlog.event_journal.Entry: ...
     @property
-    def payload(self) -> T159_0_co: ...
-    def declared(self) -> tuple[T159_0_co]: ...
+    def payload(self) -> T171_0_co: ...
+    def declared(self) -> tuple[T171_0_co]: ...
 
 
 # pyfect.eventlog.event_log.EventLogSchema
 
 
-def v160_0_out(
+def v172_0_out(
     x: pyfect.eventlog.event_log.EventLogSchema[_Sub],
 ) -> pyfect.eventlog.event_log.EventLogSchema[_Super]:
     return x
 
 
-def v160_0_in(
+def v172_0_in(
     x: pyfect.eventlog.event_log.EventLogSchema[_Super],
 ) -> pyfect.eventlog.event_log.EventLogSchema[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T160_0_co = TypeVar("T160_0_co", covariant=True)
+T172_0_co = TypeVar("T172_0_co", covariant=True)
 
 
-class Fields160(Protocol[T160_0_co]):
+class Fields172(Protocol[T172_0_co]):
     @property
-    def groups(self) -> tuple[T160_0_co, ...]: ...
-    def declared(self) -> tuple[T160_0_co]: ...
+    def groups(self) -> tuple[T172_0_co, ...]: ...
+    def declared(self) -> tuple[T172_0_co]: ...
 
 
 # pyfect.eventlog.event_log.HandlerInput
 
 
-def v161_0_out(
+def v173_0_out(
     x: pyfect.eventlog.event_log.HandlerInput[_Sub],
 ) -> pyfect.eventlog.event_log.HandlerInput[_Super]:
     return x
 
 
-def v161_0_in(
+def v173_0_in(
     x: pyfect.eventlog.event_log.HandlerInput[_Super],
 ) -> pyfect.eventlog.event_log.HandlerInput[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T161_0_co = TypeVar("T161_0_co", covariant=True)
+T173_0_co = TypeVar("T173_0_co", covariant=True)
 
 
-class Fields161(Protocol[T161_0_co]):
+class Fields173(Protocol[T173_0_co]):
     @property
     def store_id(self) -> pyfect.eventlog.event_journal.StoreId: ...
     @property
-    def payload(self) -> T161_0_co: ...
+    def payload(self) -> T173_0_co: ...
     @property
     def entry(self) -> pyfect.eventlog.event_journal.Entry: ...
     @property
-    def conflicts(self) -> tuple[pyfect.eventlog.event_log.Conflict[T161_0_co], ...]: ...
-    def declared(self) -> tuple[T161_0_co]: ...
+    def conflicts(self) -> tuple[pyfect.eventlog.event_log.Conflict[T173_0_co], ...]: ...
+    def declared(self) -> tuple[T173_0_co]: ...
 
 
 # pyfect.eventlog.event_log.Handlers
 
 
-def v162_0_out(
+def v174_0_out(
     x: pyfect.eventlog.event_log.Handlers[_Sub],
 ) -> pyfect.eventlog.event_log.Handlers[_Super]:
     return x
 
 
-def v162_0_in(
+def v174_0_in(
     x: pyfect.eventlog.event_log.Handlers[_Super],
 ) -> pyfect.eventlog.event_log.Handlers[_Sub]:
     return x  # pyright: ignore[reportReturnType]
@@ -4984,13 +5389,13 @@ def v162_0_in(
 # pyfect.eventlog.event_row.PatchPayload
 
 
-def v163_0_out(
+def v175_0_out(
     x: pyfect.eventlog.event_row.PatchPayload[_Sub],
 ) -> pyfect.eventlog.event_row.PatchPayload[_Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v163_0_in(
+def v175_0_in(
     x: pyfect.eventlog.event_row.PatchPayload[_Super],
 ) -> pyfect.eventlog.event_row.PatchPayload[_Sub]:
     return x  # pyright: ignore[reportReturnType]
@@ -4999,13 +5404,13 @@ def v163_0_in(
 # pyfect.eventlog.event_row.RemovePayload
 
 
-def v164_0_out(
+def v176_0_out(
     x: pyfect.eventlog.event_row.RemovePayload[_Sub],
 ) -> pyfect.eventlog.event_row.RemovePayload[_Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v164_0_in(
+def v176_0_in(
     x: pyfect.eventlog.event_row.RemovePayload[_Super],
 ) -> pyfect.eventlog.event_row.RemovePayload[_Sub]:
     return x  # pyright: ignore[reportReturnType]
@@ -5014,13 +5419,13 @@ def v164_0_in(
 # pyfect.eventlog.event_row.SetPayload
 
 
-def v165_0_out(
+def v177_0_out(
     x: pyfect.eventlog.event_row.SetPayload[_Sub],
 ) -> pyfect.eventlog.event_row.SetPayload[_Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v165_0_in(
+def v177_0_in(
     x: pyfect.eventlog.event_row.SetPayload[_Super],
 ) -> pyfect.eventlog.event_row.SetPayload[_Sub]:
     return x  # pyright: ignore[reportReturnType]
@@ -5029,22 +5434,22 @@ def v165_0_in(
 # pyfect.execution_plan.AttemptFailure
 
 
-def v166_0_out(
+def v178_0_out(
     x: pyfect.execution_plan.AttemptFailure[_Sub],
 ) -> pyfect.execution_plan.AttemptFailure[_Super]:
     return x
 
 
-def v166_0_in(
+def v178_0_in(
     x: pyfect.execution_plan.AttemptFailure[_Super],
 ) -> pyfect.execution_plan.AttemptFailure[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T166_0_co = TypeVar("T166_0_co", covariant=True)
+T178_0_co = TypeVar("T178_0_co", covariant=True)
 
 
-class Fields166(Protocol[T166_0_co]):
+class Fields178(Protocol[T178_0_co]):
     @property
     def attempt(self) -> int: ...
     @property
@@ -5054,122 +5459,122 @@ class Fields166(Protocol[T166_0_co]):
     @property
     def duration(self) -> pyfect.duration.Duration: ...
     @property
-    def cause(self) -> pyfect.cause.Cause[T166_0_co]: ...
-    def declared(self) -> tuple[T166_0_co]: ...
+    def cause(self) -> pyfect.cause.Cause[T178_0_co]: ...
+    def declared(self) -> tuple[T178_0_co]: ...
 
 
 # pyfect.execution_plan.Step
 
 
-def v167_0_out(
+def v179_0_out(
     x: pyfect.execution_plan.Step[_Sub, Any, Any, Any],
 ) -> pyfect.execution_plan.Step[_Super, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v167_0_in(
+def v179_0_in(
     x: pyfect.execution_plan.Step[_Super, Any, Any, Any],
 ) -> pyfect.execution_plan.Step[_Sub, Any, Any, Any]:
     return x
 
 
-def v167_1_out(
+def v179_1_out(
     x: pyfect.execution_plan.Step[Any, _Sub, Any, Any],
 ) -> pyfect.execution_plan.Step[Any, _Super, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v167_1_in(
+def v179_1_in(
     x: pyfect.execution_plan.Step[Any, _Super, Any, Any],
 ) -> pyfect.execution_plan.Step[Any, _Sub, Any, Any]:
     return x
 
 
-def v167_2_out(
+def v179_2_out(
     x: pyfect.execution_plan.Step[Any, Any, _Sub, Any],
 ) -> pyfect.execution_plan.Step[Any, Any, _Super, Any]:
     return x
 
 
-def v167_2_in(
+def v179_2_in(
     x: pyfect.execution_plan.Step[Any, Any, _Super, Any],
 ) -> pyfect.execution_plan.Step[Any, Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v167_3_out(
+def v179_3_out(
     x: pyfect.execution_plan.Step[Any, Any, Any, _Sub],
 ) -> pyfect.execution_plan.Step[Any, Any, Any, _Super]:
     return x
 
 
-def v167_3_in(
+def v179_3_in(
     x: pyfect.execution_plan.Step[Any, Any, Any, _Super],
 ) -> pyfect.execution_plan.Step[Any, Any, Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T167_0_contra = TypeVar("T167_0_contra", contravariant=True)
-T167_1_contra = TypeVar("T167_1_contra", contravariant=True)
-T167_2_co = TypeVar("T167_2_co", covariant=True)
-T167_3_co = TypeVar("T167_3_co", covariant=True)
+T179_0_contra = TypeVar("T179_0_contra", contravariant=True)
+T179_1_contra = TypeVar("T179_1_contra", contravariant=True)
+T179_2_co = TypeVar("T179_2_co", covariant=True)
+T179_3_co = TypeVar("T179_3_co", covariant=True)
 
 
-class Fields167(Protocol[T167_0_contra, T167_1_contra, T167_2_co, T167_3_co]):
+class Fields179(Protocol[T179_0_contra, T179_1_contra, T179_2_co, T179_3_co]):
     @property
     def provide(
         self,
     ) -> (
-        pyfect.context.Context[T167_0_contra]
-        | pyfect.layer.Layer[T167_0_contra, T167_2_co, T167_3_co]
+        pyfect.context.Context[T179_0_contra]
+        | pyfect.layer.Layer[T179_0_contra, T179_2_co, T179_3_co]
     ): ...
     @property
     def attempts(self) -> int | None: ...
     @property
     def while_(
         self,
-    ) -> pyfect.execution_plan._model.Predicate[T167_1_contra, T167_2_co, T167_3_co] | None: ...
+    ) -> pyfect.execution_plan._model.Predicate[T179_1_contra, T179_2_co, T179_3_co] | None: ...
     @property
     def schedule(
         self,
-    ) -> pyfect.schedule.Schedule[typing.Any, T167_1_contra, T167_2_co, T167_3_co] | None: ...
-    def declared(self, _0: T167_0_contra, _1: T167_1_contra) -> tuple[T167_2_co, T167_3_co]: ...
+    ) -> pyfect.schedule.Schedule[typing.Any, T179_1_contra, T179_2_co, T179_3_co] | None: ...
+    def declared(self, _0: T179_0_contra, _1: T179_1_contra) -> tuple[T179_2_co, T179_3_co]: ...
 
 
 # pyfect.fiber_handle.FiberHandleAsyncRuntime
 
 
-def v168_0_out(
+def v180_0_out(
     x: pyfect.fiber_handle.FiberHandleAsyncRuntime[_Sub, Any, Any],
 ) -> pyfect.fiber_handle.FiberHandleAsyncRuntime[_Super, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v168_0_in(
+def v180_0_in(
     x: pyfect.fiber_handle.FiberHandleAsyncRuntime[_Super, Any, Any],
 ) -> pyfect.fiber_handle.FiberHandleAsyncRuntime[_Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v168_1_out(
+def v180_1_out(
     x: pyfect.fiber_handle.FiberHandleAsyncRuntime[Any, _Sub, Any],
 ) -> pyfect.fiber_handle.FiberHandleAsyncRuntime[Any, _Super, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v168_1_in(
+def v180_1_in(
     x: pyfect.fiber_handle.FiberHandleAsyncRuntime[Any, _Super, Any],
 ) -> pyfect.fiber_handle.FiberHandleAsyncRuntime[Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v168_2_out(
+def v180_2_out(
     x: pyfect.fiber_handle.FiberHandleAsyncRuntime[Any, Any, _Sub],
 ) -> pyfect.fiber_handle.FiberHandleAsyncRuntime[Any, Any, _Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v168_2_in(
+def v180_2_in(
     x: pyfect.fiber_handle.FiberHandleAsyncRuntime[Any, Any, _Super],
 ) -> pyfect.fiber_handle.FiberHandleAsyncRuntime[Any, Any, _Sub]:
     return x
@@ -5178,37 +5583,37 @@ def v168_2_in(
 # pyfect.fiber_handle.FiberHandleRuntime
 
 
-def v169_0_out(
+def v181_0_out(
     x: pyfect.fiber_handle.FiberHandleRuntime[_Sub, Any, Any],
 ) -> pyfect.fiber_handle.FiberHandleRuntime[_Super, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v169_0_in(
+def v181_0_in(
     x: pyfect.fiber_handle.FiberHandleRuntime[_Super, Any, Any],
 ) -> pyfect.fiber_handle.FiberHandleRuntime[_Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v169_1_out(
+def v181_1_out(
     x: pyfect.fiber_handle.FiberHandleRuntime[Any, _Sub, Any],
 ) -> pyfect.fiber_handle.FiberHandleRuntime[Any, _Super, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v169_1_in(
+def v181_1_in(
     x: pyfect.fiber_handle.FiberHandleRuntime[Any, _Super, Any],
 ) -> pyfect.fiber_handle.FiberHandleRuntime[Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v169_2_out(
+def v181_2_out(
     x: pyfect.fiber_handle.FiberHandleRuntime[Any, Any, _Sub],
 ) -> pyfect.fiber_handle.FiberHandleRuntime[Any, Any, _Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v169_2_in(
+def v181_2_in(
     x: pyfect.fiber_handle.FiberHandleRuntime[Any, Any, _Super],
 ) -> pyfect.fiber_handle.FiberHandleRuntime[Any, Any, _Sub]:
     return x
@@ -5217,49 +5622,49 @@ def v169_2_in(
 # pyfect.fiber_map.FiberMapAsyncRuntime
 
 
-def v170_0_out(
+def v182_0_out(
     x: pyfect.fiber_map.FiberMapAsyncRuntime[Never, Any, Any, Any],
 ) -> pyfect.fiber_map.FiberMapAsyncRuntime[collections.abc.Hashable, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v170_0_in(
+def v182_0_in(
     x: pyfect.fiber_map.FiberMapAsyncRuntime[collections.abc.Hashable, Any, Any, Any],
 ) -> pyfect.fiber_map.FiberMapAsyncRuntime[Never, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v170_1_out(
+def v182_1_out(
     x: pyfect.fiber_map.FiberMapAsyncRuntime[Any, _Sub, Any, Any],
 ) -> pyfect.fiber_map.FiberMapAsyncRuntime[Any, _Super, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v170_1_in(
+def v182_1_in(
     x: pyfect.fiber_map.FiberMapAsyncRuntime[Any, _Super, Any, Any],
 ) -> pyfect.fiber_map.FiberMapAsyncRuntime[Any, _Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v170_2_out(
+def v182_2_out(
     x: pyfect.fiber_map.FiberMapAsyncRuntime[Any, Any, _Sub, Any],
 ) -> pyfect.fiber_map.FiberMapAsyncRuntime[Any, Any, _Super, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v170_2_in(
+def v182_2_in(
     x: pyfect.fiber_map.FiberMapAsyncRuntime[Any, Any, _Super, Any],
 ) -> pyfect.fiber_map.FiberMapAsyncRuntime[Any, Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v170_3_out(
+def v182_3_out(
     x: pyfect.fiber_map.FiberMapAsyncRuntime[Any, Any, Any, _Sub],
 ) -> pyfect.fiber_map.FiberMapAsyncRuntime[Any, Any, Any, _Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v170_3_in(
+def v182_3_in(
     x: pyfect.fiber_map.FiberMapAsyncRuntime[Any, Any, Any, _Super],
 ) -> pyfect.fiber_map.FiberMapAsyncRuntime[Any, Any, Any, _Sub]:
     return x
@@ -5268,49 +5673,49 @@ def v170_3_in(
 # pyfect.fiber_map.FiberMapRuntime
 
 
-def v171_0_out(
+def v183_0_out(
     x: pyfect.fiber_map.FiberMapRuntime[Never, Any, Any, Any],
 ) -> pyfect.fiber_map.FiberMapRuntime[collections.abc.Hashable, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v171_0_in(
+def v183_0_in(
     x: pyfect.fiber_map.FiberMapRuntime[collections.abc.Hashable, Any, Any, Any],
 ) -> pyfect.fiber_map.FiberMapRuntime[Never, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v171_1_out(
+def v183_1_out(
     x: pyfect.fiber_map.FiberMapRuntime[Any, _Sub, Any, Any],
 ) -> pyfect.fiber_map.FiberMapRuntime[Any, _Super, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v171_1_in(
+def v183_1_in(
     x: pyfect.fiber_map.FiberMapRuntime[Any, _Super, Any, Any],
 ) -> pyfect.fiber_map.FiberMapRuntime[Any, _Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v171_2_out(
+def v183_2_out(
     x: pyfect.fiber_map.FiberMapRuntime[Any, Any, _Sub, Any],
 ) -> pyfect.fiber_map.FiberMapRuntime[Any, Any, _Super, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v171_2_in(
+def v183_2_in(
     x: pyfect.fiber_map.FiberMapRuntime[Any, Any, _Super, Any],
 ) -> pyfect.fiber_map.FiberMapRuntime[Any, Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v171_3_out(
+def v183_3_out(
     x: pyfect.fiber_map.FiberMapRuntime[Any, Any, Any, _Sub],
 ) -> pyfect.fiber_map.FiberMapRuntime[Any, Any, Any, _Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v171_3_in(
+def v183_3_in(
     x: pyfect.fiber_map.FiberMapRuntime[Any, Any, Any, _Super],
 ) -> pyfect.fiber_map.FiberMapRuntime[Any, Any, Any, _Sub]:
     return x
@@ -5319,37 +5724,37 @@ def v171_3_in(
 # pyfect.fiber_set.FiberSetAsyncRuntime
 
 
-def v172_0_out(
+def v184_0_out(
     x: pyfect.fiber_set.FiberSetAsyncRuntime[_Sub, Any, Any],
 ) -> pyfect.fiber_set.FiberSetAsyncRuntime[_Super, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v172_0_in(
+def v184_0_in(
     x: pyfect.fiber_set.FiberSetAsyncRuntime[_Super, Any, Any],
 ) -> pyfect.fiber_set.FiberSetAsyncRuntime[_Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v172_1_out(
+def v184_1_out(
     x: pyfect.fiber_set.FiberSetAsyncRuntime[Any, _Sub, Any],
 ) -> pyfect.fiber_set.FiberSetAsyncRuntime[Any, _Super, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v172_1_in(
+def v184_1_in(
     x: pyfect.fiber_set.FiberSetAsyncRuntime[Any, _Super, Any],
 ) -> pyfect.fiber_set.FiberSetAsyncRuntime[Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v172_2_out(
+def v184_2_out(
     x: pyfect.fiber_set.FiberSetAsyncRuntime[Any, Any, _Sub],
 ) -> pyfect.fiber_set.FiberSetAsyncRuntime[Any, Any, _Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v172_2_in(
+def v184_2_in(
     x: pyfect.fiber_set.FiberSetAsyncRuntime[Any, Any, _Super],
 ) -> pyfect.fiber_set.FiberSetAsyncRuntime[Any, Any, _Sub]:
     return x
@@ -5358,37 +5763,37 @@ def v172_2_in(
 # pyfect.fiber_set.FiberSetRuntime
 
 
-def v173_0_out(
+def v185_0_out(
     x: pyfect.fiber_set.FiberSetRuntime[_Sub, Any, Any],
 ) -> pyfect.fiber_set.FiberSetRuntime[_Super, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v173_0_in(
+def v185_0_in(
     x: pyfect.fiber_set.FiberSetRuntime[_Super, Any, Any],
 ) -> pyfect.fiber_set.FiberSetRuntime[_Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v173_1_out(
+def v185_1_out(
     x: pyfect.fiber_set.FiberSetRuntime[Any, _Sub, Any],
 ) -> pyfect.fiber_set.FiberSetRuntime[Any, _Super, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v173_1_in(
+def v185_1_in(
     x: pyfect.fiber_set.FiberSetRuntime[Any, _Super, Any],
 ) -> pyfect.fiber_set.FiberSetRuntime[Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v173_2_out(
+def v185_2_out(
     x: pyfect.fiber_set.FiberSetRuntime[Any, Any, _Sub],
 ) -> pyfect.fiber_set.FiberSetRuntime[Any, Any, _Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v173_2_in(
+def v185_2_in(
     x: pyfect.fiber_set.FiberSetRuntime[Any, Any, _Super],
 ) -> pyfect.fiber_set.FiberSetRuntime[Any, Any, _Sub]:
     return x
@@ -5397,18 +5802,18 @@ def v173_2_in(
 # pyfect.graph.AllPairsResult
 
 
-def v174_0_out(x: pyfect.graph.AllPairsResult[_Sub]) -> pyfect.graph.AllPairsResult[_Super]:
+def v186_0_out(x: pyfect.graph.AllPairsResult[_Sub]) -> pyfect.graph.AllPairsResult[_Super]:
     return x
 
 
-def v174_0_in(x: pyfect.graph.AllPairsResult[_Super]) -> pyfect.graph.AllPairsResult[_Sub]:
+def v186_0_in(x: pyfect.graph.AllPairsResult[_Super]) -> pyfect.graph.AllPairsResult[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T174_0_co = TypeVar("T174_0_co", covariant=True)
+T186_0_co = TypeVar("T186_0_co", covariant=True)
 
 
-class Fields174(Protocol[T174_0_co]):
+class Fields186(Protocol[T186_0_co]):
     @property
     def distances(self) -> collections.abc.Mapping[int, collections.abc.Mapping[int, float]]: ...
     @property
@@ -5422,60 +5827,60 @@ class Fields174(Protocol[T174_0_co]):
     @property
     def costs(
         self,
-    ) -> collections.abc.Mapping[int, collections.abc.Mapping[int, tuple[T174_0_co, ...]]]: ...
-    def declared(self) -> tuple[T174_0_co]: ...
+    ) -> collections.abc.Mapping[int, collections.abc.Mapping[int, tuple[T186_0_co, ...]]]: ...
+    def declared(self) -> tuple[T186_0_co]: ...
 
 
 # pyfect.graph.Edge
 
 
-def v175_0_out(x: pyfect.graph.Edge[_Sub]) -> pyfect.graph.Edge[_Super]:
+def v187_0_out(x: pyfect.graph.Edge[_Sub]) -> pyfect.graph.Edge[_Super]:
     return x
 
 
-def v175_0_in(x: pyfect.graph.Edge[_Super]) -> pyfect.graph.Edge[_Sub]:
+def v187_0_in(x: pyfect.graph.Edge[_Super]) -> pyfect.graph.Edge[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T175_0_co = TypeVar("T175_0_co", covariant=True)
+T187_0_co = TypeVar("T187_0_co", covariant=True)
 
 
-class Fields175(Protocol[T175_0_co]):
+class Fields187(Protocol[T187_0_co]):
     @property
     def source(self) -> int: ...
     @property
     def target(self) -> int: ...
     @property
-    def data(self) -> T175_0_co: ...
-    def declared(self) -> tuple[T175_0_co]: ...
+    def data(self) -> T187_0_co: ...
+    def declared(self) -> tuple[T187_0_co]: ...
 
 
 # pyfect.graph.Graph
 
 
-def v176_0_out(x: pyfect.graph.Graph[_Sub, Any, Any]) -> pyfect.graph.Graph[_Super, Any, Any]:
+def v188_0_out(x: pyfect.graph.Graph[_Sub, Any, Any]) -> pyfect.graph.Graph[_Super, Any, Any]:
     return x
 
 
-def v176_0_in(x: pyfect.graph.Graph[_Super, Any, Any]) -> pyfect.graph.Graph[_Sub, Any, Any]:
+def v188_0_in(x: pyfect.graph.Graph[_Super, Any, Any]) -> pyfect.graph.Graph[_Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v176_1_out(x: pyfect.graph.Graph[Any, _Sub, Any]) -> pyfect.graph.Graph[Any, _Super, Any]:
+def v188_1_out(x: pyfect.graph.Graph[Any, _Sub, Any]) -> pyfect.graph.Graph[Any, _Super, Any]:
     return x
 
 
-def v176_1_in(x: pyfect.graph.Graph[Any, _Super, Any]) -> pyfect.graph.Graph[Any, _Sub, Any]:
+def v188_1_in(x: pyfect.graph.Graph[Any, _Super, Any]) -> pyfect.graph.Graph[Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v176_2_out(
+def v188_2_out(
     x: pyfect.graph.Graph[Any, Any, Never],
 ) -> pyfect.graph.Graph[Any, Any, pyfect.graph._records.Kind]:
     return x
 
 
-def v176_2_in(
+def v188_2_in(
     x: pyfect.graph.Graph[Any, Any, pyfect.graph._records.Kind],
 ) -> pyfect.graph.Graph[Any, Any, Never]:
     return x  # pyright: ignore[reportReturnType]
@@ -5484,37 +5889,37 @@ def v176_2_in(
 # pyfect.graph.GraphView
 
 
-def v177_0_out(
+def v189_0_out(
     x: pyfect.graph.GraphView[_Sub, Any, Any],
 ) -> pyfect.graph.GraphView[_Super, Any, Any]:
     return x
 
 
-def v177_0_in(
+def v189_0_in(
     x: pyfect.graph.GraphView[_Super, Any, Any],
 ) -> pyfect.graph.GraphView[_Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v177_1_out(
+def v189_1_out(
     x: pyfect.graph.GraphView[Any, _Sub, Any],
 ) -> pyfect.graph.GraphView[Any, _Super, Any]:
     return x
 
 
-def v177_1_in(
+def v189_1_in(
     x: pyfect.graph.GraphView[Any, _Super, Any],
 ) -> pyfect.graph.GraphView[Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v177_2_out(
+def v189_2_out(
     x: pyfect.graph.GraphView[Any, Any, Never],
 ) -> pyfect.graph.GraphView[Any, Any, pyfect.graph._records.Kind]:
     return x
 
 
-def v177_2_in(
+def v189_2_in(
     x: pyfect.graph.GraphView[Any, Any, pyfect.graph._records.Kind],
 ) -> pyfect.graph.GraphView[Any, Any, Never]:
     return x  # pyright: ignore[reportReturnType]
@@ -5523,18 +5928,18 @@ def v177_2_in(
 # pyfect.graph.IndexedEdge
 
 
-def v178_0_out(x: pyfect.graph.IndexedEdge[_Sub]) -> pyfect.graph.IndexedEdge[_Super]:
+def v190_0_out(x: pyfect.graph.IndexedEdge[_Sub]) -> pyfect.graph.IndexedEdge[_Super]:
     return x
 
 
-def v178_0_in(x: pyfect.graph.IndexedEdge[_Super]) -> pyfect.graph.IndexedEdge[_Sub]:
+def v190_0_in(x: pyfect.graph.IndexedEdge[_Super]) -> pyfect.graph.IndexedEdge[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T178_0_co = TypeVar("T178_0_co", covariant=True)
+T190_0_co = TypeVar("T190_0_co", covariant=True)
 
 
-class Fields178(Protocol[T178_0_co]):
+class Fields190(Protocol[T190_0_co]):
     @property
     def index(self) -> int: ...
     @property
@@ -5542,66 +5947,66 @@ class Fields178(Protocol[T178_0_co]):
     @property
     def target(self) -> int: ...
     @property
-    def data(self) -> T178_0_co: ...
-    def declared(self) -> tuple[T178_0_co]: ...
+    def data(self) -> T190_0_co: ...
+    def declared(self) -> tuple[T190_0_co]: ...
 
 
 # pyfect.graph.IndexedNode
 
 
-def v179_0_out(x: pyfect.graph.IndexedNode[_Sub]) -> pyfect.graph.IndexedNode[_Super]:
+def v191_0_out(x: pyfect.graph.IndexedNode[_Sub]) -> pyfect.graph.IndexedNode[_Super]:
     return x
 
 
-def v179_0_in(x: pyfect.graph.IndexedNode[_Super]) -> pyfect.graph.IndexedNode[_Sub]:
+def v191_0_in(x: pyfect.graph.IndexedNode[_Super]) -> pyfect.graph.IndexedNode[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T179_0_co = TypeVar("T179_0_co", covariant=True)
+T191_0_co = TypeVar("T191_0_co", covariant=True)
 
 
-class Fields179(Protocol[T179_0_co]):
+class Fields191(Protocol[T191_0_co]):
     @property
     def index(self) -> int: ...
     @property
-    def data(self) -> T179_0_co: ...
-    def declared(self) -> tuple[T179_0_co]: ...
+    def data(self) -> T191_0_co: ...
+    def declared(self) -> tuple[T191_0_co]: ...
 
 
 # pyfect.graph.MutableGraph
 
 
-def v180_0_out(
+def v192_0_out(
     x: pyfect.graph.MutableGraph[_Sub, Any, Any],
 ) -> pyfect.graph.MutableGraph[_Super, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v180_0_in(
+def v192_0_in(
     x: pyfect.graph.MutableGraph[_Super, Any, Any],
 ) -> pyfect.graph.MutableGraph[_Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v180_1_out(
+def v192_1_out(
     x: pyfect.graph.MutableGraph[Any, _Sub, Any],
 ) -> pyfect.graph.MutableGraph[Any, _Super, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v180_1_in(
+def v192_1_in(
     x: pyfect.graph.MutableGraph[Any, _Super, Any],
 ) -> pyfect.graph.MutableGraph[Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v180_2_out(
+def v192_2_out(
     x: pyfect.graph.MutableGraph[Any, Any, Never],
 ) -> pyfect.graph.MutableGraph[Any, Any, pyfect.graph._records.Kind]:
     return x
 
 
-def v180_2_in(
+def v192_2_in(
     x: pyfect.graph.MutableGraph[Any, Any, pyfect.graph._records.Kind],
 ) -> pyfect.graph.MutableGraph[Any, Any, Never]:
     return x  # pyright: ignore[reportReturnType]
@@ -5610,18 +6015,18 @@ def v180_2_in(
 # pyfect.graph.PathResult
 
 
-def v181_0_out(x: pyfect.graph.PathResult[_Sub]) -> pyfect.graph.PathResult[_Super]:
+def v193_0_out(x: pyfect.graph.PathResult[_Sub]) -> pyfect.graph.PathResult[_Super]:
     return x
 
 
-def v181_0_in(x: pyfect.graph.PathResult[_Super]) -> pyfect.graph.PathResult[_Sub]:
+def v193_0_in(x: pyfect.graph.PathResult[_Super]) -> pyfect.graph.PathResult[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T181_0_co = TypeVar("T181_0_co", covariant=True)
+T193_0_co = TypeVar("T193_0_co", covariant=True)
 
 
-class Fields181(Protocol[T181_0_co]):
+class Fields193(Protocol[T193_0_co]):
     @property
     def path(self) -> tuple[int, ...]: ...
     @property
@@ -5629,196 +6034,196 @@ class Fields181(Protocol[T181_0_co]):
     @property
     def distance(self) -> float: ...
     @property
-    def costs(self) -> tuple[T181_0_co, ...]: ...
-    def declared(self) -> tuple[T181_0_co]: ...
+    def costs(self) -> tuple[T193_0_co, ...]: ...
+    def declared(self) -> tuple[T193_0_co]: ...
 
 
 # pyfect.graph.Snapshot
 
 
-def v182_0_out(x: pyfect.graph.Snapshot[_Sub, Any, Any]) -> pyfect.graph.Snapshot[_Super, Any, Any]:
+def v194_0_out(x: pyfect.graph.Snapshot[_Sub, Any, Any]) -> pyfect.graph.Snapshot[_Super, Any, Any]:
     return x
 
 
-def v182_0_in(x: pyfect.graph.Snapshot[_Super, Any, Any]) -> pyfect.graph.Snapshot[_Sub, Any, Any]:
+def v194_0_in(x: pyfect.graph.Snapshot[_Super, Any, Any]) -> pyfect.graph.Snapshot[_Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v182_1_out(x: pyfect.graph.Snapshot[Any, _Sub, Any]) -> pyfect.graph.Snapshot[Any, _Super, Any]:
+def v194_1_out(x: pyfect.graph.Snapshot[Any, _Sub, Any]) -> pyfect.graph.Snapshot[Any, _Super, Any]:
     return x
 
 
-def v182_1_in(x: pyfect.graph.Snapshot[Any, _Super, Any]) -> pyfect.graph.Snapshot[Any, _Sub, Any]:
+def v194_1_in(x: pyfect.graph.Snapshot[Any, _Super, Any]) -> pyfect.graph.Snapshot[Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v182_2_out(
+def v194_2_out(
     x: pyfect.graph.Snapshot[Any, Any, Never],
 ) -> pyfect.graph.Snapshot[Any, Any, pyfect.graph._records.Kind]:
     return x
 
 
-def v182_2_in(
+def v194_2_in(
     x: pyfect.graph.Snapshot[Any, Any, pyfect.graph._records.Kind],
 ) -> pyfect.graph.Snapshot[Any, Any, Never]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T182_0_co = TypeVar("T182_0_co", covariant=True)
-T182_1_co = TypeVar("T182_1_co", covariant=True)
-T182_2_co = TypeVar("T182_2_co", covariant=True, bound=pyfect.graph._records.Kind)
+T194_0_co = TypeVar("T194_0_co", covariant=True)
+T194_1_co = TypeVar("T194_1_co", covariant=True)
+T194_2_co = TypeVar("T194_2_co", covariant=True, bound=pyfect.graph._records.Kind)
 
 
-class Fields182(Protocol[T182_0_co, T182_1_co, T182_2_co]):
+class Fields194(Protocol[T194_0_co, T194_1_co, T194_2_co]):
     @property
-    def type(self) -> T182_2_co: ...
+    def type(self) -> T194_2_co: ...
     @property
-    def nodes(self) -> collections.abc.Sequence[pyfect.graph._records.IndexedNode[T182_0_co]]: ...
+    def nodes(self) -> collections.abc.Sequence[pyfect.graph._records.IndexedNode[T194_0_co]]: ...
     @property
-    def edges(self) -> collections.abc.Sequence[pyfect.graph._records.IndexedEdge[T182_1_co]]: ...
-    def declared(self) -> tuple[T182_0_co, T182_1_co, T182_2_co]: ...
+    def edges(self) -> collections.abc.Sequence[pyfect.graph._records.IndexedEdge[T194_1_co]]: ...
+    def declared(self) -> tuple[T194_0_co, T194_1_co, T194_2_co]: ...
 
 
 # pyfect.graph.Visit
 
 
-def v183_0_out(x: pyfect.graph.Visit[_Sub, Any]) -> pyfect.graph.Visit[_Super, Any]:
+def v195_0_out(x: pyfect.graph.Visit[_Sub, Any]) -> pyfect.graph.Visit[_Super, Any]:
     return x
 
 
-def v183_0_in(x: pyfect.graph.Visit[_Super, Any]) -> pyfect.graph.Visit[_Sub, Any]:
+def v195_0_in(x: pyfect.graph.Visit[_Super, Any]) -> pyfect.graph.Visit[_Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v183_1_out(x: pyfect.graph.Visit[Any, _Sub]) -> pyfect.graph.Visit[Any, _Super]:
+def v195_1_out(x: pyfect.graph.Visit[Any, _Sub]) -> pyfect.graph.Visit[Any, _Super]:
     return x
 
 
-def v183_1_in(x: pyfect.graph.Visit[Any, _Super]) -> pyfect.graph.Visit[Any, _Sub]:
+def v195_1_in(x: pyfect.graph.Visit[Any, _Super]) -> pyfect.graph.Visit[Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
 # pyfect.graph.Walker
 
 
-def v184_0_out(x: pyfect.graph.Walker[_Sub, Any]) -> pyfect.graph.Walker[_Super, Any]:
+def v196_0_out(x: pyfect.graph.Walker[_Sub, Any]) -> pyfect.graph.Walker[_Super, Any]:
     return x
 
 
-def v184_0_in(x: pyfect.graph.Walker[_Super, Any]) -> pyfect.graph.Walker[_Sub, Any]:
+def v196_0_in(x: pyfect.graph.Walker[_Super, Any]) -> pyfect.graph.Walker[_Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v184_1_out(x: pyfect.graph.Walker[Any, _Sub]) -> pyfect.graph.Walker[Any, _Super]:
+def v196_1_out(x: pyfect.graph.Walker[Any, _Sub]) -> pyfect.graph.Walker[Any, _Super]:
     return x
 
 
-def v184_1_in(x: pyfect.graph.Walker[Any, _Super]) -> pyfect.graph.Walker[Any, _Sub]:
+def v196_1_in(x: pyfect.graph.Walker[Any, _Super]) -> pyfect.graph.Walker[Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
 # pyfect.graphql.GraphQLGroup
 
 
-def v185_0_out(
+def v197_0_out(
     x: pyfect.graphql.GraphQLGroup[_Sub, Any],
 ) -> pyfect.graphql.GraphQLGroup[_Super, Any]:
     return x
 
 
-def v185_0_in(
+def v197_0_in(
     x: pyfect.graphql.GraphQLGroup[_Super, Any],
 ) -> pyfect.graphql.GraphQLGroup[_Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v185_1_out(
+def v197_1_out(
     x: pyfect.graphql.GraphQLGroup[Any, _Sub],
 ) -> pyfect.graphql.GraphQLGroup[Any, _Super]:
     return x
 
 
-def v185_1_in(
+def v197_1_in(
     x: pyfect.graphql.GraphQLGroup[Any, _Super],
 ) -> pyfect.graphql.GraphQLGroup[Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T185_0_co = TypeVar("T185_0_co", covariant=True)
-T185_1_co = TypeVar("T185_1_co", covariant=True)
+T197_0_co = TypeVar("T197_0_co", covariant=True)
+T197_1_co = TypeVar("T197_1_co", covariant=True)
 
 
-class Fields185(Protocol[T185_0_co, T185_1_co]):
-    def declared(self) -> tuple[T185_0_co, T185_1_co]: ...
+class Fields197(Protocol[T197_0_co, T197_1_co]):
+    def declared(self) -> tuple[T197_0_co, T197_1_co]: ...
 
 
 # pyfect.graphql.GraphQLMiddleware
 
 
-def v186_0_out(
+def v198_0_out(
     x: pyfect.graphql.GraphQLMiddleware[_Sub, Any],
 ) -> pyfect.graphql.GraphQLMiddleware[_Super, Any]:
     return x
 
 
-def v186_0_in(
+def v198_0_in(
     x: pyfect.graphql.GraphQLMiddleware[_Super, Any],
 ) -> pyfect.graphql.GraphQLMiddleware[_Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v186_1_out(
+def v198_1_out(
     x: pyfect.graphql.GraphQLMiddleware[Any, _Sub],
 ) -> pyfect.graphql.GraphQLMiddleware[Any, _Super]:
     return x
 
 
-def v186_1_in(
+def v198_1_in(
     x: pyfect.graphql.GraphQLMiddleware[Any, _Super],
 ) -> pyfect.graphql.GraphQLMiddleware[Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T186_0_co = TypeVar("T186_0_co", covariant=True)
-T186_1_co = TypeVar("T186_1_co", covariant=True)
+T198_0_co = TypeVar("T198_0_co", covariant=True)
+T198_1_co = TypeVar("T198_1_co", covariant=True)
 
 
-class Fields186(Protocol[T186_0_co, T186_1_co]):
-    def declared(self) -> tuple[T186_0_co, T186_1_co]: ...
+class Fields198(Protocol[T198_0_co, T198_1_co]):
+    def declared(self) -> tuple[T198_0_co, T198_1_co]: ...
 
 
 # pyfect.graphql.Implementation
 
 
-def v187_0_out(
+def v199_0_out(
     x: pyfect.graphql.Implementation[_Sub, Any],
 ) -> pyfect.graphql.Implementation[_Super, Any]:
     return x
 
 
-def v187_0_in(
+def v199_0_in(
     x: pyfect.graphql.Implementation[_Super, Any],
 ) -> pyfect.graphql.Implementation[_Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v187_1_out(
+def v199_1_out(
     x: pyfect.graphql.Implementation[Any, _Sub],
 ) -> pyfect.graphql.Implementation[Any, _Super]:
     return x
 
 
-def v187_1_in(
+def v199_1_in(
     x: pyfect.graphql.Implementation[Any, _Super],
 ) -> pyfect.graphql.Implementation[Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T187_0_co = TypeVar("T187_0_co", covariant=True)
-T187_1_co = TypeVar("T187_1_co", covariant=True)
+T199_0_co = TypeVar("T199_0_co", covariant=True)
+T199_1_co = TypeVar("T199_1_co", covariant=True)
 
 
-class Fields187(Protocol[T187_0_co, T187_1_co]):
+class Fields199(Protocol[T199_0_co, T199_1_co]):
     @property
     def execute(
         self,
@@ -5826,8 +6231,8 @@ class Fields187(Protocol[T187_0_co, T187_1_co]):
         [pyfect.graphql.middleware.ExecuteOptions],
         pyfect.effect.Effect[
             pyfect.graphql._types.ExecutionResult,
-            pyfect.graphql.client_error.GraphQLClientError | T187_0_co,
-            T187_1_co,
+            pyfect.graphql.client_error.GraphQLClientError | T199_0_co,
+            T199_1_co,
         ],
     ]: ...
     @property
@@ -5837,131 +6242,131 @@ class Fields187(Protocol[T187_0_co, T187_1_co]):
         [pyfect.graphql.middleware.SubscribeOptions],
         pyfect.stream.Stream[
             pyfect.graphql._types.ExecutionResult,
-            pyfect.graphql.client_error.GraphQLClientError | T187_0_co,
-            T187_1_co,
+            pyfect.graphql.client_error.GraphQLClientError | T199_0_co,
+            T199_1_co,
         ],
     ]: ...
-    def declared(self) -> tuple[T187_0_co, T187_1_co]: ...
+    def declared(self) -> tuple[T199_0_co, T199_1_co]: ...
 
 
 # pyfect.graphql.Method
 
 
-def v188_0_out(
+def v200_0_out(
     x: pyfect.graphql.Method[_Sub, Any, Any, Any],
 ) -> pyfect.graphql.Method[_Super, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v188_0_in(
+def v200_0_in(
     x: pyfect.graphql.Method[_Super, Any, Any, Any],
 ) -> pyfect.graphql.Method[_Sub, Any, Any, Any]:
     return x
 
 
-def v188_1_out(
+def v200_1_out(
     x: pyfect.graphql.Method[Any, _Sub, Any, Any],
 ) -> pyfect.graphql.Method[Any, _Super, Any, Any]:
     return x
 
 
-def v188_1_in(
+def v200_1_in(
     x: pyfect.graphql.Method[Any, _Super, Any, Any],
 ) -> pyfect.graphql.Method[Any, _Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v188_2_out(
+def v200_2_out(
     x: pyfect.graphql.Method[Any, Any, _Sub, Any],
 ) -> pyfect.graphql.Method[Any, Any, _Super, Any]:
     return x
 
 
-def v188_2_in(
+def v200_2_in(
     x: pyfect.graphql.Method[Any, Any, _Super, Any],
 ) -> pyfect.graphql.Method[Any, Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v188_3_out(
+def v200_3_out(
     x: pyfect.graphql.Method[Any, Any, Any, _Sub],
 ) -> pyfect.graphql.Method[Any, Any, Any, _Super]:
     return x
 
 
-def v188_3_in(
+def v200_3_in(
     x: pyfect.graphql.Method[Any, Any, Any, _Super],
 ) -> pyfect.graphql.Method[Any, Any, Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T188_0_contra = TypeVar("T188_0_contra", contravariant=True)
-T188_1_co = TypeVar("T188_1_co", covariant=True)
-T188_2_co = TypeVar("T188_2_co", covariant=True)
-T188_3_co = TypeVar("T188_3_co", covariant=True)
+T200_0_contra = TypeVar("T200_0_contra", contravariant=True)
+T200_1_co = TypeVar("T200_1_co", covariant=True)
+T200_2_co = TypeVar("T200_2_co", covariant=True)
+T200_3_co = TypeVar("T200_3_co", covariant=True)
 
 
-class Fields188(Protocol[T188_0_contra, T188_1_co, T188_2_co, T188_3_co]):
-    def declared(self, _0: T188_0_contra) -> tuple[T188_1_co, T188_2_co, T188_3_co]: ...
+class Fields200(Protocol[T200_0_contra, T200_1_co, T200_2_co, T200_3_co]):
+    def declared(self, _0: T200_0_contra) -> tuple[T200_1_co, T200_2_co, T200_3_co]: ...
 
 
 # pyfect.graphql.Operation
 
 
-def v189_0_out(
+def v201_0_out(
     x: pyfect.graphql.Operation[_Sub, Any, Any, Any],
 ) -> pyfect.graphql.Operation[_Super, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v189_0_in(
+def v201_0_in(
     x: pyfect.graphql.Operation[_Super, Any, Any, Any],
 ) -> pyfect.graphql.Operation[_Sub, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v189_1_out(
+def v201_1_out(
     x: pyfect.graphql.Operation[Any, _Sub, Any, Any],
 ) -> pyfect.graphql.Operation[Any, _Super, Any, Any]:
     return x
 
 
-def v189_1_in(
+def v201_1_in(
     x: pyfect.graphql.Operation[Any, _Super, Any, Any],
 ) -> pyfect.graphql.Operation[Any, _Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v189_2_out(
+def v201_2_out(
     x: pyfect.graphql.Operation[Any, Any, _Sub, Any],
 ) -> pyfect.graphql.Operation[Any, Any, _Super, Any]:
     return x
 
 
-def v189_2_in(
+def v201_2_in(
     x: pyfect.graphql.Operation[Any, Any, _Super, Any],
 ) -> pyfect.graphql.Operation[Any, Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v189_3_out(
+def v201_3_out(
     x: pyfect.graphql.Operation[Any, Any, Any, _Sub],
 ) -> pyfect.graphql.Operation[Any, Any, Any, _Super]:
     return x
 
 
-def v189_3_in(
+def v201_3_in(
     x: pyfect.graphql.Operation[Any, Any, Any, _Super],
 ) -> pyfect.graphql.Operation[Any, Any, Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T189_1_co = TypeVar("T189_1_co", covariant=True)
-T189_2_co = TypeVar("T189_2_co", covariant=True)
-T189_3_co = TypeVar("T189_3_co", covariant=True)
+T201_1_co = TypeVar("T201_1_co", covariant=True)
+T201_2_co = TypeVar("T201_2_co", covariant=True)
+T201_3_co = TypeVar("T201_3_co", covariant=True)
 
 
-class Fields189(Protocol[T189_1_co, T189_2_co, T189_3_co]):
+class Fields201(Protocol[T201_1_co, T201_2_co, T201_3_co]):
     @property
     def kind(self) -> pyfect.graphql._types.Kind: ...
     @property
@@ -5976,90 +6381,90 @@ class Fields189(Protocol[T189_1_co, T189_2_co, T189_3_co]):
     def result(self) -> pyfect.schema.Codec[typing.Any, typing.Any, typing.Any, typing.Any]: ...
     @property
     def middlewares(self) -> tuple[pyfect.graphql.middleware.AnyMiddleware, ...]: ...
-    def declared(self) -> tuple[T189_1_co, T189_2_co, T189_3_co]: ...
+    def declared(self) -> tuple[T201_1_co, T201_2_co, T201_3_co]: ...
 
 
 # pyfect.graphql.PartialResult
 
 
-def v190_0_out(x: pyfect.graphql.PartialResult[_Sub]) -> pyfect.graphql.PartialResult[_Super]:
+def v202_0_out(x: pyfect.graphql.PartialResult[_Sub]) -> pyfect.graphql.PartialResult[_Super]:
     return x
 
 
-def v190_0_in(x: pyfect.graphql.PartialResult[_Super]) -> pyfect.graphql.PartialResult[_Sub]:
+def v202_0_in(x: pyfect.graphql.PartialResult[_Super]) -> pyfect.graphql.PartialResult[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T190_0_co = TypeVar("T190_0_co", covariant=True)
+T202_0_co = TypeVar("T202_0_co", covariant=True)
 
 
-class Fields190(Protocol[T190_0_co]):
+class Fields202(Protocol[T202_0_co]):
     @property
-    def data(self) -> T190_0_co: ...
+    def data(self) -> T202_0_co: ...
     @property
     def errors(self) -> tuple[pyfect.graphql.client_error.GraphQLError, ...]: ...
     @property
     def response(self) -> pyfect.graphql._types.ExecutionResult | None: ...
-    def declared(self) -> tuple[T190_0_co]: ...
+    def declared(self) -> tuple[T202_0_co]: ...
 
 
 # pyfect.graphql.Subscription
 
 
-def v191_0_out(
+def v203_0_out(
     x: pyfect.graphql.Subscription[_Sub, Any, Any, Any],
 ) -> pyfect.graphql.Subscription[_Super, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v191_0_in(
+def v203_0_in(
     x: pyfect.graphql.Subscription[_Super, Any, Any, Any],
 ) -> pyfect.graphql.Subscription[_Sub, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v191_1_out(
+def v203_1_out(
     x: pyfect.graphql.Subscription[Any, _Sub, Any, Any],
 ) -> pyfect.graphql.Subscription[Any, _Super, Any, Any]:
     return x
 
 
-def v191_1_in(
+def v203_1_in(
     x: pyfect.graphql.Subscription[Any, _Super, Any, Any],
 ) -> pyfect.graphql.Subscription[Any, _Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v191_2_out(
+def v203_2_out(
     x: pyfect.graphql.Subscription[Any, Any, _Sub, Any],
 ) -> pyfect.graphql.Subscription[Any, Any, _Super, Any]:
     return x
 
 
-def v191_2_in(
+def v203_2_in(
     x: pyfect.graphql.Subscription[Any, Any, _Super, Any],
 ) -> pyfect.graphql.Subscription[Any, Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v191_3_out(
+def v203_3_out(
     x: pyfect.graphql.Subscription[Any, Any, Any, _Sub],
 ) -> pyfect.graphql.Subscription[Any, Any, Any, _Super]:
     return x
 
 
-def v191_3_in(
+def v203_3_in(
     x: pyfect.graphql.Subscription[Any, Any, Any, _Super],
 ) -> pyfect.graphql.Subscription[Any, Any, Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T191_1_co = TypeVar("T191_1_co", covariant=True)
-T191_2_co = TypeVar("T191_2_co", covariant=True)
-T191_3_co = TypeVar("T191_3_co", covariant=True)
+T203_1_co = TypeVar("T203_1_co", covariant=True)
+T203_2_co = TypeVar("T203_2_co", covariant=True)
+T203_3_co = TypeVar("T203_3_co", covariant=True)
 
 
-class Fields191(Protocol[T191_1_co, T191_2_co, T191_3_co]):
+class Fields203(Protocol[T203_1_co, T203_2_co, T203_3_co]):
     @property
     def kind(self) -> pyfect.graphql._types.Kind: ...
     @property
@@ -6074,104 +6479,104 @@ class Fields191(Protocol[T191_1_co, T191_2_co, T191_3_co]):
     def result(self) -> pyfect.schema.Codec[typing.Any, typing.Any, typing.Any, typing.Any]: ...
     @property
     def middlewares(self) -> tuple[pyfect.graphql.middleware.AnyMiddleware, ...]: ...
-    def declared(self) -> tuple[T191_1_co, T191_2_co, T191_3_co]: ...
+    def declared(self) -> tuple[T203_1_co, T203_2_co, T203_3_co]: ...
 
 
 # pyfect.graphql.SubscriptionMethod
 
 
-def v192_0_out(
+def v204_0_out(
     x: pyfect.graphql.SubscriptionMethod[_Sub, Any, Any, Any],
 ) -> pyfect.graphql.SubscriptionMethod[_Super, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v192_0_in(
+def v204_0_in(
     x: pyfect.graphql.SubscriptionMethod[_Super, Any, Any, Any],
 ) -> pyfect.graphql.SubscriptionMethod[_Sub, Any, Any, Any]:
     return x
 
 
-def v192_1_out(
+def v204_1_out(
     x: pyfect.graphql.SubscriptionMethod[Any, _Sub, Any, Any],
 ) -> pyfect.graphql.SubscriptionMethod[Any, _Super, Any, Any]:
     return x
 
 
-def v192_1_in(
+def v204_1_in(
     x: pyfect.graphql.SubscriptionMethod[Any, _Super, Any, Any],
 ) -> pyfect.graphql.SubscriptionMethod[Any, _Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v192_2_out(
+def v204_2_out(
     x: pyfect.graphql.SubscriptionMethod[Any, Any, _Sub, Any],
 ) -> pyfect.graphql.SubscriptionMethod[Any, Any, _Super, Any]:
     return x
 
 
-def v192_2_in(
+def v204_2_in(
     x: pyfect.graphql.SubscriptionMethod[Any, Any, _Super, Any],
 ) -> pyfect.graphql.SubscriptionMethod[Any, Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v192_3_out(
+def v204_3_out(
     x: pyfect.graphql.SubscriptionMethod[Any, Any, Any, _Sub],
 ) -> pyfect.graphql.SubscriptionMethod[Any, Any, Any, _Super]:
     return x
 
 
-def v192_3_in(
+def v204_3_in(
     x: pyfect.graphql.SubscriptionMethod[Any, Any, Any, _Super],
 ) -> pyfect.graphql.SubscriptionMethod[Any, Any, Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T192_0_contra = TypeVar("T192_0_contra", contravariant=True)
-T192_1_co = TypeVar("T192_1_co", covariant=True)
-T192_2_co = TypeVar("T192_2_co", covariant=True)
-T192_3_co = TypeVar("T192_3_co", covariant=True)
+T204_0_contra = TypeVar("T204_0_contra", contravariant=True)
+T204_1_co = TypeVar("T204_1_co", covariant=True)
+T204_2_co = TypeVar("T204_2_co", covariant=True)
+T204_3_co = TypeVar("T204_3_co", covariant=True)
 
 
-class Fields192(Protocol[T192_0_contra, T192_1_co, T192_2_co, T192_3_co]):
-    def declared(self, _0: T192_0_contra) -> tuple[T192_1_co, T192_2_co, T192_3_co]: ...
+class Fields204(Protocol[T204_0_contra, T204_1_co, T204_2_co, T204_3_co]):
+    def declared(self, _0: T204_0_contra) -> tuple[T204_1_co, T204_2_co, T204_3_co]: ...
 
 
 # pyfect.graphql.client.GroupClass
 
 
-def v193_0_out(
+def v205_0_out(
     x: pyfect.graphql.client.GroupClass[_Sub, Any, Any],
 ) -> pyfect.graphql.client.GroupClass[_Super, Any, Any]:
     return x
 
 
-def v193_0_in(
+def v205_0_in(
     x: pyfect.graphql.client.GroupClass[_Super, Any, Any],
 ) -> pyfect.graphql.client.GroupClass[_Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v193_1_out(
+def v205_1_out(
     x: pyfect.graphql.client.GroupClass[Any, _Sub, Any],
 ) -> pyfect.graphql.client.GroupClass[Any, _Super, Any]:
     return x
 
 
-def v193_1_in(
+def v205_1_in(
     x: pyfect.graphql.client.GroupClass[Any, _Super, Any],
 ) -> pyfect.graphql.client.GroupClass[Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v193_2_out(
+def v205_2_out(
     x: pyfect.graphql.client.GroupClass[Any, Any, _Sub],
 ) -> pyfect.graphql.client.GroupClass[Any, Any, _Super]:
     return x
 
 
-def v193_2_in(
+def v205_2_in(
     x: pyfect.graphql.client.GroupClass[Any, Any, _Super],
 ) -> pyfect.graphql.client.GroupClass[Any, Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
@@ -6180,94 +6585,94 @@ def v193_2_in(
 # pyfect.graphql.client.NodesConnection
 
 
-def v194_0_out(
+def v206_0_out(
     x: pyfect.graphql.client.NodesConnection[_Sub],
 ) -> pyfect.graphql.client.NodesConnection[_Super]:
     return x
 
 
-def v194_0_in(
+def v206_0_in(
     x: pyfect.graphql.client.NodesConnection[_Super],
 ) -> pyfect.graphql.client.NodesConnection[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T194_0_co = TypeVar("T194_0_co", covariant=True)
+T206_0_co = TypeVar("T206_0_co", covariant=True)
 
 
-class Fields194(Protocol[T194_0_co]):
+class Fields206(Protocol[T206_0_co]):
     @property
-    def nodes(self) -> collections.abc.Sequence[T194_0_co] | None: ...
-    def declared(self) -> tuple[T194_0_co]: ...
+    def nodes(self) -> collections.abc.Sequence[T206_0_co] | None: ...
+    def declared(self) -> tuple[T206_0_co]: ...
 
 
 # pyfect.graphql.group.GroupTypes
 
 
-def v195_0_out(
+def v207_0_out(
     x: pyfect.graphql.group.GroupTypes[_Sub, Any, Any],
 ) -> pyfect.graphql.group.GroupTypes[_Super, Any, Any]:
     return x
 
 
-def v195_0_in(
+def v207_0_in(
     x: pyfect.graphql.group.GroupTypes[_Super, Any, Any],
 ) -> pyfect.graphql.group.GroupTypes[_Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v195_1_out(
+def v207_1_out(
     x: pyfect.graphql.group.GroupTypes[Any, _Sub, Any],
 ) -> pyfect.graphql.group.GroupTypes[Any, _Super, Any]:
     return x
 
 
-def v195_1_in(
+def v207_1_in(
     x: pyfect.graphql.group.GroupTypes[Any, _Super, Any],
 ) -> pyfect.graphql.group.GroupTypes[Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v195_2_out(
+def v207_2_out(
     x: pyfect.graphql.group.GroupTypes[Any, Any, _Sub],
 ) -> pyfect.graphql.group.GroupTypes[Any, Any, _Super]:
     return x
 
 
-def v195_2_in(
+def v207_2_in(
     x: pyfect.graphql.group.GroupTypes[Any, Any, _Super],
 ) -> pyfect.graphql.group.GroupTypes[Any, Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T195_0_co = TypeVar("T195_0_co", covariant=True)
-T195_1_co = TypeVar("T195_1_co", covariant=True)
-T195_2_co = TypeVar("T195_2_co", covariant=True)
+T207_0_co = TypeVar("T207_0_co", covariant=True)
+T207_1_co = TypeVar("T207_1_co", covariant=True)
+T207_2_co = TypeVar("T207_2_co", covariant=True)
 
 
-class Fields195(Protocol[T195_0_co, T195_1_co, T195_2_co]):
-    def declared(self) -> tuple[T195_0_co, T195_1_co, T195_2_co]: ...
+class Fields207(Protocol[T207_0_co, T207_1_co, T207_2_co]):
+    def declared(self) -> tuple[T207_0_co, T207_1_co, T207_2_co]: ...
 
 
 # pyfect.graphql.protocol.WebSocketOptions
 
 
-def v196_0_out(
+def v208_0_out(
     x: pyfect.graphql.protocol.WebSocketOptions[_Sub],
 ) -> pyfect.graphql.protocol.WebSocketOptions[_Super]:
     return x
 
 
-def v196_0_in(
+def v208_0_in(
     x: pyfect.graphql.protocol.WebSocketOptions[_Super],
 ) -> pyfect.graphql.protocol.WebSocketOptions[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T196_0_co = TypeVar("T196_0_co", covariant=True)
+T208_0_co = TypeVar("T208_0_co", covariant=True)
 
 
-class Fields196(Protocol[T196_0_co]):
+class Fields208(Protocol[T208_0_co]):
     @property
     def url(self) -> str: ...
     @property
@@ -6276,7 +6681,7 @@ class Fields196(Protocol[T196_0_co]):
     def connection_params(
         self,
     ) -> (
-        pyfect.effect.Effect[collections.abc.Mapping[str, object] | None, object, T196_0_co] | None
+        pyfect.effect.Effect[collections.abc.Mapping[str, object] | None, object, T208_0_co] | None
     ): ...
     @property
     def connection_ack_timeout(self) -> pyfect.duration.Input | None: ...
@@ -6284,138 +6689,138 @@ class Fields196(Protocol[T196_0_co]):
     def keep_alive(self) -> pyfect.duration.Input | typing.Literal[False] | None: ...
     @property
     def idle_timeout(self) -> pyfect.duration.Input | None: ...
-    def declared(self) -> tuple[T196_0_co]: ...
+    def declared(self) -> tuple[T208_0_co]: ...
 
 
 # pyfect.graphql.resolver.KeyRequest
 
 
-def v197_0_out(
+def v209_0_out(
     x: pyfect.graphql.resolver.KeyRequest[_Sub, Any, Any, Any],
 ) -> pyfect.graphql.resolver.KeyRequest[_Super, Any, Any, Any]:
     return x
 
 
-def v197_0_in(
+def v209_0_in(
     x: pyfect.graphql.resolver.KeyRequest[_Super, Any, Any, Any],
 ) -> pyfect.graphql.resolver.KeyRequest[_Sub, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v197_1_out(
+def v209_1_out(
     x: pyfect.graphql.resolver.KeyRequest[Any, _Sub, Any, Any],
 ) -> pyfect.graphql.resolver.KeyRequest[Any, _Super, Any, Any]:
     return x
 
 
-def v197_1_in(
+def v209_1_in(
     x: pyfect.graphql.resolver.KeyRequest[Any, _Super, Any, Any],
 ) -> pyfect.graphql.resolver.KeyRequest[Any, _Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v197_2_out(
+def v209_2_out(
     x: pyfect.graphql.resolver.KeyRequest[Any, Any, _Sub, Any],
 ) -> pyfect.graphql.resolver.KeyRequest[Any, Any, _Super, Any]:
     return x
 
 
-def v197_2_in(
+def v209_2_in(
     x: pyfect.graphql.resolver.KeyRequest[Any, Any, _Super, Any],
 ) -> pyfect.graphql.resolver.KeyRequest[Any, Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v197_3_out(
+def v209_3_out(
     x: pyfect.graphql.resolver.KeyRequest[Any, Any, Any, _Sub],
 ) -> pyfect.graphql.resolver.KeyRequest[Any, Any, Any, _Super]:
     return x
 
 
-def v197_3_in(
+def v209_3_in(
     x: pyfect.graphql.resolver.KeyRequest[Any, Any, Any, _Super],
 ) -> pyfect.graphql.resolver.KeyRequest[Any, Any, Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T197_0_co = TypeVar("T197_0_co", covariant=True)
-T197_1_co = TypeVar("T197_1_co", covariant=True)
-T197_2_co = TypeVar("T197_2_co", covariant=True)
-T197_3_co = TypeVar("T197_3_co", covariant=True)
+T209_0_co = TypeVar("T209_0_co", covariant=True)
+T209_1_co = TypeVar("T209_1_co", covariant=True)
+T209_2_co = TypeVar("T209_2_co", covariant=True)
+T209_3_co = TypeVar("T209_3_co", covariant=True)
 
 
-class Fields197(Protocol[T197_0_co, T197_1_co, T197_2_co, T197_3_co]):
+class Fields209(Protocol[T209_0_co, T209_1_co, T209_2_co, T209_3_co]):
     @property
-    def key(self) -> T197_0_co: ...
+    def key(self) -> T209_0_co: ...
     @property
     def url(self) -> str | None: ...
-    def declared(self) -> tuple[T197_0_co, T197_1_co, T197_2_co, T197_3_co]: ...
+    def declared(self) -> tuple[T209_0_co, T209_1_co, T209_2_co, T209_3_co]: ...
 
 
 # pyfect.hash_map.Entry
 
 
-def v198_0_out(x: pyfect.hash_map.Entry[_Sub, Any]) -> pyfect.hash_map.Entry[_Super, Any]:
+def v210_0_out(x: pyfect.hash_map.Entry[_Sub, Any]) -> pyfect.hash_map.Entry[_Super, Any]:
     return x
 
 
-def v198_0_in(x: pyfect.hash_map.Entry[_Super, Any]) -> pyfect.hash_map.Entry[_Sub, Any]:
+def v210_0_in(x: pyfect.hash_map.Entry[_Super, Any]) -> pyfect.hash_map.Entry[_Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v198_1_out(x: pyfect.hash_map.Entry[Any, _Sub]) -> pyfect.hash_map.Entry[Any, _Super]:
+def v210_1_out(x: pyfect.hash_map.Entry[Any, _Sub]) -> pyfect.hash_map.Entry[Any, _Super]:
     return x
 
 
-def v198_1_in(x: pyfect.hash_map.Entry[Any, _Super]) -> pyfect.hash_map.Entry[Any, _Sub]:
+def v210_1_in(x: pyfect.hash_map.Entry[Any, _Super]) -> pyfect.hash_map.Entry[Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T198_0_co = TypeVar("T198_0_co", covariant=True)
-T198_1_co = TypeVar("T198_1_co", covariant=True)
+T210_0_co = TypeVar("T210_0_co", covariant=True)
+T210_1_co = TypeVar("T210_1_co", covariant=True)
 
 
-class Fields198(Protocol[T198_0_co, T198_1_co]):
+class Fields210(Protocol[T210_0_co, T210_1_co]):
     @property
     def hash(self) -> int: ...
     @property
     def ident(self) -> collections.abc.Hashable: ...
     @property
-    def key(self) -> T198_0_co: ...
+    def key(self) -> T210_0_co: ...
     @property
-    def value(self) -> T198_1_co: ...
-    def declared(self) -> tuple[T198_0_co, T198_1_co]: ...
+    def value(self) -> T210_1_co: ...
+    def declared(self) -> tuple[T210_0_co, T210_1_co]: ...
 
 
 # pyfect.hash_map.HashMap
 
 
-def v199_0_out(x: pyfect.hash_map.HashMap[_Sub, Any]) -> pyfect.hash_map.HashMap[_Super, Any]:
+def v211_0_out(x: pyfect.hash_map.HashMap[_Sub, Any]) -> pyfect.hash_map.HashMap[_Super, Any]:
     return x
 
 
-def v199_0_in(x: pyfect.hash_map.HashMap[_Super, Any]) -> pyfect.hash_map.HashMap[_Sub, Any]:
+def v211_0_in(x: pyfect.hash_map.HashMap[_Super, Any]) -> pyfect.hash_map.HashMap[_Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v199_1_out(x: pyfect.hash_map.HashMap[Any, _Sub]) -> pyfect.hash_map.HashMap[Any, _Super]:
+def v211_1_out(x: pyfect.hash_map.HashMap[Any, _Sub]) -> pyfect.hash_map.HashMap[Any, _Super]:
     return x
 
 
-def v199_1_in(x: pyfect.hash_map.HashMap[Any, _Super]) -> pyfect.hash_map.HashMap[Any, _Sub]:
+def v211_1_in(x: pyfect.hash_map.HashMap[Any, _Super]) -> pyfect.hash_map.HashMap[Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
 # pyfect.hash_ring.HashRing
 
 
-def v200_0_out(
+def v212_0_out(
     x: pyfect.hash_ring.HashRing[Never],
 ) -> pyfect.hash_ring.HashRing[pyfect.primary_key.PrimaryKey]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v200_0_in(
+def v212_0_in(
     x: pyfect.hash_ring.HashRing[pyfect.primary_key.PrimaryKey],
 ) -> pyfect.hash_ring.HashRing[Never]:
     return x  # pyright: ignore[reportReturnType]
@@ -6424,36 +6829,36 @@ def v200_0_in(
 # pyfect.hash_set.HashSet
 
 
-def v201_0_out(x: pyfect.hash_set.HashSet[_Sub]) -> pyfect.hash_set.HashSet[_Super]:
+def v213_0_out(x: pyfect.hash_set.HashSet[_Sub]) -> pyfect.hash_set.HashSet[_Super]:
     return x
 
 
-def v201_0_in(x: pyfect.hash_set.HashSet[_Super]) -> pyfect.hash_set.HashSet[_Sub]:
+def v213_0_in(x: pyfect.hash_set.HashSet[_Super]) -> pyfect.hash_set.HashSet[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
 # pyfect.http.HttpClientService
 
 
-def v202_0_out(
+def v214_0_out(
     x: pyfect.http.HttpClientService[_Sub, Any],
 ) -> pyfect.http.HttpClientService[_Super, Any]:
     return x
 
 
-def v202_0_in(
+def v214_0_in(
     x: pyfect.http.HttpClientService[_Super, Any],
 ) -> pyfect.http.HttpClientService[_Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v202_1_out(
+def v214_1_out(
     x: pyfect.http.HttpClientService[Any, _Sub],
 ) -> pyfect.http.HttpClientService[Any, _Super]:
     return x
 
 
-def v202_1_in(
+def v214_1_in(
     x: pyfect.http.HttpClientService[Any, _Super],
 ) -> pyfect.http.HttpClientService[Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
@@ -6462,52 +6867,52 @@ def v202_1_in(
 # pyfect.http.find_my_way.FindResult
 
 
-def v203_0_out(
+def v215_0_out(
     x: pyfect.http.find_my_way.FindResult[_Sub],
 ) -> pyfect.http.find_my_way.FindResult[_Super]:
     return x
 
 
-def v203_0_in(
+def v215_0_in(
     x: pyfect.http.find_my_way.FindResult[_Super],
 ) -> pyfect.http.find_my_way.FindResult[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T203_0_co = TypeVar("T203_0_co", covariant=True)
+T215_0_co = TypeVar("T215_0_co", covariant=True)
 
 
-class Fields203(Protocol[T203_0_co]):
+class Fields215(Protocol[T215_0_co]):
     @property
-    def handler(self) -> T203_0_co: ...
+    def handler(self) -> T215_0_co: ...
     @property
     def params(self) -> dict[str, str]: ...
     @property
     def search_params(self) -> dict[str, str | list[str]]: ...
-    def declared(self) -> tuple[T203_0_co]: ...
+    def declared(self) -> tuple[T215_0_co]: ...
 
 
 # pyfect.http.find_my_way.Router
 
 
-def v204_0_out(x: pyfect.http.find_my_way.Router[_Sub]) -> pyfect.http.find_my_way.Router[_Super]:
+def v216_0_out(x: pyfect.http.find_my_way.Router[_Sub]) -> pyfect.http.find_my_way.Router[_Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v204_0_in(x: pyfect.http.find_my_way.Router[_Super]) -> pyfect.http.find_my_way.Router[_Sub]:
+def v216_0_in(x: pyfect.http.find_my_way.Router[_Super]) -> pyfect.http.find_my_way.Router[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
 # pyfect.http.incoming_message.HttpIncomingMessage
 
 
-def v205_0_out(
+def v217_0_out(
     x: pyfect.http.incoming_message.HttpIncomingMessage[_Sub],
 ) -> pyfect.http.incoming_message.HttpIncomingMessage[_Super]:
     return x
 
 
-def v205_0_in(
+def v217_0_in(
     x: pyfect.http.incoming_message.HttpIncomingMessage[_Super],
 ) -> pyfect.http.incoming_message.HttpIncomingMessage[_Sub]:
     return x  # pyright: ignore[reportReturnType]
@@ -6516,25 +6921,25 @@ def v205_0_in(
 # pyfect.http.incoming_message.MessageDecoder
 
 
-def v206_0_out(
+def v218_0_out(
     x: pyfect.http.incoming_message.MessageDecoder[_Sub, Any],
 ) -> pyfect.http.incoming_message.MessageDecoder[_Super, Any]:
     return x
 
 
-def v206_0_in(
+def v218_0_in(
     x: pyfect.http.incoming_message.MessageDecoder[_Super, Any],
 ) -> pyfect.http.incoming_message.MessageDecoder[_Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v206_1_out(
+def v218_1_out(
     x: pyfect.http.incoming_message.MessageDecoder[Any, _Sub],
 ) -> pyfect.http.incoming_message.MessageDecoder[Any, _Super]:
     return x
 
 
-def v206_1_in(
+def v218_1_in(
     x: pyfect.http.incoming_message.MessageDecoder[Any, _Super],
 ) -> pyfect.http.incoming_message.MessageDecoder[Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
@@ -6543,13 +6948,13 @@ def v206_1_in(
 # pyfect.http.middleware.AppMiddleware
 
 
-def v207_0_out(
+def v219_0_out(
     x: pyfect.http.middleware.AppMiddleware[_Sub],
 ) -> pyfect.http.middleware.AppMiddleware[_Super]:
     return x
 
 
-def v207_0_in(
+def v219_0_in(
     x: pyfect.http.middleware.AppMiddleware[_Super],
 ) -> pyfect.http.middleware.AppMiddleware[_Sub]:
     return x  # pyright: ignore[reportReturnType]
@@ -6558,24 +6963,24 @@ def v207_0_in(
 # pyfect.http.router.GlobalRaises
 
 
-def v208_0_out(x: pyfect.http.router.GlobalRaises[_Sub]) -> pyfect.http.router.GlobalRaises[_Super]:
+def v220_0_out(x: pyfect.http.router.GlobalRaises[_Sub]) -> pyfect.http.router.GlobalRaises[_Super]:
     return x
 
 
-def v208_0_in(x: pyfect.http.router.GlobalRaises[_Super]) -> pyfect.http.router.GlobalRaises[_Sub]:
+def v220_0_in(x: pyfect.http.router.GlobalRaises[_Super]) -> pyfect.http.router.GlobalRaises[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
 # pyfect.http.router.GlobalRequires
 
 
-def v209_0_out(
+def v221_0_out(
     x: pyfect.http.router.GlobalRequires[_Sub],
 ) -> pyfect.http.router.GlobalRequires[_Super]:
     return x
 
 
-def v209_0_in(
+def v221_0_in(
     x: pyfect.http.router.GlobalRequires[_Super],
 ) -> pyfect.http.router.GlobalRequires[_Sub]:
     return x  # pyright: ignore[reportReturnType]
@@ -6584,49 +6989,49 @@ def v209_0_in(
 # pyfect.http.router.Middleware
 
 
-def v210_0_out(
+def v222_0_out(
     x: pyfect.http.router.Middleware[_Sub, Any, Any, Any],
 ) -> pyfect.http.router.Middleware[_Super, Any, Any, Any]:
     return x
 
 
-def v210_0_in(
+def v222_0_in(
     x: pyfect.http.router.Middleware[_Super, Any, Any, Any],
 ) -> pyfect.http.router.Middleware[_Sub, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v210_1_out(
+def v222_1_out(
     x: pyfect.http.router.Middleware[Any, _Sub, Any, Any],
 ) -> pyfect.http.router.Middleware[Any, _Super, Any, Any]:
     return x
 
 
-def v210_1_in(
+def v222_1_in(
     x: pyfect.http.router.Middleware[Any, _Super, Any, Any],
 ) -> pyfect.http.router.Middleware[Any, _Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v210_2_out(
+def v222_2_out(
     x: pyfect.http.router.Middleware[Any, Any, _Sub, Any],
 ) -> pyfect.http.router.Middleware[Any, Any, _Super, Any]:
     return x
 
 
-def v210_2_in(
+def v222_2_in(
     x: pyfect.http.router.Middleware[Any, Any, _Super, Any],
 ) -> pyfect.http.router.Middleware[Any, Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v210_3_out(
+def v222_3_out(
     x: pyfect.http.router.Middleware[Any, Any, Any, _Sub],
 ) -> pyfect.http.router.Middleware[Any, Any, Any, _Super]:
     return x
 
 
-def v210_3_in(
+def v222_3_in(
     x: pyfect.http.router.Middleware[Any, Any, Any, _Super],
 ) -> pyfect.http.router.Middleware[Any, Any, Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
@@ -6635,49 +7040,49 @@ def v210_3_in(
 # pyfect.http.router.Raises
 
 
-def v211_0_out(x: pyfect.http.router.Raises[_Sub]) -> pyfect.http.router.Raises[_Super]:
+def v223_0_out(x: pyfect.http.router.Raises[_Sub]) -> pyfect.http.router.Raises[_Super]:
     return x
 
 
-def v211_0_in(x: pyfect.http.router.Raises[_Super]) -> pyfect.http.router.Raises[_Sub]:
+def v223_0_in(x: pyfect.http.router.Raises[_Super]) -> pyfect.http.router.Raises[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
 # pyfect.http.router.Requires
 
 
-def v212_0_out(x: pyfect.http.router.Requires[_Sub]) -> pyfect.http.router.Requires[_Super]:
+def v224_0_out(x: pyfect.http.router.Requires[_Sub]) -> pyfect.http.router.Requires[_Super]:
     return x
 
 
-def v212_0_in(x: pyfect.http.router.Requires[_Super]) -> pyfect.http.router.Requires[_Sub]:
+def v224_0_in(x: pyfect.http.router.Requires[_Super]) -> pyfect.http.router.Requires[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
 # pyfect.http.router.Route
 
 
-def v213_0_out(x: pyfect.http.router.Route[_Sub, Any]) -> pyfect.http.router.Route[_Super, Any]:
+def v225_0_out(x: pyfect.http.router.Route[_Sub, Any]) -> pyfect.http.router.Route[_Super, Any]:
     return x
 
 
-def v213_0_in(x: pyfect.http.router.Route[_Super, Any]) -> pyfect.http.router.Route[_Sub, Any]:
+def v225_0_in(x: pyfect.http.router.Route[_Super, Any]) -> pyfect.http.router.Route[_Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v213_1_out(x: pyfect.http.router.Route[Any, _Sub]) -> pyfect.http.router.Route[Any, _Super]:
+def v225_1_out(x: pyfect.http.router.Route[Any, _Sub]) -> pyfect.http.router.Route[Any, _Super]:
     return x
 
 
-def v213_1_in(x: pyfect.http.router.Route[Any, _Super]) -> pyfect.http.router.Route[Any, _Sub]:
+def v225_1_in(x: pyfect.http.router.Route[Any, _Super]) -> pyfect.http.router.Route[Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T213_0_co = TypeVar("T213_0_co", covariant=True)
-T213_1_co = TypeVar("T213_1_co", covariant=True)
+T225_0_co = TypeVar("T225_0_co", covariant=True)
+T225_1_co = TypeVar("T225_1_co", covariant=True)
 
 
-class Fields213(Protocol[T213_0_co, T213_1_co]):
+class Fields225(Protocol[T225_0_co, T225_1_co]):
     @property
     def method(self) -> pyfect.http.router._route.Method: ...
     @property
@@ -6686,7 +7091,7 @@ class Fields213(Protocol[T213_0_co, T213_1_co]):
     def handler(
         self,
     ) -> pyfect._core.Effect[
-        pyfect.http.server_response.HttpServerResponse, T213_0_co, T213_1_co
+        pyfect.http.server_response.HttpServerResponse, T225_0_co, T225_1_co
     ]: ...
     @property
     def uninterruptible(self) -> bool: ...
@@ -6694,31 +7099,31 @@ class Fields213(Protocol[T213_0_co, T213_1_co]):
     def prefix(self) -> str | None: ...
     @property
     def redacted_params(self) -> tuple[str, ...]: ...
-    def declared(self) -> tuple[T213_0_co, T213_1_co]: ...
+    def declared(self) -> tuple[T225_0_co, T225_1_co]: ...
 
 
 # pyfect.http.server_response.JsonResponder
 
 
-def v214_0_out(
+def v226_0_out(
     x: pyfect.http.server_response.JsonResponder[_Sub, Any],
 ) -> pyfect.http.server_response.JsonResponder[_Super, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v214_0_in(
+def v226_0_in(
     x: pyfect.http.server_response.JsonResponder[_Super, Any],
 ) -> pyfect.http.server_response.JsonResponder[_Sub, Any]:
     return x
 
 
-def v214_1_out(
+def v226_1_out(
     x: pyfect.http.server_response.JsonResponder[Any, _Sub],
 ) -> pyfect.http.server_response.JsonResponder[Any, _Super]:
     return x
 
 
-def v214_1_in(
+def v226_1_in(
     x: pyfect.http.server_response.JsonResponder[Any, _Super],
 ) -> pyfect.http.server_response.JsonResponder[Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
@@ -6727,230 +7132,230 @@ def v214_1_in(
 # pyfect.http_api.Client
 
 
-def v215_0_out(x: pyfect.http_api.Client[_Sub]) -> pyfect.http_api.Client[_Super]:
+def v227_0_out(x: pyfect.http_api.Client[_Sub]) -> pyfect.http_api.Client[_Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v215_0_in(x: pyfect.http_api.Client[_Super]) -> pyfect.http_api.Client[_Sub]:
+def v227_0_in(x: pyfect.http_api.Client[_Super]) -> pyfect.http_api.Client[_Sub]:
     return x
 
 
-T215_0_contra = TypeVar("T215_0_contra", contravariant=True)
+T227_0_contra = TypeVar("T227_0_contra", contravariant=True)
 
 
-class Fields215(Protocol[T215_0_contra]):
-    def declared(self, _0: T215_0_contra) -> tuple[()]: ...
+class Fields227(Protocol[T227_0_contra]):
+    def declared(self, _0: T227_0_contra) -> tuple[()]: ...
 
 
 # pyfect.http_api.Handlers
 
 
-def v216_0_out(
+def v228_0_out(
     x: pyfect.http_api.Handlers[_Sub, Any, Any],
 ) -> pyfect.http_api.Handlers[_Super, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v216_0_in(
+def v228_0_in(
     x: pyfect.http_api.Handlers[_Super, Any, Any],
 ) -> pyfect.http_api.Handlers[_Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v216_1_out(
+def v228_1_out(
     x: pyfect.http_api.Handlers[Any, _Sub, Any],
 ) -> pyfect.http_api.Handlers[Any, _Super, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v216_1_in(
+def v228_1_in(
     x: pyfect.http_api.Handlers[Any, _Super, Any],
 ) -> pyfect.http_api.Handlers[Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v216_2_out(
+def v228_2_out(
     x: pyfect.http_api.Handlers[Any, Any, _Sub],
 ) -> pyfect.http_api.Handlers[Any, Any, _Super]:
     return x
 
 
-def v216_2_in(
+def v228_2_in(
     x: pyfect.http_api.Handlers[Any, Any, _Super],
 ) -> pyfect.http_api.Handlers[Any, Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T216_2_co = TypeVar("T216_2_co", covariant=True)
+T228_2_co = TypeVar("T228_2_co", covariant=True)
 
 
-class Fields216(Protocol[T216_2_co]):
+class Fields228(Protocol[T228_2_co]):
     @property
     def group(self) -> pyfect.http_api.group.AnyGroup: ...
     @property
     def entries(self) -> collections.abc.Mapping[str, pyfect.http_api._handlers.HandlerEntry]: ...
-    def declared(self) -> tuple[T216_2_co]: ...
+    def declared(self) -> tuple[T228_2_co]: ...
 
 
 # pyfect.http_api.HttpApi
 
 
-def v217_0_out(x: pyfect.http_api.HttpApi[_Sub]) -> pyfect.http_api.HttpApi[_Super]:
+def v229_0_out(x: pyfect.http_api.HttpApi[_Sub]) -> pyfect.http_api.HttpApi[_Super]:
     return x
 
 
-def v217_0_in(x: pyfect.http_api.HttpApi[_Super]) -> pyfect.http_api.HttpApi[_Sub]:
+def v229_0_in(x: pyfect.http_api.HttpApi[_Super]) -> pyfect.http_api.HttpApi[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T217_0_co = TypeVar("T217_0_co", covariant=True)
+T229_0_co = TypeVar("T229_0_co", covariant=True)
 
 
-class Fields217(Protocol[T217_0_co]):
+class Fields229(Protocol[T229_0_co]):
     @property
     def identifier(self) -> str: ...
     @property
     def groups(self) -> collections.abc.Mapping[str, pyfect.http_api.group.AnyGroup]: ...
     @property
     def annotations(self) -> pyfect.context.Context[typing.Any]: ...
-    def declared(self) -> tuple[T217_0_co]: ...
+    def declared(self) -> tuple[T229_0_co]: ...
 
 
 # pyfect.http_api.HttpApiEndpoint
 
 
-def v218_0_out(
+def v230_0_out(
     x: pyfect.http_api.HttpApiEndpoint[_Sub, Any, Any, Any, Any, Any, Any, Any, Any, Any],
 ) -> pyfect.http_api.HttpApiEndpoint[_Super, Any, Any, Any, Any, Any, Any, Any, Any, Any]:
     return x
 
 
-def v218_0_in(
+def v230_0_in(
     x: pyfect.http_api.HttpApiEndpoint[_Super, Any, Any, Any, Any, Any, Any, Any, Any, Any],
 ) -> pyfect.http_api.HttpApiEndpoint[_Sub, Any, Any, Any, Any, Any, Any, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v218_1_out(
+def v230_1_out(
     x: pyfect.http_api.HttpApiEndpoint[Any, _Sub, Any, Any, Any, Any, Any, Any, Any, Any],
 ) -> pyfect.http_api.HttpApiEndpoint[Any, _Super, Any, Any, Any, Any, Any, Any, Any, Any]:
     return x
 
 
-def v218_1_in(
+def v230_1_in(
     x: pyfect.http_api.HttpApiEndpoint[Any, _Super, Any, Any, Any, Any, Any, Any, Any, Any],
 ) -> pyfect.http_api.HttpApiEndpoint[Any, _Sub, Any, Any, Any, Any, Any, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v218_2_out(
+def v230_2_out(
     x: pyfect.http_api.HttpApiEndpoint[Any, Any, _Sub, Any, Any, Any, Any, Any, Any, Any],
 ) -> pyfect.http_api.HttpApiEndpoint[Any, Any, _Super, Any, Any, Any, Any, Any, Any, Any]:
     return x
 
 
-def v218_2_in(
+def v230_2_in(
     x: pyfect.http_api.HttpApiEndpoint[Any, Any, _Super, Any, Any, Any, Any, Any, Any, Any],
 ) -> pyfect.http_api.HttpApiEndpoint[Any, Any, _Sub, Any, Any, Any, Any, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v218_3_out(
+def v230_3_out(
     x: pyfect.http_api.HttpApiEndpoint[Any, Any, Any, _Sub, Any, Any, Any, Any, Any, Any],
 ) -> pyfect.http_api.HttpApiEndpoint[Any, Any, Any, _Super, Any, Any, Any, Any, Any, Any]:
     return x
 
 
-def v218_3_in(
+def v230_3_in(
     x: pyfect.http_api.HttpApiEndpoint[Any, Any, Any, _Super, Any, Any, Any, Any, Any, Any],
 ) -> pyfect.http_api.HttpApiEndpoint[Any, Any, Any, _Sub, Any, Any, Any, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v218_4_out(
+def v230_4_out(
     x: pyfect.http_api.HttpApiEndpoint[Any, Any, Any, Any, _Sub, Any, Any, Any, Any, Any],
 ) -> pyfect.http_api.HttpApiEndpoint[Any, Any, Any, Any, _Super, Any, Any, Any, Any, Any]:
     return x
 
 
-def v218_4_in(
+def v230_4_in(
     x: pyfect.http_api.HttpApiEndpoint[Any, Any, Any, Any, _Super, Any, Any, Any, Any, Any],
 ) -> pyfect.http_api.HttpApiEndpoint[Any, Any, Any, Any, _Sub, Any, Any, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v218_5_out(
+def v230_5_out(
     x: pyfect.http_api.HttpApiEndpoint[Any, Any, Any, Any, Any, _Sub, Any, Any, Any, Any],
 ) -> pyfect.http_api.HttpApiEndpoint[Any, Any, Any, Any, Any, _Super, Any, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v218_5_in(
+def v230_5_in(
     x: pyfect.http_api.HttpApiEndpoint[Any, Any, Any, Any, Any, _Super, Any, Any, Any, Any],
 ) -> pyfect.http_api.HttpApiEndpoint[Any, Any, Any, Any, Any, _Sub, Any, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v218_6_out(
+def v230_6_out(
     x: pyfect.http_api.HttpApiEndpoint[Any, Any, Any, Any, Any, Any, _Sub, Any, Any, Any],
 ) -> pyfect.http_api.HttpApiEndpoint[Any, Any, Any, Any, Any, Any, _Super, Any, Any, Any]:
     return x
 
 
-def v218_6_in(
+def v230_6_in(
     x: pyfect.http_api.HttpApiEndpoint[Any, Any, Any, Any, Any, Any, _Super, Any, Any, Any],
 ) -> pyfect.http_api.HttpApiEndpoint[Any, Any, Any, Any, Any, Any, _Sub, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v218_7_out(
+def v230_7_out(
     x: pyfect.http_api.HttpApiEndpoint[Any, Any, Any, Any, Any, Any, Any, _Sub, Any, Any],
 ) -> pyfect.http_api.HttpApiEndpoint[Any, Any, Any, Any, Any, Any, Any, _Super, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v218_7_in(
+def v230_7_in(
     x: pyfect.http_api.HttpApiEndpoint[Any, Any, Any, Any, Any, Any, Any, _Super, Any, Any],
 ) -> pyfect.http_api.HttpApiEndpoint[Any, Any, Any, Any, Any, Any, Any, _Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v218_8_out(
+def v230_8_out(
     x: pyfect.http_api.HttpApiEndpoint[Any, Any, Any, Any, Any, Any, Any, Any, _Sub, Any],
 ) -> pyfect.http_api.HttpApiEndpoint[Any, Any, Any, Any, Any, Any, Any, Any, _Super, Any]:
     return x
 
 
-def v218_8_in(
+def v230_8_in(
     x: pyfect.http_api.HttpApiEndpoint[Any, Any, Any, Any, Any, Any, Any, Any, _Super, Any],
 ) -> pyfect.http_api.HttpApiEndpoint[Any, Any, Any, Any, Any, Any, Any, Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v218_9_out(
+def v230_9_out(
     x: pyfect.http_api.HttpApiEndpoint[Any, Any, Any, Any, Any, Any, Any, Any, Any, _Sub],
 ) -> pyfect.http_api.HttpApiEndpoint[Any, Any, Any, Any, Any, Any, Any, Any, Any, _Super]:
     return x
 
 
-def v218_9_in(
+def v230_9_in(
     x: pyfect.http_api.HttpApiEndpoint[Any, Any, Any, Any, Any, Any, Any, Any, Any, _Super],
 ) -> pyfect.http_api.HttpApiEndpoint[Any, Any, Any, Any, Any, Any, Any, Any, Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T218_0_co = TypeVar("T218_0_co", covariant=True)
-T218_1_co = TypeVar("T218_1_co", covariant=True)
-T218_2_co = TypeVar("T218_2_co", covariant=True)
-T218_3_co = TypeVar("T218_3_co", covariant=True)
-T218_4_co = TypeVar("T218_4_co", covariant=True)
-T218_6_co = TypeVar("T218_6_co", covariant=True)
-T218_8_co = TypeVar("T218_8_co", covariant=True)
-T218_9_co = TypeVar("T218_9_co", covariant=True)
+T230_0_co = TypeVar("T230_0_co", covariant=True)
+T230_1_co = TypeVar("T230_1_co", covariant=True)
+T230_2_co = TypeVar("T230_2_co", covariant=True)
+T230_3_co = TypeVar("T230_3_co", covariant=True)
+T230_4_co = TypeVar("T230_4_co", covariant=True)
+T230_6_co = TypeVar("T230_6_co", covariant=True)
+T230_8_co = TypeVar("T230_8_co", covariant=True)
+T230_9_co = TypeVar("T230_9_co", covariant=True)
 
 
-class Fields218(
-    Protocol[T218_0_co, T218_1_co, T218_2_co, T218_3_co, T218_4_co, T218_6_co, T218_8_co, T218_9_co]
+class Fields230(
+    Protocol[T230_0_co, T230_1_co, T230_2_co, T230_3_co, T230_4_co, T230_6_co, T230_8_co, T230_9_co]
 ):
     @property
     def identifier(self) -> str: ...
@@ -6979,159 +7384,159 @@ class Fields218(
     def declared(
         self,
     ) -> tuple[
-        T218_0_co, T218_1_co, T218_2_co, T218_3_co, T218_4_co, T218_6_co, T218_8_co, T218_9_co
+        T230_0_co, T230_1_co, T230_2_co, T230_3_co, T230_4_co, T230_6_co, T230_8_co, T230_9_co
     ]: ...
 
 
 # pyfect.http_api.HttpApiGroup
 
 
-def v219_0_out(
+def v231_0_out(
     x: pyfect.http_api.HttpApiGroup[_Sub, Any],
 ) -> pyfect.http_api.HttpApiGroup[_Super, Any]:
     return x
 
 
-def v219_0_in(
+def v231_0_in(
     x: pyfect.http_api.HttpApiGroup[_Super, Any],
 ) -> pyfect.http_api.HttpApiGroup[_Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v219_1_out(
+def v231_1_out(
     x: pyfect.http_api.HttpApiGroup[Any, _Sub],
 ) -> pyfect.http_api.HttpApiGroup[Any, _Super]:
     return x
 
 
-def v219_1_in(
+def v231_1_in(
     x: pyfect.http_api.HttpApiGroup[Any, _Super],
 ) -> pyfect.http_api.HttpApiGroup[Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T219_0_co = TypeVar("T219_0_co", covariant=True)
-T219_1_co = TypeVar("T219_1_co", covariant=True)
+T231_0_co = TypeVar("T231_0_co", covariant=True)
+T231_1_co = TypeVar("T231_1_co", covariant=True)
 
 
-class Fields219(Protocol[T219_0_co, T219_1_co]):
-    def declared(self) -> tuple[T219_0_co, T219_1_co]: ...
+class Fields231(Protocol[T231_0_co, T231_1_co]):
+    def declared(self) -> tuple[T231_0_co, T231_1_co]: ...
 
 
 # pyfect.http_api.HttpApiMiddleware
 
 
-def v220_0_out(
+def v232_0_out(
     x: pyfect.http_api.HttpApiMiddleware[_Sub, Any, Any],
 ) -> pyfect.http_api.HttpApiMiddleware[_Super, Any, Any]:
     return x
 
 
-def v220_0_in(
+def v232_0_in(
     x: pyfect.http_api.HttpApiMiddleware[_Super, Any, Any],
 ) -> pyfect.http_api.HttpApiMiddleware[_Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v220_1_out(
+def v232_1_out(
     x: pyfect.http_api.HttpApiMiddleware[Any, _Sub, Any],
 ) -> pyfect.http_api.HttpApiMiddleware[Any, _Super, Any]:
     return x
 
 
-def v220_1_in(
+def v232_1_in(
     x: pyfect.http_api.HttpApiMiddleware[Any, _Super, Any],
 ) -> pyfect.http_api.HttpApiMiddleware[Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v220_2_out(
+def v232_2_out(
     x: pyfect.http_api.HttpApiMiddleware[Any, Any, _Sub],
 ) -> pyfect.http_api.HttpApiMiddleware[Any, Any, _Super]:
     return x
 
 
-def v220_2_in(
+def v232_2_in(
     x: pyfect.http_api.HttpApiMiddleware[Any, Any, _Super],
 ) -> pyfect.http_api.HttpApiMiddleware[Any, Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T220_0_co = TypeVar("T220_0_co", covariant=True)
-T220_1_co = TypeVar("T220_1_co", covariant=True)
-T220_2_co = TypeVar("T220_2_co", covariant=True)
+T232_0_co = TypeVar("T232_0_co", covariant=True)
+T232_1_co = TypeVar("T232_1_co", covariant=True)
+T232_2_co = TypeVar("T232_2_co", covariant=True)
 
 
-class Fields220(Protocol[T220_0_co, T220_1_co, T220_2_co]):
-    def declared(self) -> tuple[T220_0_co, T220_1_co, T220_2_co]: ...
+class Fields232(Protocol[T232_0_co, T232_1_co, T232_2_co]):
+    def declared(self) -> tuple[T232_0_co, T232_1_co, T232_2_co]: ...
 
 
 # pyfect.http_api.HttpApiRequest
 
 
-def v221_0_out(
+def v233_0_out(
     x: pyfect.http_api.HttpApiRequest[_Sub, Any, Any, Any],
 ) -> pyfect.http_api.HttpApiRequest[_Super, Any, Any, Any]:
     return x
 
 
-def v221_0_in(
+def v233_0_in(
     x: pyfect.http_api.HttpApiRequest[_Super, Any, Any, Any],
 ) -> pyfect.http_api.HttpApiRequest[_Sub, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v221_1_out(
+def v233_1_out(
     x: pyfect.http_api.HttpApiRequest[Any, _Sub, Any, Any],
 ) -> pyfect.http_api.HttpApiRequest[Any, _Super, Any, Any]:
     return x
 
 
-def v221_1_in(
+def v233_1_in(
     x: pyfect.http_api.HttpApiRequest[Any, _Super, Any, Any],
 ) -> pyfect.http_api.HttpApiRequest[Any, _Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v221_2_out(
+def v233_2_out(
     x: pyfect.http_api.HttpApiRequest[Any, Any, _Sub, Any],
 ) -> pyfect.http_api.HttpApiRequest[Any, Any, _Super, Any]:
     return x
 
 
-def v221_2_in(
+def v233_2_in(
     x: pyfect.http_api.HttpApiRequest[Any, Any, _Super, Any],
 ) -> pyfect.http_api.HttpApiRequest[Any, Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v221_3_out(
+def v233_3_out(
     x: pyfect.http_api.HttpApiRequest[Any, Any, Any, _Sub],
 ) -> pyfect.http_api.HttpApiRequest[Any, Any, Any, _Super]:
     return x
 
 
-def v221_3_in(
+def v233_3_in(
     x: pyfect.http_api.HttpApiRequest[Any, Any, Any, _Super],
 ) -> pyfect.http_api.HttpApiRequest[Any, Any, Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T221_0_co = TypeVar("T221_0_co", covariant=True)
-T221_1_co = TypeVar("T221_1_co", covariant=True)
-T221_2_co = TypeVar("T221_2_co", covariant=True)
-T221_3_co = TypeVar("T221_3_co", covariant=True)
+T233_0_co = TypeVar("T233_0_co", covariant=True)
+T233_1_co = TypeVar("T233_1_co", covariant=True)
+T233_2_co = TypeVar("T233_2_co", covariant=True)
+T233_3_co = TypeVar("T233_3_co", covariant=True)
 
 
-class Fields221(Protocol[T221_0_co, T221_1_co, T221_2_co, T221_3_co]):
+class Fields233(Protocol[T233_0_co, T233_1_co, T233_2_co, T233_3_co]):
     @property
-    def params(self) -> T221_0_co: ...
+    def params(self) -> T233_0_co: ...
     @property
-    def query(self) -> T221_1_co: ...
+    def query(self) -> T233_1_co: ...
     @property
-    def payload(self) -> T221_2_co: ...
+    def payload(self) -> T233_2_co: ...
     @property
-    def headers(self) -> T221_3_co: ...
+    def headers(self) -> T233_3_co: ...
     @property
     def request(self) -> pyfect.http.server_request.ServerRequest: ...
     @property
@@ -7144,31 +7549,31 @@ class Fields221(Protocol[T221_0_co, T221_1_co, T221_2_co, T221_3_co]):
     ) -> (
         collections.abc.Callable[[object], pyfect._core.Effect[pyfect.socket.SocketService]] | None
     ): ...
-    def declared(self) -> tuple[T221_0_co, T221_1_co, T221_2_co, T221_3_co]: ...
+    def declared(self) -> tuple[T233_0_co, T233_1_co, T233_2_co, T233_3_co]: ...
 
 
 # pyfect.http_api.api.ApiServing
 
 
-def v222_0_out(
+def v234_0_out(
     x: pyfect.http_api.api.ApiServing[_Sub, Any],
 ) -> pyfect.http_api.api.ApiServing[_Super, Any]:
     return x
 
 
-def v222_0_in(
+def v234_0_in(
     x: pyfect.http_api.api.ApiServing[_Super, Any],
 ) -> pyfect.http_api.api.ApiServing[_Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v222_1_out(
+def v234_1_out(
     x: pyfect.http_api.api.ApiServing[Any, _Sub],
 ) -> pyfect.http_api.api.ApiServing[Any, _Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v222_1_in(
+def v234_1_in(
     x: pyfect.http_api.api.ApiServing[Any, _Super],
 ) -> pyfect.http_api.api.ApiServing[Any, _Sub]:
     return x
@@ -7177,504 +7582,38 @@ def v222_1_in(
 # pyfect.http_api.api.ApiWith
 
 
-def v223_0_out(x: pyfect.http_api.api.ApiWith[_Sub]) -> pyfect.http_api.api.ApiWith[_Super]:
+def v235_0_out(x: pyfect.http_api.api.ApiWith[_Sub]) -> pyfect.http_api.api.ApiWith[_Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v223_0_in(x: pyfect.http_api.api.ApiWith[_Super]) -> pyfect.http_api.api.ApiWith[_Sub]:
+def v235_0_in(x: pyfect.http_api.api.ApiWith[_Super]) -> pyfect.http_api.api.ApiWith[_Sub]:
     return x
 
 
 # pyfect.http_api.builder.EndpointEntry
 
 
-def v224_0_out(
+def v236_0_out(
     x: pyfect.http_api.builder.EndpointEntry[_Sub, Any],
 ) -> pyfect.http_api.builder.EndpointEntry[_Super, Any]:
     return x
 
 
-def v224_0_in(
+def v236_0_in(
     x: pyfect.http_api.builder.EndpointEntry[_Super, Any],
 ) -> pyfect.http_api.builder.EndpointEntry[_Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v224_1_out(
+def v236_1_out(
     x: pyfect.http_api.builder.EndpointEntry[Any, _Sub],
 ) -> pyfect.http_api.builder.EndpointEntry[Any, _Super]:
     return x
 
 
-def v224_1_in(
+def v236_1_in(
     x: pyfect.http_api.builder.EndpointEntry[Any, _Super],
 ) -> pyfect.http_api.builder.EndpointEntry[Any, _Sub]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-T224_0_co = TypeVar("T224_0_co", covariant=True)
-T224_1_co = TypeVar("T224_1_co", covariant=True)
-
-
-class Fields224(Protocol[T224_0_co, T224_1_co]):
-    @property
-    def endpoint(self) -> pyfect.http_api.endpoint.AnyEndpoint: ...
-    @property
-    def handler(self) -> pyfect.http_api._handlers.Handler: ...
-    @property
-    def uninterruptible(self) -> bool: ...
-    def declared(self) -> tuple[T224_0_co, T224_1_co]: ...
-
-
-# pyfect.http_api.builder.EntrySlot
-
-
-def v225_0_out(
-    x: pyfect.http_api.builder.EntrySlot[_Sub, Any, Any, Any, Any],
-) -> pyfect.http_api.builder.EntrySlot[_Super, Any, Any, Any, Any]:
-    return x
-
-
-def v225_0_in(
-    x: pyfect.http_api.builder.EntrySlot[_Super, Any, Any, Any, Any],
-) -> pyfect.http_api.builder.EntrySlot[_Sub, Any, Any, Any, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v225_1_out(
-    x: pyfect.http_api.builder.EntrySlot[Any, _Sub, Any, Any, Any],
-) -> pyfect.http_api.builder.EntrySlot[Any, _Super, Any, Any, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v225_1_in(
-    x: pyfect.http_api.builder.EntrySlot[Any, _Super, Any, Any, Any],
-) -> pyfect.http_api.builder.EntrySlot[Any, _Sub, Any, Any, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v225_2_out(
-    x: pyfect.http_api.builder.EntrySlot[Any, Any, _Sub, Any, Any],
-) -> pyfect.http_api.builder.EntrySlot[Any, Any, _Super, Any, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v225_2_in(
-    x: pyfect.http_api.builder.EntrySlot[Any, Any, _Super, Any, Any],
-) -> pyfect.http_api.builder.EntrySlot[Any, Any, _Sub, Any, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v225_3_out(
-    x: pyfect.http_api.builder.EntrySlot[Any, Any, Any, _Sub, Any],
-) -> pyfect.http_api.builder.EntrySlot[Any, Any, Any, _Super, Any]:
-    return x
-
-
-def v225_3_in(
-    x: pyfect.http_api.builder.EntrySlot[Any, Any, Any, _Super, Any],
-) -> pyfect.http_api.builder.EntrySlot[Any, Any, Any, _Sub, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v225_4_out(
-    x: pyfect.http_api.builder.EntrySlot[Any, Any, Any, Any, _Sub],
-) -> pyfect.http_api.builder.EntrySlot[Any, Any, Any, Any, _Super]:
-    return x
-
-
-def v225_4_in(
-    x: pyfect.http_api.builder.EntrySlot[Any, Any, Any, Any, _Super],
-) -> pyfect.http_api.builder.EntrySlot[Any, Any, Any, Any, _Sub]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-T225_0_co = TypeVar("T225_0_co", covariant=True)
-T225_3_co = TypeVar("T225_3_co", covariant=True)
-T225_4_co = TypeVar("T225_4_co", covariant=True)
-
-
-class Fields225(Protocol[T225_0_co, T225_3_co, T225_4_co]):
-    @property
-    def endpoint(self) -> pyfect.http_api.endpoint.AnyEndpoint: ...
-    @property
-    def uninterruptible(self) -> bool: ...
-    def declared(self) -> tuple[T225_0_co, T225_3_co, T225_4_co]: ...
-
-
-# pyfect.http_api.builder.GroupHandlers
-
-
-def v226_0_out(
-    x: pyfect.http_api.builder.GroupHandlers[_Sub],
-) -> pyfect.http_api.builder.GroupHandlers[_Super]:
-    return x
-
-
-def v226_0_in(
-    x: pyfect.http_api.builder.GroupHandlers[_Super],
-) -> pyfect.http_api.builder.GroupHandlers[_Sub]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-T226_0_co = TypeVar("T226_0_co", covariant=True)
-
-
-class Fields226(Protocol[T226_0_co]):
-    @property
-    def group(self) -> pyfect.http_api.group.AnyGroup: ...
-    def declared(self) -> tuple[T226_0_co]: ...
-
-
-# pyfect.http_api.builder.HandleAllEntry
-
-
-def v227_0_out(
-    x: pyfect.http_api.builder.HandleAllEntry[_Sub],
-) -> pyfect.http_api.builder.HandleAllEntry[_Super]:
-    return x
-
-
-def v227_0_in(
-    x: pyfect.http_api.builder.HandleAllEntry[_Super],
-) -> pyfect.http_api.builder.HandleAllEntry[_Sub]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-T227_0_co = TypeVar("T227_0_co", covariant=True)
-
-
-class Fields227(Protocol[T227_0_co]):
-    @property
-    def handler(
-        self,
-    ) -> collections.abc.Callable[
-        [pyfect.http_api._handlers.HttpApiRequest[typing.Any, typing.Any, typing.Any, typing.Any]],
-        pyfect._core.Effect[typing.Any, typing.Any, T227_0_co],
-    ]: ...
-    @property
-    def uninterruptible(self) -> bool: ...
-    def declared(self) -> tuple[T227_0_co]: ...
-
-
-# pyfect.http_api.client.DecodeResponse
-
-
-def v228_0_out(
-    x: pyfect.http_api.client.DecodeResponse[_Sub, Any],
-) -> pyfect.http_api.client.DecodeResponse[_Super, Any]:
-    return x
-
-
-def v228_0_in(
-    x: pyfect.http_api.client.DecodeResponse[_Super, Any],
-) -> pyfect.http_api.client.DecodeResponse[_Sub, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v228_1_out(
-    x: pyfect.http_api.client.DecodeResponse[Any, _Sub],
-) -> pyfect.http_api.client.DecodeResponse[Any, _Super]:
-    return x
-
-
-def v228_1_in(
-    x: pyfect.http_api.client.DecodeResponse[Any, _Super],
-) -> pyfect.http_api.client.DecodeResponse[Any, _Sub]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-T228_0_co = TypeVar("T228_0_co", covariant=True)
-T228_1_co = TypeVar("T228_1_co", covariant=True)
-
-
-class Fields228(Protocol[T228_0_co, T228_1_co]):
-    def declared(self) -> tuple[T228_0_co, T228_1_co]: ...
-
-
-# pyfect.http_api.client.EndpointClient
-
-
-def v229_0_out(
-    x: pyfect.http_api.client.EndpointClient[_Sub, Any, Any, Any, Any, Any, Any],
-) -> pyfect.http_api.client.EndpointClient[_Super, Any, Any, Any, Any, Any, Any]:
-    return x
-
-
-def v229_0_in(
-    x: pyfect.http_api.client.EndpointClient[_Super, Any, Any, Any, Any, Any, Any],
-) -> pyfect.http_api.client.EndpointClient[_Sub, Any, Any, Any, Any, Any, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v229_1_out(
-    x: pyfect.http_api.client.EndpointClient[Any, _Sub, Any, Any, Any, Any, Any],
-) -> pyfect.http_api.client.EndpointClient[Any, _Super, Any, Any, Any, Any, Any]:
-    return x
-
-
-def v229_1_in(
-    x: pyfect.http_api.client.EndpointClient[Any, _Super, Any, Any, Any, Any, Any],
-) -> pyfect.http_api.client.EndpointClient[Any, _Sub, Any, Any, Any, Any, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v229_2_out(
-    x: pyfect.http_api.client.EndpointClient[Any, Any, _Sub, Any, Any, Any, Any],
-) -> pyfect.http_api.client.EndpointClient[Any, Any, _Super, Any, Any, Any, Any]:
-    return x
-
-
-def v229_2_in(
-    x: pyfect.http_api.client.EndpointClient[Any, Any, _Super, Any, Any, Any, Any],
-) -> pyfect.http_api.client.EndpointClient[Any, Any, _Sub, Any, Any, Any, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v229_3_out(
-    x: pyfect.http_api.client.EndpointClient[Any, Any, Any, _Sub, Any, Any, Any],
-) -> pyfect.http_api.client.EndpointClient[Any, Any, Any, _Super, Any, Any, Any]:
-    return x
-
-
-def v229_3_in(
-    x: pyfect.http_api.client.EndpointClient[Any, Any, Any, _Super, Any, Any, Any],
-) -> pyfect.http_api.client.EndpointClient[Any, Any, Any, _Sub, Any, Any, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v229_4_out(
-    x: pyfect.http_api.client.EndpointClient[Any, Any, Any, Any, _Sub, Any, Any],
-) -> pyfect.http_api.client.EndpointClient[Any, Any, Any, Any, _Super, Any, Any]:
-    return x
-
-
-def v229_4_in(
-    x: pyfect.http_api.client.EndpointClient[Any, Any, Any, Any, _Super, Any, Any],
-) -> pyfect.http_api.client.EndpointClient[Any, Any, Any, Any, _Sub, Any, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v229_5_out(
-    x: pyfect.http_api.client.EndpointClient[Any, Any, Any, Any, Any, _Sub, Any],
-) -> pyfect.http_api.client.EndpointClient[Any, Any, Any, Any, Any, _Super, Any]:
-    return x
-
-
-def v229_5_in(
-    x: pyfect.http_api.client.EndpointClient[Any, Any, Any, Any, Any, _Super, Any],
-) -> pyfect.http_api.client.EndpointClient[Any, Any, Any, Any, Any, _Sub, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v229_6_out(
-    x: pyfect.http_api.client.EndpointClient[Any, Any, Any, Any, Any, Any, _Sub],
-) -> pyfect.http_api.client.EndpointClient[Any, Any, Any, Any, Any, Any, _Super]:
-    return x
-
-
-def v229_6_in(
-    x: pyfect.http_api.client.EndpointClient[Any, Any, Any, Any, Any, Any, _Super],
-) -> pyfect.http_api.client.EndpointClient[Any, Any, Any, Any, Any, Any, _Sub]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-T229_0_co = TypeVar("T229_0_co", covariant=True)
-T229_1_co = TypeVar("T229_1_co", covariant=True)
-T229_2_co = TypeVar("T229_2_co", covariant=True)
-T229_3_co = TypeVar("T229_3_co", covariant=True)
-T229_4_co = TypeVar("T229_4_co", covariant=True)
-T229_5_co = TypeVar("T229_5_co", covariant=True)
-T229_6_co = TypeVar("T229_6_co", covariant=True)
-
-
-class Fields229(
-    Protocol[T229_0_co, T229_1_co, T229_2_co, T229_3_co, T229_4_co, T229_5_co, T229_6_co]
-):
-    def declared(
-        self,
-    ) -> tuple[T229_0_co, T229_1_co, T229_2_co, T229_3_co, T229_4_co, T229_5_co, T229_6_co]: ...
-
-
-# pyfect.http_api.middleware.ForClient
-
-
-def v230_0_out(
-    x: pyfect.http_api.middleware.ForClient[_Sub],
-) -> pyfect.http_api.middleware.ForClient[_Super]:
-    return x
-
-
-def v230_0_in(
-    x: pyfect.http_api.middleware.ForClient[_Super],
-) -> pyfect.http_api.middleware.ForClient[_Sub]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-# pyfect.http_api.schema.MultipartSchema
-
-
-def v231_0_out(
-    x: pyfect.http_api.schema.MultipartSchema[_Sub, Any],
-) -> pyfect.http_api.schema.MultipartSchema[_Super, Any]:
-    return x
-
-
-def v231_0_in(
-    x: pyfect.http_api.schema.MultipartSchema[_Super, Any],
-) -> pyfect.http_api.schema.MultipartSchema[_Sub, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v231_1_out(
-    x: pyfect.http_api.schema.MultipartSchema[Any, _Sub],
-) -> pyfect.http_api.schema.MultipartSchema[Any, _Super]:
-    return x
-
-
-def v231_1_in(
-    x: pyfect.http_api.schema.MultipartSchema[Any, _Super],
-) -> pyfect.http_api.schema.MultipartSchema[Any, _Sub]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-# pyfect.http_api.schema.StreamNdjsonSchema
-
-
-def v232_0_out(
-    x: pyfect.http_api.schema.StreamNdjsonSchema[_Sub],
-) -> pyfect.http_api.schema.StreamNdjsonSchema[_Super]:
-    return x
-
-
-def v232_0_in(
-    x: pyfect.http_api.schema.StreamNdjsonSchema[_Super],
-) -> pyfect.http_api.schema.StreamNdjsonSchema[_Sub]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-T232_0_co = TypeVar("T232_0_co", covariant=True)
-
-
-class Fields232(Protocol[T232_0_co]):
-    @property
-    def ast(self) -> pyfect.schema.ast.AST: ...
-    @property
-    def content_type(self) -> str: ...
-    @property
-    def content_types(self) -> tuple[str, *tuple[str, ...]]: ...
-    @property
-    def schema(self) -> pyfect.schema.Codec[T232_0_co, typing.Any, typing.Any, typing.Any]: ...
-    @property
-    def max_bytes(self) -> pyfect.byte_size.ByteSize | None: ...
-    @property
-    def max_element_bytes(self) -> pyfect.byte_size.ByteSize: ...
-    def declared(self) -> tuple[T232_0_co]: ...
-
-
-# pyfect.http_api.schema.StreamSseSchema
-
-
-def v233_0_out(
-    x: pyfect.http_api.schema.StreamSseSchema[_Sub, Any],
-) -> pyfect.http_api.schema.StreamSseSchema[_Super, Any]:
-    return x
-
-
-def v233_0_in(
-    x: pyfect.http_api.schema.StreamSseSchema[_Super, Any],
-) -> pyfect.http_api.schema.StreamSseSchema[_Sub, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v233_1_out(
-    x: pyfect.http_api.schema.StreamSseSchema[Any, _Sub],
-) -> pyfect.http_api.schema.StreamSseSchema[Any, _Super]:
-    return x
-
-
-def v233_1_in(
-    x: pyfect.http_api.schema.StreamSseSchema[Any, _Super],
-) -> pyfect.http_api.schema.StreamSseSchema[Any, _Sub]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-# pyfect.http_api.schema.UpgradeSchema
-
-
-def v234_0_out(
-    x: pyfect.http_api.schema.UpgradeSchema[_Sub],
-) -> pyfect.http_api.schema.UpgradeSchema[_Super]:
-    return x
-
-
-def v234_0_in(
-    x: pyfect.http_api.schema.UpgradeSchema[_Super],
-) -> pyfect.http_api.schema.UpgradeSchema[_Sub]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-T234_0_co = TypeVar("T234_0_co", covariant=True)
-
-
-class Fields234(Protocol[T234_0_co]):
-    @property
-    def ast(self) -> pyfect.schema.ast.AST: ...
-    @property
-    def protocol(self) -> str: ...
-    @property
-    def headers(
-        self,
-    ) -> pyfect.schema.Codec[T234_0_co, typing.Any, typing.Never, typing.Never] | None: ...
-    def declared(self) -> tuple[T234_0_co]: ...
-
-
-# pyfect.http_api.schema.Upgraded
-
-
-def v235_0_out(x: pyfect.http_api.schema.Upgraded[_Sub]) -> pyfect.http_api.schema.Upgraded[_Super]:
-    return x
-
-
-def v235_0_in(x: pyfect.http_api.schema.Upgraded[_Super]) -> pyfect.http_api.schema.Upgraded[_Sub]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-T235_0_co = TypeVar("T235_0_co", covariant=True)
-
-
-class Fields235(Protocol[T235_0_co]):
-    @property
-    def headers(self) -> T235_0_co: ...
-    @property
-    def socket(self) -> pyfect.socket.SocketService: ...
-    def declared(self) -> tuple[T235_0_co]: ...
-
-
-# pyfect.http_api.schema.WithHeadersSchema
-
-
-def v236_0_out(
-    x: pyfect.http_api.schema.WithHeadersSchema[_Sub, Any],
-) -> pyfect.http_api.schema.WithHeadersSchema[_Super, Any]:
-    return x
-
-
-def v236_0_in(
-    x: pyfect.http_api.schema.WithHeadersSchema[_Super, Any],
-) -> pyfect.http_api.schema.WithHeadersSchema[_Sub, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v236_1_out(
-    x: pyfect.http_api.schema.WithHeadersSchema[Any, _Sub],
-) -> pyfect.http_api.schema.WithHeadersSchema[Any, _Super]:
-    return x
-
-
-def v236_1_in(
-    x: pyfect.http_api.schema.WithHeadersSchema[Any, _Super],
-) -> pyfect.http_api.schema.WithHeadersSchema[Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
@@ -7684,61 +7623,102 @@ T236_1_co = TypeVar("T236_1_co", covariant=True)
 
 class Fields236(Protocol[T236_0_co, T236_1_co]):
     @property
-    def ast(self) -> pyfect.schema.ast.AST: ...
+    def endpoint(self) -> pyfect.http_api.endpoint.AnyEndpoint: ...
     @property
-    def schema(self) -> pyfect.schema.Codec[T236_0_co, typing.Any, typing.Any, typing.Any]: ...
+    def handler(self) -> pyfect.http_api._handlers.Handler: ...
     @property
-    def headers(self) -> pyfect.schema.Codec[T236_1_co, typing.Any, typing.Any, typing.Any]: ...
+    def uninterruptible(self) -> bool: ...
     def declared(self) -> tuple[T236_0_co, T236_1_co]: ...
 
 
-# pyfect.http_api.schema.WithHeadersValue
+# pyfect.http_api.builder.EntrySlot
 
 
 def v237_0_out(
-    x: pyfect.http_api.schema.WithHeadersValue[_Sub, Any],
-) -> pyfect.http_api.schema.WithHeadersValue[_Super, Any]:
+    x: pyfect.http_api.builder.EntrySlot[_Sub, Any, Any, Any, Any],
+) -> pyfect.http_api.builder.EntrySlot[_Super, Any, Any, Any, Any]:
     return x
 
 
 def v237_0_in(
-    x: pyfect.http_api.schema.WithHeadersValue[_Super, Any],
-) -> pyfect.http_api.schema.WithHeadersValue[_Sub, Any]:
+    x: pyfect.http_api.builder.EntrySlot[_Super, Any, Any, Any, Any],
+) -> pyfect.http_api.builder.EntrySlot[_Sub, Any, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
 def v237_1_out(
-    x: pyfect.http_api.schema.WithHeadersValue[Any, _Sub],
-) -> pyfect.http_api.schema.WithHeadersValue[Any, _Super]:
-    return x
+    x: pyfect.http_api.builder.EntrySlot[Any, _Sub, Any, Any, Any],
+) -> pyfect.http_api.builder.EntrySlot[Any, _Super, Any, Any, Any]:
+    return x  # pyright: ignore[reportReturnType]
 
 
 def v237_1_in(
-    x: pyfect.http_api.schema.WithHeadersValue[Any, _Super],
-) -> pyfect.http_api.schema.WithHeadersValue[Any, _Sub]:
+    x: pyfect.http_api.builder.EntrySlot[Any, _Super, Any, Any, Any],
+) -> pyfect.http_api.builder.EntrySlot[Any, _Sub, Any, Any, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v237_2_out(
+    x: pyfect.http_api.builder.EntrySlot[Any, Any, _Sub, Any, Any],
+) -> pyfect.http_api.builder.EntrySlot[Any, Any, _Super, Any, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v237_2_in(
+    x: pyfect.http_api.builder.EntrySlot[Any, Any, _Super, Any, Any],
+) -> pyfect.http_api.builder.EntrySlot[Any, Any, _Sub, Any, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v237_3_out(
+    x: pyfect.http_api.builder.EntrySlot[Any, Any, Any, _Sub, Any],
+) -> pyfect.http_api.builder.EntrySlot[Any, Any, Any, _Super, Any]:
+    return x
+
+
+def v237_3_in(
+    x: pyfect.http_api.builder.EntrySlot[Any, Any, Any, _Super, Any],
+) -> pyfect.http_api.builder.EntrySlot[Any, Any, Any, _Sub, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v237_4_out(
+    x: pyfect.http_api.builder.EntrySlot[Any, Any, Any, Any, _Sub],
+) -> pyfect.http_api.builder.EntrySlot[Any, Any, Any, Any, _Super]:
+    return x
+
+
+def v237_4_in(
+    x: pyfect.http_api.builder.EntrySlot[Any, Any, Any, Any, _Super],
+) -> pyfect.http_api.builder.EntrySlot[Any, Any, Any, Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
 T237_0_co = TypeVar("T237_0_co", covariant=True)
-T237_1_co = TypeVar("T237_1_co", covariant=True)
+T237_3_co = TypeVar("T237_3_co", covariant=True)
+T237_4_co = TypeVar("T237_4_co", covariant=True)
 
 
-class Fields237(Protocol[T237_0_co, T237_1_co]):
+class Fields237(Protocol[T237_0_co, T237_3_co, T237_4_co]):
     @property
-    def body(self) -> T237_0_co: ...
+    def endpoint(self) -> pyfect.http_api.endpoint.AnyEndpoint: ...
     @property
-    def headers(self) -> T237_1_co: ...
-    def declared(self) -> tuple[T237_0_co, T237_1_co]: ...
+    def uninterruptible(self) -> bool: ...
+    def declared(self) -> tuple[T237_0_co, T237_3_co, T237_4_co]: ...
 
 
-# pyfect.jose.jwt.Decrypted
+# pyfect.http_api.builder.GroupHandlers
 
 
-def v238_0_out(x: pyfect.jose.jwt.Decrypted[_Sub]) -> pyfect.jose.jwt.Decrypted[_Super]:
+def v238_0_out(
+    x: pyfect.http_api.builder.GroupHandlers[_Sub],
+) -> pyfect.http_api.builder.GroupHandlers[_Super]:
     return x
 
 
-def v238_0_in(x: pyfect.jose.jwt.Decrypted[_Super]) -> pyfect.jose.jwt.Decrypted[_Sub]:
+def v238_0_in(
+    x: pyfect.http_api.builder.GroupHandlers[_Super],
+) -> pyfect.http_api.builder.GroupHandlers[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
@@ -7747,59 +7727,65 @@ T238_0_co = TypeVar("T238_0_co", covariant=True)
 
 class Fields238(Protocol[T238_0_co]):
     @property
-    def claims(self) -> T238_0_co: ...
-    @property
-    def registered_claims(self) -> pyfect.jose.jwt.RegisteredClaims: ...
-    @property
-    def protected_header(self) -> pyfect.jose.jwe.ProtectedHeader: ...
-    @property
-    def key(self) -> pyfect.jose.jwk.DirKey: ...
+    def group(self) -> pyfect.http_api.group.AnyGroup: ...
     def declared(self) -> tuple[T238_0_co]: ...
 
 
-# pyfect.jose.jwt.Exact
+# pyfect.http_api.builder.HandleAllEntry
 
 
-def v239_0_out(x: pyfect.jose.jwt.Exact[_Sub, Any, Any]) -> pyfect.jose.jwt.Exact[_Super, Any, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v239_0_in(x: pyfect.jose.jwt.Exact[_Super, Any, Any]) -> pyfect.jose.jwt.Exact[_Sub, Any, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v239_1_out(x: pyfect.jose.jwt.Exact[Any, _Sub, Any]) -> pyfect.jose.jwt.Exact[Any, _Super, Any]:
+def v239_0_out(
+    x: pyfect.http_api.builder.HandleAllEntry[_Sub],
+) -> pyfect.http_api.builder.HandleAllEntry[_Super]:
     return x
 
 
-def v239_1_in(x: pyfect.jose.jwt.Exact[Any, _Super, Any]) -> pyfect.jose.jwt.Exact[Any, _Sub, Any]:
+def v239_0_in(
+    x: pyfect.http_api.builder.HandleAllEntry[_Super],
+) -> pyfect.http_api.builder.HandleAllEntry[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v239_2_out(x: pyfect.jose.jwt.Exact[Any, Any, _Sub]) -> pyfect.jose.jwt.Exact[Any, Any, _Super]:
+T239_0_co = TypeVar("T239_0_co", covariant=True)
+
+
+class Fields239(Protocol[T239_0_co]):
+    @property
+    def handler(
+        self,
+    ) -> collections.abc.Callable[
+        [pyfect.http_api._handlers.HttpApiRequest[typing.Any, typing.Any, typing.Any, typing.Any]],
+        pyfect._core.Effect[typing.Any, typing.Any, T239_0_co],
+    ]: ...
+    @property
+    def uninterruptible(self) -> bool: ...
+    def declared(self) -> tuple[T239_0_co]: ...
+
+
+# pyfect.http_api.client.DecodeResponse
+
+
+def v240_0_out(
+    x: pyfect.http_api.client.DecodeResponse[_Sub, Any],
+) -> pyfect.http_api.client.DecodeResponse[_Super, Any]:
     return x
 
 
-def v239_2_in(x: pyfect.jose.jwt.Exact[Any, Any, _Super]) -> pyfect.jose.jwt.Exact[Any, Any, _Sub]:
+def v240_0_in(
+    x: pyfect.http_api.client.DecodeResponse[_Super, Any],
+) -> pyfect.http_api.client.DecodeResponse[_Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-# pyfect.jose.jwt.Verified
-
-
-def v240_0_out(x: pyfect.jose.jwt.Verified[_Sub, Any]) -> pyfect.jose.jwt.Verified[_Super, Any]:
+def v240_1_out(
+    x: pyfect.http_api.client.DecodeResponse[Any, _Sub],
+) -> pyfect.http_api.client.DecodeResponse[Any, _Super]:
     return x
 
 
-def v240_0_in(x: pyfect.jose.jwt.Verified[_Super, Any]) -> pyfect.jose.jwt.Verified[_Sub, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v240_1_out(x: pyfect.jose.jwt.Verified[Any, _Sub]) -> pyfect.jose.jwt.Verified[Any, _Super]:
-    return x
-
-
-def v240_1_in(x: pyfect.jose.jwt.Verified[Any, _Super]) -> pyfect.jose.jwt.Verified[Any, _Sub]:
+def v240_1_in(
+    x: pyfect.http_api.client.DecodeResponse[Any, _Super],
+) -> pyfect.http_api.client.DecodeResponse[Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
@@ -7808,180 +7794,599 @@ T240_1_co = TypeVar("T240_1_co", covariant=True)
 
 
 class Fields240(Protocol[T240_0_co, T240_1_co]):
+    def declared(self) -> tuple[T240_0_co, T240_1_co]: ...
+
+
+# pyfect.http_api.client.EndpointClient
+
+
+def v241_0_out(
+    x: pyfect.http_api.client.EndpointClient[_Sub, Any, Any, Any, Any, Any, Any],
+) -> pyfect.http_api.client.EndpointClient[_Super, Any, Any, Any, Any, Any, Any]:
+    return x
+
+
+def v241_0_in(
+    x: pyfect.http_api.client.EndpointClient[_Super, Any, Any, Any, Any, Any, Any],
+) -> pyfect.http_api.client.EndpointClient[_Sub, Any, Any, Any, Any, Any, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v241_1_out(
+    x: pyfect.http_api.client.EndpointClient[Any, _Sub, Any, Any, Any, Any, Any],
+) -> pyfect.http_api.client.EndpointClient[Any, _Super, Any, Any, Any, Any, Any]:
+    return x
+
+
+def v241_1_in(
+    x: pyfect.http_api.client.EndpointClient[Any, _Super, Any, Any, Any, Any, Any],
+) -> pyfect.http_api.client.EndpointClient[Any, _Sub, Any, Any, Any, Any, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v241_2_out(
+    x: pyfect.http_api.client.EndpointClient[Any, Any, _Sub, Any, Any, Any, Any],
+) -> pyfect.http_api.client.EndpointClient[Any, Any, _Super, Any, Any, Any, Any]:
+    return x
+
+
+def v241_2_in(
+    x: pyfect.http_api.client.EndpointClient[Any, Any, _Super, Any, Any, Any, Any],
+) -> pyfect.http_api.client.EndpointClient[Any, Any, _Sub, Any, Any, Any, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v241_3_out(
+    x: pyfect.http_api.client.EndpointClient[Any, Any, Any, _Sub, Any, Any, Any],
+) -> pyfect.http_api.client.EndpointClient[Any, Any, Any, _Super, Any, Any, Any]:
+    return x
+
+
+def v241_3_in(
+    x: pyfect.http_api.client.EndpointClient[Any, Any, Any, _Super, Any, Any, Any],
+) -> pyfect.http_api.client.EndpointClient[Any, Any, Any, _Sub, Any, Any, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v241_4_out(
+    x: pyfect.http_api.client.EndpointClient[Any, Any, Any, Any, _Sub, Any, Any],
+) -> pyfect.http_api.client.EndpointClient[Any, Any, Any, Any, _Super, Any, Any]:
+    return x
+
+
+def v241_4_in(
+    x: pyfect.http_api.client.EndpointClient[Any, Any, Any, Any, _Super, Any, Any],
+) -> pyfect.http_api.client.EndpointClient[Any, Any, Any, Any, _Sub, Any, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v241_5_out(
+    x: pyfect.http_api.client.EndpointClient[Any, Any, Any, Any, Any, _Sub, Any],
+) -> pyfect.http_api.client.EndpointClient[Any, Any, Any, Any, Any, _Super, Any]:
+    return x
+
+
+def v241_5_in(
+    x: pyfect.http_api.client.EndpointClient[Any, Any, Any, Any, Any, _Super, Any],
+) -> pyfect.http_api.client.EndpointClient[Any, Any, Any, Any, Any, _Sub, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v241_6_out(
+    x: pyfect.http_api.client.EndpointClient[Any, Any, Any, Any, Any, Any, _Sub],
+) -> pyfect.http_api.client.EndpointClient[Any, Any, Any, Any, Any, Any, _Super]:
+    return x
+
+
+def v241_6_in(
+    x: pyfect.http_api.client.EndpointClient[Any, Any, Any, Any, Any, Any, _Super],
+) -> pyfect.http_api.client.EndpointClient[Any, Any, Any, Any, Any, Any, _Sub]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+T241_0_co = TypeVar("T241_0_co", covariant=True)
+T241_1_co = TypeVar("T241_1_co", covariant=True)
+T241_2_co = TypeVar("T241_2_co", covariant=True)
+T241_3_co = TypeVar("T241_3_co", covariant=True)
+T241_4_co = TypeVar("T241_4_co", covariant=True)
+T241_5_co = TypeVar("T241_5_co", covariant=True)
+T241_6_co = TypeVar("T241_6_co", covariant=True)
+
+
+class Fields241(
+    Protocol[T241_0_co, T241_1_co, T241_2_co, T241_3_co, T241_4_co, T241_5_co, T241_6_co]
+):
+    def declared(
+        self,
+    ) -> tuple[T241_0_co, T241_1_co, T241_2_co, T241_3_co, T241_4_co, T241_5_co, T241_6_co]: ...
+
+
+# pyfect.http_api.middleware.ForClient
+
+
+def v242_0_out(
+    x: pyfect.http_api.middleware.ForClient[_Sub],
+) -> pyfect.http_api.middleware.ForClient[_Super]:
+    return x
+
+
+def v242_0_in(
+    x: pyfect.http_api.middleware.ForClient[_Super],
+) -> pyfect.http_api.middleware.ForClient[_Sub]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+# pyfect.http_api.schema.MultipartSchema
+
+
+def v243_0_out(
+    x: pyfect.http_api.schema.MultipartSchema[_Sub, Any],
+) -> pyfect.http_api.schema.MultipartSchema[_Super, Any]:
+    return x
+
+
+def v243_0_in(
+    x: pyfect.http_api.schema.MultipartSchema[_Super, Any],
+) -> pyfect.http_api.schema.MultipartSchema[_Sub, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v243_1_out(
+    x: pyfect.http_api.schema.MultipartSchema[Any, _Sub],
+) -> pyfect.http_api.schema.MultipartSchema[Any, _Super]:
+    return x
+
+
+def v243_1_in(
+    x: pyfect.http_api.schema.MultipartSchema[Any, _Super],
+) -> pyfect.http_api.schema.MultipartSchema[Any, _Sub]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+# pyfect.http_api.schema.StreamNdjsonSchema
+
+
+def v244_0_out(
+    x: pyfect.http_api.schema.StreamNdjsonSchema[_Sub],
+) -> pyfect.http_api.schema.StreamNdjsonSchema[_Super]:
+    return x
+
+
+def v244_0_in(
+    x: pyfect.http_api.schema.StreamNdjsonSchema[_Super],
+) -> pyfect.http_api.schema.StreamNdjsonSchema[_Sub]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+T244_0_co = TypeVar("T244_0_co", covariant=True)
+
+
+class Fields244(Protocol[T244_0_co]):
     @property
-    def claims(self) -> T240_0_co: ...
+    def ast(self) -> pyfect.schema.ast.AST: ...
+    @property
+    def content_type(self) -> str: ...
+    @property
+    def content_types(self) -> tuple[str, *tuple[str, ...]]: ...
+    @property
+    def schema(self) -> pyfect.schema.Codec[T244_0_co, typing.Any, typing.Any, typing.Any]: ...
+    @property
+    def max_bytes(self) -> pyfect.byte_size.ByteSize | None: ...
+    @property
+    def max_element_bytes(self) -> pyfect.byte_size.ByteSize: ...
+    def declared(self) -> tuple[T244_0_co]: ...
+
+
+# pyfect.http_api.schema.StreamSseSchema
+
+
+def v245_0_out(
+    x: pyfect.http_api.schema.StreamSseSchema[_Sub, Any],
+) -> pyfect.http_api.schema.StreamSseSchema[_Super, Any]:
+    return x
+
+
+def v245_0_in(
+    x: pyfect.http_api.schema.StreamSseSchema[_Super, Any],
+) -> pyfect.http_api.schema.StreamSseSchema[_Sub, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v245_1_out(
+    x: pyfect.http_api.schema.StreamSseSchema[Any, _Sub],
+) -> pyfect.http_api.schema.StreamSseSchema[Any, _Super]:
+    return x
+
+
+def v245_1_in(
+    x: pyfect.http_api.schema.StreamSseSchema[Any, _Super],
+) -> pyfect.http_api.schema.StreamSseSchema[Any, _Sub]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+# pyfect.http_api.schema.UpgradeSchema
+
+
+def v246_0_out(
+    x: pyfect.http_api.schema.UpgradeSchema[_Sub],
+) -> pyfect.http_api.schema.UpgradeSchema[_Super]:
+    return x
+
+
+def v246_0_in(
+    x: pyfect.http_api.schema.UpgradeSchema[_Super],
+) -> pyfect.http_api.schema.UpgradeSchema[_Sub]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+T246_0_co = TypeVar("T246_0_co", covariant=True)
+
+
+class Fields246(Protocol[T246_0_co]):
+    @property
+    def ast(self) -> pyfect.schema.ast.AST: ...
+    @property
+    def protocol(self) -> str: ...
+    @property
+    def headers(
+        self,
+    ) -> pyfect.schema.Codec[T246_0_co, typing.Any, typing.Never, typing.Never] | None: ...
+    def declared(self) -> tuple[T246_0_co]: ...
+
+
+# pyfect.http_api.schema.Upgraded
+
+
+def v247_0_out(x: pyfect.http_api.schema.Upgraded[_Sub]) -> pyfect.http_api.schema.Upgraded[_Super]:
+    return x
+
+
+def v247_0_in(x: pyfect.http_api.schema.Upgraded[_Super]) -> pyfect.http_api.schema.Upgraded[_Sub]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+T247_0_co = TypeVar("T247_0_co", covariant=True)
+
+
+class Fields247(Protocol[T247_0_co]):
+    @property
+    def headers(self) -> T247_0_co: ...
+    @property
+    def socket(self) -> pyfect.socket.SocketService: ...
+    def declared(self) -> tuple[T247_0_co]: ...
+
+
+# pyfect.http_api.schema.WithHeadersSchema
+
+
+def v248_0_out(
+    x: pyfect.http_api.schema.WithHeadersSchema[_Sub, Any],
+) -> pyfect.http_api.schema.WithHeadersSchema[_Super, Any]:
+    return x
+
+
+def v248_0_in(
+    x: pyfect.http_api.schema.WithHeadersSchema[_Super, Any],
+) -> pyfect.http_api.schema.WithHeadersSchema[_Sub, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v248_1_out(
+    x: pyfect.http_api.schema.WithHeadersSchema[Any, _Sub],
+) -> pyfect.http_api.schema.WithHeadersSchema[Any, _Super]:
+    return x
+
+
+def v248_1_in(
+    x: pyfect.http_api.schema.WithHeadersSchema[Any, _Super],
+) -> pyfect.http_api.schema.WithHeadersSchema[Any, _Sub]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+T248_0_co = TypeVar("T248_0_co", covariant=True)
+T248_1_co = TypeVar("T248_1_co", covariant=True)
+
+
+class Fields248(Protocol[T248_0_co, T248_1_co]):
+    @property
+    def ast(self) -> pyfect.schema.ast.AST: ...
+    @property
+    def schema(self) -> pyfect.schema.Codec[T248_0_co, typing.Any, typing.Any, typing.Any]: ...
+    @property
+    def headers(self) -> pyfect.schema.Codec[T248_1_co, typing.Any, typing.Any, typing.Any]: ...
+    def declared(self) -> tuple[T248_0_co, T248_1_co]: ...
+
+
+# pyfect.http_api.schema.WithHeadersValue
+
+
+def v249_0_out(
+    x: pyfect.http_api.schema.WithHeadersValue[_Sub, Any],
+) -> pyfect.http_api.schema.WithHeadersValue[_Super, Any]:
+    return x
+
+
+def v249_0_in(
+    x: pyfect.http_api.schema.WithHeadersValue[_Super, Any],
+) -> pyfect.http_api.schema.WithHeadersValue[_Sub, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v249_1_out(
+    x: pyfect.http_api.schema.WithHeadersValue[Any, _Sub],
+) -> pyfect.http_api.schema.WithHeadersValue[Any, _Super]:
+    return x
+
+
+def v249_1_in(
+    x: pyfect.http_api.schema.WithHeadersValue[Any, _Super],
+) -> pyfect.http_api.schema.WithHeadersValue[Any, _Sub]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+T249_0_co = TypeVar("T249_0_co", covariant=True)
+T249_1_co = TypeVar("T249_1_co", covariant=True)
+
+
+class Fields249(Protocol[T249_0_co, T249_1_co]):
+    @property
+    def body(self) -> T249_0_co: ...
+    @property
+    def headers(self) -> T249_1_co: ...
+    def declared(self) -> tuple[T249_0_co, T249_1_co]: ...
+
+
+# pyfect.jose.jwt.Decrypted
+
+
+def v250_0_out(x: pyfect.jose.jwt.Decrypted[_Sub]) -> pyfect.jose.jwt.Decrypted[_Super]:
+    return x
+
+
+def v250_0_in(x: pyfect.jose.jwt.Decrypted[_Super]) -> pyfect.jose.jwt.Decrypted[_Sub]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+T250_0_co = TypeVar("T250_0_co", covariant=True)
+
+
+class Fields250(Protocol[T250_0_co]):
+    @property
+    def claims(self) -> T250_0_co: ...
     @property
     def registered_claims(self) -> pyfect.jose.jwt.RegisteredClaims: ...
     @property
-    def protected_header(self) -> T240_1_co: ...
-    def declared(self) -> tuple[T240_0_co, T240_1_co]: ...
+    def protected_header(self) -> pyfect.jose.jwe.ProtectedHeader: ...
+    @property
+    def key(self) -> pyfect.jose.jwk.DirKey: ...
+    def declared(self) -> tuple[T250_0_co]: ...
+
+
+# pyfect.jose.jwt.Exact
+
+
+def v251_0_out(x: pyfect.jose.jwt.Exact[_Sub, Any, Any]) -> pyfect.jose.jwt.Exact[_Super, Any, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v251_0_in(x: pyfect.jose.jwt.Exact[_Super, Any, Any]) -> pyfect.jose.jwt.Exact[_Sub, Any, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v251_1_out(x: pyfect.jose.jwt.Exact[Any, _Sub, Any]) -> pyfect.jose.jwt.Exact[Any, _Super, Any]:
+    return x
+
+
+def v251_1_in(x: pyfect.jose.jwt.Exact[Any, _Super, Any]) -> pyfect.jose.jwt.Exact[Any, _Sub, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v251_2_out(x: pyfect.jose.jwt.Exact[Any, Any, _Sub]) -> pyfect.jose.jwt.Exact[Any, Any, _Super]:
+    return x
+
+
+def v251_2_in(x: pyfect.jose.jwt.Exact[Any, Any, _Super]) -> pyfect.jose.jwt.Exact[Any, Any, _Sub]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+# pyfect.jose.jwt.Verified
+
+
+def v252_0_out(x: pyfect.jose.jwt.Verified[_Sub, Any]) -> pyfect.jose.jwt.Verified[_Super, Any]:
+    return x
+
+
+def v252_0_in(x: pyfect.jose.jwt.Verified[_Super, Any]) -> pyfect.jose.jwt.Verified[_Sub, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v252_1_out(x: pyfect.jose.jwt.Verified[Any, _Sub]) -> pyfect.jose.jwt.Verified[Any, _Super]:
+    return x
+
+
+def v252_1_in(x: pyfect.jose.jwt.Verified[Any, _Super]) -> pyfect.jose.jwt.Verified[Any, _Sub]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+T252_0_co = TypeVar("T252_0_co", covariant=True)
+T252_1_co = TypeVar("T252_1_co", covariant=True)
+
+
+class Fields252(Protocol[T252_0_co, T252_1_co]):
+    @property
+    def claims(self) -> T252_0_co: ...
+    @property
+    def registered_claims(self) -> pyfect.jose.jwt.RegisteredClaims: ...
+    @property
+    def protected_header(self) -> T252_1_co: ...
+    def declared(self) -> tuple[T252_0_co, T252_1_co]: ...
 
 
 # pyfect.jose.jwt.VerifiedWithKey
 
 
-def v241_0_out(x: pyfect.jose.jwt.VerifiedWithKey[_Sub]) -> pyfect.jose.jwt.VerifiedWithKey[_Super]:
+def v253_0_out(x: pyfect.jose.jwt.VerifiedWithKey[_Sub]) -> pyfect.jose.jwt.VerifiedWithKey[_Super]:
     return x
 
 
-def v241_0_in(x: pyfect.jose.jwt.VerifiedWithKey[_Super]) -> pyfect.jose.jwt.VerifiedWithKey[_Sub]:
+def v253_0_in(x: pyfect.jose.jwt.VerifiedWithKey[_Super]) -> pyfect.jose.jwt.VerifiedWithKey[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T241_0_co = TypeVar("T241_0_co", covariant=True)
+T253_0_co = TypeVar("T253_0_co", covariant=True)
 
 
-class Fields241(Protocol[T241_0_co]):
+class Fields253(Protocol[T253_0_co]):
     @property
-    def claims(self) -> T241_0_co: ...
+    def claims(self) -> T253_0_co: ...
     @property
     def registered_claims(self) -> pyfect.jose.jwt.RegisteredClaims: ...
     @property
     def protected_header(self) -> pyfect.jose.jws.ProtectedHeader: ...
     @property
     def key(self) -> pyfect.jose.jwk.PublicKey: ...
-    def declared(self) -> tuple[T241_0_co]: ...
+    def declared(self) -> tuple[T253_0_co]: ...
 
 
 # pyfect.json_schema.Document
 
 
-def v242_0_out(
+def v254_0_out(
     x: pyfect.json_schema.Document[Never],
 ) -> pyfect.json_schema.Document[pyfect.json_schema._model.Dialect]:
     return x
 
 
-def v242_0_in(
+def v254_0_in(
     x: pyfect.json_schema.Document[pyfect.json_schema._model.Dialect],
 ) -> pyfect.json_schema.Document[Never]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T242_0_co = TypeVar("T242_0_co", covariant=True, bound=pyfect.json_schema._model.Dialect)
+T254_0_co = TypeVar("T254_0_co", covariant=True, bound=pyfect.json_schema._model.Dialect)
 
 
-class Fields242(Protocol[T242_0_co]):
+class Fields254(Protocol[T254_0_co]):
     @property
-    def dialect(self) -> T242_0_co: ...
+    def dialect(self) -> T254_0_co: ...
     @property
     def schema(self) -> pyfect.json_schema._model.JsonSchema: ...
     @property
     def definitions(self) -> pyfect.json_schema._model.Definitions: ...
-    def declared(self) -> tuple[T242_0_co]: ...
+    def declared(self) -> tuple[T254_0_co]: ...
 
 
 # pyfect.json_schema.MultiDocument
 
 
-def v243_0_out(
+def v255_0_out(
     x: pyfect.json_schema.MultiDocument[Never],
 ) -> pyfect.json_schema.MultiDocument[pyfect.json_schema._model.Dialect]:
     return x
 
 
-def v243_0_in(
+def v255_0_in(
     x: pyfect.json_schema.MultiDocument[pyfect.json_schema._model.Dialect],
 ) -> pyfect.json_schema.MultiDocument[Never]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T243_0_co = TypeVar("T243_0_co", covariant=True, bound=pyfect.json_schema._model.Dialect)
+T255_0_co = TypeVar("T255_0_co", covariant=True, bound=pyfect.json_schema._model.Dialect)
 
 
-class Fields243(Protocol[T243_0_co]):
+class Fields255(Protocol[T255_0_co]):
     @property
-    def dialect(self) -> T243_0_co: ...
+    def dialect(self) -> T255_0_co: ...
     @property
     def schemas(self) -> tuple[pyfect.json_schema._model.JsonSchema, ...]: ...
     @property
     def definitions(self) -> pyfect.json_schema._model.Definitions: ...
-    def declared(self) -> tuple[T243_0_co]: ...
+    def declared(self) -> tuple[T255_0_co]: ...
 
 
 # pyfect.layer.Provides
 
 
-def v244_0_out(x: pyfect.layer.Provides[_Sub, Any]) -> pyfect.layer.Provides[_Super, Any]:
+def v256_0_out(x: pyfect.layer.Provides[_Sub, Any]) -> pyfect.layer.Provides[_Super, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v244_0_in(x: pyfect.layer.Provides[_Super, Any]) -> pyfect.layer.Provides[_Sub, Any]:
+def v256_0_in(x: pyfect.layer.Provides[_Super, Any]) -> pyfect.layer.Provides[_Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v244_1_out(x: pyfect.layer.Provides[Any, _Sub]) -> pyfect.layer.Provides[Any, _Super]:
+def v256_1_out(x: pyfect.layer.Provides[Any, _Sub]) -> pyfect.layer.Provides[Any, _Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v244_1_in(x: pyfect.layer.Provides[Any, _Super]) -> pyfect.layer.Provides[Any, _Sub]:
+def v256_1_in(x: pyfect.layer.Provides[Any, _Super]) -> pyfect.layer.Provides[Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
 # pyfect.metric.CounterState
 
 
-def v245_0_out(x: pyfect.metric.CounterState[Never]) -> pyfect.metric.CounterState[float]:
+def v257_0_out(x: pyfect.metric.CounterState[Never]) -> pyfect.metric.CounterState[float]:
     return x
 
 
-def v245_0_in(x: pyfect.metric.CounterState[float]) -> pyfect.metric.CounterState[Never]:
+def v257_0_in(x: pyfect.metric.CounterState[float]) -> pyfect.metric.CounterState[Never]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T245_0_co = TypeVar("T245_0_co", covariant=True, bound=float)
+T257_0_co = TypeVar("T257_0_co", covariant=True, bound=float)
 
 
-class Fields245(Protocol[T245_0_co]):
+class Fields257(Protocol[T257_0_co]):
     @property
-    def count(self) -> T245_0_co: ...
+    def count(self) -> T257_0_co: ...
     @property
     def incremental(self) -> bool: ...
-    def declared(self) -> tuple[T245_0_co]: ...
+    def declared(self) -> tuple[T257_0_co]: ...
 
 
 # pyfect.metric.GaugeState
 
 
-def v246_0_out(x: pyfect.metric.GaugeState[Never]) -> pyfect.metric.GaugeState[float]:
+def v258_0_out(x: pyfect.metric.GaugeState[Never]) -> pyfect.metric.GaugeState[float]:
     return x
 
 
-def v246_0_in(x: pyfect.metric.GaugeState[float]) -> pyfect.metric.GaugeState[Never]:
+def v258_0_in(x: pyfect.metric.GaugeState[float]) -> pyfect.metric.GaugeState[Never]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T246_0_co = TypeVar("T246_0_co", covariant=True, bound=float)
+T258_0_co = TypeVar("T258_0_co", covariant=True, bound=float)
 
 
-class Fields246(Protocol[T246_0_co]):
+class Fields258(Protocol[T258_0_co]):
     @property
-    def value(self) -> T246_0_co: ...
-    def declared(self) -> tuple[T246_0_co]: ...
+    def value(self) -> T258_0_co: ...
+    def declared(self) -> tuple[T258_0_co]: ...
 
 
 # pyfect.mutable_hash_map.MutableHashMap
 
 
-def v247_0_out(
+def v259_0_out(
     x: pyfect.mutable_hash_map.MutableHashMap[_Sub, Any],
 ) -> pyfect.mutable_hash_map.MutableHashMap[_Super, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v247_0_in(
+def v259_0_in(
     x: pyfect.mutable_hash_map.MutableHashMap[_Super, Any],
 ) -> pyfect.mutable_hash_map.MutableHashMap[_Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v247_1_out(
+def v259_1_out(
     x: pyfect.mutable_hash_map.MutableHashMap[Any, _Sub],
 ) -> pyfect.mutable_hash_map.MutableHashMap[Any, _Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v247_1_in(
+def v259_1_in(
     x: pyfect.mutable_hash_map.MutableHashMap[Any, _Super],
 ) -> pyfect.mutable_hash_map.MutableHashMap[Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
@@ -7990,13 +8395,13 @@ def v247_1_in(
 # pyfect.mutable_hash_set.MutableHashSet
 
 
-def v248_0_out(
+def v260_0_out(
     x: pyfect.mutable_hash_set.MutableHashSet[_Sub],
 ) -> pyfect.mutable_hash_set.MutableHashSet[_Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v248_0_in(
+def v260_0_in(
     x: pyfect.mutable_hash_set.MutableHashSet[_Super],
 ) -> pyfect.mutable_hash_set.MutableHashSet[_Sub]:
     return x  # pyright: ignore[reportReturnType]
@@ -8005,13 +8410,13 @@ def v248_0_in(
 # pyfect.net.ip_network.IpInterfaceParts
 
 
-def v249_0_out(
+def v261_0_out(
     x: pyfect.net.ip_network.IpInterfaceParts[_Sub],
 ) -> pyfect.net.ip_network.IpInterfaceParts[_Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v249_0_in(
+def v261_0_in(
     x: pyfect.net.ip_network.IpInterfaceParts[_Super],
 ) -> pyfect.net.ip_network.IpInterfaceParts[_Sub]:
     return x  # pyright: ignore[reportReturnType]
@@ -8020,112 +8425,112 @@ def v249_0_in(
 # pyfect.optic.Id
 
 
-def v250_0_out(x: pyfect.optic.Id[_Sub]) -> pyfect.optic.Id[_Super]:
+def v262_0_out(x: pyfect.optic.Id[_Sub]) -> pyfect.optic.Id[_Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v250_0_in(x: pyfect.optic.Id[_Super]) -> pyfect.optic.Id[_Sub]:
+def v262_0_in(x: pyfect.optic.Id[_Super]) -> pyfect.optic.Id[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
 # pyfect.optic.Iso
 
 
-def v251_0_out(x: pyfect.optic.Iso[_Sub, Any]) -> pyfect.optic.Iso[_Super, Any]:
+def v263_0_out(x: pyfect.optic.Iso[_Sub, Any]) -> pyfect.optic.Iso[_Super, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v251_0_in(x: pyfect.optic.Iso[_Super, Any]) -> pyfect.optic.Iso[_Sub, Any]:
+def v263_0_in(x: pyfect.optic.Iso[_Super, Any]) -> pyfect.optic.Iso[_Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v251_1_out(x: pyfect.optic.Iso[Any, _Sub]) -> pyfect.optic.Iso[Any, _Super]:
+def v263_1_out(x: pyfect.optic.Iso[Any, _Sub]) -> pyfect.optic.Iso[Any, _Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v251_1_in(x: pyfect.optic.Iso[Any, _Super]) -> pyfect.optic.Iso[Any, _Sub]:
+def v263_1_in(x: pyfect.optic.Iso[Any, _Super]) -> pyfect.optic.Iso[Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
 # pyfect.optic.Lens
 
 
-def v252_0_out(x: pyfect.optic.Lens[_Sub, Any]) -> pyfect.optic.Lens[_Super, Any]:
+def v264_0_out(x: pyfect.optic.Lens[_Sub, Any]) -> pyfect.optic.Lens[_Super, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v252_0_in(x: pyfect.optic.Lens[_Super, Any]) -> pyfect.optic.Lens[_Sub, Any]:
+def v264_0_in(x: pyfect.optic.Lens[_Super, Any]) -> pyfect.optic.Lens[_Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v252_1_out(x: pyfect.optic.Lens[Any, _Sub]) -> pyfect.optic.Lens[Any, _Super]:
+def v264_1_out(x: pyfect.optic.Lens[Any, _Sub]) -> pyfect.optic.Lens[Any, _Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v252_1_in(x: pyfect.optic.Lens[Any, _Super]) -> pyfect.optic.Lens[Any, _Sub]:
+def v264_1_in(x: pyfect.optic.Lens[Any, _Super]) -> pyfect.optic.Lens[Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
 # pyfect.optic.Optional
 
 
-def v253_0_out(x: pyfect.optic.Optional[_Sub, Any]) -> pyfect.optic.Optional[_Super, Any]:
+def v265_0_out(x: pyfect.optic.Optional[_Sub, Any]) -> pyfect.optic.Optional[_Super, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v253_0_in(x: pyfect.optic.Optional[_Super, Any]) -> pyfect.optic.Optional[_Sub, Any]:
+def v265_0_in(x: pyfect.optic.Optional[_Super, Any]) -> pyfect.optic.Optional[_Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v253_1_out(x: pyfect.optic.Optional[Any, _Sub]) -> pyfect.optic.Optional[Any, _Super]:
+def v265_1_out(x: pyfect.optic.Optional[Any, _Sub]) -> pyfect.optic.Optional[Any, _Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v253_1_in(x: pyfect.optic.Optional[Any, _Super]) -> pyfect.optic.Optional[Any, _Sub]:
+def v265_1_in(x: pyfect.optic.Optional[Any, _Super]) -> pyfect.optic.Optional[Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
 # pyfect.optic.Prism
 
 
-def v254_0_out(x: pyfect.optic.Prism[_Sub, Any]) -> pyfect.optic.Prism[_Super, Any]:
+def v266_0_out(x: pyfect.optic.Prism[_Sub, Any]) -> pyfect.optic.Prism[_Super, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v254_0_in(x: pyfect.optic.Prism[_Super, Any]) -> pyfect.optic.Prism[_Sub, Any]:
+def v266_0_in(x: pyfect.optic.Prism[_Super, Any]) -> pyfect.optic.Prism[_Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v254_1_out(x: pyfect.optic.Prism[Any, _Sub]) -> pyfect.optic.Prism[Any, _Super]:
+def v266_1_out(x: pyfect.optic.Prism[Any, _Sub]) -> pyfect.optic.Prism[Any, _Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v254_1_in(x: pyfect.optic.Prism[Any, _Super]) -> pyfect.optic.Prism[Any, _Sub]:
+def v266_1_in(x: pyfect.optic.Prism[Any, _Super]) -> pyfect.optic.Prism[Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
 # pyfect.partitioned_semaphore.RoundRobin
 
 
-def v255_0_out(
+def v267_0_out(
     x: pyfect.partitioned_semaphore.RoundRobin[Never, Any],
 ) -> pyfect.partitioned_semaphore.RoundRobin[collections.abc.Hashable, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v255_0_in(
+def v267_0_in(
     x: pyfect.partitioned_semaphore.RoundRobin[collections.abc.Hashable, Any],
 ) -> pyfect.partitioned_semaphore.RoundRobin[Never, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v255_1_out(
+def v267_1_out(
     x: pyfect.partitioned_semaphore.RoundRobin[Any, Never],
 ) -> pyfect.partitioned_semaphore.RoundRobin[Any, collections.abc.Hashable]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v255_1_in(
+def v267_1_in(
     x: pyfect.partitioned_semaphore.RoundRobin[Any, collections.abc.Hashable],
 ) -> pyfect.partitioned_semaphore.RoundRobin[Any, Never]:
     return x  # pyright: ignore[reportReturnType]
@@ -8134,55 +8539,55 @@ def v255_1_in(
 # pyfect.persistence.Persistable
 
 
-def v256_0_out(
+def v268_0_out(
     x: pyfect.persistence.Persistable[_Sub, Any, Any],
 ) -> pyfect.persistence.Persistable[_Super, Any, Any]:
     return x
 
 
-def v256_0_in(
+def v268_0_in(
     x: pyfect.persistence.Persistable[_Super, Any, Any],
 ) -> pyfect.persistence.Persistable[_Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v256_1_out(
+def v268_1_out(
     x: pyfect.persistence.Persistable[Any, _Sub, Any],
 ) -> pyfect.persistence.Persistable[Any, _Super, Any]:
     return x
 
 
-def v256_1_in(
+def v268_1_in(
     x: pyfect.persistence.Persistable[Any, _Super, Any],
 ) -> pyfect.persistence.Persistable[Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v256_2_out(
+def v268_2_out(
     x: pyfect.persistence.Persistable[Any, Any, _Sub],
 ) -> pyfect.persistence.Persistable[Any, Any, _Super]:
     return x
 
 
-def v256_2_in(
+def v268_2_in(
     x: pyfect.persistence.Persistable[Any, Any, _Super],
 ) -> pyfect.persistence.Persistable[Any, Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T256_0_co = TypeVar("T256_0_co", covariant=True)
-T256_1_co = TypeVar("T256_1_co", covariant=True)
-T256_2_co = TypeVar("T256_2_co", covariant=True)
+T268_0_co = TypeVar("T268_0_co", covariant=True)
+T268_1_co = TypeVar("T268_1_co", covariant=True)
+T268_2_co = TypeVar("T268_2_co", covariant=True)
 
 
-class Fields256(Protocol[T256_0_co, T256_1_co, T256_2_co]):
-    def declared(self) -> tuple[T256_0_co, T256_1_co, T256_2_co]: ...
+class Fields268(Protocol[T268_0_co, T268_1_co, T268_2_co]):
+    def declared(self) -> tuple[T268_0_co, T268_1_co, T268_2_co]: ...
 
 
 # pyfect.persistence.PersistedCache
 
 
-def v257_0_out(
+def v269_0_out(
     x: pyfect.persistence.PersistedCache[Never, Any, Any, Any],
 ) -> pyfect.persistence.PersistedCache[
     pyfect.persistence.persistable.AnyPersistable, Any, Any, Any
@@ -8190,7 +8595,7 @@ def v257_0_out(
     return x  # pyright: ignore[reportReturnType]
 
 
-def v257_0_in(
+def v269_0_in(
     x: pyfect.persistence.PersistedCache[
         pyfect.persistence.persistable.AnyPersistable, Any, Any, Any
     ],
@@ -8198,37 +8603,37 @@ def v257_0_in(
     return x  # pyright: ignore[reportReturnType]
 
 
-def v257_1_out(
+def v269_1_out(
     x: pyfect.persistence.PersistedCache[Any, _Sub, Any, Any],
 ) -> pyfect.persistence.PersistedCache[Any, _Super, Any, Any]:
     return x
 
 
-def v257_1_in(
+def v269_1_in(
     x: pyfect.persistence.PersistedCache[Any, _Super, Any, Any],
 ) -> pyfect.persistence.PersistedCache[Any, _Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v257_2_out(
+def v269_2_out(
     x: pyfect.persistence.PersistedCache[Any, Any, _Sub, Any],
 ) -> pyfect.persistence.PersistedCache[Any, Any, _Super, Any]:
     return x
 
 
-def v257_2_in(
+def v269_2_in(
     x: pyfect.persistence.PersistedCache[Any, Any, _Super, Any],
 ) -> pyfect.persistence.PersistedCache[Any, Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v257_3_out(
+def v269_3_out(
     x: pyfect.persistence.PersistedCache[Any, Any, Any, _Sub],
 ) -> pyfect.persistence.PersistedCache[Any, Any, Any, _Super]:
     return x
 
 
-def v257_3_in(
+def v269_3_in(
     x: pyfect.persistence.PersistedCache[Any, Any, Any, _Super],
 ) -> pyfect.persistence.PersistedCache[Any, Any, Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
@@ -8237,25 +8642,25 @@ def v257_3_in(
 # pyfect.persistence.PersistedQueue
 
 
-def v258_0_out(
+def v270_0_out(
     x: pyfect.persistence.PersistedQueue[_Sub, Any],
 ) -> pyfect.persistence.PersistedQueue[_Super, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v258_0_in(
+def v270_0_in(
     x: pyfect.persistence.PersistedQueue[_Super, Any],
 ) -> pyfect.persistence.PersistedQueue[_Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v258_1_out(
+def v270_1_out(
     x: pyfect.persistence.PersistedQueue[Any, _Sub],
 ) -> pyfect.persistence.PersistedQueue[Any, _Super]:
     return x
 
 
-def v258_1_in(
+def v270_1_in(
     x: pyfect.persistence.PersistedQueue[Any, _Super],
 ) -> pyfect.persistence.PersistedQueue[Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
@@ -8264,13 +8669,13 @@ def v258_1_in(
 # pyfect.persistence.circuit_breaker.Executor
 
 
-def v259_0_out(
+def v271_0_out(
     x: pyfect.persistence.circuit_breaker.Executor[_Sub],
 ) -> pyfect.persistence.circuit_breaker.Executor[_Super]:
     return x
 
 
-def v259_0_in(
+def v271_0_in(
     x: pyfect.persistence.circuit_breaker.Executor[_Super],
 ) -> pyfect.persistence.circuit_breaker.Executor[_Sub]:
     return x  # pyright: ignore[reportReturnType]
@@ -8279,47 +8684,47 @@ def v259_0_in(
 # pyfect.persistence.key_value_store.SchemaStore
 
 
-def v260_0_out(
+def v272_0_out(
     x: pyfect.persistence.key_value_store.SchemaStore[_Sub, Any, Any],
 ) -> pyfect.persistence.key_value_store.SchemaStore[_Super, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v260_0_in(
+def v272_0_in(
     x: pyfect.persistence.key_value_store.SchemaStore[_Super, Any, Any],
 ) -> pyfect.persistence.key_value_store.SchemaStore[_Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v260_1_out(
+def v272_1_out(
     x: pyfect.persistence.key_value_store.SchemaStore[Any, _Sub, Any],
 ) -> pyfect.persistence.key_value_store.SchemaStore[Any, _Super, Any]:
     return x
 
 
-def v260_1_in(
+def v272_1_in(
     x: pyfect.persistence.key_value_store.SchemaStore[Any, _Super, Any],
 ) -> pyfect.persistence.key_value_store.SchemaStore[Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v260_2_out(
+def v272_2_out(
     x: pyfect.persistence.key_value_store.SchemaStore[Any, Any, _Sub],
 ) -> pyfect.persistence.key_value_store.SchemaStore[Any, Any, _Super]:
     return x
 
 
-def v260_2_in(
+def v272_2_in(
     x: pyfect.persistence.key_value_store.SchemaStore[Any, Any, _Super],
 ) -> pyfect.persistence.key_value_store.SchemaStore[Any, Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T260_1_co = TypeVar("T260_1_co", covariant=True)
-T260_2_co = TypeVar("T260_2_co", covariant=True)
+T272_1_co = TypeVar("T272_1_co", covariant=True)
+T272_2_co = TypeVar("T272_2_co", covariant=True)
 
 
-class Fields260(Protocol[T260_1_co, T260_2_co]):
+class Fields272(Protocol[T272_1_co, T272_2_co]):
     @property
     def get(
         self,
@@ -8329,7 +8734,7 @@ class Fields260(Protocol[T260_1_co, T260_2_co]):
             pyfect.option.Option[Any],
             pyfect.persistence.key_value_store._store.KeyValueStoreError
             | pyfect.schema.SchemaError,
-            T260_1_co,
+            T272_1_co,
         ],
     ]: ...
     @property
@@ -8341,7 +8746,7 @@ class Fields260(Protocol[T260_1_co, T260_2_co]):
             None,
             pyfect.persistence.key_value_store._store.KeyValueStoreError
             | pyfect.schema.SchemaError,
-            T260_2_co,
+            T272_2_co,
         ],
     ]: ...
     @property
@@ -8353,7 +8758,7 @@ class Fields260(Protocol[T260_1_co, T260_2_co]):
             pyfect.option.Option[Any],
             pyfect.persistence.key_value_store._store.KeyValueStoreError
             | pyfect.schema.SchemaError,
-            T260_1_co | T260_2_co,
+            T272_1_co | T272_2_co,
         ],
     ]: ...
     @property
@@ -8392,31 +8797,31 @@ class Fields260(Protocol[T260_1_co, T260_2_co]):
     ) -> pyfect._core.Effect[
         bool, pyfect.persistence.key_value_store._store.KeyValueStoreError
     ]: ...
-    def declared(self) -> tuple[T260_1_co, T260_2_co]: ...
+    def declared(self) -> tuple[T272_1_co, T272_2_co]: ...
 
 
 # pyfect.persistence.persistable.Exactly
 
 
-def v261_0_out(
+def v273_0_out(
     x: pyfect.persistence.persistable.Exactly[_Sub, Any],
 ) -> pyfect.persistence.persistable.Exactly[_Super, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v261_0_in(
+def v273_0_in(
     x: pyfect.persistence.persistable.Exactly[_Super, Any],
 ) -> pyfect.persistence.persistable.Exactly[_Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v261_1_out(
+def v273_1_out(
     x: pyfect.persistence.persistable.Exactly[Any, _Sub],
 ) -> pyfect.persistence.persistable.Exactly[Any, _Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v261_1_in(
+def v273_1_in(
     x: pyfect.persistence.persistable.Exactly[Any, _Super],
 ) -> pyfect.persistence.persistable.Exactly[Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
@@ -8425,25 +8830,25 @@ def v261_1_in(
 # pyfect.persistence.persistable.HasPersistableTypes
 
 
-def v262_0_out(
+def v274_0_out(
     x: pyfect.persistence.persistable.HasPersistableTypes[_Sub, Any],
 ) -> pyfect.persistence.persistable.HasPersistableTypes[_Super, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v262_0_in(
+def v274_0_in(
     x: pyfect.persistence.persistable.HasPersistableTypes[_Super, Any],
 ) -> pyfect.persistence.persistable.HasPersistableTypes[_Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v262_1_out(
+def v274_1_out(
     x: pyfect.persistence.persistable.HasPersistableTypes[Any, _Sub],
 ) -> pyfect.persistence.persistable.HasPersistableTypes[Any, _Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v262_1_in(
+def v274_1_in(
     x: pyfect.persistence.persistable.HasPersistableTypes[Any, _Super],
 ) -> pyfect.persistence.persistable.HasPersistableTypes[Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
@@ -8452,22 +8857,22 @@ def v262_1_in(
 # pyfect.persistence.redis.Script
 
 
-def v263_1_out(
+def v275_1_out(
     x: pyfect.persistence.redis.Script[..., _Sub],
 ) -> pyfect.persistence.redis.Script[..., _Super]:
     return x
 
 
-def v263_1_in(
+def v275_1_in(
     x: pyfect.persistence.redis.Script[..., _Super],
 ) -> pyfect.persistence.redis.Script[..., _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T263_0_co = TypeVar("T263_0_co", covariant=True)
+T275_0_co = TypeVar("T275_0_co", covariant=True)
 
 
-class Fields263(Protocol[T263_0_co]):
+class Fields275(Protocol[T275_0_co]):
     @property
     def lua(self) -> str: ...
     @property
@@ -8477,107 +8882,107 @@ class Fields263(Protocol[T263_0_co]):
     @property
     def decode(
         self,
-    ) -> collections.abc.Callable[[pyfect.persistence.redis._script.RedisReply], T263_0_co]: ...
-    def declared(self) -> tuple[T263_0_co]: ...
+    ) -> collections.abc.Callable[[pyfect.persistence.redis._script.RedisReply], T275_0_co]: ...
+    def declared(self) -> tuple[T275_0_co]: ...
 
 
 # pyfect.pool.PoolConfig
 
 
-def v264_0_out(x: pyfect.pool.PoolConfig[_Sub, Any]) -> pyfect.pool.PoolConfig[_Super, Any]:
+def v276_0_out(x: pyfect.pool.PoolConfig[_Sub, Any]) -> pyfect.pool.PoolConfig[_Super, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v264_0_in(x: pyfect.pool.PoolConfig[_Super, Any]) -> pyfect.pool.PoolConfig[_Sub, Any]:
+def v276_0_in(x: pyfect.pool.PoolConfig[_Super, Any]) -> pyfect.pool.PoolConfig[_Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v264_1_out(x: pyfect.pool.PoolConfig[Any, _Sub]) -> pyfect.pool.PoolConfig[Any, _Super]:
+def v276_1_out(x: pyfect.pool.PoolConfig[Any, _Sub]) -> pyfect.pool.PoolConfig[Any, _Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v264_1_in(x: pyfect.pool.PoolConfig[Any, _Super]) -> pyfect.pool.PoolConfig[Any, _Sub]:
+def v276_1_in(x: pyfect.pool.PoolConfig[Any, _Super]) -> pyfect.pool.PoolConfig[Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
 # pyfect.pool.PoolItem
 
 
-def v265_0_out(x: pyfect.pool.PoolItem[_Sub, Any]) -> pyfect.pool.PoolItem[_Super, Any]:
+def v277_0_out(x: pyfect.pool.PoolItem[_Sub, Any]) -> pyfect.pool.PoolItem[_Super, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v265_0_in(x: pyfect.pool.PoolItem[_Super, Any]) -> pyfect.pool.PoolItem[_Sub, Any]:
+def v277_0_in(x: pyfect.pool.PoolItem[_Super, Any]) -> pyfect.pool.PoolItem[_Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v265_1_out(x: pyfect.pool.PoolItem[Any, _Sub]) -> pyfect.pool.PoolItem[Any, _Super]:
+def v277_1_out(x: pyfect.pool.PoolItem[Any, _Sub]) -> pyfect.pool.PoolItem[Any, _Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v265_1_in(x: pyfect.pool.PoolItem[Any, _Super]) -> pyfect.pool.PoolItem[Any, _Sub]:
+def v277_1_in(x: pyfect.pool.PoolItem[Any, _Super]) -> pyfect.pool.PoolItem[Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
 # pyfect.pool.PoolState
 
 
-def v266_0_out(x: pyfect.pool.PoolState[_Sub, Any]) -> pyfect.pool.PoolState[_Super, Any]:
+def v278_0_out(x: pyfect.pool.PoolState[_Sub, Any]) -> pyfect.pool.PoolState[_Super, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v266_0_in(x: pyfect.pool.PoolState[_Super, Any]) -> pyfect.pool.PoolState[_Sub, Any]:
+def v278_0_in(x: pyfect.pool.PoolState[_Super, Any]) -> pyfect.pool.PoolState[_Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v266_1_out(x: pyfect.pool.PoolState[Any, _Sub]) -> pyfect.pool.PoolState[Any, _Super]:
+def v278_1_out(x: pyfect.pool.PoolState[Any, _Sub]) -> pyfect.pool.PoolState[Any, _Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v266_1_in(x: pyfect.pool.PoolState[Any, _Super]) -> pyfect.pool.PoolState[Any, _Sub]:
+def v278_1_in(x: pyfect.pool.PoolState[Any, _Super]) -> pyfect.pool.PoolState[Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
 # pyfect.pool.Strategy
 
 
-def v267_0_out(x: pyfect.pool.Strategy[_Sub, Any]) -> pyfect.pool.Strategy[_Super, Any]:
+def v279_0_out(x: pyfect.pool.Strategy[_Sub, Any]) -> pyfect.pool.Strategy[_Super, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v267_0_in(x: pyfect.pool.Strategy[_Super, Any]) -> pyfect.pool.Strategy[_Sub, Any]:
+def v279_0_in(x: pyfect.pool.Strategy[_Super, Any]) -> pyfect.pool.Strategy[_Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v267_1_out(x: pyfect.pool.Strategy[Any, _Sub]) -> pyfect.pool.Strategy[Any, _Super]:
+def v279_1_out(x: pyfect.pool.Strategy[Any, _Sub]) -> pyfect.pool.Strategy[Any, _Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v267_1_in(x: pyfect.pool.Strategy[Any, _Super]) -> pyfect.pool.Strategy[Any, _Sub]:
+def v279_1_in(x: pyfect.pool.Strategy[Any, _Super]) -> pyfect.pool.Strategy[Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
 # pyfect.pubsub.Atomic
 
 
-def v268_0_out(x: pyfect.pubsub.Atomic[_Sub]) -> pyfect.pubsub.Atomic[_Super]:
+def v280_0_out(x: pyfect.pubsub.Atomic[_Sub]) -> pyfect.pubsub.Atomic[_Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v268_0_in(x: pyfect.pubsub.Atomic[_Super]) -> pyfect.pubsub.Atomic[_Sub]:
+def v280_0_in(x: pyfect.pubsub.Atomic[_Super]) -> pyfect.pubsub.Atomic[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
 # pyfect.pubsub.BackPressureStrategy
 
 
-def v269_0_out(
+def v281_0_out(
     x: pyfect.pubsub.BackPressureStrategy[_Sub],
 ) -> pyfect.pubsub.BackPressureStrategy[_Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v269_0_in(
+def v281_0_in(
     x: pyfect.pubsub.BackPressureStrategy[_Super],
 ) -> pyfect.pubsub.BackPressureStrategy[_Sub]:
     return x  # pyright: ignore[reportReturnType]
@@ -8586,13 +8991,13 @@ def v269_0_in(
 # pyfect.pubsub.BackingSubscription
 
 
-def v270_0_out(
+def v282_0_out(
     x: pyfect.pubsub.BackingSubscription[_Sub],
 ) -> pyfect.pubsub.BackingSubscription[_Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v270_0_in(
+def v282_0_in(
     x: pyfect.pubsub.BackingSubscription[_Super],
 ) -> pyfect.pubsub.BackingSubscription[_Sub]:
     return x  # pyright: ignore[reportReturnType]
@@ -8601,345 +9006,345 @@ def v270_0_in(
 # pyfect.pubsub.DroppingStrategy
 
 
-def v271_0_out(x: pyfect.pubsub.DroppingStrategy[_Sub]) -> pyfect.pubsub.DroppingStrategy[_Super]:
+def v283_0_out(x: pyfect.pubsub.DroppingStrategy[_Sub]) -> pyfect.pubsub.DroppingStrategy[_Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v271_0_in(x: pyfect.pubsub.DroppingStrategy[_Super]) -> pyfect.pubsub.DroppingStrategy[_Sub]:
+def v283_0_in(x: pyfect.pubsub.DroppingStrategy[_Super]) -> pyfect.pubsub.DroppingStrategy[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
 # pyfect.pubsub.Poller
 
 
-def v272_0_out(x: pyfect.pubsub.Poller[_Sub]) -> pyfect.pubsub.Poller[_Super]:
+def v284_0_out(x: pyfect.pubsub.Poller[_Sub]) -> pyfect.pubsub.Poller[_Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v272_0_in(x: pyfect.pubsub.Poller[_Super]) -> pyfect.pubsub.Poller[_Sub]:
+def v284_0_in(x: pyfect.pubsub.Poller[_Super]) -> pyfect.pubsub.Poller[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
 # pyfect.pubsub.Pollers
 
 
-def v273_0_out(x: pyfect.pubsub.Pollers[_Sub]) -> pyfect.pubsub.Pollers[_Super]:
+def v285_0_out(x: pyfect.pubsub.Pollers[_Sub]) -> pyfect.pubsub.Pollers[_Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v273_0_in(x: pyfect.pubsub.Pollers[_Super]) -> pyfect.pubsub.Pollers[_Sub]:
+def v285_0_in(x: pyfect.pubsub.Pollers[_Super]) -> pyfect.pubsub.Pollers[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
 # pyfect.pubsub.ReplayWindow
 
 
-def v274_0_out(x: pyfect.pubsub.ReplayWindow[_Sub]) -> pyfect.pubsub.ReplayWindow[_Super]:
+def v286_0_out(x: pyfect.pubsub.ReplayWindow[_Sub]) -> pyfect.pubsub.ReplayWindow[_Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v274_0_in(x: pyfect.pubsub.ReplayWindow[_Super]) -> pyfect.pubsub.ReplayWindow[_Sub]:
+def v286_0_in(x: pyfect.pubsub.ReplayWindow[_Super]) -> pyfect.pubsub.ReplayWindow[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
 # pyfect.pubsub.SlidingStrategy
 
 
-def v275_0_out(x: pyfect.pubsub.SlidingStrategy[_Sub]) -> pyfect.pubsub.SlidingStrategy[_Super]:
+def v287_0_out(x: pyfect.pubsub.SlidingStrategy[_Sub]) -> pyfect.pubsub.SlidingStrategy[_Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v275_0_in(x: pyfect.pubsub.SlidingStrategy[_Super]) -> pyfect.pubsub.SlidingStrategy[_Sub]:
+def v287_0_in(x: pyfect.pubsub.SlidingStrategy[_Super]) -> pyfect.pubsub.SlidingStrategy[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
 # pyfect.pubsub.Strategy
 
 
-def v276_0_out(x: pyfect.pubsub.Strategy[_Sub]) -> pyfect.pubsub.Strategy[_Super]:
+def v288_0_out(x: pyfect.pubsub.Strategy[_Sub]) -> pyfect.pubsub.Strategy[_Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v276_0_in(x: pyfect.pubsub.Strategy[_Super]) -> pyfect.pubsub.Strategy[_Sub]:
+def v288_0_in(x: pyfect.pubsub.Strategy[_Super]) -> pyfect.pubsub.Strategy[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
 # pyfect.pubsub.Subscribers
 
 
-def v277_0_out(x: pyfect.pubsub.Subscribers[_Sub]) -> pyfect.pubsub.Subscribers[_Super]:
+def v289_0_out(x: pyfect.pubsub.Subscribers[_Sub]) -> pyfect.pubsub.Subscribers[_Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v277_0_in(x: pyfect.pubsub.Subscribers[_Super]) -> pyfect.pubsub.Subscribers[_Sub]:
+def v289_0_in(x: pyfect.pubsub.Subscribers[_Super]) -> pyfect.pubsub.Subscribers[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
 # pyfect.pubsub.Subscription
 
 
-def v278_0_out(x: pyfect.pubsub.Subscription[_Sub]) -> pyfect.pubsub.Subscription[_Super]:
+def v290_0_out(x: pyfect.pubsub.Subscription[_Sub]) -> pyfect.pubsub.Subscription[_Super]:
     return x
 
 
-def v278_0_in(x: pyfect.pubsub.Subscription[_Super]) -> pyfect.pubsub.Subscription[_Sub]:
+def v290_0_in(x: pyfect.pubsub.Subscription[_Super]) -> pyfect.pubsub.Subscription[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
 # pyfect.pull.Fail
 
 
-def v279_0_out(x: pyfect.pull.Fail[_Sub]) -> pyfect.pull.Fail[_Super]:
+def v291_0_out(x: pyfect.pull.Fail[_Sub]) -> pyfect.pull.Fail[_Super]:
     return x
 
 
-def v279_0_in(x: pyfect.pull.Fail[_Super]) -> pyfect.pull.Fail[_Sub]:
+def v291_0_in(x: pyfect.pull.Fail[_Super]) -> pyfect.pull.Fail[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T279_0_co = TypeVar("T279_0_co", covariant=True)
+T291_0_co = TypeVar("T291_0_co", covariant=True)
 
 
-class Fields279(Protocol[T279_0_co]):
+class Fields291(Protocol[T291_0_co]):
     @property
-    def error(self) -> T279_0_co: ...
+    def error(self) -> T291_0_co: ...
     @property
     def annotations(self) -> pyfect.cause.Annotations: ...
-    def declared(self) -> tuple[T279_0_co]: ...
+    def declared(self) -> tuple[T291_0_co]: ...
 
 
 # pyfect.reactivity.async_result.AsyncResultSchema
 
 
-def v280_0_out(
+def v292_0_out(
     x: pyfect.reactivity.async_result.AsyncResultSchema[_Sub, Any, Any, Any, Any, Any],
 ) -> pyfect.reactivity.async_result.AsyncResultSchema[_Super, Any, Any, Any, Any, Any]:
     return x
 
 
-def v280_0_in(
+def v292_0_in(
     x: pyfect.reactivity.async_result.AsyncResultSchema[_Super, Any, Any, Any, Any, Any],
 ) -> pyfect.reactivity.async_result.AsyncResultSchema[_Sub, Any, Any, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v280_1_out(
+def v292_1_out(
     x: pyfect.reactivity.async_result.AsyncResultSchema[Any, _Sub, Any, Any, Any, Any],
 ) -> pyfect.reactivity.async_result.AsyncResultSchema[Any, _Super, Any, Any, Any, Any]:
     return x
 
 
-def v280_1_in(
+def v292_1_in(
     x: pyfect.reactivity.async_result.AsyncResultSchema[Any, _Super, Any, Any, Any, Any],
 ) -> pyfect.reactivity.async_result.AsyncResultSchema[Any, _Sub, Any, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v280_2_out(
+def v292_2_out(
     x: pyfect.reactivity.async_result.AsyncResultSchema[Any, Any, _Sub, Any, Any, Any],
 ) -> pyfect.reactivity.async_result.AsyncResultSchema[Any, Any, _Super, Any, Any, Any]:
     return x
 
 
-def v280_2_in(
+def v292_2_in(
     x: pyfect.reactivity.async_result.AsyncResultSchema[Any, Any, _Super, Any, Any, Any],
 ) -> pyfect.reactivity.async_result.AsyncResultSchema[Any, Any, _Sub, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v280_3_out(
+def v292_3_out(
     x: pyfect.reactivity.async_result.AsyncResultSchema[Any, Any, Any, _Sub, Any, Any],
 ) -> pyfect.reactivity.async_result.AsyncResultSchema[Any, Any, Any, _Super, Any, Any]:
     return x
 
 
-def v280_3_in(
+def v292_3_in(
     x: pyfect.reactivity.async_result.AsyncResultSchema[Any, Any, Any, _Super, Any, Any],
 ) -> pyfect.reactivity.async_result.AsyncResultSchema[Any, Any, Any, _Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v280_4_out(
+def v292_4_out(
     x: pyfect.reactivity.async_result.AsyncResultSchema[Any, Any, Any, Any, _Sub, Any],
 ) -> pyfect.reactivity.async_result.AsyncResultSchema[Any, Any, Any, Any, _Super, Any]:
     return x
 
 
-def v280_4_in(
+def v292_4_in(
     x: pyfect.reactivity.async_result.AsyncResultSchema[Any, Any, Any, Any, _Super, Any],
 ) -> pyfect.reactivity.async_result.AsyncResultSchema[Any, Any, Any, Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v280_5_out(
+def v292_5_out(
     x: pyfect.reactivity.async_result.AsyncResultSchema[Any, Any, Any, Any, Any, _Sub],
 ) -> pyfect.reactivity.async_result.AsyncResultSchema[Any, Any, Any, Any, Any, _Super]:
     return x
 
 
-def v280_5_in(
+def v292_5_in(
     x: pyfect.reactivity.async_result.AsyncResultSchema[Any, Any, Any, Any, Any, _Super],
 ) -> pyfect.reactivity.async_result.AsyncResultSchema[Any, Any, Any, Any, Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T280_0_co = TypeVar("T280_0_co", covariant=True)
-T280_1_co = TypeVar("T280_1_co", covariant=True)
-T280_2_co = TypeVar("T280_2_co", covariant=True)
-T280_3_co = TypeVar("T280_3_co", covariant=True)
-T280_4_co = TypeVar("T280_4_co", covariant=True)
-T280_5_co = TypeVar("T280_5_co", covariant=True)
+T292_0_co = TypeVar("T292_0_co", covariant=True)
+T292_1_co = TypeVar("T292_1_co", covariant=True)
+T292_2_co = TypeVar("T292_2_co", covariant=True)
+T292_3_co = TypeVar("T292_3_co", covariant=True)
+T292_4_co = TypeVar("T292_4_co", covariant=True)
+T292_5_co = TypeVar("T292_5_co", covariant=True)
 
 
-class Fields280(Protocol[T280_0_co, T280_1_co, T280_2_co, T280_3_co, T280_4_co, T280_5_co]):
+class Fields292(Protocol[T292_0_co, T292_1_co, T292_2_co, T292_3_co, T292_4_co, T292_5_co]):
     @property
     def ast(self) -> pyfect.schema.ast.AST: ...
     @property
-    def success(self) -> pyfect.schema.Codec[T280_0_co, T280_2_co, T280_4_co, T280_5_co]: ...
+    def success(self) -> pyfect.schema.Codec[T292_0_co, T292_2_co, T292_4_co, T292_5_co]: ...
     @property
-    def error(self) -> pyfect.schema.Codec[T280_1_co, T280_3_co, T280_4_co, T280_5_co]: ...
+    def error(self) -> pyfect.schema.Codec[T292_1_co, T292_3_co, T292_4_co, T292_5_co]: ...
     def declared(
         self,
-    ) -> tuple[T280_0_co, T280_1_co, T280_2_co, T280_3_co, T280_4_co, T280_5_co]: ...
+    ) -> tuple[T292_0_co, T292_1_co, T292_2_co, T292_3_co, T292_4_co, T292_5_co]: ...
 
 
 # pyfect.reactivity.async_result.Builder
 
 
-def v281_0_out(
+def v293_0_out(
     x: pyfect.reactivity.async_result.Builder[_Sub, Any, Any],
 ) -> pyfect.reactivity.async_result.Builder[_Super, Any, Any]:
     return x
 
 
-def v281_0_in(
+def v293_0_in(
     x: pyfect.reactivity.async_result.Builder[_Super, Any, Any],
 ) -> pyfect.reactivity.async_result.Builder[_Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v281_1_out(
+def v293_1_out(
     x: pyfect.reactivity.async_result.Builder[Any, _Sub, Any],
 ) -> pyfect.reactivity.async_result.Builder[Any, _Super, Any]:
     return x
 
 
-def v281_1_in(
+def v293_1_in(
     x: pyfect.reactivity.async_result.Builder[Any, _Super, Any],
 ) -> pyfect.reactivity.async_result.Builder[Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v281_2_out(
+def v293_2_out(
     x: pyfect.reactivity.async_result.Builder[Any, Any, _Sub],
 ) -> pyfect.reactivity.async_result.Builder[Any, Any, _Super]:
     return x
 
 
-def v281_2_in(
+def v293_2_in(
     x: pyfect.reactivity.async_result.Builder[Any, Any, _Super],
 ) -> pyfect.reactivity.async_result.Builder[Any, Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T281_0_co = TypeVar("T281_0_co", covariant=True)
-T281_1_co = TypeVar("T281_1_co", covariant=True)
-T281_2_co = TypeVar("T281_2_co", covariant=True)
+T293_0_co = TypeVar("T293_0_co", covariant=True)
+T293_1_co = TypeVar("T293_1_co", covariant=True)
+T293_2_co = TypeVar("T293_2_co", covariant=True)
 
 
-class Fields281(Protocol[T281_0_co, T281_1_co, T281_2_co]):
-    def declared(self) -> tuple[T281_0_co, T281_1_co, T281_2_co]: ...
+class Fields293(Protocol[T293_0_co, T293_1_co, T293_2_co]):
+    def declared(self) -> tuple[T293_0_co, T293_1_co, T293_2_co]: ...
 
 
 # pyfect.reactivity.async_result.Failure
 
 
-def v282_0_out(
+def v294_0_out(
     x: pyfect.reactivity.async_result.Failure[_Sub, Any],
 ) -> pyfect.reactivity.async_result.Failure[_Super, Any]:
     return x
 
 
-def v282_0_in(
+def v294_0_in(
     x: pyfect.reactivity.async_result.Failure[_Super, Any],
 ) -> pyfect.reactivity.async_result.Failure[_Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v282_1_out(
+def v294_1_out(
     x: pyfect.reactivity.async_result.Failure[Any, _Sub],
 ) -> pyfect.reactivity.async_result.Failure[Any, _Super]:
     return x
 
 
-def v282_1_in(
+def v294_1_in(
     x: pyfect.reactivity.async_result.Failure[Any, _Super],
 ) -> pyfect.reactivity.async_result.Failure[Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T282_0_co = TypeVar("T282_0_co", covariant=True)
-T282_1_co = TypeVar("T282_1_co", covariant=True)
+T294_0_co = TypeVar("T294_0_co", covariant=True)
+T294_1_co = TypeVar("T294_1_co", covariant=True)
 
 
-class Fields282(Protocol[T282_0_co, T282_1_co]):
-    def declared(self) -> tuple[T282_0_co, T282_1_co]: ...
+class Fields294(Protocol[T294_0_co, T294_1_co]):
+    def declared(self) -> tuple[T294_0_co, T294_1_co]: ...
 
 
 # pyfect.reactivity.async_result.Success
 
 
-def v283_0_out(
+def v295_0_out(
     x: pyfect.reactivity.async_result.Success[_Sub, Any],
 ) -> pyfect.reactivity.async_result.Success[_Super, Any]:
     return x
 
 
-def v283_0_in(
+def v295_0_in(
     x: pyfect.reactivity.async_result.Success[_Super, Any],
 ) -> pyfect.reactivity.async_result.Success[_Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v283_1_out(
+def v295_1_out(
     x: pyfect.reactivity.async_result.Success[Any, _Sub],
 ) -> pyfect.reactivity.async_result.Success[Any, _Super]:
     return x
 
 
-def v283_1_in(
+def v295_1_in(
     x: pyfect.reactivity.async_result.Success[Any, _Super],
 ) -> pyfect.reactivity.async_result.Success[Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T283_0_co = TypeVar("T283_0_co", covariant=True)
-T283_1_co = TypeVar("T283_1_co", covariant=True)
+T295_0_co = TypeVar("T295_0_co", covariant=True)
+T295_1_co = TypeVar("T295_1_co", covariant=True)
 
 
-class Fields283(Protocol[T283_0_co, T283_1_co]):
-    def declared(self) -> tuple[T283_0_co, T283_1_co]: ...
+class Fields295(Protocol[T295_0_co, T295_1_co]):
+    def declared(self) -> tuple[T295_0_co, T295_1_co]: ...
 
 
 # pyfect.reactivity.atom.Atom
 
 
-def v284_0_out(x: pyfect.reactivity.atom.Atom[_Sub]) -> pyfect.reactivity.atom.Atom[_Super]:
+def v296_0_out(x: pyfect.reactivity.atom.Atom[_Sub]) -> pyfect.reactivity.atom.Atom[_Super]:
     return x
 
 
-def v284_0_in(x: pyfect.reactivity.atom.Atom[_Super]) -> pyfect.reactivity.atom.Atom[_Sub]:
+def v296_0_in(x: pyfect.reactivity.atom.Atom[_Super]) -> pyfect.reactivity.atom.Atom[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T284_0_co = TypeVar("T284_0_co", covariant=True)
+T296_0_co = TypeVar("T296_0_co", covariant=True)
 
 
-class Fields284(Protocol[T284_0_co]):
+class Fields296(Protocol[T296_0_co]):
     @property
     def read(
         self,
-    ) -> collections.abc.Callable[[pyfect.reactivity.atom._types.AtomContext], T284_0_co]: ...
+    ) -> collections.abc.Callable[[pyfect.reactivity.atom._types.AtomContext], T296_0_co]: ...
 
     refresh: pyfect.reactivity.atom._types.Refresh | None
     equals: collections.abc.Callable[[typing.Any, typing.Any], bool]
@@ -8959,41 +9364,41 @@ class Fields284(Protocol[T284_0_co]):
         | None
     )
 
-    def declared(self) -> tuple[T284_0_co]: ...
+    def declared(self) -> tuple[T296_0_co]: ...
 
 
 # pyfect.reactivity.atom.AtomRuntime
 
 
-def v285_0_out(
+def v297_0_out(
     x: pyfect.reactivity.atom.AtomRuntime[_Sub, Any],
 ) -> pyfect.reactivity.atom.AtomRuntime[_Super, Any]:
     return x
 
 
-def v285_0_in(
+def v297_0_in(
     x: pyfect.reactivity.atom.AtomRuntime[_Super, Any],
 ) -> pyfect.reactivity.atom.AtomRuntime[_Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v285_1_out(
+def v297_1_out(
     x: pyfect.reactivity.atom.AtomRuntime[Any, _Sub],
 ) -> pyfect.reactivity.atom.AtomRuntime[Any, _Super]:
     return x
 
 
-def v285_1_in(
+def v297_1_in(
     x: pyfect.reactivity.atom.AtomRuntime[Any, _Super],
 ) -> pyfect.reactivity.atom.AtomRuntime[Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T285_0_co = TypeVar("T285_0_co", covariant=True)
-T285_1_co = TypeVar("T285_1_co", covariant=True)
+T297_0_co = TypeVar("T297_0_co", covariant=True)
+T297_1_co = TypeVar("T297_1_co", covariant=True)
 
 
-class Fields285(Protocol[T285_0_co, T285_1_co]):
+class Fields297(Protocol[T297_0_co, T297_1_co]):
     @property
     def read(
         self,
@@ -9017,67 +9422,67 @@ class Fields285(Protocol[T285_0_co, T285_1_co]):
         | None
     )
 
-    def declared(self) -> tuple[T285_0_co, T285_1_co]: ...
+    def declared(self) -> tuple[T297_0_co, T297_1_co]: ...
 
 
 # pyfect.reactivity.atom.PullChunk
 
 
-def v286_0_out(
+def v298_0_out(
     x: pyfect.reactivity.atom.PullChunk[_Sub],
 ) -> pyfect.reactivity.atom.PullChunk[_Super]:
     return x
 
 
-def v286_0_in(
+def v298_0_in(
     x: pyfect.reactivity.atom.PullChunk[_Super],
 ) -> pyfect.reactivity.atom.PullChunk[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T286_0_co = TypeVar("T286_0_co", covariant=True)
+T298_0_co = TypeVar("T298_0_co", covariant=True)
 
 
-class Fields286(Protocol[T286_0_co]):
+class Fields298(Protocol[T298_0_co]):
     @property
     def done(self) -> bool: ...
     @property
-    def items(self) -> tuple[T286_0_co, ...]: ...
-    def declared(self) -> tuple[T286_0_co]: ...
+    def items(self) -> tuple[T298_0_co, ...]: ...
+    def declared(self) -> tuple[T298_0_co]: ...
 
 
 # pyfect.reactivity.atom.Writable
 
 
-def v287_0_out(
+def v299_0_out(
     x: pyfect.reactivity.atom.Writable[_Sub, Any],
 ) -> pyfect.reactivity.atom.Writable[_Super, Any]:
     return x
 
 
-def v287_0_in(
+def v299_0_in(
     x: pyfect.reactivity.atom.Writable[_Super, Any],
 ) -> pyfect.reactivity.atom.Writable[_Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v287_1_out(
+def v299_1_out(
     x: pyfect.reactivity.atom.Writable[Any, _Sub],
 ) -> pyfect.reactivity.atom.Writable[Any, _Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v287_1_in(
+def v299_1_in(
     x: pyfect.reactivity.atom.Writable[Any, _Super],
 ) -> pyfect.reactivity.atom.Writable[Any, _Sub]:
     return x
 
 
-T287_0_co = TypeVar("T287_0_co", covariant=True)
-T287_1_contra = TypeVar("T287_1_contra", contravariant=True)
+T299_0_co = TypeVar("T299_0_co", covariant=True)
+T299_1_contra = TypeVar("T299_1_contra", contravariant=True)
 
 
-class Fields287(Protocol[T287_0_co, T287_1_contra]):
+class Fields299(Protocol[T299_0_co, T299_1_contra]):
     @property
     def read(
         self,
@@ -9105,21 +9510,21 @@ class Fields287(Protocol[T287_0_co, T287_1_contra]):
     def write(
         self,
     ) -> collections.abc.Callable[
-        [pyfect.reactivity.atom._types.WriteContext[typing.Any], T287_1_contra], None
+        [pyfect.reactivity.atom._types.WriteContext[typing.Any], T299_1_contra], None
     ]: ...
-    def declared(self, _1: T287_1_contra) -> tuple[T287_0_co]: ...
+    def declared(self, _1: T299_1_contra) -> tuple[T299_0_co]: ...
 
 
 # pyfect.reactivity.atom.WriteContext
 
 
-def v288_0_out(
+def v300_0_out(
     x: pyfect.reactivity.atom.WriteContext[_Sub],
 ) -> pyfect.reactivity.atom.WriteContext[_Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v288_0_in(
+def v300_0_in(
     x: pyfect.reactivity.atom.WriteContext[_Super],
 ) -> pyfect.reactivity.atom.WriteContext[_Sub]:
     return x
@@ -9128,30 +9533,30 @@ def v288_0_in(
 # pyfect.reactivity.atom.state
 
 
-def v289_0_out(x: pyfect.reactivity.atom.state[_Sub]) -> pyfect.reactivity.atom.state[_Super]:
+def v301_0_out(x: pyfect.reactivity.atom.state[_Sub]) -> pyfect.reactivity.atom.state[_Super]:
     return x
 
 
-def v289_0_in(x: pyfect.reactivity.atom.state[_Super]) -> pyfect.reactivity.atom.state[_Sub]:
+def v301_0_in(x: pyfect.reactivity.atom.state[_Super]) -> pyfect.reactivity.atom.state[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
 # pyfect.reactivity.atom_http_api.AtomHttpApiClient
 
 
-def v290_0_out(
+def v302_0_out(
     x: pyfect.reactivity.atom_http_api.AtomHttpApiClient[_Sub, Any],
 ) -> pyfect.reactivity.atom_http_api.AtomHttpApiClient[_Super, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v290_0_in(
+def v302_0_in(
     x: pyfect.reactivity.atom_http_api.AtomHttpApiClient[_Super, Any],
 ) -> pyfect.reactivity.atom_http_api.AtomHttpApiClient[_Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v290_1_out(
+def v302_1_out(
     x: pyfect.reactivity.atom_http_api.AtomHttpApiClient[Any, Never],
 ) -> pyfect.reactivity.atom_http_api.AtomHttpApiClient[
     Any, pyfect.http_api.group.HttpApiGroup[typing.Any, Any]
@@ -9159,7 +9564,7 @@ def v290_1_out(
     return x  # pyright: ignore[reportReturnType]
 
 
-def v290_1_in(
+def v302_1_in(
     x: pyfect.reactivity.atom_http_api.AtomHttpApiClient[
         Any, pyfect.http_api.group.HttpApiGroup[typing.Any, Any]
     ],
@@ -9170,73 +9575,73 @@ def v290_1_in(
 # pyfect.reactivity.atom_http_api.Mutate
 
 
-def v291_0_out(
+def v303_0_out(
     x: pyfect.reactivity.atom_http_api.Mutate[_Sub, Any, Any, Any, Any, Any],
 ) -> pyfect.reactivity.atom_http_api.Mutate[_Super, Any, Any, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v291_0_in(
+def v303_0_in(
     x: pyfect.reactivity.atom_http_api.Mutate[_Super, Any, Any, Any, Any, Any],
 ) -> pyfect.reactivity.atom_http_api.Mutate[_Sub, Any, Any, Any, Any, Any]:
     return x
 
 
-def v291_1_out(
+def v303_1_out(
     x: pyfect.reactivity.atom_http_api.Mutate[Any, _Sub, Any, Any, Any, Any],
 ) -> pyfect.reactivity.atom_http_api.Mutate[Any, _Super, Any, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v291_1_in(
+def v303_1_in(
     x: pyfect.reactivity.atom_http_api.Mutate[Any, _Super, Any, Any, Any, Any],
 ) -> pyfect.reactivity.atom_http_api.Mutate[Any, _Sub, Any, Any, Any, Any]:
     return x
 
 
-def v291_2_out(
+def v303_2_out(
     x: pyfect.reactivity.atom_http_api.Mutate[Any, Any, _Sub, Any, Any, Any],
 ) -> pyfect.reactivity.atom_http_api.Mutate[Any, Any, _Super, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v291_2_in(
+def v303_2_in(
     x: pyfect.reactivity.atom_http_api.Mutate[Any, Any, _Super, Any, Any, Any],
 ) -> pyfect.reactivity.atom_http_api.Mutate[Any, Any, _Sub, Any, Any, Any]:
     return x
 
 
-def v291_3_out(
+def v303_3_out(
     x: pyfect.reactivity.atom_http_api.Mutate[Any, Any, Any, _Sub, Any, Any],
 ) -> pyfect.reactivity.atom_http_api.Mutate[Any, Any, Any, _Super, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v291_3_in(
+def v303_3_in(
     x: pyfect.reactivity.atom_http_api.Mutate[Any, Any, Any, _Super, Any, Any],
 ) -> pyfect.reactivity.atom_http_api.Mutate[Any, Any, Any, _Sub, Any, Any]:
     return x
 
 
-def v291_4_out(
+def v303_4_out(
     x: pyfect.reactivity.atom_http_api.Mutate[Any, Any, Any, Any, _Sub, Any],
 ) -> pyfect.reactivity.atom_http_api.Mutate[Any, Any, Any, Any, _Super, Any]:
     return x
 
 
-def v291_4_in(
+def v303_4_in(
     x: pyfect.reactivity.atom_http_api.Mutate[Any, Any, Any, Any, _Super, Any],
 ) -> pyfect.reactivity.atom_http_api.Mutate[Any, Any, Any, Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v291_5_out(
+def v303_5_out(
     x: pyfect.reactivity.atom_http_api.Mutate[Any, Any, Any, Any, Any, _Sub],
 ) -> pyfect.reactivity.atom_http_api.Mutate[Any, Any, Any, Any, Any, _Super]:
     return x
 
 
-def v291_5_in(
+def v303_5_in(
     x: pyfect.reactivity.atom_http_api.Mutate[Any, Any, Any, Any, Any, _Super],
 ) -> pyfect.reactivity.atom_http_api.Mutate[Any, Any, Any, Any, Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
@@ -9245,49 +9650,49 @@ def v291_5_in(
 # pyfect.reactivity.atom_http_api.MutationRequest
 
 
-def v292_0_out(
+def v304_0_out(
     x: pyfect.reactivity.atom_http_api.MutationRequest[_Sub, Any, Any, Any],
 ) -> pyfect.reactivity.atom_http_api.MutationRequest[_Super, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v292_0_in(
+def v304_0_in(
     x: pyfect.reactivity.atom_http_api.MutationRequest[_Super, Any, Any, Any],
 ) -> pyfect.reactivity.atom_http_api.MutationRequest[_Sub, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v292_1_out(
+def v304_1_out(
     x: pyfect.reactivity.atom_http_api.MutationRequest[Any, _Sub, Any, Any],
 ) -> pyfect.reactivity.atom_http_api.MutationRequest[Any, _Super, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v292_1_in(
+def v304_1_in(
     x: pyfect.reactivity.atom_http_api.MutationRequest[Any, _Super, Any, Any],
 ) -> pyfect.reactivity.atom_http_api.MutationRequest[Any, _Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v292_2_out(
+def v304_2_out(
     x: pyfect.reactivity.atom_http_api.MutationRequest[Any, Any, _Sub, Any],
 ) -> pyfect.reactivity.atom_http_api.MutationRequest[Any, Any, _Super, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v292_2_in(
+def v304_2_in(
     x: pyfect.reactivity.atom_http_api.MutationRequest[Any, Any, _Super, Any],
 ) -> pyfect.reactivity.atom_http_api.MutationRequest[Any, Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v292_3_out(
+def v304_3_out(
     x: pyfect.reactivity.atom_http_api.MutationRequest[Any, Any, Any, _Sub],
 ) -> pyfect.reactivity.atom_http_api.MutationRequest[Any, Any, Any, _Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v292_3_in(
+def v304_3_in(
     x: pyfect.reactivity.atom_http_api.MutationRequest[Any, Any, Any, _Super],
 ) -> pyfect.reactivity.atom_http_api.MutationRequest[Any, Any, Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
@@ -9296,73 +9701,73 @@ def v292_3_in(
 # pyfect.reactivity.atom_http_api.Query
 
 
-def v293_0_out(
+def v305_0_out(
     x: pyfect.reactivity.atom_http_api.Query[_Sub, Any, Any, Any, Any, Any],
 ) -> pyfect.reactivity.atom_http_api.Query[_Super, Any, Any, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v293_0_in(
+def v305_0_in(
     x: pyfect.reactivity.atom_http_api.Query[_Super, Any, Any, Any, Any, Any],
 ) -> pyfect.reactivity.atom_http_api.Query[_Sub, Any, Any, Any, Any, Any]:
     return x
 
 
-def v293_1_out(
+def v305_1_out(
     x: pyfect.reactivity.atom_http_api.Query[Any, _Sub, Any, Any, Any, Any],
 ) -> pyfect.reactivity.atom_http_api.Query[Any, _Super, Any, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v293_1_in(
+def v305_1_in(
     x: pyfect.reactivity.atom_http_api.Query[Any, _Super, Any, Any, Any, Any],
 ) -> pyfect.reactivity.atom_http_api.Query[Any, _Sub, Any, Any, Any, Any]:
     return x
 
 
-def v293_2_out(
+def v305_2_out(
     x: pyfect.reactivity.atom_http_api.Query[Any, Any, _Sub, Any, Any, Any],
 ) -> pyfect.reactivity.atom_http_api.Query[Any, Any, _Super, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v293_2_in(
+def v305_2_in(
     x: pyfect.reactivity.atom_http_api.Query[Any, Any, _Super, Any, Any, Any],
 ) -> pyfect.reactivity.atom_http_api.Query[Any, Any, _Sub, Any, Any, Any]:
     return x
 
 
-def v293_3_out(
+def v305_3_out(
     x: pyfect.reactivity.atom_http_api.Query[Any, Any, Any, _Sub, Any, Any],
 ) -> pyfect.reactivity.atom_http_api.Query[Any, Any, Any, _Super, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v293_3_in(
+def v305_3_in(
     x: pyfect.reactivity.atom_http_api.Query[Any, Any, Any, _Super, Any, Any],
 ) -> pyfect.reactivity.atom_http_api.Query[Any, Any, Any, _Sub, Any, Any]:
     return x
 
 
-def v293_4_out(
+def v305_4_out(
     x: pyfect.reactivity.atom_http_api.Query[Any, Any, Any, Any, _Sub, Any],
 ) -> pyfect.reactivity.atom_http_api.Query[Any, Any, Any, Any, _Super, Any]:
     return x
 
 
-def v293_4_in(
+def v305_4_in(
     x: pyfect.reactivity.atom_http_api.Query[Any, Any, Any, Any, _Super, Any],
 ) -> pyfect.reactivity.atom_http_api.Query[Any, Any, Any, Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v293_5_out(
+def v305_5_out(
     x: pyfect.reactivity.atom_http_api.Query[Any, Any, Any, Any, Any, _Sub],
 ) -> pyfect.reactivity.atom_http_api.Query[Any, Any, Any, Any, Any, _Super]:
     return x
 
 
-def v293_5_in(
+def v305_5_in(
     x: pyfect.reactivity.atom_http_api.Query[Any, Any, Any, Any, Any, _Super],
 ) -> pyfect.reactivity.atom_http_api.Query[Any, Any, Any, Any, Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
@@ -9371,13 +9776,13 @@ def v293_5_in(
 # pyfect.reactivity.atom_ref.AtomRef
 
 
-def v294_0_out(
+def v306_0_out(
     x: pyfect.reactivity.atom_ref.AtomRef[_Sub],
 ) -> pyfect.reactivity.atom_ref.AtomRef[_Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v294_0_in(
+def v306_0_in(
     x: pyfect.reactivity.atom_ref.AtomRef[_Super],
 ) -> pyfect.reactivity.atom_ref.AtomRef[_Sub]:
     return x  # pyright: ignore[reportReturnType]
@@ -9386,13 +9791,13 @@ def v294_0_in(
 # pyfect.reactivity.atom_ref.Collection
 
 
-def v295_0_out(
+def v307_0_out(
     x: pyfect.reactivity.atom_ref.Collection[_Sub],
 ) -> pyfect.reactivity.atom_ref.Collection[_Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v295_0_in(
+def v307_0_in(
     x: pyfect.reactivity.atom_ref.Collection[_Super],
 ) -> pyfect.reactivity.atom_ref.Collection[_Sub]:
     return x  # pyright: ignore[reportReturnType]
@@ -9401,13 +9806,13 @@ def v295_0_in(
 # pyfect.reactivity.atom_ref.ReadonlyRef
 
 
-def v296_0_out(
+def v308_0_out(
     x: pyfect.reactivity.atom_ref.ReadonlyRef[_Sub],
 ) -> pyfect.reactivity.atom_ref.ReadonlyRef[_Super]:
     return x
 
 
-def v296_0_in(
+def v308_0_in(
     x: pyfect.reactivity.atom_ref.ReadonlyRef[_Super],
 ) -> pyfect.reactivity.atom_ref.ReadonlyRef[_Sub]:
     return x  # pyright: ignore[reportReturnType]
@@ -9416,41 +9821,41 @@ def v296_0_in(
 # pyfect.reactivity.atom_registry.InitialValue
 
 
-def v297_0_out(
+def v309_0_out(
     x: pyfect.reactivity.atom_registry.InitialValue[_Sub],
 ) -> pyfect.reactivity.atom_registry.InitialValue[_Super]:
     return x
 
 
-def v297_0_in(
+def v309_0_in(
     x: pyfect.reactivity.atom_registry.InitialValue[_Super],
 ) -> pyfect.reactivity.atom_registry.InitialValue[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T297_0_co = TypeVar("T297_0_co", covariant=True)
+T309_0_co = TypeVar("T309_0_co", covariant=True)
 
 
-class Fields297(Protocol[T297_0_co]):
+class Fields309(Protocol[T309_0_co]):
     @property
-    def atom(self) -> pyfect.reactivity.atom._types.Atom[T297_0_co]: ...
+    def atom(self) -> pyfect.reactivity.atom._types.Atom[T309_0_co]: ...
     @property
-    def value(self) -> T297_0_co: ...
+    def value(self) -> T309_0_co: ...
     @property
     def skip_initial_run(self) -> bool: ...
-    def declared(self) -> tuple[T297_0_co]: ...
+    def declared(self) -> tuple[T309_0_co]: ...
 
 
 # pyfect.reactivity.atom_registry.Node
 
 
-def v298_0_out(
+def v310_0_out(
     x: pyfect.reactivity.atom_registry.Node[_Sub],
 ) -> pyfect.reactivity.atom_registry.Node[_Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v298_0_in(
+def v310_0_in(
     x: pyfect.reactivity.atom_registry.Node[_Super],
 ) -> pyfect.reactivity.atom_registry.Node[_Sub]:
     return x  # pyright: ignore[reportReturnType]
@@ -9459,25 +9864,25 @@ def v298_0_in(
 # pyfect.reactivity.atom_rpc.AtomRpcClient
 
 
-def v299_0_out(
+def v311_0_out(
     x: pyfect.reactivity.atom_rpc.AtomRpcClient[Never, Any],
 ) -> pyfect.reactivity.atom_rpc.AtomRpcClient[pyfect.rpc.group.RpcGroup, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v299_0_in(
+def v311_0_in(
     x: pyfect.reactivity.atom_rpc.AtomRpcClient[pyfect.rpc.group.RpcGroup, Any],
 ) -> pyfect.reactivity.atom_rpc.AtomRpcClient[Never, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v299_1_out(
+def v311_1_out(
     x: pyfect.reactivity.atom_rpc.AtomRpcClient[Any, _Sub],
 ) -> pyfect.reactivity.atom_rpc.AtomRpcClient[Any, _Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v299_1_in(
+def v311_1_in(
     x: pyfect.reactivity.atom_rpc.AtomRpcClient[Any, _Super],
 ) -> pyfect.reactivity.atom_rpc.AtomRpcClient[Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
@@ -9486,13 +9891,13 @@ def v299_1_in(
 # pyfect.reactivity.atom_rpc.MutationRequest
 
 
-def v300_0_out(
+def v312_0_out(
     x: pyfect.reactivity.atom_rpc.MutationRequest[_Sub],
 ) -> pyfect.reactivity.atom_rpc.MutationRequest[_Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v300_0_in(
+def v312_0_in(
     x: pyfect.reactivity.atom_rpc.MutationRequest[_Super],
 ) -> pyfect.reactivity.atom_rpc.MutationRequest[_Sub]:
     return x  # pyright: ignore[reportReturnType]
@@ -9501,197 +9906,197 @@ def v300_0_in(
 # pyfect.reactivity.hydration.Initial
 
 
-def v301_0_out(
+def v313_0_out(
     x: pyfect.reactivity.hydration.Initial[_Sub, Any],
 ) -> pyfect.reactivity.hydration.Initial[_Super, Any]:
     return x
 
 
-def v301_0_in(
+def v313_0_in(
     x: pyfect.reactivity.hydration.Initial[_Super, Any],
 ) -> pyfect.reactivity.hydration.Initial[_Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v301_1_out(
+def v313_1_out(
     x: pyfect.reactivity.hydration.Initial[Any, _Sub],
 ) -> pyfect.reactivity.hydration.Initial[Any, _Super]:
     return x
 
 
-def v301_1_in(
+def v313_1_in(
     x: pyfect.reactivity.hydration.Initial[Any, _Super],
 ) -> pyfect.reactivity.hydration.Initial[Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T301_0_co = TypeVar("T301_0_co", covariant=True)
-T301_1_co = TypeVar("T301_1_co", covariant=True)
+T313_0_co = TypeVar("T313_0_co", covariant=True)
+T313_1_co = TypeVar("T313_1_co", covariant=True)
 
 
-class Fields301(Protocol[T301_0_co, T301_1_co]):
-    def declared(self) -> tuple[T301_0_co, T301_1_co]: ...
+class Fields313(Protocol[T313_0_co, T313_1_co]):
+    def declared(self) -> tuple[T313_0_co, T313_1_co]: ...
 
 
 # pyfect.rpc.ClientErrors
 
 
-def v302_0_out(x: pyfect.rpc.ClientErrors[_Sub]) -> pyfect.rpc.ClientErrors[_Super]:
+def v314_0_out(x: pyfect.rpc.ClientErrors[_Sub]) -> pyfect.rpc.ClientErrors[_Super]:
     return x
 
 
-def v302_0_in(x: pyfect.rpc.ClientErrors[_Super]) -> pyfect.rpc.ClientErrors[_Sub]:
+def v314_0_in(x: pyfect.rpc.ClientErrors[_Super]) -> pyfect.rpc.ClientErrors[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T302_0_co = TypeVar("T302_0_co", covariant=True)
+T314_0_co = TypeVar("T314_0_co", covariant=True)
 
 
-class Fields302(Protocol[T302_0_co]):
-    def declared(self) -> tuple[T302_0_co]: ...
+class Fields314(Protocol[T314_0_co]):
+    def declared(self) -> tuple[T314_0_co]: ...
 
 
 # pyfect.rpc.HandlerOf
 
 
-def v303_0_out(x: pyfect.rpc.HandlerOf[_Sub]) -> pyfect.rpc.HandlerOf[_Super]:
+def v315_0_out(x: pyfect.rpc.HandlerOf[_Sub]) -> pyfect.rpc.HandlerOf[_Super]:
     return x
 
 
-def v303_0_in(x: pyfect.rpc.HandlerOf[_Super]) -> pyfect.rpc.HandlerOf[_Sub]:
+def v315_0_in(x: pyfect.rpc.HandlerOf[_Super]) -> pyfect.rpc.HandlerOf[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
 # pyfect.rpc.Handlers
 
 
-def v304_0_out(x: pyfect.rpc.Handlers[_Sub, Any, Any]) -> pyfect.rpc.Handlers[_Super, Any, Any]:
+def v316_0_out(x: pyfect.rpc.Handlers[_Sub, Any, Any]) -> pyfect.rpc.Handlers[_Super, Any, Any]:
     return x
 
 
-def v304_0_in(x: pyfect.rpc.Handlers[_Super, Any, Any]) -> pyfect.rpc.Handlers[_Sub, Any, Any]:
+def v316_0_in(x: pyfect.rpc.Handlers[_Super, Any, Any]) -> pyfect.rpc.Handlers[_Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v304_1_out(x: pyfect.rpc.Handlers[Any, _Sub, Any]) -> pyfect.rpc.Handlers[Any, _Super, Any]:
+def v316_1_out(x: pyfect.rpc.Handlers[Any, _Sub, Any]) -> pyfect.rpc.Handlers[Any, _Super, Any]:
     return x
 
 
-def v304_1_in(x: pyfect.rpc.Handlers[Any, _Super, Any]) -> pyfect.rpc.Handlers[Any, _Sub, Any]:
+def v316_1_in(x: pyfect.rpc.Handlers[Any, _Super, Any]) -> pyfect.rpc.Handlers[Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v304_2_out(x: pyfect.rpc.Handlers[Any, Any, _Sub]) -> pyfect.rpc.Handlers[Any, Any, _Super]:
+def v316_2_out(x: pyfect.rpc.Handlers[Any, Any, _Sub]) -> pyfect.rpc.Handlers[Any, Any, _Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v304_2_in(x: pyfect.rpc.Handlers[Any, Any, _Super]) -> pyfect.rpc.Handlers[Any, Any, _Sub]:
+def v316_2_in(x: pyfect.rpc.Handlers[Any, Any, _Super]) -> pyfect.rpc.Handlers[Any, Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T304_0_co = TypeVar("T304_0_co", covariant=True)
-T304_1_co = TypeVar("T304_1_co", covariant=True)
+T316_0_co = TypeVar("T316_0_co", covariant=True)
+T316_1_co = TypeVar("T316_1_co", covariant=True)
 
 
-class Fields304(Protocol[T304_0_co, T304_1_co]):
-    def declared(self) -> tuple[T304_0_co, T304_1_co]: ...
+class Fields316(Protocol[T316_0_co, T316_1_co]):
+    def declared(self) -> tuple[T316_0_co, T316_1_co]: ...
 
 
 # pyfect.rpc.HandlersFor
 
 
-def v305_0_out(x: pyfect.rpc.HandlersFor[_Sub]) -> pyfect.rpc.HandlersFor[_Super]:
+def v317_0_out(x: pyfect.rpc.HandlersFor[_Sub]) -> pyfect.rpc.HandlersFor[_Super]:
     return x
 
 
-def v305_0_in(x: pyfect.rpc.HandlersFor[_Super]) -> pyfect.rpc.HandlersFor[_Sub]:
+def v317_0_in(x: pyfect.rpc.HandlersFor[_Super]) -> pyfect.rpc.HandlersFor[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
 # pyfect.rpc.Rpc
 
 
-def v306_0_out(
+def v318_0_out(
     x: pyfect.rpc.Rpc[_Sub, Any, Any, Any, Any, Any],
 ) -> pyfect.rpc.Rpc[_Super, Any, Any, Any, Any, Any]:
     return x
 
 
-def v306_0_in(
+def v318_0_in(
     x: pyfect.rpc.Rpc[_Super, Any, Any, Any, Any, Any],
 ) -> pyfect.rpc.Rpc[_Sub, Any, Any, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v306_1_out(
+def v318_1_out(
     x: pyfect.rpc.Rpc[Any, _Sub, Any, Any, Any, Any],
 ) -> pyfect.rpc.Rpc[Any, _Super, Any, Any, Any, Any]:
     return x
 
 
-def v306_1_in(
+def v318_1_in(
     x: pyfect.rpc.Rpc[Any, _Super, Any, Any, Any, Any],
 ) -> pyfect.rpc.Rpc[Any, _Sub, Any, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v306_2_out(
+def v318_2_out(
     x: pyfect.rpc.Rpc[Any, Any, _Sub, Any, Any, Any],
 ) -> pyfect.rpc.Rpc[Any, Any, _Super, Any, Any, Any]:
     return x
 
 
-def v306_2_in(
+def v318_2_in(
     x: pyfect.rpc.Rpc[Any, Any, _Super, Any, Any, Any],
 ) -> pyfect.rpc.Rpc[Any, Any, _Sub, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v306_3_out(
+def v318_3_out(
     x: pyfect.rpc.Rpc[Any, Any, Any, _Sub, Any, Any],
 ) -> pyfect.rpc.Rpc[Any, Any, Any, _Super, Any, Any]:
     return x
 
 
-def v306_3_in(
+def v318_3_in(
     x: pyfect.rpc.Rpc[Any, Any, Any, _Super, Any, Any],
 ) -> pyfect.rpc.Rpc[Any, Any, Any, _Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v306_4_out(
+def v318_4_out(
     x: pyfect.rpc.Rpc[Any, Any, Any, Any, _Sub, Any],
 ) -> pyfect.rpc.Rpc[Any, Any, Any, Any, _Super, Any]:
     return x
 
 
-def v306_4_in(
+def v318_4_in(
     x: pyfect.rpc.Rpc[Any, Any, Any, Any, _Super, Any],
 ) -> pyfect.rpc.Rpc[Any, Any, Any, Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v306_5_out(
+def v318_5_out(
     x: pyfect.rpc.Rpc[Any, Any, Any, Any, Any, Never],
 ) -> pyfect.rpc.Rpc[Any, Any, Any, Any, Any, str]:
     return x
 
 
-def v306_5_in(
+def v318_5_in(
     x: pyfect.rpc.Rpc[Any, Any, Any, Any, Any, str],
 ) -> pyfect.rpc.Rpc[Any, Any, Any, Any, Any, Never]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T306_0_co = TypeVar("T306_0_co", covariant=True)
-T306_1_co = TypeVar("T306_1_co", covariant=True)
-T306_2_co = TypeVar("T306_2_co", covariant=True)
-T306_3_co = TypeVar("T306_3_co", covariant=True)
-T306_4_co = TypeVar("T306_4_co", covariant=True)
-T306_5_co = TypeVar("T306_5_co", covariant=True, bound=str)
+T318_0_co = TypeVar("T318_0_co", covariant=True)
+T318_1_co = TypeVar("T318_1_co", covariant=True)
+T318_2_co = TypeVar("T318_2_co", covariant=True)
+T318_3_co = TypeVar("T318_3_co", covariant=True)
+T318_4_co = TypeVar("T318_4_co", covariant=True)
+T318_5_co = TypeVar("T318_5_co", covariant=True, bound=str)
 
 
-class Fields306(Protocol[T306_0_co, T306_1_co, T306_2_co, T306_3_co, T306_4_co, T306_5_co]):
+class Fields318(Protocol[T318_0_co, T318_1_co, T318_2_co, T318_3_co, T318_4_co, T318_5_co]):
     @property
     def tag(self) -> str: ...
     @property
@@ -9708,119 +10113,119 @@ class Fields306(Protocol[T306_0_co, T306_1_co, T306_2_co, T306_3_co, T306_4_co, 
     def middlewares(self) -> tuple[pyfect.rpc.middleware.AnyMiddleware, ...]: ...
     def declared(
         self,
-    ) -> tuple[T306_0_co, T306_1_co, T306_2_co, T306_3_co, T306_4_co, T306_5_co]: ...
+    ) -> tuple[T318_0_co, T318_1_co, T318_2_co, T318_3_co, T318_4_co, T318_5_co]: ...
 
 
 # pyfect.rpc.RpcGroup
 
 
-def v307_0_out(x: pyfect.rpc.RpcGroup[Never]) -> pyfect.rpc.RpcGroup[str]:
+def v319_0_out(x: pyfect.rpc.RpcGroup[Never]) -> pyfect.rpc.RpcGroup[str]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v307_0_in(x: pyfect.rpc.RpcGroup[str]) -> pyfect.rpc.RpcGroup[Never]:
+def v319_0_in(x: pyfect.rpc.RpcGroup[str]) -> pyfect.rpc.RpcGroup[Never]:
     return x
 
 
-T307_0_contra = TypeVar("T307_0_contra", contravariant=True, bound=str)
+T319_0_contra = TypeVar("T319_0_contra", contravariant=True, bound=str)
 
 
-class Fields307(Protocol[T307_0_contra]):
-    def declared(self, _0: T307_0_contra) -> tuple[()]: ...
+class Fields319(Protocol[T319_0_contra]):
+    def declared(self, _0: T319_0_contra) -> tuple[()]: ...
 
 
 # pyfect.rpc.RpcGroupWith
 
 
-def v308_0_out(x: pyfect.rpc.RpcGroupWith[_Sub, Any]) -> pyfect.rpc.RpcGroupWith[_Super, Any]:
+def v320_0_out(x: pyfect.rpc.RpcGroupWith[_Sub, Any]) -> pyfect.rpc.RpcGroupWith[_Super, Any]:
     return x
 
 
-def v308_0_in(x: pyfect.rpc.RpcGroupWith[_Super, Any]) -> pyfect.rpc.RpcGroupWith[_Sub, Any]:
+def v320_0_in(x: pyfect.rpc.RpcGroupWith[_Super, Any]) -> pyfect.rpc.RpcGroupWith[_Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v308_1_out(x: pyfect.rpc.RpcGroupWith[Any, Never]) -> pyfect.rpc.RpcGroupWith[Any, str]:
+def v320_1_out(x: pyfect.rpc.RpcGroupWith[Any, Never]) -> pyfect.rpc.RpcGroupWith[Any, str]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v308_1_in(x: pyfect.rpc.RpcGroupWith[Any, str]) -> pyfect.rpc.RpcGroupWith[Any, Never]:
+def v320_1_in(x: pyfect.rpc.RpcGroupWith[Any, str]) -> pyfect.rpc.RpcGroupWith[Any, Never]:
     return x
 
 
-T308_0_co = TypeVar("T308_0_co", covariant=True)
-T308_1_contra = TypeVar("T308_1_contra", contravariant=True, bound=str)
+T320_0_co = TypeVar("T320_0_co", covariant=True)
+T320_1_contra = TypeVar("T320_1_contra", contravariant=True, bound=str)
 
 
-class Fields308(Protocol[T308_0_co, T308_1_contra]):
-    def declared(self, _1: T308_1_contra) -> tuple[T308_0_co]: ...
+class Fields320(Protocol[T320_0_co, T320_1_contra]):
+    def declared(self, _1: T320_1_contra) -> tuple[T320_0_co]: ...
 
 
 # pyfect.rpc.RpcMiddleware
 
 
-def v309_0_out(
+def v321_0_out(
     x: pyfect.rpc.RpcMiddleware[_Sub, Any, Any],
 ) -> pyfect.rpc.RpcMiddleware[_Super, Any, Any]:
     return x
 
 
-def v309_0_in(
+def v321_0_in(
     x: pyfect.rpc.RpcMiddleware[_Super, Any, Any],
 ) -> pyfect.rpc.RpcMiddleware[_Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v309_1_out(
+def v321_1_out(
     x: pyfect.rpc.RpcMiddleware[Any, _Sub, Any],
 ) -> pyfect.rpc.RpcMiddleware[Any, _Super, Any]:
     return x
 
 
-def v309_1_in(
+def v321_1_in(
     x: pyfect.rpc.RpcMiddleware[Any, _Super, Any],
 ) -> pyfect.rpc.RpcMiddleware[Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v309_2_out(
+def v321_2_out(
     x: pyfect.rpc.RpcMiddleware[Any, Any, _Sub],
 ) -> pyfect.rpc.RpcMiddleware[Any, Any, _Super]:
     return x
 
 
-def v309_2_in(
+def v321_2_in(
     x: pyfect.rpc.RpcMiddleware[Any, Any, _Super],
 ) -> pyfect.rpc.RpcMiddleware[Any, Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T309_0_co = TypeVar("T309_0_co", covariant=True)
-T309_1_co = TypeVar("T309_1_co", covariant=True)
-T309_2_co = TypeVar("T309_2_co", covariant=True)
+T321_0_co = TypeVar("T321_0_co", covariant=True)
+T321_1_co = TypeVar("T321_1_co", covariant=True)
+T321_2_co = TypeVar("T321_2_co", covariant=True)
 
 
-class Fields309(Protocol[T309_0_co, T309_1_co, T309_2_co]):
-    def declared(self) -> tuple[T309_0_co, T309_1_co, T309_2_co]: ...
+class Fields321(Protocol[T321_0_co, T321_1_co, T321_2_co]):
+    def declared(self) -> tuple[T321_0_co, T321_1_co, T321_2_co]: ...
 
 
 # pyfect.rpc.RpcRequest
 
 
-def v310_0_out(x: pyfect.rpc.RpcRequest[_Sub]) -> pyfect.rpc.RpcRequest[_Super]:
+def v322_0_out(x: pyfect.rpc.RpcRequest[_Sub]) -> pyfect.rpc.RpcRequest[_Super]:
     return x
 
 
-def v310_0_in(x: pyfect.rpc.RpcRequest[_Super]) -> pyfect.rpc.RpcRequest[_Sub]:
+def v322_0_in(x: pyfect.rpc.RpcRequest[_Super]) -> pyfect.rpc.RpcRequest[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T310_0_co = TypeVar("T310_0_co", covariant=True)
+T322_0_co = TypeVar("T322_0_co", covariant=True)
 
 
-class Fields310(Protocol[T310_0_co]):
+class Fields322(Protocol[T322_0_co]):
     @property
-    def payload(self) -> T310_0_co: ...
+    def payload(self) -> T322_0_co: ...
     @property
     def client(self) -> pyfect.rpc._rpc.ServerClient: ...
     @property
@@ -9831,55 +10236,55 @@ class Fields310(Protocol[T310_0_co]):
     def rpc(self) -> pyfect.rpc._rpc.AnyRpc: ...
     @property
     def remote_parent_span(self) -> pyfect.tracer.ExternalSpan | None: ...
-    def declared(self) -> tuple[T310_0_co]: ...
+    def declared(self) -> tuple[T322_0_co]: ...
 
 
 # pyfect.rpc.StreamMethod
 
 
-def v311_0_out(
+def v323_0_out(
     x: pyfect.rpc.StreamMethod[_Sub, Any, Any, Any],
 ) -> pyfect.rpc.StreamMethod[_Super, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v311_0_in(
+def v323_0_in(
     x: pyfect.rpc.StreamMethod[_Super, Any, Any, Any],
 ) -> pyfect.rpc.StreamMethod[_Sub, Any, Any, Any]:
     return x
 
 
-def v311_1_out(
+def v323_1_out(
     x: pyfect.rpc.StreamMethod[Any, _Sub, Any, Any],
 ) -> pyfect.rpc.StreamMethod[Any, _Super, Any, Any]:
     return x
 
 
-def v311_1_in(
+def v323_1_in(
     x: pyfect.rpc.StreamMethod[Any, _Super, Any, Any],
 ) -> pyfect.rpc.StreamMethod[Any, _Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v311_2_out(
+def v323_2_out(
     x: pyfect.rpc.StreamMethod[Any, Any, _Sub, Any],
 ) -> pyfect.rpc.StreamMethod[Any, Any, _Super, Any]:
     return x
 
 
-def v311_2_in(
+def v323_2_in(
     x: pyfect.rpc.StreamMethod[Any, Any, _Super, Any],
 ) -> pyfect.rpc.StreamMethod[Any, Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v311_3_out(
+def v323_3_out(
     x: pyfect.rpc.StreamMethod[Any, Any, Any, _Sub],
 ) -> pyfect.rpc.StreamMethod[Any, Any, Any, _Super]:
     return x
 
 
-def v311_3_in(
+def v323_3_in(
     x: pyfect.rpc.StreamMethod[Any, Any, Any, _Super],
 ) -> pyfect.rpc.StreamMethod[Any, Any, Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
@@ -9888,87 +10293,87 @@ def v311_3_in(
 # pyfect.rpc.StreamRpc
 
 
-def v312_0_out(
+def v324_0_out(
     x: pyfect.rpc.StreamRpc[_Sub, Any, Any, Any, Any, Any],
 ) -> pyfect.rpc.StreamRpc[_Super, Any, Any, Any, Any, Any]:
     return x
 
 
-def v312_0_in(
+def v324_0_in(
     x: pyfect.rpc.StreamRpc[_Super, Any, Any, Any, Any, Any],
 ) -> pyfect.rpc.StreamRpc[_Sub, Any, Any, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v312_1_out(
+def v324_1_out(
     x: pyfect.rpc.StreamRpc[Any, _Sub, Any, Any, Any, Any],
 ) -> pyfect.rpc.StreamRpc[Any, _Super, Any, Any, Any, Any]:
     return x
 
 
-def v312_1_in(
+def v324_1_in(
     x: pyfect.rpc.StreamRpc[Any, _Super, Any, Any, Any, Any],
 ) -> pyfect.rpc.StreamRpc[Any, _Sub, Any, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v312_2_out(
+def v324_2_out(
     x: pyfect.rpc.StreamRpc[Any, Any, _Sub, Any, Any, Any],
 ) -> pyfect.rpc.StreamRpc[Any, Any, _Super, Any, Any, Any]:
     return x
 
 
-def v312_2_in(
+def v324_2_in(
     x: pyfect.rpc.StreamRpc[Any, Any, _Super, Any, Any, Any],
 ) -> pyfect.rpc.StreamRpc[Any, Any, _Sub, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v312_3_out(
+def v324_3_out(
     x: pyfect.rpc.StreamRpc[Any, Any, Any, _Sub, Any, Any],
 ) -> pyfect.rpc.StreamRpc[Any, Any, Any, _Super, Any, Any]:
     return x
 
 
-def v312_3_in(
+def v324_3_in(
     x: pyfect.rpc.StreamRpc[Any, Any, Any, _Super, Any, Any],
 ) -> pyfect.rpc.StreamRpc[Any, Any, Any, _Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v312_4_out(
+def v324_4_out(
     x: pyfect.rpc.StreamRpc[Any, Any, Any, Any, _Sub, Any],
 ) -> pyfect.rpc.StreamRpc[Any, Any, Any, Any, _Super, Any]:
     return x
 
 
-def v312_4_in(
+def v324_4_in(
     x: pyfect.rpc.StreamRpc[Any, Any, Any, Any, _Super, Any],
 ) -> pyfect.rpc.StreamRpc[Any, Any, Any, Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v312_5_out(
+def v324_5_out(
     x: pyfect.rpc.StreamRpc[Any, Any, Any, Any, Any, Never],
 ) -> pyfect.rpc.StreamRpc[Any, Any, Any, Any, Any, str]:
     return x
 
 
-def v312_5_in(
+def v324_5_in(
     x: pyfect.rpc.StreamRpc[Any, Any, Any, Any, Any, str],
 ) -> pyfect.rpc.StreamRpc[Any, Any, Any, Any, Any, Never]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T312_0_co = TypeVar("T312_0_co", covariant=True)
-T312_1_co = TypeVar("T312_1_co", covariant=True)
-T312_2_co = TypeVar("T312_2_co", covariant=True)
-T312_3_co = TypeVar("T312_3_co", covariant=True)
-T312_4_co = TypeVar("T312_4_co", covariant=True)
-T312_5_co = TypeVar("T312_5_co", covariant=True, bound=str)
+T324_0_co = TypeVar("T324_0_co", covariant=True)
+T324_1_co = TypeVar("T324_1_co", covariant=True)
+T324_2_co = TypeVar("T324_2_co", covariant=True)
+T324_3_co = TypeVar("T324_3_co", covariant=True)
+T324_4_co = TypeVar("T324_4_co", covariant=True)
+T324_5_co = TypeVar("T324_5_co", covariant=True, bound=str)
 
 
-class Fields312(Protocol[T312_0_co, T312_1_co, T312_2_co, T312_3_co, T312_4_co, T312_5_co]):
+class Fields324(Protocol[T324_0_co, T324_1_co, T324_2_co, T324_3_co, T324_4_co, T324_5_co]):
     @property
     def tag(self) -> str: ...
     @property
@@ -9985,55 +10390,55 @@ class Fields312(Protocol[T312_0_co, T312_1_co, T312_2_co, T312_3_co, T312_4_co, 
     def middlewares(self) -> tuple[pyfect.rpc.middleware.AnyMiddleware, ...]: ...
     def declared(
         self,
-    ) -> tuple[T312_0_co, T312_1_co, T312_2_co, T312_3_co, T312_4_co, T312_5_co]: ...
+    ) -> tuple[T324_0_co, T324_1_co, T324_2_co, T324_3_co, T324_4_co, T324_5_co]: ...
 
 
 # pyfect.rpc.UnaryMethod
 
 
-def v313_0_out(
+def v325_0_out(
     x: pyfect.rpc.UnaryMethod[_Sub, Any, Any, Any],
 ) -> pyfect.rpc.UnaryMethod[_Super, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v313_0_in(
+def v325_0_in(
     x: pyfect.rpc.UnaryMethod[_Super, Any, Any, Any],
 ) -> pyfect.rpc.UnaryMethod[_Sub, Any, Any, Any]:
     return x
 
 
-def v313_1_out(
+def v325_1_out(
     x: pyfect.rpc.UnaryMethod[Any, _Sub, Any, Any],
 ) -> pyfect.rpc.UnaryMethod[Any, _Super, Any, Any]:
     return x
 
 
-def v313_1_in(
+def v325_1_in(
     x: pyfect.rpc.UnaryMethod[Any, _Super, Any, Any],
 ) -> pyfect.rpc.UnaryMethod[Any, _Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v313_2_out(
+def v325_2_out(
     x: pyfect.rpc.UnaryMethod[Any, Any, _Sub, Any],
 ) -> pyfect.rpc.UnaryMethod[Any, Any, _Super, Any]:
     return x
 
 
-def v313_2_in(
+def v325_2_in(
     x: pyfect.rpc.UnaryMethod[Any, Any, _Super, Any],
 ) -> pyfect.rpc.UnaryMethod[Any, Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v313_3_out(
+def v325_3_out(
     x: pyfect.rpc.UnaryMethod[Any, Any, Any, _Sub],
 ) -> pyfect.rpc.UnaryMethod[Any, Any, Any, _Super]:
     return x
 
 
-def v313_3_in(
+def v325_3_in(
     x: pyfect.rpc.UnaryMethod[Any, Any, Any, _Super],
 ) -> pyfect.rpc.UnaryMethod[Any, Any, Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
@@ -10042,321 +10447,321 @@ def v313_3_in(
 # pyfect.rpc.group.Bound
 
 
-def v314_0_out(
+def v326_0_out(
     x: pyfect.rpc.group.Bound[_Sub, Any, Any, Any, Any, Any, Any, Any],
 ) -> pyfect.rpc.group.Bound[_Super, Any, Any, Any, Any, Any, Any, Any]:
     return x
 
 
-def v314_0_in(
+def v326_0_in(
     x: pyfect.rpc.group.Bound[_Super, Any, Any, Any, Any, Any, Any, Any],
 ) -> pyfect.rpc.group.Bound[_Sub, Any, Any, Any, Any, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v314_1_out(
+def v326_1_out(
     x: pyfect.rpc.group.Bound[Any, _Sub, Any, Any, Any, Any, Any, Any],
 ) -> pyfect.rpc.group.Bound[Any, _Super, Any, Any, Any, Any, Any, Any]:
     return x
 
 
-def v314_1_in(
+def v326_1_in(
     x: pyfect.rpc.group.Bound[Any, _Super, Any, Any, Any, Any, Any, Any],
 ) -> pyfect.rpc.group.Bound[Any, _Sub, Any, Any, Any, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v314_2_out(
+def v326_2_out(
     x: pyfect.rpc.group.Bound[Any, Any, _Sub, Any, Any, Any, Any, Any],
 ) -> pyfect.rpc.group.Bound[Any, Any, _Super, Any, Any, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v314_2_in(
+def v326_2_in(
     x: pyfect.rpc.group.Bound[Any, Any, _Super, Any, Any, Any, Any, Any],
 ) -> pyfect.rpc.group.Bound[Any, Any, _Sub, Any, Any, Any, Any, Any]:
     return x
 
 
-def v314_3_out(
+def v326_3_out(
     x: pyfect.rpc.group.Bound[Any, Any, Any, _Sub, Any, Any, Any, Any],
 ) -> pyfect.rpc.group.Bound[Any, Any, Any, _Super, Any, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v314_3_in(
+def v326_3_in(
     x: pyfect.rpc.group.Bound[Any, Any, Any, _Super, Any, Any, Any, Any],
 ) -> pyfect.rpc.group.Bound[Any, Any, Any, _Sub, Any, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v314_4_out(
+def v326_4_out(
     x: pyfect.rpc.group.Bound[Any, Any, Any, Any, _Sub, Any, Any, Any],
 ) -> pyfect.rpc.group.Bound[Any, Any, Any, Any, _Super, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v314_4_in(
+def v326_4_in(
     x: pyfect.rpc.group.Bound[Any, Any, Any, Any, _Super, Any, Any, Any],
 ) -> pyfect.rpc.group.Bound[Any, Any, Any, Any, _Sub, Any, Any, Any]:
     return x
 
 
-def v314_5_out(
+def v326_5_out(
     x: pyfect.rpc.group.Bound[Any, Any, Any, Any, Any, _Sub, Any, Any],
 ) -> pyfect.rpc.group.Bound[Any, Any, Any, Any, Any, _Super, Any, Any]:
     return x
 
 
-def v314_5_in(
+def v326_5_in(
     x: pyfect.rpc.group.Bound[Any, Any, Any, Any, Any, _Super, Any, Any],
 ) -> pyfect.rpc.group.Bound[Any, Any, Any, Any, Any, _Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v314_6_out(
+def v326_6_out(
     x: pyfect.rpc.group.Bound[Any, Any, Any, Any, Any, Any, _Sub, Any],
 ) -> pyfect.rpc.group.Bound[Any, Any, Any, Any, Any, Any, _Super, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v314_6_in(
+def v326_6_in(
     x: pyfect.rpc.group.Bound[Any, Any, Any, Any, Any, Any, _Super, Any],
 ) -> pyfect.rpc.group.Bound[Any, Any, Any, Any, Any, Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v314_7_out(
+def v326_7_out(
     x: pyfect.rpc.group.Bound[Any, Any, Any, Any, Any, Any, Any, _Sub],
 ) -> pyfect.rpc.group.Bound[Any, Any, Any, Any, Any, Any, Any, _Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v314_7_in(
+def v326_7_in(
     x: pyfect.rpc.group.Bound[Any, Any, Any, Any, Any, Any, Any, _Super],
 ) -> pyfect.rpc.group.Bound[Any, Any, Any, Any, Any, Any, Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T314_0_co = TypeVar("T314_0_co", covariant=True)
-T314_1_co = TypeVar("T314_1_co", covariant=True)
-T314_2_contra = TypeVar("T314_2_contra", contravariant=True)
-T314_4_contra = TypeVar("T314_4_contra", contravariant=True)
-T314_5_co = TypeVar("T314_5_co", covariant=True)
+T326_0_co = TypeVar("T326_0_co", covariant=True)
+T326_1_co = TypeVar("T326_1_co", covariant=True)
+T326_2_contra = TypeVar("T326_2_contra", contravariant=True)
+T326_4_contra = TypeVar("T326_4_contra", contravariant=True)
+T326_5_co = TypeVar("T326_5_co", covariant=True)
 
 
-class Fields314(Protocol[T314_0_co, T314_1_co, T314_2_contra, T314_4_contra, T314_5_co]):
+class Fields326(Protocol[T326_0_co, T326_1_co, T326_2_contra, T326_4_contra, T326_5_co]):
     def declared(
-        self, _2: T314_2_contra, _3: T314_4_contra
-    ) -> tuple[T314_0_co, T314_1_co, T314_5_co]: ...
+        self, _2: T326_2_contra, _3: T326_4_contra
+    ) -> tuple[T326_0_co, T326_1_co, T326_5_co]: ...
 
 
 # pyfect.rpc.group.StreamBound
 
 
-def v315_0_out(
+def v327_0_out(
     x: pyfect.rpc.group.StreamBound[_Sub, Any, Any, Any, Any, Any, Any, Any],
 ) -> pyfect.rpc.group.StreamBound[_Super, Any, Any, Any, Any, Any, Any, Any]:
     return x
 
 
-def v315_0_in(
+def v327_0_in(
     x: pyfect.rpc.group.StreamBound[_Super, Any, Any, Any, Any, Any, Any, Any],
 ) -> pyfect.rpc.group.StreamBound[_Sub, Any, Any, Any, Any, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v315_1_out(
+def v327_1_out(
     x: pyfect.rpc.group.StreamBound[Any, _Sub, Any, Any, Any, Any, Any, Any],
 ) -> pyfect.rpc.group.StreamBound[Any, _Super, Any, Any, Any, Any, Any, Any]:
     return x
 
 
-def v315_1_in(
+def v327_1_in(
     x: pyfect.rpc.group.StreamBound[Any, _Super, Any, Any, Any, Any, Any, Any],
 ) -> pyfect.rpc.group.StreamBound[Any, _Sub, Any, Any, Any, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v315_2_out(
+def v327_2_out(
     x: pyfect.rpc.group.StreamBound[Any, Any, _Sub, Any, Any, Any, Any, Any],
 ) -> pyfect.rpc.group.StreamBound[Any, Any, _Super, Any, Any, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v315_2_in(
+def v327_2_in(
     x: pyfect.rpc.group.StreamBound[Any, Any, _Super, Any, Any, Any, Any, Any],
 ) -> pyfect.rpc.group.StreamBound[Any, Any, _Sub, Any, Any, Any, Any, Any]:
     return x
 
 
-def v315_3_out(
+def v327_3_out(
     x: pyfect.rpc.group.StreamBound[Any, Any, Any, _Sub, Any, Any, Any, Any],
 ) -> pyfect.rpc.group.StreamBound[Any, Any, Any, _Super, Any, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v315_3_in(
+def v327_3_in(
     x: pyfect.rpc.group.StreamBound[Any, Any, Any, _Super, Any, Any, Any, Any],
 ) -> pyfect.rpc.group.StreamBound[Any, Any, Any, _Sub, Any, Any, Any, Any]:
     return x
 
 
-def v315_4_out(
+def v327_4_out(
     x: pyfect.rpc.group.StreamBound[Any, Any, Any, Any, _Sub, Any, Any, Any],
 ) -> pyfect.rpc.group.StreamBound[Any, Any, Any, Any, _Super, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v315_4_in(
+def v327_4_in(
     x: pyfect.rpc.group.StreamBound[Any, Any, Any, Any, _Super, Any, Any, Any],
 ) -> pyfect.rpc.group.StreamBound[Any, Any, Any, Any, _Sub, Any, Any, Any]:
     return x
 
 
-def v315_5_out(
+def v327_5_out(
     x: pyfect.rpc.group.StreamBound[Any, Any, Any, Any, Any, _Sub, Any, Any],
 ) -> pyfect.rpc.group.StreamBound[Any, Any, Any, Any, Any, _Super, Any, Any]:
     return x
 
 
-def v315_5_in(
+def v327_5_in(
     x: pyfect.rpc.group.StreamBound[Any, Any, Any, Any, Any, _Super, Any, Any],
 ) -> pyfect.rpc.group.StreamBound[Any, Any, Any, Any, Any, _Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v315_6_out(
+def v327_6_out(
     x: pyfect.rpc.group.StreamBound[Any, Any, Any, Any, Any, Any, _Sub, Any],
 ) -> pyfect.rpc.group.StreamBound[Any, Any, Any, Any, Any, Any, _Super, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v315_6_in(
+def v327_6_in(
     x: pyfect.rpc.group.StreamBound[Any, Any, Any, Any, Any, Any, _Super, Any],
 ) -> pyfect.rpc.group.StreamBound[Any, Any, Any, Any, Any, Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v315_7_out(
+def v327_7_out(
     x: pyfect.rpc.group.StreamBound[Any, Any, Any, Any, Any, Any, Any, _Sub],
 ) -> pyfect.rpc.group.StreamBound[Any, Any, Any, Any, Any, Any, Any, _Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v315_7_in(
+def v327_7_in(
     x: pyfect.rpc.group.StreamBound[Any, Any, Any, Any, Any, Any, Any, _Super],
 ) -> pyfect.rpc.group.StreamBound[Any, Any, Any, Any, Any, Any, Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T315_0_co = TypeVar("T315_0_co", covariant=True)
-T315_1_co = TypeVar("T315_1_co", covariant=True)
-T315_2_contra = TypeVar("T315_2_contra", contravariant=True)
-T315_3_contra = TypeVar("T315_3_contra", contravariant=True)
-T315_4_contra = TypeVar("T315_4_contra", contravariant=True)
-T315_5_co = TypeVar("T315_5_co", covariant=True)
+T327_0_co = TypeVar("T327_0_co", covariant=True)
+T327_1_co = TypeVar("T327_1_co", covariant=True)
+T327_2_contra = TypeVar("T327_2_contra", contravariant=True)
+T327_3_contra = TypeVar("T327_3_contra", contravariant=True)
+T327_4_contra = TypeVar("T327_4_contra", contravariant=True)
+T327_5_co = TypeVar("T327_5_co", covariant=True)
 
 
-class Fields315(
-    Protocol[T315_0_co, T315_1_co, T315_2_contra, T315_3_contra, T315_4_contra, T315_5_co]
+class Fields327(
+    Protocol[T327_0_co, T327_1_co, T327_2_contra, T327_3_contra, T327_4_contra, T327_5_co]
 ):
     def declared(
-        self, _2: T315_2_contra, _3: T315_3_contra, _4: T315_4_contra
-    ) -> tuple[T315_0_co, T315_1_co, T315_5_co]: ...
+        self, _2: T327_2_contra, _3: T327_3_contra, _4: T327_4_contra
+    ) -> tuple[T327_0_co, T327_1_co, T327_5_co]: ...
 
 
 # pyfect.rpc.middleware.ForClient
 
 
-def v316_0_out(x: pyfect.rpc.middleware.ForClient[_Sub]) -> pyfect.rpc.middleware.ForClient[_Super]:
+def v328_0_out(x: pyfect.rpc.middleware.ForClient[_Sub]) -> pyfect.rpc.middleware.ForClient[_Super]:
     return x
 
 
-def v316_0_in(x: pyfect.rpc.middleware.ForClient[_Super]) -> pyfect.rpc.middleware.ForClient[_Sub]:
+def v328_0_in(x: pyfect.rpc.middleware.ForClient[_Super]) -> pyfect.rpc.middleware.ForClient[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
 # pyfect.rpc.schema.StreamSchema
 
 
-def v317_0_out(
+def v329_0_out(
     x: pyfect.rpc.schema.StreamSchema[_Sub, Any],
 ) -> pyfect.rpc.schema.StreamSchema[_Super, Any]:
     return x
 
 
-def v317_0_in(
+def v329_0_in(
     x: pyfect.rpc.schema.StreamSchema[_Super, Any],
 ) -> pyfect.rpc.schema.StreamSchema[_Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v317_1_out(
+def v329_1_out(
     x: pyfect.rpc.schema.StreamSchema[Any, _Sub],
 ) -> pyfect.rpc.schema.StreamSchema[Any, _Super]:
     return x
 
 
-def v317_1_in(
+def v329_1_in(
     x: pyfect.rpc.schema.StreamSchema[Any, _Super],
 ) -> pyfect.rpc.schema.StreamSchema[Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T317_0_co = TypeVar("T317_0_co", covariant=True)
-T317_1_co = TypeVar("T317_1_co", covariant=True)
+T329_0_co = TypeVar("T329_0_co", covariant=True)
+T329_1_co = TypeVar("T329_1_co", covariant=True)
 
 
-class Fields317(Protocol[T317_0_co, T317_1_co]):
+class Fields329(Protocol[T329_0_co, T329_1_co]):
     @property
     def ast(self) -> pyfect.schema.ast.AST: ...
     @property
-    def success(self) -> pyfect.schema.Codec[T317_0_co, typing.Any, typing.Any, typing.Any]: ...
+    def success(self) -> pyfect.schema.Codec[T329_0_co, typing.Any, typing.Any, typing.Any]: ...
     @property
-    def error(self) -> pyfect.schema.Codec[T317_1_co, typing.Any, typing.Any, typing.Any]: ...
-    def declared(self) -> tuple[T317_0_co, T317_1_co]: ...
+    def error(self) -> pyfect.schema.Codec[T329_1_co, typing.Any, typing.Any, typing.Any]: ...
+    def declared(self) -> tuple[T329_0_co, T329_1_co]: ...
 
 
 # pyfect.schedule.Continue
 
 
-def v318_0_out(x: pyfect.schedule.Continue[_Sub]) -> pyfect.schedule.Continue[_Super]:
+def v330_0_out(x: pyfect.schedule.Continue[_Sub]) -> pyfect.schedule.Continue[_Super]:
     return x
 
 
-def v318_0_in(x: pyfect.schedule.Continue[_Super]) -> pyfect.schedule.Continue[_Sub]:
+def v330_0_in(x: pyfect.schedule.Continue[_Super]) -> pyfect.schedule.Continue[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T318_0_co = TypeVar("T318_0_co", covariant=True)
+T330_0_co = TypeVar("T330_0_co", covariant=True)
 
 
-class Fields318(Protocol[T318_0_co]):
+class Fields330(Protocol[T330_0_co]):
     @property
-    def output(self) -> T318_0_co: ...
+    def output(self) -> T330_0_co: ...
     @property
     def delay(self) -> pyfect.duration.Duration: ...
-    def declared(self) -> tuple[T318_0_co]: ...
+    def declared(self) -> tuple[T330_0_co]: ...
 
 
 # pyfect.schedule.InputMetadata
 
 
-def v319_0_out(x: pyfect.schedule.InputMetadata[_Sub]) -> pyfect.schedule.InputMetadata[_Super]:
+def v331_0_out(x: pyfect.schedule.InputMetadata[_Sub]) -> pyfect.schedule.InputMetadata[_Super]:
     return x
 
 
-def v319_0_in(x: pyfect.schedule.InputMetadata[_Super]) -> pyfect.schedule.InputMetadata[_Sub]:
+def v331_0_in(x: pyfect.schedule.InputMetadata[_Super]) -> pyfect.schedule.InputMetadata[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T319_0_co = TypeVar("T319_0_co", covariant=True)
+T331_0_co = TypeVar("T331_0_co", covariant=True)
 
 
-class Fields319(Protocol[T319_0_co]):
+class Fields331(Protocol[T331_0_co]):
     @property
-    def input(self) -> T319_0_co: ...
+    def input(self) -> T331_0_co: ...
     @property
     def attempt(self) -> int: ...
     @property
@@ -10367,33 +10772,33 @@ class Fields319(Protocol[T319_0_co]):
     def elapsed(self) -> float: ...
     @property
     def elapsed_since_previous(self) -> float: ...
-    def declared(self) -> tuple[T319_0_co]: ...
+    def declared(self) -> tuple[T331_0_co]: ...
 
 
 # pyfect.schedule.Metadata
 
 
-def v320_0_out(x: pyfect.schedule.Metadata[_Sub, Any]) -> pyfect.schedule.Metadata[_Super, Any]:
+def v332_0_out(x: pyfect.schedule.Metadata[_Sub, Any]) -> pyfect.schedule.Metadata[_Super, Any]:
     return x
 
 
-def v320_0_in(x: pyfect.schedule.Metadata[_Super, Any]) -> pyfect.schedule.Metadata[_Sub, Any]:
+def v332_0_in(x: pyfect.schedule.Metadata[_Super, Any]) -> pyfect.schedule.Metadata[_Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v320_1_out(x: pyfect.schedule.Metadata[Any, _Sub]) -> pyfect.schedule.Metadata[Any, _Super]:
+def v332_1_out(x: pyfect.schedule.Metadata[Any, _Sub]) -> pyfect.schedule.Metadata[Any, _Super]:
     return x
 
 
-def v320_1_in(x: pyfect.schedule.Metadata[Any, _Super]) -> pyfect.schedule.Metadata[Any, _Sub]:
+def v332_1_in(x: pyfect.schedule.Metadata[Any, _Super]) -> pyfect.schedule.Metadata[Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T320_0_co = TypeVar("T320_0_co", covariant=True)
-T320_1_co = TypeVar("T320_1_co", covariant=True)
+T332_0_co = TypeVar("T332_0_co", covariant=True)
+T332_1_co = TypeVar("T332_1_co", covariant=True)
 
 
-class Fields320(Protocol[T320_0_co, T320_1_co]):
+class Fields332(Protocol[T332_0_co, T332_1_co]):
     @property
     def input(self) -> Any: ...
     @property
@@ -10407,625 +10812,103 @@ class Fields320(Protocol[T320_0_co, T320_1_co]):
     @property
     def elapsed_since_previous(self) -> float: ...
     @property
-    def output(self) -> T320_0_co: ...
+    def output(self) -> T332_0_co: ...
     @property
     def duration(self) -> pyfect.duration.Duration: ...
-    def declared(self) -> tuple[T320_0_co, T320_1_co]: ...
+    def declared(self) -> tuple[T332_0_co, T332_1_co]: ...
 
 
 # pyfect.schedule.SetInputType
 
 
-def v321_0_out(x: pyfect.schedule.SetInputType[_Sub]) -> pyfect.schedule.SetInputType[_Super]:
+def v333_0_out(x: pyfect.schedule.SetInputType[_Sub]) -> pyfect.schedule.SetInputType[_Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v321_0_in(x: pyfect.schedule.SetInputType[_Super]) -> pyfect.schedule.SetInputType[_Sub]:
+def v333_0_in(x: pyfect.schedule.SetInputType[_Super]) -> pyfect.schedule.SetInputType[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
 # pyfect.schedule.Stop
 
 
-def v322_0_out(x: pyfect.schedule.Stop[_Sub]) -> pyfect.schedule.Stop[_Super]:
+def v334_0_out(x: pyfect.schedule.Stop[_Sub]) -> pyfect.schedule.Stop[_Super]:
     return x
 
 
-def v322_0_in(x: pyfect.schedule.Stop[_Super]) -> pyfect.schedule.Stop[_Sub]:
+def v334_0_in(x: pyfect.schedule.Stop[_Super]) -> pyfect.schedule.Stop[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T322_0_co = TypeVar("T322_0_co", covariant=True)
+T334_0_co = TypeVar("T334_0_co", covariant=True)
 
 
-class Fields322(Protocol[T322_0_co]):
+class Fields334(Protocol[T334_0_co]):
     @property
-    def output(self) -> T322_0_co: ...
-    def declared(self) -> tuple[T322_0_co]: ...
+    def output(self) -> T334_0_co: ...
+    def declared(self) -> tuple[T334_0_co]: ...
 
 
 # pyfect.schema.ArraySchema
 
 
-def v323_0_out(
+def v335_0_out(
     x: pyfect.schema.ArraySchema[_Sub, Any, Any, Any, Any],
 ) -> pyfect.schema.ArraySchema[_Super, Any, Any, Any, Any]:
     return x
 
 
-def v323_0_in(
+def v335_0_in(
     x: pyfect.schema.ArraySchema[_Super, Any, Any, Any, Any],
 ) -> pyfect.schema.ArraySchema[_Sub, Any, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v323_1_out(
+def v335_1_out(
     x: pyfect.schema.ArraySchema[Any, _Sub, Any, Any, Any],
 ) -> pyfect.schema.ArraySchema[Any, _Super, Any, Any, Any]:
     return x
 
 
-def v323_1_in(
+def v335_1_in(
     x: pyfect.schema.ArraySchema[Any, _Super, Any, Any, Any],
 ) -> pyfect.schema.ArraySchema[Any, _Sub, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v323_2_out(
+def v335_2_out(
     x: pyfect.schema.ArraySchema[Any, Any, _Sub, Any, Any],
 ) -> pyfect.schema.ArraySchema[Any, Any, _Super, Any, Any]:
     return x
 
 
-def v323_2_in(
+def v335_2_in(
     x: pyfect.schema.ArraySchema[Any, Any, _Super, Any, Any],
 ) -> pyfect.schema.ArraySchema[Any, Any, _Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v323_3_out(
+def v335_3_out(
     x: pyfect.schema.ArraySchema[Any, Any, Any, _Sub, Any],
 ) -> pyfect.schema.ArraySchema[Any, Any, Any, _Super, Any]:
     return x
 
 
-def v323_3_in(
+def v335_3_in(
     x: pyfect.schema.ArraySchema[Any, Any, Any, _Super, Any],
 ) -> pyfect.schema.ArraySchema[Any, Any, Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v323_4_out(
+def v335_4_out(
     x: pyfect.schema.ArraySchema[Any, Any, Any, Any, _Sub],
 ) -> pyfect.schema.ArraySchema[Any, Any, Any, Any, _Super]:
     return x
 
 
-def v323_4_in(
+def v335_4_in(
     x: pyfect.schema.ArraySchema[Any, Any, Any, Any, _Super],
 ) -> pyfect.schema.ArraySchema[Any, Any, Any, Any, _Sub]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-T323_0_co = TypeVar("T323_0_co", covariant=True)
-T323_1_co = TypeVar("T323_1_co", covariant=True)
-T323_2_co = TypeVar("T323_2_co", covariant=True)
-T323_3_co = TypeVar("T323_3_co", covariant=True)
-T323_4_co = TypeVar("T323_4_co", covariant=True)
-
-
-class Fields323(Protocol[T323_0_co, T323_1_co, T323_2_co, T323_3_co, T323_4_co]):
-    @property
-    def ast(self) -> pyfect.schema.ast.AST: ...
-    @property
-    def value(self) -> pyfect.schema._schema.Codec[T323_1_co, T323_2_co, T323_3_co, T323_4_co]: ...
-    def declared(self) -> tuple[T323_0_co, T323_1_co, T323_2_co, T323_3_co, T323_4_co]: ...
-
-
-# pyfect.schema.Between
-
-
-def v324_0_out(x: pyfect.schema.Between[_Sub]) -> pyfect.schema.Between[_Super]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v324_0_in(x: pyfect.schema.Between[_Super]) -> pyfect.schema.Between[_Sub]:
-    return x
-
-
-# pyfect.schema.Bottom
-
-
-def v325_0_out(
-    x: pyfect.schema.Bottom[_Sub, Any, Any, Any],
-) -> pyfect.schema.Bottom[_Super, Any, Any, Any]:
-    return x
-
-
-def v325_0_in(
-    x: pyfect.schema.Bottom[_Super, Any, Any, Any],
-) -> pyfect.schema.Bottom[_Sub, Any, Any, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v325_1_out(
-    x: pyfect.schema.Bottom[Any, _Sub, Any, Any],
-) -> pyfect.schema.Bottom[Any, _Super, Any, Any]:
-    return x
-
-
-def v325_1_in(
-    x: pyfect.schema.Bottom[Any, _Super, Any, Any],
-) -> pyfect.schema.Bottom[Any, _Sub, Any, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v325_2_out(
-    x: pyfect.schema.Bottom[Any, Any, _Sub, Any],
-) -> pyfect.schema.Bottom[Any, Any, _Super, Any]:
-    return x
-
-
-def v325_2_in(
-    x: pyfect.schema.Bottom[Any, Any, _Super, Any],
-) -> pyfect.schema.Bottom[Any, Any, _Sub, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v325_3_out(
-    x: pyfect.schema.Bottom[Any, Any, Any, _Sub],
-) -> pyfect.schema.Bottom[Any, Any, Any, _Super]:
-    return x
-
-
-def v325_3_in(
-    x: pyfect.schema.Bottom[Any, Any, Any, _Super],
-) -> pyfect.schema.Bottom[Any, Any, Any, _Sub]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-T325_0_co = TypeVar("T325_0_co", covariant=True)
-T325_1_co = TypeVar("T325_1_co", covariant=True)
-T325_2_co = TypeVar("T325_2_co", covariant=True)
-T325_3_co = TypeVar("T325_3_co", covariant=True)
-
-
-class Fields325(Protocol[T325_0_co, T325_1_co, T325_2_co, T325_3_co]):
-    @property
-    def ast(self) -> pyfect.schema.ast.AST: ...
-    def declared(self) -> tuple[T325_0_co, T325_1_co, T325_2_co, T325_3_co]: ...
-
-
-# pyfect.schema.Bound
-
-
-def v326_0_out(x: pyfect.schema.Bound[_Sub]) -> pyfect.schema.Bound[_Super]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v326_0_in(x: pyfect.schema.Bound[_Super]) -> pyfect.schema.Bound[_Sub]:
-    return x
-
-
-# pyfect.schema.BrandSchema
-
-
-def v327_0_out(
-    x: pyfect.schema.BrandSchema[_Sub, Any, Any, Any],
-) -> pyfect.schema.BrandSchema[_Super, Any, Any, Any]:
-    return x
-
-
-def v327_0_in(
-    x: pyfect.schema.BrandSchema[_Super, Any, Any, Any],
-) -> pyfect.schema.BrandSchema[_Sub, Any, Any, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v327_1_out(
-    x: pyfect.schema.BrandSchema[Any, _Sub, Any, Any],
-) -> pyfect.schema.BrandSchema[Any, _Super, Any, Any]:
-    return x
-
-
-def v327_1_in(
-    x: pyfect.schema.BrandSchema[Any, _Super, Any, Any],
-) -> pyfect.schema.BrandSchema[Any, _Sub, Any, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v327_2_out(
-    x: pyfect.schema.BrandSchema[Any, Any, _Sub, Any],
-) -> pyfect.schema.BrandSchema[Any, Any, _Super, Any]:
-    return x
-
-
-def v327_2_in(
-    x: pyfect.schema.BrandSchema[Any, Any, _Super, Any],
-) -> pyfect.schema.BrandSchema[Any, Any, _Sub, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v327_3_out(
-    x: pyfect.schema.BrandSchema[Any, Any, Any, _Sub],
-) -> pyfect.schema.BrandSchema[Any, Any, Any, _Super]:
-    return x
-
-
-def v327_3_in(
-    x: pyfect.schema.BrandSchema[Any, Any, Any, _Super],
-) -> pyfect.schema.BrandSchema[Any, Any, Any, _Sub]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-T327_0_co = TypeVar("T327_0_co", covariant=True)
-T327_1_co = TypeVar("T327_1_co", covariant=True)
-T327_2_co = TypeVar("T327_2_co", covariant=True)
-T327_3_co = TypeVar("T327_3_co", covariant=True)
-
-
-class Fields327(Protocol[T327_0_co, T327_1_co, T327_2_co, T327_3_co]):
-    @property
-    def ast(self) -> pyfect.schema.ast.AST: ...
-    @property
-    def schema(self) -> pyfect.schema._schema.Bottom[object, T327_1_co, T327_2_co, T327_3_co]: ...
-    @property
-    def identifier(self) -> str | None: ...
-    def declared(self) -> tuple[T327_0_co, T327_1_co, T327_2_co, T327_3_co]: ...
-
-
-# pyfect.schema.CatchDecoding
-
-
-def v328_0_out(
-    x: pyfect.schema.CatchDecoding[_Sub, Any],
-) -> pyfect.schema.CatchDecoding[_Super, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v328_0_in(
-    x: pyfect.schema.CatchDecoding[_Super, Any],
-) -> pyfect.schema.CatchDecoding[_Sub, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v328_1_out(
-    x: pyfect.schema.CatchDecoding[Any, _Sub],
-) -> pyfect.schema.CatchDecoding[Any, _Super]:
-    return x
-
-
-def v328_1_in(
-    x: pyfect.schema.CatchDecoding[Any, _Super],
-) -> pyfect.schema.CatchDecoding[Any, _Sub]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-T328_1_co = TypeVar("T328_1_co", covariant=True)
-
-
-class Fields328(Protocol[T328_1_co]):
-    def declared(self) -> tuple[T328_1_co]: ...
-
-
-# pyfect.schema.CatchEncoding
-
-
-def v329_0_out(
-    x: pyfect.schema.CatchEncoding[_Sub, Any],
-) -> pyfect.schema.CatchEncoding[_Super, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v329_0_in(
-    x: pyfect.schema.CatchEncoding[_Super, Any],
-) -> pyfect.schema.CatchEncoding[_Sub, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v329_1_out(
-    x: pyfect.schema.CatchEncoding[Any, _Sub],
-) -> pyfect.schema.CatchEncoding[Any, _Super]:
-    return x
-
-
-def v329_1_in(
-    x: pyfect.schema.CatchEncoding[Any, _Super],
-) -> pyfect.schema.CatchEncoding[Any, _Sub]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-T329_1_co = TypeVar("T329_1_co", covariant=True)
-
-
-class Fields329(Protocol[T329_1_co]):
-    def declared(self) -> tuple[T329_1_co]: ...
-
-
-# pyfect.schema.CauseReasonSchema
-
-
-def v330_0_out(
-    x: pyfect.schema.CauseReasonSchema[_Sub, Any, Any, Any],
-) -> pyfect.schema.CauseReasonSchema[_Super, Any, Any, Any]:
-    return x
-
-
-def v330_0_in(
-    x: pyfect.schema.CauseReasonSchema[_Super, Any, Any, Any],
-) -> pyfect.schema.CauseReasonSchema[_Sub, Any, Any, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v330_1_out(
-    x: pyfect.schema.CauseReasonSchema[Any, _Sub, Any, Any],
-) -> pyfect.schema.CauseReasonSchema[Any, _Super, Any, Any]:
-    return x
-
-
-def v330_1_in(
-    x: pyfect.schema.CauseReasonSchema[Any, _Super, Any, Any],
-) -> pyfect.schema.CauseReasonSchema[Any, _Sub, Any, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v330_2_out(
-    x: pyfect.schema.CauseReasonSchema[Any, Any, _Sub, Any],
-) -> pyfect.schema.CauseReasonSchema[Any, Any, _Super, Any]:
-    return x
-
-
-def v330_2_in(
-    x: pyfect.schema.CauseReasonSchema[Any, Any, _Super, Any],
-) -> pyfect.schema.CauseReasonSchema[Any, Any, _Sub, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v330_3_out(
-    x: pyfect.schema.CauseReasonSchema[Any, Any, Any, _Sub],
-) -> pyfect.schema.CauseReasonSchema[Any, Any, Any, _Super]:
-    return x
-
-
-def v330_3_in(
-    x: pyfect.schema.CauseReasonSchema[Any, Any, Any, _Super],
-) -> pyfect.schema.CauseReasonSchema[Any, Any, Any, _Sub]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-T330_0_co = TypeVar("T330_0_co", covariant=True)
-T330_1_co = TypeVar("T330_1_co", covariant=True)
-T330_2_co = TypeVar("T330_2_co", covariant=True)
-T330_3_co = TypeVar("T330_3_co", covariant=True)
-
-
-class Fields330(Protocol[T330_0_co, T330_1_co, T330_2_co, T330_3_co]):
-    @property
-    def ast(self) -> pyfect.schema.ast.AST: ...
-    @property
-    def error(self) -> pyfect.schema._schema.Codec[T330_0_co, T330_1_co, T330_2_co, T330_3_co]: ...
-    @property
-    def defect(self) -> pyfect.schema._data.DefectCodec[T330_2_co, T330_3_co]: ...
-    def declared(self) -> tuple[T330_0_co, T330_1_co, T330_2_co, T330_3_co]: ...
-
-
-# pyfect.schema.CauseSchema
-
-
-def v331_0_out(
-    x: pyfect.schema.CauseSchema[_Sub, Any, Any, Any],
-) -> pyfect.schema.CauseSchema[_Super, Any, Any, Any]:
-    return x
-
-
-def v331_0_in(
-    x: pyfect.schema.CauseSchema[_Super, Any, Any, Any],
-) -> pyfect.schema.CauseSchema[_Sub, Any, Any, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v331_1_out(
-    x: pyfect.schema.CauseSchema[Any, _Sub, Any, Any],
-) -> pyfect.schema.CauseSchema[Any, _Super, Any, Any]:
-    return x
-
-
-def v331_1_in(
-    x: pyfect.schema.CauseSchema[Any, _Super, Any, Any],
-) -> pyfect.schema.CauseSchema[Any, _Sub, Any, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v331_2_out(
-    x: pyfect.schema.CauseSchema[Any, Any, _Sub, Any],
-) -> pyfect.schema.CauseSchema[Any, Any, _Super, Any]:
-    return x
-
-
-def v331_2_in(
-    x: pyfect.schema.CauseSchema[Any, Any, _Super, Any],
-) -> pyfect.schema.CauseSchema[Any, Any, _Sub, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v331_3_out(
-    x: pyfect.schema.CauseSchema[Any, Any, Any, _Sub],
-) -> pyfect.schema.CauseSchema[Any, Any, Any, _Super]:
-    return x
-
-
-def v331_3_in(
-    x: pyfect.schema.CauseSchema[Any, Any, Any, _Super],
-) -> pyfect.schema.CauseSchema[Any, Any, Any, _Sub]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-T331_0_co = TypeVar("T331_0_co", covariant=True)
-T331_1_co = TypeVar("T331_1_co", covariant=True)
-T331_2_co = TypeVar("T331_2_co", covariant=True)
-T331_3_co = TypeVar("T331_3_co", covariant=True)
-
-
-class Fields331(Protocol[T331_0_co, T331_1_co, T331_2_co, T331_3_co]):
-    @property
-    def ast(self) -> pyfect.schema.ast.AST: ...
-    @property
-    def error(self) -> pyfect.schema._schema.Codec[T331_0_co, T331_1_co, T331_2_co, T331_3_co]: ...
-    @property
-    def defect(self) -> pyfect.schema._data.DefectCodec[T331_2_co, T331_3_co]: ...
-    def declared(self) -> tuple[T331_0_co, T331_1_co, T331_2_co, T331_3_co]: ...
-
-
-# pyfect.schema.Codec
-
-
-def v332_0_out(
-    x: pyfect.schema.Codec[_Sub, Any, Any, Any],
-) -> pyfect.schema.Codec[_Super, Any, Any, Any]:
-    return x
-
-
-def v332_0_in(
-    x: pyfect.schema.Codec[_Super, Any, Any, Any],
-) -> pyfect.schema.Codec[_Sub, Any, Any, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v332_1_out(
-    x: pyfect.schema.Codec[Any, _Sub, Any, Any],
-) -> pyfect.schema.Codec[Any, _Super, Any, Any]:
-    return x
-
-
-def v332_1_in(
-    x: pyfect.schema.Codec[Any, _Super, Any, Any],
-) -> pyfect.schema.Codec[Any, _Sub, Any, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v332_2_out(
-    x: pyfect.schema.Codec[Any, Any, _Sub, Any],
-) -> pyfect.schema.Codec[Any, Any, _Super, Any]:
-    return x
-
-
-def v332_2_in(
-    x: pyfect.schema.Codec[Any, Any, _Super, Any],
-) -> pyfect.schema.Codec[Any, Any, _Sub, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v332_3_out(
-    x: pyfect.schema.Codec[Any, Any, Any, _Sub],
-) -> pyfect.schema.Codec[Any, Any, Any, _Super]:
-    return x
-
-
-def v332_3_in(
-    x: pyfect.schema.Codec[Any, Any, Any, _Super],
-) -> pyfect.schema.Codec[Any, Any, Any, _Sub]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-# pyfect.schema.ConstructorDefault
-
-
-def v333_0_out(
-    x: pyfect.schema.ConstructorDefault[_Sub],
-) -> pyfect.schema.ConstructorDefault[_Super]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v333_0_in(
-    x: pyfect.schema.ConstructorDefault[_Super],
-) -> pyfect.schema.ConstructorDefault[_Sub]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-# pyfect.schema.Decode
-
-
-def v334_0_out(x: pyfect.schema.Decode[_Sub, Any, Any]) -> pyfect.schema.Decode[_Super, Any, Any]:
-    return x
-
-
-def v334_0_in(x: pyfect.schema.Decode[_Super, Any, Any]) -> pyfect.schema.Decode[_Sub, Any, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v334_1_out(x: pyfect.schema.Decode[Any, _Sub, Any]) -> pyfect.schema.Decode[Any, _Super, Any]:
-    return x
-
-
-def v334_1_in(x: pyfect.schema.Decode[Any, _Super, Any]) -> pyfect.schema.Decode[Any, _Sub, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v334_2_out(x: pyfect.schema.Decode[Any, Any, _Sub]) -> pyfect.schema.Decode[Any, Any, _Super]:
-    return x
-
-
-def v334_2_in(x: pyfect.schema.Decode[Any, Any, _Super]) -> pyfect.schema.Decode[Any, Any, _Sub]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-T334_0_co = TypeVar("T334_0_co", covariant=True)
-T334_1_co = TypeVar("T334_1_co", covariant=True)
-T334_2_co = TypeVar("T334_2_co", covariant=True)
-
-
-class Fields334(Protocol[T334_0_co, T334_1_co, T334_2_co]):
-    def declared(self) -> tuple[T334_0_co, T334_1_co, T334_2_co]: ...
-
-
-# pyfect.schema.DecodeTo
-
-
-def v335_0_out(
-    x: pyfect.schema.DecodeTo[_Sub, Any, Any, Any],
-) -> pyfect.schema.DecodeTo[_Super, Any, Any, Any]:
-    return x
-
-
-def v335_0_in(
-    x: pyfect.schema.DecodeTo[_Super, Any, Any, Any],
-) -> pyfect.schema.DecodeTo[_Sub, Any, Any, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v335_1_out(
-    x: pyfect.schema.DecodeTo[Any, _Sub, Any, Any],
-) -> pyfect.schema.DecodeTo[Any, _Super, Any, Any]:
-    return x
-
-
-def v335_1_in(
-    x: pyfect.schema.DecodeTo[Any, _Super, Any, Any],
-) -> pyfect.schema.DecodeTo[Any, _Sub, Any, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v335_2_out(
-    x: pyfect.schema.DecodeTo[Any, Any, _Sub, Any],
-) -> pyfect.schema.DecodeTo[Any, Any, _Super, Any]:
-    return x
-
-
-def v335_2_in(
-    x: pyfect.schema.DecodeTo[Any, Any, _Super, Any],
-) -> pyfect.schema.DecodeTo[Any, Any, _Sub, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v335_3_out(
-    x: pyfect.schema.DecodeTo[Any, Any, Any, _Sub],
-) -> pyfect.schema.DecodeTo[Any, Any, Any, _Super]:
-    return x
-
-
-def v335_3_in(
-    x: pyfect.schema.DecodeTo[Any, Any, Any, _Super],
-) -> pyfect.schema.DecodeTo[Any, Any, Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
@@ -11033,182 +10916,150 @@ T335_0_co = TypeVar("T335_0_co", covariant=True)
 T335_1_co = TypeVar("T335_1_co", covariant=True)
 T335_2_co = TypeVar("T335_2_co", covariant=True)
 T335_3_co = TypeVar("T335_3_co", covariant=True)
+T335_4_co = TypeVar("T335_4_co", covariant=True)
 
 
-class Fields335(Protocol[T335_0_co, T335_1_co, T335_2_co, T335_3_co]):
-    def declared(self) -> tuple[T335_0_co, T335_1_co, T335_2_co, T335_3_co]: ...
-
-
-# pyfect.schema.DecodeToSchema
-
-
-def v336_0_out(
-    x: pyfect.schema.DecodeToSchema[_Sub, Any, Any, Any],
-) -> pyfect.schema.DecodeToSchema[_Super, Any, Any, Any]:
-    return x
-
-
-def v336_0_in(
-    x: pyfect.schema.DecodeToSchema[_Super, Any, Any, Any],
-) -> pyfect.schema.DecodeToSchema[_Sub, Any, Any, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v336_1_out(
-    x: pyfect.schema.DecodeToSchema[Any, _Sub, Any, Any],
-) -> pyfect.schema.DecodeToSchema[Any, _Super, Any, Any]:
-    return x
-
-
-def v336_1_in(
-    x: pyfect.schema.DecodeToSchema[Any, _Super, Any, Any],
-) -> pyfect.schema.DecodeToSchema[Any, _Sub, Any, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v336_2_out(
-    x: pyfect.schema.DecodeToSchema[Any, Any, _Sub, Any],
-) -> pyfect.schema.DecodeToSchema[Any, Any, _Super, Any]:
-    return x
-
-
-def v336_2_in(
-    x: pyfect.schema.DecodeToSchema[Any, Any, _Super, Any],
-) -> pyfect.schema.DecodeToSchema[Any, Any, _Sub, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v336_3_out(
-    x: pyfect.schema.DecodeToSchema[Any, Any, Any, _Sub],
-) -> pyfect.schema.DecodeToSchema[Any, Any, Any, _Super]:
-    return x
-
-
-def v336_3_in(
-    x: pyfect.schema.DecodeToSchema[Any, Any, Any, _Super],
-) -> pyfect.schema.DecodeToSchema[Any, Any, Any, _Sub]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-T336_0_co = TypeVar("T336_0_co", covariant=True)
-T336_1_co = TypeVar("T336_1_co", covariant=True)
-T336_2_co = TypeVar("T336_2_co", covariant=True)
-T336_3_co = TypeVar("T336_3_co", covariant=True)
-
-
-class Fields336(Protocol[T336_0_co, T336_1_co, T336_2_co, T336_3_co]):
+class Fields335(Protocol[T335_0_co, T335_1_co, T335_2_co, T335_3_co, T335_4_co]):
     @property
     def ast(self) -> pyfect.schema.ast.AST: ...
     @property
-    def from_(self) -> pyfect.schema._transform.Source[object, T336_1_co, T336_2_co, T336_3_co]: ...
+    def value(self) -> pyfect.schema._schema.Codec[T335_1_co, T335_2_co, T335_3_co, T335_4_co]: ...
+    def declared(self) -> tuple[T335_0_co, T335_1_co, T335_2_co, T335_3_co, T335_4_co]: ...
+
+
+# pyfect.schema.Between
+
+
+def v336_0_out(x: pyfect.schema.Between[_Sub]) -> pyfect.schema.Between[_Super]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v336_0_in(x: pyfect.schema.Between[_Super]) -> pyfect.schema.Between[_Sub]:
+    return x
+
+
+# pyfect.schema.Bottom
+
+
+def v337_0_out(
+    x: pyfect.schema.Bottom[_Sub, Any, Any, Any],
+) -> pyfect.schema.Bottom[_Super, Any, Any, Any]:
+    return x
+
+
+def v337_0_in(
+    x: pyfect.schema.Bottom[_Super, Any, Any, Any],
+) -> pyfect.schema.Bottom[_Sub, Any, Any, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v337_1_out(
+    x: pyfect.schema.Bottom[Any, _Sub, Any, Any],
+) -> pyfect.schema.Bottom[Any, _Super, Any, Any]:
+    return x
+
+
+def v337_1_in(
+    x: pyfect.schema.Bottom[Any, _Super, Any, Any],
+) -> pyfect.schema.Bottom[Any, _Sub, Any, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v337_2_out(
+    x: pyfect.schema.Bottom[Any, Any, _Sub, Any],
+) -> pyfect.schema.Bottom[Any, Any, _Super, Any]:
+    return x
+
+
+def v337_2_in(
+    x: pyfect.schema.Bottom[Any, Any, _Super, Any],
+) -> pyfect.schema.Bottom[Any, Any, _Sub, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v337_3_out(
+    x: pyfect.schema.Bottom[Any, Any, Any, _Sub],
+) -> pyfect.schema.Bottom[Any, Any, Any, _Super]:
+    return x
+
+
+def v337_3_in(
+    x: pyfect.schema.Bottom[Any, Any, Any, _Super],
+) -> pyfect.schema.Bottom[Any, Any, Any, _Sub]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+T337_0_co = TypeVar("T337_0_co", covariant=True)
+T337_1_co = TypeVar("T337_1_co", covariant=True)
+T337_2_co = TypeVar("T337_2_co", covariant=True)
+T337_3_co = TypeVar("T337_3_co", covariant=True)
+
+
+class Fields337(Protocol[T337_0_co, T337_1_co, T337_2_co, T337_3_co]):
     @property
-    def to(self) -> pyfect.schema._schema.Codec[T336_0_co, object, T336_2_co, T336_3_co]: ...
-    def declared(self) -> tuple[T336_0_co, T336_1_co, T336_2_co, T336_3_co]: ...
+    def ast(self) -> pyfect.schema.ast.AST: ...
+    def declared(self) -> tuple[T337_0_co, T337_1_co, T337_2_co, T337_3_co]: ...
 
 
-# pyfect.schema.Differ
+# pyfect.schema.Bound
 
 
-def v337_0_out(x: pyfect.schema.Differ[_Sub, Any]) -> pyfect.schema.Differ[_Super, Any]:
+def v338_0_out(x: pyfect.schema.Bound[_Sub]) -> pyfect.schema.Bound[_Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v337_0_in(x: pyfect.schema.Differ[_Super, Any]) -> pyfect.schema.Differ[_Sub, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v337_1_out(x: pyfect.schema.Differ[Any, _Sub]) -> pyfect.schema.Differ[Any, _Super]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v337_1_in(x: pyfect.schema.Differ[Any, _Super]) -> pyfect.schema.Differ[Any, _Sub]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-# pyfect.schema.Encode
-
-
-def v338_0_out(x: pyfect.schema.Encode[_Sub, Any, Any]) -> pyfect.schema.Encode[_Super, Any, Any]:
+def v338_0_in(x: pyfect.schema.Bound[_Super]) -> pyfect.schema.Bound[_Sub]:
     return x
 
 
-def v338_0_in(x: pyfect.schema.Encode[_Super, Any, Any]) -> pyfect.schema.Encode[_Sub, Any, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v338_1_out(x: pyfect.schema.Encode[Any, _Sub, Any]) -> pyfect.schema.Encode[Any, _Super, Any]:
-    return x
-
-
-def v338_1_in(x: pyfect.schema.Encode[Any, _Super, Any]) -> pyfect.schema.Encode[Any, _Sub, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v338_2_out(x: pyfect.schema.Encode[Any, Any, _Sub]) -> pyfect.schema.Encode[Any, Any, _Super]:
-    return x
-
-
-def v338_2_in(x: pyfect.schema.Encode[Any, Any, _Super]) -> pyfect.schema.Encode[Any, Any, _Sub]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-T338_0_co = TypeVar("T338_0_co", covariant=True)
-T338_1_co = TypeVar("T338_1_co", covariant=True)
-T338_2_co = TypeVar("T338_2_co", covariant=True)
-
-
-class Fields338(Protocol[T338_0_co, T338_1_co, T338_2_co]):
-    def declared(self) -> tuple[T338_0_co, T338_1_co, T338_2_co]: ...
-
-
-# pyfect.schema.EncodeTo
+# pyfect.schema.BrandSchema
 
 
 def v339_0_out(
-    x: pyfect.schema.EncodeTo[_Sub, Any, Any, Any],
-) -> pyfect.schema.EncodeTo[_Super, Any, Any, Any]:
+    x: pyfect.schema.BrandSchema[_Sub, Any, Any, Any],
+) -> pyfect.schema.BrandSchema[_Super, Any, Any, Any]:
     return x
 
 
 def v339_0_in(
-    x: pyfect.schema.EncodeTo[_Super, Any, Any, Any],
-) -> pyfect.schema.EncodeTo[_Sub, Any, Any, Any]:
+    x: pyfect.schema.BrandSchema[_Super, Any, Any, Any],
+) -> pyfect.schema.BrandSchema[_Sub, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
 def v339_1_out(
-    x: pyfect.schema.EncodeTo[Any, _Sub, Any, Any],
-) -> pyfect.schema.EncodeTo[Any, _Super, Any, Any]:
+    x: pyfect.schema.BrandSchema[Any, _Sub, Any, Any],
+) -> pyfect.schema.BrandSchema[Any, _Super, Any, Any]:
     return x
 
 
 def v339_1_in(
-    x: pyfect.schema.EncodeTo[Any, _Super, Any, Any],
-) -> pyfect.schema.EncodeTo[Any, _Sub, Any, Any]:
+    x: pyfect.schema.BrandSchema[Any, _Super, Any, Any],
+) -> pyfect.schema.BrandSchema[Any, _Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
 def v339_2_out(
-    x: pyfect.schema.EncodeTo[Any, Any, _Sub, Any],
-) -> pyfect.schema.EncodeTo[Any, Any, _Super, Any]:
+    x: pyfect.schema.BrandSchema[Any, Any, _Sub, Any],
+) -> pyfect.schema.BrandSchema[Any, Any, _Super, Any]:
     return x
 
 
 def v339_2_in(
-    x: pyfect.schema.EncodeTo[Any, Any, _Super, Any],
-) -> pyfect.schema.EncodeTo[Any, Any, _Sub, Any]:
+    x: pyfect.schema.BrandSchema[Any, Any, _Super, Any],
+) -> pyfect.schema.BrandSchema[Any, Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
 def v339_3_out(
-    x: pyfect.schema.EncodeTo[Any, Any, Any, _Sub],
-) -> pyfect.schema.EncodeTo[Any, Any, Any, _Super]:
+    x: pyfect.schema.BrandSchema[Any, Any, Any, _Sub],
+) -> pyfect.schema.BrandSchema[Any, Any, Any, _Super]:
     return x
 
 
 def v339_3_in(
-    x: pyfect.schema.EncodeTo[Any, Any, Any, _Super],
-) -> pyfect.schema.EncodeTo[Any, Any, Any, _Sub]:
+    x: pyfect.schema.BrandSchema[Any, Any, Any, _Super],
+) -> pyfect.schema.BrandSchema[Any, Any, Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
@@ -11219,343 +11070,367 @@ T339_3_co = TypeVar("T339_3_co", covariant=True)
 
 
 class Fields339(Protocol[T339_0_co, T339_1_co, T339_2_co, T339_3_co]):
-    def declared(self) -> tuple[T339_0_co, T339_1_co, T339_2_co, T339_3_co]: ...
-
-
-# pyfect.schema.EnumSchema
-
-
-def v340_0_out(x: pyfect.schema.EnumSchema[Never]) -> pyfect.schema.EnumSchema[enum.Enum]:
-    return x
-
-
-def v340_0_in(x: pyfect.schema.EnumSchema[enum.Enum]) -> pyfect.schema.EnumSchema[Never]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-T340_0_co = TypeVar("T340_0_co", covariant=True, bound=enum.Enum)
-
-
-class Fields340(Protocol[T340_0_co]):
     @property
     def ast(self) -> pyfect.schema.ast.AST: ...
     @property
-    def enums(self) -> type[T340_0_co]: ...
-    def declared(self) -> tuple[T340_0_co]: ...
+    def schema(self) -> pyfect.schema._schema.Bottom[object, T339_1_co, T339_2_co, T339_3_co]: ...
+    @property
+    def identifier(self) -> str | None: ...
+    def declared(self) -> tuple[T339_0_co, T339_1_co, T339_2_co, T339_3_co]: ...
 
 
-# pyfect.schema.ExitSchema
+# pyfect.schema.CatchDecoding
 
 
-def v341_0_out(
-    x: pyfect.schema.ExitSchema[_Sub, Any, Any, Any, Any, Any],
-) -> pyfect.schema.ExitSchema[_Super, Any, Any, Any, Any, Any]:
+def v340_0_out(
+    x: pyfect.schema.CatchDecoding[_Sub, Any],
+) -> pyfect.schema.CatchDecoding[_Super, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v340_0_in(
+    x: pyfect.schema.CatchDecoding[_Super, Any],
+) -> pyfect.schema.CatchDecoding[_Sub, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v340_1_out(
+    x: pyfect.schema.CatchDecoding[Any, _Sub],
+) -> pyfect.schema.CatchDecoding[Any, _Super]:
     return x
 
 
+def v340_1_in(
+    x: pyfect.schema.CatchDecoding[Any, _Super],
+) -> pyfect.schema.CatchDecoding[Any, _Sub]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+T340_1_co = TypeVar("T340_1_co", covariant=True)
+
+
+class Fields340(Protocol[T340_1_co]):
+    def declared(self) -> tuple[T340_1_co]: ...
+
+
+# pyfect.schema.CatchEncoding
+
+
+def v341_0_out(
+    x: pyfect.schema.CatchEncoding[_Sub, Any],
+) -> pyfect.schema.CatchEncoding[_Super, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
 def v341_0_in(
-    x: pyfect.schema.ExitSchema[_Super, Any, Any, Any, Any, Any],
-) -> pyfect.schema.ExitSchema[_Sub, Any, Any, Any, Any, Any]:
+    x: pyfect.schema.CatchEncoding[_Super, Any],
+) -> pyfect.schema.CatchEncoding[_Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
 def v341_1_out(
-    x: pyfect.schema.ExitSchema[Any, _Sub, Any, Any, Any, Any],
-) -> pyfect.schema.ExitSchema[Any, _Super, Any, Any, Any, Any]:
+    x: pyfect.schema.CatchEncoding[Any, _Sub],
+) -> pyfect.schema.CatchEncoding[Any, _Super]:
     return x
 
 
 def v341_1_in(
-    x: pyfect.schema.ExitSchema[Any, _Super, Any, Any, Any, Any],
-) -> pyfect.schema.ExitSchema[Any, _Sub, Any, Any, Any, Any]:
+    x: pyfect.schema.CatchEncoding[Any, _Super],
+) -> pyfect.schema.CatchEncoding[Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v341_2_out(
-    x: pyfect.schema.ExitSchema[Any, Any, _Sub, Any, Any, Any],
-) -> pyfect.schema.ExitSchema[Any, Any, _Super, Any, Any, Any]:
-    return x
-
-
-def v341_2_in(
-    x: pyfect.schema.ExitSchema[Any, Any, _Super, Any, Any, Any],
-) -> pyfect.schema.ExitSchema[Any, Any, _Sub, Any, Any, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v341_3_out(
-    x: pyfect.schema.ExitSchema[Any, Any, Any, _Sub, Any, Any],
-) -> pyfect.schema.ExitSchema[Any, Any, Any, _Super, Any, Any]:
-    return x
-
-
-def v341_3_in(
-    x: pyfect.schema.ExitSchema[Any, Any, Any, _Super, Any, Any],
-) -> pyfect.schema.ExitSchema[Any, Any, Any, _Sub, Any, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v341_4_out(
-    x: pyfect.schema.ExitSchema[Any, Any, Any, Any, _Sub, Any],
-) -> pyfect.schema.ExitSchema[Any, Any, Any, Any, _Super, Any]:
-    return x
-
-
-def v341_4_in(
-    x: pyfect.schema.ExitSchema[Any, Any, Any, Any, _Super, Any],
-) -> pyfect.schema.ExitSchema[Any, Any, Any, Any, _Sub, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v341_5_out(
-    x: pyfect.schema.ExitSchema[Any, Any, Any, Any, Any, _Sub],
-) -> pyfect.schema.ExitSchema[Any, Any, Any, Any, Any, _Super]:
-    return x
-
-
-def v341_5_in(
-    x: pyfect.schema.ExitSchema[Any, Any, Any, Any, Any, _Super],
-) -> pyfect.schema.ExitSchema[Any, Any, Any, Any, Any, _Sub]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-T341_0_co = TypeVar("T341_0_co", covariant=True)
 T341_1_co = TypeVar("T341_1_co", covariant=True)
-T341_2_co = TypeVar("T341_2_co", covariant=True)
-T341_3_co = TypeVar("T341_3_co", covariant=True)
-T341_4_co = TypeVar("T341_4_co", covariant=True)
-T341_5_co = TypeVar("T341_5_co", covariant=True)
 
 
-class Fields341(Protocol[T341_0_co, T341_1_co, T341_2_co, T341_3_co, T341_4_co, T341_5_co]):
-    @property
-    def ast(self) -> pyfect.schema.ast.AST: ...
-    @property
-    def value(self) -> pyfect.schema._schema.Codec[T341_0_co, T341_2_co, T341_4_co, T341_5_co]: ...
-    @property
-    def error(self) -> pyfect.schema._schema.Codec[T341_1_co, T341_3_co, T341_4_co, T341_5_co]: ...
-    @property
-    def defect(self) -> pyfect.schema._data.DefectCodec[T341_4_co, T341_5_co]: ...
-    def declared(
-        self,
-    ) -> tuple[T341_0_co, T341_1_co, T341_2_co, T341_3_co, T341_4_co, T341_5_co]: ...
+class Fields341(Protocol[T341_1_co]):
+    def declared(self) -> tuple[T341_1_co]: ...
 
 
-# pyfect.schema.ExtendTo
+# pyfect.schema.CauseReasonSchema
 
 
 def v342_0_out(
-    x: pyfect.schema.ExtendTo[Never, Any],
-) -> pyfect.schema.ExtendTo[collections.abc.Mapping[str, object], Any]:
-    return x  # pyright: ignore[reportReturnType]
+    x: pyfect.schema.CauseReasonSchema[_Sub, Any, Any, Any],
+) -> pyfect.schema.CauseReasonSchema[_Super, Any, Any, Any]:
+    return x
 
 
 def v342_0_in(
-    x: pyfect.schema.ExtendTo[collections.abc.Mapping[str, object], Any],
-) -> pyfect.schema.ExtendTo[Never, Any]:
+    x: pyfect.schema.CauseReasonSchema[_Super, Any, Any, Any],
+) -> pyfect.schema.CauseReasonSchema[_Sub, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
 def v342_1_out(
-    x: pyfect.schema.ExtendTo[Any, Never],
-) -> pyfect.schema.ExtendTo[Any, collections.abc.Mapping[str, object]]:
-    return x  # pyright: ignore[reportReturnType]
+    x: pyfect.schema.CauseReasonSchema[Any, _Sub, Any, Any],
+) -> pyfect.schema.CauseReasonSchema[Any, _Super, Any, Any]:
+    return x
 
 
 def v342_1_in(
-    x: pyfect.schema.ExtendTo[Any, collections.abc.Mapping[str, object]],
-) -> pyfect.schema.ExtendTo[Any, Never]:
+    x: pyfect.schema.CauseReasonSchema[Any, _Super, Any, Any],
+) -> pyfect.schema.CauseReasonSchema[Any, _Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-# pyfect.schema.Filter
-
-
-def v343_0_out(x: pyfect.schema.Filter[_Sub]) -> pyfect.schema.Filter[_Super]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v343_0_in(x: pyfect.schema.Filter[_Super]) -> pyfect.schema.Filter[_Sub]:
+def v342_2_out(
+    x: pyfect.schema.CauseReasonSchema[Any, Any, _Sub, Any],
+) -> pyfect.schema.CauseReasonSchema[Any, Any, _Super, Any]:
     return x
 
 
-T343_0_contra = TypeVar("T343_0_contra", contravariant=True)
-
-
-class Fields343(Protocol[T343_0_contra]):
-    @property
-    def run(
-        self,
-    ) -> collections.abc.Callable[
-        [T343_0_contra, pyfect.schema.ast._base.AST, pyfect.schema._options.ParseOptions],
-        pyfect.schema.issue.Issue | None,
-    ]: ...
-    @property
-    def annotations(self) -> pyfect.schema.ast._base.Annotations | None: ...
-    @property
-    def aborted(self) -> bool: ...
-    def declared(self, _0: T343_0_contra) -> tuple[()]: ...
-
-
-# pyfect.schema.FilterGroup
-
-
-def v344_0_out(x: pyfect.schema.FilterGroup[_Sub]) -> pyfect.schema.FilterGroup[_Super]:
+def v342_2_in(
+    x: pyfect.schema.CauseReasonSchema[Any, Any, _Super, Any],
+) -> pyfect.schema.CauseReasonSchema[Any, Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v344_0_in(x: pyfect.schema.FilterGroup[_Super]) -> pyfect.schema.FilterGroup[_Sub]:
+def v342_3_out(
+    x: pyfect.schema.CauseReasonSchema[Any, Any, Any, _Sub],
+) -> pyfect.schema.CauseReasonSchema[Any, Any, Any, _Super]:
     return x
 
 
-T344_0_contra = TypeVar("T344_0_contra", contravariant=True)
-
-
-class Fields344(Protocol[T344_0_contra]):
-    @property
-    def checks(
-        self,
-    ) -> tuple[
-        pyfect.schema.ast._check.Check[T344_0_contra],
-        *tuple[pyfect.schema.ast._check.Check[T344_0_contra], ...],
-    ]: ...
-    @property
-    def annotations(self) -> pyfect.schema.ast._base.Annotations | None: ...
-    def declared(self, _0: T344_0_contra) -> tuple[()]: ...
-
-
-# pyfect.schema.FlipSchema
-
-
-def v345_0_out(
-    x: pyfect.schema.FlipSchema[_Sub, Any, Any, Any],
-) -> pyfect.schema.FlipSchema[_Super, Any, Any, Any]:
-    return x
-
-
-def v345_0_in(
-    x: pyfect.schema.FlipSchema[_Super, Any, Any, Any],
-) -> pyfect.schema.FlipSchema[_Sub, Any, Any, Any]:
+def v342_3_in(
+    x: pyfect.schema.CauseReasonSchema[Any, Any, Any, _Super],
+) -> pyfect.schema.CauseReasonSchema[Any, Any, Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v345_1_out(
-    x: pyfect.schema.FlipSchema[Any, _Sub, Any, Any],
-) -> pyfect.schema.FlipSchema[Any, _Super, Any, Any]:
-    return x
+T342_0_co = TypeVar("T342_0_co", covariant=True)
+T342_1_co = TypeVar("T342_1_co", covariant=True)
+T342_2_co = TypeVar("T342_2_co", covariant=True)
+T342_3_co = TypeVar("T342_3_co", covariant=True)
 
 
-def v345_1_in(
-    x: pyfect.schema.FlipSchema[Any, _Super, Any, Any],
-) -> pyfect.schema.FlipSchema[Any, _Sub, Any, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v345_2_out(
-    x: pyfect.schema.FlipSchema[Any, Any, _Sub, Any],
-) -> pyfect.schema.FlipSchema[Any, Any, _Super, Any]:
-    return x
-
-
-def v345_2_in(
-    x: pyfect.schema.FlipSchema[Any, Any, _Super, Any],
-) -> pyfect.schema.FlipSchema[Any, Any, _Sub, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v345_3_out(
-    x: pyfect.schema.FlipSchema[Any, Any, Any, _Sub],
-) -> pyfect.schema.FlipSchema[Any, Any, Any, _Super]:
-    return x
-
-
-def v345_3_in(
-    x: pyfect.schema.FlipSchema[Any, Any, Any, _Super],
-) -> pyfect.schema.FlipSchema[Any, Any, Any, _Sub]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-T345_0_co = TypeVar("T345_0_co", covariant=True)
-T345_1_co = TypeVar("T345_1_co", covariant=True)
-T345_2_co = TypeVar("T345_2_co", covariant=True)
-T345_3_co = TypeVar("T345_3_co", covariant=True)
-
-
-class Fields345(Protocol[T345_0_co, T345_1_co, T345_2_co, T345_3_co]):
+class Fields342(Protocol[T342_0_co, T342_1_co, T342_2_co, T342_3_co]):
     @property
     def ast(self) -> pyfect.schema.ast.AST: ...
     @property
-    def schema(self) -> pyfect.schema._schema.Codec[T345_1_co, T345_0_co, T345_3_co, T345_2_co]: ...
-    def declared(self) -> tuple[T345_0_co, T345_1_co, T345_2_co, T345_3_co]: ...
+    def error(self) -> pyfect.schema._schema.Codec[T342_0_co, T342_1_co, T342_2_co, T342_3_co]: ...
+    @property
+    def defect(self) -> pyfect.schema._data.DefectCodec[T342_2_co, T342_3_co]: ...
+    def declared(self) -> tuple[T342_0_co, T342_1_co, T342_2_co, T342_3_co]: ...
 
 
-# pyfect.schema.FromBrand
+# pyfect.schema.CauseSchema
 
 
-def v346_0_out(x: pyfect.schema.FromBrand[_Sub, Any]) -> pyfect.schema.FromBrand[_Super, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v346_0_in(x: pyfect.schema.FromBrand[_Super, Any]) -> pyfect.schema.FromBrand[_Sub, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v346_1_out(x: pyfect.schema.FromBrand[Any, _Sub]) -> pyfect.schema.FromBrand[Any, _Super]:
+def v343_0_out(
+    x: pyfect.schema.CauseSchema[_Sub, Any, Any, Any],
+) -> pyfect.schema.CauseSchema[_Super, Any, Any, Any]:
     return x
 
 
-def v346_1_in(x: pyfect.schema.FromBrand[Any, _Super]) -> pyfect.schema.FromBrand[Any, _Sub]:
+def v343_0_in(
+    x: pyfect.schema.CauseSchema[_Super, Any, Any, Any],
+) -> pyfect.schema.CauseSchema[_Sub, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-# pyfect.schema.FrozenSetSchema
+def v343_1_out(
+    x: pyfect.schema.CauseSchema[Any, _Sub, Any, Any],
+) -> pyfect.schema.CauseSchema[Any, _Super, Any, Any]:
+    return x
+
+
+def v343_1_in(
+    x: pyfect.schema.CauseSchema[Any, _Super, Any, Any],
+) -> pyfect.schema.CauseSchema[Any, _Sub, Any, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v343_2_out(
+    x: pyfect.schema.CauseSchema[Any, Any, _Sub, Any],
+) -> pyfect.schema.CauseSchema[Any, Any, _Super, Any]:
+    return x
+
+
+def v343_2_in(
+    x: pyfect.schema.CauseSchema[Any, Any, _Super, Any],
+) -> pyfect.schema.CauseSchema[Any, Any, _Sub, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v343_3_out(
+    x: pyfect.schema.CauseSchema[Any, Any, Any, _Sub],
+) -> pyfect.schema.CauseSchema[Any, Any, Any, _Super]:
+    return x
+
+
+def v343_3_in(
+    x: pyfect.schema.CauseSchema[Any, Any, Any, _Super],
+) -> pyfect.schema.CauseSchema[Any, Any, Any, _Sub]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+T343_0_co = TypeVar("T343_0_co", covariant=True)
+T343_1_co = TypeVar("T343_1_co", covariant=True)
+T343_2_co = TypeVar("T343_2_co", covariant=True)
+T343_3_co = TypeVar("T343_3_co", covariant=True)
+
+
+class Fields343(Protocol[T343_0_co, T343_1_co, T343_2_co, T343_3_co]):
+    @property
+    def ast(self) -> pyfect.schema.ast.AST: ...
+    @property
+    def error(self) -> pyfect.schema._schema.Codec[T343_0_co, T343_1_co, T343_2_co, T343_3_co]: ...
+    @property
+    def defect(self) -> pyfect.schema._data.DefectCodec[T343_2_co, T343_3_co]: ...
+    def declared(self) -> tuple[T343_0_co, T343_1_co, T343_2_co, T343_3_co]: ...
+
+
+# pyfect.schema.Codec
+
+
+def v344_0_out(
+    x: pyfect.schema.Codec[_Sub, Any, Any, Any],
+) -> pyfect.schema.Codec[_Super, Any, Any, Any]:
+    return x
+
+
+def v344_0_in(
+    x: pyfect.schema.Codec[_Super, Any, Any, Any],
+) -> pyfect.schema.Codec[_Sub, Any, Any, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v344_1_out(
+    x: pyfect.schema.Codec[Any, _Sub, Any, Any],
+) -> pyfect.schema.Codec[Any, _Super, Any, Any]:
+    return x
+
+
+def v344_1_in(
+    x: pyfect.schema.Codec[Any, _Super, Any, Any],
+) -> pyfect.schema.Codec[Any, _Sub, Any, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v344_2_out(
+    x: pyfect.schema.Codec[Any, Any, _Sub, Any],
+) -> pyfect.schema.Codec[Any, Any, _Super, Any]:
+    return x
+
+
+def v344_2_in(
+    x: pyfect.schema.Codec[Any, Any, _Super, Any],
+) -> pyfect.schema.Codec[Any, Any, _Sub, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v344_3_out(
+    x: pyfect.schema.Codec[Any, Any, Any, _Sub],
+) -> pyfect.schema.Codec[Any, Any, Any, _Super]:
+    return x
+
+
+def v344_3_in(
+    x: pyfect.schema.Codec[Any, Any, Any, _Super],
+) -> pyfect.schema.Codec[Any, Any, Any, _Sub]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+# pyfect.schema.ConstructorDefault
+
+
+def v345_0_out(
+    x: pyfect.schema.ConstructorDefault[_Sub],
+) -> pyfect.schema.ConstructorDefault[_Super]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v345_0_in(
+    x: pyfect.schema.ConstructorDefault[_Super],
+) -> pyfect.schema.ConstructorDefault[_Sub]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+# pyfect.schema.Decode
+
+
+def v346_0_out(x: pyfect.schema.Decode[_Sub, Any, Any]) -> pyfect.schema.Decode[_Super, Any, Any]:
+    return x
+
+
+def v346_0_in(x: pyfect.schema.Decode[_Super, Any, Any]) -> pyfect.schema.Decode[_Sub, Any, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v346_1_out(x: pyfect.schema.Decode[Any, _Sub, Any]) -> pyfect.schema.Decode[Any, _Super, Any]:
+    return x
+
+
+def v346_1_in(x: pyfect.schema.Decode[Any, _Super, Any]) -> pyfect.schema.Decode[Any, _Sub, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v346_2_out(x: pyfect.schema.Decode[Any, Any, _Sub]) -> pyfect.schema.Decode[Any, Any, _Super]:
+    return x
+
+
+def v346_2_in(x: pyfect.schema.Decode[Any, Any, _Super]) -> pyfect.schema.Decode[Any, Any, _Sub]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+T346_0_co = TypeVar("T346_0_co", covariant=True)
+T346_1_co = TypeVar("T346_1_co", covariant=True)
+T346_2_co = TypeVar("T346_2_co", covariant=True)
+
+
+class Fields346(Protocol[T346_0_co, T346_1_co, T346_2_co]):
+    def declared(self) -> tuple[T346_0_co, T346_1_co, T346_2_co]: ...
+
+
+# pyfect.schema.DecodeTo
 
 
 def v347_0_out(
-    x: pyfect.schema.FrozenSetSchema[_Sub, Any, Any, Any],
-) -> pyfect.schema.FrozenSetSchema[_Super, Any, Any, Any]:
+    x: pyfect.schema.DecodeTo[_Sub, Any, Any, Any],
+) -> pyfect.schema.DecodeTo[_Super, Any, Any, Any]:
     return x
 
 
 def v347_0_in(
-    x: pyfect.schema.FrozenSetSchema[_Super, Any, Any, Any],
-) -> pyfect.schema.FrozenSetSchema[_Sub, Any, Any, Any]:
+    x: pyfect.schema.DecodeTo[_Super, Any, Any, Any],
+) -> pyfect.schema.DecodeTo[_Sub, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
 def v347_1_out(
-    x: pyfect.schema.FrozenSetSchema[Any, _Sub, Any, Any],
-) -> pyfect.schema.FrozenSetSchema[Any, _Super, Any, Any]:
+    x: pyfect.schema.DecodeTo[Any, _Sub, Any, Any],
+) -> pyfect.schema.DecodeTo[Any, _Super, Any, Any]:
     return x
 
 
 def v347_1_in(
-    x: pyfect.schema.FrozenSetSchema[Any, _Super, Any, Any],
-) -> pyfect.schema.FrozenSetSchema[Any, _Sub, Any, Any]:
+    x: pyfect.schema.DecodeTo[Any, _Super, Any, Any],
+) -> pyfect.schema.DecodeTo[Any, _Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
 def v347_2_out(
-    x: pyfect.schema.FrozenSetSchema[Any, Any, _Sub, Any],
-) -> pyfect.schema.FrozenSetSchema[Any, Any, _Super, Any]:
+    x: pyfect.schema.DecodeTo[Any, Any, _Sub, Any],
+) -> pyfect.schema.DecodeTo[Any, Any, _Super, Any]:
     return x
 
 
 def v347_2_in(
-    x: pyfect.schema.FrozenSetSchema[Any, Any, _Super, Any],
-) -> pyfect.schema.FrozenSetSchema[Any, Any, _Sub, Any]:
+    x: pyfect.schema.DecodeTo[Any, Any, _Super, Any],
+) -> pyfect.schema.DecodeTo[Any, Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
 def v347_3_out(
-    x: pyfect.schema.FrozenSetSchema[Any, Any, Any, _Sub],
-) -> pyfect.schema.FrozenSetSchema[Any, Any, Any, _Super]:
+    x: pyfect.schema.DecodeTo[Any, Any, Any, _Sub],
+) -> pyfect.schema.DecodeTo[Any, Any, Any, _Super]:
     return x
 
 
 def v347_3_in(
-    x: pyfect.schema.FrozenSetSchema[Any, Any, Any, _Super],
-) -> pyfect.schema.FrozenSetSchema[Any, Any, Any, _Sub]:
+    x: pyfect.schema.DecodeTo[Any, Any, Any, _Super],
+) -> pyfect.schema.DecodeTo[Any, Any, Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
@@ -11566,97 +11441,57 @@ T347_3_co = TypeVar("T347_3_co", covariant=True)
 
 
 class Fields347(Protocol[T347_0_co, T347_1_co, T347_2_co, T347_3_co]):
-    @property
-    def ast(self) -> pyfect.schema.ast.AST: ...
-    @property
-    def value(self) -> pyfect.schema._schema.Codec[T347_0_co, T347_1_co, T347_2_co, T347_3_co]: ...
     def declared(self) -> tuple[T347_0_co, T347_1_co, T347_2_co, T347_3_co]: ...
 
 
-# pyfect.schema.GraphSchema
+# pyfect.schema.DecodeToSchema
 
 
 def v348_0_out(
-    x: pyfect.schema.GraphSchema[_Sub, Any, Any, Any, Any, Any, Any],
-) -> pyfect.schema.GraphSchema[_Super, Any, Any, Any, Any, Any, Any]:
+    x: pyfect.schema.DecodeToSchema[_Sub, Any, Any, Any],
+) -> pyfect.schema.DecodeToSchema[_Super, Any, Any, Any]:
     return x
 
 
 def v348_0_in(
-    x: pyfect.schema.GraphSchema[_Super, Any, Any, Any, Any, Any, Any],
-) -> pyfect.schema.GraphSchema[_Sub, Any, Any, Any, Any, Any, Any]:
+    x: pyfect.schema.DecodeToSchema[_Super, Any, Any, Any],
+) -> pyfect.schema.DecodeToSchema[_Sub, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
 def v348_1_out(
-    x: pyfect.schema.GraphSchema[Any, _Sub, Any, Any, Any, Any, Any],
-) -> pyfect.schema.GraphSchema[Any, _Super, Any, Any, Any, Any, Any]:
+    x: pyfect.schema.DecodeToSchema[Any, _Sub, Any, Any],
+) -> pyfect.schema.DecodeToSchema[Any, _Super, Any, Any]:
     return x
 
 
 def v348_1_in(
-    x: pyfect.schema.GraphSchema[Any, _Super, Any, Any, Any, Any, Any],
-) -> pyfect.schema.GraphSchema[Any, _Sub, Any, Any, Any, Any, Any]:
+    x: pyfect.schema.DecodeToSchema[Any, _Super, Any, Any],
+) -> pyfect.schema.DecodeToSchema[Any, _Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
 def v348_2_out(
-    x: pyfect.schema.GraphSchema[Any, Any, _Sub, Any, Any, Any, Any],
-) -> pyfect.schema.GraphSchema[Any, Any, _Super, Any, Any, Any, Any]:
+    x: pyfect.schema.DecodeToSchema[Any, Any, _Sub, Any],
+) -> pyfect.schema.DecodeToSchema[Any, Any, _Super, Any]:
     return x
 
 
 def v348_2_in(
-    x: pyfect.schema.GraphSchema[Any, Any, _Super, Any, Any, Any, Any],
-) -> pyfect.schema.GraphSchema[Any, Any, _Sub, Any, Any, Any, Any]:
+    x: pyfect.schema.DecodeToSchema[Any, Any, _Super, Any],
+) -> pyfect.schema.DecodeToSchema[Any, Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
 def v348_3_out(
-    x: pyfect.schema.GraphSchema[Any, Any, Any, _Sub, Any, Any, Any],
-) -> pyfect.schema.GraphSchema[Any, Any, Any, _Super, Any, Any, Any]:
+    x: pyfect.schema.DecodeToSchema[Any, Any, Any, _Sub],
+) -> pyfect.schema.DecodeToSchema[Any, Any, Any, _Super]:
     return x
 
 
 def v348_3_in(
-    x: pyfect.schema.GraphSchema[Any, Any, Any, _Super, Any, Any, Any],
-) -> pyfect.schema.GraphSchema[Any, Any, Any, _Sub, Any, Any, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v348_4_out(
-    x: pyfect.schema.GraphSchema[Any, Any, Any, Any, Never, Any, Any],
-) -> pyfect.schema.GraphSchema[Any, Any, Any, Any, pyfect.graph._records.Kind, Any, Any]:
-    return x
-
-
-def v348_4_in(
-    x: pyfect.schema.GraphSchema[Any, Any, Any, Any, pyfect.graph._records.Kind, Any, Any],
-) -> pyfect.schema.GraphSchema[Any, Any, Any, Any, Never, Any, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v348_5_out(
-    x: pyfect.schema.GraphSchema[Any, Any, Any, Any, Any, _Sub, Any],
-) -> pyfect.schema.GraphSchema[Any, Any, Any, Any, Any, _Super, Any]:
-    return x
-
-
-def v348_5_in(
-    x: pyfect.schema.GraphSchema[Any, Any, Any, Any, Any, _Super, Any],
-) -> pyfect.schema.GraphSchema[Any, Any, Any, Any, Any, _Sub, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v348_6_out(
-    x: pyfect.schema.GraphSchema[Any, Any, Any, Any, Any, Any, _Sub],
-) -> pyfect.schema.GraphSchema[Any, Any, Any, Any, Any, Any, _Super]:
-    return x
-
-
-def v348_6_in(
-    x: pyfect.schema.GraphSchema[Any, Any, Any, Any, Any, Any, _Super],
-) -> pyfect.schema.GraphSchema[Any, Any, Any, Any, Any, Any, _Sub]:
+    x: pyfect.schema.DecodeToSchema[Any, Any, Any, _Super],
+) -> pyfect.schema.DecodeToSchema[Any, Any, Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
@@ -11664,181 +11499,121 @@ T348_0_co = TypeVar("T348_0_co", covariant=True)
 T348_1_co = TypeVar("T348_1_co", covariant=True)
 T348_2_co = TypeVar("T348_2_co", covariant=True)
 T348_3_co = TypeVar("T348_3_co", covariant=True)
-T348_4_co = TypeVar("T348_4_co", covariant=True, bound=pyfect.graph._records.Kind)
-T348_5_co = TypeVar("T348_5_co", covariant=True)
-T348_6_co = TypeVar("T348_6_co", covariant=True)
 
 
-class Fields348(
-    Protocol[T348_0_co, T348_1_co, T348_2_co, T348_3_co, T348_4_co, T348_5_co, T348_6_co]
-):
+class Fields348(Protocol[T348_0_co, T348_1_co, T348_2_co, T348_3_co]):
     @property
     def ast(self) -> pyfect.schema.ast.AST: ...
     @property
-    def kind(self) -> T348_4_co: ...
+    def from_(self) -> pyfect.schema._transform.Source[object, T348_1_co, T348_2_co, T348_3_co]: ...
     @property
-    def node(self) -> pyfect.schema._schema.Codec[T348_0_co, T348_2_co, T348_5_co, T348_6_co]: ...
-    @property
-    def edge(self) -> pyfect.schema._schema.Codec[T348_1_co, T348_3_co, T348_5_co, T348_6_co]: ...
-    def declared(
-        self,
-    ) -> tuple[T348_0_co, T348_1_co, T348_2_co, T348_3_co, T348_4_co, T348_5_co, T348_6_co]: ...
+    def to(self) -> pyfect.schema._schema.Codec[T348_0_co, object, T348_2_co, T348_3_co]: ...
+    def declared(self) -> tuple[T348_0_co, T348_1_co, T348_2_co, T348_3_co]: ...
 
 
-# pyfect.schema.Guard
+# pyfect.schema.Differ
 
 
-def v349_0_out(x: pyfect.schema.Guard[_Sub]) -> pyfect.schema.Guard[_Super]:
+def v349_0_out(x: pyfect.schema.Differ[_Sub, Any]) -> pyfect.schema.Differ[_Super, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v349_0_in(x: pyfect.schema.Guard[_Super]) -> pyfect.schema.Guard[_Sub]:
+def v349_0_in(x: pyfect.schema.Differ[_Super, Any]) -> pyfect.schema.Differ[_Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-# pyfect.schema.HashMapSchema
+def v349_1_out(x: pyfect.schema.Differ[Any, _Sub]) -> pyfect.schema.Differ[Any, _Super]:
+    return x  # pyright: ignore[reportReturnType]
 
 
-def v350_0_out(
-    x: pyfect.schema.HashMapSchema[_Sub, Any, Any, Any, Any, Any],
-) -> pyfect.schema.HashMapSchema[_Super, Any, Any, Any, Any, Any]:
+def v349_1_in(x: pyfect.schema.Differ[Any, _Super]) -> pyfect.schema.Differ[Any, _Sub]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+# pyfect.schema.Encode
+
+
+def v350_0_out(x: pyfect.schema.Encode[_Sub, Any, Any]) -> pyfect.schema.Encode[_Super, Any, Any]:
     return x
 
 
-def v350_0_in(
-    x: pyfect.schema.HashMapSchema[_Super, Any, Any, Any, Any, Any],
-) -> pyfect.schema.HashMapSchema[_Sub, Any, Any, Any, Any, Any]:
+def v350_0_in(x: pyfect.schema.Encode[_Super, Any, Any]) -> pyfect.schema.Encode[_Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v350_1_out(
-    x: pyfect.schema.HashMapSchema[Any, _Sub, Any, Any, Any, Any],
-) -> pyfect.schema.HashMapSchema[Any, _Super, Any, Any, Any, Any]:
+def v350_1_out(x: pyfect.schema.Encode[Any, _Sub, Any]) -> pyfect.schema.Encode[Any, _Super, Any]:
     return x
 
 
-def v350_1_in(
-    x: pyfect.schema.HashMapSchema[Any, _Super, Any, Any, Any, Any],
-) -> pyfect.schema.HashMapSchema[Any, _Sub, Any, Any, Any, Any]:
+def v350_1_in(x: pyfect.schema.Encode[Any, _Super, Any]) -> pyfect.schema.Encode[Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v350_2_out(
-    x: pyfect.schema.HashMapSchema[Any, Any, _Sub, Any, Any, Any],
-) -> pyfect.schema.HashMapSchema[Any, Any, _Super, Any, Any, Any]:
+def v350_2_out(x: pyfect.schema.Encode[Any, Any, _Sub]) -> pyfect.schema.Encode[Any, Any, _Super]:
     return x
 
 
-def v350_2_in(
-    x: pyfect.schema.HashMapSchema[Any, Any, _Super, Any, Any, Any],
-) -> pyfect.schema.HashMapSchema[Any, Any, _Sub, Any, Any, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v350_3_out(
-    x: pyfect.schema.HashMapSchema[Any, Any, Any, _Sub, Any, Any],
-) -> pyfect.schema.HashMapSchema[Any, Any, Any, _Super, Any, Any]:
-    return x
-
-
-def v350_3_in(
-    x: pyfect.schema.HashMapSchema[Any, Any, Any, _Super, Any, Any],
-) -> pyfect.schema.HashMapSchema[Any, Any, Any, _Sub, Any, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v350_4_out(
-    x: pyfect.schema.HashMapSchema[Any, Any, Any, Any, _Sub, Any],
-) -> pyfect.schema.HashMapSchema[Any, Any, Any, Any, _Super, Any]:
-    return x
-
-
-def v350_4_in(
-    x: pyfect.schema.HashMapSchema[Any, Any, Any, Any, _Super, Any],
-) -> pyfect.schema.HashMapSchema[Any, Any, Any, Any, _Sub, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v350_5_out(
-    x: pyfect.schema.HashMapSchema[Any, Any, Any, Any, Any, _Sub],
-) -> pyfect.schema.HashMapSchema[Any, Any, Any, Any, Any, _Super]:
-    return x
-
-
-def v350_5_in(
-    x: pyfect.schema.HashMapSchema[Any, Any, Any, Any, Any, _Super],
-) -> pyfect.schema.HashMapSchema[Any, Any, Any, Any, Any, _Sub]:
+def v350_2_in(x: pyfect.schema.Encode[Any, Any, _Super]) -> pyfect.schema.Encode[Any, Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
 T350_0_co = TypeVar("T350_0_co", covariant=True)
 T350_1_co = TypeVar("T350_1_co", covariant=True)
 T350_2_co = TypeVar("T350_2_co", covariant=True)
-T350_3_co = TypeVar("T350_3_co", covariant=True)
-T350_4_co = TypeVar("T350_4_co", covariant=True)
-T350_5_co = TypeVar("T350_5_co", covariant=True)
 
 
-class Fields350(Protocol[T350_0_co, T350_1_co, T350_2_co, T350_3_co, T350_4_co, T350_5_co]):
-    @property
-    def ast(self) -> pyfect.schema.ast.AST: ...
-    @property
-    def key(self) -> pyfect.schema._schema.Codec[T350_0_co, T350_2_co, T350_4_co, T350_5_co]: ...
-    @property
-    def value(self) -> pyfect.schema._schema.Codec[T350_1_co, T350_3_co, T350_4_co, T350_5_co]: ...
-    def declared(
-        self,
-    ) -> tuple[T350_0_co, T350_1_co, T350_2_co, T350_3_co, T350_4_co, T350_5_co]: ...
+class Fields350(Protocol[T350_0_co, T350_1_co, T350_2_co]):
+    def declared(self) -> tuple[T350_0_co, T350_1_co, T350_2_co]: ...
 
 
-# pyfect.schema.HashSetSchema
+# pyfect.schema.EncodeTo
 
 
 def v351_0_out(
-    x: pyfect.schema.HashSetSchema[_Sub, Any, Any, Any],
-) -> pyfect.schema.HashSetSchema[_Super, Any, Any, Any]:
+    x: pyfect.schema.EncodeTo[_Sub, Any, Any, Any],
+) -> pyfect.schema.EncodeTo[_Super, Any, Any, Any]:
     return x
 
 
 def v351_0_in(
-    x: pyfect.schema.HashSetSchema[_Super, Any, Any, Any],
-) -> pyfect.schema.HashSetSchema[_Sub, Any, Any, Any]:
+    x: pyfect.schema.EncodeTo[_Super, Any, Any, Any],
+) -> pyfect.schema.EncodeTo[_Sub, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
 def v351_1_out(
-    x: pyfect.schema.HashSetSchema[Any, _Sub, Any, Any],
-) -> pyfect.schema.HashSetSchema[Any, _Super, Any, Any]:
+    x: pyfect.schema.EncodeTo[Any, _Sub, Any, Any],
+) -> pyfect.schema.EncodeTo[Any, _Super, Any, Any]:
     return x
 
 
 def v351_1_in(
-    x: pyfect.schema.HashSetSchema[Any, _Super, Any, Any],
-) -> pyfect.schema.HashSetSchema[Any, _Sub, Any, Any]:
+    x: pyfect.schema.EncodeTo[Any, _Super, Any, Any],
+) -> pyfect.schema.EncodeTo[Any, _Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
 def v351_2_out(
-    x: pyfect.schema.HashSetSchema[Any, Any, _Sub, Any],
-) -> pyfect.schema.HashSetSchema[Any, Any, _Super, Any]:
+    x: pyfect.schema.EncodeTo[Any, Any, _Sub, Any],
+) -> pyfect.schema.EncodeTo[Any, Any, _Super, Any]:
     return x
 
 
 def v351_2_in(
-    x: pyfect.schema.HashSetSchema[Any, Any, _Super, Any],
-) -> pyfect.schema.HashSetSchema[Any, Any, _Sub, Any]:
+    x: pyfect.schema.EncodeTo[Any, Any, _Super, Any],
+) -> pyfect.schema.EncodeTo[Any, Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
 def v351_3_out(
-    x: pyfect.schema.HashSetSchema[Any, Any, Any, _Sub],
-) -> pyfect.schema.HashSetSchema[Any, Any, Any, _Super]:
+    x: pyfect.schema.EncodeTo[Any, Any, Any, _Sub],
+) -> pyfect.schema.EncodeTo[Any, Any, Any, _Super]:
     return x
 
 
 def v351_3_in(
-    x: pyfect.schema.HashSetSchema[Any, Any, Any, _Super],
-) -> pyfect.schema.HashSetSchema[Any, Any, Any, _Sub]:
+    x: pyfect.schema.EncodeTo[Any, Any, Any, _Super],
+) -> pyfect.schema.EncodeTo[Any, Any, Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
@@ -11849,286 +11624,259 @@ T351_3_co = TypeVar("T351_3_co", covariant=True)
 
 
 class Fields351(Protocol[T351_0_co, T351_1_co, T351_2_co, T351_3_co]):
-    @property
-    def ast(self) -> pyfect.schema.ast.AST: ...
-    @property
-    def value(self) -> pyfect.schema._schema.Codec[T351_0_co, T351_1_co, T351_2_co, T351_3_co]: ...
     def declared(self) -> tuple[T351_0_co, T351_1_co, T351_2_co, T351_3_co]: ...
 
 
-# pyfect.schema.LiteralSchema
+# pyfect.schema.EnumSchema
 
 
-def v352_0_out(
-    x: pyfect.schema.LiteralSchema[Never],
-) -> pyfect.schema.LiteralSchema[pyfect.schema._literals.LiteralValue]:
+def v352_0_out(x: pyfect.schema.EnumSchema[Never]) -> pyfect.schema.EnumSchema[enum.Enum]:
     return x
 
 
-def v352_0_in(
-    x: pyfect.schema.LiteralSchema[pyfect.schema._literals.LiteralValue],
-) -> pyfect.schema.LiteralSchema[Never]:
+def v352_0_in(x: pyfect.schema.EnumSchema[enum.Enum]) -> pyfect.schema.EnumSchema[Never]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T352_0_co = TypeVar("T352_0_co", covariant=True, bound=pyfect.schema._literals.LiteralValue)
+T352_0_co = TypeVar("T352_0_co", covariant=True, bound=enum.Enum)
 
 
 class Fields352(Protocol[T352_0_co]):
     @property
     def ast(self) -> pyfect.schema.ast.AST: ...
     @property
-    def literal(self) -> T352_0_co: ...
+    def enums(self) -> type[T352_0_co]: ...
     def declared(self) -> tuple[T352_0_co]: ...
 
 
-# pyfect.schema.LiteralsSchema
+# pyfect.schema.ExitSchema
 
 
 def v353_0_out(
-    x: pyfect.schema.LiteralsSchema[Never],
-) -> pyfect.schema.LiteralsSchema[pyfect.schema._literals.LiteralValue]:
-    return x  # pyright: ignore[reportReturnType]
+    x: pyfect.schema.ExitSchema[_Sub, Any, Any, Any, Any, Any],
+) -> pyfect.schema.ExitSchema[_Super, Any, Any, Any, Any, Any]:
+    return x
 
 
 def v353_0_in(
-    x: pyfect.schema.LiteralsSchema[pyfect.schema._literals.LiteralValue],
-) -> pyfect.schema.LiteralsSchema[Never]:
+    x: pyfect.schema.ExitSchema[_Super, Any, Any, Any, Any, Any],
+) -> pyfect.schema.ExitSchema[_Sub, Any, Any, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-# pyfect.schema.MapSchema
+def v353_1_out(
+    x: pyfect.schema.ExitSchema[Any, _Sub, Any, Any, Any, Any],
+) -> pyfect.schema.ExitSchema[Any, _Super, Any, Any, Any, Any]:
+    return x
+
+
+def v353_1_in(
+    x: pyfect.schema.ExitSchema[Any, _Super, Any, Any, Any, Any],
+) -> pyfect.schema.ExitSchema[Any, _Sub, Any, Any, Any, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v353_2_out(
+    x: pyfect.schema.ExitSchema[Any, Any, _Sub, Any, Any, Any],
+) -> pyfect.schema.ExitSchema[Any, Any, _Super, Any, Any, Any]:
+    return x
+
+
+def v353_2_in(
+    x: pyfect.schema.ExitSchema[Any, Any, _Super, Any, Any, Any],
+) -> pyfect.schema.ExitSchema[Any, Any, _Sub, Any, Any, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v353_3_out(
+    x: pyfect.schema.ExitSchema[Any, Any, Any, _Sub, Any, Any],
+) -> pyfect.schema.ExitSchema[Any, Any, Any, _Super, Any, Any]:
+    return x
+
+
+def v353_3_in(
+    x: pyfect.schema.ExitSchema[Any, Any, Any, _Super, Any, Any],
+) -> pyfect.schema.ExitSchema[Any, Any, Any, _Sub, Any, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v353_4_out(
+    x: pyfect.schema.ExitSchema[Any, Any, Any, Any, _Sub, Any],
+) -> pyfect.schema.ExitSchema[Any, Any, Any, Any, _Super, Any]:
+    return x
+
+
+def v353_4_in(
+    x: pyfect.schema.ExitSchema[Any, Any, Any, Any, _Super, Any],
+) -> pyfect.schema.ExitSchema[Any, Any, Any, Any, _Sub, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v353_5_out(
+    x: pyfect.schema.ExitSchema[Any, Any, Any, Any, Any, _Sub],
+) -> pyfect.schema.ExitSchema[Any, Any, Any, Any, Any, _Super]:
+    return x
+
+
+def v353_5_in(
+    x: pyfect.schema.ExitSchema[Any, Any, Any, Any, Any, _Super],
+) -> pyfect.schema.ExitSchema[Any, Any, Any, Any, Any, _Sub]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+T353_0_co = TypeVar("T353_0_co", covariant=True)
+T353_1_co = TypeVar("T353_1_co", covariant=True)
+T353_2_co = TypeVar("T353_2_co", covariant=True)
+T353_3_co = TypeVar("T353_3_co", covariant=True)
+T353_4_co = TypeVar("T353_4_co", covariant=True)
+T353_5_co = TypeVar("T353_5_co", covariant=True)
+
+
+class Fields353(Protocol[T353_0_co, T353_1_co, T353_2_co, T353_3_co, T353_4_co, T353_5_co]):
+    @property
+    def ast(self) -> pyfect.schema.ast.AST: ...
+    @property
+    def value(self) -> pyfect.schema._schema.Codec[T353_0_co, T353_2_co, T353_4_co, T353_5_co]: ...
+    @property
+    def error(self) -> pyfect.schema._schema.Codec[T353_1_co, T353_3_co, T353_4_co, T353_5_co]: ...
+    @property
+    def defect(self) -> pyfect.schema._data.DefectCodec[T353_4_co, T353_5_co]: ...
+    def declared(
+        self,
+    ) -> tuple[T353_0_co, T353_1_co, T353_2_co, T353_3_co, T353_4_co, T353_5_co]: ...
+
+
+# pyfect.schema.ExtendTo
 
 
 def v354_0_out(
-    x: pyfect.schema.MapSchema[_Sub, Any, Any, Any, Any, Any],
-) -> pyfect.schema.MapSchema[_Super, Any, Any, Any, Any, Any]:
+    x: pyfect.schema.ExtendTo[Never, Any],
+) -> pyfect.schema.ExtendTo[collections.abc.Mapping[str, object], Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
 def v354_0_in(
-    x: pyfect.schema.MapSchema[_Super, Any, Any, Any, Any, Any],
-) -> pyfect.schema.MapSchema[_Sub, Any, Any, Any, Any, Any]:
+    x: pyfect.schema.ExtendTo[collections.abc.Mapping[str, object], Any],
+) -> pyfect.schema.ExtendTo[Never, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
 def v354_1_out(
-    x: pyfect.schema.MapSchema[Any, _Sub, Any, Any, Any, Any],
-) -> pyfect.schema.MapSchema[Any, _Super, Any, Any, Any, Any]:
+    x: pyfect.schema.ExtendTo[Any, Never],
+) -> pyfect.schema.ExtendTo[Any, collections.abc.Mapping[str, object]]:
     return x  # pyright: ignore[reportReturnType]
 
 
 def v354_1_in(
-    x: pyfect.schema.MapSchema[Any, _Super, Any, Any, Any, Any],
-) -> pyfect.schema.MapSchema[Any, _Sub, Any, Any, Any, Any]:
+    x: pyfect.schema.ExtendTo[Any, collections.abc.Mapping[str, object]],
+) -> pyfect.schema.ExtendTo[Any, Never]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v354_2_out(
-    x: pyfect.schema.MapSchema[Any, Any, _Sub, Any, Any, Any],
-) -> pyfect.schema.MapSchema[Any, Any, _Super, Any, Any, Any]:
+# pyfect.schema.Filter
+
+
+def v355_0_out(x: pyfect.schema.Filter[_Sub]) -> pyfect.schema.Filter[_Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v354_2_in(
-    x: pyfect.schema.MapSchema[Any, Any, _Super, Any, Any, Any],
-) -> pyfect.schema.MapSchema[Any, Any, _Sub, Any, Any, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v354_3_out(
-    x: pyfect.schema.MapSchema[Any, Any, Any, _Sub, Any, Any],
-) -> pyfect.schema.MapSchema[Any, Any, Any, _Super, Any, Any]:
+def v355_0_in(x: pyfect.schema.Filter[_Super]) -> pyfect.schema.Filter[_Sub]:
     return x
 
 
-def v354_3_in(
-    x: pyfect.schema.MapSchema[Any, Any, Any, _Super, Any, Any],
-) -> pyfect.schema.MapSchema[Any, Any, Any, _Sub, Any, Any]:
-    return x  # pyright: ignore[reportReturnType]
+T355_0_contra = TypeVar("T355_0_contra", contravariant=True)
 
 
-def v354_4_out(
-    x: pyfect.schema.MapSchema[Any, Any, Any, Any, _Sub, Any],
-) -> pyfect.schema.MapSchema[Any, Any, Any, Any, _Super, Any]:
-    return x
-
-
-def v354_4_in(
-    x: pyfect.schema.MapSchema[Any, Any, Any, Any, _Super, Any],
-) -> pyfect.schema.MapSchema[Any, Any, Any, Any, _Sub, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v354_5_out(
-    x: pyfect.schema.MapSchema[Any, Any, Any, Any, Any, _Sub],
-) -> pyfect.schema.MapSchema[Any, Any, Any, Any, Any, _Super]:
-    return x
-
-
-def v354_5_in(
-    x: pyfect.schema.MapSchema[Any, Any, Any, Any, Any, _Super],
-) -> pyfect.schema.MapSchema[Any, Any, Any, Any, Any, _Sub]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-T354_3_co = TypeVar("T354_3_co", covariant=True)
-T354_4_co = TypeVar("T354_4_co", covariant=True)
-T354_5_co = TypeVar("T354_5_co", covariant=True)
-
-
-class Fields354(Protocol[T354_3_co, T354_4_co, T354_5_co]):
+class Fields355(Protocol[T355_0_contra]):
     @property
-    def ast(self) -> pyfect.schema.ast.AST: ...
+    def run(
+        self,
+    ) -> collections.abc.Callable[
+        [T355_0_contra, pyfect.schema.ast._base.AST, pyfect.schema._options.ParseOptions],
+        pyfect.schema.issue.Issue | None,
+    ]: ...
     @property
-    def key(self) -> pyfect.schema._schema.Codec[Any, Any, T354_4_co, T354_5_co]: ...
+    def annotations(self) -> pyfect.schema.ast._base.Annotations | None: ...
     @property
-    def value(self) -> pyfect.schema._schema.Codec[Any, T354_3_co, T354_4_co, T354_5_co]: ...
-    def declared(self) -> tuple[T354_3_co, T354_4_co, T354_5_co]: ...
+    def aborted(self) -> bool: ...
+    def declared(self, _0: T355_0_contra) -> tuple[()]: ...
 
 
-# pyfect.schema.MiddlewareDecoding
+# pyfect.schema.FilterGroup
 
 
-def v355_0_out(
-    x: pyfect.schema.MiddlewareDecoding[_Sub, Any, Any],
-) -> pyfect.schema.MiddlewareDecoding[_Super, Any, Any]:
+def v356_0_out(x: pyfect.schema.FilterGroup[_Sub]) -> pyfect.schema.FilterGroup[_Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v355_0_in(
-    x: pyfect.schema.MiddlewareDecoding[_Super, Any, Any],
-) -> pyfect.schema.MiddlewareDecoding[_Sub, Any, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v355_1_out(
-    x: pyfect.schema.MiddlewareDecoding[Any, _Sub, Any],
-) -> pyfect.schema.MiddlewareDecoding[Any, _Super, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v355_1_in(
-    x: pyfect.schema.MiddlewareDecoding[Any, _Super, Any],
-) -> pyfect.schema.MiddlewareDecoding[Any, _Sub, Any]:
+def v356_0_in(x: pyfect.schema.FilterGroup[_Super]) -> pyfect.schema.FilterGroup[_Sub]:
     return x
 
 
-def v355_2_out(
-    x: pyfect.schema.MiddlewareDecoding[Any, Any, _Sub],
-) -> pyfect.schema.MiddlewareDecoding[Any, Any, _Super]:
-    return x
+T356_0_contra = TypeVar("T356_0_contra", contravariant=True)
 
 
-def v355_2_in(
-    x: pyfect.schema.MiddlewareDecoding[Any, Any, _Super],
-) -> pyfect.schema.MiddlewareDecoding[Any, Any, _Sub]:
-    return x  # pyright: ignore[reportReturnType]
+class Fields356(Protocol[T356_0_contra]):
+    @property
+    def checks(
+        self,
+    ) -> tuple[
+        pyfect.schema.ast._check.Check[T356_0_contra],
+        *tuple[pyfect.schema.ast._check.Check[T356_0_contra], ...],
+    ]: ...
+    @property
+    def annotations(self) -> pyfect.schema.ast._base.Annotations | None: ...
+    def declared(self, _0: T356_0_contra) -> tuple[()]: ...
 
 
-T355_1_contra = TypeVar("T355_1_contra", contravariant=True)
-T355_2_co = TypeVar("T355_2_co", covariant=True)
-
-
-class Fields355(Protocol[T355_1_contra, T355_2_co]):
-    def declared(self, _0: T355_1_contra) -> tuple[T355_2_co]: ...
-
-
-# pyfect.schema.MiddlewareEncoding
-
-
-def v356_0_out(
-    x: pyfect.schema.MiddlewareEncoding[_Sub, Any, Any],
-) -> pyfect.schema.MiddlewareEncoding[_Super, Any, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v356_0_in(
-    x: pyfect.schema.MiddlewareEncoding[_Super, Any, Any],
-) -> pyfect.schema.MiddlewareEncoding[_Sub, Any, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v356_1_out(
-    x: pyfect.schema.MiddlewareEncoding[Any, _Sub, Any],
-) -> pyfect.schema.MiddlewareEncoding[Any, _Super, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v356_1_in(
-    x: pyfect.schema.MiddlewareEncoding[Any, _Super, Any],
-) -> pyfect.schema.MiddlewareEncoding[Any, _Sub, Any]:
-    return x
-
-
-def v356_2_out(
-    x: pyfect.schema.MiddlewareEncoding[Any, Any, _Sub],
-) -> pyfect.schema.MiddlewareEncoding[Any, Any, _Super]:
-    return x
-
-
-def v356_2_in(
-    x: pyfect.schema.MiddlewareEncoding[Any, Any, _Super],
-) -> pyfect.schema.MiddlewareEncoding[Any, Any, _Sub]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-T356_1_contra = TypeVar("T356_1_contra", contravariant=True)
-T356_2_co = TypeVar("T356_2_co", covariant=True)
-
-
-class Fields356(Protocol[T356_1_contra, T356_2_co]):
-    def declared(self, _0: T356_1_contra) -> tuple[T356_2_co]: ...
-
-
-# pyfect.schema.OptionSchema
+# pyfect.schema.FlipSchema
 
 
 def v357_0_out(
-    x: pyfect.schema.OptionSchema[_Sub, Any, Any, Any],
-) -> pyfect.schema.OptionSchema[_Super, Any, Any, Any]:
+    x: pyfect.schema.FlipSchema[_Sub, Any, Any, Any],
+) -> pyfect.schema.FlipSchema[_Super, Any, Any, Any]:
     return x
 
 
 def v357_0_in(
-    x: pyfect.schema.OptionSchema[_Super, Any, Any, Any],
-) -> pyfect.schema.OptionSchema[_Sub, Any, Any, Any]:
+    x: pyfect.schema.FlipSchema[_Super, Any, Any, Any],
+) -> pyfect.schema.FlipSchema[_Sub, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
 def v357_1_out(
-    x: pyfect.schema.OptionSchema[Any, _Sub, Any, Any],
-) -> pyfect.schema.OptionSchema[Any, _Super, Any, Any]:
+    x: pyfect.schema.FlipSchema[Any, _Sub, Any, Any],
+) -> pyfect.schema.FlipSchema[Any, _Super, Any, Any]:
     return x
 
 
 def v357_1_in(
-    x: pyfect.schema.OptionSchema[Any, _Super, Any, Any],
-) -> pyfect.schema.OptionSchema[Any, _Sub, Any, Any]:
+    x: pyfect.schema.FlipSchema[Any, _Super, Any, Any],
+) -> pyfect.schema.FlipSchema[Any, _Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
 def v357_2_out(
-    x: pyfect.schema.OptionSchema[Any, Any, _Sub, Any],
-) -> pyfect.schema.OptionSchema[Any, Any, _Super, Any]:
+    x: pyfect.schema.FlipSchema[Any, Any, _Sub, Any],
+) -> pyfect.schema.FlipSchema[Any, Any, _Super, Any]:
     return x
 
 
 def v357_2_in(
-    x: pyfect.schema.OptionSchema[Any, Any, _Super, Any],
-) -> pyfect.schema.OptionSchema[Any, Any, _Sub, Any]:
+    x: pyfect.schema.FlipSchema[Any, Any, _Super, Any],
+) -> pyfect.schema.FlipSchema[Any, Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
 def v357_3_out(
-    x: pyfect.schema.OptionSchema[Any, Any, Any, _Sub],
-) -> pyfect.schema.OptionSchema[Any, Any, Any, _Super]:
+    x: pyfect.schema.FlipSchema[Any, Any, Any, _Sub],
+) -> pyfect.schema.FlipSchema[Any, Any, Any, _Super]:
     return x
 
 
 def v357_3_in(
-    x: pyfect.schema.OptionSchema[Any, Any, Any, _Super],
-) -> pyfect.schema.OptionSchema[Any, Any, Any, _Sub]:
+    x: pyfect.schema.FlipSchema[Any, Any, Any, _Super],
+) -> pyfect.schema.FlipSchema[Any, Any, Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
@@ -12142,340 +11890,360 @@ class Fields357(Protocol[T357_0_co, T357_1_co, T357_2_co, T357_3_co]):
     @property
     def ast(self) -> pyfect.schema.ast.AST: ...
     @property
-    def value(self) -> pyfect.schema._schema.Codec[T357_0_co, T357_1_co, T357_2_co, T357_3_co]: ...
+    def schema(self) -> pyfect.schema._schema.Codec[T357_1_co, T357_0_co, T357_3_co, T357_2_co]: ...
     def declared(self) -> tuple[T357_0_co, T357_1_co, T357_2_co, T357_3_co]: ...
 
 
-# pyfect.schema.OptionalKey
+# pyfect.schema.FromBrand
 
 
-def v358_0_out(
-    x: pyfect.schema.OptionalKey[_Sub, Any, Any, Any],
-) -> pyfect.schema.OptionalKey[_Super, Any, Any, Any]:
-    return x
-
-
-def v358_0_in(
-    x: pyfect.schema.OptionalKey[_Super, Any, Any, Any],
-) -> pyfect.schema.OptionalKey[_Sub, Any, Any, Any]:
+def v358_0_out(x: pyfect.schema.FromBrand[_Sub, Any]) -> pyfect.schema.FromBrand[_Super, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v358_1_out(
-    x: pyfect.schema.OptionalKey[Any, _Sub, Any, Any],
-) -> pyfect.schema.OptionalKey[Any, _Super, Any, Any]:
-    return x
-
-
-def v358_1_in(
-    x: pyfect.schema.OptionalKey[Any, _Super, Any, Any],
-) -> pyfect.schema.OptionalKey[Any, _Sub, Any, Any]:
+def v358_0_in(x: pyfect.schema.FromBrand[_Super, Any]) -> pyfect.schema.FromBrand[_Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v358_2_out(
-    x: pyfect.schema.OptionalKey[Any, Any, _Sub, Any],
-) -> pyfect.schema.OptionalKey[Any, Any, _Super, Any]:
+def v358_1_out(x: pyfect.schema.FromBrand[Any, _Sub]) -> pyfect.schema.FromBrand[Any, _Super]:
     return x
 
 
-def v358_2_in(
-    x: pyfect.schema.OptionalKey[Any, Any, _Super, Any],
-) -> pyfect.schema.OptionalKey[Any, Any, _Sub, Any]:
+def v358_1_in(x: pyfect.schema.FromBrand[Any, _Super]) -> pyfect.schema.FromBrand[Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v358_3_out(
-    x: pyfect.schema.OptionalKey[Any, Any, Any, _Sub],
-) -> pyfect.schema.OptionalKey[Any, Any, Any, _Super]:
+# pyfect.schema.FrozenSetSchema
+
+
+def v359_0_out(
+    x: pyfect.schema.FrozenSetSchema[_Sub, Any, Any, Any],
+) -> pyfect.schema.FrozenSetSchema[_Super, Any, Any, Any]:
     return x
 
 
-def v358_3_in(
-    x: pyfect.schema.OptionalKey[Any, Any, Any, _Super],
-) -> pyfect.schema.OptionalKey[Any, Any, Any, _Sub]:
+def v359_0_in(
+    x: pyfect.schema.FrozenSetSchema[_Super, Any, Any, Any],
+) -> pyfect.schema.FrozenSetSchema[_Sub, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T358_0_co = TypeVar("T358_0_co", covariant=True)
-T358_1_co = TypeVar("T358_1_co", covariant=True)
-T358_2_co = TypeVar("T358_2_co", covariant=True)
-T358_3_co = TypeVar("T358_3_co", covariant=True)
+def v359_1_out(
+    x: pyfect.schema.FrozenSetSchema[Any, _Sub, Any, Any],
+) -> pyfect.schema.FrozenSetSchema[Any, _Super, Any, Any]:
+    return x
 
 
-class Fields358(Protocol[T358_0_co, T358_1_co, T358_2_co, T358_3_co]):
+def v359_1_in(
+    x: pyfect.schema.FrozenSetSchema[Any, _Super, Any, Any],
+) -> pyfect.schema.FrozenSetSchema[Any, _Sub, Any, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v359_2_out(
+    x: pyfect.schema.FrozenSetSchema[Any, Any, _Sub, Any],
+) -> pyfect.schema.FrozenSetSchema[Any, Any, _Super, Any]:
+    return x
+
+
+def v359_2_in(
+    x: pyfect.schema.FrozenSetSchema[Any, Any, _Super, Any],
+) -> pyfect.schema.FrozenSetSchema[Any, Any, _Sub, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v359_3_out(
+    x: pyfect.schema.FrozenSetSchema[Any, Any, Any, _Sub],
+) -> pyfect.schema.FrozenSetSchema[Any, Any, Any, _Super]:
+    return x
+
+
+def v359_3_in(
+    x: pyfect.schema.FrozenSetSchema[Any, Any, Any, _Super],
+) -> pyfect.schema.FrozenSetSchema[Any, Any, Any, _Sub]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+T359_0_co = TypeVar("T359_0_co", covariant=True)
+T359_1_co = TypeVar("T359_1_co", covariant=True)
+T359_2_co = TypeVar("T359_2_co", covariant=True)
+T359_3_co = TypeVar("T359_3_co", covariant=True)
+
+
+class Fields359(Protocol[T359_0_co, T359_1_co, T359_2_co, T359_3_co]):
     @property
-    def schema(self) -> pyfect.schema._schema.Codec[T358_0_co, T358_1_co, T358_2_co, T358_3_co]: ...
-    def declared(self) -> tuple[T358_0_co, T358_1_co, T358_2_co, T358_3_co]: ...
+    def ast(self) -> pyfect.schema.ast.AST: ...
+    @property
+    def value(self) -> pyfect.schema._schema.Codec[T359_0_co, T359_1_co, T359_2_co, T359_3_co]: ...
+    def declared(self) -> tuple[T359_0_co, T359_1_co, T359_2_co, T359_3_co]: ...
 
 
-# pyfect.schema.Parser
-
-
-def v359_0_out(x: pyfect.schema.Parser[_Sub, Any]) -> pyfect.schema.Parser[_Super, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v359_0_in(x: pyfect.schema.Parser[_Super, Any]) -> pyfect.schema.Parser[_Sub, Any]:
-    return x
-
-
-def v359_1_out(x: pyfect.schema.Parser[Any, _Sub]) -> pyfect.schema.Parser[Any, _Super]:
-    return x
-
-
-def v359_1_in(x: pyfect.schema.Parser[Any, _Super]) -> pyfect.schema.Parser[Any, _Sub]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-# pyfect.schema.RecordSchema
+# pyfect.schema.GraphSchema
 
 
 def v360_0_out(
-    x: pyfect.schema.RecordSchema[_Sub, Any, Any, Any, Any, Any],
-) -> pyfect.schema.RecordSchema[_Super, Any, Any, Any, Any, Any]:
-    return x  # pyright: ignore[reportReturnType]
+    x: pyfect.schema.GraphSchema[_Sub, Any, Any, Any, Any, Any, Any],
+) -> pyfect.schema.GraphSchema[_Super, Any, Any, Any, Any, Any, Any]:
+    return x
 
 
 def v360_0_in(
-    x: pyfect.schema.RecordSchema[_Super, Any, Any, Any, Any, Any],
-) -> pyfect.schema.RecordSchema[_Sub, Any, Any, Any, Any, Any]:
+    x: pyfect.schema.GraphSchema[_Super, Any, Any, Any, Any, Any, Any],
+) -> pyfect.schema.GraphSchema[_Sub, Any, Any, Any, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
 def v360_1_out(
-    x: pyfect.schema.RecordSchema[Any, _Sub, Any, Any, Any, Any],
-) -> pyfect.schema.RecordSchema[Any, _Super, Any, Any, Any, Any]:
-    return x  # pyright: ignore[reportReturnType]
+    x: pyfect.schema.GraphSchema[Any, _Sub, Any, Any, Any, Any, Any],
+) -> pyfect.schema.GraphSchema[Any, _Super, Any, Any, Any, Any, Any]:
+    return x
 
 
 def v360_1_in(
-    x: pyfect.schema.RecordSchema[Any, _Super, Any, Any, Any, Any],
-) -> pyfect.schema.RecordSchema[Any, _Sub, Any, Any, Any, Any]:
+    x: pyfect.schema.GraphSchema[Any, _Super, Any, Any, Any, Any, Any],
+) -> pyfect.schema.GraphSchema[Any, _Sub, Any, Any, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
 def v360_2_out(
-    x: pyfect.schema.RecordSchema[Any, Any, _Sub, Any, Any, Any],
-) -> pyfect.schema.RecordSchema[Any, Any, _Super, Any, Any, Any]:
-    return x  # pyright: ignore[reportReturnType]
+    x: pyfect.schema.GraphSchema[Any, Any, _Sub, Any, Any, Any, Any],
+) -> pyfect.schema.GraphSchema[Any, Any, _Super, Any, Any, Any, Any]:
+    return x
 
 
 def v360_2_in(
-    x: pyfect.schema.RecordSchema[Any, Any, _Super, Any, Any, Any],
-) -> pyfect.schema.RecordSchema[Any, Any, _Sub, Any, Any, Any]:
+    x: pyfect.schema.GraphSchema[Any, Any, _Super, Any, Any, Any, Any],
+) -> pyfect.schema.GraphSchema[Any, Any, _Sub, Any, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
 def v360_3_out(
-    x: pyfect.schema.RecordSchema[Any, Any, Any, _Sub, Any, Any],
-) -> pyfect.schema.RecordSchema[Any, Any, Any, _Super, Any, Any]:
+    x: pyfect.schema.GraphSchema[Any, Any, Any, _Sub, Any, Any, Any],
+) -> pyfect.schema.GraphSchema[Any, Any, Any, _Super, Any, Any, Any]:
     return x
 
 
 def v360_3_in(
-    x: pyfect.schema.RecordSchema[Any, Any, Any, _Super, Any, Any],
-) -> pyfect.schema.RecordSchema[Any, Any, Any, _Sub, Any, Any]:
+    x: pyfect.schema.GraphSchema[Any, Any, Any, _Super, Any, Any, Any],
+) -> pyfect.schema.GraphSchema[Any, Any, Any, _Sub, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
 def v360_4_out(
-    x: pyfect.schema.RecordSchema[Any, Any, Any, Any, _Sub, Any],
-) -> pyfect.schema.RecordSchema[Any, Any, Any, Any, _Super, Any]:
+    x: pyfect.schema.GraphSchema[Any, Any, Any, Any, Never, Any, Any],
+) -> pyfect.schema.GraphSchema[Any, Any, Any, Any, pyfect.graph._records.Kind, Any, Any]:
     return x
 
 
 def v360_4_in(
-    x: pyfect.schema.RecordSchema[Any, Any, Any, Any, _Super, Any],
-) -> pyfect.schema.RecordSchema[Any, Any, Any, Any, _Sub, Any]:
+    x: pyfect.schema.GraphSchema[Any, Any, Any, Any, pyfect.graph._records.Kind, Any, Any],
+) -> pyfect.schema.GraphSchema[Any, Any, Any, Any, Never, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
 def v360_5_out(
-    x: pyfect.schema.RecordSchema[Any, Any, Any, Any, Any, _Sub],
-) -> pyfect.schema.RecordSchema[Any, Any, Any, Any, Any, _Super]:
+    x: pyfect.schema.GraphSchema[Any, Any, Any, Any, Any, _Sub, Any],
+) -> pyfect.schema.GraphSchema[Any, Any, Any, Any, Any, _Super, Any]:
     return x
 
 
 def v360_5_in(
-    x: pyfect.schema.RecordSchema[Any, Any, Any, Any, Any, _Super],
-) -> pyfect.schema.RecordSchema[Any, Any, Any, Any, Any, _Sub]:
+    x: pyfect.schema.GraphSchema[Any, Any, Any, Any, Any, _Super, Any],
+) -> pyfect.schema.GraphSchema[Any, Any, Any, Any, Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
+def v360_6_out(
+    x: pyfect.schema.GraphSchema[Any, Any, Any, Any, Any, Any, _Sub],
+) -> pyfect.schema.GraphSchema[Any, Any, Any, Any, Any, Any, _Super]:
+    return x
+
+
+def v360_6_in(
+    x: pyfect.schema.GraphSchema[Any, Any, Any, Any, Any, Any, _Super],
+) -> pyfect.schema.GraphSchema[Any, Any, Any, Any, Any, Any, _Sub]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+T360_0_co = TypeVar("T360_0_co", covariant=True)
+T360_1_co = TypeVar("T360_1_co", covariant=True)
+T360_2_co = TypeVar("T360_2_co", covariant=True)
 T360_3_co = TypeVar("T360_3_co", covariant=True)
-T360_4_co = TypeVar("T360_4_co", covariant=True)
+T360_4_co = TypeVar("T360_4_co", covariant=True, bound=pyfect.graph._records.Kind)
 T360_5_co = TypeVar("T360_5_co", covariant=True)
+T360_6_co = TypeVar("T360_6_co", covariant=True)
 
 
-class Fields360(Protocol[T360_3_co, T360_4_co, T360_5_co]):
+class Fields360(
+    Protocol[T360_0_co, T360_1_co, T360_2_co, T360_3_co, T360_4_co, T360_5_co, T360_6_co]
+):
     @property
     def ast(self) -> pyfect.schema.ast.AST: ...
     @property
-    def key(self) -> pyfect.schema._schema.Codec[Any, Any, T360_4_co, T360_5_co]: ...
+    def kind(self) -> T360_4_co: ...
     @property
-    def value(self) -> pyfect.schema._schema.Codec[Any, T360_3_co, T360_4_co, T360_5_co]: ...
-    def declared(self) -> tuple[T360_3_co, T360_4_co, T360_5_co]: ...
+    def node(self) -> pyfect.schema._schema.Codec[T360_0_co, T360_2_co, T360_5_co, T360_6_co]: ...
+    @property
+    def edge(self) -> pyfect.schema._schema.Codec[T360_1_co, T360_3_co, T360_5_co, T360_6_co]: ...
+    def declared(
+        self,
+    ) -> tuple[T360_0_co, T360_1_co, T360_2_co, T360_3_co, T360_4_co, T360_5_co, T360_6_co]: ...
 
 
-# pyfect.schema.RedactedSchema
+# pyfect.schema.Guard
 
 
-def v361_0_out(
-    x: pyfect.schema.RedactedSchema[_Sub, Any, Any, Any],
-) -> pyfect.schema.RedactedSchema[_Super, Any, Any, Any]:
-    return x
-
-
-def v361_0_in(
-    x: pyfect.schema.RedactedSchema[_Super, Any, Any, Any],
-) -> pyfect.schema.RedactedSchema[_Sub, Any, Any, Any]:
+def v361_0_out(x: pyfect.schema.Guard[_Sub]) -> pyfect.schema.Guard[_Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v361_1_out(
-    x: pyfect.schema.RedactedSchema[Any, _Sub, Any, Any],
-) -> pyfect.schema.RedactedSchema[Any, _Super, Any, Any]:
-    return x
-
-
-def v361_1_in(
-    x: pyfect.schema.RedactedSchema[Any, _Super, Any, Any],
-) -> pyfect.schema.RedactedSchema[Any, _Sub, Any, Any]:
+def v361_0_in(x: pyfect.schema.Guard[_Super]) -> pyfect.schema.Guard[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v361_2_out(
-    x: pyfect.schema.RedactedSchema[Any, Any, _Sub, Any],
-) -> pyfect.schema.RedactedSchema[Any, Any, _Super, Any]:
+# pyfect.schema.HashMapSchema
+
+
+def v362_0_out(
+    x: pyfect.schema.HashMapSchema[_Sub, Any, Any, Any, Any, Any],
+) -> pyfect.schema.HashMapSchema[_Super, Any, Any, Any, Any, Any]:
     return x
 
 
-def v361_2_in(
-    x: pyfect.schema.RedactedSchema[Any, Any, _Super, Any],
-) -> pyfect.schema.RedactedSchema[Any, Any, _Sub, Any]:
+def v362_0_in(
+    x: pyfect.schema.HashMapSchema[_Super, Any, Any, Any, Any, Any],
+) -> pyfect.schema.HashMapSchema[_Sub, Any, Any, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v361_3_out(
-    x: pyfect.schema.RedactedSchema[Any, Any, Any, _Sub],
-) -> pyfect.schema.RedactedSchema[Any, Any, Any, _Super]:
+def v362_1_out(
+    x: pyfect.schema.HashMapSchema[Any, _Sub, Any, Any, Any, Any],
+) -> pyfect.schema.HashMapSchema[Any, _Super, Any, Any, Any, Any]:
     return x
 
 
-def v361_3_in(
-    x: pyfect.schema.RedactedSchema[Any, Any, Any, _Super],
-) -> pyfect.schema.RedactedSchema[Any, Any, Any, _Sub]:
+def v362_1_in(
+    x: pyfect.schema.HashMapSchema[Any, _Super, Any, Any, Any, Any],
+) -> pyfect.schema.HashMapSchema[Any, _Sub, Any, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T361_0_co = TypeVar("T361_0_co", covariant=True)
-T361_1_co = TypeVar("T361_1_co", covariant=True)
-T361_2_co = TypeVar("T361_2_co", covariant=True)
-T361_3_co = TypeVar("T361_3_co", covariant=True)
+def v362_2_out(
+    x: pyfect.schema.HashMapSchema[Any, Any, _Sub, Any, Any, Any],
+) -> pyfect.schema.HashMapSchema[Any, Any, _Super, Any, Any, Any]:
+    return x
 
 
-class Fields361(Protocol[T361_0_co, T361_1_co, T361_2_co, T361_3_co]):
+def v362_2_in(
+    x: pyfect.schema.HashMapSchema[Any, Any, _Super, Any, Any, Any],
+) -> pyfect.schema.HashMapSchema[Any, Any, _Sub, Any, Any, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v362_3_out(
+    x: pyfect.schema.HashMapSchema[Any, Any, Any, _Sub, Any, Any],
+) -> pyfect.schema.HashMapSchema[Any, Any, Any, _Super, Any, Any]:
+    return x
+
+
+def v362_3_in(
+    x: pyfect.schema.HashMapSchema[Any, Any, Any, _Super, Any, Any],
+) -> pyfect.schema.HashMapSchema[Any, Any, Any, _Sub, Any, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v362_4_out(
+    x: pyfect.schema.HashMapSchema[Any, Any, Any, Any, _Sub, Any],
+) -> pyfect.schema.HashMapSchema[Any, Any, Any, Any, _Super, Any]:
+    return x
+
+
+def v362_4_in(
+    x: pyfect.schema.HashMapSchema[Any, Any, Any, Any, _Super, Any],
+) -> pyfect.schema.HashMapSchema[Any, Any, Any, Any, _Sub, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v362_5_out(
+    x: pyfect.schema.HashMapSchema[Any, Any, Any, Any, Any, _Sub],
+) -> pyfect.schema.HashMapSchema[Any, Any, Any, Any, Any, _Super]:
+    return x
+
+
+def v362_5_in(
+    x: pyfect.schema.HashMapSchema[Any, Any, Any, Any, Any, _Super],
+) -> pyfect.schema.HashMapSchema[Any, Any, Any, Any, Any, _Sub]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+T362_0_co = TypeVar("T362_0_co", covariant=True)
+T362_1_co = TypeVar("T362_1_co", covariant=True)
+T362_2_co = TypeVar("T362_2_co", covariant=True)
+T362_3_co = TypeVar("T362_3_co", covariant=True)
+T362_4_co = TypeVar("T362_4_co", covariant=True)
+T362_5_co = TypeVar("T362_5_co", covariant=True)
+
+
+class Fields362(Protocol[T362_0_co, T362_1_co, T362_2_co, T362_3_co, T362_4_co, T362_5_co]):
     @property
     def ast(self) -> pyfect.schema.ast.AST: ...
     @property
-    def value(self) -> pyfect.schema._schema.Codec[T361_0_co, T361_1_co, T361_2_co, T361_3_co]: ...
+    def key(self) -> pyfect.schema._schema.Codec[T362_0_co, T362_2_co, T362_4_co, T362_5_co]: ...
     @property
-    def label(self) -> str | None: ...
-    def declared(self) -> tuple[T361_0_co, T361_1_co, T361_2_co, T361_3_co]: ...
+    def value(self) -> pyfect.schema._schema.Codec[T362_1_co, T362_3_co, T362_4_co, T362_5_co]: ...
+    def declared(
+        self,
+    ) -> tuple[T362_0_co, T362_1_co, T362_2_co, T362_3_co, T362_4_co, T362_5_co]: ...
 
 
-# pyfect.schema.Refine
-
-
-def v362_0_out(x: pyfect.schema.Refine[_Sub, Any]) -> pyfect.schema.Refine[_Super, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v362_0_in(x: pyfect.schema.Refine[_Super, Any]) -> pyfect.schema.Refine[_Sub, Any]:
-    return x
-
-
-def v362_1_out(x: pyfect.schema.Refine[Any, _Sub]) -> pyfect.schema.Refine[Any, _Super]:
-    return x
-
-
-def v362_1_in(x: pyfect.schema.Refine[Any, _Super]) -> pyfect.schema.Refine[Any, _Sub]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-# pyfect.schema.ResultSchema
+# pyfect.schema.HashSetSchema
 
 
 def v363_0_out(
-    x: pyfect.schema.ResultSchema[_Sub, Any, Any, Any, Any, Any],
-) -> pyfect.schema.ResultSchema[_Super, Any, Any, Any, Any, Any]:
+    x: pyfect.schema.HashSetSchema[_Sub, Any, Any, Any],
+) -> pyfect.schema.HashSetSchema[_Super, Any, Any, Any]:
     return x
 
 
 def v363_0_in(
-    x: pyfect.schema.ResultSchema[_Super, Any, Any, Any, Any, Any],
-) -> pyfect.schema.ResultSchema[_Sub, Any, Any, Any, Any, Any]:
+    x: pyfect.schema.HashSetSchema[_Super, Any, Any, Any],
+) -> pyfect.schema.HashSetSchema[_Sub, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
 def v363_1_out(
-    x: pyfect.schema.ResultSchema[Any, _Sub, Any, Any, Any, Any],
-) -> pyfect.schema.ResultSchema[Any, _Super, Any, Any, Any, Any]:
+    x: pyfect.schema.HashSetSchema[Any, _Sub, Any, Any],
+) -> pyfect.schema.HashSetSchema[Any, _Super, Any, Any]:
     return x
 
 
 def v363_1_in(
-    x: pyfect.schema.ResultSchema[Any, _Super, Any, Any, Any, Any],
-) -> pyfect.schema.ResultSchema[Any, _Sub, Any, Any, Any, Any]:
+    x: pyfect.schema.HashSetSchema[Any, _Super, Any, Any],
+) -> pyfect.schema.HashSetSchema[Any, _Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
 def v363_2_out(
-    x: pyfect.schema.ResultSchema[Any, Any, _Sub, Any, Any, Any],
-) -> pyfect.schema.ResultSchema[Any, Any, _Super, Any, Any, Any]:
+    x: pyfect.schema.HashSetSchema[Any, Any, _Sub, Any],
+) -> pyfect.schema.HashSetSchema[Any, Any, _Super, Any]:
     return x
 
 
 def v363_2_in(
-    x: pyfect.schema.ResultSchema[Any, Any, _Super, Any, Any, Any],
-) -> pyfect.schema.ResultSchema[Any, Any, _Sub, Any, Any, Any]:
+    x: pyfect.schema.HashSetSchema[Any, Any, _Super, Any],
+) -> pyfect.schema.HashSetSchema[Any, Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
 def v363_3_out(
-    x: pyfect.schema.ResultSchema[Any, Any, Any, _Sub, Any, Any],
-) -> pyfect.schema.ResultSchema[Any, Any, Any, _Super, Any, Any]:
+    x: pyfect.schema.HashSetSchema[Any, Any, Any, _Sub],
+) -> pyfect.schema.HashSetSchema[Any, Any, Any, _Super]:
     return x
 
 
 def v363_3_in(
-    x: pyfect.schema.ResultSchema[Any, Any, Any, _Super, Any, Any],
-) -> pyfect.schema.ResultSchema[Any, Any, Any, _Sub, Any, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v363_4_out(
-    x: pyfect.schema.ResultSchema[Any, Any, Any, Any, _Sub, Any],
-) -> pyfect.schema.ResultSchema[Any, Any, Any, Any, _Super, Any]:
-    return x
-
-
-def v363_4_in(
-    x: pyfect.schema.ResultSchema[Any, Any, Any, Any, _Super, Any],
-) -> pyfect.schema.ResultSchema[Any, Any, Any, Any, _Sub, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v363_5_out(
-    x: pyfect.schema.ResultSchema[Any, Any, Any, Any, Any, _Sub],
-) -> pyfect.schema.ResultSchema[Any, Any, Any, Any, Any, _Super]:
-    return x
-
-
-def v363_5_in(
-    x: pyfect.schema.ResultSchema[Any, Any, Any, Any, Any, _Super],
-) -> pyfect.schema.ResultSchema[Any, Any, Any, Any, Any, _Sub]:
+    x: pyfect.schema.HashSetSchema[Any, Any, Any, _Super],
+) -> pyfect.schema.HashSetSchema[Any, Any, Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
@@ -12483,639 +12251,526 @@ T363_0_co = TypeVar("T363_0_co", covariant=True)
 T363_1_co = TypeVar("T363_1_co", covariant=True)
 T363_2_co = TypeVar("T363_2_co", covariant=True)
 T363_3_co = TypeVar("T363_3_co", covariant=True)
-T363_4_co = TypeVar("T363_4_co", covariant=True)
-T363_5_co = TypeVar("T363_5_co", covariant=True)
 
 
-class Fields363(Protocol[T363_0_co, T363_1_co, T363_2_co, T363_3_co, T363_4_co, T363_5_co]):
+class Fields363(Protocol[T363_0_co, T363_1_co, T363_2_co, T363_3_co]):
     @property
     def ast(self) -> pyfect.schema.ast.AST: ...
     @property
-    def success(
-        self,
-    ) -> pyfect.schema._schema.Codec[T363_0_co, T363_2_co, T363_4_co, T363_5_co]: ...
-    @property
-    def failure(
-        self,
-    ) -> pyfect.schema._schema.Codec[T363_1_co, T363_3_co, T363_4_co, T363_5_co]: ...
-    def declared(
-        self,
-    ) -> tuple[T363_0_co, T363_1_co, T363_2_co, T363_3_co, T363_4_co, T363_5_co]: ...
+    def value(self) -> pyfect.schema._schema.Codec[T363_0_co, T363_1_co, T363_2_co, T363_3_co]: ...
+    def declared(self) -> tuple[T363_0_co, T363_1_co, T363_2_co, T363_3_co]: ...
 
 
-# pyfect.schema.StandardSchemaV1
+# pyfect.schema.LiteralSchema
 
 
 def v364_0_out(
-    x: pyfect.schema.StandardSchemaV1[_Sub, Any, Any, Any],
-) -> pyfect.schema.StandardSchemaV1[_Super, Any, Any, Any]:
+    x: pyfect.schema.LiteralSchema[Never],
+) -> pyfect.schema.LiteralSchema[pyfect.schema._literals.LiteralValue]:
     return x
 
 
 def v364_0_in(
-    x: pyfect.schema.StandardSchemaV1[_Super, Any, Any, Any],
-) -> pyfect.schema.StandardSchemaV1[_Sub, Any, Any, Any]:
+    x: pyfect.schema.LiteralSchema[pyfect.schema._literals.LiteralValue],
+) -> pyfect.schema.LiteralSchema[Never]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v364_1_out(
-    x: pyfect.schema.StandardSchemaV1[Any, _Sub, Any, Any],
-) -> pyfect.schema.StandardSchemaV1[Any, _Super, Any, Any]:
-    return x
+T364_0_co = TypeVar("T364_0_co", covariant=True, bound=pyfect.schema._literals.LiteralValue)
 
 
-def v364_1_in(
-    x: pyfect.schema.StandardSchemaV1[Any, _Super, Any, Any],
-) -> pyfect.schema.StandardSchemaV1[Any, _Sub, Any, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v364_2_out(
-    x: pyfect.schema.StandardSchemaV1[Any, Any, _Sub, Any],
-) -> pyfect.schema.StandardSchemaV1[Any, Any, _Super, Any]:
-    return x
-
-
-def v364_2_in(
-    x: pyfect.schema.StandardSchemaV1[Any, Any, _Super, Any],
-) -> pyfect.schema.StandardSchemaV1[Any, Any, _Sub, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v364_3_out(
-    x: pyfect.schema.StandardSchemaV1[Any, Any, Any, _Sub],
-) -> pyfect.schema.StandardSchemaV1[Any, Any, Any, _Super]:
-    return x
-
-
-def v364_3_in(
-    x: pyfect.schema.StandardSchemaV1[Any, Any, Any, _Super],
-) -> pyfect.schema.StandardSchemaV1[Any, Any, Any, _Sub]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-T364_0_co = TypeVar("T364_0_co", covariant=True)
-T364_1_co = TypeVar("T364_1_co", covariant=True)
-T364_2_co = TypeVar("T364_2_co", covariant=True)
-T364_3_co = TypeVar("T364_3_co", covariant=True)
-
-
-class Fields364(Protocol[T364_0_co, T364_1_co, T364_2_co, T364_3_co]):
-    def declared(self) -> tuple[T364_0_co, T364_1_co, T364_2_co, T364_3_co]: ...
-
-
-# pyfect.schema.StructSchema
-
-
-def v365_0_out(
-    x: pyfect.schema.StructSchema[Never, Any, Any],
-) -> pyfect.schema.StructSchema[collections.abc.Mapping[str, object], Any, Any]:
-    return x
-
-
-def v365_0_in(
-    x: pyfect.schema.StructSchema[collections.abc.Mapping[str, object], Any, Any],
-) -> pyfect.schema.StructSchema[Never, Any, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v365_1_out(
-    x: pyfect.schema.StructSchema[Any, _Sub, Any],
-) -> pyfect.schema.StructSchema[Any, _Super, Any]:
-    return x
-
-
-def v365_1_in(
-    x: pyfect.schema.StructSchema[Any, _Super, Any],
-) -> pyfect.schema.StructSchema[Any, _Sub, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v365_2_out(
-    x: pyfect.schema.StructSchema[Any, Any, _Sub],
-) -> pyfect.schema.StructSchema[Any, Any, _Super]:
-    return x
-
-
-def v365_2_in(
-    x: pyfect.schema.StructSchema[Any, Any, _Super],
-) -> pyfect.schema.StructSchema[Any, Any, _Sub]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-T365_0_co = TypeVar("T365_0_co", covariant=True, bound=collections.abc.Mapping[str, object])
-T365_1_co = TypeVar("T365_1_co", covariant=True)
-T365_2_co = TypeVar("T365_2_co", covariant=True)
-
-
-class Fields365(Protocol[T365_0_co, T365_1_co, T365_2_co]):
+class Fields364(Protocol[T364_0_co]):
     @property
     def ast(self) -> pyfect.schema.ast.AST: ...
     @property
-    def fields(
-        self,
-    ) -> collections.abc.Mapping[
-        str, pyfect.schema._schema.Bottom[object, object, T365_1_co, T365_2_co]
-    ]: ...
-    def declared(self) -> tuple[T365_0_co, T365_1_co, T365_2_co]: ...
+    def literal(self) -> T364_0_co: ...
+    def declared(self) -> tuple[T364_0_co]: ...
 
 
-# pyfect.schema.StructWithRestSchema
+# pyfect.schema.LiteralsSchema
+
+
+def v365_0_out(
+    x: pyfect.schema.LiteralsSchema[Never],
+) -> pyfect.schema.LiteralsSchema[pyfect.schema._literals.LiteralValue]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v365_0_in(
+    x: pyfect.schema.LiteralsSchema[pyfect.schema._literals.LiteralValue],
+) -> pyfect.schema.LiteralsSchema[Never]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+# pyfect.schema.MapSchema
 
 
 def v366_0_out(
-    x: pyfect.schema.StructWithRestSchema[Never, Any, Any],
-) -> pyfect.schema.StructWithRestSchema[collections.abc.Mapping[str, object], Any, Any]:
-    return x
+    x: pyfect.schema.MapSchema[_Sub, Any, Any, Any, Any, Any],
+) -> pyfect.schema.MapSchema[_Super, Any, Any, Any, Any, Any]:
+    return x  # pyright: ignore[reportReturnType]
 
 
 def v366_0_in(
-    x: pyfect.schema.StructWithRestSchema[collections.abc.Mapping[str, object], Any, Any],
-) -> pyfect.schema.StructWithRestSchema[Never, Any, Any]:
+    x: pyfect.schema.MapSchema[_Super, Any, Any, Any, Any, Any],
+) -> pyfect.schema.MapSchema[_Sub, Any, Any, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
 def v366_1_out(
-    x: pyfect.schema.StructWithRestSchema[Any, _Sub, Any],
-) -> pyfect.schema.StructWithRestSchema[Any, _Super, Any]:
-    return x
+    x: pyfect.schema.MapSchema[Any, _Sub, Any, Any, Any, Any],
+) -> pyfect.schema.MapSchema[Any, _Super, Any, Any, Any, Any]:
+    return x  # pyright: ignore[reportReturnType]
 
 
 def v366_1_in(
-    x: pyfect.schema.StructWithRestSchema[Any, _Super, Any],
-) -> pyfect.schema.StructWithRestSchema[Any, _Sub, Any]:
+    x: pyfect.schema.MapSchema[Any, _Super, Any, Any, Any, Any],
+) -> pyfect.schema.MapSchema[Any, _Sub, Any, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
 def v366_2_out(
-    x: pyfect.schema.StructWithRestSchema[Any, Any, _Sub],
-) -> pyfect.schema.StructWithRestSchema[Any, Any, _Super]:
-    return x
-
-
-def v366_2_in(
-    x: pyfect.schema.StructWithRestSchema[Any, Any, _Super],
-) -> pyfect.schema.StructWithRestSchema[Any, Any, _Sub]:
+    x: pyfect.schema.MapSchema[Any, Any, _Sub, Any, Any, Any],
+) -> pyfect.schema.MapSchema[Any, Any, _Super, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T366_0_co = TypeVar("T366_0_co", covariant=True, bound=collections.abc.Mapping[str, object])
-T366_1_co = TypeVar("T366_1_co", covariant=True)
-T366_2_co = TypeVar("T366_2_co", covariant=True)
+def v366_2_in(
+    x: pyfect.schema.MapSchema[Any, Any, _Super, Any, Any, Any],
+) -> pyfect.schema.MapSchema[Any, Any, _Sub, Any, Any, Any]:
+    return x  # pyright: ignore[reportReturnType]
 
 
-class Fields366(Protocol[T366_0_co, T366_1_co, T366_2_co]):
-    @property
-    def ast(self) -> pyfect.schema.ast.AST: ...
-    @property
-    def schema(self) -> pyfect.schema._struct.StructSchema[T366_0_co, T366_1_co, T366_2_co]: ...
-    @property
-    def records(
-        self,
-    ) -> tuple[
-        pyfect.schema._record.RecordSchema[
-            typing.Any, typing.Any, typing.Any, typing.Any, T366_1_co, T366_2_co
-        ],
-        ...,
-    ]: ...
-    def declared(self) -> tuple[T366_0_co, T366_1_co, T366_2_co]: ...
-
-
-# pyfect.schema.TaggedStructSchema
-
-
-def v367_0_out(
-    x: pyfect.schema.TaggedStructSchema[Never, Any, Any],
-) -> pyfect.schema.TaggedStructSchema[collections.abc.Mapping[str, object], Any, Any]:
+def v366_3_out(
+    x: pyfect.schema.MapSchema[Any, Any, Any, _Sub, Any, Any],
+) -> pyfect.schema.MapSchema[Any, Any, Any, _Super, Any, Any]:
     return x
 
 
+def v366_3_in(
+    x: pyfect.schema.MapSchema[Any, Any, Any, _Super, Any, Any],
+) -> pyfect.schema.MapSchema[Any, Any, Any, _Sub, Any, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v366_4_out(
+    x: pyfect.schema.MapSchema[Any, Any, Any, Any, _Sub, Any],
+) -> pyfect.schema.MapSchema[Any, Any, Any, Any, _Super, Any]:
+    return x
+
+
+def v366_4_in(
+    x: pyfect.schema.MapSchema[Any, Any, Any, Any, _Super, Any],
+) -> pyfect.schema.MapSchema[Any, Any, Any, Any, _Sub, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v366_5_out(
+    x: pyfect.schema.MapSchema[Any, Any, Any, Any, Any, _Sub],
+) -> pyfect.schema.MapSchema[Any, Any, Any, Any, Any, _Super]:
+    return x
+
+
+def v366_5_in(
+    x: pyfect.schema.MapSchema[Any, Any, Any, Any, Any, _Super],
+) -> pyfect.schema.MapSchema[Any, Any, Any, Any, Any, _Sub]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+T366_3_co = TypeVar("T366_3_co", covariant=True)
+T366_4_co = TypeVar("T366_4_co", covariant=True)
+T366_5_co = TypeVar("T366_5_co", covariant=True)
+
+
+class Fields366(Protocol[T366_3_co, T366_4_co, T366_5_co]):
+    @property
+    def ast(self) -> pyfect.schema.ast.AST: ...
+    @property
+    def key(self) -> pyfect.schema._schema.Codec[Any, Any, T366_4_co, T366_5_co]: ...
+    @property
+    def value(self) -> pyfect.schema._schema.Codec[Any, T366_3_co, T366_4_co, T366_5_co]: ...
+    def declared(self) -> tuple[T366_3_co, T366_4_co, T366_5_co]: ...
+
+
+# pyfect.schema.MiddlewareDecoding
+
+
+def v367_0_out(
+    x: pyfect.schema.MiddlewareDecoding[_Sub, Any, Any],
+) -> pyfect.schema.MiddlewareDecoding[_Super, Any, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
 def v367_0_in(
-    x: pyfect.schema.TaggedStructSchema[collections.abc.Mapping[str, object], Any, Any],
-) -> pyfect.schema.TaggedStructSchema[Never, Any, Any]:
+    x: pyfect.schema.MiddlewareDecoding[_Super, Any, Any],
+) -> pyfect.schema.MiddlewareDecoding[_Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
 def v367_1_out(
-    x: pyfect.schema.TaggedStructSchema[Any, _Sub, Any],
-) -> pyfect.schema.TaggedStructSchema[Any, _Super, Any]:
-    return x
-
-
-def v367_1_in(
-    x: pyfect.schema.TaggedStructSchema[Any, _Super, Any],
-) -> pyfect.schema.TaggedStructSchema[Any, _Sub, Any]:
+    x: pyfect.schema.MiddlewareDecoding[Any, _Sub, Any],
+) -> pyfect.schema.MiddlewareDecoding[Any, _Super, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
+def v367_1_in(
+    x: pyfect.schema.MiddlewareDecoding[Any, _Super, Any],
+) -> pyfect.schema.MiddlewareDecoding[Any, _Sub, Any]:
+    return x
+
+
 def v367_2_out(
-    x: pyfect.schema.TaggedStructSchema[Any, Any, _Sub],
-) -> pyfect.schema.TaggedStructSchema[Any, Any, _Super]:
+    x: pyfect.schema.MiddlewareDecoding[Any, Any, _Sub],
+) -> pyfect.schema.MiddlewareDecoding[Any, Any, _Super]:
     return x
 
 
 def v367_2_in(
-    x: pyfect.schema.TaggedStructSchema[Any, Any, _Super],
-) -> pyfect.schema.TaggedStructSchema[Any, Any, _Sub]:
+    x: pyfect.schema.MiddlewareDecoding[Any, Any, _Super],
+) -> pyfect.schema.MiddlewareDecoding[Any, Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T367_0_co = TypeVar("T367_0_co", covariant=True, bound=collections.abc.Mapping[str, object])
-T367_1_co = TypeVar("T367_1_co", covariant=True)
+T367_1_contra = TypeVar("T367_1_contra", contravariant=True)
 T367_2_co = TypeVar("T367_2_co", covariant=True)
 
 
-class Fields367(Protocol[T367_0_co, T367_1_co, T367_2_co]):
-    @property
-    def ast(self) -> pyfect.schema.ast.AST: ...
-    @property
-    def fields(
-        self,
-    ) -> collections.abc.Mapping[str, pyfect.schema._schema.Bottom[object, object, Any, Any]]: ...
-    @property
-    def tag(self) -> pyfect.schema.ast.LiteralValue: ...
-    def declared(self) -> tuple[T367_0_co, T367_1_co, T367_2_co]: ...
+class Fields367(Protocol[T367_1_contra, T367_2_co]):
+    def declared(self, _0: T367_1_contra) -> tuple[T367_2_co]: ...
 
 
-# pyfect.schema.TaggedUnionSchema
+# pyfect.schema.MiddlewareEncoding
 
 
 def v368_0_out(
-    x: pyfect.schema.TaggedUnionSchema[_Sub, Any, Any, Any],
-) -> pyfect.schema.TaggedUnionSchema[_Super, Any, Any, Any]:
-    return x
+    x: pyfect.schema.MiddlewareEncoding[_Sub, Any, Any],
+) -> pyfect.schema.MiddlewareEncoding[_Super, Any, Any]:
+    return x  # pyright: ignore[reportReturnType]
 
 
 def v368_0_in(
-    x: pyfect.schema.TaggedUnionSchema[_Super, Any, Any, Any],
-) -> pyfect.schema.TaggedUnionSchema[_Sub, Any, Any, Any]:
+    x: pyfect.schema.MiddlewareEncoding[_Super, Any, Any],
+) -> pyfect.schema.MiddlewareEncoding[_Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
 def v368_1_out(
-    x: pyfect.schema.TaggedUnionSchema[Any, _Sub, Any, Any],
-) -> pyfect.schema.TaggedUnionSchema[Any, _Super, Any, Any]:
-    return x
-
-
-def v368_1_in(
-    x: pyfect.schema.TaggedUnionSchema[Any, _Super, Any, Any],
-) -> pyfect.schema.TaggedUnionSchema[Any, _Sub, Any, Any]:
+    x: pyfect.schema.MiddlewareEncoding[Any, _Sub, Any],
+) -> pyfect.schema.MiddlewareEncoding[Any, _Super, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
+def v368_1_in(
+    x: pyfect.schema.MiddlewareEncoding[Any, _Super, Any],
+) -> pyfect.schema.MiddlewareEncoding[Any, _Sub, Any]:
+    return x
+
+
 def v368_2_out(
-    x: pyfect.schema.TaggedUnionSchema[Any, Any, _Sub, Any],
-) -> pyfect.schema.TaggedUnionSchema[Any, Any, _Super, Any]:
+    x: pyfect.schema.MiddlewareEncoding[Any, Any, _Sub],
+) -> pyfect.schema.MiddlewareEncoding[Any, Any, _Super]:
     return x
 
 
 def v368_2_in(
-    x: pyfect.schema.TaggedUnionSchema[Any, Any, _Super, Any],
-) -> pyfect.schema.TaggedUnionSchema[Any, Any, _Sub, Any]:
+    x: pyfect.schema.MiddlewareEncoding[Any, Any, _Super],
+) -> pyfect.schema.MiddlewareEncoding[Any, Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v368_3_out(
-    x: pyfect.schema.TaggedUnionSchema[Any, Any, Any, _Sub],
-) -> pyfect.schema.TaggedUnionSchema[Any, Any, Any, _Super]:
-    return x
-
-
-def v368_3_in(
-    x: pyfect.schema.TaggedUnionSchema[Any, Any, Any, _Super],
-) -> pyfect.schema.TaggedUnionSchema[Any, Any, Any, _Sub]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-T368_0_co = TypeVar("T368_0_co", covariant=True)
-T368_1_co = TypeVar("T368_1_co", covariant=True)
+T368_1_contra = TypeVar("T368_1_contra", contravariant=True)
 T368_2_co = TypeVar("T368_2_co", covariant=True)
-T368_3_co = TypeVar("T368_3_co", covariant=True)
 
 
-class Fields368(Protocol[T368_0_co, T368_1_co, T368_2_co, T368_3_co]):
-    @property
-    def ast(self) -> pyfect.schema.ast.AST: ...
-    @property
-    def members(self) -> tuple[pyfect.schema._schema.Codec[Any, Any, Any, Any], ...]: ...
-    @property
-    def tag(self) -> str: ...
-    @property
-    def discriminants(self) -> tuple[pyfect.schema.ast.LiteralValue, ...]: ...
-    @property
-    def cases(
-        self,
-    ) -> collections.abc.Mapping[
-        pyfect.schema.ast.LiteralValue,
-        pyfect.schema._schema.Codec[T368_0_co, T368_1_co, T368_2_co, T368_3_co],
-    ]: ...
-    @property
-    def guards(
-        self,
-    ) -> collections.abc.Mapping[
-        pyfect.schema.ast.LiteralValue,
-        collections.abc.Callable[[object], typing.TypeGuard[T368_0_co]],
-    ]: ...
-    def declared(self) -> tuple[T368_0_co, T368_1_co, T368_2_co, T368_3_co]: ...
+class Fields368(Protocol[T368_1_contra, T368_2_co]):
+    def declared(self, _0: T368_1_contra) -> tuple[T368_2_co]: ...
 
 
-# pyfect.schema.TemplateLiteralParserSchema
+# pyfect.schema.OptionSchema
 
 
 def v369_0_out(
-    x: pyfect.schema.TemplateLiteralParserSchema[_Sub, Any],
-) -> pyfect.schema.TemplateLiteralParserSchema[_Super, Any]:
+    x: pyfect.schema.OptionSchema[_Sub, Any, Any, Any],
+) -> pyfect.schema.OptionSchema[_Super, Any, Any, Any]:
     return x
 
 
 def v369_0_in(
-    x: pyfect.schema.TemplateLiteralParserSchema[_Super, Any],
-) -> pyfect.schema.TemplateLiteralParserSchema[_Sub, Any]:
+    x: pyfect.schema.OptionSchema[_Super, Any, Any, Any],
+) -> pyfect.schema.OptionSchema[_Sub, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
 def v369_1_out(
-    x: pyfect.schema.TemplateLiteralParserSchema[Any, _Sub],
-) -> pyfect.schema.TemplateLiteralParserSchema[Any, _Super]:
+    x: pyfect.schema.OptionSchema[Any, _Sub, Any, Any],
+) -> pyfect.schema.OptionSchema[Any, _Super, Any, Any]:
     return x
 
 
 def v369_1_in(
-    x: pyfect.schema.TemplateLiteralParserSchema[Any, _Super],
-) -> pyfect.schema.TemplateLiteralParserSchema[Any, _Sub]:
+    x: pyfect.schema.OptionSchema[Any, _Super, Any, Any],
+) -> pyfect.schema.OptionSchema[Any, _Sub, Any, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v369_2_out(
+    x: pyfect.schema.OptionSchema[Any, Any, _Sub, Any],
+) -> pyfect.schema.OptionSchema[Any, Any, _Super, Any]:
+    return x
+
+
+def v369_2_in(
+    x: pyfect.schema.OptionSchema[Any, Any, _Super, Any],
+) -> pyfect.schema.OptionSchema[Any, Any, _Sub, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v369_3_out(
+    x: pyfect.schema.OptionSchema[Any, Any, Any, _Sub],
+) -> pyfect.schema.OptionSchema[Any, Any, Any, _Super]:
+    return x
+
+
+def v369_3_in(
+    x: pyfect.schema.OptionSchema[Any, Any, Any, _Super],
+) -> pyfect.schema.OptionSchema[Any, Any, Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
 T369_0_co = TypeVar("T369_0_co", covariant=True)
 T369_1_co = TypeVar("T369_1_co", covariant=True)
+T369_2_co = TypeVar("T369_2_co", covariant=True)
+T369_3_co = TypeVar("T369_3_co", covariant=True)
 
 
-class Fields369(Protocol[T369_0_co, T369_1_co]):
+class Fields369(Protocol[T369_0_co, T369_1_co, T369_2_co, T369_3_co]):
     @property
     def ast(self) -> pyfect.schema.ast.AST: ...
     @property
-    def parts(
-        self,
-    ) -> tuple[
-        pyfect.schema._schema.Codec[typing.Any, typing.Any, T369_0_co, T369_1_co]
-        | pyfect.schema._template_literal.LiteralPart,
-        ...,
-    ]: ...
-    def declared(self) -> tuple[T369_0_co, T369_1_co]: ...
+    def value(self) -> pyfect.schema._schema.Codec[T369_0_co, T369_1_co, T369_2_co, T369_3_co]: ...
+    def declared(self) -> tuple[T369_0_co, T369_1_co, T369_2_co, T369_3_co]: ...
 
 
-# pyfect.schema.TupleSchema
+# pyfect.schema.OptionalKey
 
 
 def v370_0_out(
-    x: pyfect.schema.TupleSchema[Never, Any, Any, Any],
-) -> pyfect.schema.TupleSchema[tuple[object, ...], Any, Any, Any]:
+    x: pyfect.schema.OptionalKey[_Sub, Any, Any, Any],
+) -> pyfect.schema.OptionalKey[_Super, Any, Any, Any]:
     return x
 
 
 def v370_0_in(
-    x: pyfect.schema.TupleSchema[tuple[object, ...], Any, Any, Any],
-) -> pyfect.schema.TupleSchema[Never, Any, Any, Any]:
+    x: pyfect.schema.OptionalKey[_Super, Any, Any, Any],
+) -> pyfect.schema.OptionalKey[_Sub, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
 def v370_1_out(
-    x: pyfect.schema.TupleSchema[Any, Never, Any, Any],
-) -> pyfect.schema.TupleSchema[Any, tuple[object, ...], Any, Any]:
+    x: pyfect.schema.OptionalKey[Any, _Sub, Any, Any],
+) -> pyfect.schema.OptionalKey[Any, _Super, Any, Any]:
     return x
 
 
 def v370_1_in(
-    x: pyfect.schema.TupleSchema[Any, tuple[object, ...], Any, Any],
-) -> pyfect.schema.TupleSchema[Any, Never, Any, Any]:
+    x: pyfect.schema.OptionalKey[Any, _Super, Any, Any],
+) -> pyfect.schema.OptionalKey[Any, _Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
 def v370_2_out(
-    x: pyfect.schema.TupleSchema[Any, Any, _Sub, Any],
-) -> pyfect.schema.TupleSchema[Any, Any, _Super, Any]:
+    x: pyfect.schema.OptionalKey[Any, Any, _Sub, Any],
+) -> pyfect.schema.OptionalKey[Any, Any, _Super, Any]:
     return x
 
 
 def v370_2_in(
-    x: pyfect.schema.TupleSchema[Any, Any, _Super, Any],
-) -> pyfect.schema.TupleSchema[Any, Any, _Sub, Any]:
+    x: pyfect.schema.OptionalKey[Any, Any, _Super, Any],
+) -> pyfect.schema.OptionalKey[Any, Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
 def v370_3_out(
-    x: pyfect.schema.TupleSchema[Any, Any, Any, _Sub],
-) -> pyfect.schema.TupleSchema[Any, Any, Any, _Super]:
+    x: pyfect.schema.OptionalKey[Any, Any, Any, _Sub],
+) -> pyfect.schema.OptionalKey[Any, Any, Any, _Super]:
     return x
 
 
 def v370_3_in(
-    x: pyfect.schema.TupleSchema[Any, Any, Any, _Super],
-) -> pyfect.schema.TupleSchema[Any, Any, Any, _Sub]:
+    x: pyfect.schema.OptionalKey[Any, Any, Any, _Super],
+) -> pyfect.schema.OptionalKey[Any, Any, Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T370_0_co = TypeVar("T370_0_co", covariant=True, bound=tuple[object, ...])
-T370_1_co = TypeVar("T370_1_co", covariant=True, bound=tuple[object, ...])
+T370_0_co = TypeVar("T370_0_co", covariant=True)
+T370_1_co = TypeVar("T370_1_co", covariant=True)
 T370_2_co = TypeVar("T370_2_co", covariant=True)
 T370_3_co = TypeVar("T370_3_co", covariant=True)
 
 
 class Fields370(Protocol[T370_0_co, T370_1_co, T370_2_co, T370_3_co]):
     @property
-    def ast(self) -> pyfect.schema.ast.AST: ...
-    @property
-    def elements(self) -> tuple[pyfect.schema._arrays.TupleElement[T370_2_co, T370_3_co], ...]: ...
+    def schema(self) -> pyfect.schema._schema.Codec[T370_0_co, T370_1_co, T370_2_co, T370_3_co]: ...
     def declared(self) -> tuple[T370_0_co, T370_1_co, T370_2_co, T370_3_co]: ...
 
 
-# pyfect.schema.TupleWithRestSchema
+# pyfect.schema.Parser
 
 
-def v371_0_out(
-    x: pyfect.schema.TupleWithRestSchema[_Sub, Any, Any, Any],
-) -> pyfect.schema.TupleWithRestSchema[_Super, Any, Any, Any]:
-    return x
-
-
-def v371_0_in(
-    x: pyfect.schema.TupleWithRestSchema[_Super, Any, Any, Any],
-) -> pyfect.schema.TupleWithRestSchema[_Sub, Any, Any, Any]:
+def v371_0_out(x: pyfect.schema.Parser[_Sub, Any]) -> pyfect.schema.Parser[_Super, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v371_1_out(
-    x: pyfect.schema.TupleWithRestSchema[Any, _Sub, Any, Any],
-) -> pyfect.schema.TupleWithRestSchema[Any, _Super, Any, Any]:
+def v371_0_in(x: pyfect.schema.Parser[_Super, Any]) -> pyfect.schema.Parser[_Sub, Any]:
     return x
 
 
-def v371_1_in(
-    x: pyfect.schema.TupleWithRestSchema[Any, _Super, Any, Any],
-) -> pyfect.schema.TupleWithRestSchema[Any, _Sub, Any, Any]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-def v371_2_out(
-    x: pyfect.schema.TupleWithRestSchema[Any, Any, _Sub, Any],
-) -> pyfect.schema.TupleWithRestSchema[Any, Any, _Super, Any]:
+def v371_1_out(x: pyfect.schema.Parser[Any, _Sub]) -> pyfect.schema.Parser[Any, _Super]:
     return x
 
 
-def v371_2_in(
-    x: pyfect.schema.TupleWithRestSchema[Any, Any, _Super, Any],
-) -> pyfect.schema.TupleWithRestSchema[Any, Any, _Sub, Any]:
+def v371_1_in(x: pyfect.schema.Parser[Any, _Super]) -> pyfect.schema.Parser[Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v371_3_out(
-    x: pyfect.schema.TupleWithRestSchema[Any, Any, Any, _Sub],
-) -> pyfect.schema.TupleWithRestSchema[Any, Any, Any, _Super]:
-    return x
-
-
-def v371_3_in(
-    x: pyfect.schema.TupleWithRestSchema[Any, Any, Any, _Super],
-) -> pyfect.schema.TupleWithRestSchema[Any, Any, Any, _Sub]:
-    return x  # pyright: ignore[reportReturnType]
-
-
-T371_0_co = TypeVar("T371_0_co", covariant=True)
-T371_1_co = TypeVar("T371_1_co", covariant=True)
-T371_2_co = TypeVar("T371_2_co", covariant=True)
-T371_3_co = TypeVar("T371_3_co", covariant=True)
-
-
-class Fields371(Protocol[T371_0_co, T371_1_co, T371_2_co, T371_3_co]):
-    @property
-    def ast(self) -> pyfect.schema.ast.AST: ...
-    @property
-    def schema(
-        self,
-    ) -> pyfect.schema._arrays.TupleSchema[typing.Any, typing.Any, T371_2_co, T371_3_co]: ...
-    @property
-    def rest(
-        self,
-    ) -> tuple[pyfect.schema._schema.Codec[object, object, T371_2_co, T371_3_co], ...]: ...
-    def declared(self) -> tuple[T371_0_co, T371_1_co, T371_2_co, T371_3_co]: ...
-
-
-# pyfect.schema.UnionSchema
+# pyfect.schema.RecordSchema
 
 
 def v372_0_out(
-    x: pyfect.schema.UnionSchema[_Sub, Any, Any, Any],
-) -> pyfect.schema.UnionSchema[_Super, Any, Any, Any]:
-    return x
+    x: pyfect.schema.RecordSchema[_Sub, Any, Any, Any, Any, Any],
+) -> pyfect.schema.RecordSchema[_Super, Any, Any, Any, Any, Any]:
+    return x  # pyright: ignore[reportReturnType]
 
 
 def v372_0_in(
-    x: pyfect.schema.UnionSchema[_Super, Any, Any, Any],
-) -> pyfect.schema.UnionSchema[_Sub, Any, Any, Any]:
+    x: pyfect.schema.RecordSchema[_Super, Any, Any, Any, Any, Any],
+) -> pyfect.schema.RecordSchema[_Sub, Any, Any, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
 def v372_1_out(
-    x: pyfect.schema.UnionSchema[Any, _Sub, Any, Any],
-) -> pyfect.schema.UnionSchema[Any, _Super, Any, Any]:
-    return x
+    x: pyfect.schema.RecordSchema[Any, _Sub, Any, Any, Any, Any],
+) -> pyfect.schema.RecordSchema[Any, _Super, Any, Any, Any, Any]:
+    return x  # pyright: ignore[reportReturnType]
 
 
 def v372_1_in(
-    x: pyfect.schema.UnionSchema[Any, _Super, Any, Any],
-) -> pyfect.schema.UnionSchema[Any, _Sub, Any, Any]:
+    x: pyfect.schema.RecordSchema[Any, _Super, Any, Any, Any, Any],
+) -> pyfect.schema.RecordSchema[Any, _Sub, Any, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
 def v372_2_out(
-    x: pyfect.schema.UnionSchema[Any, Any, _Sub, Any],
-) -> pyfect.schema.UnionSchema[Any, Any, _Super, Any]:
-    return x
+    x: pyfect.schema.RecordSchema[Any, Any, _Sub, Any, Any, Any],
+) -> pyfect.schema.RecordSchema[Any, Any, _Super, Any, Any, Any]:
+    return x  # pyright: ignore[reportReturnType]
 
 
 def v372_2_in(
-    x: pyfect.schema.UnionSchema[Any, Any, _Super, Any],
-) -> pyfect.schema.UnionSchema[Any, Any, _Sub, Any]:
+    x: pyfect.schema.RecordSchema[Any, Any, _Super, Any, Any, Any],
+) -> pyfect.schema.RecordSchema[Any, Any, _Sub, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
 def v372_3_out(
-    x: pyfect.schema.UnionSchema[Any, Any, Any, _Sub],
-) -> pyfect.schema.UnionSchema[Any, Any, Any, _Super]:
+    x: pyfect.schema.RecordSchema[Any, Any, Any, _Sub, Any, Any],
+) -> pyfect.schema.RecordSchema[Any, Any, Any, _Super, Any, Any]:
     return x
 
 
 def v372_3_in(
-    x: pyfect.schema.UnionSchema[Any, Any, Any, _Super],
-) -> pyfect.schema.UnionSchema[Any, Any, Any, _Sub]:
+    x: pyfect.schema.RecordSchema[Any, Any, Any, _Super, Any, Any],
+) -> pyfect.schema.RecordSchema[Any, Any, Any, _Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T372_0_co = TypeVar("T372_0_co", covariant=True)
-T372_1_co = TypeVar("T372_1_co", covariant=True)
-T372_2_co = TypeVar("T372_2_co", covariant=True)
+def v372_4_out(
+    x: pyfect.schema.RecordSchema[Any, Any, Any, Any, _Sub, Any],
+) -> pyfect.schema.RecordSchema[Any, Any, Any, Any, _Super, Any]:
+    return x
+
+
+def v372_4_in(
+    x: pyfect.schema.RecordSchema[Any, Any, Any, Any, _Super, Any],
+) -> pyfect.schema.RecordSchema[Any, Any, Any, Any, _Sub, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v372_5_out(
+    x: pyfect.schema.RecordSchema[Any, Any, Any, Any, Any, _Sub],
+) -> pyfect.schema.RecordSchema[Any, Any, Any, Any, Any, _Super]:
+    return x
+
+
+def v372_5_in(
+    x: pyfect.schema.RecordSchema[Any, Any, Any, Any, Any, _Super],
+) -> pyfect.schema.RecordSchema[Any, Any, Any, Any, Any, _Sub]:
+    return x  # pyright: ignore[reportReturnType]
+
+
 T372_3_co = TypeVar("T372_3_co", covariant=True)
+T372_4_co = TypeVar("T372_4_co", covariant=True)
+T372_5_co = TypeVar("T372_5_co", covariant=True)
 
 
-class Fields372(Protocol[T372_0_co, T372_1_co, T372_2_co, T372_3_co]):
+class Fields372(Protocol[T372_3_co, T372_4_co, T372_5_co]):
     @property
     def ast(self) -> pyfect.schema.ast.AST: ...
     @property
-    def members(
-        self,
-    ) -> tuple[pyfect.schema._schema.Codec[T372_0_co, T372_1_co, T372_2_co, T372_3_co], ...]: ...
-    def declared(self) -> tuple[T372_0_co, T372_1_co, T372_2_co, T372_3_co]: ...
+    def key(self) -> pyfect.schema._schema.Codec[Any, Any, T372_4_co, T372_5_co]: ...
+    @property
+    def value(self) -> pyfect.schema._schema.Codec[Any, T372_3_co, T372_4_co, T372_5_co]: ...
+    def declared(self) -> tuple[T372_3_co, T372_4_co, T372_5_co]: ...
 
 
-# pyfect.schema.WithConstructorDefault
+# pyfect.schema.RedactedSchema
 
 
 def v373_0_out(
-    x: pyfect.schema.WithConstructorDefault[_Sub, Any, Any, Any],
-) -> pyfect.schema.WithConstructorDefault[_Super, Any, Any, Any]:
+    x: pyfect.schema.RedactedSchema[_Sub, Any, Any, Any],
+) -> pyfect.schema.RedactedSchema[_Super, Any, Any, Any]:
     return x
 
 
 def v373_0_in(
-    x: pyfect.schema.WithConstructorDefault[_Super, Any, Any, Any],
-) -> pyfect.schema.WithConstructorDefault[_Sub, Any, Any, Any]:
+    x: pyfect.schema.RedactedSchema[_Super, Any, Any, Any],
+) -> pyfect.schema.RedactedSchema[_Sub, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
 def v373_1_out(
-    x: pyfect.schema.WithConstructorDefault[Any, _Sub, Any, Any],
-) -> pyfect.schema.WithConstructorDefault[Any, _Super, Any, Any]:
+    x: pyfect.schema.RedactedSchema[Any, _Sub, Any, Any],
+) -> pyfect.schema.RedactedSchema[Any, _Super, Any, Any]:
     return x
 
 
 def v373_1_in(
-    x: pyfect.schema.WithConstructorDefault[Any, _Super, Any, Any],
-) -> pyfect.schema.WithConstructorDefault[Any, _Sub, Any, Any]:
+    x: pyfect.schema.RedactedSchema[Any, _Super, Any, Any],
+) -> pyfect.schema.RedactedSchema[Any, _Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
 def v373_2_out(
-    x: pyfect.schema.WithConstructorDefault[Any, Any, _Sub, Any],
-) -> pyfect.schema.WithConstructorDefault[Any, Any, _Super, Any]:
+    x: pyfect.schema.RedactedSchema[Any, Any, _Sub, Any],
+) -> pyfect.schema.RedactedSchema[Any, Any, _Super, Any]:
     return x
 
 
 def v373_2_in(
-    x: pyfect.schema.WithConstructorDefault[Any, Any, _Super, Any],
-) -> pyfect.schema.WithConstructorDefault[Any, Any, _Sub, Any]:
+    x: pyfect.schema.RedactedSchema[Any, Any, _Super, Any],
+) -> pyfect.schema.RedactedSchema[Any, Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
 def v373_3_out(
-    x: pyfect.schema.WithConstructorDefault[Any, Any, Any, _Sub],
-) -> pyfect.schema.WithConstructorDefault[Any, Any, Any, _Super]:
+    x: pyfect.schema.RedactedSchema[Any, Any, Any, _Sub],
+) -> pyfect.schema.RedactedSchema[Any, Any, Any, _Super]:
     return x
 
 
 def v373_3_in(
-    x: pyfect.schema.WithConstructorDefault[Any, Any, Any, _Super],
-) -> pyfect.schema.WithConstructorDefault[Any, Any, Any, _Sub]:
+    x: pyfect.schema.RedactedSchema[Any, Any, Any, _Super],
+) -> pyfect.schema.RedactedSchema[Any, Any, Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
@@ -13129,392 +12784,1142 @@ class Fields373(Protocol[T373_0_co, T373_1_co, T373_2_co, T373_3_co]):
     @property
     def ast(self) -> pyfect.schema.ast.AST: ...
     @property
-    def default(self) -> pyfect._core.Effect[T373_0_co, pyfect.schema.issue.Issue]: ...
+    def value(self) -> pyfect.schema._schema.Codec[T373_0_co, T373_1_co, T373_2_co, T373_3_co]: ...
+    @property
+    def label(self) -> str | None: ...
     def declared(self) -> tuple[T373_0_co, T373_1_co, T373_2_co, T373_3_co]: ...
+
+
+# pyfect.schema.Refine
+
+
+def v374_0_out(x: pyfect.schema.Refine[_Sub, Any]) -> pyfect.schema.Refine[_Super, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v374_0_in(x: pyfect.schema.Refine[_Super, Any]) -> pyfect.schema.Refine[_Sub, Any]:
+    return x
+
+
+def v374_1_out(x: pyfect.schema.Refine[Any, _Sub]) -> pyfect.schema.Refine[Any, _Super]:
+    return x
+
+
+def v374_1_in(x: pyfect.schema.Refine[Any, _Super]) -> pyfect.schema.Refine[Any, _Sub]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+# pyfect.schema.ResultSchema
+
+
+def v375_0_out(
+    x: pyfect.schema.ResultSchema[_Sub, Any, Any, Any, Any, Any],
+) -> pyfect.schema.ResultSchema[_Super, Any, Any, Any, Any, Any]:
+    return x
+
+
+def v375_0_in(
+    x: pyfect.schema.ResultSchema[_Super, Any, Any, Any, Any, Any],
+) -> pyfect.schema.ResultSchema[_Sub, Any, Any, Any, Any, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v375_1_out(
+    x: pyfect.schema.ResultSchema[Any, _Sub, Any, Any, Any, Any],
+) -> pyfect.schema.ResultSchema[Any, _Super, Any, Any, Any, Any]:
+    return x
+
+
+def v375_1_in(
+    x: pyfect.schema.ResultSchema[Any, _Super, Any, Any, Any, Any],
+) -> pyfect.schema.ResultSchema[Any, _Sub, Any, Any, Any, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v375_2_out(
+    x: pyfect.schema.ResultSchema[Any, Any, _Sub, Any, Any, Any],
+) -> pyfect.schema.ResultSchema[Any, Any, _Super, Any, Any, Any]:
+    return x
+
+
+def v375_2_in(
+    x: pyfect.schema.ResultSchema[Any, Any, _Super, Any, Any, Any],
+) -> pyfect.schema.ResultSchema[Any, Any, _Sub, Any, Any, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v375_3_out(
+    x: pyfect.schema.ResultSchema[Any, Any, Any, _Sub, Any, Any],
+) -> pyfect.schema.ResultSchema[Any, Any, Any, _Super, Any, Any]:
+    return x
+
+
+def v375_3_in(
+    x: pyfect.schema.ResultSchema[Any, Any, Any, _Super, Any, Any],
+) -> pyfect.schema.ResultSchema[Any, Any, Any, _Sub, Any, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v375_4_out(
+    x: pyfect.schema.ResultSchema[Any, Any, Any, Any, _Sub, Any],
+) -> pyfect.schema.ResultSchema[Any, Any, Any, Any, _Super, Any]:
+    return x
+
+
+def v375_4_in(
+    x: pyfect.schema.ResultSchema[Any, Any, Any, Any, _Super, Any],
+) -> pyfect.schema.ResultSchema[Any, Any, Any, Any, _Sub, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v375_5_out(
+    x: pyfect.schema.ResultSchema[Any, Any, Any, Any, Any, _Sub],
+) -> pyfect.schema.ResultSchema[Any, Any, Any, Any, Any, _Super]:
+    return x
+
+
+def v375_5_in(
+    x: pyfect.schema.ResultSchema[Any, Any, Any, Any, Any, _Super],
+) -> pyfect.schema.ResultSchema[Any, Any, Any, Any, Any, _Sub]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+T375_0_co = TypeVar("T375_0_co", covariant=True)
+T375_1_co = TypeVar("T375_1_co", covariant=True)
+T375_2_co = TypeVar("T375_2_co", covariant=True)
+T375_3_co = TypeVar("T375_3_co", covariant=True)
+T375_4_co = TypeVar("T375_4_co", covariant=True)
+T375_5_co = TypeVar("T375_5_co", covariant=True)
+
+
+class Fields375(Protocol[T375_0_co, T375_1_co, T375_2_co, T375_3_co, T375_4_co, T375_5_co]):
+    @property
+    def ast(self) -> pyfect.schema.ast.AST: ...
+    @property
+    def success(
+        self,
+    ) -> pyfect.schema._schema.Codec[T375_0_co, T375_2_co, T375_4_co, T375_5_co]: ...
+    @property
+    def failure(
+        self,
+    ) -> pyfect.schema._schema.Codec[T375_1_co, T375_3_co, T375_4_co, T375_5_co]: ...
+    def declared(
+        self,
+    ) -> tuple[T375_0_co, T375_1_co, T375_2_co, T375_3_co, T375_4_co, T375_5_co]: ...
+
+
+# pyfect.schema.StandardSchemaV1
+
+
+def v376_0_out(
+    x: pyfect.schema.StandardSchemaV1[_Sub, Any, Any, Any],
+) -> pyfect.schema.StandardSchemaV1[_Super, Any, Any, Any]:
+    return x
+
+
+def v376_0_in(
+    x: pyfect.schema.StandardSchemaV1[_Super, Any, Any, Any],
+) -> pyfect.schema.StandardSchemaV1[_Sub, Any, Any, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v376_1_out(
+    x: pyfect.schema.StandardSchemaV1[Any, _Sub, Any, Any],
+) -> pyfect.schema.StandardSchemaV1[Any, _Super, Any, Any]:
+    return x
+
+
+def v376_1_in(
+    x: pyfect.schema.StandardSchemaV1[Any, _Super, Any, Any],
+) -> pyfect.schema.StandardSchemaV1[Any, _Sub, Any, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v376_2_out(
+    x: pyfect.schema.StandardSchemaV1[Any, Any, _Sub, Any],
+) -> pyfect.schema.StandardSchemaV1[Any, Any, _Super, Any]:
+    return x
+
+
+def v376_2_in(
+    x: pyfect.schema.StandardSchemaV1[Any, Any, _Super, Any],
+) -> pyfect.schema.StandardSchemaV1[Any, Any, _Sub, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v376_3_out(
+    x: pyfect.schema.StandardSchemaV1[Any, Any, Any, _Sub],
+) -> pyfect.schema.StandardSchemaV1[Any, Any, Any, _Super]:
+    return x
+
+
+def v376_3_in(
+    x: pyfect.schema.StandardSchemaV1[Any, Any, Any, _Super],
+) -> pyfect.schema.StandardSchemaV1[Any, Any, Any, _Sub]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+T376_0_co = TypeVar("T376_0_co", covariant=True)
+T376_1_co = TypeVar("T376_1_co", covariant=True)
+T376_2_co = TypeVar("T376_2_co", covariant=True)
+T376_3_co = TypeVar("T376_3_co", covariant=True)
+
+
+class Fields376(Protocol[T376_0_co, T376_1_co, T376_2_co, T376_3_co]):
+    def declared(self) -> tuple[T376_0_co, T376_1_co, T376_2_co, T376_3_co]: ...
+
+
+# pyfect.schema.StructSchema
+
+
+def v377_0_out(
+    x: pyfect.schema.StructSchema[Never, Any, Any],
+) -> pyfect.schema.StructSchema[collections.abc.Mapping[str, object], Any, Any]:
+    return x
+
+
+def v377_0_in(
+    x: pyfect.schema.StructSchema[collections.abc.Mapping[str, object], Any, Any],
+) -> pyfect.schema.StructSchema[Never, Any, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v377_1_out(
+    x: pyfect.schema.StructSchema[Any, _Sub, Any],
+) -> pyfect.schema.StructSchema[Any, _Super, Any]:
+    return x
+
+
+def v377_1_in(
+    x: pyfect.schema.StructSchema[Any, _Super, Any],
+) -> pyfect.schema.StructSchema[Any, _Sub, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v377_2_out(
+    x: pyfect.schema.StructSchema[Any, Any, _Sub],
+) -> pyfect.schema.StructSchema[Any, Any, _Super]:
+    return x
+
+
+def v377_2_in(
+    x: pyfect.schema.StructSchema[Any, Any, _Super],
+) -> pyfect.schema.StructSchema[Any, Any, _Sub]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+T377_0_co = TypeVar("T377_0_co", covariant=True, bound=collections.abc.Mapping[str, object])
+T377_1_co = TypeVar("T377_1_co", covariant=True)
+T377_2_co = TypeVar("T377_2_co", covariant=True)
+
+
+class Fields377(Protocol[T377_0_co, T377_1_co, T377_2_co]):
+    @property
+    def ast(self) -> pyfect.schema.ast.AST: ...
+    @property
+    def fields(
+        self,
+    ) -> collections.abc.Mapping[
+        str, pyfect.schema._schema.Bottom[object, object, T377_1_co, T377_2_co]
+    ]: ...
+    def declared(self) -> tuple[T377_0_co, T377_1_co, T377_2_co]: ...
+
+
+# pyfect.schema.StructWithRestSchema
+
+
+def v378_0_out(
+    x: pyfect.schema.StructWithRestSchema[Never, Any, Any],
+) -> pyfect.schema.StructWithRestSchema[collections.abc.Mapping[str, object], Any, Any]:
+    return x
+
+
+def v378_0_in(
+    x: pyfect.schema.StructWithRestSchema[collections.abc.Mapping[str, object], Any, Any],
+) -> pyfect.schema.StructWithRestSchema[Never, Any, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v378_1_out(
+    x: pyfect.schema.StructWithRestSchema[Any, _Sub, Any],
+) -> pyfect.schema.StructWithRestSchema[Any, _Super, Any]:
+    return x
+
+
+def v378_1_in(
+    x: pyfect.schema.StructWithRestSchema[Any, _Super, Any],
+) -> pyfect.schema.StructWithRestSchema[Any, _Sub, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v378_2_out(
+    x: pyfect.schema.StructWithRestSchema[Any, Any, _Sub],
+) -> pyfect.schema.StructWithRestSchema[Any, Any, _Super]:
+    return x
+
+
+def v378_2_in(
+    x: pyfect.schema.StructWithRestSchema[Any, Any, _Super],
+) -> pyfect.schema.StructWithRestSchema[Any, Any, _Sub]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+T378_0_co = TypeVar("T378_0_co", covariant=True, bound=collections.abc.Mapping[str, object])
+T378_1_co = TypeVar("T378_1_co", covariant=True)
+T378_2_co = TypeVar("T378_2_co", covariant=True)
+
+
+class Fields378(Protocol[T378_0_co, T378_1_co, T378_2_co]):
+    @property
+    def ast(self) -> pyfect.schema.ast.AST: ...
+    @property
+    def schema(self) -> pyfect.schema._struct.StructSchema[T378_0_co, T378_1_co, T378_2_co]: ...
+    @property
+    def records(
+        self,
+    ) -> tuple[
+        pyfect.schema._record.RecordSchema[
+            typing.Any, typing.Any, typing.Any, typing.Any, T378_1_co, T378_2_co
+        ],
+        ...,
+    ]: ...
+    def declared(self) -> tuple[T378_0_co, T378_1_co, T378_2_co]: ...
+
+
+# pyfect.schema.TaggedStructSchema
+
+
+def v379_0_out(
+    x: pyfect.schema.TaggedStructSchema[Never, Any, Any],
+) -> pyfect.schema.TaggedStructSchema[collections.abc.Mapping[str, object], Any, Any]:
+    return x
+
+
+def v379_0_in(
+    x: pyfect.schema.TaggedStructSchema[collections.abc.Mapping[str, object], Any, Any],
+) -> pyfect.schema.TaggedStructSchema[Never, Any, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v379_1_out(
+    x: pyfect.schema.TaggedStructSchema[Any, _Sub, Any],
+) -> pyfect.schema.TaggedStructSchema[Any, _Super, Any]:
+    return x
+
+
+def v379_1_in(
+    x: pyfect.schema.TaggedStructSchema[Any, _Super, Any],
+) -> pyfect.schema.TaggedStructSchema[Any, _Sub, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v379_2_out(
+    x: pyfect.schema.TaggedStructSchema[Any, Any, _Sub],
+) -> pyfect.schema.TaggedStructSchema[Any, Any, _Super]:
+    return x
+
+
+def v379_2_in(
+    x: pyfect.schema.TaggedStructSchema[Any, Any, _Super],
+) -> pyfect.schema.TaggedStructSchema[Any, Any, _Sub]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+T379_0_co = TypeVar("T379_0_co", covariant=True, bound=collections.abc.Mapping[str, object])
+T379_1_co = TypeVar("T379_1_co", covariant=True)
+T379_2_co = TypeVar("T379_2_co", covariant=True)
+
+
+class Fields379(Protocol[T379_0_co, T379_1_co, T379_2_co]):
+    @property
+    def ast(self) -> pyfect.schema.ast.AST: ...
+    @property
+    def fields(
+        self,
+    ) -> collections.abc.Mapping[str, pyfect.schema._schema.Bottom[object, object, Any, Any]]: ...
+    @property
+    def tag(self) -> pyfect.schema.ast.LiteralValue: ...
+    def declared(self) -> tuple[T379_0_co, T379_1_co, T379_2_co]: ...
+
+
+# pyfect.schema.TaggedUnionSchema
+
+
+def v380_0_out(
+    x: pyfect.schema.TaggedUnionSchema[_Sub, Any, Any, Any],
+) -> pyfect.schema.TaggedUnionSchema[_Super, Any, Any, Any]:
+    return x
+
+
+def v380_0_in(
+    x: pyfect.schema.TaggedUnionSchema[_Super, Any, Any, Any],
+) -> pyfect.schema.TaggedUnionSchema[_Sub, Any, Any, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v380_1_out(
+    x: pyfect.schema.TaggedUnionSchema[Any, _Sub, Any, Any],
+) -> pyfect.schema.TaggedUnionSchema[Any, _Super, Any, Any]:
+    return x
+
+
+def v380_1_in(
+    x: pyfect.schema.TaggedUnionSchema[Any, _Super, Any, Any],
+) -> pyfect.schema.TaggedUnionSchema[Any, _Sub, Any, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v380_2_out(
+    x: pyfect.schema.TaggedUnionSchema[Any, Any, _Sub, Any],
+) -> pyfect.schema.TaggedUnionSchema[Any, Any, _Super, Any]:
+    return x
+
+
+def v380_2_in(
+    x: pyfect.schema.TaggedUnionSchema[Any, Any, _Super, Any],
+) -> pyfect.schema.TaggedUnionSchema[Any, Any, _Sub, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v380_3_out(
+    x: pyfect.schema.TaggedUnionSchema[Any, Any, Any, _Sub],
+) -> pyfect.schema.TaggedUnionSchema[Any, Any, Any, _Super]:
+    return x
+
+
+def v380_3_in(
+    x: pyfect.schema.TaggedUnionSchema[Any, Any, Any, _Super],
+) -> pyfect.schema.TaggedUnionSchema[Any, Any, Any, _Sub]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+T380_0_co = TypeVar("T380_0_co", covariant=True)
+T380_1_co = TypeVar("T380_1_co", covariant=True)
+T380_2_co = TypeVar("T380_2_co", covariant=True)
+T380_3_co = TypeVar("T380_3_co", covariant=True)
+
+
+class Fields380(Protocol[T380_0_co, T380_1_co, T380_2_co, T380_3_co]):
+    @property
+    def ast(self) -> pyfect.schema.ast.AST: ...
+    @property
+    def members(self) -> tuple[pyfect.schema._schema.Codec[Any, Any, Any, Any], ...]: ...
+    @property
+    def tag(self) -> str: ...
+    @property
+    def discriminants(self) -> tuple[pyfect.schema.ast.LiteralValue, ...]: ...
+    @property
+    def cases(
+        self,
+    ) -> collections.abc.Mapping[
+        pyfect.schema.ast.LiteralValue,
+        pyfect.schema._schema.Codec[T380_0_co, T380_1_co, T380_2_co, T380_3_co],
+    ]: ...
+    @property
+    def guards(
+        self,
+    ) -> collections.abc.Mapping[
+        pyfect.schema.ast.LiteralValue,
+        collections.abc.Callable[[object], typing.TypeGuard[T380_0_co]],
+    ]: ...
+    def declared(self) -> tuple[T380_0_co, T380_1_co, T380_2_co, T380_3_co]: ...
+
+
+# pyfect.schema.TemplateLiteralParserSchema
+
+
+def v381_0_out(
+    x: pyfect.schema.TemplateLiteralParserSchema[_Sub, Any],
+) -> pyfect.schema.TemplateLiteralParserSchema[_Super, Any]:
+    return x
+
+
+def v381_0_in(
+    x: pyfect.schema.TemplateLiteralParserSchema[_Super, Any],
+) -> pyfect.schema.TemplateLiteralParserSchema[_Sub, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v381_1_out(
+    x: pyfect.schema.TemplateLiteralParserSchema[Any, _Sub],
+) -> pyfect.schema.TemplateLiteralParserSchema[Any, _Super]:
+    return x
+
+
+def v381_1_in(
+    x: pyfect.schema.TemplateLiteralParserSchema[Any, _Super],
+) -> pyfect.schema.TemplateLiteralParserSchema[Any, _Sub]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+T381_0_co = TypeVar("T381_0_co", covariant=True)
+T381_1_co = TypeVar("T381_1_co", covariant=True)
+
+
+class Fields381(Protocol[T381_0_co, T381_1_co]):
+    @property
+    def ast(self) -> pyfect.schema.ast.AST: ...
+    @property
+    def parts(
+        self,
+    ) -> tuple[
+        pyfect.schema._schema.Codec[typing.Any, typing.Any, T381_0_co, T381_1_co]
+        | pyfect.schema._template_literal.LiteralPart,
+        ...,
+    ]: ...
+    def declared(self) -> tuple[T381_0_co, T381_1_co]: ...
+
+
+# pyfect.schema.TupleSchema
+
+
+def v382_0_out(
+    x: pyfect.schema.TupleSchema[Never, Any, Any, Any],
+) -> pyfect.schema.TupleSchema[tuple[object, ...], Any, Any, Any]:
+    return x
+
+
+def v382_0_in(
+    x: pyfect.schema.TupleSchema[tuple[object, ...], Any, Any, Any],
+) -> pyfect.schema.TupleSchema[Never, Any, Any, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v382_1_out(
+    x: pyfect.schema.TupleSchema[Any, Never, Any, Any],
+) -> pyfect.schema.TupleSchema[Any, tuple[object, ...], Any, Any]:
+    return x
+
+
+def v382_1_in(
+    x: pyfect.schema.TupleSchema[Any, tuple[object, ...], Any, Any],
+) -> pyfect.schema.TupleSchema[Any, Never, Any, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v382_2_out(
+    x: pyfect.schema.TupleSchema[Any, Any, _Sub, Any],
+) -> pyfect.schema.TupleSchema[Any, Any, _Super, Any]:
+    return x
+
+
+def v382_2_in(
+    x: pyfect.schema.TupleSchema[Any, Any, _Super, Any],
+) -> pyfect.schema.TupleSchema[Any, Any, _Sub, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v382_3_out(
+    x: pyfect.schema.TupleSchema[Any, Any, Any, _Sub],
+) -> pyfect.schema.TupleSchema[Any, Any, Any, _Super]:
+    return x
+
+
+def v382_3_in(
+    x: pyfect.schema.TupleSchema[Any, Any, Any, _Super],
+) -> pyfect.schema.TupleSchema[Any, Any, Any, _Sub]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+T382_0_co = TypeVar("T382_0_co", covariant=True, bound=tuple[object, ...])
+T382_1_co = TypeVar("T382_1_co", covariant=True, bound=tuple[object, ...])
+T382_2_co = TypeVar("T382_2_co", covariant=True)
+T382_3_co = TypeVar("T382_3_co", covariant=True)
+
+
+class Fields382(Protocol[T382_0_co, T382_1_co, T382_2_co, T382_3_co]):
+    @property
+    def ast(self) -> pyfect.schema.ast.AST: ...
+    @property
+    def elements(self) -> tuple[pyfect.schema._arrays.TupleElement[T382_2_co, T382_3_co], ...]: ...
+    def declared(self) -> tuple[T382_0_co, T382_1_co, T382_2_co, T382_3_co]: ...
+
+
+# pyfect.schema.TupleWithRestSchema
+
+
+def v383_0_out(
+    x: pyfect.schema.TupleWithRestSchema[_Sub, Any, Any, Any],
+) -> pyfect.schema.TupleWithRestSchema[_Super, Any, Any, Any]:
+    return x
+
+
+def v383_0_in(
+    x: pyfect.schema.TupleWithRestSchema[_Super, Any, Any, Any],
+) -> pyfect.schema.TupleWithRestSchema[_Sub, Any, Any, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v383_1_out(
+    x: pyfect.schema.TupleWithRestSchema[Any, _Sub, Any, Any],
+) -> pyfect.schema.TupleWithRestSchema[Any, _Super, Any, Any]:
+    return x
+
+
+def v383_1_in(
+    x: pyfect.schema.TupleWithRestSchema[Any, _Super, Any, Any],
+) -> pyfect.schema.TupleWithRestSchema[Any, _Sub, Any, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v383_2_out(
+    x: pyfect.schema.TupleWithRestSchema[Any, Any, _Sub, Any],
+) -> pyfect.schema.TupleWithRestSchema[Any, Any, _Super, Any]:
+    return x
+
+
+def v383_2_in(
+    x: pyfect.schema.TupleWithRestSchema[Any, Any, _Super, Any],
+) -> pyfect.schema.TupleWithRestSchema[Any, Any, _Sub, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v383_3_out(
+    x: pyfect.schema.TupleWithRestSchema[Any, Any, Any, _Sub],
+) -> pyfect.schema.TupleWithRestSchema[Any, Any, Any, _Super]:
+    return x
+
+
+def v383_3_in(
+    x: pyfect.schema.TupleWithRestSchema[Any, Any, Any, _Super],
+) -> pyfect.schema.TupleWithRestSchema[Any, Any, Any, _Sub]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+T383_0_co = TypeVar("T383_0_co", covariant=True)
+T383_1_co = TypeVar("T383_1_co", covariant=True)
+T383_2_co = TypeVar("T383_2_co", covariant=True)
+T383_3_co = TypeVar("T383_3_co", covariant=True)
+
+
+class Fields383(Protocol[T383_0_co, T383_1_co, T383_2_co, T383_3_co]):
+    @property
+    def ast(self) -> pyfect.schema.ast.AST: ...
+    @property
+    def schema(
+        self,
+    ) -> pyfect.schema._arrays.TupleSchema[typing.Any, typing.Any, T383_2_co, T383_3_co]: ...
+    @property
+    def rest(
+        self,
+    ) -> tuple[pyfect.schema._schema.Codec[object, object, T383_2_co, T383_3_co], ...]: ...
+    def declared(self) -> tuple[T383_0_co, T383_1_co, T383_2_co, T383_3_co]: ...
+
+
+# pyfect.schema.UnionSchema
+
+
+def v384_0_out(
+    x: pyfect.schema.UnionSchema[_Sub, Any, Any, Any],
+) -> pyfect.schema.UnionSchema[_Super, Any, Any, Any]:
+    return x
+
+
+def v384_0_in(
+    x: pyfect.schema.UnionSchema[_Super, Any, Any, Any],
+) -> pyfect.schema.UnionSchema[_Sub, Any, Any, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v384_1_out(
+    x: pyfect.schema.UnionSchema[Any, _Sub, Any, Any],
+) -> pyfect.schema.UnionSchema[Any, _Super, Any, Any]:
+    return x
+
+
+def v384_1_in(
+    x: pyfect.schema.UnionSchema[Any, _Super, Any, Any],
+) -> pyfect.schema.UnionSchema[Any, _Sub, Any, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v384_2_out(
+    x: pyfect.schema.UnionSchema[Any, Any, _Sub, Any],
+) -> pyfect.schema.UnionSchema[Any, Any, _Super, Any]:
+    return x
+
+
+def v384_2_in(
+    x: pyfect.schema.UnionSchema[Any, Any, _Super, Any],
+) -> pyfect.schema.UnionSchema[Any, Any, _Sub, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v384_3_out(
+    x: pyfect.schema.UnionSchema[Any, Any, Any, _Sub],
+) -> pyfect.schema.UnionSchema[Any, Any, Any, _Super]:
+    return x
+
+
+def v384_3_in(
+    x: pyfect.schema.UnionSchema[Any, Any, Any, _Super],
+) -> pyfect.schema.UnionSchema[Any, Any, Any, _Sub]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+T384_0_co = TypeVar("T384_0_co", covariant=True)
+T384_1_co = TypeVar("T384_1_co", covariant=True)
+T384_2_co = TypeVar("T384_2_co", covariant=True)
+T384_3_co = TypeVar("T384_3_co", covariant=True)
+
+
+class Fields384(Protocol[T384_0_co, T384_1_co, T384_2_co, T384_3_co]):
+    @property
+    def ast(self) -> pyfect.schema.ast.AST: ...
+    @property
+    def members(
+        self,
+    ) -> tuple[pyfect.schema._schema.Codec[T384_0_co, T384_1_co, T384_2_co, T384_3_co], ...]: ...
+    def declared(self) -> tuple[T384_0_co, T384_1_co, T384_2_co, T384_3_co]: ...
+
+
+# pyfect.schema.WithConstructorDefault
+
+
+def v385_0_out(
+    x: pyfect.schema.WithConstructorDefault[_Sub, Any, Any, Any],
+) -> pyfect.schema.WithConstructorDefault[_Super, Any, Any, Any]:
+    return x
+
+
+def v385_0_in(
+    x: pyfect.schema.WithConstructorDefault[_Super, Any, Any, Any],
+) -> pyfect.schema.WithConstructorDefault[_Sub, Any, Any, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v385_1_out(
+    x: pyfect.schema.WithConstructorDefault[Any, _Sub, Any, Any],
+) -> pyfect.schema.WithConstructorDefault[Any, _Super, Any, Any]:
+    return x
+
+
+def v385_1_in(
+    x: pyfect.schema.WithConstructorDefault[Any, _Super, Any, Any],
+) -> pyfect.schema.WithConstructorDefault[Any, _Sub, Any, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v385_2_out(
+    x: pyfect.schema.WithConstructorDefault[Any, Any, _Sub, Any],
+) -> pyfect.schema.WithConstructorDefault[Any, Any, _Super, Any]:
+    return x
+
+
+def v385_2_in(
+    x: pyfect.schema.WithConstructorDefault[Any, Any, _Super, Any],
+) -> pyfect.schema.WithConstructorDefault[Any, Any, _Sub, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v385_3_out(
+    x: pyfect.schema.WithConstructorDefault[Any, Any, Any, _Sub],
+) -> pyfect.schema.WithConstructorDefault[Any, Any, Any, _Super]:
+    return x
+
+
+def v385_3_in(
+    x: pyfect.schema.WithConstructorDefault[Any, Any, Any, _Super],
+) -> pyfect.schema.WithConstructorDefault[Any, Any, Any, _Sub]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+T385_0_co = TypeVar("T385_0_co", covariant=True)
+T385_1_co = TypeVar("T385_1_co", covariant=True)
+T385_2_co = TypeVar("T385_2_co", covariant=True)
+T385_3_co = TypeVar("T385_3_co", covariant=True)
+
+
+class Fields385(Protocol[T385_0_co, T385_1_co, T385_2_co, T385_3_co]):
+    @property
+    def ast(self) -> pyfect.schema.ast.AST: ...
+    @property
+    def default(self) -> pyfect._core.Effect[T385_0_co, pyfect.schema.issue.Issue]: ...
+    def declared(self) -> tuple[T385_0_co, T385_1_co, T385_2_co, T385_3_co]: ...
 
 
 # pyfect.schema.WithDecodingDefault
 
 
-def v374_0_out(
+def v386_0_out(
     x: pyfect.schema.WithDecodingDefault[_Sub, Any],
 ) -> pyfect.schema.WithDecodingDefault[_Super, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v374_0_in(
+def v386_0_in(
     x: pyfect.schema.WithDecodingDefault[_Super, Any],
 ) -> pyfect.schema.WithDecodingDefault[_Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v374_1_out(
+def v386_1_out(
     x: pyfect.schema.WithDecodingDefault[Any, _Sub],
 ) -> pyfect.schema.WithDecodingDefault[Any, _Super]:
     return x
 
 
-def v374_1_in(
+def v386_1_in(
     x: pyfect.schema.WithDecodingDefault[Any, _Super],
 ) -> pyfect.schema.WithDecodingDefault[Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T374_1_co = TypeVar("T374_1_co", covariant=True)
+T386_1_co = TypeVar("T386_1_co", covariant=True)
 
 
-class Fields374(Protocol[T374_1_co]):
-    def declared(self) -> tuple[T374_1_co]: ...
+class Fields386(Protocol[T386_1_co]):
+    def declared(self) -> tuple[T386_1_co]: ...
 
 
 # pyfect.schema.WithDecodingDefaultKey
 
 
-def v375_0_out(
+def v387_0_out(
     x: pyfect.schema.WithDecodingDefaultKey[_Sub, Any],
 ) -> pyfect.schema.WithDecodingDefaultKey[_Super, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v375_0_in(
+def v387_0_in(
     x: pyfect.schema.WithDecodingDefaultKey[_Super, Any],
 ) -> pyfect.schema.WithDecodingDefaultKey[_Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v375_1_out(
+def v387_1_out(
     x: pyfect.schema.WithDecodingDefaultKey[Any, _Sub],
 ) -> pyfect.schema.WithDecodingDefaultKey[Any, _Super]:
     return x
 
 
-def v375_1_in(
+def v387_1_in(
     x: pyfect.schema.WithDecodingDefaultKey[Any, _Super],
 ) -> pyfect.schema.WithDecodingDefaultKey[Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T375_1_co = TypeVar("T375_1_co", covariant=True)
+T387_1_co = TypeVar("T387_1_co", covariant=True)
 
 
-class Fields375(Protocol[T375_1_co]):
-    def declared(self) -> tuple[T375_1_co]: ...
+class Fields387(Protocol[T387_1_co]):
+    def declared(self) -> tuple[T387_1_co]: ...
 
 
 # pyfect.schema.WithDecodingDefaultType
 
 
-def v376_0_out(
+def v388_0_out(
     x: pyfect.schema.WithDecodingDefaultType[_Sub, Any],
 ) -> pyfect.schema.WithDecodingDefaultType[_Super, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v376_0_in(
+def v388_0_in(
     x: pyfect.schema.WithDecodingDefaultType[_Super, Any],
 ) -> pyfect.schema.WithDecodingDefaultType[_Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v376_1_out(
+def v388_1_out(
     x: pyfect.schema.WithDecodingDefaultType[Any, _Sub],
 ) -> pyfect.schema.WithDecodingDefaultType[Any, _Super]:
     return x
 
 
-def v376_1_in(
+def v388_1_in(
     x: pyfect.schema.WithDecodingDefaultType[Any, _Super],
 ) -> pyfect.schema.WithDecodingDefaultType[Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T376_1_co = TypeVar("T376_1_co", covariant=True)
+T388_1_co = TypeVar("T388_1_co", covariant=True)
 
 
-class Fields376(Protocol[T376_1_co]):
-    def declared(self) -> tuple[T376_1_co]: ...
+class Fields388(Protocol[T388_1_co]):
+    def declared(self) -> tuple[T388_1_co]: ...
 
 
 # pyfect.schema.WithDecodingDefaultTypeKey
 
 
-def v377_0_out(
+def v389_0_out(
     x: pyfect.schema.WithDecodingDefaultTypeKey[_Sub, Any],
 ) -> pyfect.schema.WithDecodingDefaultTypeKey[_Super, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v377_0_in(
+def v389_0_in(
     x: pyfect.schema.WithDecodingDefaultTypeKey[_Super, Any],
 ) -> pyfect.schema.WithDecodingDefaultTypeKey[_Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v377_1_out(
+def v389_1_out(
     x: pyfect.schema.WithDecodingDefaultTypeKey[Any, _Sub],
 ) -> pyfect.schema.WithDecodingDefaultTypeKey[Any, _Super]:
     return x
 
 
-def v377_1_in(
+def v389_1_in(
     x: pyfect.schema.WithDecodingDefaultTypeKey[Any, _Super],
 ) -> pyfect.schema.WithDecodingDefaultTypeKey[Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T377_1_co = TypeVar("T377_1_co", covariant=True)
+T389_1_co = TypeVar("T389_1_co", covariant=True)
 
 
-class Fields377(Protocol[T377_1_co]):
-    def declared(self) -> tuple[T377_1_co]: ...
+class Fields389(Protocol[T389_1_co]):
+    def declared(self) -> tuple[T389_1_co]: ...
 
 
 # pyfect.schema.getter.Transform
 
 
-def v378_0_out(
+def v390_0_out(
     x: pyfect.schema.getter.Transform[_Sub, Any],
 ) -> pyfect.schema.getter.Transform[_Super, Any]:
     return x
 
 
-def v378_0_in(
+def v390_0_in(
     x: pyfect.schema.getter.Transform[_Super, Any],
 ) -> pyfect.schema.getter.Transform[_Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v378_1_out(
+def v390_1_out(
     x: pyfect.schema.getter.Transform[Any, _Sub],
 ) -> pyfect.schema.getter.Transform[Any, _Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v378_1_in(
+def v390_1_in(
     x: pyfect.schema.getter.Transform[Any, _Super],
 ) -> pyfect.schema.getter.Transform[Any, _Sub]:
     return x
 
 
-T378_0_co = TypeVar("T378_0_co", covariant=True)
-T378_1_contra = TypeVar("T378_1_contra", contravariant=True)
+T390_0_co = TypeVar("T390_0_co", covariant=True)
+T390_1_contra = TypeVar("T390_1_contra", contravariant=True)
 
 
-class Fields378(Protocol[T378_0_co, T378_1_contra]):
+class Fields390(Protocol[T390_0_co, T390_1_contra]):
     @property
-    def f(self) -> collections.abc.Callable[[T378_1_contra], T378_0_co]: ...
-    def declared(self, _1: T378_1_contra) -> tuple[T378_0_co]: ...
+    def f(self) -> collections.abc.Callable[[T390_1_contra], T390_0_co]: ...
+    def declared(self, _1: T390_1_contra) -> tuple[T390_0_co]: ...
 
 
 # pyfect.schema.getter.TransformEffect
 
 
-def v379_0_out(
+def v391_0_out(
     x: pyfect.schema.getter.TransformEffect[_Sub, Any, Any],
 ) -> pyfect.schema.getter.TransformEffect[_Super, Any, Any]:
     return x
 
 
-def v379_0_in(
+def v391_0_in(
     x: pyfect.schema.getter.TransformEffect[_Super, Any, Any],
 ) -> pyfect.schema.getter.TransformEffect[_Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v379_1_out(
+def v391_1_out(
     x: pyfect.schema.getter.TransformEffect[Any, _Sub, Any],
 ) -> pyfect.schema.getter.TransformEffect[Any, _Super, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v379_1_in(
+def v391_1_in(
     x: pyfect.schema.getter.TransformEffect[Any, _Super, Any],
 ) -> pyfect.schema.getter.TransformEffect[Any, _Sub, Any]:
     return x
 
 
-def v379_2_out(
+def v391_2_out(
     x: pyfect.schema.getter.TransformEffect[Any, Any, _Sub],
 ) -> pyfect.schema.getter.TransformEffect[Any, Any, _Super]:
     return x
 
 
-def v379_2_in(
+def v391_2_in(
     x: pyfect.schema.getter.TransformEffect[Any, Any, _Super],
 ) -> pyfect.schema.getter.TransformEffect[Any, Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T379_0_co = TypeVar("T379_0_co", covariant=True)
-T379_1_contra = TypeVar("T379_1_contra", contravariant=True)
-T379_2_co = TypeVar("T379_2_co", covariant=True)
+T391_0_co = TypeVar("T391_0_co", covariant=True)
+T391_1_contra = TypeVar("T391_1_contra", contravariant=True)
+T391_2_co = TypeVar("T391_2_co", covariant=True)
 
 
-class Fields379(Protocol[T379_0_co, T379_1_contra, T379_2_co]):
+class Fields391(Protocol[T391_0_co, T391_1_contra, T391_2_co]):
     @property
     def f(
         self,
     ) -> collections.abc.Callable[
-        [T379_1_contra, pyfect.schema._options.ParseOptions],
-        pyfect.schema.getter._getter.Outcome[T379_0_co, T379_2_co],
+        [T391_1_contra, pyfect.schema._options.ParseOptions],
+        pyfect.schema.getter._getter.Outcome[T391_0_co, T391_2_co],
     ]: ...
-    def declared(self, _1: T379_1_contra) -> tuple[T379_0_co, T379_2_co]: ...
+    def declared(self, _1: T391_1_contra) -> tuple[T391_0_co, T391_2_co]: ...
 
 
 # pyfect.schema.getter.TransformOptional
 
 
-def v380_0_out(
+def v392_0_out(
     x: pyfect.schema.getter.TransformOptional[_Sub, Any],
 ) -> pyfect.schema.getter.TransformOptional[_Super, Any]:
     return x
 
 
-def v380_0_in(
+def v392_0_in(
     x: pyfect.schema.getter.TransformOptional[_Super, Any],
 ) -> pyfect.schema.getter.TransformOptional[_Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v380_1_out(
+def v392_1_out(
     x: pyfect.schema.getter.TransformOptional[Any, _Sub],
 ) -> pyfect.schema.getter.TransformOptional[Any, _Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v380_1_in(
+def v392_1_in(
     x: pyfect.schema.getter.TransformOptional[Any, _Super],
 ) -> pyfect.schema.getter.TransformOptional[Any, _Sub]:
     return x
 
 
-T380_0_co = TypeVar("T380_0_co", covariant=True)
-T380_1_contra = TypeVar("T380_1_contra", contravariant=True)
+T392_0_co = TypeVar("T392_0_co", covariant=True)
+T392_1_contra = TypeVar("T392_1_contra", contravariant=True)
 
 
-class Fields380(Protocol[T380_0_co, T380_1_contra]):
+class Fields392(Protocol[T392_0_co, T392_1_contra]):
     @property
     def f(
         self,
     ) -> collections.abc.Callable[
-        [pyfect.option.Option[T380_1_contra]], pyfect.option.Option[T380_0_co]
+        [pyfect.option.Option[T392_1_contra]], pyfect.option.Option[T392_0_co]
     ]: ...
-    def declared(self, _1: T380_1_contra) -> tuple[T380_0_co]: ...
+    def declared(self, _1: T392_1_contra) -> tuple[T392_0_co]: ...
 
 
 # pyfect.schema.getter.TransformOptionalEffect
 
 
-def v381_0_out(
+def v393_0_out(
     x: pyfect.schema.getter.TransformOptionalEffect[_Sub, Any, Any],
 ) -> pyfect.schema.getter.TransformOptionalEffect[_Super, Any, Any]:
     return x
 
 
-def v381_0_in(
+def v393_0_in(
     x: pyfect.schema.getter.TransformOptionalEffect[_Super, Any, Any],
 ) -> pyfect.schema.getter.TransformOptionalEffect[_Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v381_1_out(
+def v393_1_out(
     x: pyfect.schema.getter.TransformOptionalEffect[Any, _Sub, Any],
 ) -> pyfect.schema.getter.TransformOptionalEffect[Any, _Super, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v381_1_in(
+def v393_1_in(
     x: pyfect.schema.getter.TransformOptionalEffect[Any, _Super, Any],
 ) -> pyfect.schema.getter.TransformOptionalEffect[Any, _Sub, Any]:
     return x
 
 
-def v381_2_out(
+def v393_2_out(
     x: pyfect.schema.getter.TransformOptionalEffect[Any, Any, _Sub],
 ) -> pyfect.schema.getter.TransformOptionalEffect[Any, Any, _Super]:
     return x
 
 
-def v381_2_in(
+def v393_2_in(
     x: pyfect.schema.getter.TransformOptionalEffect[Any, Any, _Super],
 ) -> pyfect.schema.getter.TransformOptionalEffect[Any, Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T381_0_co = TypeVar("T381_0_co", covariant=True)
-T381_1_contra = TypeVar("T381_1_contra", contravariant=True)
-T381_2_co = TypeVar("T381_2_co", covariant=True)
+T393_0_co = TypeVar("T393_0_co", covariant=True)
+T393_1_contra = TypeVar("T393_1_contra", contravariant=True)
+T393_2_co = TypeVar("T393_2_co", covariant=True)
 
 
-class Fields381(Protocol[T381_0_co, T381_1_contra, T381_2_co]):
+class Fields393(Protocol[T393_0_co, T393_1_contra, T393_2_co]):
     @property
     def f(
         self,
     ) -> collections.abc.Callable[
-        [pyfect.option.Option[T381_1_contra], pyfect.schema._options.ParseOptions],
-        pyfect.schema.getter._getter.Outcome[pyfect.option.Option[T381_0_co], T381_2_co],
+        [pyfect.option.Option[T393_1_contra], pyfect.schema._options.ParseOptions],
+        pyfect.schema.getter._getter.Outcome[pyfect.option.Option[T393_0_co], T393_2_co],
     ]: ...
-    def declared(self, _1: T381_1_contra) -> tuple[T381_0_co, T381_2_co]: ...
+    def declared(self, _1: T393_1_contra) -> tuple[T393_0_co, T393_2_co]: ...
 
 
 # pyfect.schema.model.Class
 
 
-def v382_0_out(
+def v394_0_out(
     x: pyfect.schema.model.Class[Never, Any, Any, Any, Any],
 ) -> pyfect.schema.model.Class[pyfect.schema.model._class._TD, Any, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v382_0_in(
+def v394_0_in(
     x: pyfect.schema.model.Class[pyfect.schema.model._class._TD, Any, Any, Any, Any],
 ) -> pyfect.schema.model.Class[Never, Any, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v382_1_out(
+def v394_1_out(
     x: pyfect.schema.model.Class[Any, Never, Any, Any, Any],
 ) -> pyfect.schema.model.Class[Any, pyfect.schema.model._class._TD, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v382_1_in(
+def v394_1_in(
     x: pyfect.schema.model.Class[Any, pyfect.schema.model._class._TD, Any, Any, Any],
 ) -> pyfect.schema.model.Class[Any, Never, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v382_2_out(
+def v394_2_out(
     x: pyfect.schema.model.Class[Any, Any, Never, Any, Any],
 ) -> pyfect.schema.model.Class[Any, Any, pyfect.schema.model._class._TD, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v382_2_in(
+def v394_2_in(
     x: pyfect.schema.model.Class[Any, Any, pyfect.schema.model._class._TD, Any, Any],
 ) -> pyfect.schema.model.Class[Any, Any, Never, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v382_3_out(
+def v394_3_out(
     x: pyfect.schema.model.Class[Any, Any, Any, Never, Any],
 ) -> pyfect.schema.model.Class[Any, Any, Any, pyfect.schema.model._class._TD, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v382_3_in(
+def v394_3_in(
     x: pyfect.schema.model.Class[Any, Any, Any, pyfect.schema.model._class._TD, Any],
 ) -> pyfect.schema.model.Class[Any, Any, Any, Never, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v382_4_out(
+def v394_4_out(
     x: pyfect.schema.model.Class[Any, Any, Any, Any, Never],
 ) -> pyfect.schema.model.Class[Any, Any, Any, Any, pyfect.schema.model._class._TD]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v382_4_in(
+def v394_4_in(
     x: pyfect.schema.model.Class[Any, Any, Any, Any, pyfect.schema.model._class._TD],
 ) -> pyfect.schema.model.Class[Any, Any, Any, Any, Never]:
     return x  # pyright: ignore[reportReturnType]
@@ -13523,69 +13928,69 @@ def v382_4_in(
 # pyfect.schema.representation.CheckInput
 
 
-def v383_0_out(
+def v395_0_out(
     x: pyfect.schema.representation.CheckInput[_Sub],
 ) -> pyfect.schema.representation.CheckInput[_Super]:
     return x
 
 
-def v383_0_in(
+def v395_0_in(
     x: pyfect.schema.representation.CheckInput[_Super],
 ) -> pyfect.schema.representation.CheckInput[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T383_0_co = TypeVar("T383_0_co", covariant=True)
+T395_0_co = TypeVar("T395_0_co", covariant=True)
 
 
-class Fields383(Protocol[T383_0_co]):
+class Fields395(Protocol[T395_0_co]):
     @property
-    def payload(self) -> T383_0_co: ...
+    def payload(self) -> T395_0_co: ...
     @property
     def schemas(self) -> tuple[pyfect.schema.representation._revivers.AnySchema, ...]: ...
     @property
     def annotations(self) -> pyfect.schema.ast.Annotations | None: ...
-    def declared(self) -> tuple[T383_0_co]: ...
+    def declared(self) -> tuple[T395_0_co]: ...
 
 
 # pyfect.schema.representation.DeclarationInput
 
 
-def v384_0_out(
+def v396_0_out(
     x: pyfect.schema.representation.DeclarationInput[_Sub],
 ) -> pyfect.schema.representation.DeclarationInput[_Super]:
     return x
 
 
-def v384_0_in(
+def v396_0_in(
     x: pyfect.schema.representation.DeclarationInput[_Super],
 ) -> pyfect.schema.representation.DeclarationInput[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T384_0_co = TypeVar("T384_0_co", covariant=True)
+T396_0_co = TypeVar("T396_0_co", covariant=True)
 
 
-class Fields384(Protocol[T384_0_co]):
+class Fields396(Protocol[T396_0_co]):
     @property
-    def payload(self) -> T384_0_co: ...
+    def payload(self) -> T396_0_co: ...
     @property
     def type_parameters(self) -> tuple[pyfect.schema.representation._revivers.AnySchema, ...]: ...
     @property
     def annotations(self) -> pyfect.schema.ast.Annotations | None: ...
-    def declared(self) -> tuple[T384_0_co]: ...
+    def declared(self) -> tuple[T396_0_co]: ...
 
 
 # pyfect.schema.representation.DeclarationReviver
 
 
-def v385_0_out(
+def v397_0_out(
     x: pyfect.schema.representation.DeclarationReviver[_Sub],
 ) -> pyfect.schema.representation.DeclarationReviver[_Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v385_0_in(
+def v397_0_in(
     x: pyfect.schema.representation.DeclarationReviver[_Super],
 ) -> pyfect.schema.representation.DeclarationReviver[_Sub]:
     return x  # pyright: ignore[reportReturnType]
@@ -13594,13 +13999,13 @@ def v385_0_in(
 # pyfect.schema.representation.FilterGroupReviver
 
 
-def v386_0_out(
+def v398_0_out(
     x: pyfect.schema.representation.FilterGroupReviver[_Sub],
 ) -> pyfect.schema.representation.FilterGroupReviver[_Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v386_0_in(
+def v398_0_in(
     x: pyfect.schema.representation.FilterGroupReviver[_Super],
 ) -> pyfect.schema.representation.FilterGroupReviver[_Sub]:
     return x  # pyright: ignore[reportReturnType]
@@ -13609,13 +14014,13 @@ def v386_0_in(
 # pyfect.schema.representation.FilterReviver
 
 
-def v387_0_out(
+def v399_0_out(
     x: pyfect.schema.representation.FilterReviver[_Sub],
 ) -> pyfect.schema.representation.FilterReviver[_Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v387_0_in(
+def v399_0_in(
     x: pyfect.schema.representation.FilterReviver[_Super],
 ) -> pyfect.schema.representation.FilterReviver[_Sub]:
     return x  # pyright: ignore[reportReturnType]
@@ -13624,59 +14029,59 @@ def v387_0_in(
 # pyfect.schema.transformation.Middleware
 
 
-def v388_0_out(
+def v400_0_out(
     x: pyfect.schema.transformation.Middleware[_Sub, Any, Any, Any],
 ) -> pyfect.schema.transformation.Middleware[_Super, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v388_0_in(
+def v400_0_in(
     x: pyfect.schema.transformation.Middleware[_Super, Any, Any, Any],
 ) -> pyfect.schema.transformation.Middleware[_Sub, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v388_1_out(
+def v400_1_out(
     x: pyfect.schema.transformation.Middleware[Any, _Sub, Any, Any],
 ) -> pyfect.schema.transformation.Middleware[Any, _Super, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v388_1_in(
+def v400_1_in(
     x: pyfect.schema.transformation.Middleware[Any, _Super, Any, Any],
 ) -> pyfect.schema.transformation.Middleware[Any, _Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v388_2_out(
+def v400_2_out(
     x: pyfect.schema.transformation.Middleware[Any, Any, _Sub, Any],
 ) -> pyfect.schema.transformation.Middleware[Any, Any, _Super, Any]:
     return x
 
 
-def v388_2_in(
+def v400_2_in(
     x: pyfect.schema.transformation.Middleware[Any, Any, _Super, Any],
 ) -> pyfect.schema.transformation.Middleware[Any, Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v388_3_out(
+def v400_3_out(
     x: pyfect.schema.transformation.Middleware[Any, Any, Any, _Sub],
 ) -> pyfect.schema.transformation.Middleware[Any, Any, Any, _Super]:
     return x
 
 
-def v388_3_in(
+def v400_3_in(
     x: pyfect.schema.transformation.Middleware[Any, Any, Any, _Super],
 ) -> pyfect.schema.transformation.Middleware[Any, Any, Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T388_2_co = TypeVar("T388_2_co", covariant=True)
-T388_3_co = TypeVar("T388_3_co", covariant=True)
+T400_2_co = TypeVar("T400_2_co", covariant=True)
+T400_3_co = TypeVar("T400_3_co", covariant=True)
 
 
-class Fields388(Protocol[T388_2_co, T388_3_co]):
+class Fields400(Protocol[T400_2_co, T400_3_co]):
     @property
     def decode(
         self,
@@ -13685,7 +14090,7 @@ class Fields388(Protocol[T388_2_co, T388_3_co]):
             pyfect.schema.transformation._transformation._Parse[Any, typing.Any],
             pyfect.schema._options.ParseOptions,
         ],
-        pyfect.schema.transformation._transformation._Parse[Any, T388_2_co],
+        pyfect.schema.transformation._transformation._Parse[Any, T400_2_co],
     ]: ...
     @property
     def encode(
@@ -13695,189 +14100,189 @@ class Fields388(Protocol[T388_2_co, T388_3_co]):
             pyfect.schema.transformation._transformation._Parse[Any, typing.Any],
             pyfect.schema._options.ParseOptions,
         ],
-        pyfect.schema.transformation._transformation._Parse[Any, T388_3_co],
+        pyfect.schema.transformation._transformation._Parse[Any, T400_3_co],
     ]: ...
-    def declared(self) -> tuple[T388_2_co, T388_3_co]: ...
+    def declared(self) -> tuple[T400_2_co, T400_3_co]: ...
 
 
 # pyfect.schema.transformation.Transformation
 
 
-def v389_0_out(
+def v401_0_out(
     x: pyfect.schema.transformation.Transformation[_Sub, Any, Any, Any],
 ) -> pyfect.schema.transformation.Transformation[_Super, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v389_0_in(
+def v401_0_in(
     x: pyfect.schema.transformation.Transformation[_Super, Any, Any, Any],
 ) -> pyfect.schema.transformation.Transformation[_Sub, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v389_1_out(
+def v401_1_out(
     x: pyfect.schema.transformation.Transformation[Any, _Sub, Any, Any],
 ) -> pyfect.schema.transformation.Transformation[Any, _Super, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v389_1_in(
+def v401_1_in(
     x: pyfect.schema.transformation.Transformation[Any, _Super, Any, Any],
 ) -> pyfect.schema.transformation.Transformation[Any, _Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v389_2_out(
+def v401_2_out(
     x: pyfect.schema.transformation.Transformation[Any, Any, _Sub, Any],
 ) -> pyfect.schema.transformation.Transformation[Any, Any, _Super, Any]:
     return x
 
 
-def v389_2_in(
+def v401_2_in(
     x: pyfect.schema.transformation.Transformation[Any, Any, _Super, Any],
 ) -> pyfect.schema.transformation.Transformation[Any, Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v389_3_out(
+def v401_3_out(
     x: pyfect.schema.transformation.Transformation[Any, Any, Any, _Sub],
 ) -> pyfect.schema.transformation.Transformation[Any, Any, Any, _Super]:
     return x
 
 
-def v389_3_in(
+def v401_3_in(
     x: pyfect.schema.transformation.Transformation[Any, Any, Any, _Super],
 ) -> pyfect.schema.transformation.Transformation[Any, Any, Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T389_2_co = TypeVar("T389_2_co", covariant=True)
-T389_3_co = TypeVar("T389_3_co", covariant=True)
+T401_2_co = TypeVar("T401_2_co", covariant=True)
+T401_3_co = TypeVar("T401_3_co", covariant=True)
 
 
-class Fields389(Protocol[T389_2_co, T389_3_co]):
+class Fields401(Protocol[T401_2_co, T401_3_co]):
     @property
-    def decode(self) -> pyfect.schema.getter.Getter[Any, Any, T389_2_co]: ...
+    def decode(self) -> pyfect.schema.getter.Getter[Any, Any, T401_2_co]: ...
     @property
-    def encode(self) -> pyfect.schema.getter.Getter[Any, Any, T389_3_co]: ...
+    def encode(self) -> pyfect.schema.getter.Getter[Any, Any, T401_3_co]: ...
     @property
     def content(self) -> pyfect.schema.transformation._transformation.Content | None: ...
     @property
     def decode_content(self) -> pyfect.schema.transformation._transformation.Content | None: ...
-    def declared(self) -> tuple[T389_2_co, T389_3_co]: ...
+    def declared(self) -> tuple[T401_2_co, T401_3_co]: ...
 
 
 # pyfect.schema.variant_schema.Field
 
 
-def v390_0_out(
+def v402_0_out(
     x: pyfect.schema.variant_schema.Field[_Sub],
 ) -> pyfect.schema.variant_schema.Field[_Super]:
     return x
 
 
-def v390_0_in(
+def v402_0_in(
     x: pyfect.schema.variant_schema.Field[_Super],
 ) -> pyfect.schema.variant_schema.Field[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T390_0_co = TypeVar("T390_0_co", covariant=True)
+T402_0_co = TypeVar("T402_0_co", covariant=True)
 
 
-class Fields390(Protocol[T390_0_co]):
+class Fields402(Protocol[T402_0_co]):
     @property
     def schemas(
         self,
     ) -> collections.abc.Mapping[str, pyfect.schema.variant_schema._field.AnyCodec]: ...
-    def declared(self) -> tuple[T390_0_co]: ...
+    def declared(self) -> tuple[T402_0_co]: ...
 
 
 # pyfect.schema.variant_schema.VariantStructSchema
 
 
-def v391_0_out(
+def v403_0_out(
     x: pyfect.schema.variant_schema.VariantStructSchema[Never],
 ) -> pyfect.schema.variant_schema.VariantStructSchema[collections.abc.Mapping[str, object]]:
     return x
 
 
-def v391_0_in(
+def v403_0_in(
     x: pyfect.schema.variant_schema.VariantStructSchema[collections.abc.Mapping[str, object]],
 ) -> pyfect.schema.variant_schema.VariantStructSchema[Never]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T391_0_co = TypeVar("T391_0_co", covariant=True, bound=collections.abc.Mapping[str, object])
+T403_0_co = TypeVar("T403_0_co", covariant=True, bound=collections.abc.Mapping[str, object])
 
 
-class Fields391(Protocol[T391_0_co]):
+class Fields403(Protocol[T403_0_co]):
     @property
     def ast(self) -> pyfect.schema.ast.AST: ...
     @property
     def fields(
         self,
     ) -> collections.abc.Mapping[str, pyfect.schema._schema.Bottom[object, object, Any, Any]]: ...
-    def declared(self) -> tuple[T391_0_co]: ...
+    def declared(self) -> tuple[T403_0_co]: ...
 
 
 # pyfect.scope.Managed
 
 
-def v392_0_out(x: pyfect.scope.Managed[_Sub]) -> pyfect.scope.Managed[_Super]:
+def v404_0_out(x: pyfect.scope.Managed[_Sub]) -> pyfect.scope.Managed[_Super]:
     return x
 
 
-def v392_0_in(x: pyfect.scope.Managed[_Super]) -> pyfect.scope.Managed[_Sub]:
+def v404_0_in(x: pyfect.scope.Managed[_Super]) -> pyfect.scope.Managed[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
 # pyfect.sql.SqlRequest
 
 
-def v393_0_out(
+def v405_0_out(
     x: pyfect.sql.SqlRequest[_Sub, Any, Any, Any],
 ) -> pyfect.sql.SqlRequest[_Super, Any, Any, Any]:
     return x
 
 
-def v393_0_in(
+def v405_0_in(
     x: pyfect.sql.SqlRequest[_Super, Any, Any, Any],
 ) -> pyfect.sql.SqlRequest[_Sub, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v393_1_out(
+def v405_1_out(
     x: pyfect.sql.SqlRequest[Any, _Sub, Any, Any],
 ) -> pyfect.sql.SqlRequest[Any, _Super, Any, Any]:
     return x
 
 
-def v393_1_in(
+def v405_1_in(
     x: pyfect.sql.SqlRequest[Any, _Super, Any, Any],
 ) -> pyfect.sql.SqlRequest[Any, _Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v393_2_out(
+def v405_2_out(
     x: pyfect.sql.SqlRequest[Any, Any, _Sub, Any],
 ) -> pyfect.sql.SqlRequest[Any, Any, _Super, Any]:
     return x
 
 
-def v393_2_in(
+def v405_2_in(
     x: pyfect.sql.SqlRequest[Any, Any, _Super, Any],
 ) -> pyfect.sql.SqlRequest[Any, Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v393_3_out(
+def v405_3_out(
     x: pyfect.sql.SqlRequest[Any, Any, Any, _Sub],
 ) -> pyfect.sql.SqlRequest[Any, Any, Any, _Super]:
     return x
 
 
-def v393_3_in(
+def v405_3_in(
     x: pyfect.sql.SqlRequest[Any, Any, Any, _Super],
 ) -> pyfect.sql.SqlRequest[Any, Any, Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
@@ -13886,59 +14291,59 @@ def v393_3_in(
 # pyfect.sql.Statement
 
 
-def v394_0_out(x: pyfect.sql.Statement[_Sub]) -> pyfect.sql.Statement[_Super]:
+def v406_0_out(x: pyfect.sql.Statement[_Sub]) -> pyfect.sql.Statement[_Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v394_0_in(x: pyfect.sql.Statement[_Super]) -> pyfect.sql.Statement[_Sub]:
+def v406_0_in(x: pyfect.sql.Statement[_Super]) -> pyfect.sql.Statement[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
 # pyfect.sql.migrator.Runner
 
 
-def v395_0_out(x: pyfect.sql.migrator.Runner[_Sub]) -> pyfect.sql.migrator.Runner[_Super]:
+def v407_0_out(x: pyfect.sql.migrator.Runner[_Sub]) -> pyfect.sql.migrator.Runner[_Super]:
     return x
 
 
-def v395_0_in(x: pyfect.sql.migrator.Runner[_Super]) -> pyfect.sql.migrator.Runner[_Sub]:
+def v407_0_in(x: pyfect.sql.migrator.Runner[_Super]) -> pyfect.sql.migrator.Runner[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
 # pyfect.sql.model.ModelType
 
 
-def v396_0_out(
+def v408_0_out(
     x: pyfect.sql.model.ModelType[_Sub, Any, Any],
 ) -> pyfect.sql.model.ModelType[_Super, Any, Any]:
     return x
 
 
-def v396_0_in(
+def v408_0_in(
     x: pyfect.sql.model.ModelType[_Super, Any, Any],
 ) -> pyfect.sql.model.ModelType[_Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v396_1_out(
+def v408_1_out(
     x: pyfect.sql.model.ModelType[Any, _Sub, Any],
 ) -> pyfect.sql.model.ModelType[Any, _Super, Any]:
     return x
 
 
-def v396_1_in(
+def v408_1_in(
     x: pyfect.sql.model.ModelType[Any, _Super, Any],
 ) -> pyfect.sql.model.ModelType[Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v396_2_out(
+def v408_2_out(
     x: pyfect.sql.model.ModelType[Any, Any, _Sub],
 ) -> pyfect.sql.model.ModelType[Any, Any, _Super]:
     return x
 
 
-def v396_2_in(
+def v408_2_in(
     x: pyfect.sql.model.ModelType[Any, Any, _Super],
 ) -> pyfect.sql.model.ModelType[Any, Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
@@ -13947,130 +14352,130 @@ def v396_2_in(
 # pyfect.sql.model.ModelVariants
 
 
-def v397_0_out(
+def v409_0_out(
     x: pyfect.sql.model.ModelVariants[_Sub, Any, Any],
 ) -> pyfect.sql.model.ModelVariants[_Super, Any, Any]:
     return x
 
 
-def v397_0_in(
+def v409_0_in(
     x: pyfect.sql.model.ModelVariants[_Super, Any, Any],
 ) -> pyfect.sql.model.ModelVariants[_Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v397_1_out(
+def v409_1_out(
     x: pyfect.sql.model.ModelVariants[Any, _Sub, Any],
 ) -> pyfect.sql.model.ModelVariants[Any, _Super, Any]:
     return x
 
 
-def v397_1_in(
+def v409_1_in(
     x: pyfect.sql.model.ModelVariants[Any, _Super, Any],
 ) -> pyfect.sql.model.ModelVariants[Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v397_2_out(
+def v409_2_out(
     x: pyfect.sql.model.ModelVariants[Any, Any, _Sub],
 ) -> pyfect.sql.model.ModelVariants[Any, Any, _Super]:
     return x
 
 
-def v397_2_in(
+def v409_2_in(
     x: pyfect.sql.model.ModelVariants[Any, Any, _Super],
 ) -> pyfect.sql.model.ModelVariants[Any, Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T397_0_co = TypeVar("T397_0_co", covariant=True)
-T397_1_co = TypeVar("T397_1_co", covariant=True)
-T397_2_co = TypeVar("T397_2_co", covariant=True)
+T409_0_co = TypeVar("T409_0_co", covariant=True)
+T409_1_co = TypeVar("T409_1_co", covariant=True)
+T409_2_co = TypeVar("T409_2_co", covariant=True)
 
 
-class Fields397(Protocol[T397_0_co, T397_1_co, T397_2_co]):
+class Fields409(Protocol[T409_0_co, T409_1_co, T409_2_co]):
     @property
     def model(
         self,
-    ) -> pyfect.schema._schema.Codec[T397_0_co, typing.Any, typing.Any, typing.Any]: ...
+    ) -> pyfect.schema._schema.Codec[T409_0_co, typing.Any, typing.Any, typing.Any]: ...
     @property
     def insert(self) -> pyfect.schema.variant_schema.VariantStructSchema[typing.Any]: ...
     @property
     def update(self) -> pyfect.schema.variant_schema.VariantStructSchema[typing.Any]: ...
-    def declared(self) -> tuple[T397_0_co, T397_1_co, T397_2_co]: ...
+    def declared(self) -> tuple[T409_0_co, T409_1_co, T409_2_co]: ...
 
 
 # pyfect.sql.model.Repository
 
 
-def v398_0_out(
+def v410_0_out(
     x: pyfect.sql.model.Repository[_Sub, Any, Any],
 ) -> pyfect.sql.model.Repository[_Super, Any, Any]:
     return x
 
 
-def v398_0_in(
+def v410_0_in(
     x: pyfect.sql.model.Repository[_Super, Any, Any],
 ) -> pyfect.sql.model.Repository[_Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v398_1_out(
+def v410_1_out(
     x: pyfect.sql.model.Repository[Any, _Sub, Any],
 ) -> pyfect.sql.model.Repository[Any, _Super, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v398_1_in(
+def v410_1_in(
     x: pyfect.sql.model.Repository[Any, _Super, Any],
 ) -> pyfect.sql.model.Repository[Any, _Sub, Any]:
     return x
 
 
-def v398_2_out(
+def v410_2_out(
     x: pyfect.sql.model.Repository[Any, Any, _Sub],
 ) -> pyfect.sql.model.Repository[Any, Any, _Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v398_2_in(
+def v410_2_in(
     x: pyfect.sql.model.Repository[Any, Any, _Super],
 ) -> pyfect.sql.model.Repository[Any, Any, _Sub]:
     return x
 
 
-T398_0_co = TypeVar("T398_0_co", covariant=True)
-T398_1_contra = TypeVar("T398_1_contra", contravariant=True)
-T398_2_contra = TypeVar("T398_2_contra", contravariant=True)
+T410_0_co = TypeVar("T410_0_co", covariant=True)
+T410_1_contra = TypeVar("T410_1_contra", contravariant=True)
+T410_2_contra = TypeVar("T410_2_contra", contravariant=True)
 
 
-class Fields398(Protocol[T398_0_co, T398_1_contra, T398_2_contra]):
+class Fields410(Protocol[T410_0_co, T410_1_contra, T410_2_contra]):
     @property
     def insert(
         self,
     ) -> collections.abc.Callable[
-        [T398_1_contra],
-        pyfect._core.Effect[T398_0_co, pyfect.schema.SchemaError | pyfect.sql.error.SqlError],
+        [T410_1_contra],
+        pyfect._core.Effect[T410_0_co, pyfect.schema.SchemaError | pyfect.sql.error.SqlError],
     ]: ...
     @property
     def insert_void(
         self,
     ) -> collections.abc.Callable[
-        [T398_1_contra],
+        [T410_1_contra],
         pyfect._core.Effect[None, pyfect.schema.SchemaError | pyfect.sql.error.SqlError],
     ]: ...
     @property
     def update(
         self,
     ) -> collections.abc.Callable[
-        [T398_2_contra],
-        pyfect._core.Effect[T398_0_co, pyfect.schema.SchemaError | pyfect.sql.error.SqlError],
+        [T410_2_contra],
+        pyfect._core.Effect[T410_0_co, pyfect.schema.SchemaError | pyfect.sql.error.SqlError],
     ]: ...
     @property
     def update_void(
         self,
     ) -> collections.abc.Callable[
-        [T398_2_contra],
+        [T410_2_contra],
         pyfect._core.Effect[None, pyfect.schema.SchemaError | pyfect.sql.error.SqlError],
     ]: ...
     @property
@@ -14079,7 +14484,7 @@ class Fields398(Protocol[T398_0_co, T398_1_contra, T398_2_contra]):
     ) -> collections.abc.Callable[
         [object],
         pyfect._core.Effect[
-            T398_0_co,
+            T410_0_co,
             pyfect.errors.NoSuchElementException
             | pyfect.schema.SchemaError
             | pyfect.sql.error.SqlError,
@@ -14091,39 +14496,39 @@ class Fields398(Protocol[T398_0_co, T398_1_contra, T398_2_contra]):
     ) -> collections.abc.Callable[
         [object], pyfect._core.Effect[None, pyfect.schema.SchemaError | pyfect.sql.error.SqlError]
     ]: ...
-    def declared(self, _1: T398_1_contra, _2: T398_2_contra) -> tuple[T398_0_co]: ...
+    def declared(self, _1: T410_1_contra, _2: T410_2_contra) -> tuple[T410_0_co]: ...
 
 
 # pyfect.sql.model.Resolvers
 
 
-def v399_0_out(x: pyfect.sql.model.Resolvers[_Sub, Any]) -> pyfect.sql.model.Resolvers[_Super, Any]:
+def v411_0_out(x: pyfect.sql.model.Resolvers[_Sub, Any]) -> pyfect.sql.model.Resolvers[_Super, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v399_0_in(x: pyfect.sql.model.Resolvers[_Super, Any]) -> pyfect.sql.model.Resolvers[_Sub, Any]:
+def v411_0_in(x: pyfect.sql.model.Resolvers[_Super, Any]) -> pyfect.sql.model.Resolvers[_Sub, Any]:
     return x
 
 
-def v399_1_out(x: pyfect.sql.model.Resolvers[Any, _Sub]) -> pyfect.sql.model.Resolvers[Any, _Super]:
+def v411_1_out(x: pyfect.sql.model.Resolvers[Any, _Sub]) -> pyfect.sql.model.Resolvers[Any, _Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v399_1_in(x: pyfect.sql.model.Resolvers[Any, _Super]) -> pyfect.sql.model.Resolvers[Any, _Sub]:
+def v411_1_in(x: pyfect.sql.model.Resolvers[Any, _Super]) -> pyfect.sql.model.Resolvers[Any, _Sub]:
     return x
 
 
-T399_0_contra = TypeVar("T399_0_contra", contravariant=True)
-T399_1_contra = TypeVar("T399_1_contra", contravariant=True)
+T411_0_contra = TypeVar("T411_0_contra", contravariant=True)
+T411_1_contra = TypeVar("T411_1_contra", contravariant=True)
 
 
-class Fields399(Protocol[T399_0_contra, T399_1_contra]):
+class Fields411(Protocol[T411_0_contra, T411_1_contra]):
     @property
     def insert(
         self,
     ) -> pyfect.sql.resolver.SqlResolver[
-        T399_1_contra,
-        T399_0_contra,
+        T411_1_contra,
+        T411_0_contra,
         pyfect.sql.error.ResultLengthMismatch
         | pyfect.schema.SchemaError
         | pyfect.sql.error.SqlError,
@@ -14133,14 +14538,14 @@ class Fields399(Protocol[T399_0_contra, T399_1_contra]):
     def insert_void(
         self,
     ) -> pyfect.sql.resolver.SqlResolver[
-        T399_1_contra, None, pyfect.schema.SchemaError | pyfect.sql.error.SqlError, typing.Any
+        T411_1_contra, None, pyfect.schema.SchemaError | pyfect.sql.error.SqlError, typing.Any
     ]: ...
     @property
     def find_by_id(
         self,
     ) -> pyfect.sql.resolver.SqlResolver[
         collections.abc.Hashable,
-        T399_0_contra,
+        T411_0_contra,
         pyfect.errors.NoSuchElementException
         | pyfect.schema.SchemaError
         | pyfect.sql.error.SqlError,
@@ -14155,102 +14560,102 @@ class Fields399(Protocol[T399_0_contra, T399_1_contra]):
         pyfect.schema.SchemaError | pyfect.sql.error.SqlError,
         typing.Any,
     ]: ...
-    def declared(self, _0: T399_0_contra, _1: T399_1_contra) -> tuple[()]: ...
+    def declared(self, _0: T411_0_contra, _1: T411_1_contra) -> tuple[()]: ...
 
 
 # pyfect.sql.mssql.Parameter
 
 
-def v400_0_out(x: pyfect.sql.mssql.Parameter[_Sub]) -> pyfect.sql.mssql.Parameter[_Super]:
+def v412_0_out(x: pyfect.sql.mssql.Parameter[_Sub]) -> pyfect.sql.mssql.Parameter[_Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v400_0_in(x: pyfect.sql.mssql.Parameter[_Super]) -> pyfect.sql.mssql.Parameter[_Sub]:
+def v412_0_in(x: pyfect.sql.mssql.Parameter[_Super]) -> pyfect.sql.mssql.Parameter[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
 # pyfect.sql.mssql.Procedure
 
 
-def v401_0_out(x: pyfect.sql.mssql.Procedure[_Sub]) -> pyfect.sql.mssql.Procedure[_Super]:
+def v413_0_out(x: pyfect.sql.mssql.Procedure[_Sub]) -> pyfect.sql.mssql.Procedure[_Super]:
     return x
 
 
-def v401_0_in(x: pyfect.sql.mssql.Procedure[_Super]) -> pyfect.sql.mssql.Procedure[_Sub]:
+def v413_0_in(x: pyfect.sql.mssql.Procedure[_Super]) -> pyfect.sql.mssql.Procedure[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T401_0_co = TypeVar("T401_0_co", covariant=True)
+T413_0_co = TypeVar("T413_0_co", covariant=True)
 
 
-class Fields401(Protocol[T401_0_co]):
+class Fields413(Protocol[T413_0_co]):
     @property
     def name(self) -> str: ...
     @property
     def params(self) -> tuple[pyfect.sql.mssql.parameter.Parameter[typing.Any], ...]: ...
     @property
     def output_params(self) -> tuple[pyfect.sql.mssql.parameter.Parameter[typing.Any], ...]: ...
-    def declared(self) -> tuple[T401_0_co]: ...
+    def declared(self) -> tuple[T413_0_co]: ...
 
 
 # pyfect.sql.mssql.Result
 
 
-def v402_0_out(x: pyfect.sql.mssql.Result[_Sub]) -> pyfect.sql.mssql.Result[_Super]:
+def v414_0_out(x: pyfect.sql.mssql.Result[_Sub]) -> pyfect.sql.mssql.Result[_Super]:
     return x
 
 
-def v402_0_in(x: pyfect.sql.mssql.Result[_Super]) -> pyfect.sql.mssql.Result[_Sub]:
+def v414_0_in(x: pyfect.sql.mssql.Result[_Super]) -> pyfect.sql.mssql.Result[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T402_0_co = TypeVar("T402_0_co", covariant=True)
+T414_0_co = TypeVar("T414_0_co", covariant=True)
 
 
-class Fields402(Protocol[T402_0_co]):
+class Fields414(Protocol[T414_0_co]):
     @property
     def output(self) -> pyfect.sql.mssql.procedure.Outputs: ...
     @property
-    def rows(self) -> collections.abc.Sequence[T402_0_co]: ...
-    def declared(self) -> tuple[T402_0_co]: ...
+    def rows(self) -> collections.abc.Sequence[T414_0_co]: ...
+    def declared(self) -> tuple[T414_0_co]: ...
 
 
 # pyfect.sql.mssql.client.ProcedureWithValues
 
 
-def v403_0_out(
+def v415_0_out(
     x: pyfect.sql.mssql.client.ProcedureWithValues[_Sub],
 ) -> pyfect.sql.mssql.client.ProcedureWithValues[_Super]:
     return x
 
 
-def v403_0_in(
+def v415_0_in(
     x: pyfect.sql.mssql.client.ProcedureWithValues[_Super],
 ) -> pyfect.sql.mssql.client.ProcedureWithValues[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T403_0_co = TypeVar("T403_0_co", covariant=True)
+T415_0_co = TypeVar("T415_0_co", covariant=True)
 
 
-class Fields403(Protocol[T403_0_co]):
+class Fields415(Protocol[T415_0_co]):
     @property
-    def procedure(self) -> pyfect.sql.mssql.procedure.Procedure[T403_0_co]: ...
+    def procedure(self) -> pyfect.sql.mssql.procedure.Procedure[T415_0_co]: ...
     @property
     def values(self) -> collections.abc.Mapping[str, object]: ...
-    def declared(self) -> tuple[T403_0_co]: ...
+    def declared(self) -> tuple[T415_0_co]: ...
 
 
 # pyfect.sql.mssql.parameter.Bound
 
 
-def v404_0_out(
+def v416_0_out(
     x: pyfect.sql.mssql.parameter.Bound[_Sub],
 ) -> pyfect.sql.mssql.parameter.Bound[_Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v404_0_in(
+def v416_0_in(
     x: pyfect.sql.mssql.parameter.Bound[_Super],
 ) -> pyfect.sql.mssql.parameter.Bound[_Sub]:
     return x  # pyright: ignore[reportReturnType]
@@ -14259,163 +14664,163 @@ def v404_0_in(
 # pyfect.sql.pg.client.Custom
 
 
-def v405_0_out(
+def v417_0_out(
     x: pyfect.sql.pg.client.Custom[Never, Any, Any, Any],
 ) -> pyfect.sql.pg.client.Custom[str, Any, Any, Any]:
     return x
 
 
-def v405_0_in(
+def v417_0_in(
     x: pyfect.sql.pg.client.Custom[str, Any, Any, Any],
 ) -> pyfect.sql.pg.client.Custom[Never, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v405_1_out(
+def v417_1_out(
     x: pyfect.sql.pg.client.Custom[Any, _Sub, Any, Any],
 ) -> pyfect.sql.pg.client.Custom[Any, _Super, Any, Any]:
     return x
 
 
-def v405_1_in(
+def v417_1_in(
     x: pyfect.sql.pg.client.Custom[Any, _Super, Any, Any],
 ) -> pyfect.sql.pg.client.Custom[Any, _Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v405_2_out(
+def v417_2_out(
     x: pyfect.sql.pg.client.Custom[Any, Any, _Sub, Any],
 ) -> pyfect.sql.pg.client.Custom[Any, Any, _Super, Any]:
     return x
 
 
-def v405_2_in(
+def v417_2_in(
     x: pyfect.sql.pg.client.Custom[Any, Any, _Super, Any],
 ) -> pyfect.sql.pg.client.Custom[Any, Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v405_3_out(
+def v417_3_out(
     x: pyfect.sql.pg.client.Custom[Any, Any, Any, _Sub],
 ) -> pyfect.sql.pg.client.Custom[Any, Any, Any, _Super]:
     return x
 
 
-def v405_3_in(
+def v417_3_in(
     x: pyfect.sql.pg.client.Custom[Any, Any, Any, _Super],
 ) -> pyfect.sql.pg.client.Custom[Any, Any, Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T405_0_co = TypeVar("T405_0_co", covariant=True, bound=str)
-T405_1_co = TypeVar("T405_1_co", covariant=True)
-T405_2_co = TypeVar("T405_2_co", covariant=True)
-T405_3_co = TypeVar("T405_3_co", covariant=True)
+T417_0_co = TypeVar("T417_0_co", covariant=True, bound=str)
+T417_1_co = TypeVar("T417_1_co", covariant=True)
+T417_2_co = TypeVar("T417_2_co", covariant=True)
+T417_3_co = TypeVar("T417_3_co", covariant=True)
 
 
-class Fields405(Protocol[T405_0_co, T405_1_co, T405_2_co, T405_3_co]):
+class Fields417(Protocol[T417_0_co, T417_1_co, T417_2_co, T417_3_co]):
     @property
-    def kind(self) -> T405_0_co: ...
+    def kind(self) -> T417_0_co: ...
     @property
-    def param_a(self) -> T405_1_co: ...
+    def param_a(self) -> T417_1_co: ...
     @property
-    def param_b(self) -> T405_2_co: ...
+    def param_b(self) -> T417_2_co: ...
     @property
-    def param_c(self) -> T405_3_co: ...
-    def declared(self) -> tuple[T405_0_co, T405_1_co, T405_2_co, T405_3_co]: ...
+    def param_c(self) -> T417_3_co: ...
+    def declared(self) -> tuple[T417_0_co, T417_1_co, T417_2_co, T417_3_co]: ...
 
 
 # pyfect.sql.stream.Emit
 
 
-def v406_0_out(x: pyfect.sql.stream.Emit[_Sub, Any]) -> pyfect.sql.stream.Emit[_Super, Any]:
+def v418_0_out(x: pyfect.sql.stream.Emit[_Sub, Any]) -> pyfect.sql.stream.Emit[_Super, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v406_0_in(x: pyfect.sql.stream.Emit[_Super, Any]) -> pyfect.sql.stream.Emit[_Sub, Any]:
+def v418_0_in(x: pyfect.sql.stream.Emit[_Super, Any]) -> pyfect.sql.stream.Emit[_Sub, Any]:
     return x
 
 
-def v406_1_out(x: pyfect.sql.stream.Emit[Any, _Sub]) -> pyfect.sql.stream.Emit[Any, _Super]:
+def v418_1_out(x: pyfect.sql.stream.Emit[Any, _Sub]) -> pyfect.sql.stream.Emit[Any, _Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v406_1_in(x: pyfect.sql.stream.Emit[Any, _Super]) -> pyfect.sql.stream.Emit[Any, _Sub]:
+def v418_1_in(x: pyfect.sql.stream.Emit[Any, _Super]) -> pyfect.sql.stream.Emit[Any, _Sub]:
     return x
 
 
-T406_0_contra = TypeVar("T406_0_contra", contravariant=True)
-T406_1_contra = TypeVar("T406_1_contra", contravariant=True)
+T418_0_contra = TypeVar("T418_0_contra", contravariant=True)
+T418_1_contra = TypeVar("T418_1_contra", contravariant=True)
 
 
-class Fields406(Protocol[T406_0_contra, T406_1_contra]):
+class Fields418(Protocol[T418_0_contra, T418_1_contra]):
     @property
-    def single(self) -> collections.abc.Callable[[T406_0_contra], None]: ...
+    def single(self) -> collections.abc.Callable[[T418_0_contra], None]: ...
     @property
     def array(
         self,
-    ) -> collections.abc.Callable[[collections.abc.Sequence[T406_0_contra]], None]: ...
+    ) -> collections.abc.Callable[[collections.abc.Sequence[T418_0_contra]], None]: ...
     @property
-    def fail(self) -> collections.abc.Callable[[T406_1_contra], None]: ...
+    def fail(self) -> collections.abc.Callable[[T418_1_contra], None]: ...
     @property
     def end(self) -> collections.abc.Callable[[], None]: ...
-    def declared(self, _0: T406_0_contra, _1: T406_1_contra) -> tuple[()]: ...
+    def declared(self, _0: T418_0_contra, _1: T418_1_contra) -> tuple[()]: ...
 
 
 # pyfect.stream.StreamAsyncIterable
 
 
-def v407_0_out(
+def v419_0_out(
     x: pyfect.stream.StreamAsyncIterable[_Sub],
 ) -> pyfect.stream.StreamAsyncIterable[_Super]:
     return x
 
 
-def v407_0_in(
+def v419_0_in(
     x: pyfect.stream.StreamAsyncIterable[_Super],
 ) -> pyfect.stream.StreamAsyncIterable[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T407_0_co = TypeVar("T407_0_co", covariant=True)
+T419_0_co = TypeVar("T419_0_co", covariant=True)
 
 
-class Fields407(Protocol[T407_0_co]):
-    def declared(self) -> tuple[T407_0_co]: ...
+class Fields419(Protocol[T419_0_co]):
+    def declared(self) -> tuple[T419_0_co]: ...
 
 
 # pyfect.stream.StreamAsyncIterator
 
 
-def v408_0_out(
+def v420_0_out(
     x: pyfect.stream.StreamAsyncIterator[_Sub],
 ) -> pyfect.stream.StreamAsyncIterator[_Super]:
     return x
 
 
-def v408_0_in(
+def v420_0_in(
     x: pyfect.stream.StreamAsyncIterator[_Super],
 ) -> pyfect.stream.StreamAsyncIterator[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T408_0_co = TypeVar("T408_0_co", covariant=True)
+T420_0_co = TypeVar("T420_0_co", covariant=True)
 
 
-class Fields408(Protocol[T408_0_co]):
-    def declared(self) -> tuple[T408_0_co]: ...
+class Fields420(Protocol[T420_0_co]):
+    def declared(self) -> tuple[T420_0_co]: ...
 
 
 # pyfect.subscription_ref.LockedRef
 
 
-def v409_0_out(
+def v421_0_out(
     x: pyfect.subscription_ref.LockedRef[_Sub],
 ) -> pyfect.subscription_ref.LockedRef[_Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v409_0_in(
+def v421_0_in(
     x: pyfect.subscription_ref.LockedRef[_Super],
 ) -> pyfect.subscription_ref.LockedRef[_Sub]:
     return x  # pyright: ignore[reportReturnType]
@@ -14424,127 +14829,127 @@ def v409_0_in(
 # pyfect.testing.SchemaAsserts
 
 
-def v410_0_out(
+def v422_0_out(
     x: pyfect.testing.SchemaAsserts[_Sub, Any],
 ) -> pyfect.testing.SchemaAsserts[_Super, Any]:
     return x
 
 
-def v410_0_in(
+def v422_0_in(
     x: pyfect.testing.SchemaAsserts[_Super, Any],
 ) -> pyfect.testing.SchemaAsserts[_Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v410_1_out(
+def v422_1_out(
     x: pyfect.testing.SchemaAsserts[Any, _Sub],
 ) -> pyfect.testing.SchemaAsserts[Any, _Super]:
     return x
 
 
-def v410_1_in(
+def v422_1_in(
     x: pyfect.testing.SchemaAsserts[Any, _Super],
 ) -> pyfect.testing.SchemaAsserts[Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T410_0_co = TypeVar("T410_0_co", covariant=True)
-T410_1_co = TypeVar("T410_1_co", covariant=True)
+T422_0_co = TypeVar("T422_0_co", covariant=True)
+T422_1_co = TypeVar("T422_1_co", covariant=True)
 
 
-class Fields410(Protocol[T410_0_co, T410_1_co]):
+class Fields422(Protocol[T422_0_co, T422_1_co]):
     @property
-    def schema(self) -> pyfect.schema.Codec[object, object, T410_0_co, T410_1_co]: ...
-    def declared(self) -> tuple[T410_0_co, T410_1_co]: ...
+    def schema(self) -> pyfect.schema.Codec[object, object, T422_0_co, T422_1_co]: ...
+    def declared(self) -> tuple[T422_0_co, T422_1_co]: ...
 
 
 # pyfect.testing.SchemaCheck
 
 
-def v411_0_out(x: pyfect.testing.SchemaCheck[_Sub]) -> pyfect.testing.SchemaCheck[_Super]:
+def v423_0_out(x: pyfect.testing.SchemaCheck[_Sub]) -> pyfect.testing.SchemaCheck[_Super]:
     return x
 
 
-def v411_0_in(x: pyfect.testing.SchemaCheck[_Super]) -> pyfect.testing.SchemaCheck[_Sub]:
+def v423_0_in(x: pyfect.testing.SchemaCheck[_Super]) -> pyfect.testing.SchemaCheck[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T411_0_co = TypeVar("T411_0_co", covariant=True)
+T423_0_co = TypeVar("T423_0_co", covariant=True)
 
 
-class Fields411(Protocol[T411_0_co]):
+class Fields423(Protocol[T423_0_co]):
     @property
     def parse(
         self,
     ) -> collections.abc.Callable[
-        [object], pyfect._core.Effect[object, pyfect.schema.SchemaError, T411_0_co]
+        [object], pyfect._core.Effect[object, pyfect.schema.SchemaError, T423_0_co]
     ]: ...
-    def declared(self) -> tuple[T411_0_co]: ...
+    def declared(self) -> tuple[T423_0_co]: ...
 
 
 # pyfect.testing.Services
 
 
-def v412_0_out(x: pyfect.testing.Services[_Sub]) -> pyfect.testing.Services[_Super]:
+def v424_0_out(x: pyfect.testing.Services[_Sub]) -> pyfect.testing.Services[_Super]:
     return x
 
 
-def v412_0_in(x: pyfect.testing.Services[_Super]) -> pyfect.testing.Services[_Sub]:
+def v424_0_in(x: pyfect.testing.Services[_Super]) -> pyfect.testing.Services[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
 # pyfect.trie.Trie
 
 
-def v413_0_out(x: pyfect.trie.Trie[_Sub]) -> pyfect.trie.Trie[_Super]:
+def v425_0_out(x: pyfect.trie.Trie[_Sub]) -> pyfect.trie.Trie[_Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v413_0_in(x: pyfect.trie.Trie[_Super]) -> pyfect.trie.Trie[_Sub]:
+def v425_0_in(x: pyfect.trie.Trie[_Super]) -> pyfect.trie.Trie[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
 # pyfect.workers.Worker
 
 
-def v414_0_out(x: pyfect.workers.Worker[_Sub, Any]) -> pyfect.workers.Worker[_Super, Any]:
+def v426_0_out(x: pyfect.workers.Worker[_Sub, Any]) -> pyfect.workers.Worker[_Super, Any]:
     return x
 
 
-def v414_0_in(x: pyfect.workers.Worker[_Super, Any]) -> pyfect.workers.Worker[_Sub, Any]:
+def v426_0_in(x: pyfect.workers.Worker[_Super, Any]) -> pyfect.workers.Worker[_Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v414_1_out(x: pyfect.workers.Worker[Any, _Sub]) -> pyfect.workers.Worker[Any, _Super]:
+def v426_1_out(x: pyfect.workers.Worker[Any, _Sub]) -> pyfect.workers.Worker[Any, _Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v414_1_in(x: pyfect.workers.Worker[Any, _Super]) -> pyfect.workers.Worker[Any, _Sub]:
+def v426_1_in(x: pyfect.workers.Worker[Any, _Super]) -> pyfect.workers.Worker[Any, _Sub]:
     return x
 
 
 # pyfect.workers.WorkerRunner
 
 
-def v415_0_out(
+def v427_0_out(
     x: pyfect.workers.WorkerRunner[_Sub, Any],
 ) -> pyfect.workers.WorkerRunner[_Super, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v415_0_in(
+def v427_0_in(
     x: pyfect.workers.WorkerRunner[_Super, Any],
 ) -> pyfect.workers.WorkerRunner[_Sub, Any]:
     return x
 
 
-def v415_1_out(
+def v427_1_out(
     x: pyfect.workers.WorkerRunner[Any, _Sub],
 ) -> pyfect.workers.WorkerRunner[Any, _Super]:
     return x
 
 
-def v415_1_in(
+def v427_1_in(
     x: pyfect.workers.WorkerRunner[Any, _Super],
 ) -> pyfect.workers.WorkerRunner[Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
@@ -14553,13 +14958,13 @@ def v415_1_in(
 # pyfect.workers.shared_memory.Kind
 
 
-def v416_0_out(
+def v428_0_out(
     x: pyfect.workers.shared_memory.Kind[Never],
 ) -> pyfect.workers.shared_memory.Kind[int | float]:
     return x
 
 
-def v416_0_in(
+def v428_0_in(
     x: pyfect.workers.shared_memory.Kind[int | float],
 ) -> pyfect.workers.shared_memory.Kind[Never]:
     return x  # pyright: ignore[reportReturnType]
@@ -14568,13 +14973,13 @@ def v416_0_in(
 # pyfect.workers.shared_memory.SharedArray
 
 
-def v417_0_out(
+def v429_0_out(
     x: pyfect.workers.shared_memory.SharedArray[Never],
 ) -> pyfect.workers.shared_memory.SharedArray[int | float]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v417_0_in(
+def v429_0_in(
     x: pyfect.workers.shared_memory.SharedArray[int | float],
 ) -> pyfect.workers.shared_memory.SharedArray[Never]:
     return x  # pyright: ignore[reportReturnType]
@@ -14583,24 +14988,24 @@ def v417_0_in(
 # pyfect.workers.worker.ListenOptions
 
 
-def v418_0_out(
+def v430_0_out(
     x: pyfect.workers.worker.ListenOptions[_Sub],
 ) -> pyfect.workers.worker.ListenOptions[_Super]:
     return x
 
 
-def v418_0_in(
+def v430_0_in(
     x: pyfect.workers.worker.ListenOptions[_Super],
 ) -> pyfect.workers.worker.ListenOptions[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T418_0_co = TypeVar("T418_0_co", covariant=True)
+T430_0_co = TypeVar("T430_0_co", covariant=True)
 
 
-class Fields418(Protocol[T418_0_co]):
+class Fields430(Protocol[T430_0_co]):
     @property
-    def port(self) -> T418_0_co: ...
+    def port(self) -> T430_0_co: ...
     @property
     def emit(self) -> collections.abc.Callable[[pyfect.workers.worker.PlatformMessage], None]: ...
     @property
@@ -14609,134 +15014,134 @@ class Fields418(Protocol[T418_0_co]):
     ) -> pyfect.deferred.Deferred[None, pyfect.workers.worker_error.WorkerError]: ...
     @property
     def scope(self) -> pyfect.scope.CloseableScope: ...
-    def declared(self) -> tuple[T418_0_co]: ...
+    def declared(self) -> tuple[T430_0_co]: ...
 
 
 # pyfect.workers.worker.SetupOptions
 
 
-def v419_0_out(
+def v431_0_out(
     x: pyfect.workers.worker.SetupOptions[_Sub],
 ) -> pyfect.workers.worker.SetupOptions[_Super]:
     return x
 
 
-def v419_0_in(
+def v431_0_in(
     x: pyfect.workers.worker.SetupOptions[_Super],
 ) -> pyfect.workers.worker.SetupOptions[_Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T419_0_co = TypeVar("T419_0_co", covariant=True)
+T431_0_co = TypeVar("T431_0_co", covariant=True)
 
 
-class Fields419(Protocol[T419_0_co]):
+class Fields431(Protocol[T431_0_co]):
     @property
-    def worker(self) -> T419_0_co: ...
+    def worker(self) -> T431_0_co: ...
     @property
     def scope(self) -> pyfect.scope.CloseableScope: ...
-    def declared(self) -> tuple[T419_0_co]: ...
+    def declared(self) -> tuple[T431_0_co]: ...
 
 
 # pyfect.workflow.Activity
 
 
-def v420_0_out(
+def v432_0_out(
     x: pyfect.workflow.Activity[_Sub, Any, Any],
 ) -> pyfect.workflow.Activity[_Super, Any, Any]:
     return x
 
 
-def v420_0_in(
+def v432_0_in(
     x: pyfect.workflow.Activity[_Super, Any, Any],
 ) -> pyfect.workflow.Activity[_Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v420_1_out(
+def v432_1_out(
     x: pyfect.workflow.Activity[Any, _Sub, Any],
 ) -> pyfect.workflow.Activity[Any, _Super, Any]:
     return x
 
 
-def v420_1_in(
+def v432_1_in(
     x: pyfect.workflow.Activity[Any, _Super, Any],
 ) -> pyfect.workflow.Activity[Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v420_2_out(
+def v432_2_out(
     x: pyfect.workflow.Activity[Any, Any, _Sub],
 ) -> pyfect.workflow.Activity[Any, Any, _Super]:
     return x
 
 
-def v420_2_in(
+def v432_2_in(
     x: pyfect.workflow.Activity[Any, Any, _Super],
 ) -> pyfect.workflow.Activity[Any, Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T420_0_co = TypeVar("T420_0_co", covariant=True)
-T420_1_co = TypeVar("T420_1_co", covariant=True)
-T420_2_co = TypeVar("T420_2_co", covariant=True)
+T432_0_co = TypeVar("T432_0_co", covariant=True)
+T432_1_co = TypeVar("T432_1_co", covariant=True)
+T432_2_co = TypeVar("T432_2_co", covariant=True)
 
 
-class Fields420(Protocol[T420_0_co, T420_1_co, T420_2_co]):
-    def declared(self) -> tuple[T420_0_co, T420_1_co, T420_2_co]: ...
+class Fields432(Protocol[T432_0_co, T432_1_co, T432_2_co]):
+    def declared(self) -> tuple[T432_0_co, T432_1_co, T432_2_co]: ...
 
 
 # pyfect.workflow.Complete
 
 
-def v421_0_out(x: pyfect.workflow.Complete[_Sub, Any]) -> pyfect.workflow.Complete[_Super, Any]:
+def v433_0_out(x: pyfect.workflow.Complete[_Sub, Any]) -> pyfect.workflow.Complete[_Super, Any]:
     return x
 
 
-def v421_0_in(x: pyfect.workflow.Complete[_Super, Any]) -> pyfect.workflow.Complete[_Sub, Any]:
+def v433_0_in(x: pyfect.workflow.Complete[_Super, Any]) -> pyfect.workflow.Complete[_Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v421_1_out(x: pyfect.workflow.Complete[Any, _Sub]) -> pyfect.workflow.Complete[Any, _Super]:
+def v433_1_out(x: pyfect.workflow.Complete[Any, _Sub]) -> pyfect.workflow.Complete[Any, _Super]:
     return x
 
 
-def v421_1_in(x: pyfect.workflow.Complete[Any, _Super]) -> pyfect.workflow.Complete[Any, _Sub]:
+def v433_1_in(x: pyfect.workflow.Complete[Any, _Super]) -> pyfect.workflow.Complete[Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T421_0_co = TypeVar("T421_0_co", covariant=True)
-T421_1_co = TypeVar("T421_1_co", covariant=True)
+T433_0_co = TypeVar("T433_0_co", covariant=True)
+T433_1_co = TypeVar("T433_1_co", covariant=True)
 
 
-class Fields421(Protocol[T421_0_co, T421_1_co]):
+class Fields433(Protocol[T433_0_co, T433_1_co]):
     @property
-    def exit(self) -> pyfect.exit.Exit[T421_0_co, T421_1_co]: ...
-    def declared(self) -> tuple[T421_0_co, T421_1_co]: ...
+    def exit(self) -> pyfect.exit.Exit[T433_0_co, T433_1_co]: ...
+    def declared(self) -> tuple[T433_0_co, T433_1_co]: ...
 
 
 # pyfect.workflow.DurableDeferred
 
 
-def v422_0_out(
+def v434_0_out(
     x: pyfect.workflow.DurableDeferred[_Sub, Any],
 ) -> pyfect.workflow.DurableDeferred[_Super, Any]:
     return x
 
 
-def v422_0_in(
+def v434_0_in(
     x: pyfect.workflow.DurableDeferred[_Super, Any],
 ) -> pyfect.workflow.DurableDeferred[_Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v422_1_out(
+def v434_1_out(
     x: pyfect.workflow.DurableDeferred[Any, _Sub],
 ) -> pyfect.workflow.DurableDeferred[Any, _Super]:
     return x
 
 
-def v422_1_in(
+def v434_1_in(
     x: pyfect.workflow.DurableDeferred[Any, _Super],
 ) -> pyfect.workflow.DurableDeferred[Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
@@ -14745,37 +15150,37 @@ def v422_1_in(
 # pyfect.workflow.DurableQueue
 
 
-def v423_0_out(
+def v435_0_out(
     x: pyfect.workflow.DurableQueue[_Sub, Any, Any],
 ) -> pyfect.workflow.DurableQueue[_Super, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v423_0_in(
+def v435_0_in(
     x: pyfect.workflow.DurableQueue[_Super, Any, Any],
 ) -> pyfect.workflow.DurableQueue[_Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v423_1_out(
+def v435_1_out(
     x: pyfect.workflow.DurableQueue[Any, _Sub, Any],
 ) -> pyfect.workflow.DurableQueue[Any, _Super, Any]:
     return x
 
 
-def v423_1_in(
+def v435_1_in(
     x: pyfect.workflow.DurableQueue[Any, _Super, Any],
 ) -> pyfect.workflow.DurableQueue[Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v423_2_out(
+def v435_2_out(
     x: pyfect.workflow.DurableQueue[Any, Any, _Sub],
 ) -> pyfect.workflow.DurableQueue[Any, Any, _Super]:
     return x
 
 
-def v423_2_in(
+def v435_2_in(
     x: pyfect.workflow.DurableQueue[Any, Any, _Super],
 ) -> pyfect.workflow.DurableQueue[Any, Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
@@ -14784,37 +15189,37 @@ def v423_2_in(
 # pyfect.workflow.Workflow
 
 
-def v424_0_out(
+def v436_0_out(
     x: pyfect.workflow.Workflow[_Sub, Any, Any],
 ) -> pyfect.workflow.Workflow[_Super, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v424_0_in(
+def v436_0_in(
     x: pyfect.workflow.Workflow[_Super, Any, Any],
 ) -> pyfect.workflow.Workflow[_Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v424_1_out(
+def v436_1_out(
     x: pyfect.workflow.Workflow[Any, _Sub, Any],
 ) -> pyfect.workflow.Workflow[Any, _Super, Any]:
     return x
 
 
-def v424_1_in(
+def v436_1_in(
     x: pyfect.workflow.Workflow[Any, _Super, Any],
 ) -> pyfect.workflow.Workflow[Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v424_2_out(
+def v436_2_out(
     x: pyfect.workflow.Workflow[Any, Any, _Sub],
 ) -> pyfect.workflow.Workflow[Any, Any, _Super]:
     return x
 
 
-def v424_2_in(
+def v436_2_in(
     x: pyfect.workflow.Workflow[Any, Any, _Super],
 ) -> pyfect.workflow.Workflow[Any, Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
@@ -14823,13 +15228,13 @@ def v424_2_in(
 # pyfect.workflow.activity.Exactly
 
 
-def v425_0_out(
+def v437_0_out(
     x: pyfect.workflow.activity.Exactly[_Sub],
 ) -> pyfect.workflow.activity.Exactly[_Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v425_0_in(
+def v437_0_in(
     x: pyfect.workflow.activity.Exactly[_Super],
 ) -> pyfect.workflow.activity.Exactly[_Sub]:
     return x  # pyright: ignore[reportReturnType]
@@ -14838,57 +15243,57 @@ def v425_0_in(
 # pyfect.workflow.workflow_proxy.WorkflowEndpoints
 
 
-def v426_0_out(
+def v438_0_out(
     x: pyfect.workflow.workflow_proxy.WorkflowEndpoints[_Sub, Any, Any],
 ) -> pyfect.workflow.workflow_proxy.WorkflowEndpoints[_Super, Any, Any]:
     return x
 
 
-def v426_0_in(
+def v438_0_in(
     x: pyfect.workflow.workflow_proxy.WorkflowEndpoints[_Super, Any, Any],
 ) -> pyfect.workflow.workflow_proxy.WorkflowEndpoints[_Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v426_1_out(
+def v438_1_out(
     x: pyfect.workflow.workflow_proxy.WorkflowEndpoints[Any, _Sub, Any],
 ) -> pyfect.workflow.workflow_proxy.WorkflowEndpoints[Any, _Super, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v426_1_in(
+def v438_1_in(
     x: pyfect.workflow.workflow_proxy.WorkflowEndpoints[Any, _Super, Any],
 ) -> pyfect.workflow.workflow_proxy.WorkflowEndpoints[Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v426_2_out(
+def v438_2_out(
     x: pyfect.workflow.workflow_proxy.WorkflowEndpoints[Any, Any, _Sub],
 ) -> pyfect.workflow.workflow_proxy.WorkflowEndpoints[Any, Any, _Super]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v426_2_in(
+def v438_2_in(
     x: pyfect.workflow.workflow_proxy.WorkflowEndpoints[Any, Any, _Super],
 ) -> pyfect.workflow.workflow_proxy.WorkflowEndpoints[Any, Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T426_0_co = TypeVar("T426_0_co", covariant=True)
+T438_0_co = TypeVar("T438_0_co", covariant=True)
 
 
-class Fields426(Protocol[T426_0_co]):
+class Fields438(Protocol[T438_0_co]):
     @property
     def execute(
         self,
     ) -> pyfect.http_api.endpoint.HttpApiEndpoint[
-        None, None, T426_0_co, T426_0_co, None, Any, Any, Any
+        None, None, T438_0_co, T438_0_co, None, Any, Any, Any
     ]: ...
     @property
     def discard(
         self,
     ) -> pyfect.http_api.endpoint.HttpApiEndpoint[
-        None, None, T426_0_co, T426_0_co, None, str, str, typing.Never
+        None, None, T438_0_co, T438_0_co, None, str, str, typing.Never
     ]: ...
     @property
     def resume(
@@ -14903,60 +15308,60 @@ class Fields426(Protocol[T426_0_co]):
         None,
         typing.Never,
     ]: ...
-    def declared(self) -> tuple[T426_0_co]: ...
+    def declared(self) -> tuple[T438_0_co]: ...
 
 
 # pyfect.workflow.workflow_proxy.WorkflowRpcs
 
 
-def v427_0_out(
+def v439_0_out(
     x: pyfect.workflow.workflow_proxy.WorkflowRpcs[_Sub, Any, Any],
 ) -> pyfect.workflow.workflow_proxy.WorkflowRpcs[_Super, Any, Any]:
     return x
 
 
-def v427_0_in(
+def v439_0_in(
     x: pyfect.workflow.workflow_proxy.WorkflowRpcs[_Super, Any, Any],
 ) -> pyfect.workflow.workflow_proxy.WorkflowRpcs[_Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v427_1_out(
+def v439_1_out(
     x: pyfect.workflow.workflow_proxy.WorkflowRpcs[Any, _Sub, Any],
 ) -> pyfect.workflow.workflow_proxy.WorkflowRpcs[Any, _Super, Any]:
     return x
 
 
-def v427_1_in(
+def v439_1_in(
     x: pyfect.workflow.workflow_proxy.WorkflowRpcs[Any, _Super, Any],
 ) -> pyfect.workflow.workflow_proxy.WorkflowRpcs[Any, _Sub, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
-def v427_2_out(
+def v439_2_out(
     x: pyfect.workflow.workflow_proxy.WorkflowRpcs[Any, Any, _Sub],
 ) -> pyfect.workflow.workflow_proxy.WorkflowRpcs[Any, Any, _Super]:
     return x
 
 
-def v427_2_in(
+def v439_2_in(
     x: pyfect.workflow.workflow_proxy.WorkflowRpcs[Any, Any, _Super],
 ) -> pyfect.workflow.workflow_proxy.WorkflowRpcs[Any, Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
-T427_0_co = TypeVar("T427_0_co", covariant=True)
-T427_1_co = TypeVar("T427_1_co", covariant=True)
-T427_2_co = TypeVar("T427_2_co", covariant=True)
+T439_0_co = TypeVar("T439_0_co", covariant=True)
+T439_1_co = TypeVar("T439_1_co", covariant=True)
+T439_2_co = TypeVar("T439_2_co", covariant=True)
 
 
-class Fields427(Protocol[T427_0_co, T427_1_co, T427_2_co]):
+class Fields439(Protocol[T439_0_co, T439_1_co, T439_2_co]):
     @property
-    def execute(self) -> pyfect.rpc.Rpc[T427_0_co, T427_1_co, T427_2_co]: ...
+    def execute(self) -> pyfect.rpc.Rpc[T439_0_co, T439_1_co, T439_2_co]: ...
     @property
-    def discard(self) -> pyfect.rpc.Rpc[T427_0_co, str, typing.Never]: ...
+    def discard(self) -> pyfect.rpc.Rpc[T439_0_co, str, typing.Never]: ...
     @property
     def resume(
         self,
     ) -> pyfect.rpc.Rpc[pyfect.workflow.workflow_proxy.ResumePayload, None, typing.Never]: ...
-    def declared(self) -> tuple[T427_0_co, T427_1_co, T427_2_co]: ...
+    def declared(self) -> tuple[T439_0_co, T439_1_co, T439_2_co]: ...

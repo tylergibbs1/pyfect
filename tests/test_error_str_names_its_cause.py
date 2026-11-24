@@ -13,6 +13,7 @@ import pytest
 from _pyfect_modules import INSTALLS_ON_IMPORT, module_names
 
 from pyfect.ai import mcp_client_error
+from pyfect.chat import chat_error, chat_markdown
 from pyfect.errors import TaggedError, UnknownError
 from pyfect.eventlog.event_log_session_auth import EventLogSessionAuthError
 from pyfect.http import error as http_error
@@ -111,6 +112,11 @@ _OWN_STR_WITH_A_TEST = {
     UnknownError,  # test_a_raised_cause_shows_in_a_plain_tagged_error
     # ``reason`` is a tag and ``message`` says why: test_command_line.py checks both.
     command_line.CommandLineError,
+    # A chat error's cause can hold URLs, tokens and message text, which Effect keeps out
+    # of what is logged: test_chat_core.py and test_chat_markdown.py check they stay out.
+    chat_error.ChatErrorReason,
+    chat_error.ChatError,
+    chat_markdown.ChatMarkdownError,
 }
 
 
