@@ -229,16 +229,15 @@ def count_rows(sql: SqlClientService, table: str, where: Any = None) -> fx.Effec
 def sweep_until[A](
     read: fx.Effect[A, Any, Any], done: Callable[[A], bool]
 ) -> Generator[Any, Any, A]:
-    """Advances the clock an hour at a time until ``done`` holds. A sweep the
-    clock wakes finishes its queries in real time, so each hour polls on the
-    live clock."""
+    """Advances the clock an hour at a time until ``done`` holds. Each
+    ``adjust`` returns once the sweep it woke has finished its queries
+    (thread-backed work takes no virtual time), so one read per hour
+    sees it."""
     for _ in range(24):
         yield from testing.adjust("1 hour")
-        for _ in range(50):
-            value = yield from read
-            if done(value):
-                return value
-            yield from testing.with_live(fx.sleep("10 millis"))
+        value = yield from read
+        if done(value):
+            return value
     return (yield from read)
 
 

@@ -638,32 +638,6 @@ def test_replaces_per_entry_remote_rows_with_entry_sources_in_one_restartable_mi
     def body():
         filename = str(tmp_path / "journal.db")
         client = yield from _client(filename)
-        # A journal written by an unreleased build with upload checkpoints and cursors.
-        yield from client(_LEGACY_ENTRIES)
-        yield from client(_LEGACY_REMOTES)
-        yield from client(
-            "CREATE TABLE effect_event_journal_sequence "
-            "(sequence INTEGER PRIMARY KEY, entry_id BLOB NOT NULL UNIQUE)"
-        )
-        yield from client(
-            "CREATE TABLE effect_event_remotes_checkpoints "
-            "(remote_id BLOB PRIMARY KEY, sequence INTEGER NOT NULL)"
-        )
-        yield from client(
-            "CREATE TABLE effect_event_remotes_cursors "
-            "(remote_id BLOB PRIMARY KEY, next_sequence INT NOT NULL)"
-        )
-        yield from client(
-            "CREATE INDEX effect_event_journal_event_idx "
-            "ON effect_event_journal (event, primary_key, timestamp)"
-        )
-        yield from client(
-            "CREATE INDEX effect_event_journal_timestamp_idx ON effect_event_journal (timestamp)"
-        )
-        yield from client(
-            "CREATE INDEX effect_event_remotes_sequence_idx "
-            "ON effect_event_remotes (remote_id, sequence)"
-        )
         remote_a = J.make_remote_id_unsafe()
         remote_b = J.make_remote_id_unsafe()
         uploaded = entry(1000, "Repro", "uploaded")
@@ -673,30 +647,63 @@ def test_replaces_per_entry_remote_rows_with_entry_sources_in_one_restartable_mi
         from_b = entry(4000, "Repro", "fromB")
         # Written offline; no remote has it.
         pending = entry(5000, "Repro", "pending")
-        for item in (uploaded, from_a, acked, from_b, pending):
-            yield from _insert_legacy_entry(client, item)
+        # A journal written by an unreleased build with upload checkpoints and cursors,
+        # in one transaction: a commit per statement makes CI wait on a WAL sync each.
+
+        def legacy():
+            yield from client(_LEGACY_ENTRIES)
+            yield from client(_LEGACY_REMOTES)
             yield from client(
-                "INSERT INTO effect_event_journal_sequence {}", client.insert({"entry_id": item.id})
+                "CREATE TABLE effect_event_journal_sequence "
+                "(sequence INTEGER PRIMARY KEY, entry_id BLOB NOT NULL UNIQUE)"
             )
-        yield from client(
-            "INSERT INTO effect_event_remotes {}",
-            client.insert(
-                [
-                    {"remote_id": remote_a, "entry_id": from_a.id, "sequence": 0},
-                    {"remote_id": remote_a, "entry_id": acked.id, "sequence": 1},
-                    {"remote_id": remote_b, "entry_id": from_b.id, "sequence": 3},
-                ]
-            ),
-        )
-        yield from client(
-            "INSERT INTO effect_event_remotes_checkpoints {}",
-            client.insert({"remote_id": remote_a, "sequence": 1}),
-        )
-        # B has no cursor row, so its download progress is only in the remotes table.
-        yield from client(
-            "INSERT INTO effect_event_remotes_cursors {}",
-            client.insert({"remote_id": remote_a, "next_sequence": 2}),
-        )
+            yield from client(
+                "CREATE TABLE effect_event_remotes_checkpoints "
+                "(remote_id BLOB PRIMARY KEY, sequence INTEGER NOT NULL)"
+            )
+            yield from client(
+                "CREATE TABLE effect_event_remotes_cursors "
+                "(remote_id BLOB PRIMARY KEY, next_sequence INT NOT NULL)"
+            )
+            yield from client(
+                "CREATE INDEX effect_event_journal_event_idx "
+                "ON effect_event_journal (event, primary_key, timestamp)"
+            )
+            yield from client(
+                "CREATE INDEX effect_event_journal_timestamp_idx "
+                "ON effect_event_journal (timestamp)"
+            )
+            yield from client(
+                "CREATE INDEX effect_event_remotes_sequence_idx "
+                "ON effect_event_remotes (remote_id, sequence)"
+            )
+            for item in (uploaded, from_a, acked, from_b, pending):
+                yield from _insert_legacy_entry(client, item)
+                yield from client(
+                    "INSERT INTO effect_event_journal_sequence {}",
+                    client.insert({"entry_id": item.id}),
+                )
+            yield from client(
+                "INSERT INTO effect_event_remotes {}",
+                client.insert(
+                    [
+                        {"remote_id": remote_a, "entry_id": from_a.id, "sequence": 0},
+                        {"remote_id": remote_a, "entry_id": acked.id, "sequence": 1},
+                        {"remote_id": remote_b, "entry_id": from_b.id, "sequence": 3},
+                    ]
+                ),
+            )
+            yield from client(
+                "INSERT INTO effect_event_remotes_checkpoints {}",
+                client.insert({"remote_id": remote_a, "sequence": 1}),
+            )
+            # B has no cursor row, so its download progress is only in the remotes table.
+            yield from client(
+                "INSERT INTO effect_event_remotes_cursors {}",
+                client.insert({"remote_id": remote_a, "next_sequence": 2}),
+            )
+
+        yield from client.with_transaction(fx.gen(legacy))
 
         def fail_drop(statement: Any, *_: object) -> fx.Effect[Any]:
             if "DROP TABLE" in statement.compile()[0]:
