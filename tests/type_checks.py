@@ -115,6 +115,7 @@ from pyfect.chat.chat_error import Retry as ChatRetry
 from pyfect.chat.chat_thread import ChatThread
 from pyfect.chat.discord import discord_chat, discord_gateway, discord_rest
 from pyfect.chat.slack import slack_chat, slack_web_api
+from pyfect.chat.whatsapp import whatsapp_chat, whatsapp_graph_api
 from pyfect.cli import (
     Argument,
     CliError,
@@ -12278,6 +12279,12 @@ def _chat_teams() -> None:
     from pyfect.crypto.digest import Digest
     from pyfect.crypto.mac import Mac
     from pyfect.crypto.signature import Signature
+def _chat_whatsapp(effect: fx.Effect[int, ValueError, ChatService]) -> None:
+    from pyfect.chat.chat_adapter import Posted
+    from pyfect.chat.chat_handler import ChatHandler, NotAccepted
+    from pyfect.chat.chat_test import MentionToken
+    from pyfect.crypto.mac import Mac
+    from pyfect.encoding import Json
     from pyfect.http.client import HttpClient
     from pyfect.http.router import HttpRouter
     from pyfect.redacted import make as redacted
@@ -12355,6 +12362,20 @@ def _chat_discord(effect: fx.Effect[int, ValueError, ChatService]) -> None:
     assert_type(
         discord_chat.normalize(dispatch, bot_user_id="1"),
         Ok[tuple[ChatEvent, ...]] | Err[discord_chat.MissingChannelType],
+    token = redacted("EAAG")
+    # The adapter registers in the Registry and needs only an HttpClient besides.
+    assert_type(
+        whatsapp_chat.layer(access_token=token, phone_number_id="1"),
+        fx.Layer[
+            whatsapp_chat.WhatsAppChat | whatsapp_graph_api.WhatsAppGraphApi,
+            Never,
+            HttpClient | ChatRegistry,
+        ],
+    )
+    # The webhook adds GET and POST to a router and checks signatures with Mac.
+    assert_type(
+        whatsapp_chat.layer_webhook(path="/w", app_secret=token, verify_token=token),
+        fx.Layer[Never, Never, HttpRouter | whatsapp_chat.WhatsAppChat | ChatHandler | Mac],
     )
     # Scoped options leave the effect's type as it was.
     assert_type(
@@ -12373,3 +12394,28 @@ def _chat_discord(effect: fx.Effect[int, ValueError, ChatService]) -> None:
 
 
 del _chat_discord
+            whatsapp_chat.with_post_options(whatsapp_chat.WhatsAppPostOptions(link_preview=True))
+        ),
+        fx.Effect[int, ValueError, ChatService],
+    )
+    whatsapp_chat.WhatsAppPostOptions(link_preview="yes")  # pyright: ignore[reportArgumentType]
+    assert_type(whatsapp_chat.parse_mention("@1"), MentionToken | None)
+    thread = whatsapp_chat.thread(phone_number_id="1", user="2")
+    assert_type(whatsapp_chat.parts(thread), whatsapp_chat.Parts | None)
+    assert_type(
+        whatsapp_chat.WhatsAppChat().flat_map(
+            lambda service: service.send_template(thread, whatsapp_chat.Template("t", "en"))
+        ),
+        fx.Effect[Posted, ChatError, whatsapp_chat.WhatsAppChat],
+    )
+    assert_type(
+        whatsapp_chat.WhatsAppChat().flat_map(lambda service: service.receive({})),
+        fx.Effect[None, NotAccepted, whatsapp_chat.WhatsAppChat | ChatHandler],
+    )
+    assert_type(
+        whatsapp_graph_api.WhatsAppGraphApi().flat_map(lambda api: api.call("me")),
+        fx.Effect[Json, ChatError, whatsapp_graph_api.WhatsAppGraphApi],
+    )
+
+
+del _chat_whatsapp

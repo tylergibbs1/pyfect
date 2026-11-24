@@ -27,6 +27,9 @@ from hypothesis import strategies as st
 from pyfect import _js
 from pyfect._js import SPACE
 from pyfect.ai._mcp import skill_rules
+from pyfect.chat.whatsapp import _address as whatsapp_address
+from pyfect.chat.whatsapp import _text as whatsapp_text
+from pyfect.chat.whatsapp import _webhook as whatsapp_webhook
 from pyfect.cli.prompt import _date_parts
 from pyfect.config_provider import _dotenv, from_dot_env_contents
 from pyfect.encoding import _json_array_scanner, _json_parser, json5, json_array, jsonc, toml
@@ -261,6 +264,26 @@ _REWRITES = {
         _date_parts._DATE_PART,
         '"\\aD',
         searched=True,
+    ),
+    "whatsapp _address._BSUID": Rewrite(
+        r"[A-Z]{2}(?:\.[A-Z0-9]+)+", whatsapp_address._BSUID, "US.0a"
+    ),
+    "whatsapp _webhook._SIGNATURE": Rewrite(
+        r"sha256=((?:[0-9a-fA-F]{2})+)", whatsapp_webhook._SIGNATURE, "0fFg", prefix="sha256="
+    ),
+    "whatsapp _text._THEMATIC_BREAK": Rewrite(
+        r" {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*", whatsapp_text._THEMATIC_BREAK, "-*_ \ta"
+    ),
+    "whatsapp _text._TABLE_DELIMITER": Rewrite(
+        r" {0,3}\|?[ \t]*:?-+:?[ \t]*(?:\|[ \t]*:?-+:?[ \t]*)*\|?[ \t]*",
+        whatsapp_text._TABLE_DELIMITER,
+        "|-: \ta",
+    ),
+    "whatsapp _text._EMAIL_AUTOLINK": Rewrite(
+        r"<([A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?"
+        r"(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*)>",
+        whatsapp_text._EMAIL_AUTOLINK,
+        "<>@.-a",
     ),
     "_conditional._ENTITY_TAG_LIST": Rewrite(
         r'[\s,]*(?:(?:W/)?"[^"]*"\s*(?:,[\s,]*|\Z))*\Z', _conditional._ENTITY_TAG_LIST, 'W/" ,a'
