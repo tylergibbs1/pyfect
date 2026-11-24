@@ -1041,7 +1041,7 @@ wheels = [
 
 [[package]]
 name = "pyfect-dev"
-version = "0.6.35"
+version = "0.6.36"
 source = { editable = "." }
 dependencies = [
     { name = "typing-extensions" },

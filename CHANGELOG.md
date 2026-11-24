@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.6.36 (2026-11-24)
+
+### Added
+
+- `pyfect.big_int.nth_root` and `nth_root_unsafe`: the integer `degree`-th root of an `int`,
+  rounded toward zero, as Effect 4.1.5's `BigInt.nthRoot` / `nthRootUnsafe` (`None`, or a
+  `ValueError`, for an even root of a negative number).
+- `pyfect.codegen.Module` (Effect 4.1.5's `Codegen.Module`): `add_schemas({name:
+  representation}, references=...)` collects schemas and `print()` writes them as one Python
+  module, a variable per name sharing the references.
+- `http.live_server` takes `websocket_high_water_mark`, the inbound WebSocket bytes that may
+  wait for a reader's pull before the server stops reading the connection (64 KiB by default),
+  as Effect 4.1.5's `websocket.highWaterMark` (#10628). An empty message counts as one byte, so
+  a client sending only empty messages is paused too.
+
+### Deprecated
+
+- `schema.representation.to_code_document` and `make_code`, which Effect 4.1.5 replaced with
+  `Codegen`: use `codegen.Module().add_schemas(...).print()` and `Code(runtime, type)`. Both
+  warn and are removed in 0.8.0.
+
+### Fixed
+
+- `Stream.merge` and `Channel.merge` start both sides as soon as the merged stream is opened,
+  before its first value is asked for, and so do the combinators built on them
+  (`merge_effect`, `merge_left`, `merge_right`, `merge_result`, `Channel.interrupt_when`). Both
+  sides used to be scheduled to start later.
+- A command with `shell=True` runs on Windows. Its `cmd.exe /d /s /c "<script>"` line went to
+  `subprocess` as a list, which escaped the script's quotes, so `cmd.exe` ran nothing; it is
+  passed verbatim now, as Node's `windowsVerbatimArguments` does.
+
+### Docs
+
+- http-server.mdx: the `layer_test` client sends every request to the test server, absolute
+  URLs included, with the whole URL as the path (`/http://api.example/graphql`), as Effect's
+  `layerTestClient` does.
+
 ## 0.6.35 (2026-11-24)
 
 ### Performance
