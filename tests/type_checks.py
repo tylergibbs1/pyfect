@@ -8009,6 +8009,34 @@ def check_ai_toolkit() -> None:
     ai_tool_ledger.guard(kit)  # pyright: ignore[reportCallIssue]
     ai_tool_ledger.guard(kit, on_unknown="retry")  # pyright: ignore[reportCallIssue, reportArgumentType]
 
+    # A workflow lists ToolLedgerError in error= as it does ToolOutcomeUnknown, so a ledger
+    # failure reaches its caller typed; a workflow that leaves it out rejects the handler.
+    def ledger_down(o: WorkflowOrder, _id: str) -> fx.Effect[str, ai_tool_ledger.ToolLedgerError]:
+        return fx.fail(ai_tool_ledger.ToolLedgerError("down", "begin", o["id"]))
+
+    ledgered = workflow.make(
+        "Ledgered",
+        payload=S.Struct(WorkflowOrder),
+        success=S.String,
+        error=S.Union(ai_tool_ledger.ToolOutcomeUnknown, ai_tool_ledger.ToolLedgerError),
+        idempotency_key=lambda o: o["id"],
+    )
+    assert_type(
+        ledgered,
+        Workflow[
+            WorkflowOrder, str, ai_tool_ledger.ToolOutcomeUnknown | ai_tool_ledger.ToolLedgerError
+        ],
+    )
+    assert_type(ledgered.to_layer(ledger_down), fx.Layer[Never, Never, WorkflowEngine])
+    unledgered = workflow.make(
+        "Unledgered",
+        payload=S.Struct(WorkflowOrder),
+        success=S.String,
+        error=ai_tool_ledger.ToolOutcomeUnknown,
+        idempotency_key=lambda o: o["id"],
+    )
+    unledgered.to_layer(ledger_down)  # pyright: ignore[reportCallIssue, reportArgumentType]
+
 
 def check_ai_tool_ledger_workflow_error(
     answer: fx.Effect[str, ai_tool_ledger.ToolOutcomeUnknown, lm.LanguageModel],
