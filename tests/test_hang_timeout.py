@@ -69,6 +69,46 @@ def test_a_test_spinning_inside_an_asyncio_loop_fails_where_it_was_stuck(
     )
 
 
+POLLING_LOOP_TEST = """
+import asyncio
+import time
+
+def test_polls_in_the_loop():
+    async def main():
+        loop = asyncio.get_running_loop()
+
+        def poll_in_a_callback():
+            time.sleep(0.003)
+            loop.call_later(0.05, poll_in_a_callback)
+
+        poll_in_a_callback()
+        await asyncio.Event().wait()
+
+    asyncio.run(main())
+"""
+
+
+def test_a_loop_mostly_between_its_callbacks_reports_the_callback(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A loop spends part of each turn in its own code, between callbacks; this one is there
+    almost all the time. The report used to name wherever the alarm happened to land, so
+    under CI load it named asyncio's ``run_forever`` instead of the spinning callback."""
+    monkeypatch.setenv("PYTHONPATH", str(Path(__file__).parent))
+    pytester.makepyfile(POLLING_LOOP_TEST)
+    pytester.makeini("[pytest]\ntest_timeout = 0.5\n")
+    result = pytester.runpytest_subprocess("-p", "_timeout", timeout=SUBPROCESS_TIMEOUT)
+    result.assert_outcomes(failed=1)
+    result.stdout.fnmatch_lines(
+        [
+            "*test hung: still running after 0.5s; stuck in:*",
+            "*in poll_in_a_callback*",
+            "*task Task-1 awaits in:*",
+            "*in main*",
+        ]
+    )
+
+
 def test_the_suite_loads_the_timeout_plugin(pytestconfig: pytest.Config) -> None:
     assert pytestconfig.pluginmanager.has_plugin("_timeout")
 

@@ -10,13 +10,17 @@ asyncio runs callbacks catching every exception but ``KeyboardInterrupt`` and
 spinning in a callback (anyio's repeated cancels, say) would hang for good.
 There the alarm raises ``_Hung``, a ``KeyboardInterrupt`` the loop lets
 through, and this plugin turns it back into the failure, naming where the
-test was stuck. Until the test ends the alarm fires again every
-``_AGAIN`` seconds at most: an exception caught on its way out (a loop's
-shutdown cancelling a task that waits through cancels) is raised again, and
-a ``pytest.fail`` swallowed elsewhere becomes a ``_Hung``.
+test was stuck. A loop spends part of every turn in its own code, between
+callbacks, so there the alarm looks again every ``_LOOK_EVERY`` seconds, up to
+``_LOOKS`` times, and reports the first look that lands in a callback (or,
+for a loop idle all along, the last). Until the test ends the alarm fires
+again every ``_AGAIN`` seconds at most: an exception caught on its way out (a
+loop's shutdown cancelling a task that waits through cancels) is raised
+again, and a ``pytest.fail`` swallowed elsewhere becomes a ``_Hung``.
 """
 
 import asyncio
+import asyncio.events
 import signal
 import threading
 import traceback
@@ -30,6 +34,11 @@ from _native_stacks import capture, captured
 
 _AGAIN = 1.0
 """Seconds at most between the alarm's raises, after the first."""
+_LOOK_EVERY = 0.001
+_LOOKS = 250
+"""How often, and how many times, the alarm looks again for a running loop's callback."""
+_CALLBACK_RUNNER = asyncio.events.Handle._run.__code__
+"""The frame that calls every callback of a pure-Python asyncio loop."""
 
 
 class _Hung(KeyboardInterrupt):
@@ -49,6 +58,14 @@ def _running_loop() -> asyncio.AbstractEventLoop | None:
         return asyncio.get_running_loop()
     except RuntimeError:
         return None
+
+
+def _in_a_callback(frame: FrameType | None) -> bool:
+    while frame is not None and frame.f_back is not None:
+        if frame.f_back.f_code is _CALLBACK_RUNNER:
+            return True
+        frame = frame.f_back
+    return False
 
 
 def _where_stuck(
@@ -77,13 +94,19 @@ def pytest_runtest_call(item: pytest.Item) -> Generator[None, object, object]:
     fired = False
     stuck: str | None = None
     """Where the first ``_Hung`` found the test; a later one may land in its cleanup."""
+    looks_left: int | None = None
 
     def on_alarm(signum: int, frame: FrameType | None) -> None:
-        nonlocal fired, stuck
-        if not fired:
-            capture(item)  # while the test is still stuck: the failure unwinds it
-        signal.setitimer(signal.ITIMER_REAL, min(seconds, _AGAIN))
+        nonlocal fired, stuck, looks_left
         loop = _running_loop()
+        if looks_left is None:
+            capture(item)  # while the test is still stuck: the failure unwinds it
+            looks_left = _LOOKS
+        if loop is not None and stuck is None and looks_left and not _in_a_callback(frame):
+            looks_left -= 1
+            signal.setitimer(signal.ITIMER_REAL, _LOOK_EVERY)
+            return
+        signal.setitimer(signal.ITIMER_REAL, min(seconds, _AGAIN))
         if fired or loop is not None:
             fired = True
             stuck = stuck or _where_stuck(str(item.path), frame, loop)
