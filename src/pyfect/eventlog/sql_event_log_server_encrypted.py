@@ -149,7 +149,8 @@ def layer_storage(
 
     A server streams to its clients the writes of every server on the
     database (Effect's, only its own): its own at once, the others' within
-    ``poll_interval``, which must be positive and finite."""
+    ``poll_interval``, which must be positive and finite (else
+    ``IllegalArgumentError``, raised by the call)."""
     return layer_effect(
         Storage,
         make_storage(

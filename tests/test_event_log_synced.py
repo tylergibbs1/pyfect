@@ -384,25 +384,27 @@ def test_an_unencrypted_sql_storage_streams_what_another_storage_wrote(tmp_path:
     assert fx.run_blocking_exit(program.timeout("10 seconds")) == fx.Success((3, [1, 2, 3]))
 
 
-@pytest.mark.parametrize("make", [SqlServer.make_storage, SqlU.make_storage])
-@pytest.mark.parametrize("poll_interval", ["0 millis", "-1 second", duration.infinity])
+@pytest.mark.parametrize(
+    "make",
+    [
+        SqlServer.make_storage,
+        SqlServer.layer_storage,
+        SqlServer.layer_storage_subtle,
+        SqlU.make_storage,
+        SqlU.layer_storage,
+    ],
+)
+@pytest.mark.parametrize(
+    ("poll_interval", "shown"),
+    [("0 millis", "0 millis"), ("-1 second", "-1000 millis"), (duration.infinity, "Infinity")],
+)
 def test_a_sql_storage_refuses_a_poll_interval_that_is_not_positive_and_finite(
-    make: Callable[..., fx.Effect[Any, Any, Any]], poll_interval: duration.Input
+    make: Callable[..., object], poll_interval: duration.Input, shown: str
 ) -> None:
     # Without polling, a server reports entries another server took as its latest
-    # but never streams them, and synced waits for them forever.
-    @fx.fn
-    def body():
-        client = yield from _sqlite()
-        return (
-            yield from make(poll_interval=poll_interval).pipe(fx.provide_service(SqlClient, client))
-        )
-
-    program = fx.scoped(body()).pipe(
-        fx.provide(layer.merge(digest.layer_web_crypto, reactivity_layer))
-    )
-    exit = fx.run_blocking_exit(program)
-    assert isinstance(exit, fx.Failure)
-    assert repr(exit.cause.squash()) == repr(
-        IllegalArgumentError("poll_interval must be positive and finite")
-    )
+    # but never streams them, and synced waits for them forever. The call refuses it,
+    # before any layer is built.
+    with pytest.raises(
+        IllegalArgumentError, match=f"^poll_interval must be positive and finite, got {shown}$"
+    ):
+        make(poll_interval=poll_interval)

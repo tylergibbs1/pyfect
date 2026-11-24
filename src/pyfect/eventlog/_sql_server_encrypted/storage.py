@@ -207,10 +207,11 @@ def make_storage(
     compaction and its sweep (Effect's ``makeStorage``).
     ``migrate_legacy_stores``: see ``LegacyMigration``. Change streams read
     the writes of other servers on the database every ``poll_interval``
-    (see ``_table_tail``)."""
+    (see ``_table_tail``), which must be positive and finite (else
+    ``IllegalArgumentError``, raised by the call)."""
+    poll = parse_poll_interval(poll_interval)
 
     def build():
-        poll = yield from parse_poll_interval(poll_interval)
         digest = yield from Digest()
         sql = (yield from SqlClient()).without_transforms()
         config = yield from make_compaction_config(compaction)

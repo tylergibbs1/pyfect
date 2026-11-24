@@ -104,10 +104,11 @@ def make_storage(
 
     A server streams to its clients the writes of every server on the
     database (Effect's, only its own): its own at once, the others' within
-    ``poll_interval``, which must be positive and finite."""
+    ``poll_interval``, which must be positive and finite (else
+    ``IllegalArgumentError``, raised by the call)."""
+    poll = parse_poll_interval(poll_interval)
 
     def build():
-        poll = yield from parse_poll_interval(poll_interval)
         sql = (yield from SqlClient()).without_transforms()
         dialect = _dialect(sql)
         tables = _Tables(sql, entry_table_prefix, remote_id_table)

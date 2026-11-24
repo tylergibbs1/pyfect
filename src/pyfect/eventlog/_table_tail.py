@@ -17,7 +17,6 @@ from typing import Never
 from pyfect._core import Effect
 from pyfect.duration import Duration, from_input_unsafe
 from pyfect.duration import Input as DurationInput
-from pyfect.effect import die, succeed, suspend
 from pyfect.errors import IllegalArgumentError
 from pyfect.option import Some
 from pyfect.pubsub import PubSub, Subscription
@@ -28,18 +27,14 @@ type Page[A] = tuple[Sequence[A], int]
 """The items read and the sequence to read from next."""
 
 
-def parse_poll_interval(poll_interval: DurationInput) -> Effect[Duration]:
-    """``poll_interval`` as a ``Duration``. Dies with an
-    ``IllegalArgumentError`` unless it is positive and finite: a reader
-    that never polls misses entries ``latest_sequence`` reports."""
-
-    def parse() -> Effect[Duration]:
-        parsed = from_input_unsafe(poll_interval)
-        if not (parsed.is_positive() and parsed.is_finite()):
-            return die(IllegalArgumentError("poll_interval must be positive and finite"))
-        return succeed(parsed)
-
-    return suspend(parse)
+def parse_poll_interval(poll_interval: DurationInput) -> Duration:
+    """``poll_interval`` as a ``Duration``. Raises ``IllegalArgumentError``
+    (a ``ValueError``) unless it is positive and finite: a reader that never
+    polls misses entries ``latest_sequence`` reports."""
+    parsed = from_input_unsafe(poll_interval)
+    if not (parsed.is_positive() and parsed.is_finite()):
+        raise IllegalArgumentError(f"poll_interval must be positive and finite, got {parsed}")
+    return parsed
 
 
 def make_wakes() -> Effect[PubSub[None], Never, Scope]:
