@@ -7,9 +7,9 @@ here reaches the network."""
 from __future__ import annotations
 
 import json
-import time
 from collections.abc import Callable, Generator, Mapping
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import Any, TypedDict, cast
 from urllib.parse import unquote
 
@@ -56,6 +56,11 @@ OTHER_KEY: Redacted[SecretJwk] = redacted(
 )
 
 crypto = layer.merge(layer.merge(layer_mac, layer_digest), layer_signature)
+
+
+def unix_now() -> int:
+    """Whole seconds since the epoch, from the wall clock token checks read, not a timing."""
+    return int(datetime.now(UTC).timestamp())
 
 
 def activity(**overrides: object) -> dict[str, Any]:
@@ -178,7 +183,7 @@ class Bot:
             body: dict[str, object] = {
                 "iss": "https://api.botframework.com",
                 "aud": APP_ID,
-                "exp": int(time.time()) + 600,
+                "exp": unix_now() + 600,
                 "serviceurl": claimed,
                 **claims,
             }
@@ -230,7 +235,7 @@ def user_posts(at: ChatThread, text: str) -> Effect[ChatEvent]:
         events = teams_chat.normalize(
             activity(
                 id=id,
-                timestamp=time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime()),
+                timestamp=datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.000Z"),
                 serviceUrl="https://smba.trafficmanager.net/teams",
                 conversation={
                     "id": CONVERSATION if parts is None else parts.conversation_id,

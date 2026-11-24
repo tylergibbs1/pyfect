@@ -53,6 +53,7 @@ from pyfect.redacted import Redacted
 
 __all__ = [
     "PUBLIC_CLOUD",
+    "ChatError",
     "Cloud",
     "Credentials",
     "Parts",

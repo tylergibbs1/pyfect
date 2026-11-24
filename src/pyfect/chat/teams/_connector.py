@@ -7,6 +7,7 @@ from __future__ import annotations
 from collections.abc import Callable, Generator, Mapping, Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal, Never
+from urllib.parse import quote
 
 import pyfect as fx
 from pyfect._core import Effect, _call_user
@@ -181,15 +182,13 @@ def _seconds(value: object) -> float | None:
             value = float(value.strip()) if value.strip() else None
         except ValueError:
             return None
-    if not isinstance(value, int | float):
+    if not isinstance(value, (int, float)):
         return None
     number = float(value)
     return number if 0 < number < float("inf") else None
 
 
 def _segment(value: str) -> str:
-    from urllib.parse import quote
-
     return quote(value, safe="-_.!~*'()")
 
 

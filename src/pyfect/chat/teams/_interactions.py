@@ -261,7 +261,7 @@ def invoke(activity: JsonObject, options: Options) -> Effect[InvokeResponse, Nev
         acked = (
             _EXECUTE_ACK if name == "adaptiveCard/action" else _OK if name == "message" else failure
         )
-        if isinstance(reply, ci.Late | ci.Ack):
+        if isinstance(reply, (ci.Late, ci.Ack)):
             return acked
         if not opens_dialog or "modals" not in options.capabilities:
             yield from _refused(
@@ -301,8 +301,23 @@ def invoke(activity: JsonObject, options: Options) -> Effect[InvokeResponse, Nev
     return click
 
 
-_COMMAND_PREFIX = re.compile(f"(?:[{SPACE}]|<at>[^<]*</at>)*/?")
-"""Leading ``<at>…</at>`` tokens, spaces and one slash, before a command's name."""
+_LEADING_SPACE = re.compile(f"[{SPACE}]*")
+_LEADING_MENTION = re.compile("<at>[^<]*</at>")
+
+
+def _command_start(text: str) -> int:
+    """Where a command's name starts: after leading ``<at>…</at>`` tokens,
+    spaces and one slash."""
+    at = 0
+    while True:
+        at = _LEADING_SPACE.match(text, at).end()  # pyright: ignore[reportOptionalMemberAccess]
+        mention = _LEADING_MENTION.match(text, at)
+        if mention is None:
+            break
+        at = mention.end()
+    return at + 1 if text.startswith("/", at) else at
+
+
 _COMMAND = re.compile(f"([^{SPACE}]+)[{SPACE}]*(.*)", re.DOTALL)
 
 
@@ -319,7 +334,7 @@ def command(
         return fx.void
     text = activity.get("text")
     text = text if isinstance(text, str) else ""
-    rest = text[_COMMAND_PREFIX.match(text).end() :]  # pyright: ignore[reportOptionalMemberAccess]
+    rest = text[_command_start(text) :]
     match = _COMMAND.fullmatch(rest)
     user = user_id(_json.object_(activity, "from"))
     at = thread_of(activity)

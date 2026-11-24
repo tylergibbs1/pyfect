@@ -90,7 +90,7 @@ def safe_url(input: str, base: str | None = None) -> Url | None:
 
 def _size(record: _json.JsonObject) -> int | None:
     value = record.get("size")
-    if isinstance(value, bool) or not isinstance(value, int | float):
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
     if isinstance(value, float) and not value.is_integer():
         return None

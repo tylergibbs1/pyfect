@@ -3,9 +3,9 @@ thread is the channel's id followed by ``;messageid={root}``."""
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 
+from pyfect._digits import is_digits
 from pyfect.chat import chat_thread
 from pyfect.chat.chat_event import ThreadKind
 from pyfect.chat.chat_thread import ChatThread
@@ -17,7 +17,6 @@ MAX_ID_LENGTH = 256
 user or tenant id. A longer one fails ``InvalidRequest`` before the call."""
 
 _REPLY_CHAIN = ";messageid="
-_DIGITS = re.compile(r"[0-9]+")
 _CHANNEL_SUFFIXES = ("@thread.tacv2", "@thread.skype")
 
 
@@ -39,7 +38,7 @@ def thread(conversation_id: str) -> ChatThread:
 
 def is_root(text: str) -> bool:
     """Whether ``text`` is a message id that can root a reply chain: ASCII digits."""
-    return _DIGITS.fullmatch(text) is not None
+    return is_digits(text)
 
 
 def parts(address: ChatThread) -> Parts | None:

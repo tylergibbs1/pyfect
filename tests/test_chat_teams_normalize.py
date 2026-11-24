@@ -75,7 +75,7 @@ def test_reactions_are_emoji_for_the_six_documented_types_and_custom_otherwise()
         ),
         app_id=APP_ID,
     )
-    reactions = [event for event in events if isinstance(event, ReactionAdded | ReactionRemoved)]
+    reactions = [event for event in events if isinstance(event, (ReactionAdded, ReactionRemoved))]
     assert len(reactions) == len(events)
     assert [(type(event), event.emoji) for event in reactions] == [
         (ReactionAdded, "\U0001f44d"),

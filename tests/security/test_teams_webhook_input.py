@@ -10,10 +10,9 @@ import base64
 import hashlib
 import hmac
 import json
-import time
 from typing import Any
 
-from _teams_fake import APP_ID, SERVICE_URL, Gen, activity, crypto, setup
+from _teams_fake import APP_ID, SERVICE_URL, Gen, activity, crypto, setup, unix_now
 
 import pyfect as fx
 from pyfect import testing
@@ -28,7 +27,7 @@ def _claims(**overrides: object) -> dict[str, object]:
     return {
         "iss": "https://api.botframework.com",
         "aud": APP_ID,
-        "exp": int(time.time()) + 600,
+        "exp": unix_now() + 600,
         "serviceurl": SERVICE_URL,
         **overrides,
     }
@@ -67,7 +66,7 @@ def test_refuses_the_wrong_issuer_or_audience_and_a_token_expired_past_the_skew(
     @fx.gen
     def program() -> Gen[None]:
         endpoint = yield from setup()
-        now = int(time.time())
+        now = unix_now()
         refused: list[dict[str, object]] = [
             {"iss": "https://sts.windows.net/"},
             {"aud": "another-app"},

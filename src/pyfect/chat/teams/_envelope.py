@@ -16,6 +16,7 @@ from pyfect import schema as S
 from pyfect._core import Effect
 from pyfect._js import text_encode
 from pyfect._json_text import stringify
+from pyfect._text_keys import key_bytes
 from pyfect.chat.chat_error import AnyReason
 from pyfect.chat.chat_ui import Button as UiButton
 from pyfect.chat.chat_ui import Modal, ModalElement, SelectInput, SelectOption, Text, TextInput
@@ -483,7 +484,7 @@ class Envelope:
 
     def _hash(self, conversation_id: str) -> Effect[str]:
         return self._digest.digest(
-            _digest.sha256, text_encode(base_conversation(conversation_id))
+            _digest.sha256, key_bytes(base_conversation(conversation_id))
         ).map(base64_url.encode)
 
     def _sign(self, schema: Any, claims: Mapping[str, object], typ: str) -> Effect[str]:

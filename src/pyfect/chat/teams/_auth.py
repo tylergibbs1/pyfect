@@ -10,6 +10,7 @@ from typing import Any, Literal, Never, NotRequired, TypedDict, cast
 import pyfect as fx
 from pyfect import schema as S
 from pyfect._core import Effect
+from pyfect._digits import parse_digits
 from pyfect._url import Url
 from pyfect.chat.teams import _connector, _json
 from pyfect.chat.teams._cloud import Cloud
@@ -117,8 +118,8 @@ def _jwks_uri(http: _connector.Http, cloud: Cloud) -> Effect[str | None]:
         ).or_else_succeed(_none)
         if response is None or response.status != 200:
             return None
-        length = response.headers.get("content-length")
-        if length is not None and length.strip().isdigit() and int(length) > MAX_METADATA_BYTES:
+        length = parse_digits(response.headers.get("content-length", "").strip())
+        if length is not None and length > MAX_METADATA_BYTES:
             return None
         body = yield from _read_bounded(response.stream, MAX_METADATA_BYTES)
         metadata = (
