@@ -1251,6 +1251,29 @@ class ClusterDatabase:
 
         return fx.blocking(take)
 
+    def write_locked(self) -> fx.Effect[Never]:
+        """SQLite only (pyfect-only): holds the database's write lock on a
+        connection of its own until interrupted, as a disk stalled until the
+        runners give their shards up would. Every member's writes, lock
+        refreshes included, wait."""
+        path = self.sqlite_file
+        assert path is not None, "write_locked needs the SQLite backend"
+
+        def take() -> sqlite3.Connection:
+            conn = sqlite3.connect(path, timeout=10, isolation_level=None, check_same_thread=False)
+            conn.execute("BEGIN IMMEDIATE")
+            return conn
+
+        def release(conn: sqlite3.Connection) -> None:
+            conn.execute("COMMIT")
+            conn.close()
+
+        return fx.scoped(
+            fx.acquire_release(
+                fx.blocking(take), lambda conn, _: fx.sync(lambda: release(conn))
+            ).and_then(fx.never)
+        )
+
 
 def _sqlite(directory: Path) -> fx.Effect[SqlClientService, Any, Scope]:
     """A client on the cluster's SQLite file. Commits skip fsync, as the
