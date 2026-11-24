@@ -23,7 +23,6 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Literal, Never
-from warnings import deprecated
 
 from pyfect import schema as S
 from pyfect._core import Effect
@@ -73,14 +72,6 @@ class LegacyStoreNeedsMigration(S.TaggedError, StoreUnavailable, tag="LegacyStor
     def authenticated(self) -> bool:
         """Whether its key had a binding before the upgrade."""
         return self.state != "unbound"
-
-    @property
-    @deprecated("LegacyStoreNeedsMigration.automatic is deprecated; read .state instead")
-    def automatic(self) -> bool:
-        """Deprecated since 0.6.9: whether the upgrade record predates every earlier
-        upgrade, as in 0.6.8 (``state != "unconfirmed"``). The server no longer migrates
-        by itself unless ``layer_storage(migrate_legacy_stores="when_server_written")``."""
-        return self.state != "unconfirmed"
 
     @property
     def message(self) -> str:
