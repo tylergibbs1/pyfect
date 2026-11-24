@@ -482,3 +482,24 @@ def test_evaluates_scripts_on_a_reserved_connection_loading_them_through_the_sha
     assert result == "ok"
     assert shared == ["SCRIPT", "SCRIPT"]
     assert reserved == ["EVALSHA", "EVALSHA"]
+
+
+@testing.effect
+def test_a_reservation_held_past_the_service_scope_is_closed_with_it():
+    """Adapted: a reservation made in a scope that outlives the service's.
+    The pool waits for the connections it lent when it shuts down, and this
+    one returns only when its own scope closes, after the service's: closing
+    the service closes the connection instead, and a later command on it
+    fails."""
+    service = fx.CloseableScope()
+    reservation = fx.CloseableScope()
+    redis, harness = yield from _make_harness().pipe(fx.provide_service(fx.Scope, service))
+    connection = yield from redis.reserve.pipe(fx.provide_service(fx.Scope, reservation))
+    assert (yield from connection.send("PING")) == "PING"
+    yield from service.close(fx.exit.succeed(None))
+    assert harness.closes == 1
+    error = yield from connection.send("PING").flip()
+    assert "closed" in str(error.cause)
+    yield from reservation.close(fx.exit.succeed(None))
+    assert harness.connects == 1
+    assert harness.closes == 1

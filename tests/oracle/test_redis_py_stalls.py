@@ -30,7 +30,7 @@ pytest.importorskip("redis")
 
 import pyfect as fx
 from pyfect.persistence import redis_py
-from pyfect.persistence.redis import Redis
+from pyfect.persistence.redis import Redis, RedisError
 
 _COMMAND = re.compile(rb"\*\d+\r\n\$\d+\r\n(\w+)\r\n")
 _WAIT = 10.0
@@ -323,6 +323,34 @@ def test_a_subscriber_outliving_its_client_does_not_reconnect() -> None:
     try:
         fx.run_blocking(fx.scoped(fx.gen(run)))
         assert not resubscribed.is_set(), "the subscriber reconnected after its client closed"
+        assert peer.all_closed(_WAIT), "a connection was left open"
+    finally:
+        peer.close()
+
+
+def test_a_reservation_outliving_its_client_does_not_hold_up_shutdown() -> None:
+    """Adapted: a reserved connection made in a scope that outlives the
+    layer's. The layer's pool waits for the connections it lent, and this one
+    returns only when its scope closes, after the layer's: the layer closes
+    it instead, a later command on it fails, and the peer sees every
+    connection closed."""
+    peer = _stalling(lambda _connection, _command: False)
+
+    def body():
+        redis = yield from Redis()
+        connection = yield from redis.reserve
+        assert (yield from connection.send("PING")) == "OK"
+        return connection
+
+    def run():
+        # The reservation's scope is this one, closed after the layer's.
+        connection = yield from fx.gen(body).pipe(fx.provide(_layer(peer.port))).or_die()
+        exit_ = yield from connection.send("PING").exit()
+        assert isinstance(exit_, fx.Failure) and isinstance(exit_.cause.squash(), RedisError)
+
+    try:
+        # Hung before: the run's close waited for the reservation for good.
+        fx.run_blocking(fx.scoped(fx.gen(run)))
         assert peer.all_closed(_WAIT), "a connection was left open"
     finally:
         peer.close()
