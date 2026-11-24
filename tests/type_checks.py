@@ -113,6 +113,7 @@ from pyfect.chat.chat_error import ChatError
 from pyfect.chat.chat_error import NotFound as ChatNotFound
 from pyfect.chat.chat_error import Retry as ChatRetry
 from pyfect.chat.chat_thread import ChatThread
+from pyfect.chat.slack import slack_chat, slack_web_api
 from pyfect.cli import (
     Argument,
     CliError,
@@ -12137,3 +12138,46 @@ def _chat(thread: ChatThread, deltas: fx.Stream[str, ValueError]) -> None:
 
 
 del _chat
+
+
+def _chat_slack(effect: fx.Effect[int, ValueError, ChatService]) -> None:
+    from pyfect.chat.chat_handler import ChatHandler
+    from pyfect.chat.chat_test import MentionToken
+    from pyfect.crypto.mac import Mac
+    from pyfect.encoding import Json
+    from pyfect.http.client import HttpClient
+    from pyfect.http.router import HttpRouter
+    from pyfect.redacted import make as redacted
+
+    token = redacted("xoxb")
+    # The adapter registers in the Registry and needs only an HttpClient besides.
+    assert_type(
+        slack_chat.layer(bot_token=token, team_id="T"),
+        fx.Layer[
+            slack_chat.SlackChat | slack_web_api.SlackWebApi, Never, HttpClient | ChatRegistry
+        ],
+    )
+    # The routes add to a router and check signatures with Mac.
+    assert_type(
+        slack_chat.layer_webhook(path="/e", signing_secret=token, app_id="A"),
+        fx.Layer[Never, Never, HttpRouter | slack_chat.SlackChat | ChatHandler | Mac],
+    )
+    assert_type(
+        slack_chat.layer_interactivity(path="/i", signing_secret=token, app_id="A"),
+        fx.Layer[Never, Never, HttpRouter | slack_chat.SlackChat | chat_ci.Handler | Mac],
+    )
+    # Scoped options leave the effect's type as it was.
+    assert_type(
+        effect.pipe(slack_chat.with_post_options(slack_chat.SlackPostOptions(unfurl=True))),
+        fx.Effect[int, ValueError, ChatService],
+    )
+    slack_chat.SlackPostOptions(unfurl="yes")  # pyright: ignore[reportArgumentType]
+    assert_type(slack_chat.parse_mention("<@U1>"), MentionToken | None)
+    assert_type(
+        slack_web_api.SlackWebApi().flat_map(lambda api: api.call("auth.test", {})),
+        fx.Effect[Json, ChatError, slack_web_api.SlackWebApi],
+    )
+    assert_type(slack_chat.parts(slack_chat.thread(team="T", channel="C")), slack_chat.Parts | None)
+
+
+del _chat_slack

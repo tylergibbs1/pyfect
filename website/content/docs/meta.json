@@ -48,6 +48,7 @@
     "ai-skills",
     "mcp",
     "chat",
+    "chat-slack",
     "models",
     "graphql",
     "eventlog",

@@ -10,8 +10,11 @@ text in practice starts a cluster with, is left out.
 
 from __future__ import annotations
 
+import re
 import unicodedata
 from bisect import bisect_right
+
+_PRINTABLE_ASCII = re.compile("[ -~]+")
 
 _ZWJ = 0x200D
 
@@ -78,8 +81,19 @@ def starts(text: str) -> list[int]:
     # followed by extends, so that a joiner then a pictograph continues it.
     emoji_run = False
     after_emoji_zwj = False
-    for index, char in enumerate(text):
-        code = ord(char)
+    index = 0
+    while index < len(text):
+        plain = _PRINTABLE_ASCII.match(text, index)
+        if plain is not None:
+            # Printable ASCII is no control, extend, regional indicator,
+            # Hangul or pictograph, so each starts a cluster and ends any run.
+            found.extend(range(index, plain.end()))
+            index = plain.end()
+            after_emoji_zwj = emoji_run = False
+            regional_run = 0
+            previous = ord(text[index - 1])
+            continue
+        code = ord(text[index])
         if previous is None:
             joins = False
         elif previous == 0xD and code == 0xA:
@@ -105,6 +119,7 @@ def starts(text: str) -> list[int]:
             emoji_run = False
         regional_run = regional_run + 1 if _is_regional(code) else 0
         previous = code
+        index += 1
     return found
 
 

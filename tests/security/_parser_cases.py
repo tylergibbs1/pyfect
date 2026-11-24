@@ -19,7 +19,7 @@ from __future__ import annotations
 import io
 import json
 import tarfile
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from itertools import cycle, islice
 from typing import Any, TypedDict, cast
@@ -50,6 +50,7 @@ from pyfect.ai import mcp_schema, mcp_server
 from pyfect.ai import tool as ai_tool
 from pyfect.ai.chat import from_json as chat_from_json
 from pyfect.chat import chat_interaction, chat_thread
+from pyfect.chat.slack import slack_chat
 from pyfect.cluster import shard_id, snowflake
 from pyfect.crypto import key_format, password
 from pyfect.effect import Effect
@@ -511,6 +512,93 @@ CASES.append(
         guards=Guard("ce40a38a", "header-lines-joined-per-line"),
     )
 )
+
+
+# ------------------------------------------------------------------------- Slack inbound
+
+# A Slack event is peer input: any member of a workspace can post a message as
+# long as Slack allows (40,000 characters), and the bot's own messages read
+# back from their rich_text block.
+text(slack_chat.parse_mention)
+
+
+def _slack_message(
+    text: str, elements: Sequence[object] | None = None, user: str = "U0PEER"
+) -> Work:
+    message: dict[str, object] = {"ts": "1794509003.000001", "user": user, "text": text}
+    if elements is not None:
+        message["blocks"] = [
+            {
+                "type": "rich_text",
+                "elements": [{"type": "rich_text_section", "elements": list(elements)}],
+            }
+        ]
+    envelope = {
+        "type": "event_callback",
+        "team_id": "T0",
+        "api_app_id": "A0",
+        "event": {**message, "type": "message", "channel": "C0", "channel_type": "channel"},
+    }
+    return lambda: slack_chat.normalize(envelope, team_id="T0", bot_user_id="U0BOT")
+
+
+_USER = {"type": "user", "user_id": "U1AAAA"}
+
+
+@case(slack_chat.normalize, "slack_chat.normalize: mentions in text, no rich_text", size=4000)
+def _slack_text_mentions(n: int) -> Work:
+    return _slack_message("<@U1AAAA> " * (n // 10))
+
+
+# Past the alignment's cap (a million item and token pairs, as in Effect), each
+# real item takes the next unused token it equals.
+@case(slack_chat.normalize, "slack_chat.normalize: mentions past the alignment cap", size=40_000)
+def _slack_fallback_mentions(n: int) -> Work:
+    count = n // 10
+    return _slack_message("<@U1AAAA> " * count, [_USER, {"type": "text", "text": " "}] * count)
+
+
+@case(slack_chat.normalize, "slack_chat.normalize: literal tokens before real ones", size=40_000)
+def _slack_literal_mentions(n: int) -> Work:
+    count = n // 10
+    literal = {"type": "text", "text": "<@U1AAAA> "}
+    return _slack_message("<@U1AAAA> " * count, [literal] * (count // 2) + [_USER] * (count // 2))
+
+
+def _own_list(n: int, item: object) -> Work:
+    message = {
+        "ts": "1794509003.000001",
+        "user": "U0BOT",
+        "text": "x",
+        "blocks": [
+            {
+                "type": "rich_text",
+                "elements": [
+                    {"type": "rich_text_list", "style": "ordered", "elements": [item] * n}
+                ],
+            }
+        ],
+    }
+    envelope = {
+        "type": "event_callback",
+        "team_id": "T0",
+        "api_app_id": "A0",
+        "event": {**message, "type": "message", "channel": "C0", "channel_type": "channel"},
+    }
+    return lambda: slack_chat.normalize(envelope, team_id="T0", bot_user_id="U0BOT")
+
+
+@case(slack_chat.normalize, "slack_chat.normalize: the bot's list items with mentions", size=2000)
+def _slack_own_list(n: int) -> Work:
+    return _own_list(n // 4, {"type": "rich_text_section", "elements": [_USER]})
+
+
+@case(slack_chat.normalize, "slack_chat.normalize: lists nested in list items", size=2000)
+def _slack_nested_lists(n: int) -> Work:
+    item: object = {"type": "rich_text_section", "elements": [{"type": "text", "text": "a"}]}
+    for _ in range(n // 8):
+        item = {"type": "rich_text_list", "elements": [item]}
+    return _own_list(1, item)
 
 
 # ------------------------------------------------------------------------- streaming decoders

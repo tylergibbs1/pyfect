@@ -1,0 +1,68 @@
+---
+title: Slack
+description: "Run a pyfect.chat bot on Slack: the adapter, the signed Events API and Interactivity routes, and the options that decide who a post notifies."
+---
+
+`pyfect.chat.slack` is Effect's `@effect/chat-slack`, the Slack adapter for
+[Chat](/docs/chat). `slack_chat.layer(bot_token=..., team_id=...)` registers it for one
+workspace and needs only an `HttpClient`. It calls Slack's Web API over HTTP, with no
+Slack SDK. A thread is `slack_chat.thread(team=..., channel=..., thread_ts=...)`, and
+everything `Chat` does (posts, edits, reactions, files, history, native streaming) works
+on it.
+
+## Events and interactions
+
+`slack_chat.layer_webhook(path=..., signing_secret=..., app_id=...)` adds the Events API
+route to an `HttpRouter`. Every request is untrusted until it passes Slack's `v0`
+signature check: an HMAC-SHA256 of the timestamp and body with your signing secret,
+compared in constant time through `Mac` (`pyfect.crypto.native.layer_mac`), with a
+timestamp at most five minutes from now. A request that fails it is answered 401 before
+its body is parsed, and one over `max_body_bytes` (1 MiB) is answered 413 before that.
+The body is parsed into typed events at the route, and the `ChatHandler` gets them one at
+a time. When the handler fails `NotAccepted`, or the request runs past `deadline`, the
+route answers 503 so that Slack retries. `chat_event.dedupe_key` gives a redelivery the
+same key.
+
+`slack_chat.layer_interactivity(...)` is the route for buttons, selects, modals and slash
+commands, with the same checks. It hands each payload to the `chat_interaction.Handler`
+within Slack's three seconds. With Socket Mode instead of a public URL, pass each
+envelope to `slack_chat.normalize` and each interaction to
+`SlackChatService.interaction` yourself.
+
+## Who a post notifies
+
+Slack decides who a message notifies from its `text` field, so the adapter sends every
+`<@user>`, `<!here>` or group token as plain text unless the post allows it.
+`slack_chat.with_post_options(SlackPostOptions(...))` sets the options for every write
+inside an effect: `notify_users`, `notify_groups` and `notify_broadcast` let those tokens
+through, and `unfurl`, `native_stream` and `session_status_at_end` turn link previews,
+Slack's native streaming and the agent session status on or off. Nested options merge,
+and the inner option wins.
+
+<CodeOutput>
+
+<include meta='title="slack_bot.py"'>../../snippets/chat/slack_bot.py</include>
+
+<include lang="text">../../snippets/chat/slack_bot.out</include>
+
+</CodeOutput>
+
+The app needs these bot token scopes: `chat:write`, `channels:history`,
+`groups:history`, `im:history`, `mpim:history`, `channels:read`, `groups:read`,
+`im:read`, `mpim:read`, `users:read`, `reactions:read`, `files:read` and `files:write`,
+plus `commands` for slash commands. Subscribe it to `message.channels`,
+`message.groups`, `message.im`, `message.mpim`, `app_mention`, `reaction_added`,
+`reaction_removed` and `agent_session_stopped`. Slack's stop button for a streaming
+reply needs the app declared as an agent; without that, the adapter stops setting the
+session status after Slack's first `not_authorized`.
+
+## Testing
+
+`slack_chat.normalize` and `slack_chat.normalize_interaction` are pure functions from
+Slack's JSON to events, so captured payloads test them directly. For the adapter's
+writes, provide an `HttpClient` from `pyfect.http.client.layer_test` that answers like
+Slack, as the example above does. Effect's conformance suite runs against the adapter
+this way in pyfect's own tests (`chat_test.conformance`).
+
+Reference: [`slack_chat`](/docs/reference/chat/slack/slack_chat),
+[`slack_web_api`](/docs/reference/chat/slack/slack_web_api).
