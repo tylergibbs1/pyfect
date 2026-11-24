@@ -1,5 +1,3 @@
-# Schedule steps here use 0.6's Continue/Stop protocol, deprecated until 0.7.0.
-# pyright: reportDeprecated=false
 """Ports of Effect's graphql/GraphQLClient.test.ts, GraphQLClient.pages.test.ts,
 GraphQLClient.makeTest.test.ts and GraphQLClient.subscriptions.test.ts. Each
 test's docstring is the Effect test title, prefixed by its describe blocks.
@@ -19,14 +17,16 @@ plain identifiers) and is left out of that test.
 import json
 from dataclasses import replace
 from datetime import UTC, datetime
-from typing import Any, TypedDict
+from typing import Any, Never, TypedDict
 
 import pyfect as fx
 from pyfect import effect, layer, schedule, stream, testing
 from pyfect import schema as S
+from pyfect.cause import done
 from pyfect.context import Context, Tag
 from pyfect.duration import millis
 from pyfect.effect import Effect
+from pyfect.errors import Done
 from pyfect.exit import Failure
 from pyfect.graphql import (
     GraphQLGroup,
@@ -47,7 +47,6 @@ from pyfect.graphql.client_error import (
 from pyfect.graphql.middleware import ExecuteOptions, SubscribeOptions
 from pyfect.graphql.protocol import Answer, GraphQLRequest
 from pyfect.http import headers as H
-from pyfect.schedule import Stop
 from pyfect.stream import Stream
 
 from ._graphql import (
@@ -659,8 +658,8 @@ def test_a_middleware_failure_is_not_retried_and_does_not_step_subscription_retr
 
         return stream.suspend(run)
 
-    def step(_now: float, _input: object) -> Effect[Any]:
-        return effect.sync(lambda: steps.__setitem__(0, steps[0] + 1)).as_(Stop(None))
+    def step(_now: float, _input: object) -> Effect[Never, Done[None]]:
+        return effect.sync(lambda: steps.__setitem__(0, steps[0] + 1)).and_then(done(None))
 
     retry = schedule.from_step(effect.succeed(step))
 

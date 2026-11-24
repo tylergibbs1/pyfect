@@ -1,5 +1,3 @@
-# Schedule steps here use 0.6's Continue/Stop protocol, deprecated until 0.7.0.
-# pyright: reportDeprecated=false
 """Durations: parsed once at the boundary, so every consumer agrees."""
 
 import asyncio
@@ -92,7 +90,7 @@ def test_schedules_treat_nan_as_zero():
         step = yield from schedule.to_step(schedule.spaced(float("nan")))
         return (yield from step(0.0, None))
 
-    assert fx.run_blocking(first_decision) == schedule.Continue(0, zero)
+    assert fx.run_blocking(first_decision.or_die()) == (0, zero)
 
 
 @pytest.mark.parametrize(
