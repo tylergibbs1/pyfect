@@ -1432,6 +1432,40 @@ def test_a_test_within_its_limit_passes(
     _blocking(pytester, monkeypatch, WITHIN_ITS_LIMIT, "fail").assert_outcomes(passed=1)
 
 
+TWO_STALLS = """
+import time
+
+import pyfect as fx
+
+
+def short_block():
+    time.sleep(0.6)
+
+
+def long_block():
+    time.sleep(1.5)
+
+
+def test_blocks_twice():
+    fx.run_blocking(fx.sync(short_block))
+    fx.run_blocking(fx.sync(long_block))
+"""
+
+
+def test_a_passing_test_that_stalled_is_warned_about_its_longest_stall(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Under load one busy loop can be seen as several stalls, the first a short piece: the
+    warning names the longest, as the blocked-past-limit failure does."""
+    monkeypatch.setenv("PYTHONPATH", str(Path(__file__).parent))
+    pytester.makepyfile(TWO_STALLS)
+    pytester.makeini("[pytest]\nstall_threshold = 0.3\n")
+    out = _described(_run_inner(pytester, "-p", "_stalls"), passed=True)
+    warned = [line for line in out.splitlines() if "StallWarning:" in line]
+    assert len(warned) == 1, out
+    assert "pyfect blocked in long_block (" in warned[0], out
+
+
 def test_a_frame_in_a_wait_is_idle() -> None:
     assert Frame("/usr/lib/python3.13/threading.py", 359, "wait").idle
     assert not Frame("/w/app.py", 9, "spin").idle

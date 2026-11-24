@@ -211,7 +211,7 @@ from pyfect.rpc import server as rpc_server
 from pyfect.rpc import test as rpc_test
 from pyfect.rpc.serialization import RpcSerialization
 from pyfect.run import unwrap_group
-from pyfect.scheduler import Scheduler, SyncScheduler
+from pyfect.scheduler import Cancel, MixedScheduler, Scheduler, SyncScheduler, Task
 from pyfect.schema import SchemaError
 from pyfect.schema import model as Model
 from pyfect.schema import variant_schema as VS
@@ -1910,6 +1910,15 @@ def check_testing() -> None:
     assert_type(fx.testing.effect_fixture(scoped_value), FixtureFunctionDefinition)
     fx.testing.effect_fixture(Port())  # pyright: ignore[reportArgumentType]
     fx.testing.run_test(fx.fail("e"))  # pyright: ignore[reportArgumentType]
+
+
+def check_count_scheduler_rounds() -> None:
+    rounds = fx.testing.count_scheduler_rounds()
+    assert_type(rounds, fx.testing.SchedulerRounds)
+    assert_type(rounds.count, int)
+    assert_type(rounds.scheduler, MixedScheduler)
+    assert_type(rounds.scheduler.set_immediate, Callable[[Task], Cancel])
+    rounds.count = 1  # pyright: ignore[reportAttributeAccessIssue]
 
 
 def check_flaky(scoped_int: fx.Effect[int, str, fx.Scope]) -> None:

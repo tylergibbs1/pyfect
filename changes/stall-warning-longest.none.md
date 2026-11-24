@@ -1,0 +1,1 @@
+- Tests: a passing test's `StallWarning` names its longest stall, not its first.

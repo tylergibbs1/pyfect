@@ -211,3 +211,15 @@ def test_a_scheduler_that_runs_tasks_at_once_does_not_nest_fibers():
 
     yield from program.pipe(fx.provide_service(fx.CurrentScheduler, ImmediateScheduler(outer)))
     assert log == ["parent", "child", "after yield"]
+
+
+@testing.effect
+def test_count_scheduler_rounds_counts_the_rounds_of_the_effects_given_its_scheduler():
+    rounds = testing.count_scheduler_rounds()
+    yield from fx.yield_now()
+    assert rounds.count == 0  # an effect not given its scheduler runs no round of it
+    on_rounds = fx.provide_service(fx.scheduler.CurrentScheduler, rounds.scheduler)
+    yield from fx.for_each(range(3), lambda _: fx.yield_now(), discard=True).pipe(on_rounds)
+    assert rounds.count == 3
+    yield from fx.succeed(1).pipe(on_rounds)
+    assert rounds.count == 3  # nothing waited: no round

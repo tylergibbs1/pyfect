@@ -27,8 +27,6 @@ from pyfect.rpc import server as rpc_server
 from pyfect.scheduler import CurrentScheduler
 from pyfect.scope import CloseableScope, Scope
 
-from ._custom_scheduler import counting_rounds
-
 
 class Events(RpcGroup):
     events = make("events", success=S.Number, stream=True)
@@ -304,7 +302,7 @@ class Echo(RpcGroup):
 def test_answers_a_framed_http_request_before_a_scheduler_round_runs():
     """Effect's #10753, which covers this path without a test of its own: the
     server's answer reaches the response at once, not a scheduler round later."""
-    scheduler, rounds = counting_rounds()
+    rounds = testing.count_scheduler_rounds()
     # Waits, and a timer of the run, not a round of the server's scheduler, resumes it.
     handlers = Echo.to_layer(
         Echo.handlers().handle(Echo.echo)(lambda _: fx.sleep("1 millis").as_("hi"))
@@ -316,15 +314,15 @@ def test_answers_a_framed_http_request_before_a_scheduler_round_runs():
         line = f'{{"_tag":"Request","id":{request_id},"tag":"echo","payload":null,"headers":[]}}\n'
         # The routes' services come from the request (``router.in_memory_client``).
         return client.execute(_post_text(line)).pipe(
-            fx.provide_service(CurrentScheduler, scheduler)
+            fx.provide_service(CurrentScheduler, rounds.scheduler)
         )
 
     # Serve one request before measuring, and let the rounds it left run.
     yield from call(1).flat_map(lambda r: r.text)
     yield from effect.yield_now()
-    before = rounds[0]
+    before = rounds.count
     response = yield from call(2)
-    assert rounds[0] == before
+    assert rounds.count == before
     text = yield from response.text
     assert [json.loads(line) for line in text.splitlines()] == [
         {"_tag": "Exit", "requestId": 2, "exit": {"_tag": "Success", "value": "hi"}}

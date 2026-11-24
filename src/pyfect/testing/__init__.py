@@ -29,6 +29,7 @@ take no real time::
   ``warn_lines``, ``info_lines``, ``debug_lines`` and ``trace_lines``.
 - ``assert_exit_success`` and friends: failures print ``Cause.pretty()``;
   ``assert_exit_fail(exit, error)`` compares a failure by its error alone.
+- ``count_scheduler_rounds``: a ``MixedScheduler`` counting the rounds it runs (pyfect-only).
 - ``SchemaAsserts``: decode, encode and make assertions for a schema.
 - ``prop`` / ``effect_prop`` / ``live_prop``: property tests over schemas
   and Hypothesis strategies (``it.prop`` / ``it.effect.prop`` /
@@ -83,6 +84,7 @@ from pyfect.testing._runtime import (
     TestTimeoutError,
     leave_out_host_freezes,
 )
+from pyfect.testing._scheduler_rounds import SchedulerRounds, count_scheduler_rounds
 from pyfect.testing._schema import SchemaAsserts, SchemaCheck
 
 __all__ = [
@@ -93,6 +95,7 @@ __all__ = [
     "HostFreezeSource",
     "HostFreezes",
     "PropertyFalsifiedError",
+    "SchedulerRounds",
     "SchemaAsserts",
     "SchemaCheck",
     "Services",
@@ -108,6 +111,7 @@ __all__ = [
     "assert_exit_success",
     "assert_failure",
     "assert_success",
+    "count_scheduler_rounds",
     "debug_lines",
     "effect",
     "effect_fixture",

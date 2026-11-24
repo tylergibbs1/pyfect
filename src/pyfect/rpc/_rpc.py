@@ -78,9 +78,9 @@ class TracingEnabled(Reference[Tracing], key="effect/rpc/Rpc/TracingEnabled"):
     """The sides that make automatic spans for an RPC, read from its annotations
     (``rpc.annotate(TracingEnabled, "server")``): ``"client"``, ``"server"``, ``"both"`` (the
     default) or ``"none"``. Without a client span, the client still sends its caller's span,
-    which a handler reads as ``remote_parent_span``. A client's or server's
-    ``disable_tracing=True`` overrides it on that side, and a client with tracing disabled
-    sends no span."""
+    which a handler reads as ``remote_parent_span`` (always ``None`` over plain HTTP, where the
+    span arrives in the HTTP headers instead). A client's or server's ``disable_tracing=True``
+    overrides it on that side, and a client with tracing disabled sends no span."""
 
     @classmethod
     def default(cls) -> Tracing:
@@ -120,8 +120,8 @@ class ClientErrors(Generic[TE_co]):
 class RpcRequest(Generic[P_co]):
     """What a handler gets: the decoded ``payload``, the ``client`` that
     sent it, the ``request_id``, the request ``headers``, the ``rpc``, and the
-    ``remote_parent_span`` the client sent (``None`` when it sent none), to
-    parent spans of the handler's own."""
+    ``remote_parent_span`` the client sent (``None`` when it sent none, and always over plain
+    HTTP, which carries the span in the HTTP headers), to parent spans of the handler's own."""
 
     payload: P_co
     client: ServerClient

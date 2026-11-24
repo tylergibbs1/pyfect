@@ -33,15 +33,15 @@ thread, ticking for the whole session and recording while a test runs, tells the
   as approximate.
 
 A stall is added to the failure output of the test it happened in (a "stall" section), and
-a passing test that stalled gets a ``StallWarning``. A ``pyfect.testing`` test that passed
-although it ran longer than its timeout (host freezes left out) blocked past it: a step the
-timer could not interrupt. ``pyfect.testing`` lets it pass, as Effect's harness does; this
-suite fails it ("fibers never block"), naming the longest stall seen, or with
-``blocked_past_limit = warn`` only warns. A test failed by a timeout or the hang
-alarm (``tests/_timeout.py``) with no stall says so instead, with the process's CPU time and
-where the test's thread was at its last sample before the failure: still running, or
-waiting. Per test, arming and reading the
-watchdog cost about a microsecond; it waits only when its tick is overdue, after a stall.
+a passing test that stalled gets a ``StallWarning`` naming its longest stall. A
+``pyfect.testing`` test that passed although it ran longer than its timeout (host freezes
+left out) blocked past it: a step the timer could not interrupt. ``pyfect.testing`` lets it
+pass, as Effect's harness does; this suite fails it ("fibers never block"), naming the
+longest stall seen, or with ``blocked_past_limit = warn`` only warns. A test failed by a
+timeout or the hang alarm (``tests/_timeout.py``) with no stall says so instead, with the
+process's CPU time and where the test's thread was at its last sample before the failure:
+still running, or waiting. Per test, arming and reading the watchdog cost about a
+microsecond; it waits only when its tick is overdue, after a stall.
 Off Linux there is no dump, and a GIL-held call is not named.
 """
 
@@ -1002,13 +1002,19 @@ def _blocked_past_limit(item: pytest.Item, watchdog: Watchdog, stalls: list[str]
     limit = timeout.to_seconds()
     if ran <= limit:
         return None
-    longest = max(stalls, key=_stall_seconds, default=None)
+    longest = _longest(stalls)
     seen = (
         f"the longest stall seen: {longest.splitlines()[0]}"
         if longest is not None
         else "no stall seen: every step ran under the stall threshold"
     )
     return f"finished, but blocked past its {limit:.1f} s limit: ran {ran:.1f} s; {seen}"
+
+
+def _longest(stalls: list[str]) -> str | None:
+    """The stall to name: the longest, since under load one busy loop can be seen as several
+    stalls, the first maybe a short piece."""
+    return max(stalls, key=_stall_seconds, default=None)
 
 
 def _stall_seconds(stall: str) -> float:
@@ -1054,8 +1060,8 @@ def pytest_runtest_makereport(
         stalls.clear()
     elif report.failed and _timed_out(call):
         report.sections.append(("stall", watchdog.no_stall(call.stop, call.duration)))
-    elif stalls and call.when == "teardown":
-        item.warn(StallWarning(stalls[0].splitlines()[0]))
+    elif (longest := _longest(stalls)) is not None and call.when == "teardown":
+        item.warn(StallWarning(longest.splitlines()[0]))
     return report
 
 

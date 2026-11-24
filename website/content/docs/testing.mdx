@@ -110,6 +110,19 @@ unset, they come from the active Hypothesis settings profile, which plays the ro
 
 <include meta='title="test_properties.py"'>../../snippets/testing/test_properties.py</include>
 
+## Counting scheduler rounds
+
+To check that an answer arrives without waiting for another scheduler round, or how many rounds
+some work takes, use `testing.count_scheduler_rounds()`. It returns a fresh `MixedScheduler` as
+`.scheduler` and the rounds it has run so far as `.count`. Provide the scheduler to the effects
+you want to measure, then read `.count` before and after.
+
+<include meta='title="test_scheduler_rounds.py"'>../../snippets/testing/test_scheduler_rounds.py</include>
+
+A round is one turn the scheduler asks its run for (Effect's `setImmediate`). Effect has no such
+helper; this one wraps `MixedScheduler.set_immediate`, which you can wrap yourself to observe
+rounds in other ways.
+
 ## Checking failures
 
 A failure records annotations in its cause, such as the span it happened in, and they take
