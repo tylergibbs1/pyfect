@@ -1,0 +1,1 @@
+- Tests: the stall detector no longer names a stall "pyfect blocked" when the busy thread has only pytest and standard-library frames on its stack, as while pytest builds a failure report. It names that stall "the test runner busy in <frame>".

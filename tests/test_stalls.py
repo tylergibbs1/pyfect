@@ -108,6 +108,51 @@ def test_sleeps_holding_the_gil():
 """
 )
 
+GIL_HELD_SLEEP_DUMPED_IN_THE_RUNNER = (
+    _SLEEP_HOLDING_THE_GIL
+    + """
+import inspect
+
+import _pytest._code.code
+import _pytest.nodes
+import _stalls
+import pluggy._callers
+
+take = _stalls._DumpTimer.take
+
+# Where release 0.6.25's loop caught the test thread: pytest reading a failed test's source
+# for its report, with no frame of the test or of pyfect left on the stack.
+REPORTING = tuple(
+    _stalls.Frame(module.__file__, line, func)
+    for module, line, func in (
+        (inspect, 1021, "getmodule"),
+        (inspect, 1074, "findsource"),
+        (_pytest._code.code, 926, "_getentrysource"),
+        (_pytest._code.code, 1243, "repr_excinfo"),
+        (_pytest.nodes, 477, "_repr_failure_py"),
+        (pluggy._callers, 121, "_multicall"),
+    )
+)
+
+
+def dumped_in_the_runner(self, *, stalled):
+    \"\"\"The stalled tick's dump, on time, with every thread in pytest's report.\"\"\"
+    dump = take(self, stalled=stalled)
+    if not stalled or dump is None:
+        return dump
+    threads = [_stalls.DumpedThread(t.ident, t.current, REPORTING) for t in dump.threads]
+    return _stalls._Dump(threads, dump.at, 0.0, _stalls._Timing.ON_TIME)
+
+
+_stalls._DumpTimer.take = dumped_in_the_runner
+
+
+def test_stalls_in_the_runner():
+    ctypes.PyDLL(None).read(*a_pipe_written_in(1))  # the GIL held 1 s
+    assert False
+"""
+)
+
 GIL_HELD_SLEEP_DUMPED_LATE = (
     _SLEEP_HOLDING_THE_GIL
     + """
@@ -355,6 +400,18 @@ def test_a_freeze_right_after_the_dump_is_armed_is_a_host_stall(
     assert "process stalled 1." in out
     assert ": host: process frozen, " in out
     assert "on time" not in out
+
+
+@_NEEDS_STACK_DUMPS
+def test_a_stall_with_only_the_runner_on_the_stack_is_not_named_pyfect(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Release 0.6.25's loop: the process stalled while pytest built a failure's report, and
+    the dump's busy thread, all pytest and standard library frames, read "pyfect blocked in
+    getmodule (inspect.py)". The stall is the runner's."""
+    out = _run(pytester, monkeypatch, GIL_HELD_SLEEP_DUMPED_IN_THE_RUNNER)
+    assert re.search(r"process stalled 1\.\d s: the test runner busy in getmodule \(", out), out
+    assert "pyfect blocked" not in out
 
 
 @_NEEDS_STACK_DUMPS

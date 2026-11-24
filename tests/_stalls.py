@@ -12,15 +12,15 @@ thread, ticking for the whole session and recording while a test runs, tells the
   frames: faulthandler's all-threads dump, which ``dump_traceback_later`` makes from a C
   thread, segfaulted when the other threads ran meanwhile (at the end of a SIGSTOP).
 - A tick that comes ``stall_threshold`` late is a process stall. With the dump, the time
-  ``gc.callbacks`` saw collecting, the process's CPU time over the gap and, on Linux, the
-  CPU steal of ``/proc/stat`` and ``/proc/loadavg``, it is named "host" or "pyfect blocked
-  in <frame>" (a busy thread, a fiber's first). The dump needs no GIL, so one written on
-  time means the process was running (a C call holding the GIL, which also uses no CPU, is
-  pyfect) and names where (``_DumpTimer``). Only a SIGCONT in the gap, the end of every
-  SIGSTOP, proves the host froze the process (``_Continues``): on a loaded machine a dump
-  comes seconds late with the process running, so a late dump proves nothing; one written a
-  threshold before the watchdog woke still shows the process running, however late. Anything
-  else counts as running time.
+  ``gc.callbacks`` saw collecting, the process's CPU time over the gap and, on Linux, the CPU steal
+  of ``/proc/stat`` and ``/proc/loadavg``, it is named "host" or "pyfect blocked in <frame>" (a busy
+  thread, a fiber's first; "the test runner busy in <frame>" when the busy thread has only pytest's
+  and the standard library's frames). The dump needs no GIL, so one written on time means the
+  process was running (a C call holding the GIL, which also uses no CPU, is pyfect) and names where
+  (``_DumpTimer``). Only a SIGCONT in the gap, the end of every SIGSTOP, proves the host froze the
+  process (``_Continues``): on a loaded machine a dump comes seconds late with the process running,
+  so a late dump proves nothing; one written a threshold before the watchdog woke still shows the
+  process running, however late. Anything else counts as running time.
 - Each tick also samples every thread's stack, through ``sys._current_frames()``
   (``pyfect._frames``) under the GIL (text: holding frames would keep what a finished step handled
   alive). A thread inside ``Fiber._run`` whose stack has not moved for the threshold, while the
@@ -739,9 +739,8 @@ class Watchdog:
         busy = [t for t in threads if not t.current and not t.frames[0].idle]
         fibers = [t for t in busy if t.in_fiber_step]
         on_time = dump is not None and dump.timing is _Timing.ON_TIME
-        if (fibers or busy) and (on_time or cpu >= gap / 2):
-            frames = (fibers or busy)[0].frames
-            return f"{head}: pyfect blocked in {frames[0]} ({numbers})\n" + _stack(frames)
+        if busy and (on_time or cpu >= gap / 2):
+            return f"{head}: {_busy_in(fibers or busy, numbers)}"
         if resumed or self._continues.came(wait=2 * self.tick if idle else 0.0):
             with self._lock:
                 self._frozen += gap - self.tick
@@ -749,9 +748,8 @@ class Watchdog:
         # Late, but written a threshold before the watchdog could tick: the threads ran while
         # it stayed starved, so the process was running and the GIL held (a loaded host
         # delivers the dump's signal late). A freeze wakes both together.
-        if (fibers or busy) and dump is not None and dump.at <= woke - self.threshold:
-            frames = (fibers or busy)[0].frames
-            return f"{head}: pyfect blocked in {frames[0]} ({numbers})\n" + _stack(frames)
+        if busy and dump is not None and dump.at <= woke - self.threshold:
+            return f"{head}: {_busy_in(fibers or busy, numbers)}"
         return f"{head}: {_not_frozen(gap, cpu, dump, dumps=self.dump)} ({numbers})"
 
     def frozen_seconds(self) -> float:
@@ -871,6 +869,16 @@ def _sampled_head(
         f"process CPU {cpu:.1f} s)"
     )
     return head, _stack(stack)
+
+
+def _busy_in(threads: list[DumpedThread], numbers: str) -> str:
+    """Names the stall after the first busy thread with a frame outside the runner (pytest,
+    pluggy, the standard library): pyfect's, or the code under test. With none, the test runner
+    itself was busy, as while it builds a failure's report."""
+    ours = [t for t in threads if not all(frame.runner for frame in t.frames)]
+    frames = (ours or threads)[0].frames
+    who = "pyfect blocked" if ours else "the test runner busy"
+    return f"{who} in {frames[0]} ({numbers})\n" + _stack(frames)
 
 
 def _not_frozen(gap: float, cpu: float, dump: _Dump | None, *, dumps: bool) -> str:
