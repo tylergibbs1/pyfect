@@ -195,14 +195,20 @@ class MissingChannelType(
 
 
 def layer(
-    *, bot_token: Redacted[str], base_url: str = DEFAULT_BASE_URL
+    *,
+    bot_token: Redacted[str],
+    base_url: str = DEFAULT_BASE_URL,
+    max_retry_after: DurationInput | None = None,
 ) -> Layer[DiscordChat | DiscordRest, Never, HttpClient | Registry]:
     """Registers the Discord adapter in the ``Registry`` and provides
     ``DiscordChat`` and ``DiscordRest``.
 
     - Every REST call but ``follow_up`` goes through ``DiscordRest``, and
       what is safe to send again (a read, a 429) is retried as
-      ``chat_adapter.retry_safe`` retries.
+      ``chat_adapter.retry_safe`` retries. A 429 asking to wait longer than
+      ``max_retry_after`` fails ``RateLimited`` at once, its ``retry_after``
+      on the error; by default any wait is waited out, as in Effect, and
+      Discord's shared limits can ask for over 20 minutes.
     - ``HttpClient`` downloads attachments from Discord's CDN, with no token,
       and sends ``follow_up``'s edit, which needs no bot token either, once.
     - Content goes out as written: Discord reads Markdown itself. Every write
@@ -239,6 +245,8 @@ def layer(
       least 1.5 seconds apart.
     """
 
+    cap = None if max_retry_after is None else from_input_unsafe(max_retry_after)
+
     @fx.gen
     def build() -> Generator[Effect[Any, Never, Any], Any, DiscordChatService]:
         rest = yield from DiscordRest()
@@ -268,7 +276,9 @@ def layer(
             )
 
         bot_user_id = fx.suspend(read_bot_user_id)
-        adapter = yield from _adapter.make(rest=rest, http=http, bot_user_id=bot_user_id)
+        adapter = yield from _adapter.make(
+            rest=rest, http=http, bot_user_id=bot_user_id, max_retry_after=cap
+        )
         yield from registry.register(adapter)
         return DiscordChatService(bot_user_id=bot_user_id, adapter=adapter)
 

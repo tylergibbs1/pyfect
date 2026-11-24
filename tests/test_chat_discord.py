@@ -26,6 +26,7 @@ import pyfect as fx
 from pyfect import testing
 from pyfect._core import Effect
 from pyfect.chat.chat_adapter import ChatAdapter, File
+from pyfect.chat.chat_error import RateLimited
 from pyfect.chat.chat_event import ChatEvent, MessageCreated
 from pyfect.chat.chat_handler import ChatHandler, NotAccepted
 from pyfect.chat.chat_handler import Service as HandlerService
@@ -33,6 +34,7 @@ from pyfect.chat.chat_message import Attachment, ReplyTo
 from pyfect.chat.chat_ui import Button, LinkButton, Select, SelectOption
 from pyfect.chat.discord import discord_chat
 from pyfect.chat.discord.discord_chat import DiscordPostOptions
+from pyfect.duration import millis
 
 type Gen[A] = Generator[Effect[Any, Any, Any], Any, A]
 
@@ -894,3 +896,43 @@ def test_drops_the_event_when_the_lookup_is_denied():
     return with_adapter(
         {"getChannel": lambda *_: answer(step("errors", "get-channel-unknown"))}, body
     )
+
+
+# --- max_retry_after -------------------------------------------------------------------
+
+
+def _rate_limited(*_: object) -> object:
+    return error_response(429, {"message": "You are being rate limited.", "retry_after": 1336.57})
+
+
+@testing.effect
+def test_a_429_past_max_retry_after_fails_at_once_with_its_wait():
+    fake = Fake({"createMessage": _rate_limited})
+    app = discord_layer(fake, max_retry_after="1 minute")
+
+    @fx.gen
+    def program() -> Gen[None]:
+        discord: ChatAdapter = yield from adapter
+        error = yield from discord.post(CHANNEL, markdown="alert").flip()
+        assert isinstance(error.reason, RateLimited)
+        assert error.retry_after == millis(1_336_570)
+        assert len(fake.called("createMessage")) == 1
+
+    return program.pipe(fx.provide(app))
+
+
+@testing.effect
+def test_a_429_within_max_retry_after_is_waited_out():
+    answers = iter([_rate_limited(), POSTED])
+    fake = Fake({"createMessage": lambda *_: next(answers)})
+    app = discord_layer(fake, max_retry_after="1 hour")
+
+    @fx.gen
+    def program() -> Gen[None]:
+        discord: ChatAdapter = yield from adapter
+        fiber = yield from discord.post(CHANNEL, markdown="alert").fork()
+        yield from testing.adjust("1337 seconds")
+        yield from fiber.join()
+        assert len(fake.called("createMessage")) == 2
+
+    return program.pipe(fx.provide(app))

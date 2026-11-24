@@ -156,11 +156,13 @@ class DiscordAdapter:
         http: HttpClientService[HttpClientError, Never],
         bot_user_id: Effect[str, ChatError],
         channels: Cache[str, _Channel, ChatError],
+        max_retry_after: Duration | None = None,
     ) -> None:
         self._rest = rest
         self._http = http
         self._bot_user_id = bot_user_id
         self._channels = channels
+        self._max_retry_after = max_retry_after
 
     @property
     def descriptor(self) -> Descriptor:
@@ -180,7 +182,10 @@ class DiscordAdapter:
     def _call[A](self, op: str, effect: Effect[A, ChatError]) -> Effect[A, ChatError]:
         """One REST call, its failure as an error of ``op``, retried when
         nothing happened."""
-        return retry_safe(effect.map_error(lambda error: _errors.with_op(op, error)))
+        return retry_safe(
+            effect.map_error(lambda error: _errors.with_op(op, error)),
+            max_retry_after=self._max_retry_after,
+        )
 
     def _resolve(self, op: str, thread: ChatThread) -> Effect[str, ChatError]:
         if _normalize.is_address(thread):
@@ -799,6 +804,7 @@ def make(
     rest: DiscordRestService,
     http: HttpClientService[HttpClientError, Never],
     bot_user_id: Effect[str, ChatError],
+    max_retry_after: Duration | None = None,
 ) -> Effect[DiscordAdapter]:
     """Builds the adapter, with its cache of channels: up to 1,024, each for
     an hour; a failed read is not kept."""
@@ -808,7 +814,13 @@ def make(
         return holder[0].get_channel("getChannel", id)
 
     def build(channels: Cache[str, _Channel, ChatError]) -> DiscordAdapter:
-        adapter = DiscordAdapter(rest=rest, http=http, bot_user_id=bot_user_id, channels=channels)
+        adapter = DiscordAdapter(
+            rest=rest,
+            http=http,
+            bot_user_id=bot_user_id,
+            channels=channels,
+            max_retry_after=max_retry_after,
+        )
         holder.append(adapter)
         return adapter
 

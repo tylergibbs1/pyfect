@@ -228,10 +228,10 @@ class Fake:
         return client.layer_test(self._answer)
 
 
-def discord_layer(fake: Fake) -> layer.Layer[Any]:
+def discord_layer(fake: Fake, *, max_retry_after: str | None = None) -> layer.Layer[Any]:
     """``Chat``, ``Registry`` and the Discord adapter on a fake."""
     return (
-        discord_chat.layer(bot_token=redacted("bot-token"))
+        discord_chat.layer(bot_token=redacted("bot-token"), max_retry_after=max_retry_after)
         .pipe(layer.provide_merge(chat.layer))
         .pipe(layer.provide(fake.layer))
     )
