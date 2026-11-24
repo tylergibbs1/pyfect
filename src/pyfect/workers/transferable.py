@@ -12,7 +12,7 @@ copies them too.
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
-from typing import Any
+from typing import Never
 
 from pyfect import schema as S
 from pyfect._core import Effect
@@ -79,11 +79,11 @@ def add_all(values: Iterable[object]) -> Effect[None]:
     )
 
 
-def getter_add_all[A](f: Callable[[A], Iterable[object]]) -> G.Getter[A, A, Any]:
+def getter_add_all[A](f: Callable[[A], Iterable[object]]) -> G.Getter[A, A, Never]:
     """A getter passing its value through, adding ``f(value)`` to the
     ``Collector`` in the context, if there is one."""
 
-    def collect(value: A, _options: ParseOptions) -> Effect[A, Any, Any]:
+    def collect(value: A, _options: ParseOptions) -> Effect[A]:
         return add_all(f(value)).map(lambda _: value)
 
     return G.transform_effect(collect)
@@ -91,14 +91,12 @@ def getter_add_all[A](f: Callable[[A], Iterable[object]]) -> G.Getter[A, A, Any]
 
 def schema[T_, E, RD, RE](
     self: S.Codec[T_, E, RD, RE], f: Callable[[E], Iterable[object]]
-) -> S.DecodeToSchema[T_, E, Any, Any]:
+) -> S.DecodeToSchema[T_, E, RD, RE]:
     """``self``, reporting ``f`` of each encoded value to the ``Collector``
     when encoding. As in Effect, a declaration (``S.Bytes``, ...) is written
     as itself by ``S.to_codec_json``, so a worker message carries the value
     its transfer list names."""
-    transformation: T.Transformation[E, E, Any, Any] = T.Transformation(
-        G.passthrough(), getter_add_all(f)
-    )
+    transformation: T.Transformation[E, E] = T.Transformation(G.passthrough(), getter_add_all(f))
     return S.encode(transformation)(self.__codec__().annotate(to_codec_json=passthrough_link))
 
 

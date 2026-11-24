@@ -1,8 +1,8 @@
 """A function returning a schema keeps the services it needs in its type.
 
-``transferable.schema`` and ``problem_details.optional_member`` return
-``Bottom[..., Any, Any]``: the services the wrapped codec needs become ``Any``,
-so a caller can run it without them. This scans the return annotations in
+``problem_details.optional_member`` (and ``transferable.schema`` before 0.7.0) returned
+``Bottom[..., Any, Any]``: the services the wrapped codec needs became ``Any``,
+so a caller could run it without them. This scans the return annotations in
 ``src/pyfect`` for ``Any`` in a schema's service slots (``RD`` / ``RE``, a
 getter's ``R``). An overloaded function's implementation is exempt (its
 overloads carry the types); every other hit must be listed below with why
@@ -50,8 +50,6 @@ ALLOWED: dict[str, str] = {
     "http/problem_details.py:optional_member": "0.7.0: layer-initial-message-070",
     "http_api/schema.py:__call__": "0.7.0: layer-initial-message-070 (_StatusAnnotate)",
     "schema/_to_iso.py:override_to_codec_iso": "0.7.0: layer-initial-message-070",
-    "workers/transferable.py:getter_add_all": "0.7.0: transferable-services-070",
-    "workers/transferable.py:schema": "0.7.0: transferable-services-070",
 }
 
 

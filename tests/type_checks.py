@@ -4998,6 +4998,16 @@ def check_schema_transformations(db: Db) -> None:
         S.String.pipe(S.decode_to(S.Int, needs_db)), S.DecodeToSchema[int, str, Primary, Never]
     )
 
+    # ``transferable.schema`` keeps the services the wrapped codec needs.
+    from pyfect.workers import transferable
+
+    with_db = S.String.pipe(S.decode_to(S.Int, needs_db))
+    assert_type(
+        transferable.schema(with_db, lambda encoded: ()),
+        S.DecodeToSchema[int, str, Primary, Never],
+    )
+    assert_type(transferable.getter_add_all(str.split), G.Getter[str, str, Never])
+
     # A middleware replaces the services it provides; catching adds its own.
     def fallback(issue: Issue) -> fx.Effect[Option[str], Issue, Port]:
         return Port().map(lambda port: Some(str(port)))
