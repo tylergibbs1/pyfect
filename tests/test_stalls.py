@@ -604,72 +604,101 @@ def test_after_it():
     assert signal.getsignal(signal.SIGPROF) is signal.SIG_DFL
 """
 
-BUSY_UNTIL_SAMPLED = """
-import signal
+_SAMPLED_BUSY_STEPS = """
+import sys
 import time
 
+import _stalls
 import pyfect as fx
+import pytest
+
+SAMPLED_CPU = 0.1
+\"\"\"Seconds of the busy thread's own CPU spun while it is sampled: one sample per 10 ms of
+it (``_stalls._PROFILE_INTERVAL``), however starved the host leaves the process.\"\"\"
 
 
-def spin_on_purpose(n):
-    return sum(range(n))  # one C call: holds the GIL throughout
-
-
-def step():
-    spin_on_purpose(10**5)  # about 1 ms
-    time.sleep(0.0002)  # room for the watchdog to take the GIL, so its ticks keep time
-
-
-def sampling():
-    return signal.getitimer(signal.ITIMER_PROF) != (0.0, 0.0)
-
-
-@fx.fn
-def steps():
-    start = time.process_time()
-    while not sampling() and time.process_time() - start < 2:
-        yield from fx.sync(step)
-    # About 0.1 s with no tick: the CPU samples go on, the stall ends before the next tick.
-    yield from fx.sync(lambda: spin_on_purpose(10**7))
-
-
-def test_busy_until_sampled():
-    fx.run_blocking(steps())
-"""
-
-OWN_PROFILING_TIMER = """
-import signal
-import time
-
-import pyfect as fx
-
-fired = []
-
-
-def spin_on_purpose():
-    return sum(range(10**5))
+def spin_on_purpose(n=10**5):
+    return sum(range(n))  # one C call: holds the GIL throughout (10**5: about 1 ms)
 
 
 def step():
     spin_on_purpose()
-    time.sleep(0.0002)
+    time.sleep(0.0002)  # releases the GIL: with no forced switch, the only place a tick lands
 
 
-@fx.fn
-def steps():
-    start = time.process_time()
-    while time.process_time() - start < 2:  # 2 s of CPU, however fast the machine
+@pytest.fixture
+def sampler(request):
+    \"\"\"The watchdog's CPU sampler, with the GIL switched only where a step releases it.
+    Forced switches, which a starved host lets the watchdog ask for anywhere, would put its
+    ticks at different lines of the same busy loop, cutting one stall into several, the first
+    with a sample or none.\"\"\"
+    interval = sys.getswitchinterval()
+    sys.setswitchinterval(60)
+    try:
+        yield request.config.stash[_stalls._WATCHDOG]._cpu
+    finally:
+        sys.setswitchinterval(interval)
+
+
+def busy_until_sampled(sampler):
+    \"\"\"Busy steps until the watchdog names them a busy stall and samples the thread.\"\"\"
+    while sampler.thread is None:
         yield from fx.sync(step)
 
 
-def test_profiles_itself():
+def spun(cpu):
+    \"\"\"Whether ``cpu`` seconds of this thread's CPU have passed (``time.thread_time``).\"\"\"
+    end = time.thread_time() + cpu
+    return lambda: time.thread_time() >= end
+"""
+
+BUSY_UNTIL_SAMPLED = (
+    _SAMPLED_BUSY_STEPS
+    + """
+
+def spin_until_sampled():
+    # No tick until it returns (the GIL stays held): the stall's only head written meanwhile
+    # came before the first sample, and the samples go on.
+    done = spun(SAMPLED_CPU)
+    while not done():
+        spin_on_purpose()
+
+
+@fx.fn
+def steps(sampler):
+    yield from busy_until_sampled(sampler)
+    yield from fx.sync(spin_until_sampled)  # the stall ends before the next tick
+
+
+def test_busy_until_sampled(sampler):
+    fx.run_blocking(steps(sampler))
+"""
+)
+
+OWN_PROFILING_TIMER = (
+    _SAMPLED_BUSY_STEPS
+    + """
+import signal
+
+fired = []
+
+
+@fx.fn
+def steps(sampler):
+    yield from busy_until_sampled(sampler)
+    done = spun(SAMPLED_CPU)
+    while not done():
+        yield from fx.sync(step)
+
+
+def test_profiles_itself(sampler):
     def on_prof(signum, frame):
         fired.append(signum)
 
     signal.signal(signal.SIGPROF, on_prof)
     signal.setitimer(signal.ITIMER_PROF, 0.05, 0.05)
     try:
-        fx.run_blocking(steps())  # a busy stall, past the threshold
+        fx.run_blocking(steps(sampler))  # a busy stall, sampled
         assert signal.getitimer(signal.ITIMER_PROF)[1] == 0.05
         assert signal.getsignal(signal.SIGPROF) is on_prof
         assert fired  # its timer kept firing into its own handler
@@ -677,6 +706,7 @@ def test_profiles_itself():
         signal.setitimer(signal.ITIMER_PROF, 0, 0)
         signal.signal(signal.SIGPROF, signal.SIG_DFL)
 """
+)
 
 
 def _outcomes(
