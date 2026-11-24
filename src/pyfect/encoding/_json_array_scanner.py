@@ -335,7 +335,7 @@ class Scanner:
         self.buffer = []
         self.buffered = 0
         try:
-            value = parse(source)
+            value = parse(source, max_depth=self.config.max_depth)
         except PARSE_ERRORS as cause:
             raise self.fail("Syntax", "Invalid JSON value", self.start, cause) from cause
         if mode is _Capture.ELEMENT:
@@ -418,7 +418,7 @@ class Scanner:
         values: Json = None
         if cut != -1:
             try:
-                values = parse("[" + text[i:cut] + "]")
+                values = parse("[" + text[i:cut] + "]", max_depth=self.config.max_depth + 1)
             except PARSE_ERRORS:
                 self.slow = self.base + cut
         if not isinstance(values, list):

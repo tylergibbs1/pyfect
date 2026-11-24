@@ -122,7 +122,7 @@ def test_nesting_inside_strings_does_not_count() -> None:
 def test_the_depth_check_is_linear_on_unterminated_strings() -> None:
     def make(n: int):
         value = b'"\\"' * (n // 3)
-        return lambda: _json.within_depth(value)
+        return lambda: _json.parse(value)
 
     assert_near_linear(make, 40_000)
 

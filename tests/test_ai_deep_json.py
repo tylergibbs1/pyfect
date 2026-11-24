@@ -1,7 +1,8 @@
 """JSON nested deeper than Python's recursion limit, from a model, a
 provider, an MCP peer: a typed failure (or an ignored event), never a
-defect. ``json.loads`` raises ``RecursionError`` for it, which is not a
-``ValueError``."""
+defect. ``json.loads`` reads it (about ten thousand levels on 3.13, a hundred
+thousand on 3.14) and the walks after it (``whole_numbers_as_ints``, ``==``)
+raised ``RecursionError``; ``_json_text.parse`` now refuses it."""
 
 from __future__ import annotations
 
@@ -34,7 +35,7 @@ from pyfect.http.client import make as make_http_client
 from pyfect.http.request import HttpClientRequest
 from pyfect.result import Err, Ok
 
-DEEP = "[" * 1_500_000 + "]" * 1_500_000  # past the C stack guard of json.loads
+DEEP = "[" * 5_000 + "]" * 5_000
 
 
 def test_secure_json_parse_refuses_deep_nesting_with_a_value_error():

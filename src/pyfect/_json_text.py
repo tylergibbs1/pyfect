@@ -21,6 +21,7 @@ from json.encoder import encode_basestring as _encode_string
 from typing import Never, cast
 
 from pyfect._js import int_text, js_number
+from pyfect._json_depth import within_depth
 from pyfect._nesting import parse_nested
 from pyfect._redaction import NO_FORM, json_form
 from pyfect._stack import with_fresh_stack
@@ -45,14 +46,29 @@ MAX_INTEGER_DIGITS = 4300
 fails the parse, as converting it costs superlinear time."""
 
 
-def parse(text: str | bytes | bytearray) -> Json:
+MAX_DEPTH = 512
+"""The deepest nesting of arrays and objects ``parse`` reads by default (PHP's
+``json_decode`` default; orjson and simdjson stop at 1024, Jackson at 1000).
+Deeper text is refused before it is parsed: ``json.loads`` on Python 3.14
+reads about a hundred thousand levels, and code that walks the value with
+plain recursion (``whole_numbers_as_ints``, a reviver, ``==``) then raises
+``RecursionError``, where 512 levels leave it room."""
+
+
+def parse(text: str | bytes | bytearray, *, max_depth: int = MAX_DEPTH) -> Json:
     """``JSON.parse``: ``json.loads`` without the ``NaN`` / ``Infinity``
     extensions (bytes are read as ``json.loads`` reads them). Text that is
-    not JSON raises ``ValueError``, also when it nests too deeply to decode
-    (where ``json.loads`` raises ``RecursionError``) or holds an integer of
-    more than ``MAX_INTEGER_DIGITS`` digits."""
+    not JSON raises ``ValueError``, also when it nests more than
+    ``max_depth`` deep or too deeply to decode (where ``json.loads`` raises
+    ``RecursionError``) or holds an integer of more than
+    ``MAX_INTEGER_DIGITS`` digits."""
+    if not isinstance(text, str):
+        text = text.decode(json.detect_encoding(text), "surrogatepass")
+    if not within_depth(text, max_depth):
+        raise ValueError(f"the input is nested more than {max_depth} levels deep")
+    decoded = text
     value: Json = parse_nested(
-        lambda: json.loads(text, parse_constant=_reject_constant, parse_int=_integer)
+        lambda: json.loads(decoded, parse_constant=_reject_constant, parse_int=_integer)
     )
     return value
 

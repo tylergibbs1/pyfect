@@ -9,10 +9,8 @@ import math
 from collections.abc import Mapping
 from typing import cast
 
-from pyfect._js import text_encode
 from pyfect._json_text import PARSE_ERRORS
 from pyfect._json_text import parse as _parse
-from pyfect.chat._json_depth import within_depth
 
 type JsonObject = Mapping[str, object]
 
@@ -29,10 +27,8 @@ class Invalid(Exception):
 def parse(text: str) -> object:
     """The parsed JSON, or ``None`` when ``text`` is not JSON or nests deeper
     than ``MAX_DEPTH``."""
-    if not within_depth(text_encode(text), MAX_DEPTH):
-        return None
     try:
-        return _parse(text)
+        return _parse(text, max_depth=MAX_DEPTH)
     except PARSE_ERRORS:
         return None
 

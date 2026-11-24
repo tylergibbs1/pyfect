@@ -8,7 +8,6 @@ from typing import cast
 
 from pyfect._json_text import PARSE_ERRORS
 from pyfect._json_text import parse as _parse
-from pyfect.chat._json_depth import within_depth as _within_depth
 
 type JsonObject = Mapping[str, object]
 
@@ -56,19 +55,11 @@ def integer(value: object, key: str) -> int | None:
     return None
 
 
-def within_depth(body: bytes, limit: int = MAX_DEPTH) -> bool:
-    """Whether the JSON text ``body`` nests at most ``limit`` deep, strings
-    skipped. Text that is not JSON may pass; the parse refuses it."""
-    return _within_depth(body, limit)
-
-
 def parse(body: bytes) -> object:
     """The parsed JSON of a webhook body, or ``None`` when it is not JSON or
     nests past ``MAX_DEPTH``. Bad UTF-8 is replaced, as ``TextDecoder``
     does."""
-    if not within_depth(body):
-        return None
     try:
-        return _parse(body.decode("utf-8", "replace"))
+        return _parse(body.decode("utf-8", "replace"), max_depth=MAX_DEPTH)
     except PARSE_ERRORS:
         return None

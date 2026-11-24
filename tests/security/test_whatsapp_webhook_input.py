@@ -246,5 +246,6 @@ def test_an_out_of_range_timestamp_is_no_timestamp_not_a_defect(timestamp: str) 
 
 def test_the_depth_check_is_linear_on_unterminated_strings() -> None:
     # A quote-escape run never ends a string: matched whole, not once per quote.
-    assert _json.within_depth(b'"\\"' * 200_000)
-    assert not _json.within_depth(b"[" * 200_000)
+    assert _json.parse(b'"\\"' * 200_000) is None
+    assert _json.parse(b"[" * 200_000) is None
+    assert _json.parse(b"[" * _json.MAX_DEPTH + b"]" * _json.MAX_DEPTH) is not None

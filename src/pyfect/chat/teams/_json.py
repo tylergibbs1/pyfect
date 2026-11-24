@@ -40,32 +40,10 @@ nests a few levels, an Adaptive Card in it a few dozen; deeper text is not
 taken as JSON, so nothing that walks ``raw`` later meets an unbounded depth."""
 
 
-def _depth_within(value: object, limit: int) -> bool:
-    """Whether ``value`` nests at most ``limit`` levels; walks each node once,
-    without recursion."""
-    stack: list[tuple[object, int]] = [(value, 0)]
-    while stack:
-        node, depth = stack.pop()
-        if isinstance(node, dict):
-            children = cast("dict[str, object]", node).values()
-        elif isinstance(node, list):
-            children = cast("list[object]", node)
-        else:
-            continue
-        if depth == limit:
-            return False
-        stack.extend((child, depth + 1) for child in children)
-    return True
-
-
 def parse(text: str) -> object:
     """The parsed JSON, or ``None`` when ``text`` is not JSON or nests past
     ``MAX_DEPTH``."""
     try:
-        value = _parse(text)
+        return _parse(text, max_depth=MAX_DEPTH)
     except PARSE_ERRORS:
         return None
-    # Fewer brackets than the limit can't nest past it: most documents skip the walk.
-    if text.count("[") + text.count("{") <= MAX_DEPTH:
-        return value
-    return value if _depth_within(value, MAX_DEPTH) else None

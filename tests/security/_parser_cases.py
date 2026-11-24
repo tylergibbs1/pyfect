@@ -783,10 +783,10 @@ def _whatsapp_nested(n: int) -> Work:
     return lambda: whatsapp_text.render(value)
 
 
-@case(whatsapp_json.within_depth, "whatsapp _json.within_depth: unterminated escapes", size=40_000)
+@case(whatsapp_json.parse, "whatsapp _json.parse: unterminated escapes", size=40_000)
 def _whatsapp_depth_quotes(n: int) -> Work:
     value = b'"\\"' * (n // 3)
-    return lambda: whatsapp_json.within_depth(value)
+    return lambda: whatsapp_json.parse(value)
 
 
 @case(whatsapp_chat.normalize, "whatsapp_chat.normalize: many messages", size=2000)
@@ -849,10 +849,10 @@ def _telegram_quotes(n: int) -> Work:
     return lambda: telegram_markdown.render(value)
 
 
-@case(telegram_json.within_depth, "telegram _json.within_depth: unterminated escapes", size=40_000)
+@case(telegram_json.parse, "telegram _json.parse: unterminated escapes", size=40_000)
 def _telegram_depth_quotes(n: int) -> Work:
     value = b'"\\"' * (n // 3)
-    return lambda: telegram_json.within_depth(value)
+    return lambda: telegram_json.parse(value)
 
 
 @case(telegram_chat.normalize, "telegram_chat.normalize: many long mention entities", size=4000)
