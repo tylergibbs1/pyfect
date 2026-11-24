@@ -89,6 +89,8 @@ def tokens(text: str) -> list[Token]:
     runs: _Runs | None = None
     # Past this index there is no "```": a failed search is not repeated.
     no_fence_after = len(text) + 1
+    # The run of backticks last measured, as [run_start, run_end).
+    run_start = run_end = 0
     i = 0
     length = len(text)
     while i < length:
@@ -97,9 +99,13 @@ def tokens(text: str) -> list[Token]:
             i += 2
             continue
         if char == "`":
-            n = 1
-            while i + n < length and text[i + n] == "`":
-                n += 1
+            # A fence can close inside a long run, so the scan can stop in the middle
+            # of one: the run's end, found once, serves every stop in it.
+            if not run_start <= i < run_end:
+                run_start = run_end = i
+                while run_end < length and text[run_end] == "`":
+                    run_end += 1
+            n = run_end - i
             if n >= 3 and i + 3 < no_fence_after:
                 end = text.find("```", i + 3)
                 if end != -1:

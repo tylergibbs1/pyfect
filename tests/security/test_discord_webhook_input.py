@@ -7,8 +7,8 @@ to another route."""
 from __future__ import annotations
 
 import json
-import time
 from collections.abc import Callable, Generator
+from datetime import UTC, datetime
 from typing import Any, cast
 
 import pytest
@@ -55,7 +55,7 @@ BODY = json.dumps(CLICK).encode()
 def now(offset: int = 0) -> str:
     """A request timestamp: whole seconds since the epoch, from the wall clock
     the signature check reads."""
-    return str(int(time.time()) + offset)
+    return str(int(datetime.now(UTC).timestamp()) + offset)
 
 
 def sign(timestamp: str, body: bytes, key: Ed25519PrivateKey = KEY) -> str:
@@ -298,3 +298,10 @@ def test_mention_offsets_count_utf16_units_past_astral_characters() -> None:
     starts = _mentions.utf16_offsets(text, [token.start for token in tokens])
     units = text.encode("utf-16-le")
     assert [units[s * 2 : s * 2 + 8].decode("utf-16-le") for s in starts] == ["<@1>", "<@2>"]
+
+
+def test_a_fence_that_closes_inside_a_long_run_still_scans_as_effect_does() -> None:
+    # A fence opens at the run's first three backticks and closes at the next three,
+    # here inside the same run; the scan resumes in the run, which it measures once.
+    text = "`" * 7 + "<@7>``` <@8>"
+    assert [token.id for token in _mentions.tokens(text)] == ["7", "8"]

@@ -6,7 +6,7 @@ from __future__ import annotations
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Literal, cast
 
 import pyfect.schema as S
@@ -23,6 +23,7 @@ from pyfect.chat.chat_message import Attachment, Author, ChatMessage, Mention, R
 from pyfect.chat.chat_thread import ChatThread
 from pyfect.chat.discord import _json, _mentions
 from pyfect.chat.discord._json import Invalid, JsonObject
+from pyfect.date_time._epoch import from_epoch_millis
 
 PLATFORM = "discord"
 
@@ -463,7 +464,7 @@ def snowflake_time(id: str) -> datetime | None:
     if SNOWFLAKE.fullmatch(id) is None:
         return None
     try:
-        return datetime.fromtimestamp(snowflake_millis(id) / 1000, UTC)
+        return from_epoch_millis(snowflake_millis(id))
     except (OverflowError, ValueError, OSError):
         return None
 

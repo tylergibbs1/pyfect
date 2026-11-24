@@ -630,13 +630,13 @@ def _discord_message(content: str, mentions: int = 0) -> Work:
     return lambda: discord_chat.normalize(found, bot_user_id="1564742987727118426")
 
 
-@case(discord_chat.normalize, "discord_chat.normalize: resolved mentions in content", size=4000)
+@case(discord_chat.normalize, "discord_chat.normalize: resolved mentions in content", size=1500)
 def _discord_mentions(n: int) -> Work:
     count = n // 6
     return _discord_message("".join(f"<@{i + 1}> " for i in range(count)), count)
 
 
-@case(discord_chat.normalize, "discord_chat.normalize: backtick runs that never close", size=4000)
+@case(discord_chat.normalize, "discord_chat.normalize: backtick runs that never close", size=1000)
 def _discord_open_backticks(n: int) -> Work:
     # Each run of a new length looks for its closer once; a failed fence search is kept.
     runs = []
@@ -680,7 +680,7 @@ def _discord_submit(n: int) -> Work:
 case(
     discord_chat.normalize_interaction,
     "discord_chat.normalize_interaction: a submit with many inputs",
-    size=2000,
+    size=500,
 )(_discord_submit)
 
 

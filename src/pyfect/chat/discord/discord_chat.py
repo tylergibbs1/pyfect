@@ -537,11 +537,13 @@ def parse_mention(text: str) -> MentionToken | None:
 
 __all__ = [
     "DEFAULT_DEADLINE",
+    "ChatError",
     "DiscordChat",
     "DiscordChatService",
     "DiscordPostOptions",
     "Member",
     "MissingChannelType",
+    "NotAccepted",
     "command_requests",
     "guild_id",
     "layer",

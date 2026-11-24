@@ -5,7 +5,7 @@ to the interactions endpoint or drives a gateway shard over a fake socket."""
 from __future__ import annotations
 
 import json
-import time
+from datetime import UTC, datetime
 from typing import Any
 
 from _discord_fake import SCRATCH, Fake
@@ -87,7 +87,7 @@ def _interactions_run(value: AnyLayer) -> AnyEffect:
     def run():
         http = yield from router.in_memory_client(value.pipe(L.provide(needs)))
         body = json.dumps({"type": 1, "id": "1", "token": "t"}).encode()
-        timestamp = str(int(time.time()))
+        timestamp = str(int(datetime.now(UTC).timestamp()))
         headers = {
             "x-signature-timestamp": timestamp,
             "x-signature-ed25519": _KEY.sign(timestamp.encode() + body).hex(),
