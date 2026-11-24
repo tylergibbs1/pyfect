@@ -1,0 +1,2 @@
+['a', 'b', 'c']
+[Link(target='/items?page=2', rel=('next', 'last'), params={})]

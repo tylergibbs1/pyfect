@@ -269,9 +269,23 @@ def _explicit_content_headers() -> HttpServerResponse:
     )
 
 
+def test_append_header_keeps_an_existing_link_header() -> None:
+    """appendHeader keeps an existing Link header"""
+    response = (
+        server_response.empty()
+        .append_header("Link", '<https://example.com/en>; rel="canonical"')
+        .append_header("Link", '<https://example.com/de>; rel="alternate"; hreflang="de"')
+    )
+    assert response.headers["link"] == (
+        '<https://example.com/en>; rel="canonical", '
+        '<https://example.com/de>; rel="alternate"; hreflang="de"'
+    )
+
+
 _KEEPING_UPDATES: list[tuple[str, Callable[[HttpServerResponse], HttpServerResponse]]] = [
     ("set_status", lambda r: r.set_status(201)),
     ("remove_header", lambda r: r.remove_header("x-test")),
+    ("append_header", lambda r: r.append_header("vary", "Accept")),
     ("set_cookie_unsafe", lambda r: r.set_cookie_unsafe("session", "123")),
     ("set_cookie", lambda r: fx.run_sync(r.set_cookie("session", "123").or_die())),
     ("set_cookies_unsafe", lambda r: r.set_cookies_unsafe([("session", "123")])),

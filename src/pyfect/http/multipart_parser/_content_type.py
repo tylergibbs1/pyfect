@@ -5,7 +5,8 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from urllib.parse import unquote_to_bytes
+
+from pyfect.http._ext_value import decode_ext_value
 
 _QUOTED = (
     r'"(?:[\t\u0020\u0021\u0023-\u005b\u005d-\u007e\u0080-\U0010ffff]++'
@@ -19,11 +20,6 @@ _DISPOSITION_PARAM = re.compile(
 _QUOTED_PAIR = re.compile(r"\\([\t\u0020-\U0010ffff])")
 _MEDIA_TYPE = re.compile(r"^[!#$%&'*+.^\w|~-]+/[!#$%&'*+.^\w|~-]+$", re.ASCII)
 _DISPOSITION_TYPE = re.compile(r"^[!#$%&'*+.^\w|~-]+$", re.ASCII)
-_EXT_VALUE = re.compile(
-    r"^(utf-8|iso-8859-1)'[a-z0-9-]*+'((?:%[0-9a-f]{2}|[!#$&+.^_`|~\w-]++)*+)$",
-    re.IGNORECASE | re.ASCII,
-)
-_PCT_ENCODED = re.compile(r"%([0-9a-f]{2})", re.IGNORECASE)
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,18 +52,6 @@ def parse(header: str | None) -> ContentType:
     if index != len(header):
         return ContentType()
     return ContentType(media.lower(), parameters)
-
-
-def _decode_ext_value(value: str) -> str | None:
-    match = _EXT_VALUE.match(value)
-    if match is None:
-        return None
-    if match[1].lower() == "iso-8859-1":
-        return _PCT_ENCODED.sub(lambda m: chr(int(m[1], 16)), match[2])
-    try:
-        return unquote_to_bytes(match[2]).decode("utf-8")
-    except UnicodeDecodeError:
-        return None
 
 
 @dataclass(frozen=True, slots=True)
@@ -103,7 +87,7 @@ def parse_disposition(header: str | list[str] | None) -> ContentDisposition | No
             return None
     filename = parameters.get("filename")
     if "filename*" in parameters:
-        filename = _decode_ext_value(parameters["filename*"])
+        filename = decode_ext_value(parameters["filename*"])
         if filename is None:
             return None
     return ContentDisposition(kind.lower(), parameters, filename)

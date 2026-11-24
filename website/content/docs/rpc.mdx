@@ -105,6 +105,23 @@ reconnecting when it drops.
 `.middleware(...)`, for authentication say, and can provide them a service such as the
 current user.
 
+## Tracing
+
+Each call makes a client span and a server span, the server's a child of the client's. The
+`TracingEnabled` annotation picks the sides per procedure: `"client"`, `"server"`, `"both"`
+(the default) or `"none"`, so a call made every second need not fill the traces. Without a
+client span, the client still sends its caller's span; a handler or middleware reads it as
+`remote_parent_span` to parent spans of its own. `disable_tracing=True` on a client or server
+turns off that side for every procedure.
+
+<CodeOutput>
+
+<include meta='title="tracing.py"'>../../snippets/rpc/tracing.py</include>
+
+<include lang="text">../../snippets/rpc/tracing.out</include>
+
+</CodeOutput>
+
 ## Security defaults
 
 - A WebSocket handshake or HTTP call from a browser page of another origin gets a 403 unless

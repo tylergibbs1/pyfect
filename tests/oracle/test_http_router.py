@@ -14,6 +14,7 @@ import pytest
 
 import pyfect as fx
 from pyfect import effect, layer
+from pyfect.context import Context
 from pyfect.exit import Failure
 from pyfect.http import find_my_way, router, server_response
 from pyfect.http.http_effect import append_pre_response_handler
@@ -22,9 +23,12 @@ from pyfect.http.router import HttpRouter, HttpRouterService, RouterConfig
 from pyfect.http.server_error import HttpServerError, RouteNotFound
 from pyfect.http.server_request import HttpServerRequest, ServerRequest
 from pyfect.http.server_response import HttpServerResponse
+from pyfect.http.url_params import CurrentRedactedNames
 from pyfect.http.web import WebRequest
 from pyfect.http.web_handler import request_from_web
+from pyfect.logger import CurrentLogAnnotations, CurrentLoggers, Logger
 from pyfect.scope import add_finalizer, scoped
+from pyfect.tracer import CurrentTracer, NativeSpan, SpanRequest, Tracer
 
 BIG_JSON = '{"text":"' + "All work and no play makes Jack a dull boy. " * 100 + '"}'
 
@@ -75,6 +79,94 @@ def test_rejects_colliding_regex_patterns_with_first_registered_first(first: str
     assert [(type(d), str(d)) for d in result.cause.defects] == [
         (ValueError, "Method 'GET' already declared for route '/files/:()'")
     ]
+
+
+def test_records_redacted_params_in_server_spans_and_logs() -> None:
+    """records redacted params in server spans and logs"""
+    spans: list[NativeSpan] = []
+
+    def make_span(request: SpanRequest) -> NativeSpan:
+        span = NativeSpan(request)
+        spans.append(span)
+        return span
+
+    urls: list[object] = []
+    recorder = Logger.make(
+        lambda options: urls.append(options.fiber.get_ref(CurrentLogAnnotations).get("http.url"))
+    )
+    paths = [
+        "/hooks/123/s3cret?key=q",
+        "/assets/tok/site.css",
+        "/codes/a1-7",
+        "/named/12",
+        "/opt",
+        "/other/s3cret",
+        "/vault/1/s3cret",
+        "/mounted/1/s3cret",
+    ]
+
+    @fx.fn
+    def program():
+        inner = yield from router.to_http_effect(
+            router.add("GET", "/:id/:secret", _echo_url, redacted_params=["secret"])
+        )
+        app = layer.merge(
+            router.add("GET", "/hooks/:id/:secret", _echo_url, redacted_params=["secret"]),
+            router.add("GET", "/assets/*", _echo_url, redacted_params=["*"]),
+            # Nested regex capture shifts param indices, so all params are redacted.
+            router.add(
+                "GET", "/codes/:secret(^(a|b)\\d+)-:id", _echo_url, redacted_params=["secret"]
+            ),
+            router.add("GET", "/named/:id(?P<digits>\\d+)", _echo_url, redacted_params=["id"]),
+            router.add("GET", "/opt/:p1-:p2?", _echo_url, redacted_params=["p2"]),
+            router.add("GET", "*", _echo_url, redacted_params=["*"]),
+            router.use(
+                lambda service: service.prefixed("/vault").add(
+                    "*", "*", inner.or_die(), redacted_params=["*"]
+                )
+            ),
+            router.use(lambda service: service.prefixed("/mounted").add("*", "*", inner.or_die())),
+        )
+        context = (
+            Context.make(CurrentTracer, Tracer(make_span))
+            .add(CurrentLoggers, (recorder,))
+            .add(CurrentRedactedNames, ("key",))
+        )
+
+        async def main() -> list[str]:
+            made = router.to_web_handler(app)
+            try:
+                out: list[str] = []
+                for path in paths:
+                    response = await made.handler(WebRequest(f"http://localhost{path}"), context)
+                    out.append(await response.text())
+                return out
+            finally:
+                await made.dispose()
+
+        return asyncio.run(main())
+
+    bodies = fx.run_blocking(scoped(program()))
+    expected_paths = [
+        "/hooks/123/REDACTED",
+        "/assets/REDACTED",
+        "/codes/REDACTED-REDACTED",
+        "/named/REDACTED",
+        "/opt",
+        "/REDACTED",
+        "/vault/REDACTED",
+        "/mounted/1/REDACTED",
+    ]
+    assert bodies[0] == "/hooks/123/s3cret?key=q"
+    assert urls == expected_paths
+    assert [span.attributes.get("url.path") for span in spans] == expected_paths
+    assert spans[0].attributes["url.full"] == "http://localhost/hooks/123/REDACTED?key=REDACTED"
+
+
+def test_rejects_a_string_as_redacted_params() -> None:
+    """A bare string is a mistake for a list of one name, which would redact each letter."""
+    with pytest.raises(TypeError, match="not the string 'secret'"):
+        router.route("GET", "/:secret", server_response.empty(), redacted_params="secret")
 
 
 def test_normalizes_the_prefix_stored_by_prefix_route() -> None:

@@ -43,11 +43,11 @@ index 1e29596d..d5368759 100644
  )
  _QUOTED = re.compile(rf"{_START}(['\"`])([\s\S]*)\1{_END}")
 diff --git a/src/pyfect/http/multipart_parser/_content_type.py b/src/pyfect/http/multipart_parser/_content_type.py
-index 58c8b290..a4f0b9c2 100644
+index 286fb622..fe0a16d7 100644
 --- a/src/pyfect/http/multipart_parser/_content_type.py
 +++ b/src/pyfect/http/multipart_parser/_content_type.py
-@@ -8,8 +8,8 @@ from dataclasses import dataclass, field
- from urllib.parse import unquote_to_bytes
+@@ -9,8 +9,8 @@ from dataclasses import dataclass, field
+ from pyfect.http._ext_value import decode_ext_value
  
  _QUOTED = (
 -    r'"(?:[\t\u0020\u0021\u0023-\u005b\u005d-\u007e\u0080-\U0010ffff]++'

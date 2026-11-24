@@ -16,10 +16,11 @@ from pyfect.clock import Clock
 from pyfect.context import Reference
 from pyfect.effect import sync
 from pyfect.exit import Exit, Failure, Success
-from pyfect.http import _request_state, trace_context
+from pyfect.http import _redacted_path, _request_state, trace_context
 from pyfect.http import headers as _headers
 from pyfect.http import url_params as _url_params
 from pyfect.http._request_state import RequestState
+from pyfect.http._url_text import strip_search_and_hash
 from pyfect.http.client._make import _add_header_attributes, _add_url_attributes
 from pyfect.http.server_error import (
     HttpServerError,
@@ -28,6 +29,7 @@ from pyfect.http.server_error import (
 )
 from pyfect.http.server_request import HttpServerRequest, ServerRequest, to_url
 from pyfect.http.server_response import HttpServerResponse
+from pyfect.http.url import set_pathname
 from pyfect.layer import Layer
 from pyfect.layer import succeed as layer_succeed
 from pyfect.tracer import ParentSpan, Span, TracerEnabled, native_tracer
@@ -78,14 +80,27 @@ def uses_native_tracer(fiber: Fiber[Any, Any]) -> bool:
 
 
 def _response_span_exit(
-    fiber: Fiber[Any, Any], request: ServerRequest, response: HttpServerResponse
+    fiber: Fiber[Any, Any],
+    request: ServerRequest,
+    response: HttpServerResponse,
+    state: RequestState | None,
 ) -> Exit[HttpServerResponse, HttpServerError]:
     # OpenTelemetry fails server spans of 5xx responses.
     if not 500 <= response.status < 600:
         return Success(response)
     # The message is path-only, but exporters can still read the error's request URL
     # after the request's redacted names are gone.
-    url = _url_params.redact_url(request.url, fiber.get_ref(_url_params.CurrentRedactedNames))
+    url = _url_params.redact_url(
+        request.url,
+        _with_state_names(
+            fiber.get_ref(_url_params.CurrentRedactedNames),
+            () if state is None else state.redacted_url_param_names,
+        ),
+    )
+    if state is not None and state.redacted_path is not None:
+        url = (
+            _redacted_path.format_path(state.redacted_path) + url[len(strip_search_and_hash(url)) :]
+        )
     if url != request.url:
         request = request.modify(url=url)
     return Failure(fail(HttpServerError(ResponseError(request, response))))
@@ -108,7 +123,7 @@ def _end(
     if isinstance(exit, Success) and (
         not span.sampled or fiber.get_ref(CurrentTracer) is native_tracer
     ):
-        span.end(end_time, _response_span_exit(fiber, request, exit.value))
+        span.end(end_time, _response_span_exit(fiber, request, exit.value, state))
         return
     redacted_headers = _with_state_names(
         fiber.get_ref(_headers.CurrentRedactedNames),
@@ -122,14 +137,16 @@ def _end(
         if cause is not None and (response.status >= 500 or cause.has_interrupts):
             span_exit = Failure(cause)
         else:
-            span_exit = _response_span_exit(fiber, request, response)
+            span_exit = _response_span_exit(fiber, request, response, state)
     else:
         response = exit.value
-        span_exit = _response_span_exit(fiber, request, response)
+        span_exit = _response_span_exit(fiber, request, response, state)
     if span.sampled:
         span.attribute("http.request.method", request.method)
         url = to_url(request)
         if url is not None:
+            if state is not None and state.redacted_path is not None:
+                url = set_pathname(url, _redacted_path.format_path(state.redacted_path))
             redacted_params = _with_state_names(
                 fiber.get_ref(_url_params.CurrentRedactedNames),
                 () if state is None else state.redacted_url_param_names,

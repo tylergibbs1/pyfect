@@ -25,6 +25,7 @@ from typing import (
 from pyfect._pipe import pipe_one
 from pyfect.context import Context, Tag, TagLike
 from pyfect.http.headers import Pattern
+from pyfect.http.router._route import redacted_param_names
 from pyfect.http_api import schema as api_schema
 from pyfect.http_api.endpoint import AnyEndpoint, error_schemas, success_schemas
 from pyfect.http_api.group import AnyGroup, HttpApiGroup
@@ -234,11 +235,13 @@ class RedactedNamesOptions(TypedDict, total=False):
 
     query: Sequence[Pattern]
     headers: Sequence[Pattern]
+    params: Sequence[str]
 
 
 class RedactedNames(Tag[RedactedNamesOptions], key="effect/http-api/HttpApi/RedactedNames"):
-    """Query parameters and headers whose values are only sometimes secret, redacted in the
-    client and server spans of an endpoint without being modelled as ``Redacted``.
+    """Query parameters, headers and path params whose values are only sometimes secret,
+    redacted in the client and server spans of an endpoint without being modelled as
+    ``Redacted``.
 
     Names are wire names after encoding, matched as ``headers.is_redacted_name`` does: a
     string ignoring case, a ``re.Pattern`` by ``search``. A string query name also matches
@@ -252,6 +255,12 @@ class RedactedNames(Tag[RedactedNamesOptions], key="effect/http-api/HttpApi/Reda
         build = HttpApiEndpoint.post("build", "/build", query=...).annotate(
             RedactedNames, {"query": ["buildargs"], "headers": ["x-registry-config"]}
         )
+
+    ``params`` are path param names, matched exactly. On the server they become the route's
+    ``redacted_params``, so the server span and the ``middleware.logger`` entry record the
+    path with those values replaced by ``REDACTED``; client spans record the path as sent.
+    ``builder.endpoint`` returns a handler without a route, so set ``redacted_params`` on the
+    route it is mounted with.
     """
 
 
@@ -281,6 +290,18 @@ def endpoint_redacted_names(
     if not query and not headers:
         return None
     return EndpointRedactedNames(tuple(query), tuple(headers))
+
+
+def endpoint_redacted_params(
+    api: AnyApi, group: AnyGroup, endpoint: AnyEndpoint
+) -> tuple[str, ...]:
+    """The path params ``RedactedNames`` declares on ``api``, ``group`` and ``endpoint``."""
+    params: list[str] = []
+    for annotated in (api.annotations, group.annotations, endpoint.annotations):
+        found = annotated.get_option(RedactedNames)
+        if found is not None:
+            params.extend(redacted_param_names(found.value.get("params", ())))
+    return tuple(params)
 
 
 @dataclass(frozen=True, slots=True)
@@ -334,6 +355,7 @@ __all__ = [
     "SuccessParseOptions",
     "api_of",
     "endpoint_redacted_names",
+    "endpoint_redacted_params",
     "get_slot_parse_options",
     "reflect",
 ]

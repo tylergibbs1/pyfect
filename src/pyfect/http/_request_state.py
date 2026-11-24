@@ -13,6 +13,7 @@ from pyfect.effect import void
 
 if TYPE_CHECKING:
     from pyfect.exit import Exit
+    from pyfect.http._redacted_path import RedactedPath
     from pyfect.http.headers import Pattern
     from pyfect.http.server_error import HttpServerError
     from pyfect.http.server_request import ServerRequest
@@ -31,6 +32,7 @@ class RequestState:
         "logger_disabled",
         "pre_response_handler",
         "redacted_header_names",
+        "redacted_path",
         "redacted_url_param_names",
         "request_scope",
         "scope_ejected",
@@ -43,6 +45,8 @@ class RequestState:
         self.scope_ejected = False
         self.redacted_url_param_names: tuple[Pattern, ...] = ()
         self.redacted_header_names: tuple[Pattern, ...] = ()
+        self.redacted_path: RedactedPath | None = None
+        """The matched path with its ``redacted_params`` hidden, set when a route matches."""
         self.request_scope = request_scope
         """The scope ``to_handled`` made for the request, which a transferred body and the
         request both have to finish before it closes."""

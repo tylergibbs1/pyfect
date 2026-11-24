@@ -1,6 +1,6 @@
 """HTTP headers (Effect's ``Headers``): an immutable mapping from lowercased
 header names to values, plus the header value formats the client reads
-(HTTP dates and ``Retry-After``).
+(HTTP dates, ``Retry-After`` and ``Link``).
 
 Lookups are case-insensitive (``headers["Content-Type"]``), and every
 update gives a new ``Headers``::
@@ -13,19 +13,23 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterable, Iterator, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from email.utils import format_datetime
 from typing import ClassVar, Literal, cast, final
+from urllib.parse import quote
 
 from pyfect import _json_text
 from pyfect._digits import is_digits, parse_digits
+from pyfect._js import to_well_formed
+from pyfect._js import trim as js_trim
 from pyfect.context import Reference
 from pyfect.duration import Duration, from_input_unsafe, nanos, seconds, zero
 from pyfect.duration import Input as DurationInput
 from pyfect.duration import millis as millis_duration
 from pyfect.errors import TaggedError
 from pyfect.http import _header_lines
+from pyfect.http._ext_value import decode_ext_value
 from pyfect.redacted import Redacted
 from pyfect.result import Err, Ok, Result
 
@@ -82,6 +86,15 @@ class Headers(Mapping[str, str]):
 
     def set(self, key: str, value: str) -> Headers:
         return Headers._unsafe({**self._entries, key.lower(): value})
+
+    def append(self, key: str, value: str) -> Headers:
+        """``value`` added to ``key``'s value, joined with ``", "``; an empty value changes
+        nothing. For list-valued headers such as ``Link`` or ``Vary``, not ``Set-Cookie``."""
+        if value == "":
+            return self
+        name = key.lower()
+        previous = self._entries.get(name)
+        return self.set(name, value if previous is None else f"{previous}, {value}")
 
     def set_all(self, headers: Input) -> Headers:
         return Headers._unsafe({**self._entries, **from_input(headers)._entries})
@@ -333,6 +346,140 @@ def retry_after_delay(value: RetryAfter, now_millis: float) -> Duration:
             return millis_duration(max(0.0, millis - now_millis))
 
 
+# --- Link (RFC 8288) ------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class Link:
+    """One link of a ``Link`` header: the URI reference ``target`` (between ``<`` and
+    ``>``), its relation types ``rel``, and every other parameter by name (``anchor``,
+    ``title``, ``hreflang``...). A parameter without a value, such as ``nopush``, is
+    ``""``."""
+
+    target: str
+    rel: tuple[str, ...] = ()
+    params: Mapping[str, str] = field(default_factory=dict[str, str], hash=False)
+
+
+def _skip_space(input: str, i: int) -> int:
+    while input[i : i + 1] in (" ", "\t"):
+        i += 1
+    return i
+
+
+def _read_param_value(input: str, i: int) -> tuple[str, int]:
+    """The value of a link parameter after its ``=``, and the index after it."""
+    if input[i : i + 1] != '"':
+        start = i
+        while i < len(input) and input[i] not in ";,":
+            i += 1
+        return js_trim(input[start:i]), i
+    i += 1
+    chars: list[str] = []
+    while i < len(input) and input[i] != '"':
+        if input[i] == "\\":
+            i += 1
+        chars.append(input[i : i + 1])
+        i += 1
+    return "".join(chars), i + 1
+
+
+def _read_link_params(input: str, i: int) -> tuple[str | None, dict[str, str], int]:
+    """The ``rel`` and other parameters of a link after its target, and the index after them."""
+    plain: dict[str, str] = {}
+    extended: dict[str, str | None] = {}
+    while True:
+        i = _skip_space(input, i)
+        if input[i : i + 1] != ";":
+            break
+        i = start = _skip_space(input, i + 1)
+        while i < len(input) and input[i] not in "=;, \t":
+            i += 1
+        name = input[start:i].lower()
+        i = _skip_space(input, i)
+        value = ""
+        if input[i : i + 1] == "=":
+            value, i = _read_param_value(input, _skip_space(input, i + 1))
+        if len(name) > 1 and name.endswith("*"):
+            extended.setdefault(name[:-1], decode_ext_value(value))
+        elif name and name not in plain:
+            plain[name] = value
+    # Read rel before the extended params, so rel* cannot set it; then drop it from params.
+    rel = plain.pop("rel", None)
+    plain.update({name: text for name, text in extended.items() if text is not None})
+    plain.pop("rel", None)
+    return rel, plain, i
+
+
+def parse_link(input: str) -> list[Link]:
+    """The links of a ``Link`` header value, read by the forgiving algorithm of RFC 8288
+    Appendix B, so it never fails: at input that is no link, it stops and gives the links read
+    so far. Parameter names and relation types are lowercased, and for every parameter the
+    first occurrence wins. An extended parameter such as ``title*`` is decoded (RFC 8187) and
+    stored as ``title``, replacing the plain one; an undecodable one is ignored, and ``rel*``
+    never sets the relation types. Targets are as written and ``anchor`` is an ordinary
+    parameter (``response.links`` resolves targets and skips anchored links)::
+
+        parse_link('</items?page=2>; rel="next last"')
+        # [Link("/items?page=2", ("next", "last"), {})]
+    """
+    links: list[Link] = []
+    i = 0
+    while True:
+        while input[i : i + 1] in (" ", "\t", ","):
+            i += 1
+        if input[i : i + 1] != "<":
+            return links
+        end = input.find(">", i + 1)
+        if end == -1:
+            return links
+        target = input[i + 1 : end]
+        rel, params, i = _read_link_params(input, end + 1)
+        types = () if rel is None else tuple(t for t in _LINK_SPACES.split(rel.lower()) if t)
+        links.append(Link(target, types, params))
+
+
+_LINK_SPACES = re.compile("[ \t]+")
+_QUOTABLE = re.compile(r"[\t\x20-\x7e]*\Z")
+_RELATION_TYPE_UNSAFE = re.compile(r"[^\x21\x23-\x5b\x5d-\x7e]")
+_QUOTED_SPECIALS = re.compile(r'["\\]')
+
+
+def _format_relation_type(type: str) -> str:
+    # Percent-encoded outside visible ASCII, and `"` and `\`, so a type cannot end the quoted rel.
+    return _RELATION_TYPE_UNSAFE.sub(lambda m: quote(m[0], safe=""), to_well_formed(type))
+
+
+def _format_link_param(name: str, value: str) -> str:
+    if value == "":
+        return name
+    if _QUOTABLE.match(value):
+        return f'{name}="{_QUOTED_SPECIALS.sub(lambda m: "\\" + m[0], value)}"'
+    return f"{name}*=UTF-8''{quote(to_well_formed(value), safe='-_.!~')}"
+
+
+def format_link(links: Iterable[Link]) -> str:
+    """``links`` as a ``Link`` header value: ``<target>``, then ``rel`` when it has relation
+    types, then the other parameters, links joined with ``", "``. An empty value is a bare
+    name, tabs, spaces and visible ASCII a quoted string, and anything else an RFC 8187
+    extended parameter (``title*=UTF-8''Gr%C3%BC%C3%9Fe``). A ``rel`` key in ``params`` is
+    ignored. Targets and parameter names are written as given, so they must be valid in a
+    header. No links give ``""``, which ``append_header`` ignores::
+
+        response.append_header("Link", format_link([Link("/en", ("canonical",))]))
+    """
+    out: list[str] = []
+    for link in links:
+        text = f"<{link.target}>"
+        if link.rel:
+            text += f'; rel="{" ".join(map(_format_relation_type, link.rel))}"'
+        for name, value in link.params.items():
+            if name.lower() != "rel":
+                text += f"; {_format_link_param(name, value)}"
+        out.append(text)
+    return ", ".join(out)
+
+
 __all__ = [
     "EMPTY",
     "CurrentRedactedNames",
@@ -340,16 +487,19 @@ __all__ = [
     "HeaderParseErrorReason",
     "Headers",
     "Input",
+    "Link",
     "Pattern",
     "RetryAfter",
     "RetryAfterDateTime",
     "RetryAfterDuration",
     "current_redacted_names",
     "format_http_date",
+    "format_link",
     "format_retry_after",
     "from_input",
     "is_redacted_name",
     "parse_http_date",
+    "parse_link",
     "parse_retry_after",
     "retry_after_date_time",
     "retry_after_delay",

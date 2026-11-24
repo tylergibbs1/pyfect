@@ -295,6 +295,14 @@ def test_set_body_stale_length() -> None:
     assert "content-length" not in request.headers
 
 
+def test_append_header_joins_onto_an_existing_header() -> None:
+    """appendHeader / joins onto an existing header"""
+    request = (
+        r.get("/").set_header("Accept", "text/html").append_header("accept", "application/json")
+    )
+    assert request.headers["accept"] == "text/html, application/json"
+
+
 def test_remove_header() -> None:
     """removes an existing header"""
     request = r.get("/").set_header("X-Test", "ok").remove_header("X-Test")

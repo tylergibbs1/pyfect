@@ -28,7 +28,7 @@ from pyfect.effect import (
 from pyfect.http.headers import Headers, from_input
 from pyfect.queue import Queue
 from pyfect.rpc._methods import CallOptions, StreamMethod, UnaryMethod
-from pyfect.rpc._rpc import AnyRpc
+from pyfect.rpc._rpc import AnyRpc, traced_on
 from pyfect.rpc.group import RpcGroup
 from pyfect.rpc.message import (
     Ack,
@@ -44,7 +44,13 @@ from pyfect.rpc.message import (
 )
 from pyfect.rpc.middleware import ClientMiddlewareOptions, client_tag
 from pyfect.scope import Scope, fork_in
-from pyfect.tracer import AnySpan, make_span_scoped
+from pyfect.tracer import (
+    AnySpan,
+    DisablePropagation,
+    ParentSpan,
+    TracerEnabled,
+    make_span_scoped,
+)
 
 _VOID: Effect[None] = succeed(None)
 
@@ -200,18 +206,36 @@ class ClientCore:
         headers = fiber.get_ref(CurrentHeaders)
         if call.headers is not None:
             headers = headers.merge(from_input(call.headers))
-        if span is None:
+        sent = self._propagated_span(fiber, span)
+        if sent is None:
             return Request(id, rpc.tag, payload, headers, discard=call.discard)
         return Request(
             id,
             rpc.tag,
             payload,
             headers,
-            span.trace_id,
-            span.span_id,
-            _sampled(span),
+            sent.trace_id,
+            sent.span_id,
+            _sampled(sent),
             discard=call.discard,
         )
+
+    def _propagated_span(self, fiber: Fiber[Any, Any], span: AnySpan | None) -> AnySpan | None:
+        """The span a request carries: its client span, else the caller's (an RPC whose
+        ``TracingEnabled`` makes no client span), unless tracing or propagation is off."""
+        if (
+            self._options.disable_tracing
+            or not fiber.get_ref(TracerEnabled)
+            or fiber.get_ref(DisablePropagation)
+        ):
+            return None
+        sent = span if span is not None else fiber.get_ref(ParentSpan)
+        if sent is None or sent.annotations.get_unsafe(DisablePropagation):
+            return None
+        return sent
+
+    def _creates_span(self, rpc: AnyRpc) -> bool:
+        return not self._options.disable_tracing and traced_on(rpc, "client")
 
     def _send_interrupt(
         self, request_id: RequestId, context: Context[Any], interruptors: tuple[int, ...]
@@ -222,7 +246,7 @@ class ClientCore:
     # --- unary calls -----------------------------------------------------------------
 
     def call(self, rpc: AnyRpc, payload: object, call: CallOptions) -> Effect[Any, Any]:
-        if self._options.disable_tracing:
+        if not self._creates_span(rpc):
             return self._effect_request(rpc, payload, call, None)
         from pyfect.tracer import use_span
 
@@ -335,7 +359,7 @@ class ClientCore:
             if self._is_shutdown:
                 yield from interrupt_closed("RPC client")
             span = None
-            if not self._options.disable_tracing:
+            if self._creates_span(rpc):
                 span = yield from make_span_scoped(
                     self._span_name(rpc), kind="client", attributes=self._span_attributes(rpc)
                 )

@@ -21,7 +21,7 @@ from pyfect.http.incoming_message import Reviver, revive
 from pyfect.http.middleware import logger as http_logger
 from pyfect.http.router._markers import GlobalRaises, GlobalRequires, Raises, Requires
 from pyfect.http.router._provided import Provided, RouteContext
-from pyfect.http.router._route import Method, Route, to_effect
+from pyfect.http.router._route import Method, Route, redacted_param_names, to_effect
 from pyfect.http.router._router import HttpRouter, HttpRouterService, RouterConfig, make
 from pyfect.http.server import HttpServer
 from pyfect.http.server_error import HttpServerError
@@ -131,6 +131,7 @@ def add(
     | Callable[[ServerRequest], Effect[HttpServerResponse, Never, Provided]],
     *,
     uninterruptible: bool = False,
+    redacted_params: Sequence[str] = (),
 ) -> Layer[Never, Never, HttpRouter]: ...
 @overload
 def add[E](
@@ -140,6 +141,7 @@ def add[E](
     | Callable[[ServerRequest], Effect[HttpServerResponse, E, Provided]],
     *,
     uninterruptible: bool = False,
+    redacted_params: Sequence[str] = (),
 ) -> Layer[Never, Never, HttpRouter | Raises[E]]: ...
 @overload
 def add[R](
@@ -149,6 +151,7 @@ def add[R](
     | Callable[[ServerRequest], Effect[HttpServerResponse, Never, R | Provided]],
     *,
     uninterruptible: bool = False,
+    redacted_params: Sequence[str] = (),
 ) -> Layer[Never, Never, HttpRouter | Requires[R]]: ...
 @overload
 def add[E, R](
@@ -158,6 +161,7 @@ def add[E, R](
     | Callable[[ServerRequest], Effect[HttpServerResponse, E, R | Provided]],
     *,
     uninterruptible: bool = False,
+    redacted_params: Sequence[str] = (),
 ) -> Layer[Never, Never, HttpRouter | Requires[R] | Raises[E]]: ...
 def add(
     method: Method,
@@ -168,9 +172,16 @@ def add(
     | Callable[[ServerRequest], Effect[HttpServerResponse, Any, Any]],
     *,
     uninterruptible: bool = False,
+    redacted_params: Sequence[str] = (),
 ) -> Layer[Never, Never, Any]:
-    """A layer adding one route."""
-    route = Route(method, path, to_effect(handler), uninterruptible)
+    """A layer adding one route; the options are ``route``'s."""
+    route = Route(
+        method,
+        path,
+        to_effect(handler),
+        uninterruptible,
+        redacted_params=redacted_param_names(redacted_params),
+    )
     return effect_discard(HttpRouter().flat_map(lambda router: router.add_all([route])))
 
 

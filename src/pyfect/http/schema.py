@@ -1,7 +1,7 @@
 """Schemas of the HTTP values (Effect's ``Schema.Headers``, ``Cookie``,
 ``Cookies``, ``RecordFromCookies``, ``UrlParams``, ``JsonFromUrlParamsField``,
-``RecordFromUrlParams``, ``RetryAfter``, ``RetryAfterFromString`` and
-``DateTimeUtcFromHttpDate``). They live here, not in ``pyfect.schema``,
+``RecordFromUrlParams``, ``RetryAfter``, ``RetryAfterFromString``,
+``DateTimeUtcFromHttpDate`` and ``LinkHeaderFromString``). They live here, not in ``pyfect.schema``,
 because ``pyfect.http`` is built on ``pyfect.schema``::
 
     from pyfect.http import schema as HS
@@ -10,7 +10,8 @@ because ``pyfect.http`` is built on ``pyfect.schema``::
 
 ``RetryAfter`` is a declaration of ``headers.RetryAfterDuration`` /
 ``RetryAfterDateTime`` (Effect's is a union of tagged structs of the same
-shape): the duration must be finite and non-negative.
+shape): the duration must be finite and non-negative. ``Link`` is likewise a
+declaration of ``headers.Link``.
 """
 
 from __future__ import annotations
@@ -261,12 +262,36 @@ DateTimeUtcFromHttpDate: DecodeToSchema[datetime, str] = String.annotate(
 """A UTC ``datetime`` from any HTTP date format (RFC 9110 §5.6.7),
 written back as an IMF-fixdate."""
 
+
+def _is_link(value: object) -> TypeIs[_headers.Link]:
+    return isinstance(value, _headers.Link)
+
+
+Link: Bottom[_headers.Link] = declare(_is_link, expected="Link")
+"""A ``headers.Link``."""
+
+LinkHeaderFromString: DecodeToSchema[tuple[_headers.Link, ...], str] = String.annotate(
+    expected="a Link header value"
+).pipe(
+    decode_to(
+        Array(Link),
+        T.transform_effect(
+            decode=_done(lambda text: tuple(_headers.parse_link(text))),
+            encode=_done(_headers.format_link),
+        ),
+    )
+)
+"""A ``Link`` header value (RFC 8288), read with ``headers.parse_link`` (which never fails on a
+string) and written with ``headers.format_link``; for the ``link`` field of a headers schema."""
+
 __all__ = [
     "Cookie",
     "Cookies",
     "DateTimeUtcFromHttpDate",
     "Headers",
     "JsonFromUrlParamsField",
+    "Link",
+    "LinkHeaderFromString",
     "RecordFromCookies",
     "RecordFromUrlParams",
     "RetryAfter",

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from typing import Any, Generic, Literal, Never, Self, TypeVar, cast, overload
 
@@ -27,13 +27,16 @@ R_co = TypeVar("R_co", covariant=True, default=Never)
 class Route(Generic[E_co, R_co]):
     """``method`` ``"*"`` matches every method, and a ``path`` ending in
     ``/*`` matches its prefix too. ``prefix`` is the mount point removed
-    from the request URL before the handler runs."""
+    from the request URL before the handler runs. ``redacted_params`` are the
+    path params (``"*"`` for the wildcard) recorded as ``REDACTED`` in the
+    server span and request log when the route matches."""
 
     method: Method
     path: str
     handler: Effect[HttpServerResponse, E_co, R_co]
     uninterruptible: bool = False
     prefix: str | None = None
+    redacted_params: tuple[str, ...] = ()
 
     def pipe[B](self, f: Callable[[Self], B], /, *more: Never) -> B:
         return pipe_one(self, f, more)
@@ -46,6 +49,13 @@ type Handler[E, R] = (
 )
 
 
+def redacted_param_names(names: Sequence[str]) -> tuple[str, ...]:
+    """``names`` as a tuple; a lone string is a mistake for a list of one name."""
+    if isinstance(names, str):
+        raise TypeError(f"redacted_params takes a sequence of names, not the string {names!r}")
+    return tuple(names)
+
+
 def to_effect(handler: Handler[Any, Any]) -> Effect[HttpServerResponse, Any, Any]:
     if isinstance(handler, HttpServerResponse):
         return succeed(handler)
@@ -56,7 +66,12 @@ def to_effect(handler: Handler[Any, Any]) -> Effect[HttpServerResponse, Any, Any
 
 @overload
 def route(
-    method: Method, path: str, handler: HttpServerResponse, *, uninterruptible: bool = False
+    method: Method,
+    path: str,
+    handler: HttpServerResponse,
+    *,
+    uninterruptible: bool = False,
+    redacted_params: Sequence[str] = (),
 ) -> Route: ...
 @overload
 def route[E](
@@ -66,6 +81,7 @@ def route[E](
     | Callable[[ServerRequest], Effect[HttpServerResponse, E, Provided]],
     *,
     uninterruptible: bool = False,
+    redacted_params: Sequence[str] = (),
 ) -> Route[E]: ...
 @overload
 def route[E, R](
@@ -75,6 +91,7 @@ def route[E, R](
     | Callable[[ServerRequest], Effect[HttpServerResponse, E, R | Provided]],
     *,
     uninterruptible: bool = False,
+    redacted_params: Sequence[str] = (),
 ) -> Route[E, R]: ...
 def route(
     method: Method,
@@ -85,11 +102,20 @@ def route(
     | Callable[[ServerRequest], Effect[HttpServerResponse, Any, Any]],
     *,
     uninterruptible: bool = False,
+    redacted_params: Sequence[str] = (),
 ) -> Route[Any, Any]:
     """A route for ``add_all``. ``handler`` is a response, an effect, or a
     function of the request. Handlers run interruptibly unless
-    ``uninterruptible``."""
-    return Route(method, path, to_effect(handler), uninterruptible)
+    ``uninterruptible``. The values of ``redacted_params`` (``"*"`` for the
+    wildcard) are recorded as ``REDACTED`` in the server span and request log;
+    the handler sees the path as sent."""
+    return Route(
+        method,
+        path,
+        to_effect(handler),
+        uninterruptible,
+        redacted_params=redacted_param_names(redacted_params),
+    )
 
 
 def remove_trailing_slash(path: str) -> str:

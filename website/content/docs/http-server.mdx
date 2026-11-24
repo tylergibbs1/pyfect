@@ -117,6 +117,22 @@ is still a failure inside it, so `f` sees it only by catching it (`catch_cause`,
 
 </CodeOutput>
 
+## Secrets in paths
+
+A route's `redacted_params` names path params whose values are secret (`"*"` for the
+wildcard). When the route matches, the request log and the server span record the path with
+those values as `REDACTED`, and the handler still sees the URL as sent. In
+[HttpApi](/docs/http-api), `RedactedNames`'s `params` does the same for an endpoint. Requests
+that match no route, such as 404s and CORS preflights, are recorded as sent.
+
+<CodeOutput>
+
+<include meta='title="redacted_params.py"'>../../snippets/http_server/redacted_params.py</include>
+
+<include lang="text">../../snippets/http_server/redacted_params.out</include>
+
+</CodeOutput>
+
 ## Serving with uvicorn
 
 `router.serve(routes)` is a layer, so a program serves until it is interrupted by

@@ -6235,6 +6235,15 @@ assert_type(
     http_router.route("GET", "/db", route_db_handler),
     http_router.Route[RouteNotAllowed, RouteDb],
 )
+# Redacting path params changes no type.
+assert_type(
+    http_router.route("GET", "/db/:token", route_db_handler, redacted_params=["token"]),
+    http_router.Route[RouteNotAllowed, RouteDb],
+)
+assert_type(
+    http_router.add("GET", "/db/:token", route_db_handler, redacted_params=["token"]),
+    fx.Layer[Never, Never, HttpRouter | Requires[RouteDb] | Raises[RouteNotAllowed]],
+)
 
 route_app = http_router.use(
     lambda r: r.add("GET", "/db", route_db_handler).and_then(
@@ -7111,6 +7120,7 @@ class RpcOther(rpc.RpcGroup):
 class RpcUsers(rpc.RpcGroup):
     get = rpc.make("Get", payload=fx.schema.String, success=RpcUser, error=RpcNotFound)
     ping = rpc.make("Ping")
+    silent_ping = rpc.make("SilentPing").annotate(rpc.TracingEnabled, "server")
     stream = rpc.make("Stream", success=fx.schema.Number, stream=True)
     me = rpc.make("Me", success=RpcUser).middleware(RpcAuth)
     never_fails = rpc.make(
@@ -11854,3 +11864,48 @@ def check_ai_skill(refunds: ai_skill.Skill) -> None:
         mcp_m.register_skill("skill://refunds/SKILL.md", refunds),
         fx.Effect[None, Illegal, mcp_m.McpServer],
     )
+
+
+# --- Link headers (Effect #10817) ----------------------------------------------------------
+def _link_headers() -> None:
+    from pyfect.http import headers as http_headers
+    from pyfect.http import request as http_request
+    from pyfect.http import response as http_response
+    from pyfect.http import schema as http_schema
+    from pyfect.http import url as http_url
+
+    assert_type(http_headers.parse_link('</p2>; rel="next"'), list[http_headers.Link])
+    assert_type(http_headers.format_link([http_headers.Link("/p2", ("next",))]), str)
+    assert_type(http_headers.EMPTY.append("Vary", "Accept"), http_headers.Headers)
+    assert_type(
+        http_request.get("/").append_header("Accept", "text/html"), http_request.HttpClientRequest
+    )
+    assert_type(
+        http_server_response.empty().append_header("Link", "</p2>"),
+        http_server_response.HttpServerResponse,
+    )
+    got = http_response.make(http_request.get("https://example.com"))
+    assert_type(http_response.links(got), list[http_headers.Link])
+    assert_type(http_response.link(got, "next"), http_url.Url | None)
+    assert_type(
+        http_schema.LinkHeaderFromString,
+        S.DecodeToSchema[tuple[http_headers.Link, ...], str],
+    )
+    # Relation types are a tuple, so a bare string (one character per type) is an error.
+    http_headers.Link("/p2", "next")  # pyright: ignore[reportArgumentType]
+
+
+del _link_headers
+
+
+# --- Per-procedure RPC tracing (Effect #10780) ---------------------------------------------
+def _rpc_tracing(request: rpc.RpcRequest[str], options: rpc.middleware.MiddlewareOptions) -> None:
+    from pyfect.tracer import ExternalSpan
+
+    assert_type(request.remote_parent_span, ExternalSpan | None)
+    assert_type(options.remote_parent_span, ExternalSpan | None)
+    assert_type(rpc.TracingEnabled.default(), rpc.Tracing)
+    rpc.make("Ping").annotate(rpc.TracingEnabled, "always")  # pyright: ignore[reportArgumentType]
+
+
+del _rpc_tracing
