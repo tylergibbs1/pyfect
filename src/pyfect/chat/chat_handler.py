@@ -42,6 +42,7 @@ class Service:
         self._handle = handle
 
     def handle(self, event: ChatEvent) -> Effect[None, NotAccepted]:
+        """Hands ``event`` to the consumer; ``NotAccepted`` refuses it."""
         return self._handle(event)
 
 

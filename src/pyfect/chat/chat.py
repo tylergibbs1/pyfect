@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING
 
 import pyfect as fx
 from pyfect._core import Effect
+from pyfect._effect_args import require_effect
 from pyfect.chat.chat_adapter import (
     ChatAdapter,
     Descriptor,
@@ -110,6 +111,7 @@ class Service:
         files: Sequence[File] = (),
         actions: Sequence[Action] = (),
     ) -> Effect[Posted, ChatError]:
+        """Posts Markdown to ``thread`` through its platform's adapter (``Ops.post``)."""
         return self._route(
             thread.platform,
             "post",
@@ -121,6 +123,7 @@ class Service:
     def edit(
         self, thread: ChatThread, message_id: str, *, markdown: str, actions: Sequence[Action] = ()
     ) -> Effect[None, ChatError]:
+        """Replaces a message's Markdown and elements (``Ops.edit``)."""
         return self._route(
             thread.platform,
             "edit",
@@ -128,9 +131,11 @@ class Service:
         )
 
     def delete(self, thread: ChatThread, message_id: str) -> Effect[None, ChatError]:
+        """Deletes a message (``Ops.delete``)."""
         return self._route(thread.platform, "delete", lambda a: a.delete(thread, message_id))
 
     def fetch_message(self, thread: ChatThread, message_id: str) -> Effect[ChatMessage, ChatError]:
+        """The message ``message_id`` in ``thread`` (``Ops.fetch_message``)."""
         return self._route(
             thread.platform, "fetchMessage", lambda a: a.fetch_message(thread, message_id)
         )
@@ -138,6 +143,7 @@ class Service:
     def history(
         self, thread: ChatThread, *, direction: Direction, from_: str | None = None
     ) -> Stream[ChatMessage, ChatError]:
+        """The thread's messages, paged lazily in ``direction`` (``Ops.history``)."""
         return self._route_stream(
             thread.platform,
             "history",
@@ -147,6 +153,7 @@ class Service:
     def download(
         self, thread: ChatThread, attachment: Attachment, *, max_bytes: int
     ) -> Stream[bytes, ChatError]:
+        """An attachment's bytes, failing past ``max_bytes`` (``Ops.download``)."""
         return self._route_stream(
             thread.platform,
             "download",
@@ -156,24 +163,29 @@ class Service:
     def start_thread(
         self, thread: ChatThread, message_id: str, *, name: str | None = None
     ) -> Effect[ChatThread, ChatError]:
+        """The thread under ``message_id``, made if needed (``Ops.start_thread``)."""
         return self._route(
             thread.platform, "startThread", lambda a: a.start_thread(thread, message_id, name=name)
         )
 
     def get_thread(self, thread: ChatThread) -> Effect[ThreadInfo, ChatError]:
+        """What the platform says about ``thread`` (``Ops.get_thread``)."""
         return self._route(thread.platform, "getThread", lambda a: a.get_thread(thread))
 
     def opener(self, thread: ChatThread) -> Effect[ChatMessage | None, ChatError]:
+        """The message ``thread`` hangs off, if any (``Ops.opener``)."""
         return self._route(thread.platform, "opener", lambda a: a.opener(thread))
 
     def get_user(
         self, platform: str, id: str, *, in_: ChatThread | None = None
     ) -> Effect[User, ChatError]:
+        """A user as the platform reports them (``Ops.get_user``)."""
         return self._route(platform, "getUser", lambda a: a.get_user(id, in_=in_))
 
     def follow_up(
         self, deferred: Defer, *, markdown: str, actions: Sequence[Action] = ()
     ) -> Effect[None, ChatError]:
+        """Sends the answer a command's ``Defer`` promised (``Ops.follow_up``)."""
         return self._route(
             deferred.command.thread.platform,
             "followUp",
@@ -181,6 +193,7 @@ class Service:
         )
 
     def descriptor(self, platform: str) -> Effect[Descriptor, ChatError]:
+        """The descriptor of ``platform``'s adapter, or ``NoAdapter``."""
         return self._route(platform, "descriptor", lambda a: fx.succeed(a.descriptor))
 
 
@@ -221,6 +234,7 @@ with ``layer.provide_merge``."""
 def without_retries[A, E, R](effect: Effect[A, E, R]) -> Effect[A, E, R]:
     """``effect`` with adapter retries turned off, so every adapter call in
     it makes one attempt. Use with ``.pipe``."""
+    require_effect(effect, "effect")
     return effect.pipe(fx.provide_service(RetriesDisabled, True))
 
 

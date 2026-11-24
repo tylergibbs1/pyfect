@@ -82,6 +82,8 @@ NOT_SHARED: dict[str, str] = {
     "pyfect.ai.chat.Persisted": _SERVICE,
     "pyfect.ai.language_model.Service": _SERVICE,
     "pyfect.ai.mcp_test.McpTestClient": _SERVICE,
+    "pyfect.chat.chat_interaction.RegistryService": _SERVICE,
+    "pyfect.chat.chat_test.Service": "one test's",
     "pyfect.cli._command.Command": "configured before the program runs, then only read",
     "pyfect.cluster.entity._queue.Replier": _ONE_OWNER,
     "pyfect.cluster.message_storage._memory.MemoryEncoded": _SERVICE,

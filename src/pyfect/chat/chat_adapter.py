@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Literal, Never, Protocol, overload
 
 import pyfect as fx
 from pyfect._core import Effect
+from pyfect._effect_args import require_effect
 from pyfect._json_value import JsonValue
 from pyfect.chat.chat_error import Capability, ChatError, TooLarge
 from pyfect.chat.chat_event import ThreadKind
@@ -268,10 +269,14 @@ class RegistryService(Protocol):
 
     def register(self, adapter: ChatAdapter) -> Effect[None]: ...
 
-    def get(self, platform: str) -> Effect[ChatAdapter, ChatError]: ...
+    def get(self, platform: str) -> Effect[ChatAdapter, ChatError]:
+        """The adapter for ``platform``; ``NoAdapter`` when none is registered."""
+        ...
 
     @property
-    def descriptors(self) -> Effect[tuple[Descriptor, ...]]: ...
+    def descriptors(self) -> Effect[tuple[Descriptor, ...]]:
+        """The descriptors of every registered adapter."""
+        ...
 
 
 class Registry(Tag[RegistryService], key="effect/chat/ChatAdapter/Registry"):
@@ -293,6 +298,7 @@ def layer[E, R](adapter: Effect[ChatAdapter, E, Scope | R]) -> Layer[Never, E, R
 def layer[E, R](adapter: Effect[ChatAdapter, E, Scope | R]) -> Layer[Never, E, R | Registry]:
     """The layer that registers ``adapter`` in the ``Registry``. A platform
     that is off is a layer left out."""
+    require_effect(adapter, "adapter")
 
     @fx.gen
     def register():
@@ -339,6 +345,7 @@ def retry_safe[A, R](effect: Effect[A, ChatError, R]) -> Effect[A, ChatError, R]
     failures, up to three times, after the error's ``retry_after`` or an
     exponential backoff from 500 milliseconds. Inside
     ``chat.without_retries`` the request runs once."""
+    require_effect(effect, "effect")
     return RetriesDisabled().flat_map(lambda disabled: effect if disabled else _retrying(effect, 0))
 
 

@@ -889,6 +889,8 @@ class RegistryService:
         self._entries = entries
 
     def register(self, registered: Sequence[Registered]) -> Effect[None]:
+        """Registers handlers; dies when an id is already registered."""
+
         def run() -> Effect[None]:
             ids: set[str] = set()
             for entry in registered:
@@ -905,6 +907,7 @@ class RegistryService:
         return fx.suspend(run)
 
     def get(self, id: str) -> Effect[Registered | None]:
+        """The handler registered for ``id``, or ``None``."""
         return fx.sync(lambda: self._entries.get(id))
 
 
@@ -1015,17 +1018,21 @@ class HandlerService:
         self._refused = refused
 
     def click(self, event: ButtonClicked | SelectChanged) -> Effect[ClickReply]:
+        """The reply to a button click or a select change."""
         return self._click(event)
 
     def submit(self, event: ModalSubmitted) -> Effect[SubmitReply]:
+        """The reply to a modal submit."""
         return self._submit(event)
 
     def command(self, event: CommandInvoked) -> Effect[CommandReply]:
+        """The reply to a slash command."""
         return self._command(event)
 
     def refused(
         self, event: ButtonClicked | SelectChanged | CommandInvoked, error: ChatError
     ) -> Effect[None]:
+        """Reports that a click's or a command's reply was not carried out."""
         return self._refused(event, error)
 
 

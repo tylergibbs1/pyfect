@@ -1001,10 +1001,12 @@ class Service:
 
     @property
     def platform(self) -> str:
+        """The fake platform's name."""
         return self._fake.platform
 
     @property
     def self_id(self) -> str:
+        """The bot's own user id on the fake platform."""
         return self._fake.self_id
 
     def _add_thread(self, kind: Literal["channel", "direct"]) -> Effect[ChatThread]:
@@ -1020,6 +1022,7 @@ class Service:
         return _date_time.now().map(add)
 
     def make_thread(self, kind: ThreadKind = "channel") -> Effect[ChatThread]:
+        """A new channel, direct address, or thread under a user's opener."""
         if kind != "thread":
             return self._add_thread(kind)
 
@@ -1045,6 +1048,8 @@ class Service:
         reply_to: ReplyTo | None = None,
         files: Sequence[File] = (),
     ) -> Effect[MessageCreated]:
+        """Stores a message from another identity and gives the
+        ``MessageCreated`` the platform would deliver."""
         fake = self._fake
 
         def post() -> Effect[MessageCreated]:
@@ -1085,9 +1090,11 @@ class Service:
         return fx.suspend(post)
 
     def deliver(self, event: ChatEvent) -> Effect[None, NotAccepted, ChatHandler]:
+        """Hands ``event`` to ``ChatHandler``."""
         return ChatHandler().flat_map(lambda handler: handler.handle(event))
 
     def messages(self, thread: ChatThread) -> Effect[tuple[ChatMessage, ...]]:
+        """The messages stored in ``thread``, oldest first."""
         fake = self._fake
 
         def read() -> tuple[ChatMessage, ...]:
@@ -1100,9 +1107,12 @@ class Service:
 
     @property
     def calls(self) -> Effect[tuple[Call, ...]]:
+        """Every adapter call made so far, in order."""
         return fx.sync(lambda: tuple(self._fake.calls))
 
     def refuse_files(self, *, times: int = 1) -> Effect[None]:
+        """Refuses the next ``times`` posts with files."""
+
         def refuse() -> None:
             self._fake.refused_files += times
 
@@ -1111,6 +1121,9 @@ class Service:
     def fail_next(
         self, op: str, reason: AnyReason, *, times: int = 1, landed: bool = False
     ) -> Effect[None]:
+        """Fails the next ``times`` calls of ``op`` with ``reason``;
+        ``landed`` runs the call first."""
+
         def add() -> None:
             if times == 0:
                 return
@@ -1128,12 +1141,16 @@ class Service:
         return fx.suspend(find)
 
     def click_stop(self, message_id: str) -> Effect[None]:
+        """Clicks stop on the native stream ``message_id``."""
+
         def click(stream: _StoredStream) -> None:
             stream.clicked = True
 
         return self._stream_for("click_stop", message_id).map(click)
 
     def close_stream(self, message_id: str) -> Effect[None]:
+        """Closes the native stream ``message_id``, as its expiry would."""
+
         def close(stream: _StoredStream) -> None:
             stream.open = False
 
@@ -1142,6 +1159,8 @@ class Service:
     def click(
         self, message_id: str, id: str, *, user_id: str = "user", option: str | None = None
     ) -> Effect[ci.ButtonClicked | ci.SelectChanged, NoSuchElement]:
+        """The click on element ``id`` of message ``message_id`` the platform
+        would send (a select's ``option``)."""
         fake = self._fake
 
         def build() -> Effect[ci.ButtonClicked | ci.SelectChanged, NoSuchElement]:
@@ -1201,6 +1220,7 @@ class Service:
     def command(
         self, thread: ChatThread, id: str, *, text: str = "", user_id: str = "user"
     ) -> Effect[ci.CommandInvoked]:
+        """The slash command the platform would send."""
         fake = self._fake
         return fx.sync(
             lambda: ci.CommandInvoked(
@@ -1220,6 +1240,7 @@ class Service:
         *,
         user_id: str | None = None,
     ) -> Effect[ci.ModalSubmitted]:
+        """The submit of an open modal the platform would send."""
         fake = self._fake
         return fx.sync(
             lambda: ci.ModalSubmitted(
@@ -1248,6 +1269,9 @@ class Service:
     @overload
     def interact(self, event: ci.Interaction) -> Effect[Any, Never, ci.Handler]: ...
     def interact(self, event: ci.Interaction) -> Effect[Any, Never, ci.Handler]:
+        """Runs ``event`` through ``chat_interaction.handle`` and carries out
+        the reply as the platform would, calling ``Handler.refused`` when it
+        cannot."""
         fake = self._fake
 
         @fx.gen

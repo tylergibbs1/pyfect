@@ -53,6 +53,7 @@ from pyfect.latch import Latch
 from pyfect.result import Ok
 from pyfect.scope import CloseableScope
 from pyfect.stream import Stream
+from pyfect.stream._base import require_stream
 from pyfect.tracer._spans import annotate_current_span
 
 # --- models --------------------------------------------------------------------------
@@ -1378,6 +1379,7 @@ def stream[E = Never, RR = Never](
     ``Result`` still comes back. Native writes go through the ``Registry``,
     so a layer wrapping ``Chat`` does not see them.
     """
+    require_stream(deltas, "deltas")
 
     @fx.gen
     def run():
