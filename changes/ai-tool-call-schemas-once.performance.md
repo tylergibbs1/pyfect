@@ -1,0 +1,1 @@
+- `pyfect.ai`: a tool call no longer derives the codecs of its failures again on every call. A tool's failed-result schema, a toolkit's (and a tool ledger's) call failures and `durable`'s record of a call are now one schema per tool, whose codecs are derived once; a durable agent with a tool ledger spent about 2 ms per call deriving them.

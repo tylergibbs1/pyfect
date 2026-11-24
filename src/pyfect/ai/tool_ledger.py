@@ -39,6 +39,7 @@ from pyfect._effect_args import require_effect
 from pyfect._json_text import parse as parse_json
 from pyfect._json_text import stringify
 from pyfect.ai import _tool_outcomes as outcomes
+from pyfect.ai._call_schemas import call_schema
 from pyfect.ai._tool_outcomes import Outcome
 from pyfect.ai.response import ToolResultFailure
 from pyfect.ai.tool import (
@@ -423,10 +424,15 @@ class _Guarded(WithHandler[Any, Any, Any, Any]):
         )
 
     def call_failure_schema(self, name: str) -> S.Top:
-        return S.Union(
-            cast("Any", self.inner.call_failure_schema(name)),
-            cast("Any", ToolOutcomeUnknown),
-            cast("Any", ToolLedgerError),
+        return call_schema(
+            self,
+            "failures",
+            name,
+            lambda: S.Union(
+                cast("Any", self.inner.call_failure_schema(name)),
+                cast("Any", ToolOutcomeUnknown),
+                cast("Any", ToolLedgerError),
+            ),
         )
 
 

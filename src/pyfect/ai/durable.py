@@ -52,6 +52,7 @@ from pyfect.ai import language_model as lm
 from pyfect.ai import prompt as P
 from pyfect.ai import toolkit as K
 from pyfect.ai._budget import Precounted, tool_call
+from pyfect.ai._call_schemas import call_schema
 from pyfect.ai._handler_hook import Handled, HandlerHook
 from pyfect.ai._tool_outcomes import Outcome
 from pyfect.ai.ai_error import AiError
@@ -269,7 +270,9 @@ _OUTCOME = S.Struct(_Outcome, encoded_result=S.Unknown)
 def _tool_record(kit: K.WithHandler[Any, Any, Any, Any], name: str) -> S.Top:
     """A tool call's record: the result the model saw, or a failure the call gave its
     caller instead, any the toolkit (wrapped by a tool ledger, say) can give."""
-    return _record_schema(_OUTCOME, kit.call_failure_schema(name))
+    return call_schema(
+        kit, "durable record", name, lambda: _record_schema(_OUTCOME, kit.call_failure_schema(name))
+    )
 
 
 def _step[A](
