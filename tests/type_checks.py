@@ -6216,6 +6216,10 @@ group(name="Remote")
 
 cli_handled = command.make("plain", CliClone).with_handler(lambda c: fx.succeed(c.repository))
 assert_type(cli_handled, Command[CliClone, Config, Never, Never])
+# A replaced handler's errors stay in the type, as Effect 4.1.4's withHandler keeps them.
+assert_type(
+    cli_clone.with_handler(lambda _: fx.void), Command[CliClone, Config, CliNotFound, Never]
+)
 
 
 class CliConflict(TaggedError):

@@ -247,19 +247,20 @@ class Command(Effect[C_co, Never, CommandContext[C_co]], Generic[In_contra, C_co
     # --- combinators -----------------------------------------------------------
 
     @overload
-    def with_handler[I2, C2, EH = Never](
-        self: Command[I2, C2, Any, Any], handler: Callable[[I2], Effect[object, EH, LogLevel]]
-    ) -> Command[I2, C2, EH, Never]: ...
+    def with_handler[I2, C2, E2, EH = Never](
+        self: Command[I2, C2, E2, Any], handler: Callable[[I2], Effect[object, EH, LogLevel]]
+    ) -> Command[I2, C2, E2 | EH, Never]: ...
     @overload
-    def with_handler[I2, C2, EH = Never, RH = Never](
-        self: Command[I2, C2, Any, Any],
+    def with_handler[I2, C2, E2, EH = Never, RH = Never](
+        self: Command[I2, C2, E2, Any],
         handler: Callable[[I2], Effect[object, EH, LogLevel | RH]],
-    ) -> Command[I2, C2, EH, RH]: ...
+    ) -> Command[I2, C2, E2 | EH, RH]: ...
     def with_handler(
         self, handler: Callable[[Any], Effect[object, Any, Any]]
     ) -> Command[Any, Any, Any, Any]:
         """Runs ``handler`` with the parsed config (in place of any handler
-        before)."""
+        before). The command keeps its error type, so the errors of its
+        validations, and of a handler this replaces, stay in it."""
         own = _run_handler(handler)
         if self.state.subcommands:
             return self._derive(handle=_dispatch(self.state, own))
