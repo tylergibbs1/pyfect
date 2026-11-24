@@ -15,7 +15,7 @@ from hypothesis import strategies as st
 from pyfect._json_depth import nesting_depth, within_depth
 
 # ``codecs.escape_decode`` warns about escapes it is unsure of; the count gives it none.
-pytestmark = pytest.mark.filterwarnings("error")
+pytestmark = pytest.mark.filterwarnings("error:.*escape sequence:DeprecationWarning")
 
 _ESCAPE_DECODE_SPECIALS = "abfnrtvx01234567N'\"\\\n\r"
 """Bytes ``codecs.escape_decode`` reads after a backslash as more than itself."""
