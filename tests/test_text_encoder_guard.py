@@ -20,6 +20,7 @@ _KEPT: dict[tuple[str, str], str] = {
     ("persistence/persisted_queue/_sql_statements.py", "offer"): "a byte count, as above",
     ("sql/pg/error.py", "validate_channel_name"): "a byte count, as above",
     ("chat/slack/_text.py", "utf8_bytes"): "a byte count, as above",
+    ("_json_depth.py", "within_depth"): "only the ASCII brackets and quotes are counted",
 }
 
 _UTF8 = frozenset({"utf-8", "utf8", "UTF-8", "UTF8"})
