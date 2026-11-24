@@ -114,6 +114,10 @@ client span, the client still sends its caller's span; a handler or middleware r
 `remote_parent_span` to parent spans of its own. `disable_tracing=True` on a client or server
 turns off that side for every procedure.
 
+Over plain HTTP (`layer_protocol_http`), `remote_parent_span` is always `None`, as in Effect: the
+HTTP protocol does not carry the span in the RPC message. The caller's span travels in the
+request's trace headers instead, where the HTTP server's tracing reads it. WebSockets, workers and standard input and output send it in the message.
+
 <CodeOutput>
 
 <include meta='title="tracing.py"'>../../snippets/rpc/tracing.py</include>

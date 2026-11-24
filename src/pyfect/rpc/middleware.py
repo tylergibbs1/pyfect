@@ -58,7 +58,8 @@ class Unhandled(Exception):
 class MiddlewareOptions:
     """The request a middleware runs for: the ``client``, ``request_id``,
     ``rpc``, decoded ``payload`` and ``headers``, and the ``remote_parent_span``
-    the client sent (``None`` when it sent none)."""
+    the client sent (``None`` when it sent none, and always over plain HTTP, which carries the
+    span in the HTTP headers)."""
 
     client: ServerClient
     request_id: RequestId
