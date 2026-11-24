@@ -936,3 +936,27 @@ def test_a_connection_check_that_times_out_does_not_wait_for_the_open(
         lambda: len(fake.connections) == 1 and fake.connections[0].closed,
         what="the late connection to be closed",
     )
+
+
+# --- a reservation outliving the client ------------------------------------------
+
+
+@testing.effect
+def test_a_reservation_held_past_the_client_layer_is_closed_with_it(mssql_server: MssqlServer):
+    """(pyfect) a reservation made in a scope that outlives the client's
+    layer: closing the layer closes its connection instead of waiting for
+    it, and a later statement on it fails"""
+
+    def reserve():
+        sql = yield from SqlClient()
+        conn = yield from sql.reserve
+        yield from conn.execute_unprepared("SELECT 1", (), None)
+        return conn
+
+    def body():
+        conn = yield from fx.gen(reserve).pipe(fx.provide(mssql.layer(_config(mssql_server))))
+        error = yield from conn.execute_unprepared("SELECT 1", (), None).flip()
+        assert isinstance(error, SqlError)
+        assert "connection is closed" in str(error.reason.message)
+
+    yield from fx.scoped(fx.gen(body))

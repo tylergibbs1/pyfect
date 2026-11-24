@@ -8,7 +8,7 @@ as the protocol is not checked at runtime.
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from typing import Any, cast
+from typing import Any, Never, cast
 
 import pytest
 
@@ -17,6 +17,7 @@ from pyfect import reactivity, testing
 from pyfect._core import _Locally
 from pyfect.cause import Cause, Die, Fail, UnhandledError
 from pyfect.context import Context, Tag
+from pyfect.pool import Pool
 from pyfect.sql import client as sql_client
 from pyfect.sql import statement as st
 from pyfect.sql.connection import Connection, Row, TransformRows, ValueRow
@@ -167,7 +168,7 @@ class _RecordingConnection:
     def __init__(self, record: Callable[[str], fx.Effect[None]]) -> None:
         self._record = record
 
-    def _run(self, sql: str) -> fx.Effect[list[Any]]:
+    def _run(self, sql: str) -> fx.Effect[list[Any], SqlError]:
         return self._record(sql).as_([])
 
     def execute(
@@ -1152,3 +1153,85 @@ def test_invalidates_once_the_outermost_transaction_commits_dropping_rolled_back
 
     assert calls[-3:] == ["COMMIT", "release", "invalidate(users)"]
     assert "invalidate(dropped)" not in calls
+
+
+# --- reserve ----------------------------------------------------------------------
+
+
+class _PooledConnection(_RecordingConnection):
+    """A fake pool's connection: what runs on it after it closes fails."""
+
+    def __init__(self, record: Callable[[str], fx.Effect[None]]) -> None:
+        super().__init__(record)
+        self.closed = False
+
+    def _run(self, sql: str) -> fx.Effect[list[Any], SqlError]:
+        if self.closed:
+            return fx.fail(_sql_error("connection closed"))
+        return super()._run(sql)
+
+
+def _pooled_client(calls: list[str]) -> fx.Effect[sql_client.SqlClientService, Never, fx.Scope]:
+    """A client on a pool of one connection, which closes with the scope."""
+
+    def record(call: str) -> fx.Effect[None]:
+        return fx.sync(lambda: calls.append(call))
+
+    def close(conn: _PooledConnection) -> fx.Effect[None]:
+        conn.closed = True
+        return record("close")
+
+    opened = fx.acquire_release(
+        fx.sync(lambda: _PooledConnection(record)), lambda conn, _: close(conn)
+    )
+
+    def body():
+        pool = yield from Pool.make(opened, size=1)
+        return (
+            yield from sql_client.make(
+                driver="test",
+                acquirer=pool.get().map(lambda conn: cast("Connection", conn)),
+                compiler=st.make_compiler_sqlite(),
+            )
+        )
+
+    return fx.gen(body).pipe(fx.provide(reactivity.layer))
+
+
+@testing.effect
+def test_a_reservation_held_past_the_client_scope_is_closed_with_it():
+    """Adapted: a reservation made in a scope that outlives the client's.
+    The pool waits for the connections it lent when it shuts down, and this
+    one returns only when its own scope closes, after the client's: closing
+    the client closes the connection instead, and a later statement on it
+    fails with the driver's error."""
+    calls: list[str] = []
+    service = fx.CloseableScope()
+    reservation = fx.CloseableScope()
+    sql = yield from _pooled_client(calls).pipe(fx.provide_service(fx.Scope, service))
+    conn = yield from sql.reserve.pipe(fx.provide_service(fx.Scope, reservation))
+    yield from conn.execute_unprepared("SELECT 1", (), None)
+    yield from service.close(fx.exit.succeed(None))
+    assert calls == ["SELECT 1", "close"]
+    error = yield from conn.execute_unprepared("SELECT 2", (), None).flip()
+    assert error.reason.message == "connection closed"
+    yield from reservation.close(fx.exit.succeed(None))
+    assert calls == ["SELECT 1", "close"]
+
+
+@testing.effect
+def test_a_reservation_released_by_its_own_scope_goes_back_to_the_pool():
+    """Adapted: a reservation whose scope closes first returns its
+    connection for the next one, and leaves nothing behind in the client's
+    scope."""
+    calls: list[str] = []
+    service = fx.CloseableScope()
+    sql = yield from _pooled_client(calls).pipe(fx.provide_service(fx.Scope, service))
+    finalizers = service.finalizer_count
+    first = yield from fx.scoped(sql.reserve)
+    second = yield from fx.scoped(sql.reserve)
+    assert first is second
+    assert service.finalizer_count == finalizers
+    assert calls == []
+    yield from service.close(fx.exit.succeed(None))
+    assert calls == ["close"]
