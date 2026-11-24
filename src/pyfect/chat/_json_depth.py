@@ -56,4 +56,7 @@ def nesting_depth(body: bytes) -> int:
 
 def within_depth(body: bytes, limit: int) -> bool:
     """Whether the JSON text ``body`` nests at most ``limit`` deep."""
+    # No deeper than it has opening brackets: most bodies are counted in two scans.
+    if body.count(b"[") + body.count(b"{") <= limit:
+        return True
     return nesting_depth(body) <= limit

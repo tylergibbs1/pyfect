@@ -84,6 +84,12 @@ def test_every_length_around_a_packed_byte_gets_the_depth_the_walk_gave() -> Non
             assert depth(text) == walked_depth(text), text
 
 
+@settings(max_examples=300, deadline=None)
+@given(st.text(alphabet='[]{}"\\ a', max_size=40), st.integers(min_value=0, max_value=12))
+def test_within_depth_is_the_walked_depth_against_the_limit(text: str, limit: int) -> None:
+    assert within_depth(text.encode(), limit) == (walked_depth(text) <= limit)
+
+
 def test_within_depth_compares_with_the_limit() -> None:
     assert within_depth(b"[" * 64, 64)
     assert not within_depth(b"[" * 65, 64)
