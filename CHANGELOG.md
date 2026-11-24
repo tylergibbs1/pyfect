@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.6.35 (2026-11-24)
+
+### Performance
+
+- The JSON depth check that every JSON parse runs costs about half as much on large text: a
+  50 MB array of small objects about 1.2 ms per MB (was 1.8), strings full of brackets and
+  escaped quotes about 2 ms (was 3.7), and one long string next to nothing (was 0.5). Escapes
+  go through `codecs.escape_decode` in one pass instead of two `bytes.replace` calls, and text
+  over 65,536 characters is searched for at most 513 opening brackets instead of counted.
+
+### Docs
+
+- The Schema guide's new JSON nesting limit section states the 512-level limit, that it is a
+  deliberate difference from Effect's `JSON.parse`, which entry points it covers and the error
+  each gives, that `json_array` has its own `max_depth` and `jsonc` / `json5` none, and why an
+  app that wraps parsed JSON in its own envelopes should refuse input a few levels below 512.
+  The HTTP server's security defaults and the configuration text section link to it.
+
 ## 0.6.34 (2026-11-24)
 
 ### Fixed
