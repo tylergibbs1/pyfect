@@ -11,7 +11,9 @@ before storing its sequence, then to every subscriber of ``dispatch``.
   IDENTIFY, and Discord sends what it missed.
 - A hook that fails or dies drops the connection without storing the
   dispatch's sequence, so the RESUME brings it back: after 1 second,
-  doubling with every failure in a row up to 2 minutes.
+  doubling with every failure in a row up to 2 minutes. Whatever was already
+  read from a dropped connection is skipped, unstored, until the next HELLO,
+  and comes back with the RESUME too. A refused ``READY`` stores no session.
 - Op 7 (reconnect) resumes; op 9 (invalid session) that can't be resumed
   clears the stored session and identifies again. A heartbeat Discord did
   not acknowledge before the next one drops the connection.
@@ -314,16 +316,29 @@ class _Shard:
     received: int | None = None
     backoff: Duration = zero
     heartbeat: Fiber[Any, Any] | None = None
+    connecting: bool = True
+    """From a dropped connection until the next HELLO: what is still queued
+    from the old socket is skipped, unstored, and the RESUME replays it."""
 
     def _write(self, item: GatewaySend | Reconnect) -> Effect[None]:
         assert self.conn is not None
         return self.conn.write(item)
 
+    def _reconnect(self) -> Effect[None]:
+        def run() -> Effect[None]:
+            self.connecting = True
+            return self._write(RECONNECT)
+
+        return fx.suspend(run)
+
+    def on_connecting(self) -> None:
+        self.connecting = True
+
     def _drop(self) -> Effect[None]:
         self.backoff = (
             _FIRST_BACKOFF if self.backoff == zero else min(self.backoff.times(2), _MAX_BACKOFF)
         )
-        return self._write(RECONNECT)
+        return self._reconnect()
 
     def _get(self) -> Effect[ShardState | None]:
         return _call_user(lambda: self.store.get)
@@ -333,10 +348,12 @@ class _Shard:
 
     def _beats(self, interval: Duration) -> Effect[Never]:
         def beat() -> Effect[None]:
+            if self.connecting:
+                return fx.void
             if not self.acked:
                 # Discord did not answer the last one: the connection is a zombie.
                 self.acked = True
-                return self._write(RECONNECT)
+                return self._reconnect()
             self.acked = False
             return self._write({"op": 1, "d": self.received})
 
@@ -398,14 +415,14 @@ class _Shard:
             if s is not None:
                 self.received = s
             state = yield from self._get()
+            resume_url: str | None = None
             if t == "READY":
                 session = _json.string_field(dispatch.d, "session_id")
                 resume = _json.string_field(dispatch.d, "resume_gateway_url")
                 if session and resume and resume.startswith("wss://"):
+                    # Stored once the hook took READY: a refused READY leaves no session.
                     state = ShardState(session_id=session, resume_url=resume, sequence=s)
-                    yield from self._set(state)
-                    assert self.conn is not None
-                    yield from self.conn.set_url(with_query(resume))
+                    resume_url = with_query(resume)
             if self.hook is not None:
                 hook = self.hook
                 exit = yield from _call_user(hook, dispatch).exit()
@@ -415,33 +432,41 @@ class _Shard:
                     yield from self._drop()
                     return
             self.backoff = zero
-            if state is not None and s is not None:
+            if state is not None and (s is not None or resume_url is not None):
                 yield from self._set(replace(state, sequence=s))
+            if resume_url is not None:
+                assert self.conn is not None
+                yield from self.conn.set_url(resume_url)
             yield from self.pubsub.publish(dispatch)
 
         return run
 
     def on_payload(self, payload: _json.JsonObject) -> Effect[None]:  # noqa: PLR0911
-        match payload.get("op"):
+        op = payload.get("op")
+        if self.connecting and op != 10:
+            # From the socket being dropped: nothing of it is handled or stored.
+            return fx.void
+        match op:
             case 0:
                 return self._dispatch(payload)
             case 10:
+                self.connecting = False
                 return self._hello(payload.get("d"))
             case 11:
                 return fx.sync(lambda: setattr(self, "acked", True))
             case 1:
                 return self._write({"op": 1, "d": self.received})
             case 7:
-                return self._write(RECONNECT)
+                return self._reconnect()
             case 9:
                 if payload.get("d") is True:
-                    return self._write(RECONNECT)
+                    return self._reconnect()
                 assert self.conn is not None
                 conn = self.conn
                 return (
                     _call_user(lambda: self.store.clear)
                     .and_then(conn.set_url(with_query(self.url)))
-                    .and_then(self._write(RECONNECT))
+                    .and_then(self._reconnect())
                 )
             case _:
                 return fx.void
@@ -479,7 +504,7 @@ def layer(
         )
         stored = yield from state._get()  # pyright: ignore[reportPrivateUsage]
         start = with_query(url if stored is None else stored.resume_url)
-        state.conn = yield from ws.connect(start, fx.void)
+        state.conn = yield from ws.connect(start, fx.sync(state.on_connecting))
         conn = state.conn
         yield from conn.take.flat_map(state.on_payload).forever().fork_scoped()
 

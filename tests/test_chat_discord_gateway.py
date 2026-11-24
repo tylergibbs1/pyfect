@@ -20,6 +20,8 @@ from pyfect.chat.chat_handler import Service as HandlerService
 from pyfect.chat.discord import discord_chat, discord_gateway
 from pyfect.chat.discord.discord_gateway import (
     DiscordWs,
+    DispatchHook,
+    GatewayDispatch,
     Reconnect,
     ShardState,
     ShardStateStore,
@@ -129,10 +131,13 @@ class _Ws:
 
 
 def host(
-    storage: Storage, handle: Callable[[ChatEvent], Effect[None, NotAccepted]]
+    storage: Storage,
+    handle: Callable[[ChatEvent], Effect[None, NotAccepted]],
+    *,
+    dispatch_hook: discord_gateway.Hook | None = None,
 ) -> Effect[Host, Any, Scope]:
     """One host: the shard over a socket the test drives, with
-    ``layer_dispatch_hook`` and ``storage`` behind it."""
+    ``layer_dispatch_hook`` (or ``dispatch_hook``) and ``storage`` behind it."""
 
     @fx.gen
     def build() -> Gen[Host]:
@@ -146,6 +151,8 @@ def host(
                 )
             )
         )
+        if dispatch_hook is not None:
+            hook = layer.succeed(DispatchHook, dispatch_hook)
         gateway = discord_gateway.layer(token=redacted("token")).pipe(
             layer.provide(
                 layer.merge(socket, layer.succeed(ShardStateStore, _Store(storage)), hook)
@@ -237,6 +244,77 @@ def test_an_event_refused_with_not_accepted_is_not_stored_and_comes_back_with_th
         yield from until(lambda: sequence(storage) == 2)
         assert attempts[0] == 2
         assert gateway.reconnects() == 1
+
+    return fx.scoped(program)
+
+
+@testing.effect
+def test_an_event_queued_behind_a_refused_one_is_not_handled_until_the_resume():
+    """A refusal drops the connection: what was already read from it waits for the RESUME, so
+    the stored sequence never passes the refused event."""
+    storage: Storage = {}
+    handled: list[int] = []
+    attempts = [0]
+
+    def handle(event: ChatEvent) -> Effect[None, NotAccepted]:
+        def run() -> Effect[None, NotAccepted]:
+            attempts[0] += 1
+            if attempts[0] == 1:
+                return fx.fail(NotAccepted())
+            handled.append(attempts[0])
+            return fx.void
+
+        return fx.suspend(run)
+
+    @fx.gen
+    def program() -> Gen[None]:
+        gateway = yield from host(storage, handle)
+        yield from gateway.receive(HELLO)
+        yield from gateway.receive(READY)
+        yield from gateway.receive(message(2))
+        yield from gateway.receive(message(3))
+        yield from until(lambda: gateway.reconnects() == 1)
+        for _ in range(20):
+            yield from fx.yield_now()
+        assert attempts[0] == 1
+        assert sequence(storage) == 1
+        yield from gateway.reopened
+        yield from gateway.receive(HELLO)
+        yield from testing.adjust("1 second")
+        yield from until(lambda: len(gateway.sent(6)) == 1)
+        assert gateway.sent(6) == [{"token": "token", "session_id": "session-1", "seq": 1}]
+        yield from gateway.receive(message(2))
+        yield from gateway.receive(message(3))
+        yield from until(lambda: sequence(storage) == 3)
+        assert handled == [2, 3]
+
+    return fx.scoped(program)
+
+
+@testing.effect
+def test_a_ready_the_hook_refused_stores_no_session_so_the_shard_identifies_again():
+    storage: Storage = {}
+    seen: list[str] = []
+
+    def refuse_ready(dispatch: GatewayDispatch) -> Effect[None, str]:
+        def run() -> Effect[None, str]:
+            seen.append(dispatch.t)
+            return fx.fail("not now") if seen.count("READY") == 1 else fx.void
+
+        return fx.suspend(run)
+
+    @fx.gen
+    def program() -> Gen[None]:
+        gateway = yield from host(storage, lambda _: fx.void, dispatch_hook=refuse_ready)
+        yield from gateway.receive(HELLO)
+        yield from gateway.receive(READY)
+        yield from until(lambda: gateway.reconnects() == 1)
+        assert stored(storage) is None
+        yield from gateway.reopened
+        yield from gateway.receive(HELLO)
+        yield from testing.adjust("1 second")
+        yield from until(lambda: len(gateway.sent(2)) == 2)
+        assert gateway.sent(6) == []
 
     return fx.scoped(program)
 
