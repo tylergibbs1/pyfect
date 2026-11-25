@@ -1,0 +1,160 @@
+---
+title: "Schema validation in Python: pyfect Schema compared with pydantic"
+description: "Schema validation in Python with pyfect Schema: decode and encode with one codec, validation errors as typed values, and an honest comparison with pydantic."
+date: "2026-11-24"
+author: "Tyler Gibbs"
+tags: ["python", "schema validation", "pydantic", "serialization", "typed errors"]
+---
+
+pydantic is how most Python code does schema validation, and for good reason. This post looks
+at a different design: pyfect's `Schema`, a port of Effect's `Schema` to Python. It describes
+data once and gives you a decoder and an encoder from the same description, its validation
+errors are typed values instead of exceptions, and its classes come from ordinary annotations.
+If you are looking for a pydantic alternative, this explains what is actually different, and
+where pydantic is still the better choice.
+
+pyfect is a port of [Effect](https://effect.website) to Python (`pip install pyfect-dev`,
+`import pyfect`). The examples import its schema module as `S`.
+
+## Decode and encode with one schema
+
+A pydantic model mostly runs in one direction. Input goes through validators into the model,
+and `model_dump` turns the model back into data. When the wire form and the Python form differ,
+say a price sent as the string `"12.34"` that you want to hold as 1234 cents, you write a
+validator for the way in and a serializer for the way out, and keeping the two consistent is
+up to you.
+
+In pyfect a schema is a codec: it has a decoded type and an encoded type, and the
+transformation between them is defined once with a function each way.
+
+<CodeOutput>
+
+<include meta='title="both_ways.py"'>../../snippets/blog/python-schema-validation-vs-pydantic/both_ways.py</include>
+
+<include lang="text">../../snippets/blog/python-schema-validation-vs-pydantic/both_ways.out</include>
+
+</CodeOutput>
+
+A few things happen here:
+
+- `Cents` joins two schemas with `S.decode_to`. `S.NumberFromString` reads `"12.34"` as a
+  float, and the transformation turns that into an int and back. The result is one value you
+  can reuse in any class or struct.
+- `S.Trim` and `S.DateTimeUtcFromString` are built-in codecs of the same kind. Codecs compose,
+  so a field can hold another class, a list of them, or a union.
+- `S.encode_sync(Order)` runs every codec backwards. The customer is still trimmed, the total is
+  a string again, and the timestamp is ISO 8601. Decoding then encoding gets you back to the
+  wire form.
+
+The class is plain Python. `id: int` becomes `S.Int` from the annotation, and
+`Annotated[int, S.is_greater_than(0)]` adds a check. The checks run when you decode and also
+when you construct the class directly, which is why `Order(id=0, ...)` fails above. Instances
+are immutable, and pyright sees the constructor's keyword arguments.
+
+`S.from_json_string(Order)` wraps the same schema so it reads and writes JSON text, and
+`S.to_json_schema_document(Order)` writes a JSON Schema for it. The [schema guide](/docs/schema)
+lists the built-in codecs and how to write your own.
+
+## Typed validation errors in Python
+
+pydantic raises `ValidationError`. It is a good exception: it collects every problem, and
+`errors()` gives you a list of dicts with a location, a message and an error type. But it is an
+exception, so nothing in a function's type says that it can fail validation, and a caller that
+forgets the `try` finds out at run time.
+
+pyfect gives you the failure as a value, in two ways:
+
+<CodeOutput>
+
+<include meta='title="errors_as_values.py"'>../../snippets/blog/python-schema-validation-vs-pydantic/errors_as_values.py</include>
+
+<include lang="text">../../snippets/blog/python-schema-validation-vs-pydantic/errors_as_values.out</include>
+
+</CodeOutput>
+
+`S.decode_unknown_result` returns `Ok(value)` or `Err(SchemaError)`, and a `match` takes it
+apart. Every decoder comes in a few forms: `_sync` raises, `_result` and `_exit` return the
+outcome, and `_effect` fails in an effect's error channel.
+
+The `_effect` form is where it fits into the rest of pyfect. `register` decodes its input, and
+pyright infers `Effect[str, SchemaError]` from that one line, without an annotation. `handle`
+declares that it returns `Effect[str]`, no errors left, so it only type-checks because
+`catch_tag` turns the schema error into a 400. If someone deletes that handler, pyright reports
+it. The [errors guide](/docs/errors) covers how typed errors work in general.
+
+Two differences from pydantic's defaults show up in this output:
+
+- **No coercion.** pydantic's default lax mode turns the string `"29"` into the int 29. pyfect's
+  `int` schema refuses a string, as Effect's does. When the wire form really is a string,
+  you say so with a codec such as `S.NumberFromString`, and the encoder then writes a string
+  back. pydantic can be made strict too, with `strict=True` on a model, a field or a call.
+- **First error by default.** pydantic collects every error. pyfect stops at the first one
+  unless you pass `errors="all"`, as the first decode does here.
+
+## Classes from annotations
+
+Both libraries build classes from annotations, so this part will feel familiar. In pyfect a
+subclass of `S.Class` is a schema and a class at the same time. An annotation gives the field's
+schema. `S.field(schema)` overrides it, a default makes the key optional, and `Annotated`
+carries checks.
+
+Beyond `S.Class` there are a few shapes pydantic doesn't have in the same form:
+
+- `S.Struct(TypedDict)` takes its fields from a `TypedDict` and decodes to a plain dict, which
+  is handy when the rest of the code already passes dicts around.
+- `S.TaggedClass` and `S.TaggedUnion` add a `"_tag"` key and pick the union member from it, so
+  an error message talks about one member instead of all of them. The decoded value is a plain
+  Python union you can `match` on.
+- `S.TaggedError` is an error class that is also a schema, so a typed error can cross the wire
+  and decode on the other side.
+
+## Where pydantic is the better choice
+
+Use pydantic when one of these matters more than the points above:
+
+- **Speed.** pydantic's core is written in Rust. pyfect's schema is pure Python. It has an
+  optional compiler, `pyfect.schema.jit_compiler`, which generates Python source for a schema's
+  validators; on the schema guide's nested struct it decodes about six times faster than the
+  interpreter. It is still Python. If validation is the hot path of your service, measure both on your own data before
+  you choose. I haven't published a benchmark against pydantic, so I won't quote one.
+- **Ecosystem.** FastAPI, SQLModel, pydantic-settings and a long list of other libraries take
+  pydantic models directly. pyfect has its own HTTP server and API layer that use its schemas,
+  but if your framework expects a `BaseModel`, give it one.
+- **Familiarity.** Most Python developers have written a pydantic model. Fewer have used a
+  codec-based schema library, and that learning cost is real.
+- **You don't use pyright.** Much of what makes pyfect's schema worth it is in the types:
+  decoded values pyright knows exactly, errors in the effect's type, handlers that remove them.
+  Without a type checker you are left with a validation library that is slower than pydantic.
+
+pyfect is a good fit when the data has a real wire form that differs from its Python form,
+when you want one definition to drive decoding, encoding and JSON Schema, and when validation
+failures should be part of a function's type, handled or declared like any other error.
+
+## You don't have to pick one
+
+The two work together. `pyfect.pydantic.from_model` turns a pydantic model into a pyfect
+schema: it decodes with `model_validate`, encodes with `model_dump(mode="json")`, and reports
+pydantic's errors as issues at their paths.
+
+<CodeOutput>
+
+<include meta='title="with_pydantic.py"'>../../snippets/blog/python-schema-validation-vs-pydantic/with_pydantic.py</include>
+
+<include lang="text">../../snippets/blog/python-schema-validation-vs-pydantic/with_pydantic.out</include>
+
+</CodeOutput>
+
+`Address` is still a pydantic model, validated by pydantic, and it sits inside a pyfect class
+next to a codec. Going the other way, a pyfect schema can be a pydantic field type: annotate the
+field with it, and pydantic decodes, encodes and writes the JSON Schema with it. The `pydantic`
+extra (`pip install "pyfect-dev[pydantic]"`) installs what this needs, and there is a `msgspec`
+extra that does the same for msgspec structs.
+
+So you can keep the models you have, and use pyfect's codecs and typed errors where they help.
+
+## Where to go next
+
+The [schema guide](/docs/schema) covers structs, classes, unions, branded values,
+transformations, JSON Schema and the compiled decoders. [Pydantic and msgspec](/docs/pydantic-msgspec)
+shows both directions of the interop. For classes whose fields differ between a database and an
+API, see [models](/docs/models).

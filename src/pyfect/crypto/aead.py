@@ -53,6 +53,8 @@ class Implementation:
 
 @dataclass(frozen=True, kw_only=True)
 class Algorithm:
+    """An AEAD algorithm, such as AES-GCM or ChaCha20-Poly1305, with its key and nonce sizes."""
+
     name: Name
     key_length: Literal[16, 32]
     nonce_length: Literal[12, 24]
@@ -137,6 +139,8 @@ def is_key(u: object) -> bool:
 
 
 class AeadService(Protocol):
+    """Authenticated encryption: generate keys, and encrypt and decrypt with a nonce."""
+
     def generate_key[A: Algorithm](self, algorithm: A) -> Effect[Key[A], CryptoError]:
         """A key of random bytes from ``SecureRandom``."""
         ...

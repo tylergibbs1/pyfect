@@ -19,12 +19,16 @@ from pyfect.layer import succeed as layer_succeed
 
 @dataclass(frozen=True, slots=True)
 class Weak:
+    """A weak entity tag: the content is equivalent, not the same byte for byte."""
+
     value: str
     tag: ClassVar[Literal["Weak"]] = "Weak"
 
 
 @dataclass(frozen=True, slots=True)
 class Strong:
+    """A strong entity tag: the content is the same byte for byte."""
+
     value: str
     tag: ClassVar[Literal["Strong"]] = "Strong"
 

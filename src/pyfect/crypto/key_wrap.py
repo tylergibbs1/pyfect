@@ -36,6 +36,8 @@ from pyfect.layer import effect as layer_effect
 
 @dataclass(frozen=True, kw_only=True)
 class AesKw:
+    """The AES key wrap algorithm, with a 128 or 256-bit key."""
+
     name: Literal["aes128Kw", "aes256Kw"]
     key_length: Literal[16, 32]
 
@@ -44,6 +46,8 @@ class AesKw:
 
 @dataclass(frozen=True, kw_only=True)
 class RsaOaep:
+    """RSA-OAEP key wrapping, with its hash and modulus length."""
+
     name: str
     hash: DigestAlgorithm
     modulus_length: int
@@ -92,6 +96,8 @@ class PublicKey[A: RsaOaep = RsaOaep](KeyBase[A]):
 
 @dataclass(frozen=True, slots=True)
 class KeyPair[A: RsaOaep = RsaOaep]:
+    """An RSA-OAEP key pair for wrapping keys: a private key and its public key."""
+
     private_key: PrivateKey[A]
     public_key: PublicKey[A]
 
@@ -194,6 +200,8 @@ def _check_kw_length(length: int, overhead: int) -> None:
 
 
 class KeyWrapService(Protocol):
+    """Key wrapping: encrypt a key under another with AES-KW or RSA-OAEP, and unwrap it."""
+
     def generate_key[A: AesKw](self, algorithm: A) -> Effect[Key[A], CryptoError]:
         """An AES-KW key of random bytes from ``SecureRandom``."""
         ...

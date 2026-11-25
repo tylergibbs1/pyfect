@@ -61,6 +61,8 @@ type Model = str
 
 
 class OutputConfig(TypedDict, total=False):
+    """Bedrock output options: the reasoning effort to ask the model for."""
+
     effort: str
 
 

@@ -55,6 +55,8 @@ _NO_PARAMETERS = S.Unknown
 
 
 class ApplyPatchParameters(TypedDict):
+    """Input of OpenAI's apply patch tool: a file to create, delete or update."""
+
     call_id: str
     operation: (
         GT.ApplyPatchCreateFileOperation
@@ -64,6 +66,8 @@ class ApplyPatchParameters(TypedDict):
 
 
 class ApplyPatchResult(TypedDict):
+    """Result of OpenAI's apply patch tool: its status and any output."""
+
     status: GT.ApplyPatchCallOutputStatus
     output: NotRequired[str | None]
 
@@ -81,10 +85,14 @@ ApplyPatch = T.provider_defined(
 
 
 class CodeInterpreterArgs(TypedDict):
+    """Arguments of OpenAI's code interpreter tool: the container to run code in."""
+
     container: str | GT.AutoCodeInterpreterToolParam
 
 
 class CodeInterpreterParameters(TypedDict):
+    """Input of OpenAI's code interpreter tool: the code and its container id."""
+
     code: str | None
     container_id: str
 
@@ -95,11 +103,15 @@ type _CodeInterpreterOutputs = (
 
 
 class CodeInterpreterSuccess(TypedDict):
+    """A finished code interpreter call, with its outputs."""
+
     status: Literal["completed"]
     outputs: _CodeInterpreterOutputs
 
 
 class CodeInterpreterFailure(TypedDict):
+    """A code interpreter call that failed or did not finish, with its outputs."""
+
     status: Literal["in_progress", "incomplete", "interpreting", "failed"]
     outputs: _CodeInterpreterOutputs
 
@@ -125,6 +137,8 @@ CodeInterpreter = T.provider_defined(
 
 
 class FileSearchArgs(TypedDict):
+    """Arguments of OpenAI's file search tool: vector stores, filters and result count."""
+
     vector_store_ids: Sequence[str]
     filters: NotRequired[GT.Filters | None]
     max_num_results: NotRequired[float]
@@ -135,12 +149,16 @@ type _FileSearchResults = Sequence[GT.FileSearchToolCall__results__0__item] | No
 
 
 class FileSearchSuccess(TypedDict):
+    """A finished file search, with its queries and results."""
+
     status: Literal["completed"]
     queries: Sequence[str]
     results: _FileSearchResults
 
 
 class FileSearchFailure(TypedDict):
+    """A file search that failed or did not finish, with its queries and results."""
+
     status: Literal["in_progress", "searching", "incomplete", "failed"]
     queries: Sequence[str]
     results: _FileSearchResults
@@ -178,10 +196,14 @@ FileSearch = T.provider_defined(
 
 
 class ImageGenerationSuccess(TypedDict):
+    """A finished image generation, with the image as base64."""
+
     result: str | None
 
 
 class ImageGenerationFailure(TypedDict):
+    """An image generation that failed or did not finish."""
+
     status: Literal["in_progress", "generating", "failed"]
     result: str | None
 
@@ -220,10 +242,14 @@ ImageGeneration = T.provider_defined(
 
 
 class LocalShellParameters(TypedDict):
+    """Input of OpenAI's local shell tool: the command to run."""
+
     action: GT.LocalShellExecAction
 
 
 class LocalShellResult(TypedDict):
+    """Result of OpenAI's local shell tool: the command's output."""
+
     output: str
 
 
@@ -240,6 +266,8 @@ LocalShell = T.provider_defined(
 
 
 class McpSuccess(TypedDict):
+    """A finished remote MCP tool call: the tool, its arguments, output and server."""
+
     type: Literal["mcp_call"]
     name: str
     arguments: str
@@ -248,6 +276,8 @@ class McpSuccess(TypedDict):
 
 
 class McpFailure(McpSuccess):
+    """A remote MCP tool call that failed, with its error."""
+
     error: str
 
 
@@ -277,10 +307,14 @@ Mcp = T.provider_defined(
 
 
 class ShellParameters(TypedDict):
+    """Input of OpenAI's shell tool: the commands to run."""
+
     action: GT.FunctionShellAction
 
 
 class ShellResult(TypedDict):
+    """Result of OpenAI's shell tool: each command's output."""
+
     output: Sequence[GT.FunctionShellCallOutputContent]
 
 
@@ -301,15 +335,21 @@ type _WebSearchAction = (
 
 
 class WebSearchParameters(TypedDict):
+    """Input of OpenAI's web search tool: the search, page open or find it did."""
+
     action: NotRequired[_WebSearchAction]
 
 
 class WebSearchSuccess(TypedDict):
+    """A finished OpenAI web search, with its action."""
+
     action: NotRequired[_WebSearchAction]
     status: Literal["completed"]
 
 
 class WebSearchFailure(TypedDict):
+    """An OpenAI web search that failed or did not finish."""
+
     action: NotRequired[_WebSearchAction]
     status: Literal["in_progress", "searching", "failed", "incomplete"]
 

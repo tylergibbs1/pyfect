@@ -17,6 +17,8 @@ from pyfect.schema.issue import Issue
 
 @dataclass(frozen=True, slots=True, eq=False)
 class Never(Refinement):
+    """Schema AST keyword that accepts no value."""
+
     tag = "Never"
 
     def get_expected(self) -> str:
@@ -28,6 +30,8 @@ class Never(Refinement):
 
 @dataclass(frozen=True, slots=True, eq=False)
 class Any(Refinement):
+    """Schema AST keyword that accepts any value, typed as ``Any``."""
+
     tag = "Any"
 
     def get_expected(self) -> str:
@@ -39,6 +43,8 @@ class Any(Refinement):
 
 @dataclass(frozen=True, slots=True, eq=False)
 class Unknown(Refinement):
+    """Schema AST keyword that accepts any value, typed as ``object``."""
+
     tag = "Unknown"
 
     def get_expected(self) -> str:
@@ -50,6 +56,8 @@ class Unknown(Refinement):
 
 @dataclass(frozen=True, slots=True, eq=False)
 class Null(Refinement):
+    """Schema AST keyword that accepts ``None``."""
+
     tag = "Null"
 
     def get_expected(self) -> str:
@@ -61,6 +69,8 @@ class Null(Refinement):
 
 @dataclass(frozen=True, slots=True, eq=False)
 class String(Refinement):
+    """Schema AST keyword that accepts a string."""
+
     tag = "String"
 
     def get_expected(self) -> str:
@@ -94,6 +104,8 @@ class Number(Refinement):
 
 @dataclass(frozen=True, slots=True, eq=False)
 class Boolean(Refinement):
+    """Schema AST keyword that accepts ``True`` or ``False``."""
+
     tag = "Boolean"
 
     def get_expected(self) -> str:
@@ -105,6 +117,8 @@ class Boolean(Refinement):
 
 @dataclass(frozen=True, slots=True, eq=False)
 class BigInt(Refinement):
+    """Schema AST keyword that accepts an integer of any size."""
+
     tag = "BigInt"
 
     def get_expected(self) -> str:

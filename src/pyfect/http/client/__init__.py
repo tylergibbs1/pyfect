@@ -1,4 +1,4 @@
-"""HTTP clients (Effect's ``HttpClient``).
+"""HTTP clients (Effect's ``HttpClient``): send requests, with retries, tracing and test layers.
 
 ``HttpClient`` is the service; ``httpx_client.layer`` provides one backed by
 httpx (the ``pyfect-dev[httpx]`` extra), and ``layer_test`` one answering from a

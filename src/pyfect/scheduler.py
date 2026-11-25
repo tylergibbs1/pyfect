@@ -1,4 +1,4 @@
-"""Where fibers run.
+"""Where fibers run: asyncio, synchronous and mixed schedulers, step budgets and stalls.
 
 A scheduler runs short tasks one at a time and fires timers. Fibers never
 touch threads or event loops directly; they only call ``schedule`` and
@@ -51,6 +51,8 @@ type Cancel = Callable[[], None]
 
 
 class Scheduler(Protocol):
+    """Runs fiber tasks soon or after a delay: the loop every fiber runs on."""
+
     def schedule(self, task: Task, priority: int = 0) -> None:
         """Run ``task`` soon. Each batch runs lowest priority first, in order
         within a priority."""

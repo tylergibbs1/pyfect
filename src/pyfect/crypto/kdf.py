@@ -30,6 +30,8 @@ from pyfect.layer import effect as layer_effect
 
 @dataclass(frozen=True, kw_only=True)
 class Hkdf:
+    """The HKDF key derivation function, with its hash."""
+
     name: str
     hash: DigestAlgorithm
 
@@ -38,6 +40,8 @@ class Hkdf:
 
 @dataclass(frozen=True, kw_only=True)
 class Pbkdf2:
+    """The PBKDF2 key derivation function, with its hash and iteration count."""
+
     name: str
     hash: DigestAlgorithm
     iterations: int
@@ -84,6 +88,8 @@ def argon2id(*, memory: int = 65_536, passes: int = 3, parallelism: int = 4) -> 
 
 
 class KdfService(Protocol):
+    """Key derivation: derive key bytes from a secret and a salt with HKDF or PBKDF2."""
+
     def derive(
         self,
         algorithm: Algorithm,

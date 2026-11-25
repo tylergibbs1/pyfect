@@ -1,6 +1,6 @@
 ---
 title: Tool ledger
-description: "Record each tool call before and after its handler runs, so a replayed call does not pay twice."
+description: "Record each AI tool call before and after its handler runs, so a retried or replayed call never runs twice, and choose what an unknown outcome does."
 ---
 
 A tool call can reach its handler more than once. A turn is retried after a timeout, a

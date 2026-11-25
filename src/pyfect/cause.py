@@ -1,4 +1,4 @@
-"""Why an effect failed.
+"""Why an effect failed: a ``Cause`` of typed failures, defects and interruptions.
 
 A ``Cause`` is a flat list of reasons, as in Effect 4:
 
@@ -64,18 +64,24 @@ def _merge_annotations(
 
 @dataclass(frozen=True, slots=True)
 class Fail(_Annotated, Generic[E_co]):
+    """A cause's reason: an expected failure, with its typed error."""
+
     error: E_co
     annotations: Annotations = field(default=_NO_ANNOTATIONS, hash=False, repr=False, kw_only=True)
 
 
 @dataclass(frozen=True, slots=True)
 class Die(_Annotated):
+    """A cause's reason: a defect, an unexpected exception or value."""
+
     defect: object
     annotations: Annotations = field(default=_NO_ANNOTATIONS, hash=False, repr=False, kw_only=True)
 
 
 @dataclass(frozen=True, slots=True)
 class Interrupt(_Annotated):
+    """A cause's reason: the fiber was interrupted, by the fiber with this id if known."""
+
     fiber_id: int | None = None
     annotations: Annotations = field(default=_NO_ANNOTATIONS, hash=False, repr=False, kw_only=True)
 
@@ -85,6 +91,8 @@ type Reason[E] = Fail[E] | Die | Interrupt
 
 @dataclass(frozen=True, slots=True, weakref_slot=True)
 class Cause(Generic[E_co]):
+    """Why an effect failed: its failures, defects and interrupts, in order."""
+
     reasons: tuple[Reason[E_co], ...]
 
     def __add__[E2](self, other: Cause[E2]) -> Cause[E_co | E2]:

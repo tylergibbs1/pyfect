@@ -30,6 +30,8 @@ from pyfect.layer import effect as layer_effect
 
 @dataclass(frozen=True, kw_only=True)
 class X25519:
+    """The X25519 key agreement algorithm."""
+
     name: Literal["x25519"] = "x25519"
 
     tag: ClassVar[Literal["X25519"]] = "X25519"
@@ -40,6 +42,8 @@ C_co = TypeVar("C_co", bound=Curve, covariant=True, default=Curve)
 
 @dataclass(frozen=True, kw_only=True)
 class Ecdh(Generic[C_co]):
+    """ECDH key agreement on a NIST curve: P-256, P-384 or P-521."""
+
     name: Literal["ecdhP256", "ecdhP384", "ecdhP521"]
     named_curve: C_co
 
@@ -72,6 +76,8 @@ class PublicKey[A: Algorithm = Algorithm](KeyBase[A]):
 
 @dataclass(frozen=True, slots=True)
 class KeyPair[A: Algorithm = Algorithm]:
+    """A key agreement key pair: a private key and its public key."""
+
     private_key: PrivateKey[A]
     public_key: PublicKey[A]
 
@@ -125,6 +131,8 @@ def _invalid_peer(description: str, cause: object = None) -> CryptoError:
 
 
 class KeyAgreementService(Protocol):
+    """Key agreement: generate key pairs and derive the secret shared with a peer."""
+
     def generate_key_pair[A: Algorithm](self, algorithm: A) -> Effect[KeyPair[A], CryptoError]:
         """A new key pair for ``algorithm``."""
         ...

@@ -67,17 +67,23 @@ type _Codec = S.Codec[Any, Any, Any, Any]
 
 
 class SetPayload[R](TypedDict):
+    """An event row change: set a whole row."""
+
     _tag: Literal["set"]
     row: R
 
 
 class PatchPayload[K](TypedDict):
+    """An event row change: update some fields of the row with a key."""
+
     _tag: Literal["patch"]
     key: K
     fields: Row
 
 
 class RemovePayload[K](TypedDict):
+    """An event row change: remove the row with a key."""
+
     _tag: Literal["remove"]
     key: K
 

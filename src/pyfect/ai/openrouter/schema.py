@@ -22,23 +22,31 @@ ENTRY = S.Union(S.String, S.JsonObject, S.Array(S.Json))
 
 
 class ChoiceQuestion(TypedDict):
+    """An OpenRouter decisions question that picks one of several named criteria."""
+
     type: Literal["choice"]
     instructions: Entry
     criteria: Mapping[str, Entry | None]
 
 
 class ScoreQuestion(TypedDict):
+    """An OpenRouter decisions question that scores against a list of levels."""
+
     type: Literal["score"]
     instructions: Entry
     criteria: Sequence[Entry]
 
 
 class NoulCriteria(TypedDict):
+    """What an OpenRouter yes-or-no question's true and false answers mean."""
+
     true: Entry
     false: Entry
 
 
 class NoulQuestion(TypedDict):
+    """An OpenRouter yes-or-no decisions question, answered with a probability."""
+
     type: Literal["noul"]
     instructions: Entry
     criteria: NotRequired[NoulCriteria]
@@ -48,6 +56,8 @@ type DecisionsQuestion = ChoiceQuestion | ScoreQuestion | NoulQuestion
 
 
 class ChoiceAnswer(TypedDict):
+    """An OpenRouter answer to a choice question, with its confidence and probabilities."""
+
     type: Literal["choice"]
     choice: str
     confidence: NotRequired[float]
@@ -55,6 +65,8 @@ class ChoiceAnswer(TypedDict):
 
 
 class ScoreAnswer(TypedDict):
+    """An OpenRouter answer to a score question: the score, level probabilities and legend."""
+
     type: Literal["score"]
     score: float
     confidence: NotRequired[float]
@@ -64,6 +76,8 @@ class ScoreAnswer(TypedDict):
 
 
 class NoulAnswer(TypedDict):
+    """An OpenRouter answer to a yes-or-no question: the probability of yes."""
+
     type: Literal["noul"]
     noul: float
 
@@ -81,18 +95,24 @@ class DecisionsOptions(TypedDict, total=False):
 
 
 class DecisionsRequest(DecisionsOptions):
+    """An OpenRouter decisions request: the model, the state and the questions."""
+
     model: str
     state: object
     questions: Mapping[str, DecisionsQuestion]
 
 
 class Usage(TypedDict):
+    """OpenRouter decisions usage: input and output tokens and the cost."""
+
     input_tokens: int
     output_tokens: int
     cost: NotRequired[float]
 
 
 class DecisionsResponse(TypedDict):
+    """An OpenRouter decisions response: an answer per question, usage and provider."""
+
     model: str
     answers: Mapping[str, Answer]
     usage: Usage

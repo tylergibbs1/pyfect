@@ -36,6 +36,8 @@ from pyfect.layer import effect as layer_effect
 
 @dataclass(frozen=True, kw_only=True)
 class Ed25519:
+    """The Ed25519 signature algorithm."""
+
     name: Literal["ed25519"] = "ed25519"
 
     tag: ClassVar[Literal["Ed25519"]] = "Ed25519"
@@ -57,6 +59,8 @@ class Ecdsa(Generic[C_co]):
 
 @dataclass(frozen=True, kw_only=True)
 class RsaPss:
+    """RSA-PSS signatures, with their hash, modulus length and salt length."""
+
     name: str
     hash: DigestAlgorithm
     modulus_length: int
@@ -67,6 +71,8 @@ class RsaPss:
 
 @dataclass(frozen=True, kw_only=True)
 class RsaPkcs1v15:
+    """RSASSA-PKCS1-v1_5 signatures, with their hash and modulus length."""
+
     name: str
     hash: DigestAlgorithm
     modulus_length: int
@@ -127,6 +133,8 @@ class PublicKey[A: Algorithm = Algorithm](KeyBase[A]):
 
 @dataclass(frozen=True, slots=True)
 class KeyPair[A: Algorithm = Algorithm]:
+    """A signing key pair: a private key and its public key."""
+
     private_key: PrivateKey[A]
     public_key: PublicKey[A]
 
@@ -240,6 +248,8 @@ def _check_salt_length(algorithm: Algorithm, crypto_key: CryptoKey) -> None:
 
 
 class SignatureService(Protocol):
+    """Digital signatures: generate key pairs, sign data and verify signatures."""
+
     def generate_key_pair[A: Algorithm](self, algorithm: A) -> Effect[KeyPair[A], CryptoError]:
         """A new key pair for ``algorithm``."""
         ...

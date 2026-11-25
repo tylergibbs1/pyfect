@@ -28,6 +28,8 @@ P_co = TypeVar("P_co", covariant=True)
 
 @dataclass(frozen=True, slots=True)
 class DeclarationInput(Generic[P_co]):
+    """What a declaration reviver gets: its payload, type parameters and annotations."""
+
     payload: P_co
     type_parameters: tuple[AnySchema, ...]
     annotations: Annotations | None
@@ -35,6 +37,8 @@ class DeclarationInput(Generic[P_co]):
 
 @dataclass(frozen=True, slots=True)
 class CheckInput(Generic[P_co]):
+    """What a check reviver gets: its payload, revived schemas and annotations."""
+
     payload: P_co
     schemas: tuple[AnySchema, ...]
     """The revived schemas of the check's ``representation.schemas``."""
@@ -43,6 +47,8 @@ class CheckInput(Generic[P_co]):
 
 @dataclass(frozen=True, slots=True)
 class DeclarationReviver[P]:
+    """Rebuilds an opaque schema declaration from its id and payload."""
+
     id: str
     payload_schema: PayloadSchema[P]
     revive: Callable[[DeclarationInput[P]], Top]
@@ -51,6 +57,8 @@ class DeclarationReviver[P]:
 
 @dataclass(frozen=True, slots=True)
 class FilterReviver[P]:
+    """Rebuilds a schema filter from its id and payload."""
+
     id: str
     payload_schema: PayloadSchema[P]
     revive: Callable[[CheckInput[P]], Filter[Any]]
@@ -59,6 +67,8 @@ class FilterReviver[P]:
 
 @dataclass(frozen=True, slots=True)
 class FilterGroupReviver[P]:
+    """Rebuilds a group of schema filters from its id and payload."""
+
     id: str
     payload_schema: PayloadSchema[P]
     revive: Callable[[CheckInput[P]], FilterGroup[Any]]

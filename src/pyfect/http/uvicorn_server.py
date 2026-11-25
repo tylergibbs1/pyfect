@@ -56,6 +56,8 @@ from pyfect.socket.server import SocketServerError
 
 
 class Options(ListenOptions):
+    """Options of the uvicorn server: listen address and more uvicorn config."""
+
     config: NotRequired[Mapping[str, Any]]
     """More ``uvicorn.Config`` arguments (``ssl_certfile`` and ``ssl_keyfile``
     for TLS, ``http``, ``ws``, ``ws_max_size``, ``timeout_keep_alive``,

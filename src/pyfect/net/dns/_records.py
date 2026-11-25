@@ -66,6 +66,8 @@ class _Record:
 
 @dataclass(frozen=True, slots=True)
 class A(_Record):
+    """A DNS A record: an IPv4 address."""
+
     address: IPv4Address
     tag: ClassVar[RecordType] = "A"
     _checks: ClassVar[dict[str, _Check]] = {"address": lambda u: isinstance(u, IPv4Address)}
@@ -73,6 +75,8 @@ class A(_Record):
 
 @dataclass(frozen=True, slots=True)
 class Aaaa(_Record):
+    """A DNS AAAA record: an IPv6 address."""
+
     address: IPv6Address
     tag: ClassVar[RecordType] = "AAAA"
     _checks: ClassVar[dict[str, _Check]] = {"address": lambda u: isinstance(u, IPv6Address)}
@@ -80,6 +84,8 @@ class Aaaa(_Record):
 
 @dataclass(frozen=True, slots=True)
 class Caa(_Record):
+    """A DNS CAA record: which certificate authorities may issue for the domain."""
+
     critical: bool
     tag_name: str
     value: str
@@ -95,6 +101,8 @@ class Caa(_Record):
 
 @dataclass(frozen=True, slots=True)
 class Cname(_Record):
+    """A DNS CNAME record: the canonical name the name is an alias of."""
+
     target: DomainName
     tag: ClassVar[RecordType] = "CNAME"
     _checks: ClassVar[dict[str, _Check]] = {"target": is_domain_name}
@@ -102,6 +110,8 @@ class Cname(_Record):
 
 @dataclass(frozen=True, slots=True)
 class Mx(_Record):
+    """A DNS MX record: a mail exchange host and its priority."""
+
     exchange: DomainName
     priority: int
     tag: ClassVar[RecordType] = "MX"
@@ -110,6 +120,8 @@ class Mx(_Record):
 
 @dataclass(frozen=True, slots=True)
 class Naptr(_Record):
+    """A DNS NAPTR record: a rewrite rule for a service, with order and preference."""
+
     order: int
     preference: int
     flags: str
@@ -129,6 +141,8 @@ class Naptr(_Record):
 
 @dataclass(frozen=True, slots=True)
 class Ns(_Record):
+    """A DNS NS record: a name server for the domain."""
+
     host: DomainName
     tag: ClassVar[RecordType] = "NS"
     _checks: ClassVar[dict[str, _Check]] = {"host": is_domain_name}
@@ -145,6 +159,8 @@ class Ptr(_Record):
 
 @dataclass(frozen=True, slots=True)
 class Soa(_Record):
+    """A DNS SOA record: the zone's primary server, admin, serial and timers."""
+
     primary: DomainName
     admin: str
     serial: int
@@ -166,6 +182,8 @@ class Soa(_Record):
 
 @dataclass(frozen=True, slots=True)
 class Srv(_Record):
+    """A DNS SRV record: a service's host and port, with priority and weight."""
+
     target: DomainName
     port: int
     priority: int
@@ -181,6 +199,8 @@ class Srv(_Record):
 
 @dataclass(frozen=True, slots=True)
 class Tlsa(_Record):
+    """A DNS TLSA record: the certificate data a TLS server must match (DANE)."""
+
     cert_usage: int
     selector: int
     matching_type: int
@@ -196,6 +216,8 @@ class Tlsa(_Record):
 
 @dataclass(frozen=True, slots=True)
 class Txt(_Record):
+    """A DNS TXT record: its text strings."""
+
     chunks: tuple[str, ...]
     tag: ClassVar[RecordType] = "TXT"
     _checks: ClassVar[dict[str, _Check]] = {

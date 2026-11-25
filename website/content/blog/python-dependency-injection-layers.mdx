@@ -1,0 +1,148 @@
+---
+title: "Type-safe dependency injection in Python with services and layers"
+description: "Type-safe dependency injection in Python: pyfect tracks the services each function needs, pyright flags a missing one, and tests swap in fake layers."
+date: "2026-11-24"
+author: "Tyler Gibbs"
+tags: ["python", "dependency injection", "pyright", "testing", "services"]
+---
+
+Most Python dependency injection works at run time. You register providers in a container,
+ask it for a `UserRepository`, and find out whether you wired it correctly when that line
+runs. This post shows type-safe dependency injection in Python with pyfect's services and
+layers: each function's type lists the services it needs, pyright reports a missing one before
+you run anything, and tests swap in fake services without patching.
+
+pyfect is a port of [Effect](https://effect.website) to Python (`pip install pyfect-dev`,
+`import pyfect`). Its `Effect[A, E, R]` type has three parameters: the value, the errors, and
+the requirements. This post is about the third.
+
+## Defining a service
+
+A service has two parts. Its **shape** is any class or `Protocol`. Its **tag** is the identity
+that code asks for, declared by subclassing `fx.Tag`. Keeping them apart means two tags can
+share one interface, a primary and a replica database for example.
+
+Here is a sign-up flow that needs a user store and a mailer. The live layers use an in-memory
+SQLite database and print mail to the console, so the whole file runs as-is:
+
+<CodeOutput>
+
+<include meta='title="services.py"'>../../snippets/blog/python-dependency-injection-layers/services.py</include>
+
+<include lang="text">../../snippets/blog/python-dependency-injection-layers/services.out</include>
+
+</CodeOutput>
+
+A few things to notice.
+
+`sign_up` asks for its dependencies with `yield from Users()` and `yield from Mail()`, at the
+point it needs them. There is no constructor taking a repository and a mailer, and no
+decorator. pyright infers `Users | Mail` as the requirements from those two lines, and the
+`assert_type` check pins it.
+
+The requirements spread to callers the same way errors do. Any function that calls `sign_up`
+also needs `Users | Mail` until something provides them. So adding a new dependency deep in
+the call graph changes the types all the way up, and pyright shows you every place that now
+needs it.
+
+## Providing it with a layer
+
+A layer builds services. `layer.succeed(Mail, ConsoleMailer())` provides a value you already
+have. `layer.effect(Users, ...)` runs an effect to build one, and that effect can open
+resources. Here `fx.acquire_release` opens the SQLite connection and registers its close, so
+the connection lives exactly as long as the program using the layer. That is why the output
+starts with `open database` and ends with `close database`, after the second sign-up failed.
+
+`layer.merge(UsersLive, MailLive)` combines the two, and `fx.provide(AppLive)` hands them to
+the program. Each layer is built once per `fx.provide`, however many services inside it ask
+for the same dependency, so keep layers in module-level constants and provide them once
+around the whole program.
+
+Layers can depend on other layers, too. A `UsersLive` that needed a `Db` service to build
+would have the type `Layer[Users, Never, Db]`, and `UsersLive.pipe(layer.provide(DbLive))`
+would wire them together. The [services guide](/docs/services) walks through that graph.
+
+## pyright catches a missing dependency
+
+The point of putting requirements in the type is what happens when you forget one. Here only
+the mailer is provided:
+
+<CodeOutput>
+
+<include meta='title="missing.py"'>../../snippets/blog/python-dependency-injection-layers/missing.py</include>
+
+<include lang="text">../../snippets/blog/python-dependency-injection-layers/missing.out</include>
+
+</CodeOutput>
+
+`fx.provide` removes exactly what its layer builds, so `half` still needs `Users`. Running it
+is the error. Without the ignore comment, pyright reports:
+
+```text
+missing.py:40:29 - error: Argument of type "Effect[int, Never, Users]" cannot be assigned
+  to parameter "eff" of type "Effect[A@run_blocking_exit, E@run_blocking_exit, Never]"
+    Type "Users" is not assignable to type "Never" (reportArgumentType)
+```
+
+The run functions only accept effects whose requirements are `Never`, meaning nothing left to
+provide. The snippet keeps the ignore comment so you can see what happens if you push past
+the error: the program starts, and the first `yield from Users()` dies with
+`Service not found: Users`. The project's build checks that the ignored line really is a
+pyright error, so this example can't quietly go stale.
+
+The `key="Users"` on the tag only sets the name shown in messages like that one. Without it,
+the message names the class's module and name.
+
+## Testing with fake services
+
+Since a service is a protocol, a fake is any class with the same methods. A test provides fake
+layers in place of the live ones, and nothing needs patching:
+
+<include meta='title="test_sign_up.py"'>../../snippets/blog/python-dependency-injection-layers/test_sign_up.py</include>
+
+The first test builds two fakes by hand. `InMemoryUsers` and `RecordingMailer` are ordinary
+dataclasses that pyright checks against the protocols when they go into `layer.succeed`, so a
+fake whose `send` takes the wrong arguments is a type error, not a confusing test failure.
+
+The second test uses `layer.mock`, which provides a service made of just the members you give
+it. `Users` gets an `exists` that always says yes. `Mail` gets nothing, so if `sign_up` tried
+to send a welcome mail to a taken address, `send` would die with `UnimplementedError` and the
+test would fail. That turns "sends nothing" into something the test checks, without writing a
+fake that counts calls. One caveat from the [services guide](/docs/services#mocking-a-service):
+pyright doesn't check the names you pass to `layer.mock`, so a misspelt member leaves the real
+one unmocked. The defect it causes names the likely typo.
+
+`@testing.effect` comes from pyfect's pytest plugin. It runs a generator test with a virtual
+clock, so a test of retries or timeouts takes no real time. For a layer that is expensive to
+build, such as a database in a container, `testing.layer_fixture` builds it once per pytest
+scope and lets tests declare which services they use; see [testing](/docs/testing).
+
+## Compared with other Python DI
+
+**Constructor injection by hand** is the simplest thing that works, and pyright checks it
+fine: `SignUp(users, mailer)`. It gets heavy as the graph grows, because every layer of the
+call stack has to accept and pass along dependencies it doesn't use itself. Services in pyfect
+skip the passing: a function deep in the stack asks for what it needs, and the type tells the
+top of the program what to provide.
+
+**Container libraries** resolve providers by key or type when you ask for them. That is
+flexible, but a missing or mismatched binding shows up when it is resolved, at run time, often
+in a code path your tests didn't reach.
+
+**FastAPI's `Depends`** is well liked and works well inside FastAPI. For tests it offers
+`app.dependency_overrides`, a dict from the original dependency function to its replacement.
+It works, but it's global state on the app, and nothing checks that the override returns the
+same type as the function it replaces.
+
+What pyfect's approach costs: your code is written as effects, with `yield from` and
+`@fx.fn`, and you need pyright in strict mode to get the checking. It also helps to think in
+layers, which takes a little getting used to. In return, the type of every function says what
+it needs, a missing service is a type error, and swapping implementations for tests is a
+matter of providing a different layer.
+
+## Where to go next
+
+The [services and layers guide](/docs/services) covers layer constructors, `layer.provide`
+between layers, `fx.Reference` for services with a default, and how layers are shared. The
+[testing guide](/docs/testing) covers the pytest plugin and its virtual clock. Services pair
+with pyfect's [typed errors](/docs/errors), which use the same type to track failures.

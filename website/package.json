@@ -8,7 +8,7 @@
     "dev": "next dev",
     "prebuild": "node scripts/check-api.mjs",
     "build": "next build",
-    "postbuild": "node scripts/check-links.mjs && node scripts/check-search-size.mjs && node scripts/check-page-size.mjs",
+    "postbuild": "node scripts/check-links.mjs && node scripts/check-seo.mjs && node scripts/check-search-size.mjs && node scripts/check-page-size.mjs",
     "start": "next start",
     "check:layout": "node scripts/check-layout.mjs",
     "test:layout": "bun test scripts/layout/table-columns.test.mjs && node --test scripts/layout/streaming.test.mjs",
@@ -30,7 +30,8 @@
     "radix-ui": "1.4.3",
     "react": "19.3.1",
     "react-dom": "19.3.1",
-    "shiki": "4.5.0"
+    "shiki": "4.5.0",
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "4.3.3",

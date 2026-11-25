@@ -10,6 +10,8 @@ from pyfect.cluster.shard_id import ShardId
 
 
 class EntityAddress(S.Class, identifier="~effect/cluster/EntityAddress"):
+    """Where an entity lives in a cluster: its type, id and shard."""
+
     shard_id: ShardId = S.field(ShardId, key="shardId")
     entity_type: EntityType = S.field(EntityTypeSchema, key="entityType")
     entity_id: EntityId = S.field(EntityIdSchema, key="entityId")

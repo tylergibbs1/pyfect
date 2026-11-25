@@ -1,4 +1,4 @@
-"""Envelopes on their way (Effect's ``Message``).
+"""Cluster messages on their way (Effect's ``Message``): outgoing and incoming envelopes.
 
 An ``Outgoing`` message is what a sender holds: an ``OutgoingRequest``
 (its decoded envelope, the services its schemas need, and how to answer
@@ -70,6 +70,8 @@ class IncomingRequestLocal[P = Any]:
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class IncomingEnvelope:
+    """An acknowledgement or interrupt that arrived for a local entity."""
+
     envelope: AckChunk | Interrupt
 
 
@@ -102,6 +104,8 @@ _never_rpc = make_rpc("Never", success=S.Never)
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class OutgoingEnvelope:
+    """An acknowledgement or interrupt on its way to an entity's runner."""
+
     envelope: AckChunk | Interrupt
     rpc: AnyRpc = _never_rpc
 

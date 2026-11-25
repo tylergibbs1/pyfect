@@ -36,6 +36,8 @@ class ProviderRateAnswer(TypedDict):
 
 
 class ProviderProbabilityAnswer(TypedDict):
+    """A provider's answer to a probability question: the probability it gives, from 0 to 1."""
+
     _tag: Literal["Probability"]
     probability: float
 
@@ -50,6 +52,8 @@ class ProviderBoundingBox(TypedDict):
 
 
 class ProviderLocateAnswer(TypedDict):
+    """A provider's answer to a locate question: a bounding box, with its confidence if given."""
+
     _tag: Literal["Locate"]
     box: ProviderBoundingBox
     confidence: NotRequired[float | None]

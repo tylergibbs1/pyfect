@@ -107,6 +107,8 @@ publish(globals())
 
 
 class Changes(Protocol):
+    """Subscribes to a remote's entries for a store from a sequence number on."""
+
     def __call__(
         self,
         *,
@@ -118,12 +120,16 @@ class Changes(Protocol):
 
 
 class WriteFn(Protocol):
+    """Writes entries of a store to a remote, returning its acknowledgements."""
+
     def __call__(
         self, *, identity: IdentityService, store_id: StoreId, entries: Sequence[Entry]
     ) -> Effect[Sequence[WriteAck] | None, EventLogRemoteError]: ...
 
 
 class LatestSequence(Protocol):
+    """Asks a remote for the latest sequence number of a store."""
+
     def __call__(
         self, *, identity: IdentityService, store_id: StoreId
     ) -> Effect[int | None, EventLogRemoteError]: ...

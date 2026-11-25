@@ -221,6 +221,8 @@ def layer_from_env(
 
 @dataclass(frozen=True, slots=True)
 class ShardGroups:
+    """The shard groups a cluster has, and the ones this runner serves."""
+
     available: tuple[str, ...]
     """Sorted, without duplicates."""
     assigned: tuple[str, ...]

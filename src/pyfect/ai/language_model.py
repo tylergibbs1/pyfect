@@ -82,10 +82,14 @@ if TYPE_CHECKING:
 
 
 class ToolChoiceTool(TypedDict):
+    """Tool choice: the model must call the named tool."""
+
     tool: str
 
 
 class ToolChoiceOneOf(TypedDict, total=False):
+    """Tool choice: the model may, or must, call one of the named tools."""
+
     one_of: Sequence[str]
     mode: Literal["auto", "required"]
 
@@ -104,11 +108,15 @@ provider-executed call is still checked)."""
 
 @dataclass(frozen=True)
 class TextFormat:
+    """Response format: plain text."""
+
     type: Literal["text"] = "text"
 
 
 @dataclass(frozen=True)
 class JsonFormat:
+    """Response format: a JSON object that the given schema decodes."""
+
     object_name: str
     schema: S.Top
     type: Literal["json"] = "json"

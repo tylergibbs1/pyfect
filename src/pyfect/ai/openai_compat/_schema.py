@@ -71,6 +71,8 @@ class EmbeddingUsage(TypedDict):
 
 
 class EmbeddingResponse(TypedDict):
+    """An OpenAI-compatible Embeddings response: the vectors, model and token usage."""
+
     data: list[Embedding]
     model: str
     object: NotRequired[Literal["list"] | None]

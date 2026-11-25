@@ -42,6 +42,8 @@ class DOMException(Exception):
 
 
 class OtherPrime(TypedDict, total=False):
+    """An extra prime of a multi-prime RSA key in JWK form."""
+
     r: str
     d: str
     t: str
@@ -114,6 +116,8 @@ class CryptoKey:
 
 @dataclass(frozen=True, slots=True)
 class CryptoKeyPair:
+    """A Web Crypto key pair: a private key and its public key."""
+
     private_key: CryptoKey
     public_key: CryptoKey
 

@@ -36,12 +36,16 @@ class Edge(Generic[E_co]):
 
 @dataclass(frozen=True, slots=True)
 class IndexedNode(Generic[N_co]):
+    """A graph node with its index."""
+
     index: int
     data: N_co
 
 
 @dataclass(frozen=True, slots=True)
 class IndexedEdge(Generic[E_co]):
+    """A graph edge with its index and the indexes of its source and target nodes."""
+
     index: int
     source: int
     target: int
@@ -96,6 +100,8 @@ class AllPairsResult(Generic[E_co]):
 
 @dataclass(frozen=True, slots=True)
 class BipartiteMatch:
+    """One pair of a bipartite matching: a left node, a right node and their edge."""
+
     left: int
     right: int
     edge: int
@@ -113,6 +119,8 @@ class MaximumFlowResult:
 
 @dataclass(frozen=True, slots=True)
 class MinimumCutResult:
+    """A minimum cut: its value, the cut edges and the nodes on each side."""
+
     value: float
     edges: tuple[int, ...]
     source: tuple[int, ...]

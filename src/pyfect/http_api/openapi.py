@@ -41,11 +41,11 @@ class Title(Tag[str], key="effect/http-api/OpenApi/Title"):
 
 
 class Version(Tag[str], key="effect/http-api/OpenApi/Version"):
-    pass
+    """OpenAPI annotation: the API's version in its OpenAPI document."""
 
 
 class Description(Tag[str], key="effect/http-api/OpenApi/Description"):
-    pass
+    """OpenAPI annotation: the description of an API, group or endpoint."""
 
 
 class License(Tag[Mapping[str, Any]], key="effect/http-api/OpenApi/License"):
@@ -65,11 +65,11 @@ class Format(Tag[str], key="effect/http-api/OpenApi/Format"):
 
 
 class Summary(Tag[str], key="effect/http-api/OpenApi/Summary"):
-    pass
+    """OpenAPI annotation: the one-line summary of an API, group or endpoint."""
 
 
 class Deprecated(Tag[bool], key="effect/http-api/OpenApi/Deprecated"):
-    pass
+    """OpenAPI annotation: marks an endpoint or group as deprecated."""
 
 
 class Override(Tag[Mapping[str, Any]], key="effect/http-api/OpenApi/Override"):
@@ -90,6 +90,8 @@ class Transform(Tag[Callable[[Json], Json]], key="effect/http-api/OpenApi/Transf
 
 
 class AnnotationOptions(TypedDict, total=False):
+    """OpenAPI annotations of an API, group or endpoint: title, version, servers and more."""
+
     identifier: str
     title: str
     version: str
@@ -131,6 +133,8 @@ def annotations(**options: Unpack[AnnotationOptions]) -> Context[Never]:
 
 
 class FromApiOptions(TypedDict, total=False):
+    """Options of ``from_api``: extra annotations to keep and which schemas become components."""
+
     include_annotation_key: Callable[[str], bool]
     """Admits other annotations with JSON values into the schemas."""
     reference_policy: ReferencePolicy

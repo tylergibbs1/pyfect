@@ -24,6 +24,8 @@ from pyfect.http.multipart_parser._search import Search
 
 @dataclass(frozen=True, slots=True)
 class PartInfo:
+    """A multipart part's headers: its name, file name, content type and disposition."""
+
     name: str
     filename: str | None
     content_type: str
@@ -35,17 +37,23 @@ class PartInfo:
 
 @dataclass(frozen=True, slots=True)
 class InvalidBoundary:
+    """Multipart parse error: the boundary is missing or invalid."""
+
     tag: ClassVar[Literal["InvalidBoundary"]] = "InvalidBoundary"
 
 
 @dataclass(frozen=True, slots=True)
 class BadHeaders:
+    """Multipart parse error: a part's headers could not be parsed."""
+
     error: Failure
     tag: ClassVar[Literal["BadHeaders"]] = "BadHeaders"
 
 
 @dataclass(frozen=True, slots=True)
 class InvalidDisposition:
+    """Multipart parse error: a part's ``Content-Disposition`` is invalid."""
+
     tag: ClassVar[Literal["InvalidDisposition"]] = "InvalidDisposition"
 
 
@@ -54,12 +62,16 @@ type Limit = Literal["MaxParts", "MaxTotalSize", "MaxPartSize", "MaxFieldSize"]
 
 @dataclass(frozen=True, slots=True)
 class ReachedLimit:
+    """Multipart parse error: the body went over one of its limits."""
+
     limit: Limit
     tag: ClassVar[Literal["ReachedLimit"]] = "ReachedLimit"
 
 
 @dataclass(frozen=True, slots=True)
 class EndNotReached:
+    """Multipart parse error: the body ended before its closing boundary."""
+
     tag: ClassVar[Literal["EndNotReached"]] = "EndNotReached"
 
 
@@ -72,6 +84,8 @@ type OnChunk = Callable[[bytes | None], None]
 
 
 class Parser(Protocol):
+    """A streaming multipart parser: write the body's chunks, then end it."""
+
     def write(self, chunk: bytes) -> None: ...
     def end(self) -> None: ...
 

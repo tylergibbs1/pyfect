@@ -24,6 +24,8 @@ class Usage(TypedDict):
 
 
 class Message(TypedDict):
+    """An Anthropic Messages API response: content blocks, stop reason, model and usage."""
+
     id: str
     type: Literal["message"]
     role: Literal["assistant"]

@@ -34,10 +34,14 @@ type ScalarThemeId = Literal[
 
 
 class ScalarAuthentication(TypedDict, total=False):
+    """Scalar settings: which security scheme the API reference selects first."""
+
     preferredSecurityScheme: str | list[str | list[str]] | None
 
 
 class ScalarAgent(TypedDict, total=False):
+    """Scalar settings for its Ask AI agent, such as hiding it."""
+
     disabled: bool
     """``True`` hides Scalar's Ask AI controls."""
 

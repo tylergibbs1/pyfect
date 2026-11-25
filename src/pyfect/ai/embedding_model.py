@@ -28,16 +28,22 @@ class Dimensions(Tag[int], key="effect/ai/EmbeddingModel/Dimensions"):
 
 @dataclass(frozen=True)
 class EmbeddingUsage:
+    """The tokens an embedding call used, when the provider reports them."""
+
     input_tokens: float | None = None
 
 
 @dataclass(frozen=True)
 class EmbedResponse:
+    """The embedding vector of one input."""
+
     vector: tuple[float, ...]
 
 
 @dataclass(frozen=True)
 class EmbedManyResponse:
+    """The embedding vectors of several inputs, in order, with the call's token usage."""
+
     embeddings: tuple[EmbedResponse, ...]
     usage: EmbeddingUsage = field(default_factory=EmbeddingUsage)
 
@@ -64,6 +70,8 @@ EMBED_MANY_RESPONSE = wire_codec(
 
 @dataclass(frozen=True)
 class ProviderOptions:
+    """What an embedding provider is asked to embed: the input texts of one batch."""
+
     inputs: tuple[str, ...]
 
 
@@ -80,11 +88,15 @@ type EmbedMany = Callable[[ProviderOptions], Effect[ProviderResponse, E.AiError]
 
 @dataclass(frozen=True)
 class EmbeddingRequest(Request[EmbedResponse, E.AiError]):
+    """A request for one input's embedding, batched with others made at the same time."""
+
     input: str
 
 
 @dataclass(frozen=True)
 class Service:
+    """The ``EmbeddingModel`` service: embed one text or many, batching concurrent calls."""
+
     resolver: RequestResolver[EmbeddingRequest, E.AiError]
     _embed_many: EmbedMany
 

@@ -101,6 +101,8 @@ _VOID: Effect[None] = succeed(None)
 
 @dataclass(frozen=True, slots=True)
 class ToolEntry:
+    """A tool registered on an MCP server: its definition, annotations, handler and services."""
+
     tool: Tool
     annotations: Context[Any]
     handle: Callable[
@@ -116,6 +118,8 @@ class ToolEntry:
 
 @dataclass(frozen=True, slots=True)
 class ResourceEntry:
+    """A fixed-URI resource registered on an MCP server, with the effect that reads it."""
+
     resource: Resource
     annotations: Context[Any]
     handle: Effect[ReadResourceResult, McpError, RequestServices]
@@ -124,6 +128,8 @@ class ResourceEntry:
 
 @dataclass(frozen=True, slots=True)
 class ResourceTemplateEntry:
+    """A URI-template resource registered on an MCP server: its matcher, completions and reader."""
+
     template: ResourceTemplate
     annotations: Context[Any]
     match: Callable[[str], Mapping[str, str] | None]
@@ -136,6 +142,8 @@ class ResourceTemplateEntry:
 
 @dataclass(frozen=True, slots=True)
 class PromptEntry:
+    """A prompt registered on an MCP server, with its argument completions and handler."""
+
     prompt: Prompt
     annotations: Context[Any]
     completions: Mapping[str, CompletionHandler]

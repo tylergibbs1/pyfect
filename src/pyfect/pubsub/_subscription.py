@@ -52,6 +52,8 @@ def _interrupt() -> Effect[Never]:
 
 
 class Subscription[A]:
+    """One subscriber's view of a ``PubSub``: take the messages published to it."""
+
     __slots__ = ("_hub", "_reader")
 
     def __init__(self, hub: Hub[Any], reader: Reader[Any]) -> None:

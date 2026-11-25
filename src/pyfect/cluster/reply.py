@@ -69,6 +69,8 @@ def is_reply(u: object) -> TypeIs[Reply]:
 
 
 class WithExitEncoded(TypedDict):
+    """A reply as JSON that ends a request with its exit."""
+
     _tag: Literal["WithExit"]
     requestId: str
     id: str
@@ -76,6 +78,8 @@ class WithExitEncoded(TypedDict):
 
 
 class ChunkEncoded(TypedDict):
+    """A reply as JSON that carries one numbered chunk of a streamed reply."""
+
     _tag: Literal["Chunk"]
     requestId: str
     id: str

@@ -1,0 +1,1 @@
+.pipe takes one function, got 2: chain them, .pipe(f).pipe(g). One per call is on purpose: pyright loses type narrowing after the first step of a multi-step pipe

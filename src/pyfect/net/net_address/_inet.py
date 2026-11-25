@@ -84,12 +84,16 @@ type SocketAddress = InetAddress | UnixPathAddress
 
 
 class InetAddressParts(TypedDict):
+    """An IP address, a port and an optional IPv6 scope id, to build a socket address from."""
+
     address: IpAddressInput
     port: int
     scope_id: NotRequired[int]
 
 
 class UnixPathAddressParts(TypedDict):
+    """A Unix socket path, to build a socket address from."""
+
     path: str
 
 

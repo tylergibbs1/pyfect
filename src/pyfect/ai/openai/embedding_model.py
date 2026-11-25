@@ -31,6 +31,8 @@ type Model = Literal["text-embedding-ada-002", "text-embedding-3-small", "text-e
 
 
 class ConfigService(TypedDict, total=False):
+    """OpenAI embedding options: the model, encoding format, dimensions and end-user id."""
+
     model: str
     encoding_format: Literal["float", "base64"]
     dimensions: int

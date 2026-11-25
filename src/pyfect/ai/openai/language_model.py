@@ -53,6 +53,8 @@ from pyfect.tracer import Span
 
 
 class TextConfig(TypedDict, total=False):
+    """OpenAI text output options: how verbose the answer should be."""
+
     verbosity: Literal["low", "medium", "high"] | None
 
 

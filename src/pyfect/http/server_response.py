@@ -57,10 +57,14 @@ class Options(TypedDict, total=False):
 
 
 class ContentTypeOptions(Options, total=False):
+    """Response options with a content type."""
+
     content_type: str
 
 
 class RawOptions(ContentTypeOptions, total=False):
+    """Options of a raw response: content type and content length."""
+
     content_length: int
 
 

@@ -201,33 +201,33 @@ class ParseOptions(Tag[SchemaParseOptions], key="effect/http-api/HttpApi/ParseOp
 
 
 class ParamsParseOptions(Tag[SchemaParseOptions], key="effect/http-api/HttpApi/ParamsParseOptions"):
-    pass
+    """Tag of the schema parse options for an endpoint's path parameters."""
 
 
 class QueryParseOptions(Tag[SchemaParseOptions], key="effect/http-api/HttpApi/QueryParseOptions"):
-    pass
+    """Tag of the schema parse options for an endpoint's query parameters."""
 
 
 class HeadersParseOptions(
     Tag[SchemaParseOptions], key="effect/http-api/HttpApi/HeadersParseOptions"
 ):
-    pass
+    """Tag of the schema parse options for an endpoint's request headers."""
 
 
 class PayloadParseOptions(
     Tag[SchemaParseOptions], key="effect/http-api/HttpApi/PayloadParseOptions"
 ):
-    pass
+    """Tag of the schema parse options for an endpoint's payload."""
 
 
 class SuccessParseOptions(
     Tag[SchemaParseOptions], key="effect/http-api/HttpApi/SuccessParseOptions"
 ):
-    pass
+    """Tag of the schema parse options for an endpoint's success response."""
 
 
 class ErrorParseOptions(Tag[SchemaParseOptions], key="effect/http-api/HttpApi/ErrorParseOptions"):
-    pass
+    """Tag of the schema parse options for an endpoint's error responses."""
 
 
 class RedactedNamesOptions(TypedDict, total=False):

@@ -1,0 +1,185 @@
+---
+title: "Python retry with backoff, timeouts and schedules"
+description: "Python retry with backoff and jitter in pyfect: schedules you can combine, retries limited to typed errors, timeouts per attempt, and tests on a virtual clock."
+date: "2026-11-24"
+author: "Tyler Gibbs"
+tags: ["python", "retry", "exponential backoff", "timeouts", "testing", "tenacity"]
+---
+
+Every service that calls another one needs a retry policy sooner or later. In Python, a retry
+with backoff is usually a decorator from tenacity or a loop around `time.sleep`. This post shows
+how pyfect does it: the policy is a value called a schedule, it retries only the typed errors you
+choose, timeouts are part of the same model, and tests run the whole thing on a virtual clock in
+no real time.
+
+pyfect is a port of [Effect](https://effect.website) to Python (`pip install pyfect-dev`,
+`import pyfect`). Its effects carry their errors in their type, which turns out to matter a
+lot for retries.
+
+## Python retry with exponential backoff and jitter
+
+A schedule decides two things after each attempt: whether to go again, and how long to wait
+first. `eff.retry(schedule)` runs the effect, and on a typed failure asks the schedule. When the
+schedule says stop, the effect fails with the last error.
+
+Here a rates API answers 503 three times before it works:
+
+<CodeOutput>
+
+<include meta='title="backoff.py"'>../../snippets/blog/python-retry-schedules/backoff.py</include>
+
+<include lang="text">../../snippets/blog/python-retry-schedules/backoff.out</include>
+
+</CodeOutput>
+
+The policy is built from small pieces, and each piece is an ordinary value you can name, share
+and test:
+
+- `schedule.exponential("10 millis")` waits 10, 20, 40, 80 ms and so on, forever.
+- `schedule.spaced("50 millis")` waits 50 ms every time, forever.
+- `schedule.min(a, b)` recurs while either one does and waits the shorter delay. Combining an
+  exponential with a spaced schedule this way caps each wait at 50 ms.
+- `.jittered()` moves each delay to a random point between 80% and 120% of itself, so a fleet
+  of clients that failed together doesn't retry in lockstep.
+- `.up_to(times=5)` stops after five retries. `up_to(duration="30 seconds")` stops once that
+  much time has passed since the first attempt.
+
+`schedule.max(a, b)` is the other way to combine: it recurs only while both recur and waits the
+longer delay. `schedule.max(schedule.exponential("10 millis"), schedule.recurs(5))` is the same
+policy as `.up_to(times=5)` on the exponential. There are also `fixed`, `fibonacci`, `windowed`
+and `cron`, and `concat` to run one schedule after another.
+
+Two details in the snippet are worth pointing out. `.tap(record)` sees each step's metadata,
+including the jittered delay, which is useful for logging. And `random.with_seed("blog")` fixes
+the random numbers the jitter draws, so the output above is the same on every run. Without it,
+the jitter is random.
+
+Notice the `assert_type` line. Retrying can still fail, so `Unavailable` stays in the type, and
+the caller still has to decide what happens when the API stays down. Here a `catch_tag` turns it
+into a message.
+
+`repeat` is the mirror of `retry`: it runs the effect again after each success, while the
+schedule recurs. `check.repeat(schedule.spaced("1 second").up_to(times=10))` runs `check` ten
+more times, a second apart, and stops early if a run fails.
+
+## Retrying only some typed errors
+
+Not every failure is worth another attempt. A rate limit will clear up. An invalid API key won't,
+and retrying it five times only delays the error and burns quota.
+
+With exceptions, you list exception classes, and nothing checks that the list matches what the
+code can raise. In pyfect the errors are already in the type, so the retry's predicates receive
+them typed:
+
+<CodeOutput>
+
+<include meta='title="only_some.py"'>../../snippets/blog/python-retry-schedules/only_some.py</include>
+
+<include lang="text">../../snippets/blog/python-retry-schedules/only_some.out</include>
+
+</CodeOutput>
+
+`retry(schedule=..., while_=...)` uses the schedule's delays but stops as soon as the predicate
+says no. The lambda's `e` is typed `RateLimited | InvalidApiKey`, so a typo in the class name is
+a pyright error, not a retry policy that silently never matches.
+
+`until=` goes the other way: retry until the predicate holds. When the predicate is a `TypeIs`
+function and it is the only keyword, pyright narrows the error type. Every error that isn't
+`InvalidApiKey` gets retried, so `patient` can only fail with `InvalidApiKey`, and its type says
+exactly that. This form retries without limit, so use it for errors you know are temporary.
+
+Two things are never retried: defects and interruptions. A `ZeroDivisionError` from a bug in
+your code is a defect, and retrying a bug only runs it again. An interruption, from a timeout or
+a shutdown, means someone asked the work to stop. Both pass straight through `retry`. The
+[errors guide](/docs/errors) explains the line between typed errors and defects.
+
+## Timeouts per attempt and overall
+
+`eff.timeout("50 millis")` interrupts the effect when time runs out and fails with
+`TimeoutException`, which is a typed error like any other. That means it composes with `retry`
+in both orders, and the order matters:
+
+<CodeOutput>
+
+<include meta='title="timeouts.py"'>../../snippets/blog/python-retry-schedules/timeouts.py</include>
+
+<include lang="text">../../snippets/blog/python-retry-schedules/timeouts.out</include>
+
+</CodeOutput>
+
+The inner `timeout` limits each attempt: the first call hangs, is interrupted after 50 ms, and the
+retry starts a second one. The outer `timeout` limits the whole operation, waits included, so a
+slow dependency can't hold a request for longer than you planned. The type is
+`Effect[str, TimeoutException]`, because both timeouts can fail the same way.
+
+The interrupted attempt is really stopped, and its cleanup runs before the retry begins. If it
+held a connection through `acquire_release`, the connection is back in the pool first. The
+[structured concurrency post](/blog/structured-concurrency-python) covers how interruption and
+finalizers work.
+
+If you would rather have no error at all, `timeout_option` gives `None` on a timeout, and
+`timeout_or_else` continues with a fallback effect.
+
+## Testing retries without real sleeps
+
+A retry policy with waits of 1, 2 and 4 seconds and a 5-second timeout per attempt takes 27
+seconds to give up. Nobody wants that in a test suite, and nobody wants to patch `time.sleep`
+either.
+
+pyfect's sleeps, timeouts and schedules all read the `Clock` service. The pytest plugin's
+`@testing.effect` runs a test with a `TestClock`, where time moves only when the test calls
+`testing.adjust`:
+
+<include meta='title="test_retry_policy.py"'>../../snippets/blog/python-retry-schedules/test_retry_policy.py</include>
+
+The test forks the call, moves the clock 26 seconds, checks that the fourth attempt is still
+running, then moves one more second and checks the failure. It asserts the exact second each
+attempt started. Each `adjust` runs every fiber that the move wakes until it waits again, so
+the result doesn't depend on how fast the machine is, and the test takes milliseconds.
+
+The policy under test is the same object production uses. There is no test-only setting that
+turns the waits off, so the waits you check are the ones that run in production. The
+[testing guide](/docs/testing) covers the TestClock in more detail, including what it waits
+for when work runs on other threads.
+
+## pyfect compared with tenacity
+
+[tenacity](https://github.com/jd/tenacity) is the standard Python retry library, and it is good
+at its job. You decorate a function with `@retry(...)` and pass a stop strategy
+(`stop_after_attempt(5)`), a wait strategy (`wait_exponential_jitter(initial=1, max=30)`) and a
+retry condition (`retry_if_exception_type(IOError)`). Waits add together with `+` and stops
+combine with `|`, so it has its own way of composing policies. It works on plain functions and
+on coroutines, and `retry_with` makes a copy of a decorated function with different settings.
+
+Where tenacity is the better choice:
+
+- You have existing code and want retries on one function today. tenacity adds a decorator.
+  pyfect asks you to write that function as an effect.
+- You want AWS-style "full jitter". tenacity ships it as `wait_random_exponential`. pyfect's
+  `jittered` stays within 20% of the delay; anything else is a `modify_delay` you write yourself.
+- Your team already knows it. It is widely used, and most Python developers can read a tenacity
+  decorator without looking anything up.
+
+Where pyfect does something tenacity can't:
+
+- **The error types are checked.** tenacity's retry conditions name exception classes, and
+  nothing ties that list to what the function can raise. pyfect's predicates get the effect's
+  own error type, and `until=` with `TypeIs` narrows what comes out.
+- **Timeouts interrupt.** tenacity's `stop_after_delay` decides whether to start another
+  attempt; it doesn't stop one that is running. A pyfect `timeout` interrupts the attempt and
+  runs its cleanup.
+- **Time is a service.** Tests move a virtual clock instead of patching sleep or swapping the
+  wait strategy, so the policy you test is the one you ship.
+- **Bugs aren't retried.** A defect skips `retry`, where a broad `retry_if_exception_type` can
+  retry a bug as readily as a network error.
+
+The cost is the same as the rest of pyfect: you write effects, not plain functions, and you need
+Python 3.13 or newer with pyright. If you only need a retry decorator on a few functions,
+tenacity is less to learn. If retries, timeouts and typed errors show up across a whole service,
+having them in one model starts to pay off.
+
+## Where to go next
+
+The [schedules guide](/docs/schedules) lists every constructor and combinator, and how durations
+are written. The [testing guide](/docs/testing) covers the TestClock and the pytest plugin. For
+the error types that `retry` works with, see [typed errors](/docs/errors).

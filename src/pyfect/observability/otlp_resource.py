@@ -51,15 +51,21 @@ class AnyValue(TypedDict, total=False):
 
 
 class ArrayValue(TypedDict):
+    """An OTLP attribute value that is a list of values."""
+
     values: list[AnyValue]
 
 
 class KeyValue(TypedDict):
+    """An OTLP attribute: a key and its value."""
+
     key: str
     value: AnyValue
 
 
 class KeyValueList(TypedDict):
+    """An OTLP attribute value that is a list of key-value pairs."""
+
     values: list[KeyValue]
 
 

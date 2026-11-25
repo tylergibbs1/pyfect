@@ -41,6 +41,8 @@ from pyfect.exit import interrupt as interrupt_exit
 
 
 class Deferred[A, E = Never]:
+    """A result set exactly once, which fibers wait on: Effect's ``Deferred``."""
+
     __slots__ = ("_effect", "_lock", "_waiters")
 
     def __init__(self) -> None:

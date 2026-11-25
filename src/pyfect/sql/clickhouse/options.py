@@ -52,20 +52,28 @@ _CODECS: tuple[CompressionCodec, ...] = ("gzip", "zstd", "br")
 
 
 class ResponseCompression(TypedDict):
+    """ClickHouse response compression: the codec the server compresses with."""
+
     codec: CompressionCodec
 
 
 class GzipRequestCompression(TypedDict):
+    """ClickHouse request compression with gzip, at a level."""
+
     codec: Literal["gzip"]
     level: NotRequired[int]
 
 
 class ZstdRequestCompression(TypedDict):
+    """ClickHouse request compression with zstd, at a level."""
+
     codec: Literal["zstd"]
     level: NotRequired[int]
 
 
 class BrotliRequestCompression(TypedDict):
+    """ClickHouse request compression with Brotli, at a quality."""
+
     codec: Literal["br"]
     quality: NotRequired[int]
 
@@ -166,6 +174,8 @@ class RequestCodec:
 
 
 class Compressor(Protocol):
+    """A streaming compressor: compress chunks, then flush what remains."""
+
     def compress(self, data: bytes) -> bytes: ...
     def flush(self) -> bytes: ...
 

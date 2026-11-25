@@ -1,6 +1,6 @@
 ---
 title: Transactions
-description: "Change several values atomically with TxRef, tx and tx_retry."
+description: "Software transactional memory in Python: change several TxRef values atomically with tx, wait for a condition with tx_retry, and use transactional collections."
 ---
 
 `fx.tx(eff)` runs `eff` as a transaction. It reads and writes `TxRef`s through a journal,

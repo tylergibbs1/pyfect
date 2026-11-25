@@ -24,6 +24,8 @@ from pyfect.context import Context, Tag
 
 
 class ConfigService(TypedDict, total=False):
+    """Embedding options for an OpenAI-compatible API: model, encoding, dimensions and user."""
+
     model: str
     encoding_format: Literal["float", "base64"]
     dimensions: int

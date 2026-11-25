@@ -34,6 +34,8 @@ from pyfect.layer import effect as layer_effect
 
 @dataclass(frozen=True, kw_only=True)
 class Algorithm:
+    """An HMAC algorithm: HMAC with SHA-1, SHA-256, SHA-384 or SHA-512."""
+
     name: Literal["hmacSha1", "hmacSha256", "hmacSha384", "hmacSha512"]
     hash: DigestAlgorithm
 

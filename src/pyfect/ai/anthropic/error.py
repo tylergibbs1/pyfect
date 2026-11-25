@@ -11,11 +11,15 @@ from typing import TypedDict
 
 
 class AnthropicErrorMetadata(TypedDict):
+    """Anthropic details on an ``AiError``: the provider's error type and request id."""
+
     errorType: str | None
     requestId: str | None
 
 
 class AnthropicRateLimitMetadata(AnthropicErrorMetadata):
+    """Anthropic rate limit details: request and token limits, what remains and when they reset."""
+
     requestsLimit: int | float | None
     requestsRemaining: int | float | None
     requestsReset: str | None

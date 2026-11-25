@@ -36,17 +36,23 @@ type Json = Any
 
 
 class OpenRPCContact(TypedDict, total=False):
+    """The contact of an OpenRPC API: name, URL and email."""
+
     name: str
     url: str
     email: str
 
 
 class OpenRPCLicense(TypedDict):
+    """The license of an OpenRPC API: its name and URL."""
+
     name: str
     url: NotRequired[str]
 
 
 class OpenRPCInfo(TypedDict):
+    """An OpenRPC document's info: title, version, description, contact and license."""
+
     title: str
     version: str
     description: NotRequired[str]
@@ -56,12 +62,16 @@ class OpenRPCInfo(TypedDict):
 
 
 class OpenRPCServerVariable(TypedDict):
+    """A variable of an OpenRPC server URL: its default and allowed values."""
+
     default: str
     enum: NotRequired[Sequence[str]]
     description: NotRequired[str]
 
 
 class OpenRPCServer(TypedDict):
+    """A server of an OpenRPC API: its name, URL and variables."""
+
     name: str
     url: str
     summary: NotRequired[str]
@@ -70,11 +80,15 @@ class OpenRPCServer(TypedDict):
 
 
 class OpenRPCExternalDocs(TypedDict):
+    """A link to documentation outside an OpenRPC document."""
+
     url: str
     description: NotRequired[str]
 
 
 class OpenRPCTag(TypedDict):
+    """An OpenRPC tag that groups methods, with its description."""
+
     name: str
     summary: NotRequired[str]
     description: NotRequired[str]
@@ -82,6 +96,8 @@ class OpenRPCTag(TypedDict):
 
 
 class OpenRPCExample(TypedDict):
+    """An example value in an OpenRPC document."""
+
     name: str
     value: Json
     summary: NotRequired[str]
@@ -89,6 +105,8 @@ class OpenRPCExample(TypedDict):
 
 
 class OpenRPCExamplePairing(TypedDict):
+    """An OpenRPC example call: example params and the result they give."""
+
     name: str
     params: Sequence[OpenRPCExample]
     result: OpenRPCExample
@@ -97,12 +115,16 @@ class OpenRPCExamplePairing(TypedDict):
 
 
 class OpenRPCError(TypedDict):
+    """An error an OpenRPC method can return: its code, message and data."""
+
     code: int
     message: str
     data: NotRequired[Json]
 
 
 class OpenRPCContentDescriptor(TypedDict):
+    """An OpenRPC param or result: its name and JSON Schema."""
+
     name: str
     schema: JsonSchema
     required: NotRequired[bool]
@@ -149,10 +171,14 @@ OpenRPCMethod = TypedDict(
 
 
 class OpenRPCComponents(TypedDict):
+    """The reusable JSON Schemas of an OpenRPC document."""
+
     schemas: dict[str, JsonSchema]
 
 
 class OpenRPCSpec(TypedDict):
+    """An OpenRPC 1.3.2 document: info, servers, methods and components."""
+
     openrpc: Literal["1.3.2"]
     info: OpenRPCInfo
     servers: NotRequired[Sequence[OpenRPCServer]]
@@ -161,31 +187,31 @@ class OpenRPCSpec(TypedDict):
 
 
 class Summary(Tag[str], key="effect/rpc/OpenRpc/Summary"):
-    pass
+    """OpenRPC annotation: the one-line summary of a method."""
 
 
 class Description(Tag[str], key="effect/rpc/OpenRpc/Description"):
-    pass
+    """OpenRPC annotation: the description of a method."""
 
 
 class Tags(Tag[Sequence[OpenRPCTag]], key="effect/rpc/OpenRpc/Tags"):
-    pass
+    """OpenRPC annotation: the tags a method is grouped under."""
 
 
 class Examples(Tag[Sequence[OpenRPCExamplePairing]], key="effect/rpc/OpenRpc/Examples"):
-    pass
+    """OpenRPC annotation: example calls of a method."""
 
 
 class Deprecated(Tag[bool], key="effect/rpc/OpenRpc/Deprecated"):
-    pass
+    """OpenRPC annotation: marks a method as deprecated."""
 
 
 class ExternalDocs(Tag[OpenRPCExternalDocs], key="effect/rpc/OpenRpc/ExternalDocs"):
-    pass
+    """OpenRPC annotation: a link to a method's documentation elsewhere."""
 
 
 class Errors(Tag[Sequence[OpenRPCError]], key="effect/rpc/OpenRpc/Errors"):
-    pass
+    """OpenRPC annotation: the errors a method can return."""
 
 
 _ANNOTATIONS: tuple[tuple[str, type[Tag[Any]]], ...] = (

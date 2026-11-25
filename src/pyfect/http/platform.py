@@ -58,6 +58,8 @@ _MAX_SAFE = 2**53 - 1
 
 
 class CompressResponse(Protocol):
+    """Compresses a server response with an algorithm and level."""
+
     def __call__(
         self, response: HttpServerResponse, algorithm: CompressionAlgorithm, level: int | None, /
     ) -> Effect[HttpServerResponse]: ...
@@ -73,6 +75,8 @@ class Compression:
 
 
 class FileOptions(TypedDict, total=False):
+    """Options of a file response: status, headers, content type, range and chunk size."""
+
     status: int
     status_text: str
     headers: HeadersInput
@@ -83,6 +87,8 @@ class FileOptions(TypedDict, total=False):
 
 
 class FileWebOptions(TypedDict, total=False):
+    """Options of a response from a web ``File``: status, headers, type and range."""
+
     status: int
     status_text: str
     headers: HeadersInput
@@ -369,6 +375,8 @@ brotli with the ``brotli`` extra, one-shot bodies compressed whole off the fiber
 
 
 class FileResponseImpl(Protocol):
+    """Makes a response that streams a byte range of a file at a path."""
+
     def __call__(  # noqa: PLR0917
         self,
         path: str,
@@ -383,6 +391,8 @@ class FileResponseImpl(Protocol):
 
 
 class FileWebResponseImpl(Protocol):
+    """Makes a response that streams a web ``File``."""
+
     def __call__(
         self,
         file: FileLike,

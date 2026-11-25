@@ -30,6 +30,8 @@ from pyfect.json_pointer import escape_token, unescape_token
 
 
 class AddOperation(TypedDict):
+    """A JSON Patch ``add`` operation: put a value at a path."""
+
     op: Literal["add"]
     path: str
     value: JsonValue
@@ -37,12 +39,16 @@ class AddOperation(TypedDict):
 
 
 class RemoveOperation(TypedDict):
+    """A JSON Patch ``remove`` operation: delete the value at a path."""
+
     op: Literal["remove"]
     path: str
     description: NotRequired[str]
 
 
 class ReplaceOperation(TypedDict):
+    """A JSON Patch ``replace`` operation: swap the value at a path for another."""
+
     op: Literal["replace"]
     path: str
     value: JsonValue
