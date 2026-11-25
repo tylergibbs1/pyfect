@@ -1,6 +1,7 @@
 import { loader } from 'fumadocs-core/source';
 import { defineCollections } from 'fumadocs-mdx/macro';
 import { z } from 'zod';
+import { searchDescription } from './frontmatter';
 import { mdxOptions } from './mdx-options';
 import { blogRoute } from './shared';
 
@@ -10,8 +11,7 @@ import { blogRoute } from './shared';
  */
 const postSchema = z.object({
   title: z.string().min(1),
-  // Google shows about 155 characters of a meta description.
-  description: z.string().min(120).max(160),
+  description: searchDescription,
   date: z.iso.date(),
   author: z.string().min(1),
   tags: z.array(z.string().min(1)),

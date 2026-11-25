@@ -1,6 +1,6 @@
 ---
 title: Rate limiting and circuit breakers
-description: "Limit how often each key is used and stop calling what keeps failing, in memory or shared through Redis."
+description: "Rate limit calls per key and add circuit breakers that stop calling a failing service, in memory or shared across processes through Redis, in Python."
 ---
 
 `RateLimiter` and `CircuitBreaker` guard calls by key: a user id, an API, a host. Their

@@ -13,7 +13,8 @@ const config = {
   },
   async redirects() {
     return [
-      { source: '/', destination: '/docs', permanent: false },
+      // The docs index is the site's front page (308).
+      { source: '/', destination: '/docs', permanent: true },
       // The upgrade page's first URL, which advisories link to.
       {
         source: '/docs/eventlog-upgrade-0-6-7',
