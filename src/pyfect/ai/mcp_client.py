@@ -37,7 +37,7 @@ from pyfect.ai._mcp.client_skills import (
     SkillsClient,
     client_capabilities,
 )
-from pyfect.ai._mcp.client_toolkit import RemoteTool, ToolDescriptor, toolkit
+from pyfect.ai._mcp.client_toolkit import ModedRemoteTool, RemoteTool, ToolDescriptor, toolkit
 from pyfect.ai._mcp.client_transport import (
     ClientProtocol,
     ClientProtocolVersion,
@@ -641,6 +641,7 @@ __all__ = [
     "McpClient",
     "McpClientError",
     "McpClientService",
+    "ModedRemoteTool",
     "OnInvalidSkill",
     "RemoteTool",
     "ToolDescriptor",

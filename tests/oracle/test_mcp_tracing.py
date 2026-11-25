@@ -1,9 +1,8 @@
-"""MCP spans (DOGFOOD atlas #8). The server's follow Effect's: its
-``McpServer`` is an ``RpcServer`` with ``spanPrefix: "McpServer"``, so each
-request is a server span ``McpServer.<method>`` with ``rpc.system.name`` and
-``rpc.method``, and the toolkit names the tool on it (``tool`` and
-``parameters``). Effect's ``McpClient`` makes no spans of its own; pyfect's
-makes the matching client span ``McpClient.<method>``, naming the tool."""
+"""MCP spans (DOGFOOD atlas #8). The server's follow Effect's, after the OpenTelemetry MCP
+semantic conventions: each request is a server span named after its method, with the tool
+appended for ``tools/call`` (``tools/call add``), carrying ``mcp.method.name`` and
+``gen_ai.tool.name`` but not the arguments. Effect's ``McpClient`` makes no spans of its
+own; pyfect's makes the matching client span ``McpClient.<method>``, naming the tool."""
 
 from __future__ import annotations
 
@@ -53,12 +52,11 @@ def test_each_request_is_a_client_span_and_a_server_span_naming_the_method_and_t
     assert client.kind == "client"
     assert client.attributes["rpc.method"] == "tools/call"
     assert client.attributes["tool"] == "add"
-    [server] = called(spans, "McpServer.tools/call")
+    [server] = called(spans, "tools/call add")
     assert server.kind == "server"
-    assert server.attributes["rpc.system.name"] == "effect_rpc"
-    assert server.attributes["rpc.method"] == "tools/call"
-    assert server.attributes["tool"] == "add"
-    assert server.attributes["parameters"] == {"a": 1, "b": 2}
+    assert server.attributes["mcp.method.name"] == "tools/call"
+    assert server.attributes["gen_ai.tool.name"] == "add"
+    assert "gen_ai.tool.call.arguments" not in server.attributes
     # The server's span is in the client's trace, below the HTTP request.
     assert server.trace_id == client.trace_id
-    assert called(spans, "McpClient.tools/list") and called(spans, "McpServer.tools/list")
+    assert called(spans, "McpClient.tools/list") and called(spans, "tools/list")

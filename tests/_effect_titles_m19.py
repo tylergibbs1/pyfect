@@ -25,13 +25,6 @@ TITLES: dict[str, tuple[str, ...]] = {
         "shares import symbols across modules and prints without mutating names",
         "shares names, imports and symbol identities with the rest of the module",
     ),
-    "effect/test/ai/McpServer/LayerHttpRequestScoped.test.ts": (
-        "answers an asynchronous tools/call before a scheduler round runs",
-    ),
-    "effect/test/ai/McpServer/McpServer.test.ts": (
-        "downgrades unsupported toModelOutput blocks to text on 2024-11-05",
-        "uses toModelOutput parts as tool result content while preserving structuredContent",
-    ),
     "effect/test/schema/representation/codeExpression.test.ts": (
         "inserts supplied fragments without parsing or renaming their contents",
         "preserves escaped strings, numeric literals and comments when renaming references",

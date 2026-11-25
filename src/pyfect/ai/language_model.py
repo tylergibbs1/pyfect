@@ -68,7 +68,7 @@ from pyfect.ai.id_generator import Service as IdService
 from pyfect.ai.response_id_tracker import ResponseIdTracker
 from pyfect.ai.response_id_tracker import Service as Tracker
 from pyfect.ai.telemetry import CurrentSpanTransformer, SpanTransformer
-from pyfect.ai.tool import AnyTool, CodecTransformer
+from pyfect.ai.tool import AnyTool, CodecTransformer, ProviderDefined
 from pyfect.context import Tag
 from pyfect.json_schema._model import JsonSchema
 from pyfect.option import Option, Some
@@ -259,10 +259,18 @@ def _validation(disable: bool, validation: ToolCallValidation) -> ToolCallValida
 
 def _decoded_toolkit(kit: K.WithHandler[Any, Any, Any, Any], encoded: bool) -> K.AnyToolkit:
     tools = [
-        tool.set_parameters(S.to_encoded(tool.parameters_schema) if encoded else S.Unknown)
+        tool.set_parameters(_encoded_parameters(tool) if encoded else S.Unknown)
         for tool in kit.tools.values()
     ]
     return K.make(*tools)
+
+
+def _encoded_parameters(tool: AnyTool) -> S.Top:
+    """What a response carries of a call's parameters: the provider's payload for a
+    provider-executed tool, the JSON encoding of a locally handled tool's."""
+    if isinstance(tool, ProviderDefined) and not tool.requires_handler:
+        return S.to_encoded(tool.parameters_schema)
+    return S.to_encoded(S.to_codec_json(tool.parameters_schema))
 
 
 def _tool_calls(parts: Sequence[EncodedPart]) -> list[EncodedPart]:

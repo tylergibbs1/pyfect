@@ -31,6 +31,7 @@ from pyfect import schema as S
 from pyfect._core import Effect
 from pyfect.ai import ai_error as AiErr
 from pyfect.ai._budget import Precounted, tool_call
+from pyfect.ai._tool_arguments import stringify_tool_arguments
 from pyfect.ai.ai_error import AiError
 from pyfect.ai.prompt import ToolModelOutputPart
 from pyfect.ai.response import ToolResultFailure, ToolResultSuccess
@@ -76,6 +77,30 @@ class FailureOriginAnnotation(Reference[FailureOrigin], key="effect/ai/Toolkit/F
     @classmethod
     def default(cls) -> FailureOrigin:
         return "result"
+
+
+class RecordToolArguments(Reference[bool], key="effect/ai/Toolkit/RecordToolArguments"):
+    """Whether a tool call's span records its arguments as ``gen_ai.tool.call.arguments``
+    (off by default: arguments can hold sensitive data). Read by the toolkit and by the
+    MCP server's ``tools/call`` spans."""
+
+    @classmethod
+    def default(cls) -> bool:
+        return False
+
+
+def _annotate_call(name: str, params: object, tool_call_id: str | None) -> Effect[None]:
+    """Names the call on the current span, after the OpenTelemetry GenAI conventions."""
+
+    def annotate(record_arguments: bool) -> Effect[None]:
+        attributes: dict[str, object] = {"gen_ai.tool.name": name}
+        if tool_call_id is not None:
+            attributes["gen_ai.tool.call.id"] = tool_call_id
+        if record_arguments:
+            attributes["gen_ai.tool.call.arguments"] = stringify_tool_arguments(params)
+        return fx.annotate_current_span(attributes)
+
+    return RecordToolArguments().flat_map(annotate)
 
 
 class PreliminaryBuffer(Reference[int | None], key="effect/ai/Toolkit/PreliminaryBuffer"):
@@ -124,7 +149,7 @@ def _handler_tag(tool_id: str) -> type[Tag[_Registered]]:
 @dataclass(frozen=True)
 class HandlerResult:
     """One output of a tool call: the result, what the model sees of it
-    (``encoded_result``, or ``model_output`` from the tool's
+    (``encoded_result``, its JSON encoding, or ``model_output`` from the tool's
     ``to_model_output`` for a final success), whether it is a failure (and
     its origin) and whether it is a preliminary progress value."""
 
@@ -169,8 +194,8 @@ class WithHandler(Generic[N_co, RP_co, HE_co, R_co]):
         tool_call_id: str | None = None,
         options: S.ParseOptions | None = None,
     ) -> Effect[Stream[HandlerResult, HE_co | AiError, R_co], AiError, R_co]:
-        """The results of calling the tool ``name`` with ``params`` (as the
-        model sent them, decoded with ``options``): preliminary values, then
+        """The results of calling the tool ``name`` with ``params`` (their JSON
+        encoding, as the model sends them, decoded with ``options``): preliminary values, then
         the final one. Invalid parameters, a handler failure or an invalid
         result fail the stream in ``"error"`` mode and are a failed result in
         ``"return"`` mode."""
@@ -192,7 +217,7 @@ def _handle(
     options: S.ParseOptions,
 ) -> Effect[Stream[HandlerResult, Any, Any], AiError, Any]:
     tool = kit.tools.get(name)
-    annotate = fx.annotate_current_span({"tool": name, "parameters": params})
+    annotate = _annotate_call(name, params, tool_call_id)
     if tool is None:
         error = _make_error(
             name, AiErr.ToolNotFoundError(tool_name=name, available_tools=tuple(kit.tools))
@@ -208,11 +233,12 @@ def _handle(
         missing = MissingServiceError(tool.id)
         return annotate.and_then(fx.die(missing))
     registered = cast("_Registered", registered_value)
+    # Results are encoded to JSON, what a model or an MCP client is sent.
     encode_success: Callable[[object], Effect[object, SchemaError]] = cast(
-        "Any", S.encode_unknown_effect(tool.success_schema)
+        "Any", S.encode_unknown_effect(S.to_codec_json(tool.success_schema))
     )
     encode_failure: Callable[[object], Effect[object, SchemaError]] = cast(
-        "Any", S.encode_unknown_effect(failure_result_schema(tool))
+        "Any", S.encode_unknown_effect(S.to_codec_json(failure_result_schema(tool)))
     )
 
     to_model_output = tool.to_model_output
@@ -307,10 +333,17 @@ def _handle(
                 on_failure=queue.fail_cause,
                 on_success=lambda _: queue.end(),
             )
-            return worker.fork().map(lambda fiber: results(queue, fiber))
+            return worker.fork(start_immediately=True).map(
+                lambda fiber: results(queue, flushed_on_exit(fiber, queue))
+            )
 
         # Counted in the budgets before the handler runs (pyfect.ai.budget).
         return tool_call(tool_call_id).and_then(PreliminaryBuffer().flat_map(with_capacity))
+
+    def flushed_on_exit(fiber: Fiber[Any, Any], queue: Queue[_Output, Any]) -> Fiber[Any, Any]:
+        # Drain the last offer only once stream cleanup can no longer interrupt the producer.
+        fiber.add_observer_unsafe(lambda _: queue.flush_unsafe())
+        return fiber
 
     def results(queue: Queue[_Output, Any], fiber: Any) -> Stream[HandlerResult, Any, Any]:
         source: Stream[_Output, Any, Any] = StreamSources.from_queue(queue)
@@ -337,7 +370,8 @@ def _handle(
         return source.map_effect(encode).ensuring(_stop_handler(fiber))
 
     decode = (
-        S.decode_unknown_effect(tool.parameters_schema, **options)(params)
+        # Parameters come as the model sends them: their JSON encoding.
+        S.decode_unknown_effect(S.to_codec_json(tool.parameters_schema), **options)(params)
         .exit()
         .flat_map(
             lambda exit: (
@@ -534,6 +568,7 @@ __all__ = [
     "HandlerResult",
     "Handlers",
     "PreliminaryBuffer",
+    "RecordToolArguments",
     "Toolkit",
     "WithHandler",
     "empty",

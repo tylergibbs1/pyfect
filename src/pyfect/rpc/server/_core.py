@@ -66,7 +66,11 @@ from pyfect.tracer import AnySpan, ExternalSpan, ParentSpan, SpanLink, SpanOptio
 
 type Concurrency = int | Literal["unbounded"]
 type OnFromServer = Callable[[FromServer], Effect[None]]
-type OnRequest = Callable[[Effect[Any, Any, Any]], Effect[Any, Any, Any]]
+type OnRequest = Callable[[Effect[Any, Any, Any], Request], Effect[Any, Any, Any]]
+"""Wraps the effect that runs one decoded request (Effect's ``onRequest``): its middleware
+and handler and, when the handler returns its result directly, the response write. It is
+interrupted when the request is cancelled, its client disconnects or the server stops, and
+runs inside the request's span unless tracing is disabled."""
 
 _VOID: Effect[None] = succeed(None)
 
@@ -90,7 +94,12 @@ class ServerOptions:
     not wait for them. It is not called for a client that ends its input,
     or one still connected when the server stops. Each call runs in a fiber
     of its own, interrupted when the server stops; a failure is logged at
-    ``UnhandledLogLevel`` and ignored."""
+    ``UnhandledLogLevel`` and ignored.
+
+    ``on_request`` (read by ``make`` and the layers over a protocol) wraps the effect that
+    runs each decoded request (see ``OnRequest``). When a handler succeeds with a
+    ``Deferred``, the wrapped effect ends there; the reply is sent once the ``Deferred``
+    completes, outside it."""
 
     disable_tracing: bool = False
     disable_span_propagation: bool = False
@@ -100,6 +109,7 @@ class ServerOptions:
     disable_fatal_defects: bool = False
     disable_client_acks: bool = False
     on_disconnect: Callable[[int], Effect[None]] | None = None
+    on_request: OnRequest | None = None
 
 
 @dataclass(slots=True, eq=False)
@@ -284,7 +294,7 @@ class RpcServer:
             entry, rpc, run, unwrap_handler(result), metadata, started=not construction_failed
         ).on_exit(run.on_exit)
         if on_request is not None:
-            effect = on_request(effect)
+            effect = on_request(effect, request)
         if not self._options.disable_tracing and traced_on(rpc, "server"):
             effect = self._traced(
                 effect, request, metadata.remote_parent_span, request_fiber.get_ref(ParentSpan)

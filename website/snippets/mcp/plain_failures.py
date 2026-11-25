@@ -1,4 +1,4 @@
-from typing import Never, TypedDict
+from typing import Literal, Never, TypedDict
 
 import pyfect as fx
 from pyfect import layer
@@ -49,7 +49,7 @@ PlainText = S.String.pipe(
 
 
 def plain_failures(
-    remote: mcp_client.RemoteTool[str, Never], _: mcp_schema.Tool
+    remote: mcp_client.ModedRemoteTool[str, Never, Literal["return"]], _: mcp_schema.Tool
 ) -> mcp_client.RemoteTool[str, Never]:
     return remote.set_failure(PlainText)
 

@@ -12,6 +12,7 @@ from __future__ import annotations
 # pyright: reportUnknownMemberType=false, reportUnknownLambdaType=false
 import json
 from collections.abc import Sequence
+from datetime import datetime
 from typing import Any, NotRequired, TypedDict
 
 import pytest
@@ -706,6 +707,43 @@ def test_generate_omits_strict_json_schema():
     assert body["tools"][0]["strict"] is False
     assert "strictJsonSchema" not in body
     assert "strict_json_schema" not in body
+
+
+class _Schedule(TypedDict):
+    at: datetime
+
+
+@testing.effect
+def test_generate_non_json_tool_params():
+    """generateText / passes tool call params with non-JSON types to the Toolkit"""
+    block = {
+        "type": "tool_use",
+        "id": "toolu_1",
+        "name": "Schedule",
+        "input": {"at": "2026-01-01T00:00:00.000Z"},
+    }
+    mock = mock_json(_message([block], stop_reason="tool_use"))
+    approval_at: list[float] = []
+
+    def needs_approval(params: Any, _: object) -> bool:
+        approval_at.append(params["at"].timestamp() * 1000)
+        return False
+
+    schedule = T.make(
+        "Schedule",
+        parameters=S.Struct(_Schedule, at=S.DateTimeUtc),
+        success=S.Number,
+        needs_approval=needs_approval,
+    )
+    toolkit = K.make(schedule)
+    layer = toolkit.to_layer(
+        schedule.handler(lambda params, _: fx.succeed(params["at"].timestamp() * 1000))
+    )
+    response = yield from _provided(
+        lm.generate_text("Schedule it", toolkit=toolkit), mock, _LEGACY, None, layer
+    )
+    assert approval_at == [1767225600000]
+    assert response.tool_results[0].result == 1767225600000
 
 
 @testing.effect

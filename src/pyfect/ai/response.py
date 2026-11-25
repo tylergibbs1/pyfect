@@ -653,14 +653,20 @@ _tool_parts_cache: dict[int, tuple[AnyTool, S.Top, S.Top]] = {}
 
 
 def _tool_parts(tool: AnyTool) -> tuple[S.Top, S.Top]:
-    from pyfect.ai.tool import failure_result_schema
+    from pyfect.ai.tool import ProviderDefined, failure_result_schema
 
     cached = _tool_parts_cache.get(id(tool))
     if cached is None or cached[0] is not tool:
+        # Provider-executed tools keep the provider's payload; locally handled tools carry
+        # the JSON encoding of their results, as the toolkit produces.
+        provider_results = isinstance(tool, ProviderDefined) and not tool.requires_handler
+        success, failure = tool.success_schema, failure_result_schema(tool)
+        if not provider_results:
+            success, failure = S.to_codec_json(success), S.to_codec_json(failure)
         cached = (
             tool,
             tool_call_part_schema(tool.name, tool.parameters_schema),
-            tool_result_part_schema(tool.name, tool.success_schema, failure_result_schema(tool)),
+            tool_result_part_schema(tool.name, success, failure),
         )
         _tool_parts_cache[id(tool)] = cached
     return cached[1], cached[2]

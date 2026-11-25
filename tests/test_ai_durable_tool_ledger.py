@@ -118,28 +118,20 @@ def test_a_call_cut_off_mid_handler_reaches_the_agent_as_an_unknown_outcome(
     assert found == (EXPECTED[on_unknown], {})
 
 
-@pytest.mark.parametrize("on_unknown", ["tell_model", "fail"])
 @pytest.mark.parametrize("engine", ENGINES)
 @testing.live
-def test_an_intent_an_earlier_release_stored_under_the_bare_id_still_counts(
-    engine: str, on_unknown: tool_ledger.OnUnknown
-):
-    """Releases up to 0.6.22 keyed a call by its bare ``tool_call_id`` inside a workflow
-    too: an execution in flight across the upgrade still finds its call's record."""
-    found = yield from _run_after(_started(fx.succeed("call-0")), on_unknown, ENGINES[engine])
-    assert found == (EXPECTED[on_unknown], {})
+def test_inside_a_workflow_a_record_under_the_bare_id_is_not_read(engine: str):
+    """0.6.22 and earlier keyed a call inside a workflow by its bare ``tool_call_id``; 0.7.0
+    reads only ``<execution id>/<tool_call_id>``, so such a record answers nothing and the
+    call runs."""
 
-
-@pytest.mark.parametrize("engine", ENGINES)
-@testing.live
-def test_a_result_an_earlier_release_stored_under_the_bare_id_is_replayed(engine: str):
     def completed(ledger: tool_ledger.ToolLedgerService) -> fx.Effect[Any, Any]:
         return ledger.begin("call-0", "Lookup").and_then(
-            ledger.complete("call-0", Outcome(False, "result 0"))
+            ledger.complete("call-0", Outcome(False, "stale"))
         )
 
-    found = yield from _run_after(completed, "tell_model", ENGINES[engine])
-    assert found == ("done", {})
+    found = yield from _run_after(completed, "fail", ENGINES[engine])
+    assert found == ("done", {0: 1})
 
 
 class _Broken(tool_ledger.ToolLedgerService):

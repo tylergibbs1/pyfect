@@ -916,3 +916,50 @@ def test_keeps_interrupting_disconnected_clients_while_an_on_disconnect_callback
         assert [(yield from observed.take()), (yield from observed.take())] == [1, 2]
 
     fx.run_blocking(fx.scoped(effect.gen(body)).timeout("5 seconds").or_die())
+
+
+def test_on_request_wraps_each_decoded_request_with_its_request() -> None:
+    """``ServerOptions.on_request`` (Effect's ``RpcServer.make`` ``onRequest``) wraps the
+    effect running each decoded request and is given the request."""
+
+    def body():
+        seen = yield from fx.Queue[tuple[str, str]].unbounded()
+        sent = yield from fx.Queue[Any].unbounded()
+        disconnects = yield from fx.Queue[int].unbounded()
+        writers: list[Any] = []
+
+        def parts(write: Any) -> fx.Effect[rpc_server.ProtocolParts]:
+            writers.append(write)
+            return effect.succeed(
+                rpc_server.ProtocolParts(
+                    disconnects=disconnects,
+                    send=lambda _id, message: sent.offer(message).as_void(),
+                    end=lambda _id: effect.void,
+                    supports_ack=False,
+                    supports_span_propagation=False,
+                    codec_for=rs.json.codec_for,
+                )
+            )
+
+        protocol = yield from rpc_server.with_run(parts)
+        handlers = WaitOnly.to_layer(
+            WaitOnly.handlers().handle(WaitOnly.wait)(lambda _: effect.void)
+        )
+
+        def on_request(run: fx.Effect[Any, Any, Any], request: Any) -> fx.Effect[Any, Any, Any]:
+            return seen.offer((request.tag, str(request.id))).and_then(run)
+
+        yield from (
+            rpc_server.make(WaitOnly, rpc_server.ServerOptions(on_request=on_request))
+            .pipe(effect.provide_service(rpc_server.ServerProtocol, protocol))
+            .pipe(fx.provide(handlers))
+            .fork_scoped()
+        )
+        yield from effect.yield_now()
+        yield from writers[0](
+            1, {"_tag": "Request", "id": "7", "tag": "wait", "payload": {}, "headers": []}
+        )
+        assert (yield from seen.take()) == ("wait", "7")
+        assert (yield from sent.take())["_tag"] == "Exit"
+
+    fx.run_blocking(fx.scoped(effect.gen(body)).timeout("5 seconds").or_die())

@@ -49,7 +49,7 @@ def of_failure(tool: AnyTool, cause: Cause[Any]) -> Effect[Outcome | None]:
         case (Fail(error=error) as reason,):
             origin = cast("FailureOrigin", reason.annotations.get(FailureOriginAnnotation))
             encode: Callable[[object], Effect[object, S.SchemaError]] = cast(
-                "Any", S.encode_unknown_effect(failure_result_schema(tool))
+                "Any", S.encode_unknown_effect(S.to_codec_json(failure_result_schema(tool)))
             )
             encoded = encode(error)
             return encoded.exit().map(
@@ -68,10 +68,10 @@ def replay[E](
     *,
     failures: S.Top,
 ) -> Effect[Stream[HandlerResult, Any, Any], E | Any, Any]:
-    """The call's results again, from ``outcome``: a success decoded with the tool's
-    success schema, a failure with ``failures`` (the ``call_failure_schema`` of the toolkit
-    that made it), ``invalid`` when it no longer decodes; a failure of a tool in ``"error"``
-    mode fails the stream."""
+    """The call's results again, from ``outcome``, decoded with JSON codecs: a success
+    with its tool's success schema's, a failure with ``failures``' (the
+    ``call_failure_schema`` of the toolkit that made it), ``invalid`` when it no longer
+    decodes; a failure of a tool in ``"error"`` mode fails the stream."""
     encoded = outcome.encoded_result
     if not outcome.is_failure:
         return _decoded(tool.success_schema, encoded, invalid).flat_map(
@@ -97,7 +97,8 @@ def _decoded[E](
     schema: S.Top, encoded: object, invalid: Callable[[S.SchemaError], E]
 ) -> Effect[object, E]:
     decode = cast(
-        "Callable[[object], Effect[object, S.SchemaError]]", S.decode_unknown_effect(schema)
+        "Callable[[object], Effect[object, S.SchemaError]]",
+        S.decode_unknown_effect(S.to_codec_json(schema)),
     )
     return decode(encoded).map_error(invalid)
 

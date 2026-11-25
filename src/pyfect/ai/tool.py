@@ -1,11 +1,12 @@
 """Tools a language model can call (Effect's ``Tool``).
 
 A tool has a name, a parameters schema, a success schema and a failure
-schema. Its type ``Tool[N_co, P_co, S, F_co, HE_co, R_co]`` keeps the name ``N_co``, the
-decoded parameters ``P_co``, the success ``S``, the failure ``F_co``, the error a
+schema. Its type ``Tool[N_co, P_co, S, F_co, HE_co, R_co, M_co]`` keeps the name ``N_co``,
+the decoded parameters ``P_co``, the success ``S``, the failure ``F_co``, the error a
 handler raises to the caller ``HE_co`` (``F_co`` when ``failure_mode="error"``,
-``Never`` when failures are returned to the model) and the services the
-handler needs ``R_co`` (its ``dependencies``)::
+``Never`` when failures are returned to the model), the services the
+handler needs ``R_co`` (its ``dependencies``) and the ``failure_mode`` ``M_co``
+(``FailureMode`` when not known, as in a six-argument ``Tool[...]``)::
 
     get_weather = tool.make(
         "GetWeather",
@@ -64,6 +65,8 @@ HE_co = TypeVar("HE_co", covariant=True)
 R_co = TypeVar("R_co", covariant=True)
 
 type FailureMode = Literal["error", "return"]
+M_co = TypeVar("M_co", covariant=True, default=Literal["error", "return"])
+"""A tool's ``failure_mode`` (``FailureMode`` when it is not known)."""
 type FailureOrigin = Literal["parameters", "handler", "result"]
 type Execution = Literal["server", "client"]
 """Where calls to a tool are executed: by its handler on the ``"server"``, or by the
@@ -106,7 +109,7 @@ sees."""
 
 
 @dataclass(frozen=True)
-class Tool(Generic[N_co, P_co, S_co, F_co, HE_co, R_co]):
+class Tool(Generic[N_co, P_co, S_co, F_co, HE_co, R_co, M_co]):
     """A tool the model can call (see the module docstring)."""
 
     name: N_co
@@ -149,24 +152,33 @@ class Tool(Generic[N_co, P_co, S_co, F_co, HE_co, R_co]):
 
     def add_dependency[T](
         self, tag: type[Tag[Any] | T]
-    ) -> Tool[N_co, P_co, S_co, F_co, HE_co, R_co | T]:
+    ) -> Tool[N_co, P_co, S_co, F_co, HE_co, R_co | T, M_co]:
         """The same tool, whose handler may also need ``tag``'s service."""
         return cast("Any", replace(self))
 
     def set_parameters[PP](
         self, schema: S.Codec[PP, Any, Any, Any]
-    ) -> Tool[N_co, PP, S_co, F_co, HE_co, R_co]:
+    ) -> Tool[N_co, PP, S_co, F_co, HE_co, R_co, M_co]:
         return cast("Any", replace(self, parameters_schema=schema))
 
     def set_success[SS](
         self, schema: S.Codec[SS, Any, Any, Any]
-    ) -> Tool[N_co, P_co, SS, F_co, HE_co, R_co]:
+    ) -> Tool[N_co, P_co, SS, F_co, HE_co, R_co, M_co]:
         return cast("Any", replace(self, success_schema=schema, to_model_output=None))
 
+    @overload
+    def set_failure[NN: LiteralString, PP, SS, RR, FF](
+        self: Tool[NN, PP, SS, Any, Any, RR, Literal["return"]],
+        schema: S.Codec[FF, Any, Any, Any],
+    ) -> Tool[NN, PP, SS, FF, Never, RR, Literal["return"]]: ...
+    @overload
     def set_failure[FF](
         self, schema: S.Codec[FF, Any, Any, Any]
-    ) -> Tool[N_co, P_co, S_co, FF, Any, R_co]:
-        return cast("Any", replace(self, failure_schema=schema))
+    ) -> Tool[N_co, P_co, S_co, FF, FF, R_co, M_co]: ...
+    def set_failure(self, schema: S.Top) -> Tool[Any, Any, Any, Any, Any, Any, Any]:
+        """The same tool with the failure ``schema``. Its handler raises that failure to
+        the caller, unless the tool returns failures to the model (``"return"`` mode)."""
+        return replace(self, failure_schema=schema)
 
     def annotate[V](self, tag: type[Tag[V]], value: V) -> Self:
         return replace(self, annotations=self.annotations.add(tag, value))
@@ -176,7 +188,7 @@ class Tool(Generic[N_co, P_co, S_co, F_co, HE_co, R_co]):
 
 
 @dataclass(frozen=True)
-class ProviderDefined(Tool[N_co, P_co, S_co, F_co, HE_co, R_co]):
+class ProviderDefined(Tool[N_co, P_co, S_co, F_co, HE_co, R_co, M_co]):
     """A tool the provider defines (``provider_name`` on its side), with
     provider ``args``. ``requires_handler``: the toolkit must handle it."""
 
@@ -192,27 +204,34 @@ class ProviderDefined(Tool[N_co, P_co, S_co, F_co, HE_co, R_co]):
 
     def add_dependency[T](
         self, tag: type[Tag[Any] | T]
-    ) -> ProviderDefined[N_co, P_co, S_co, F_co, HE_co, R_co | T]:
+    ) -> ProviderDefined[N_co, P_co, S_co, F_co, HE_co, R_co | T, M_co]:
         return cast("Any", replace(self))
 
     def set_parameters[PP](
         self, schema: S.Codec[PP, Any, Any, Any]
-    ) -> ProviderDefined[N_co, PP, S_co, F_co, HE_co, R_co]:
+    ) -> ProviderDefined[N_co, PP, S_co, F_co, HE_co, R_co, M_co]:
         return cast("Any", replace(self, parameters_schema=schema))
 
     def set_success[SS](
         self, schema: S.Codec[SS, Any, Any, Any]
-    ) -> ProviderDefined[N_co, P_co, SS, F_co, HE_co, R_co]:
+    ) -> ProviderDefined[N_co, P_co, SS, F_co, HE_co, R_co, M_co]:
         return cast("Any", replace(self, success_schema=schema, to_model_output=None))
 
+    @overload
+    def set_failure[NN: LiteralString, PP, SS, RR, FF](
+        self: ProviderDefined[NN, PP, SS, Any, Any, RR, Literal["return"]],
+        schema: S.Codec[FF, Any, Any, Any],
+    ) -> ProviderDefined[NN, PP, SS, FF, Never, RR, Literal["return"]]: ...
+    @overload
     def set_failure[FF](
         self, schema: S.Codec[FF, Any, Any, Any]
-    ) -> ProviderDefined[N_co, P_co, S_co, FF, Any, R_co]:
-        return cast("Any", replace(self, failure_schema=schema))
+    ) -> ProviderDefined[N_co, P_co, S_co, FF, FF, R_co, M_co]: ...
+    def set_failure(self, schema: S.Top) -> ProviderDefined[Any, Any, Any, Any, Any, Any, Any]:
+        return replace(self, failure_schema=schema)
 
 
 @dataclass(frozen=True)
-class Dynamic(Tool[N_co, P_co, S_co, F_co, HE_co, R_co]):
+class Dynamic(Tool[N_co, P_co, S_co, F_co, HE_co, R_co, M_co]):
     """A tool whose parameters may be a raw JSON Schema (``json_schema``):
     its handler then gets the parameters undecoded."""
 
@@ -220,8 +239,30 @@ class Dynamic(Tool[N_co, P_co, S_co, F_co, HE_co, R_co]):
 
     def set_parameters[PP](
         self, schema: S.Codec[PP, Any, Any, Any]
-    ) -> Tool[N_co, PP, S_co, F_co, HE_co, R_co]:
+    ) -> Dynamic[N_co, PP, S_co, F_co, HE_co, R_co, M_co]:
         return cast("Any", replace(self, parameters_schema=schema, json_schema=None))
+
+    def add_dependency[T](
+        self, tag: type[Tag[Any] | T]
+    ) -> Dynamic[N_co, P_co, S_co, F_co, HE_co, R_co | T, M_co]:
+        return cast("Any", replace(self))
+
+    def set_success[SS](
+        self, schema: S.Codec[SS, Any, Any, Any]
+    ) -> Dynamic[N_co, P_co, SS, F_co, HE_co, R_co, M_co]:
+        return cast("Any", replace(self, success_schema=schema, to_model_output=None))
+
+    @overload
+    def set_failure[NN: LiteralString, PP, SS, RR, FF](
+        self: Dynamic[NN, PP, SS, Any, Any, RR, Literal["return"]],
+        schema: S.Codec[FF, Any, Any, Any],
+    ) -> Dynamic[NN, PP, SS, FF, Never, RR, Literal["return"]]: ...
+    @overload
+    def set_failure[FF](
+        self, schema: S.Codec[FF, Any, Any, Any]
+    ) -> Dynamic[N_co, P_co, S_co, FF, FF, R_co, M_co]: ...
+    def set_failure(self, schema: S.Top) -> Dynamic[Any, Any, Any, Any, Any, Any, Any]:
+        return replace(self, failure_schema=schema)
 
 
 type AnyTool = Tool[Any, Any, Any, Any, Any, Any]
@@ -293,7 +334,7 @@ def make[NN: LiteralString, PP = dict[str, Never], SS = None, FF = Never, RR = N
     needs_approval: NeedsApproval | None = None,
     to_model_output: Callable[[SS], Sequence[ToolModelOutputPart]] | None = None,
     execution: Execution | None = None,
-) -> Tool[NN, PP, SS, FF, FF, RR]: ...
+) -> Tool[NN, PP, SS, FF, FF, RR, Literal["error"]]: ...
 @overload
 def make[NN: LiteralString, PP = dict[str, Never], SS = None, FF = Never, RR = Never](
     name: NN,
@@ -307,7 +348,21 @@ def make[NN: LiteralString, PP = dict[str, Never], SS = None, FF = Never, RR = N
     needs_approval: NeedsApproval | None = None,
     to_model_output: Callable[[SS], Sequence[ToolModelOutputPart]] | None = None,
     execution: Execution | None = None,
-) -> Tool[NN, PP, SS, FF, Never, RR]: ...
+) -> Tool[NN, PP, SS, FF, Never, RR, Literal["return"]]: ...
+@overload
+def make[NN: LiteralString, PP = dict[str, Never], SS = None, FF = Never, RR = Never](
+    name: NN,
+    *,
+    description: str | None = None,
+    parameters: S.Codec[PP, Any, Any, Any] | None = None,
+    success: S.Codec[SS, Any, Any, Any] | None = None,
+    failure: S.Codec[FF, Any, Any, Any] | None = None,
+    failure_mode: FailureMode,
+    dependencies: Sequence[type[RR]] = (),
+    needs_approval: NeedsApproval | None = None,
+    to_model_output: Callable[[SS], Sequence[ToolModelOutputPart]] | None = None,
+    execution: Execution | None = None,
+) -> Tool[NN, PP, SS, FF, FF, RR]: ...
 def make(
     name: str,
     *,
@@ -353,7 +408,7 @@ def dynamic[NN: LiteralString, PP = object, SS = object, FF = Never](
     needs_approval: NeedsApproval | None = None,
     to_model_output: Callable[[SS], Sequence[ToolModelOutputPart]] | None = None,
     execution: Execution | None = None,
-) -> Dynamic[NN, PP, SS, FF, FF, Never]: ...
+) -> Dynamic[NN, PP, SS, FF, FF, Never, Literal["error"]]: ...
 @overload
 def dynamic[NN: LiteralString, SS = object, FF = Never](
     name: NN,
@@ -366,7 +421,7 @@ def dynamic[NN: LiteralString, SS = object, FF = Never](
     needs_approval: NeedsApproval | None = None,
     to_model_output: Callable[[SS], Sequence[ToolModelOutputPart]] | None = None,
     execution: Execution | None = None,
-) -> Dynamic[NN, object, SS, FF, FF, Never]: ...
+) -> Dynamic[NN, object, SS, FF, FF, Never, Literal["error"]]: ...
 @overload
 def dynamic[NN: LiteralString, PP = object, SS = object, FF = Never](
     name: NN,
@@ -379,7 +434,20 @@ def dynamic[NN: LiteralString, PP = object, SS = object, FF = Never](
     needs_approval: NeedsApproval | None = None,
     to_model_output: Callable[[SS], Sequence[ToolModelOutputPart]] | None = None,
     execution: Execution | None = None,
-) -> Dynamic[NN, PP, SS, FF, Never, Never]: ...
+) -> Dynamic[NN, PP, SS, FF, Never, Never, Literal["return"]]: ...
+@overload
+def dynamic[NN: LiteralString, PP = object, SS = object, FF = Never](
+    name: NN,
+    *,
+    description: str | None = None,
+    parameters: S.Codec[PP, Any, Any, Any] | JsonSchema | None = None,
+    success: S.Codec[SS, Any, Any, Any] | None = None,
+    failure: S.Codec[FF, Any, Any, Any] | None = None,
+    failure_mode: FailureMode,
+    needs_approval: NeedsApproval | None = None,
+    to_model_output: Callable[[SS], Sequence[ToolModelOutputPart]] | None = None,
+    execution: Execution | None = None,
+) -> Dynamic[NN, PP, SS, FF, FF, Never]: ...
 def dynamic(
     name: str,
     *,
@@ -422,7 +490,7 @@ class ProviderToolConstructor[NN: LiteralString, PP, SS, FF](Protocol):
         *,
         failure_mode: Literal["error"] = "error",
         **kwargs: object,
-    ) -> ProviderDefined[NN, PP, SS, FF, FF, Never]: ...
+    ) -> ProviderDefined[NN, PP, SS, FF, FF, Never, Literal["error"]]: ...
     @overload
     def __call__(
         self,
@@ -431,7 +499,7 @@ class ProviderToolConstructor[NN: LiteralString, PP, SS, FF](Protocol):
         *,
         failure_mode: Literal["return"],
         **kwargs: object,
-    ) -> ProviderDefined[NN, PP, SS, FF, Never, Never]: ...
+    ) -> ProviderDefined[NN, PP, SS, FF, Never, Never, Literal["return"]]: ...
     @overload
     def __call__(
         self,

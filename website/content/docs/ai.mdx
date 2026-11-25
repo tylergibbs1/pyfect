@@ -182,8 +182,10 @@ sees its description and its parameters' JSON Schema. `toolkit.make(*tools)` gro
 and `to_layer(*handlers)` provides their handlers: pyright checks `GetWeather.handler(f)`
 against the tool's schemas and the services it declares in `dependencies`.
 
-With `toolkit=Tools`, `generate_text` offers the tools, decodes each call's parameters,
-runs its handler and adds the results to the response. A handler's failure fails
+With `toolkit=Tools`, `generate_text` offers the tools, decodes each call's parameters
+from their JSON encoding, runs its handler and adds the results to the response, each with
+its JSON encoding (`encoded_result`), what the model is sent: a `DateTimeUtc` is ISO text and a
+`BigInt` a string of digits. A handler's failure fails
 `generate_text`, or, for a tool made with `failure_mode="return"`, goes back to the model
 as a failure result. `tool_choice` is `"auto"`, `"none"`, `"required"`, `{"tool": name}` or
 `{"one_of": names}`, and a tool with `needs_approval` gives an approval request in place

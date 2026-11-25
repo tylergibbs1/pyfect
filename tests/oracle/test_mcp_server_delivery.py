@@ -187,7 +187,7 @@ def _declared_failure(failure_mode: Literal["error", "return"]):
         charge = T.make(
             "Charge",
             failure=S.Struct(_Charge, missingCents=S.BigInt, retryAfter=S.FiniteFromString),
-            failure_mode=cast("Any", failure_mode),
+            failure_mode=failure_mode,
         )
         kit = K.make(charge)
         failed = cast("_Charge", {"missingCents": 250, "retryAfter": 5.0})

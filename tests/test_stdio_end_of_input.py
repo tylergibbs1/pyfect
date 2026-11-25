@@ -137,6 +137,23 @@ def test_run_stdio_writes_its_answers_before_it_returns():
     assert [json.loads(line)["id"] for line in "".join(written).splitlines()] == [1]
 
 
+@testing.effect
+def test_run_stdio_drops_an_unterminated_last_line():
+    """Effect's NDJSON framing (``RpcSerialization.ndjson`` under ``McpServer.layerStdio``)
+    reads newline-terminated lines only: a request without one when the input ends is not
+    read. A ``\\r\\n`` ends a line too."""
+    crlf = (json.dumps({"jsonrpc": "2.0", "id": 2, "method": "ping"}) + "\r\n").encode()
+    unterminated = json.dumps({"jsonrpc": "2.0", "id": 3, "method": "ping"}).encode()
+    stdin, written, io = _input((_PING, crlf, unterminated))
+    server = yield from mcp_server.make()
+    served = _run_stdio().pipe(fx.provide_service(mcp_server.McpServer, server))
+    fiber = yield from _forked(served.pipe(fx.provide(io)))
+    yield from _yields(50)
+    yield from stdin.end()
+    assert exit_.is_success((yield from _exit_soon(fiber)))
+    assert [json.loads(line)["id"] for line in "".join(written).splitlines()] == [1, 2]
+
+
 @pytest.mark.parametrize("open_for", _OPEN_FOR)
 @testing.effect
 def test_launching_mcp_layer_stdio_is_interrupted_when_its_input_ends(open_for: int):

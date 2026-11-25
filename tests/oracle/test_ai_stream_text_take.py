@@ -1,7 +1,9 @@
-"""``stream_text(...).take(n)`` starts no tool handler for a call it never
-pulls past (QA ai-workflow AI-1). Effect 4.0.6 (``take.ts`` in the QA
-repros, run under Node) logs no handler start for ``take`` 1, 2 or 3 of a
-stream with two tool calls, a text delta and the finish."""
+"""``stream_text(...).take(n)`` starts the tool handlers of the calls the
+model sent, as Effect does since it forks a toolkit handler with
+``startImmediately`` (Effect 4.1.5, ae947a3). Run under Node, Effect at that
+commit logs both handler starts for ``take`` 1, 2 or 3 of a stream with two
+tool calls, a text delta and the finish; at the commit before it, and in
+Effect 4.0.6 (QA ai-workflow AI-1), it logged none."""
 
 from __future__ import annotations
 
@@ -36,7 +38,7 @@ def _call(id: str, ms: int) -> Any:
 
 
 @pytest.mark.parametrize("n", [1, 2, 3])
-def test_take_starts_no_tool_handler(n: int) -> None:
+def test_take_starts_the_tool_handlers_of_the_calls_sent(n: int) -> None:
     log: list[str] = []
 
     def handler(params: _Params, _: object) -> fx.Effect[str]:
@@ -57,4 +59,4 @@ def test_take_starts_no_tool_handler(n: int) -> None:
     )
     fx.run_blocking(fx.sleep("100 millis"))
     assert [part.type for part in taken] == [p["type"] for p in parts[:n]]
-    assert log == []
+    assert log == ["start80", "start10"]

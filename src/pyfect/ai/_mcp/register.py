@@ -25,6 +25,7 @@ from pyfect.ai._mcp.core import (
     ToolEntry,
 )
 from pyfect.ai._mcp.invoke import omit_request_services
+from pyfect.ai._mcp.model_output import model_output_content
 from pyfect.ai._mcp.tool_schema import tool_json_schema
 from pyfect.ai.ai_error import AiError
 from pyfect.ai.mcp_schema import (
@@ -56,6 +57,7 @@ from pyfect.ai.mcp_schema import (
     ToolAnnotations,
 )
 from pyfect.ai.mcp_schema import Tool as McpTool
+from pyfect.ai.prompt import ToolModelOutputPart
 from pyfect.ai.toolkit import (
     FailureOriginAnnotation,
     HandlerResult,
@@ -296,16 +298,29 @@ def _json_encoder(tool: Tool.AnyTool, schema: S.Top) -> Callable[[object], Effec
     return encoded
 
 
+def _model_output_result(
+    parts: Sequence[ToolModelOutputPart], encoded: object, protocol_version: str, *, absent: bool
+) -> CallToolResult:
+    """A success whose ``content`` is the tool's ``to_model_output``; ``structuredContent``
+    keeps the encoded result. Revisions before 2026-07-28 drop a string
+    ``structuredContent`` and would unquote a text block matching it, so it is left out."""
+    out: CallToolResult = {
+        "isError": False,
+        "content": model_output_content(parts, protocol_version),
+    }
+    if not absent and not (isinstance(encoded, str) and protocol_version < "2026-07-28"):
+        out["structuredContent"] = cast("Any", encoded)
+    return out
+
+
 def _tool_handler(
     kit: Any,
     tool: Tool.AnyTool,
     internal_tool_error: Callable[[Cause[object]], Effect[CallToolResult, InvalidParams]],
     mapper: Callable[[Any], Sequence[ContentBlock]] | None,
 ) -> Callable[[JsonObject | None], Effect[CallToolResult, InvalidParams, RequestServices]]:
+    # MCP content is JSON. Failures raised in "error" mode skip the toolkit's encoding.
     encode_failure = _json_encoder(tool, tool.failure_schema)
-    # Successes and returned failures come encoded by the toolkit: only their JSON form is left.
-    encode_returned_failure = _json_encoder(tool, S.to_encoded(cast("Any", tool.failure_schema)))
-    encode_structured = _json_encoder(tool, S.to_encoded(cast("Any", tool.success_schema)))
     is_declared_failure = S.is_(tool.failure_schema)
     void = tool.success_schema is S.Null
     strict = tool.annotations.get_unsafe(Tool.Strict) is True
@@ -344,18 +359,27 @@ def _tool_handler(
                 return declared_failure_result(error).catch_cause(internal_tool_error)
         return internal_tool_error(cause)
 
-    def to_result(result: HandlerResult) -> Effect[CallToolResult, Any]:
+    def to_result(result: HandlerResult) -> Effect[CallToolResult, Any, McpRequestContext]:
         if not result.is_failure:
             if mapper is not None:
                 # A raising mapper is a defect: logged, and answered with the generic error.
                 to_blocks = mapper
                 return sync(lambda: mapped_result(to_blocks(result.result)))
+            parts = result.model_output
+            if parts is not None:
+                absent = void and result.encoded_result is None
+                return McpRequestContext().map(
+                    lambda request: _model_output_result(
+                        parts, result.encoded_result, request.protocol_version, absent=absent
+                    )
+                )
             if void and result.encoded_result is None:
                 # An absent result has no structured form.
                 return succeed({"isError": False, "content": []})
-            return encode_structured(result.encoded_result).map(success_result)
+            # The toolkit encodes successes and "return"-mode failures with their JSON codec.
+            return succeed(success_result(result.encoded_result))
         if result.failure_origin == "handler":
-            return encode_returned_failure(result.encoded_result).map(failure_result)
+            return succeed(failure_result(result.encoded_result))
         origin = Context.make(FailureOriginAnnotation, result.failure_origin or "result")
         return fail_cause(Cause((Fail(result.result),)).annotate(origin))
 

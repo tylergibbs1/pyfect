@@ -102,7 +102,7 @@ def transform_params(
     transformer: T.CodecTransformer,
 ) -> Effect[object, AiError, Any]:
     """Valid parameters, decoded from the provider's shape by the
-    transformer's codec, in the tool's standard encoded form; invalid ones
+    transformer's codec, in their JSON encoding (what the toolkit decodes); invalid ones
     unchanged, for the toolkit to report. An unknown tool fails, unless
     tool call validation is deferred (its parameters are kept)."""
     tool = next((t for t in options.tools if t.name == tool_name), None)
@@ -126,7 +126,7 @@ def transform_params(
     except Exception as error:
         return fx.fail(unsupported_schema(module, error, "makeResponse").error)
     normalized: Effect[object, Any, Any] = S.decode_unknown_effect(codec)(params).flat_map(
-        S.encode_unknown_effect(schema)
+        S.encode_unknown_effect(S.to_codec_json(schema))
     )
     return normalized.or_else_succeed(lambda _: params)
 

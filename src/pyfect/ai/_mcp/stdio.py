@@ -13,6 +13,7 @@ from pyfect._fiber import Fiber
 from pyfect.ai._mcp import batch, frames, liveness
 from pyfect.ai._mcp.core import McpServer
 from pyfect.ai._mcp.dispatch import Connection, ServerInfo, error_response
+from pyfect.ai._mcp.ndjson import ndjson_lines
 from pyfect.ai.mcp_protocol import Registry
 from pyfect.ai.mcp_schema import InvalidRequest, JsonObject, ParseError
 from pyfect.channel import LineTooLongError
@@ -105,8 +106,7 @@ def serve(info: ServerInfo, registry: Registry) -> Effect[None, PlatformError, M
         server.connect(connection)
         # A line past 16 MiB ends the server, as Effect's NDJSON-RPC framing does.
         reading = (
-            io.stdin.decode_text()
-            .split_lines_within(DEFAULT_MAX_BUFFER_SIZE)
+            ndjson_lines(io.stdin.decode_text(), DEFAULT_MAX_BUFFER_SIZE)
             .run_for_each(receive)
             .pipe(catch_tag(LineTooLongError, _too_long))
         )
