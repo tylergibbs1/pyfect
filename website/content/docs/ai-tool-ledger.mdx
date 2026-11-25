@@ -90,23 +90,20 @@ so executions that share a database never answer each other's calls, even when t
 reuses an id (fake models and examples often do). Outside a workflow the key is the bare
 `tool_call_id`, as before. A custom store sees the key as the `tool_call_id` it is given.
 
-Releases up to 0.6.22 keyed every call by its bare id. So that an execution in flight across
-the upgrade does not run a tool twice, a call inside a workflow first looks for a record
-under its bare id and, if one exists, is answered from it. That costs each guarded call in a
-workflow one extra lookup.
-
-The bare-id record need not be the calling execution's own. One written by any execution
-under 0.6.22 or earlier answers every later execution that reuses that id, and so does one
-written outside a workflow. Once no execution started before the upgrade is still running,
-delete the bare-id rows (in the default table; a scoped key is the one with a `/`):
+Releases up to 0.6.22 keyed a call inside a workflow by its bare id too, and 0.6.x looked
+for such a record first. 0.7.0 reads only the scoped key, so a bare-id record no longer
+answers a call made inside a workflow: a workflow in flight across the upgrade would run its
+tool calls again. Let such workflows finish on 0.6.x before upgrading. A bare-id record
+cannot be moved to its scoped key, since it does not say which execution wrote it; once no
+0.6.x execution is running, the rows that only 0.6.x read can be deleted (in the default
+table; a scoped key is the one with a `/`):
 
 ```sql
 DELETE FROM effect_ai_tool_ledger WHERE id NOT LIKE '%/%'
 ```
 
 That also deletes the records of calls guarded outside workflows, which stay bare, so run it
-only when none of them will be replayed. Otherwise use fresh call ids: ones no 0.6.22
-execution wrote, and, for calls made outside workflows, ids of their own.
+only when none of them will be replayed.
 
 With [durable agents](/docs/ai-durable) the ledger runs inside each tool call's activity, and
 the activity stores what the guard gives back, `ToolOutcomeUnknown` and `ToolLedgerError`

@@ -466,21 +466,9 @@ class _Call:
         def claim(key: str) -> Effect[Stream[HandlerResult, Any, Any], Any, Any]:
             return ledger.begin(key, self.tool.name).flat_map(lambda found: decide(key, found))
 
-        def in_execution(execution_id: str) -> Effect[Stream[HandlerResult, Any, Any], Any, Any]:
-            # Releases up to 0.6.22 keyed calls inside a workflow by the bare id too: a
-            # record they left still answers, so a run in flight across the upgrade does
-            # not run its tool again.
-            return ledger.lookup(self.id).flat_map(
-                lambda legacy: (
-                    claim(f"{execution_id}/{self.id}")
-                    if legacy is None
-                    else decide(self.id, legacy)
-                )
-            )
-
         return fx.service_option(WorkflowInstance).flat_map(
-            lambda found: (
-                claim(self.id) if found is None else in_execution(found.value.execution_id)
+            lambda found: claim(
+                self.id if found is None else f"{found.value.execution_id}/{self.id}"
             )
         )
 
