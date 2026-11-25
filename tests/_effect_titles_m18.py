@@ -12,10 +12,6 @@ TITLES: dict[str, tuple[str, ...]] = {
     "ai/anthropic/test/AnthropicLanguageModel.test.ts": (
         "passes tool call params with non-JSON types to the Toolkit",
     ),
-    "ai/openrouter/test/Generated.test.ts": (
-        "preserves composed reasoning options",
-        "preserves alignment calls in response error metadata",
-    ),
     "effect/test/ai/Chat.test.ts": ("exports tool results with non-JSON types through exportJson",),
     "effect/test/ai/LanguageModel.test.ts": (
         "validates locally handled provider-defined tool parameters in their JSON encoding",

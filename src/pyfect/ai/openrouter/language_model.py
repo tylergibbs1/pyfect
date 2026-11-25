@@ -66,39 +66,46 @@ class ConfigService(TypedDict, total=False):
         | GT.ContextCompressionPlugin
         | GT.ParetoRouterPlugin
         | GT.FusionPlugin
+        | GT.SwitchyardRouterPlugin
+        | GT.JevRouterPlugin
+        | GT.AlignmentPlugin
+        | GT.ArmorPlugin
     ]
     reasoning: GT.ChatRequest__reasoning
     reasoning_effort: Literal["max", "xhigh", "high", "medium", "low", "minimal", "none"] | None
     temperature: float | None
     top_p: float | None
-    top_k: float | None
+    top_k: int | None
     top_a: float | None
     min_p: float | None
-    max_tokens: float | None
-    max_completion_tokens: float | None
+    max_tokens: int | None
+    max_completion_tokens: int | None
     frequency_penalty: float | None
     presence_penalty: float | None
     repetition_penalty: float | None
     logit_bias: Mapping[str, float] | None
     logprobs: bool | None
-    top_logprobs: float | None
-    seed: float | None
+    top_logprobs: int | None
+    seed: int | None
     stop: str | Sequence[str] | None
     stop_server_tools_when: GT.StopServerToolsWhen
     parallel_tool_calls: bool | None
     modalities: Sequence[Literal["text", "image", "audio"]]
-    metadata: GT.ChatRequest__metadata
+    metadata: Mapping[str, str]
     prediction: GT.Prediction
     prompt_cache_key: str | None
     prompt_cache_options: GT.PromptCacheOptions
     route: GT.DeprecatedRoute
     cache_control: GT.AnthropicCacheControlDirective
-    service_tier: Literal["auto", "default", "flex", "priority", "scale"] | None
+    service_tier: (
+        Literal["auto", "default", "fast", "flex", "priority", "scale", "ultrafast"] | None
+    )
     session_id: str
     user: str
     trace: GT.TraceConfig
     debug: GT.ChatDebugOptions
     image_config: GT.ImageConfig
+    deferred_tools: GT.DeferredToolsControl
     strict_json_schema: bool
     """The strictness of a schema-backed response format (not of tools)."""
 

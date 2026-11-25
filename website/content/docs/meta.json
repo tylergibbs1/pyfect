@@ -46,6 +46,7 @@
     "ai-budgets",
     "ai-durable",
     "ai-skills",
+    "ai-providers-migration",
     "mcp",
     "chat",
     "chat-slack",

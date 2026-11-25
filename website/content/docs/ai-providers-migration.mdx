@@ -1,0 +1,989 @@
+---
+title: AI providers in 0.7.0
+description: "The OpenAI and OpenRouter generated packages follow Effect 4.1.5 from 0.7.0: every schema, type and client method that was renamed or removed, and what to use instead."
+---
+
+`pyfect.ai.openai.generated` and `pyfect.ai.openrouter.generated` are generated from the
+`Generated.ts` of Effect's provider packages (`scripts/gen_ai_schemas.py`). Through 0.6.x they
+stayed on older releases so a patch release could not rename what you import: OpenAI on Effect
+4.1.4's and OpenRouter on 4.1.2's. From 0.7.0 both follow Effect 4.1.5, which regenerated them
+from newer OpenAPI specs.
+
+OpenAI keeps every name. OpenRouter's spec renamed or dropped some, and its client gained
+operations. The lists below say, for each name that is gone, what took its place.
+
+## What changed for every name
+
+- A schema's type in `types` has the schema's name, so a renamed schema's type is renamed with
+  it: `generated.CompletedEvent` became `generated.StreamEventsResponseCompleted`, and
+  `types.CompletedEvent` became `types.StreamEventsResponseCompleted`.
+- Integer fields (Effect's `Schema.Int`, new in 4.1.5's generator) are typed `int` where they
+  were `float`. They decode the same values.
+- OpenRouter's `types.ChatToolCall` `id` and `types.ChatStreamToolCall` `index` are
+  `NotRequired`, as in Effect: a response may omit them, which decoding has accepted since
+  0.6. Read them with `.get("id")` / `.get("index")`, or check `"id" in call`, instead of
+  `call["id"]`.
+- `Objects_17`, `Arrays_3`, `Union_5` and the types nested in them (`Objects_148__max_price`)
+  were Effect's numbered names for schemas the spec left unnamed, and a regeneration numbers
+  them afresh. They are listed as removed: the schema is now named, or written where it is
+  used. Reach it through the type that holds it (`types.ProviderPreferences`'s `max_price`,
+  for example).
+- A nested type (`Parent__key`, a struct inside another) is named after its path, so it moves
+  when its parent is renamed or its field changes.
+
+pyfect keeps no deprecated aliases for the old names. A schema is a value and a type a
+`TypedDict` or alias, and neither can carry `warnings.deprecated` so that pyright reports
+their use; an alias that only warned at runtime would hide a rename that pyright now shows
+you where the old name is imported.
+
+## How the lists are made
+
+`uv run python scripts/ai_generated_migration.py --write` diffs the packages of 0.6.36 with
+0.7.0's. A name that is gone is listed as renamed when exactly one name of 0.7.0 matches it:
+a struct with the same fields (descriptions and other annotations aside), else a schema with
+the same description, else, for a nested type, the same path under its renamed parent.
+Otherwise it is listed as removed: the spec dropped it, or changed it enough that no single
+name replaces it. Look up the field that used it in the new type.
+
+{/* begin: scripts/ai_generated_migration.py --write */}
+
+## OpenAI
+
+0 new schemas and 0 new client methods; 138 of the 3595 schemas that keep their name have a new definition.
+
+### Schemas and their types (0 renamed, 0 removed)
+
+None.
+
+### Nested types (0 renamed, 0 removed)
+
+None.
+
+### Client methods (0 renamed, 0 removed)
+
+None.
+
+## OpenRouter
+
+1173 new schemas and 85 new client methods; 721 of the 1264 schemas that keep their name have a new definition.
+
+### Schemas and their types (34 renamed, 208 removed)
+
+- `BaseAnnotationAddedEvent` → `AnnotationAddedEvent`
+- `BaseContentPartAddedEvent` → `ContentPartAddedEvent`
+- `BaseContentPartDoneEvent` → `ContentPartDoneEvent`
+- `BaseCustomToolCallInputDeltaEvent` → `CustomToolCallInputDeltaEvent`
+- `BaseCustomToolCallInputDoneEvent` → `CustomToolCallInputDoneEvent`
+- `BaseErrorEvent` → `ErrorEvent`
+- `BaseFunctionCallArgsDeltaEvent` → `FunctionCallArgsDeltaEvent`
+- `BaseFunctionCallArgsDoneEvent` → `FunctionCallArgsDoneEvent`
+- `BaseReasoningDeltaEvent` → `ReasoningDeltaEvent`
+- `BaseReasoningDoneEvent` → `ReasoningDoneEvent`
+- `BaseReasoningSummaryPartAddedEvent` → `ReasoningSummaryPartAddedEvent`
+- `BaseReasoningSummaryPartDoneEvent` → `ReasoningSummaryPartDoneEvent`
+- `BaseReasoningSummaryTextDeltaEvent` → `ReasoningSummaryTextDeltaEvent`
+- `BaseReasoningSummaryTextDoneEvent` → `ReasoningSummaryTextDoneEvent`
+- `BaseRefusalDeltaEvent` → `RefusalDeltaEvent`
+- `BaseRefusalDoneEvent` → `RefusalDoneEvent`
+- `BaseTextDeltaEvent` → `TextDeltaEvent`
+- `BaseTextDoneEvent` → `TextDoneEvent`
+- `CodeInterpreterCallItem` → `OutputCodeInterpreterCallItem`
+- `CompletedEvent` → `StreamEventsResponseCompleted`
+- `CreatedEvent` → `OpenResponsesCreatedEvent`
+- `FailedEvent` → `StreamEventsResponseFailed`
+- `InProgressEvent` → `OpenResponsesInProgressEvent`
+- `IncompleteEvent` → `StreamEventsResponseIncomplete`
+- `OpenAIResponsesImageGenCallCompleted` → `ImageGenCallCompletedEvent`
+- `OpenAIResponsesImageGenCallGenerating` → `ImageGenCallGeneratingEvent`
+- `OpenAIResponsesImageGenCallInProgress` → `ImageGenCallInProgressEvent`
+- `OpenAIResponsesImageGenCallPartialImage` → `ImageGenCallPartialImageEvent`
+- `OpenAIResponsesSearchCompleted` → `WebSearchCallCompletedEvent`
+- `OpenAIResponsesWebSearchCallInProgress` → `WebSearchCallInProgressEvent`
+- `OpenAIResponsesWebSearchCallSearching` → `WebSearchCallSearchingEvent`
+- `OutputItemAddedEvent` → `StreamEventsResponseOutputItemAdded`
+- `OutputItemDoneEvent` → `StreamEventsResponseOutputItemDone`
+- `TextConfig` → `TextExtendedConfig`
+- `AdvisorNestedTool`: removed
+- `AnthropicBaseUsageIteration`: removed
+- `AnthropicUsage`: removed
+- `Arrays_`: removed
+- `Arrays_1`: removed
+- `Arrays_10`: removed
+- `Arrays_11`: removed
+- `Arrays_12`: removed
+- `Arrays_13`: removed
+- `Arrays_14`: removed
+- `Arrays_15`: removed
+- `Arrays_16`: removed
+- `Arrays_17`: removed
+- `Arrays_18`: removed
+- `Arrays_2`: removed
+- `Arrays_3`: removed
+- `Arrays_4`: removed
+- `Arrays_5`: removed
+- `Arrays_6`: removed
+- `Arrays_7`: removed
+- `Arrays_8`: removed
+- `Arrays_9`: removed
+- `BaseMessagesResult`: removed
+- `BaseResponsesResult`: removed
+- `ChatAssistantImages`: removed
+- `FileMetadata`: removed
+- `FunctionTool`: removed
+- `MessagesErrorDetail`: removed
+- `MessagesErrorResponse`: removed
+- `Objects_`: removed
+- `Objects_1`: removed
+- `Objects_10`: removed
+- `Objects_100`: removed
+- `Objects_101`: removed
+- `Objects_102`: removed
+- `Objects_103`: removed
+- `Objects_104`: removed
+- `Objects_105`: removed
+- `Objects_106`: removed
+- `Objects_107`: removed
+- `Objects_108`: removed
+- `Objects_109`: removed
+- `Objects_11`: removed
+- `Objects_110`: removed
+- `Objects_111`: removed
+- `Objects_112`: removed
+- `Objects_113`: removed
+- `Objects_114`: removed
+- `Objects_115`: removed
+- `Objects_116`: removed
+- `Objects_117`: removed
+- `Objects_118`: removed
+- `Objects_119`: removed
+- `Objects_12`: removed
+- `Objects_120`: removed
+- `Objects_121`: removed
+- `Objects_122`: removed
+- `Objects_123`: removed
+- `Objects_124`: removed
+- `Objects_125`: removed
+- `Objects_126`: removed
+- `Objects_127`: removed
+- `Objects_128`: removed
+- `Objects_129`: removed
+- `Objects_13`: removed
+- `Objects_130`: removed
+- `Objects_131`: removed
+- `Objects_132`: removed
+- `Objects_133`: removed
+- `Objects_134`: removed
+- `Objects_135`: removed
+- `Objects_136`: removed
+- `Objects_137`: removed
+- `Objects_138`: removed
+- `Objects_139`: removed
+- `Objects_14`: removed
+- `Objects_140`: removed
+- `Objects_141`: removed
+- `Objects_142`: removed
+- `Objects_143`: removed
+- `Objects_144`: removed
+- `Objects_145`: removed
+- `Objects_146`: removed
+- `Objects_147`: removed
+- `Objects_148`: removed
+- `Objects_149`: removed
+- `Objects_15`: removed
+- `Objects_150`: removed
+- `Objects_151`: removed
+- `Objects_152`: removed
+- `Objects_153`: removed
+- `Objects_16`: removed
+- `Objects_17`: removed
+- `Objects_18`: removed
+- `Objects_19`: removed
+- `Objects_2`: removed
+- `Objects_20`: removed
+- `Objects_21`: removed
+- `Objects_22`: removed
+- `Objects_23`: removed
+- `Objects_24`: removed
+- `Objects_25`: removed
+- `Objects_26`: removed
+- `Objects_27`: removed
+- `Objects_28`: removed
+- `Objects_29`: removed
+- `Objects_3`: removed
+- `Objects_30`: removed
+- `Objects_31`: removed
+- `Objects_32`: removed
+- `Objects_33`: removed
+- `Objects_34`: removed
+- `Objects_35`: removed
+- `Objects_36`: removed
+- `Objects_37`: removed
+- `Objects_38`: removed
+- `Objects_39`: removed
+- `Objects_4`: removed
+- `Objects_40`: removed
+- `Objects_41`: removed
+- `Objects_42`: removed
+- `Objects_43`: removed
+- `Objects_44`: removed
+- `Objects_45`: removed
+- `Objects_46`: removed
+- `Objects_47`: removed
+- `Objects_48`: removed
+- `Objects_49`: removed
+- `Objects_5`: removed
+- `Objects_50`: removed
+- `Objects_51`: removed
+- `Objects_52`: removed
+- `Objects_53`: removed
+- `Objects_54`: removed
+- `Objects_55`: removed
+- `Objects_56`: removed
+- `Objects_57`: removed
+- `Objects_58`: removed
+- `Objects_59`: removed
+- `Objects_6`: removed
+- `Objects_60`: removed
+- `Objects_61`: removed
+- `Objects_62`: removed
+- `Objects_63`: removed
+- `Objects_64`: removed
+- `Objects_65`: removed
+- `Objects_66`: removed
+- `Objects_67`: removed
+- `Objects_68`: removed
+- `Objects_69`: removed
+- `Objects_7`: removed
+- `Objects_70`: removed
+- `Objects_71`: removed
+- `Objects_72`: removed
+- `Objects_73`: removed
+- `Objects_74`: removed
+- `Objects_75`: removed
+- `Objects_76`: removed
+- `Objects_77`: removed
+- `Objects_78`: removed
+- `Objects_79`: removed
+- `Objects_8`: removed
+- `Objects_80`: removed
+- `Objects_81`: removed
+- `Objects_82`: removed
+- `Objects_83`: removed
+- `Objects_84`: removed
+- `Objects_85`: removed
+- `Objects_86`: removed
+- `Objects_87`: removed
+- `Objects_88`: removed
+- `Objects_89`: removed
+- `Objects_9`: removed
+- `Objects_90`: removed
+- `Objects_91`: removed
+- `Objects_92`: removed
+- `Objects_93`: removed
+- `Objects_94`: removed
+- `Objects_95`: removed
+- `Objects_96`: removed
+- `Objects_97`: removed
+- `Objects_98`: removed
+- `Objects_99`: removed
+- `OpenAIResponsesUsage`: removed
+- `OpenResponsesLogProbs`: removed
+- `OpenResponsesTopLogprobs`: removed
+- `OutputMcpServerToolItem`: removed
+- `ResponsesErrorField`: removed
+- `SandboxSleepAfterSeconds`: removed
+- `ServiceTier`: removed
+- `StreamLogprob`: removed
+- `StreamLogprobTopLogprob`: removed
+- `Union_`: removed
+- `Union_1`: removed
+- `Union_10`: removed
+- `Union_11`: removed
+- `Union_12`: removed
+- `Union_13`: removed
+- `Union_2`: removed
+- `Union_3`: removed
+- `Union_4`: removed
+- `Union_5`: removed
+- `Union_6`: removed
+- `Union_7`: removed
+- `Union_8`: removed
+- `Union_9`: removed
+- `Usage`: removed
+- `WorkspaceBudgetInterval`: removed
+
+<details>
+<summary>Nested types (150 renamed, 514 removed)</summary>
+
+- `types.OpenResponsesResult__output__item__0__19__output__item__outcome__1` → `types.ShellCallOutputContent__outcome__1`
+- `types.OpenResponsesResult__output__item__0__25__failed_models__item` → `types.OutputFusionServerToolItem__failed_models__item`
+- `types.OpenResponsesResult__output__item__0__25__responses__item` → `types.OutputFusionServerToolItem__responses__item`
+- `types.OpenResponsesResult__output__item__0__3__action__0` → `types.OpenResponsesResult__output__item__4__action__0`
+- `types.OpenResponsesResult__output__item__0__3__action__1` → `types.OpenResponsesResult__output__item__4__action__1`
+- `types.OpenResponsesResult__output__item__0__3__action__2` → `types.OpenResponsesResult__output__item__4__action__2`
+- `types.OpenResponsesResult__output__item__0__7__pending_safety_checks__item` → `types.OutputComputerCallItem__pending_safety_checks__item`
+- `types.OpenResponsesResult__output__item__0__9__action` → `types.OutputWebSearchServerToolItem__action`
+- `types.OpenResponsesResult__output__item__0__9__action__sources__item` → `types.OutputWebSearchServerToolItem__action__sources__item`
+- `types.OpenResponsesResult__output__item__1__19__output__item__outcome__1` → `types.ShellCallOutputContent__outcome__1`
+- `types.OpenResponsesResult__output__item__1__25__failed_models__item` → `types.OutputFusionServerToolItem__failed_models__item`
+- `types.OpenResponsesResult__output__item__1__25__responses__item` → `types.OutputFusionServerToolItem__responses__item`
+- `types.OpenResponsesResult__output__item__1__3__action__0` → `types.OpenResponsesResult__output__item__4__action__0`
+- `types.OpenResponsesResult__output__item__1__3__action__1` → `types.OpenResponsesResult__output__item__4__action__1`
+- `types.OpenResponsesResult__output__item__1__3__action__2` → `types.OpenResponsesResult__output__item__4__action__2`
+- `types.OpenResponsesResult__output__item__1__7__pending_safety_checks__item` → `types.OutputComputerCallItem__pending_safety_checks__item`
+- `types.OpenResponsesResult__output__item__1__9__action` → `types.OutputWebSearchServerToolItem__action`
+- `types.OpenResponsesResult__output__item__1__9__action__sources__item` → `types.OutputWebSearchServerToolItem__action__sources__item`
+- `types.OpenResponsesResult__output__item__2__19__output__item__outcome__1` → `types.ShellCallOutputContent__outcome__1`
+- `types.OpenResponsesResult__output__item__2__25__failed_models__item` → `types.OutputFusionServerToolItem__failed_models__item`
+- `types.OpenResponsesResult__output__item__2__25__responses__item` → `types.OutputFusionServerToolItem__responses__item`
+- `types.OpenResponsesResult__output__item__2__3__action__0` → `types.OpenResponsesResult__output__item__4__action__0`
+- `types.OpenResponsesResult__output__item__2__3__action__1` → `types.OpenResponsesResult__output__item__4__action__1`
+- `types.OpenResponsesResult__output__item__2__3__action__2` → `types.OpenResponsesResult__output__item__4__action__2`
+- `types.OpenResponsesResult__output__item__2__7__pending_safety_checks__item` → `types.OutputComputerCallItem__pending_safety_checks__item`
+- `types.OpenResponsesResult__output__item__2__9__action` → `types.OutputWebSearchServerToolItem__action`
+- `types.OpenResponsesResult__output__item__2__9__action__sources__item` → `types.OutputWebSearchServerToolItem__action__sources__item`
+- `types.OpenResponsesResult__output__item__3__19__output__item__outcome__1` → `types.ShellCallOutputContent__outcome__1`
+- `types.OpenResponsesResult__output__item__3__25__failed_models__item` → `types.OutputFusionServerToolItem__failed_models__item`
+- `types.OpenResponsesResult__output__item__3__25__responses__item` → `types.OutputFusionServerToolItem__responses__item`
+- `types.OpenResponsesResult__output__item__3__3__action__0` → `types.OpenResponsesResult__output__item__4__action__0`
+- `types.OpenResponsesResult__output__item__3__3__action__1` → `types.OpenResponsesResult__output__item__4__action__1`
+- `types.OpenResponsesResult__output__item__3__3__action__2` → `types.OpenResponsesResult__output__item__4__action__2`
+- `types.OpenResponsesResult__output__item__3__7__pending_safety_checks__item` → `types.OutputComputerCallItem__pending_safety_checks__item`
+- `types.OpenResponsesResult__output__item__3__9__action` → `types.OutputWebSearchServerToolItem__action`
+- `types.OpenResponsesResult__output__item__3__9__action__sources__item` → `types.OutputWebSearchServerToolItem__action__sources__item`
+- `types.OpenResponsesResult__output__item__4__0__action__0` → `types.OpenResponsesResult__output__item__4__action__0`
+- `types.OpenResponsesResult__output__item__4__0__action__1` → `types.OpenResponsesResult__output__item__4__action__1`
+- `types.OpenResponsesResult__output__item__4__0__action__2` → `types.OpenResponsesResult__output__item__4__action__2`
+- `types.OpenResponsesResult__output__item__4__10__action__0` → `types.OpenResponsesResult__output__item__4__action__0`
+- `types.OpenResponsesResult__output__item__4__10__action__1` → `types.OpenResponsesResult__output__item__4__action__1`
+- `types.OpenResponsesResult__output__item__4__10__action__2` → `types.OpenResponsesResult__output__item__4__action__2`
+- `types.OpenResponsesResult__output__item__4__11__action__0` → `types.OpenResponsesResult__output__item__4__action__0`
+- `types.OpenResponsesResult__output__item__4__11__action__1` → `types.OpenResponsesResult__output__item__4__action__1`
+- `types.OpenResponsesResult__output__item__4__11__action__2` → `types.OpenResponsesResult__output__item__4__action__2`
+- `types.OpenResponsesResult__output__item__4__12__action__0` → `types.OpenResponsesResult__output__item__4__action__0`
+- `types.OpenResponsesResult__output__item__4__12__action__1` → `types.OpenResponsesResult__output__item__4__action__1`
+- `types.OpenResponsesResult__output__item__4__12__action__2` → `types.OpenResponsesResult__output__item__4__action__2`
+- `types.OpenResponsesResult__output__item__4__14__action__0` → `types.OpenResponsesResult__output__item__4__action__0`
+- `types.OpenResponsesResult__output__item__4__14__action__1` → `types.OpenResponsesResult__output__item__4__action__1`
+- `types.OpenResponsesResult__output__item__4__14__action__2` → `types.OpenResponsesResult__output__item__4__action__2`
+- `types.OpenResponsesResult__output__item__4__15__action__0` → `types.OpenResponsesResult__output__item__4__action__0`
+- `types.OpenResponsesResult__output__item__4__15__action__1` → `types.OpenResponsesResult__output__item__4__action__1`
+- `types.OpenResponsesResult__output__item__4__15__action__2` → `types.OpenResponsesResult__output__item__4__action__2`
+- `types.OpenResponsesResult__output__item__4__16__action__0` → `types.OpenResponsesResult__output__item__4__action__0`
+- `types.OpenResponsesResult__output__item__4__16__action__1` → `types.OpenResponsesResult__output__item__4__action__1`
+- `types.OpenResponsesResult__output__item__4__16__action__2` → `types.OpenResponsesResult__output__item__4__action__2`
+- `types.OpenResponsesResult__output__item__4__17__action__0` → `types.OpenResponsesResult__output__item__4__action__0`
+- `types.OpenResponsesResult__output__item__4__17__action__1` → `types.OpenResponsesResult__output__item__4__action__1`
+- `types.OpenResponsesResult__output__item__4__17__action__2` → `types.OpenResponsesResult__output__item__4__action__2`
+- `types.OpenResponsesResult__output__item__4__19__action__0` → `types.OpenResponsesResult__output__item__4__action__0`
+- `types.OpenResponsesResult__output__item__4__19__action__1` → `types.OpenResponsesResult__output__item__4__action__1`
+- `types.OpenResponsesResult__output__item__4__19__action__2` → `types.OpenResponsesResult__output__item__4__action__2`
+- `types.OpenResponsesResult__output__item__4__19__output__item__outcome__1` → `types.ShellCallOutputContent__outcome__1`
+- `types.OpenResponsesResult__output__item__4__1__action__0` → `types.OpenResponsesResult__output__item__4__action__0`
+- `types.OpenResponsesResult__output__item__4__1__action__1` → `types.OpenResponsesResult__output__item__4__action__1`
+- `types.OpenResponsesResult__output__item__4__1__action__2` → `types.OpenResponsesResult__output__item__4__action__2`
+- `types.OpenResponsesResult__output__item__4__20__action__0` → `types.OpenResponsesResult__output__item__4__action__0`
+- `types.OpenResponsesResult__output__item__4__20__action__1` → `types.OpenResponsesResult__output__item__4__action__1`
+- `types.OpenResponsesResult__output__item__4__20__action__2` → `types.OpenResponsesResult__output__item__4__action__2`
+- `types.OpenResponsesResult__output__item__4__21__action__0` → `types.OpenResponsesResult__output__item__4__action__0`
+- `types.OpenResponsesResult__output__item__4__21__action__1` → `types.OpenResponsesResult__output__item__4__action__1`
+- `types.OpenResponsesResult__output__item__4__21__action__2` → `types.OpenResponsesResult__output__item__4__action__2`
+- `types.OpenResponsesResult__output__item__4__23__action__0` → `types.OpenResponsesResult__output__item__4__action__0`
+- `types.OpenResponsesResult__output__item__4__23__action__1` → `types.OpenResponsesResult__output__item__4__action__1`
+- `types.OpenResponsesResult__output__item__4__23__action__2` → `types.OpenResponsesResult__output__item__4__action__2`
+- `types.OpenResponsesResult__output__item__4__24__action__0` → `types.OpenResponsesResult__output__item__4__action__0`
+- `types.OpenResponsesResult__output__item__4__24__action__1` → `types.OpenResponsesResult__output__item__4__action__1`
+- `types.OpenResponsesResult__output__item__4__24__action__2` → `types.OpenResponsesResult__output__item__4__action__2`
+- `types.OpenResponsesResult__output__item__4__25__action__0` → `types.OpenResponsesResult__output__item__4__action__0`
+- `types.OpenResponsesResult__output__item__4__25__action__1` → `types.OpenResponsesResult__output__item__4__action__1`
+- `types.OpenResponsesResult__output__item__4__25__action__2` → `types.OpenResponsesResult__output__item__4__action__2`
+- `types.OpenResponsesResult__output__item__4__25__failed_models__item` → `types.OutputFusionServerToolItem__failed_models__item`
+- `types.OpenResponsesResult__output__item__4__25__responses__item` → `types.OutputFusionServerToolItem__responses__item`
+- `types.OpenResponsesResult__output__item__4__26__action__0` → `types.OpenResponsesResult__output__item__4__action__0`
+- `types.OpenResponsesResult__output__item__4__26__action__1` → `types.OpenResponsesResult__output__item__4__action__1`
+- `types.OpenResponsesResult__output__item__4__26__action__2` → `types.OpenResponsesResult__output__item__4__action__2`
+- `types.OpenResponsesResult__output__item__4__27__action__0` → `types.OpenResponsesResult__output__item__4__action__0`
+- `types.OpenResponsesResult__output__item__4__27__action__1` → `types.OpenResponsesResult__output__item__4__action__1`
+- `types.OpenResponsesResult__output__item__4__27__action__2` → `types.OpenResponsesResult__output__item__4__action__2`
+- `types.OpenResponsesResult__output__item__4__28__action__0` → `types.OpenResponsesResult__output__item__4__action__0`
+- `types.OpenResponsesResult__output__item__4__28__action__1` → `types.OpenResponsesResult__output__item__4__action__1`
+- `types.OpenResponsesResult__output__item__4__28__action__2` → `types.OpenResponsesResult__output__item__4__action__2`
+- `types.OpenResponsesResult__output__item__4__29__action__0` → `types.OpenResponsesResult__output__item__4__action__0`
+- `types.OpenResponsesResult__output__item__4__29__action__1` → `types.OpenResponsesResult__output__item__4__action__1`
+- `types.OpenResponsesResult__output__item__4__29__action__2` → `types.OpenResponsesResult__output__item__4__action__2`
+- `types.OpenResponsesResult__output__item__4__2__action__0` → `types.OpenResponsesResult__output__item__4__action__0`
+- `types.OpenResponsesResult__output__item__4__2__action__1` → `types.OpenResponsesResult__output__item__4__action__1`
+- `types.OpenResponsesResult__output__item__4__2__action__2` → `types.OpenResponsesResult__output__item__4__action__2`
+- `types.OpenResponsesResult__output__item__4__3__action__0__0__sources__item` → `types.OutputWebSearchServerToolItem__action__sources__item`
+- `types.OpenResponsesResult__output__item__4__3__action__1__1` → `types.OpenResponsesResult__output__item__4__action__1`
+- `types.OpenResponsesResult__output__item__4__3__action__2__2` → `types.OpenResponsesResult__output__item__4__action__2`
+- `types.OpenResponsesResult__output__item__4__4__action__0` → `types.OpenResponsesResult__output__item__4__action__0`
+- `types.OpenResponsesResult__output__item__4__4__action__1` → `types.OpenResponsesResult__output__item__4__action__1`
+- `types.OpenResponsesResult__output__item__4__4__action__2` → `types.OpenResponsesResult__output__item__4__action__2`
+- `types.OpenResponsesResult__output__item__4__5__action__0` → `types.OpenResponsesResult__output__item__4__action__0`
+- `types.OpenResponsesResult__output__item__4__5__action__1` → `types.OpenResponsesResult__output__item__4__action__1`
+- `types.OpenResponsesResult__output__item__4__5__action__2` → `types.OpenResponsesResult__output__item__4__action__2`
+- `types.OpenResponsesResult__output__item__4__6__action__0` → `types.OpenResponsesResult__output__item__4__action__0`
+- `types.OpenResponsesResult__output__item__4__6__action__1` → `types.OpenResponsesResult__output__item__4__action__1`
+- `types.OpenResponsesResult__output__item__4__6__action__2` → `types.OpenResponsesResult__output__item__4__action__2`
+- `types.OpenResponsesResult__output__item__4__7__action__0` → `types.OpenResponsesResult__output__item__4__action__0`
+- `types.OpenResponsesResult__output__item__4__7__action__1` → `types.OpenResponsesResult__output__item__4__action__1`
+- `types.OpenResponsesResult__output__item__4__7__action__2` → `types.OpenResponsesResult__output__item__4__action__2`
+- `types.OpenResponsesResult__output__item__4__7__pending_safety_checks__item` → `types.OutputComputerCallItem__pending_safety_checks__item`
+- `types.OpenResponsesResult__output__item__4__8__action__0` → `types.OpenResponsesResult__output__item__4__action__0`
+- `types.OpenResponsesResult__output__item__4__8__action__1` → `types.OpenResponsesResult__output__item__4__action__1`
+- `types.OpenResponsesResult__output__item__4__8__action__2` → `types.OpenResponsesResult__output__item__4__action__2`
+- `types.OpenResponsesResult__output__item__4__9__action__0__sources__item` → `types.OutputWebSearchServerToolItem__action__sources__item`
+- `types.OpenResponsesResult__output__item__4__9__action__1__sources__item` → `types.OutputWebSearchServerToolItem__action__sources__item`
+- `types.OpenResponsesResult__output__item__4__9__action__2__sources__item` → `types.OutputWebSearchServerToolItem__action__sources__item`
+- `types.OpenResponsesResult__output__item__5__19__output__item__outcome__1` → `types.ShellCallOutputContent__outcome__1`
+- `types.OpenResponsesResult__output__item__5__25__failed_models__item` → `types.OutputFusionServerToolItem__failed_models__item`
+- `types.OpenResponsesResult__output__item__5__25__responses__item` → `types.OutputFusionServerToolItem__responses__item`
+- `types.OpenResponsesResult__output__item__5__3__action__0` → `types.OpenResponsesResult__output__item__4__action__0`
+- `types.OpenResponsesResult__output__item__5__3__action__1` → `types.OpenResponsesResult__output__item__4__action__1`
+- `types.OpenResponsesResult__output__item__5__3__action__2` → `types.OpenResponsesResult__output__item__4__action__2`
+- `types.OpenResponsesResult__output__item__5__7__pending_safety_checks__item` → `types.OutputComputerCallItem__pending_safety_checks__item`
+- `types.OpenResponsesResult__output__item__5__9__action` → `types.OutputWebSearchServerToolItem__action`
+- `types.OpenResponsesResult__output__item__5__9__action__sources__item` → `types.OutputWebSearchServerToolItem__action__sources__item`
+- `types.OpenResponsesResult__output__item__6__19__output__item__outcome__1` → `types.ShellCallOutputContent__outcome__1`
+- `types.OpenResponsesResult__output__item__6__25__failed_models__item` → `types.OutputFusionServerToolItem__failed_models__item`
+- `types.OpenResponsesResult__output__item__6__25__responses__item` → `types.OutputFusionServerToolItem__responses__item`
+- `types.OpenResponsesResult__output__item__6__3__action__0` → `types.OpenResponsesResult__output__item__4__action__0`
+- `types.OpenResponsesResult__output__item__6__3__action__1` → `types.OpenResponsesResult__output__item__4__action__1`
+- `types.OpenResponsesResult__output__item__6__3__action__2` → `types.OpenResponsesResult__output__item__4__action__2`
+- `types.OpenResponsesResult__output__item__6__7__pending_safety_checks__item` → `types.OutputComputerCallItem__pending_safety_checks__item`
+- `types.OpenResponsesResult__output__item__6__9__action` → `types.OutputWebSearchServerToolItem__action`
+- `types.OpenResponsesResult__output__item__6__9__action__sources__item` → `types.OutputWebSearchServerToolItem__action__sources__item`
+- `types.OpenResponsesResult__output__item__7__19__output__item__outcome__1` → `types.ShellCallOutputContent__outcome__1`
+- `types.OpenResponsesResult__output__item__7__25__failed_models__item` → `types.OutputFusionServerToolItem__failed_models__item`
+- `types.OpenResponsesResult__output__item__7__25__responses__item` → `types.OutputFusionServerToolItem__responses__item`
+- `types.OpenResponsesResult__output__item__7__3__action__0` → `types.OpenResponsesResult__output__item__4__action__0`
+- `types.OpenResponsesResult__output__item__7__3__action__1` → `types.OpenResponsesResult__output__item__4__action__1`
+- `types.OpenResponsesResult__output__item__7__3__action__2` → `types.OpenResponsesResult__output__item__4__action__2`
+- `types.OpenResponsesResult__output__item__7__7__pending_safety_checks__item` → `types.OutputComputerCallItem__pending_safety_checks__item`
+- `types.OpenResponsesResult__output__item__7__9__action` → `types.OutputWebSearchServerToolItem__action`
+- `types.OpenResponsesResult__output__item__7__9__action__sources__item` → `types.OutputWebSearchServerToolItem__action__sources__item`
+- `types.OpenResponsesResult__text__format__0__0` → `types.CustomTool__format__0`
+- `types.OutputShellCallOutputItem__output__item__outcome__1` → `types.ShellCallOutputContent__outcome__1`
+- `types.AdditionalToolsItem__tools__item__27`: removed
+- `types.AdvisorNestedTool__parameters`: removed
+- `types.AnthropicAdvisorToolResult__content`: removed
+- `types.Arrays_3__item`: removed
+- `types.Arrays_3__item__stances__item`: removed
+- `types.Arrays_4__item`: removed
+- `types.Arrays_5__item`: removed
+- `types.Arrays_7__item`: removed
+- `types.Arrays_7__item__parameters`: removed
+- `types.Arrays_8__item__7`: removed
+- `types.Arrays_8__item__7__content__0__item__0__0`: removed
+- `types.Arrays_8__item__7__content__0__item__0__0__annotations__item__0__0`: removed
+- `types.Arrays_8__item__7__content__0__item__0__0__annotations__item__0__1`: removed
+- `types.Arrays_8__item__7__content__0__item__0__0__annotations__item__0__2`: removed
+- `types.Arrays_8__item__7__content__0__item__0__0__annotations__item__1__0`: removed
+- `types.Arrays_8__item__7__content__0__item__0__0__annotations__item__1__1`: removed
+- `types.Arrays_8__item__7__content__0__item__0__0__annotations__item__1__2`: removed
+- `types.Arrays_8__item__7__content__0__item__0__0__annotations__item__2__0`: removed
+- `types.Arrays_8__item__7__content__0__item__0__0__annotations__item__2__1`: removed
+- `types.Arrays_8__item__7__content__0__item__0__0__annotations__item__2__2`: removed
+- `types.Arrays_8__item__7__content__0__item__0__0__logprobs__item`: removed
+- `types.Arrays_8__item__7__content__0__item__0__0__logprobs__item__top_logprobs__item`: removed
+- `types.Arrays_8__item__7__content__0__item__0__1`: removed
+- `types.Arrays_8__item__7__content__0__item__0__1__logprobs__item`: removed
+- `types.Arrays_8__item__7__content__0__item__0__1__logprobs__item__top_logprobs__item`: removed
+- `types.Arrays_8__item__7__content__0__item__1__0`: removed
+- `types.Arrays_8__item__7__content__0__item__1__0__logprobs__item`: removed
+- `types.Arrays_8__item__7__content__0__item__1__0__logprobs__item__top_logprobs__item`: removed
+- `types.Arrays_8__item__7__content__0__item__1__1`: removed
+- `types.Arrays_8__item__8`: removed
+- `types.Arrays_8__item__8__content__0__item`: removed
+- `types.Arrays_8__item__8__summary__0__item`: removed
+- `types.BaseMessagesResult__usage`: removed
+- `types.BaseResponsesResult__tools__item__0`: removed
+- `types.ChatAssistantImages__item`: removed
+- `types.ChatAssistantImages__item__image_url`: removed
+- `types.ChatFunctionTool__0__function__parameters`: removed
+- `types.ChatJsonSchemaConfig__schema`: removed
+- `types.ChatRequest__metadata`: removed
+- `types.CodeInterpreterCallItem__outputs__0__item__0`: removed
+- `types.CodeInterpreterCallItem__outputs__0__item__1`: removed
+- `types.CompoundFilter__filters__item`: removed
+- `types.CreateObservabilityDestinationRequest__config`: removed
+- `types.CustomToolCallOutputItem__output__1__0__item__0__0`: removed
+- `types.CustomToolCallOutputItem__output__1__0__item__0__0__prompt_cache_breakpoint__0__0`: removed
+- `types.CustomToolCallOutputItem__output__1__0__item__0__1`: removed
+- `types.CustomToolCallOutputItem__output__1__0__item__0__2`: removed
+- `types.CustomToolCallOutputItem__output__1__0__item__1__0`: removed
+- `types.CustomToolCallOutputItem__output__1__0__item__1__1`: removed
+- `types.CustomToolCallOutputItem__output__1__0__item__1__2`: removed
+- `types.CustomToolCallOutputItem__output__1__0__item__2__0`: removed
+- `types.CustomToolCallOutputItem__output__1__0__item__2__1`: removed
+- `types.CustomToolCallOutputItem__output__1__0__item__2__2`: removed
+- `types.DebugEvent__debug__echo_upstream_body`: removed
+- `types.FormatJsonSchemaConfig__schema`: removed
+- `types.FunctionCallOutputItem__output__1__0__item__0__0`: removed
+- `types.FunctionCallOutputItem__output__1__0__item__0__0__prompt_cache_breakpoint__0__0`: removed
+- `types.FunctionCallOutputItem__output__1__0__item__0__1`: removed
+- `types.FunctionCallOutputItem__output__1__0__item__0__2`: removed
+- `types.FunctionCallOutputItem__output__1__0__item__1__0`: removed
+- `types.FunctionCallOutputItem__output__1__0__item__1__1`: removed
+- `types.FunctionCallOutputItem__output__1__0__item__1__2`: removed
+- `types.FunctionCallOutputItem__output__1__0__item__2__0`: removed
+- `types.FunctionCallOutputItem__output__1__0__item__2__1`: removed
+- `types.FunctionCallOutputItem__output__1__0__item__2__2`: removed
+- `types.FusionPlugin__tools__item__parameters`: removed
+- `types.GetAnalyticsMeta200__data__operators__item`: removed
+- `types.LocalShellCallItem__action__env`: removed
+- `types.McpListToolsItem__tools__item__input_schema`: removed
+- `types.MessagesAdvisorToolResultBlock__content`: removed
+- `types.MessagesContentBlockStartEvent__content_block__14`: removed
+- `types.MessagesDeltaEvent__usage__server_tool_use__0`: removed
+- `types.MessagesResult__usage__cache_creation__0__0`: removed
+- `types.MessagesResult__usage__iterations__item__0__0`: removed
+- `types.MessagesResult__usage__iterations__item__0__0__cache_creation__0__0`: removed
+- `types.MessagesResult__usage__iterations__item__0__1`: removed
+- `types.MessagesResult__usage__iterations__item__0__1__cache_creation__0__0`: removed
+- `types.MessagesResult__usage__iterations__item__0__2`: removed
+- `types.MessagesResult__usage__iterations__item__0__2__cache_creation__0__0`: removed
+- `types.MessagesResult__usage__iterations__item__0__3`: removed
+- `types.MessagesResult__usage__iterations__item__0__3__cache_creation__0__0`: removed
+- `types.MessagesResult__usage__iterations__item__1__0`: removed
+- `types.MessagesResult__usage__iterations__item__1__0__cache_creation__0__0`: removed
+- `types.MessagesResult__usage__iterations__item__1__1`: removed
+- `types.MessagesResult__usage__iterations__item__1__1__cache_creation__0__0`: removed
+- `types.MessagesResult__usage__iterations__item__1__2`: removed
+- `types.MessagesResult__usage__iterations__item__1__2__cache_creation__0__0`: removed
+- `types.MessagesResult__usage__iterations__item__1__3`: removed
+- `types.MessagesResult__usage__iterations__item__1__3__cache_creation__0__0`: removed
+- `types.MessagesResult__usage__iterations__item__2__0`: removed
+- `types.MessagesResult__usage__iterations__item__2__0__cache_creation__0__0`: removed
+- `types.MessagesResult__usage__iterations__item__2__1`: removed
+- `types.MessagesResult__usage__iterations__item__2__1__cache_creation__0__0`: removed
+- `types.MessagesResult__usage__iterations__item__2__2`: removed
+- `types.MessagesResult__usage__iterations__item__2__2__cache_creation__0__0`: removed
+- `types.MessagesResult__usage__iterations__item__2__3`: removed
+- `types.MessagesResult__usage__iterations__item__2__3__cache_creation__0__0`: removed
+- `types.MessagesResult__usage__iterations__item__3__0`: removed
+- `types.MessagesResult__usage__iterations__item__3__0__cache_creation__0__0`: removed
+- `types.MessagesResult__usage__iterations__item__3__1`: removed
+- `types.MessagesResult__usage__iterations__item__3__1__cache_creation__0__0`: removed
+- `types.MessagesResult__usage__iterations__item__3__2`: removed
+- `types.MessagesResult__usage__iterations__item__3__2__cache_creation__0__0`: removed
+- `types.MessagesResult__usage__iterations__item__3__3`: removed
+- `types.MessagesResult__usage__iterations__item__3__3__cache_creation__0__0`: removed
+- `types.MessagesResult__usage__output_tokens_details__0__0`: removed
+- `types.MessagesResult__usage__server_tool_use__0__0`: removed
+- `types.Objects_148__max_price`: removed
+- `types.ObservabilityArizeDestination__config__headers`: removed
+- `types.ObservabilityBraintrustDestination__config__headers`: removed
+- `types.ObservabilityClickhouseDestination__config__headers`: removed
+- `types.ObservabilityDatadogDestination__config__headers`: removed
+- `types.ObservabilityGrafanaDestination__config__headers`: removed
+- `types.ObservabilityLangfuseDestination__config__headers`: removed
+- `types.ObservabilityLangsmithDestination__config__headers`: removed
+- `types.ObservabilityNewrelicDestination__config__headers`: removed
+- `types.ObservabilityOpikDestination__config__headers`: removed
+- `types.ObservabilityOtelCollectorDestination__config__headers`: removed
+- `types.ObservabilityPosthogDestination__config__headers`: removed
+- `types.ObservabilityRampDestination__config__headers`: removed
+- `types.ObservabilityS3Destination__config__headers`: removed
+- `types.ObservabilitySentryDestination__config__headers`: removed
+- `types.ObservabilitySnowflakeDestination__config__headers`: removed
+- `types.ObservabilityWeaveDestination__config__headers`: removed
+- `types.ObservabilityWebhookDestination__config__headers`: removed
+- `types.OpenResponsesResult__output__item__0__0`: removed
+- `types.OpenResponsesResult__output__item__0__0__content__item__0__0`: removed
+- `types.OpenResponsesResult__output__item__0__0__content__item__0__0__annotations__item__0__0`: removed
+- `types.OpenResponsesResult__output__item__0__0__content__item__0__0__annotations__item__0__1`: removed
+- `types.OpenResponsesResult__output__item__0__0__content__item__0__0__annotations__item__0__2`: removed
+- `types.OpenResponsesResult__output__item__0__0__content__item__0__0__annotations__item__1__0`: removed
+- `types.OpenResponsesResult__output__item__0__0__content__item__0__0__annotations__item__1__1`: removed
+- `types.OpenResponsesResult__output__item__0__0__content__item__0__0__annotations__item__1__2`: removed
+- `types.OpenResponsesResult__output__item__0__0__content__item__0__0__annotations__item__2__0`: removed
+- `types.OpenResponsesResult__output__item__0__0__content__item__0__0__annotations__item__2__1`: removed
+- `types.OpenResponsesResult__output__item__0__0__content__item__0__0__annotations__item__2__2`: removed
+- `types.OpenResponsesResult__output__item__0__0__content__item__0__0__logprobs__item`: removed
+- `types.OpenResponsesResult__output__item__0__0__content__item__0__0__logprobs__item__top_logprobs__item`: removed
+- `types.OpenResponsesResult__output__item__0__0__content__item__0__1`: removed
+- `types.OpenResponsesResult__output__item__0__0__content__item__0__1__logprobs__item`: removed
+- `types.OpenResponsesResult__output__item__0__0__content__item__0__1__logprobs__item__top_logprobs__item`: removed
+- `types.OpenResponsesResult__output__item__0__0__content__item__1__0`: removed
+- `types.OpenResponsesResult__output__item__0__0__content__item__1__0__logprobs__item`: removed
+- `types.OpenResponsesResult__output__item__0__0__content__item__1__0__logprobs__item__top_logprobs__item`: removed
+- `types.OpenResponsesResult__output__item__0__0__content__item__1__1`: removed
+- `types.OpenResponsesResult__output__item__0__1`: removed
+- `types.OpenResponsesResult__output__item__0__10`: removed
+- `types.OpenResponsesResult__output__item__0__11`: removed
+- `types.OpenResponsesResult__output__item__0__12`: removed
+- `types.OpenResponsesResult__output__item__0__13`: removed
+- `types.OpenResponsesResult__output__item__0__14`: removed
+- `types.OpenResponsesResult__output__item__0__15`: removed
+- `types.OpenResponsesResult__output__item__0__16`: removed
+- `types.OpenResponsesResult__output__item__0__17`: removed
+- `types.OpenResponsesResult__output__item__0__18`: removed
+- `types.OpenResponsesResult__output__item__0__18__action`: removed
+- `types.OpenResponsesResult__output__item__0__19`: removed
+- `types.OpenResponsesResult__output__item__0__19__output__item`: removed
+- `types.OpenResponsesResult__output__item__0__19__output__item__outcome__0`: removed
+- `types.OpenResponsesResult__output__item__0__1__content__0__item__0`: removed
+- `types.OpenResponsesResult__output__item__0__1__content__0__item__0__logprobs__item`: removed
+- `types.OpenResponsesResult__output__item__0__1__content__0__item__0__logprobs__item__top_logprobs__item`: removed
+- `types.OpenResponsesResult__output__item__0__1__content__0__item__1`: removed
+- `types.OpenResponsesResult__output__item__0__2`: removed
+- `types.OpenResponsesResult__output__item__0__20`: removed
+- `types.OpenResponsesResult__output__item__0__21`: removed
+- `types.OpenResponsesResult__output__item__0__22`: removed
+- `types.OpenResponsesResult__output__item__0__23`: removed
+- `types.OpenResponsesResult__output__item__0__24`: removed
+- `types.OpenResponsesResult__output__item__0__25`: removed
+- `types.OpenResponsesResult__output__item__0__26`: removed
+- `types.OpenResponsesResult__output__item__0__27`: removed
+- `types.OpenResponsesResult__output__item__0__28`: removed
+- `types.OpenResponsesResult__output__item__0__29`: removed
+- `types.OpenResponsesResult__output__item__0__3`: removed
+- `types.OpenResponsesResult__output__item__0__4`: removed
+- `types.OpenResponsesResult__output__item__0__5`: removed
+- `types.OpenResponsesResult__output__item__0__6`: removed
+- `types.OpenResponsesResult__output__item__0__6__outputs__0__item__0`: removed
+- `types.OpenResponsesResult__output__item__0__6__outputs__0__item__1`: removed
+- `types.OpenResponsesResult__output__item__0__7`: removed
+- `types.OpenResponsesResult__output__item__0__8`: removed
+- `types.OpenResponsesResult__output__item__0__9`: removed
+- `types.OpenResponsesResult__output__item__1__0`: removed
+- `types.OpenResponsesResult__output__item__1__0__content__item__0`: removed
+- `types.OpenResponsesResult__output__item__1__0__content__item__0__logprobs__item`: removed
+- `types.OpenResponsesResult__output__item__1__0__content__item__0__logprobs__item__top_logprobs__item`: removed
+- `types.OpenResponsesResult__output__item__1__0__content__item__1`: removed
+- `types.OpenResponsesResult__output__item__1__1`: removed
+- `types.OpenResponsesResult__output__item__1__10`: removed
+- `types.OpenResponsesResult__output__item__1__11`: removed
+- `types.OpenResponsesResult__output__item__1__12`: removed
+- `types.OpenResponsesResult__output__item__1__13`: removed
+- `types.OpenResponsesResult__output__item__1__14`: removed
+- `types.OpenResponsesResult__output__item__1__15`: removed
+- `types.OpenResponsesResult__output__item__1__16`: removed
+- `types.OpenResponsesResult__output__item__1__17`: removed
+- `types.OpenResponsesResult__output__item__1__18`: removed
+- `types.OpenResponsesResult__output__item__1__18__action`: removed
+- `types.OpenResponsesResult__output__item__1__19`: removed
+- `types.OpenResponsesResult__output__item__1__19__output__item`: removed
+- `types.OpenResponsesResult__output__item__1__19__output__item__outcome__0`: removed
+- `types.OpenResponsesResult__output__item__1__1__content__0__item`: removed
+- `types.OpenResponsesResult__output__item__1__1__summary__item`: removed
+- `types.OpenResponsesResult__output__item__1__2`: removed
+- `types.OpenResponsesResult__output__item__1__20`: removed
+- `types.OpenResponsesResult__output__item__1__21`: removed
+- `types.OpenResponsesResult__output__item__1__22`: removed
+- `types.OpenResponsesResult__output__item__1__23`: removed
+- `types.OpenResponsesResult__output__item__1__24`: removed
+- `types.OpenResponsesResult__output__item__1__25`: removed
+- `types.OpenResponsesResult__output__item__1__26`: removed
+- `types.OpenResponsesResult__output__item__1__27`: removed
+- `types.OpenResponsesResult__output__item__1__28`: removed
+- `types.OpenResponsesResult__output__item__1__29`: removed
+- `types.OpenResponsesResult__output__item__1__3`: removed
+- `types.OpenResponsesResult__output__item__1__4`: removed
+- `types.OpenResponsesResult__output__item__1__5`: removed
+- `types.OpenResponsesResult__output__item__1__6`: removed
+- `types.OpenResponsesResult__output__item__1__6__outputs__0__item__0`: removed
+- `types.OpenResponsesResult__output__item__1__6__outputs__0__item__1`: removed
+- `types.OpenResponsesResult__output__item__1__7`: removed
+- `types.OpenResponsesResult__output__item__1__8`: removed
+- `types.OpenResponsesResult__output__item__1__9`: removed
+- `types.OpenResponsesResult__output__item__2__0`: removed
+- `types.OpenResponsesResult__output__item__2__1`: removed
+- `types.OpenResponsesResult__output__item__2__10`: removed
+- `types.OpenResponsesResult__output__item__2__11`: removed
+- `types.OpenResponsesResult__output__item__2__12`: removed
+- `types.OpenResponsesResult__output__item__2__13`: removed
+- `types.OpenResponsesResult__output__item__2__14`: removed
+- `types.OpenResponsesResult__output__item__2__15`: removed
+- `types.OpenResponsesResult__output__item__2__16`: removed
+- `types.OpenResponsesResult__output__item__2__17`: removed
+- `types.OpenResponsesResult__output__item__2__18`: removed
+- `types.OpenResponsesResult__output__item__2__18__action`: removed
+- `types.OpenResponsesResult__output__item__2__19`: removed
+- `types.OpenResponsesResult__output__item__2__19__output__item`: removed
+- `types.OpenResponsesResult__output__item__2__19__output__item__outcome__0`: removed
+- `types.OpenResponsesResult__output__item__2__1__content__0__item`: removed
+- `types.OpenResponsesResult__output__item__2__2`: removed
+- `types.OpenResponsesResult__output__item__2__20`: removed
+- `types.OpenResponsesResult__output__item__2__21`: removed
+- `types.OpenResponsesResult__output__item__2__22`: removed
+- `types.OpenResponsesResult__output__item__2__23`: removed
+- `types.OpenResponsesResult__output__item__2__24`: removed
+- `types.OpenResponsesResult__output__item__2__25`: removed
+- `types.OpenResponsesResult__output__item__2__26`: removed
+- `types.OpenResponsesResult__output__item__2__27`: removed
+- `types.OpenResponsesResult__output__item__2__28`: removed
+- `types.OpenResponsesResult__output__item__2__29`: removed
+- `types.OpenResponsesResult__output__item__2__3`: removed
+- `types.OpenResponsesResult__output__item__2__4`: removed
+- `types.OpenResponsesResult__output__item__2__5`: removed
+- `types.OpenResponsesResult__output__item__2__6`: removed
+- `types.OpenResponsesResult__output__item__2__6__outputs__0__item__0`: removed
+- `types.OpenResponsesResult__output__item__2__6__outputs__0__item__1`: removed
+- `types.OpenResponsesResult__output__item__2__7`: removed
+- `types.OpenResponsesResult__output__item__2__8`: removed
+- `types.OpenResponsesResult__output__item__2__9`: removed
+- `types.OpenResponsesResult__output__item__3__0`: removed
+- `types.OpenResponsesResult__output__item__3__1`: removed
+- `types.OpenResponsesResult__output__item__3__10`: removed
+- `types.OpenResponsesResult__output__item__3__11`: removed
+- `types.OpenResponsesResult__output__item__3__12`: removed
+- `types.OpenResponsesResult__output__item__3__13`: removed
+- `types.OpenResponsesResult__output__item__3__14`: removed
+- `types.OpenResponsesResult__output__item__3__15`: removed
+- `types.OpenResponsesResult__output__item__3__16`: removed
+- `types.OpenResponsesResult__output__item__3__17`: removed
+- `types.OpenResponsesResult__output__item__3__18`: removed
+- `types.OpenResponsesResult__output__item__3__18__action`: removed
+- `types.OpenResponsesResult__output__item__3__19`: removed
+- `types.OpenResponsesResult__output__item__3__19__output__item`: removed
+- `types.OpenResponsesResult__output__item__3__19__output__item__outcome__0`: removed
+- `types.OpenResponsesResult__output__item__3__1__content__0__item`: removed
+- `types.OpenResponsesResult__output__item__3__2`: removed
+- `types.OpenResponsesResult__output__item__3__20`: removed
+- `types.OpenResponsesResult__output__item__3__21`: removed
+- `types.OpenResponsesResult__output__item__3__22`: removed
+- `types.OpenResponsesResult__output__item__3__23`: removed
+- `types.OpenResponsesResult__output__item__3__24`: removed
+- `types.OpenResponsesResult__output__item__3__25`: removed
+- `types.OpenResponsesResult__output__item__3__26`: removed
+- `types.OpenResponsesResult__output__item__3__27`: removed
+- `types.OpenResponsesResult__output__item__3__28`: removed
+- `types.OpenResponsesResult__output__item__3__29`: removed
+- `types.OpenResponsesResult__output__item__3__3`: removed
+- `types.OpenResponsesResult__output__item__3__4`: removed
+- `types.OpenResponsesResult__output__item__3__5`: removed
+- `types.OpenResponsesResult__output__item__3__6`: removed
+- `types.OpenResponsesResult__output__item__3__6__outputs__0__item__0`: removed
+- `types.OpenResponsesResult__output__item__3__6__outputs__0__item__1`: removed
+- `types.OpenResponsesResult__output__item__3__7`: removed
+- `types.OpenResponsesResult__output__item__3__8`: removed
+- `types.OpenResponsesResult__output__item__3__9`: removed
+- `types.OpenResponsesResult__output__item__4__0`: removed
+- `types.OpenResponsesResult__output__item__4__1`: removed
+- `types.OpenResponsesResult__output__item__4__10`: removed
+- `types.OpenResponsesResult__output__item__4__11`: removed
+- `types.OpenResponsesResult__output__item__4__12`: removed
+- `types.OpenResponsesResult__output__item__4__13`: removed
+- `types.OpenResponsesResult__output__item__4__14`: removed
+- `types.OpenResponsesResult__output__item__4__15`: removed
+- `types.OpenResponsesResult__output__item__4__16`: removed
+- `types.OpenResponsesResult__output__item__4__17`: removed
+- `types.OpenResponsesResult__output__item__4__18`: removed
+- `types.OpenResponsesResult__output__item__4__18__action__0`: removed
+- `types.OpenResponsesResult__output__item__4__18__action__1`: removed
+- `types.OpenResponsesResult__output__item__4__18__action__2`: removed
+- `types.OpenResponsesResult__output__item__4__19`: removed
+- `types.OpenResponsesResult__output__item__4__19__output__item`: removed
+- `types.OpenResponsesResult__output__item__4__19__output__item__outcome__0`: removed
+- `types.OpenResponsesResult__output__item__4__1__content__0__item`: removed
+- `types.OpenResponsesResult__output__item__4__2`: removed
+- `types.OpenResponsesResult__output__item__4__20`: removed
+- `types.OpenResponsesResult__output__item__4__21`: removed
+- `types.OpenResponsesResult__output__item__4__22`: removed
+- `types.OpenResponsesResult__output__item__4__23`: removed
+- `types.OpenResponsesResult__output__item__4__24`: removed
+- `types.OpenResponsesResult__output__item__4__25`: removed
+- `types.OpenResponsesResult__output__item__4__26`: removed
+- `types.OpenResponsesResult__output__item__4__27`: removed
+- `types.OpenResponsesResult__output__item__4__28`: removed
+- `types.OpenResponsesResult__output__item__4__29`: removed
+- `types.OpenResponsesResult__output__item__4__3`: removed
+- `types.OpenResponsesResult__output__item__4__3__action__0__0`: removed
+- `types.OpenResponsesResult__output__item__4__3__action__0__1`: removed
+- `types.OpenResponsesResult__output__item__4__3__action__0__2`: removed
+- `types.OpenResponsesResult__output__item__4__3__action__1__0`: removed
+- `types.OpenResponsesResult__output__item__4__3__action__1__2`: removed
+- `types.OpenResponsesResult__output__item__4__3__action__2__0`: removed
+- `types.OpenResponsesResult__output__item__4__3__action__2__1`: removed
+- `types.OpenResponsesResult__output__item__4__4`: removed
+- `types.OpenResponsesResult__output__item__4__5`: removed
+- `types.OpenResponsesResult__output__item__4__6`: removed
+- `types.OpenResponsesResult__output__item__4__6__outputs__0__item__0`: removed
+- `types.OpenResponsesResult__output__item__4__6__outputs__0__item__1`: removed
+- `types.OpenResponsesResult__output__item__4__7`: removed
+- `types.OpenResponsesResult__output__item__4__8`: removed
+- `types.OpenResponsesResult__output__item__4__9`: removed
+- `types.OpenResponsesResult__output__item__4__9__action__0`: removed
+- `types.OpenResponsesResult__output__item__4__9__action__1`: removed
+- `types.OpenResponsesResult__output__item__4__9__action__2`: removed
+- `types.OpenResponsesResult__output__item__5__0`: removed
+- `types.OpenResponsesResult__output__item__5__1`: removed
+- `types.OpenResponsesResult__output__item__5__10`: removed
+- `types.OpenResponsesResult__output__item__5__11`: removed
+- `types.OpenResponsesResult__output__item__5__12`: removed
+- `types.OpenResponsesResult__output__item__5__13`: removed
+- `types.OpenResponsesResult__output__item__5__14`: removed
+- `types.OpenResponsesResult__output__item__5__15`: removed
+- `types.OpenResponsesResult__output__item__5__16`: removed
+- `types.OpenResponsesResult__output__item__5__17`: removed
+- `types.OpenResponsesResult__output__item__5__18`: removed
+- `types.OpenResponsesResult__output__item__5__18__action`: removed
+- `types.OpenResponsesResult__output__item__5__19`: removed
+- `types.OpenResponsesResult__output__item__5__19__output__item`: removed
+- `types.OpenResponsesResult__output__item__5__19__output__item__outcome__0`: removed
+- `types.OpenResponsesResult__output__item__5__1__content__0__item`: removed
+- `types.OpenResponsesResult__output__item__5__2`: removed
+- `types.OpenResponsesResult__output__item__5__20`: removed
+- `types.OpenResponsesResult__output__item__5__21`: removed
+- `types.OpenResponsesResult__output__item__5__22`: removed
+- `types.OpenResponsesResult__output__item__5__23`: removed
+- `types.OpenResponsesResult__output__item__5__24`: removed
+- `types.OpenResponsesResult__output__item__5__25`: removed
+- `types.OpenResponsesResult__output__item__5__26`: removed
+- `types.OpenResponsesResult__output__item__5__27`: removed
+- `types.OpenResponsesResult__output__item__5__28`: removed
+- `types.OpenResponsesResult__output__item__5__29`: removed
+- `types.OpenResponsesResult__output__item__5__3`: removed
+- `types.OpenResponsesResult__output__item__5__4`: removed
+- `types.OpenResponsesResult__output__item__5__5`: removed
+- `types.OpenResponsesResult__output__item__5__6`: removed
+- `types.OpenResponsesResult__output__item__5__6__outputs__0__item__0`: removed
+- `types.OpenResponsesResult__output__item__5__6__outputs__0__item__1`: removed
+- `types.OpenResponsesResult__output__item__5__7`: removed
+- `types.OpenResponsesResult__output__item__5__8`: removed
+- `types.OpenResponsesResult__output__item__5__9`: removed
+- `types.OpenResponsesResult__output__item__6__0`: removed
+- `types.OpenResponsesResult__output__item__6__1`: removed
+- `types.OpenResponsesResult__output__item__6__10`: removed
+- `types.OpenResponsesResult__output__item__6__11`: removed
+- `types.OpenResponsesResult__output__item__6__12`: removed
+- `types.OpenResponsesResult__output__item__6__13`: removed
+- `types.OpenResponsesResult__output__item__6__14`: removed
+- `types.OpenResponsesResult__output__item__6__15`: removed
+- `types.OpenResponsesResult__output__item__6__16`: removed
+- `types.OpenResponsesResult__output__item__6__17`: removed
+- `types.OpenResponsesResult__output__item__6__18`: removed
+- `types.OpenResponsesResult__output__item__6__18__action`: removed
+- `types.OpenResponsesResult__output__item__6__19`: removed
+- `types.OpenResponsesResult__output__item__6__19__output__item`: removed
+- `types.OpenResponsesResult__output__item__6__19__output__item__outcome__0`: removed
+- `types.OpenResponsesResult__output__item__6__1__content__0__item`: removed
+- `types.OpenResponsesResult__output__item__6__2`: removed
+- `types.OpenResponsesResult__output__item__6__20`: removed
+- `types.OpenResponsesResult__output__item__6__21`: removed
+- `types.OpenResponsesResult__output__item__6__22`: removed
+- `types.OpenResponsesResult__output__item__6__23`: removed
+- `types.OpenResponsesResult__output__item__6__24`: removed
+- `types.OpenResponsesResult__output__item__6__25`: removed
+- `types.OpenResponsesResult__output__item__6__26`: removed
+- `types.OpenResponsesResult__output__item__6__27`: removed
+- `types.OpenResponsesResult__output__item__6__28`: removed
+- `types.OpenResponsesResult__output__item__6__29`: removed
+- `types.OpenResponsesResult__output__item__6__3`: removed
+- `types.OpenResponsesResult__output__item__6__4`: removed
+- `types.OpenResponsesResult__output__item__6__5`: removed
+- `types.OpenResponsesResult__output__item__6__6`: removed
+- `types.OpenResponsesResult__output__item__6__6__outputs__0__item__0`: removed
+- `types.OpenResponsesResult__output__item__6__6__outputs__0__item__1`: removed
+- `types.OpenResponsesResult__output__item__6__7`: removed
+- `types.OpenResponsesResult__output__item__6__8`: removed
+- `types.OpenResponsesResult__output__item__6__9`: removed
+- `types.OpenResponsesResult__output__item__7__0`: removed
+- `types.OpenResponsesResult__output__item__7__1`: removed
+- `types.OpenResponsesResult__output__item__7__10`: removed
+- `types.OpenResponsesResult__output__item__7__11`: removed
+- `types.OpenResponsesResult__output__item__7__12`: removed
+- `types.OpenResponsesResult__output__item__7__13`: removed
+- `types.OpenResponsesResult__output__item__7__14`: removed
+- `types.OpenResponsesResult__output__item__7__15`: removed
+- `types.OpenResponsesResult__output__item__7__16`: removed
+- `types.OpenResponsesResult__output__item__7__16__operation__0__0`: removed
+- `types.OpenResponsesResult__output__item__7__16__operation__0__1`: removed
+- `types.OpenResponsesResult__output__item__7__16__operation__0__2`: removed
+- `types.OpenResponsesResult__output__item__7__16__operation__1__0`: removed
+- `types.OpenResponsesResult__output__item__7__16__operation__1__1`: removed
+- `types.OpenResponsesResult__output__item__7__16__operation__1__2`: removed
+- `types.OpenResponsesResult__output__item__7__16__operation__2__0`: removed
+- `types.OpenResponsesResult__output__item__7__16__operation__2__1`: removed
+- `types.OpenResponsesResult__output__item__7__16__operation__2__2`: removed
+- `types.OpenResponsesResult__output__item__7__17`: removed
+- `types.OpenResponsesResult__output__item__7__17__operation__0__0`: removed
+- `types.OpenResponsesResult__output__item__7__17__operation__0__1`: removed
+- `types.OpenResponsesResult__output__item__7__17__operation__0__2`: removed
+- `types.OpenResponsesResult__output__item__7__17__operation__1__0`: removed
+- `types.OpenResponsesResult__output__item__7__17__operation__1__1`: removed
+- `types.OpenResponsesResult__output__item__7__17__operation__1__2`: removed
+- `types.OpenResponsesResult__output__item__7__17__operation__2__0`: removed
+- `types.OpenResponsesResult__output__item__7__17__operation__2__1`: removed
+- `types.OpenResponsesResult__output__item__7__17__operation__2__2`: removed
+- `types.OpenResponsesResult__output__item__7__18`: removed
+- `types.OpenResponsesResult__output__item__7__18__action`: removed
+- `types.OpenResponsesResult__output__item__7__19`: removed
+- `types.OpenResponsesResult__output__item__7__19__output__item`: removed
+- `types.OpenResponsesResult__output__item__7__19__output__item__outcome__0`: removed
+- `types.OpenResponsesResult__output__item__7__1__content__0__item`: removed
+- `types.OpenResponsesResult__output__item__7__2`: removed
+- `types.OpenResponsesResult__output__item__7__20`: removed
+- `types.OpenResponsesResult__output__item__7__21`: removed
+- `types.OpenResponsesResult__output__item__7__22`: removed
+- `types.OpenResponsesResult__output__item__7__23`: removed
+- `types.OpenResponsesResult__output__item__7__24`: removed
+- `types.OpenResponsesResult__output__item__7__25`: removed
+- `types.OpenResponsesResult__output__item__7__26`: removed
+- `types.OpenResponsesResult__output__item__7__27`: removed
+- `types.OpenResponsesResult__output__item__7__28`: removed
+- `types.OpenResponsesResult__output__item__7__29`: removed
+- `types.OpenResponsesResult__output__item__7__3`: removed
+- `types.OpenResponsesResult__output__item__7__4`: removed
+- `types.OpenResponsesResult__output__item__7__5`: removed
+- `types.OpenResponsesResult__output__item__7__6`: removed
+- `types.OpenResponsesResult__output__item__7__6__outputs__0__item__0`: removed
+- `types.OpenResponsesResult__output__item__7__6__outputs__0__item__1`: removed
+- `types.OpenResponsesResult__output__item__7__7`: removed
+- `types.OpenResponsesResult__output__item__7__8`: removed
+- `types.OpenResponsesResult__output__item__7__9`: removed
+- `types.OpenResponsesResult__text__format__0__1`: removed
+- `types.OpenResponsesResult__text__format__0__2`: removed
+- `types.OpenResponsesResult__text__format__0__2__schema`: removed
+- `types.OpenResponsesResult__text__format__1__0`: removed
+- `types.OpenResponsesResult__text__format__1__1`: removed
+- `types.OpenResponsesResult__text__format__1__2`: removed
+- `types.OpenResponsesResult__text__format__1__2__schema`: removed
+- `types.OpenResponsesResult__text__format__2__0`: removed
+- `types.OpenResponsesResult__text__format__2__0__schema`: removed
+- `types.OpenResponsesResult__text__format__2__1`: removed
+- `types.OpenResponsesResult__text__format__2__1__schema`: removed
+- `types.OpenResponsesResult__text__format__2__2`: removed
+- `types.OpenResponsesResult__text__format__2__2__schema`: removed
+- `types.OutputCodeInterpreterCallItem__outputs__0__item__0`: removed
+- `types.OutputCodeInterpreterCallItem__outputs__0__item__1`: removed
+- `types.OutputReasoningItem__content__0__item`: removed
+- `types.OutputShellCallOutputItem__output__item`: removed
+- `types.OutputShellCallOutputItem__output__item__outcome__0`: removed
+- `types.PipelineStage__data`: removed
+- `types.PresetDesignatedVersion__0__config`: removed
+- `types.PublicEndpoint__pricing`: removed
+- `types.QueryAnalytics200__data__data__item`: removed
+- `types.QueryAnalyticsRequestJson__classifier_filters__filters__item`: removed
+- `types.QueryAnalyticsRequestJson__filters__item`: removed
+- `types.ReasoningItem__content__0__item`: removed
+- `types.ResponsesErrorField__0`: removed
+- `types.ShellCallOutputItem__output__item`: removed
+- `types.StreamLogprob__top_logprobs__item`: removed
+- `types.SubagentNestedTool__parameters`: removed
+- `types.ToolChoiceAllowed__tools__item`: removed
+- `types.Union_10__0`: removed
+- `types.Union_10__0__schema`: removed
+- `types.Union_11__0`: removed
+- `types.Union_13__0`: removed
+- `types.Union_1__0`: removed
+- `types.Union_6__0`: removed
+- `types.Union_8__0`: removed
+- `types.Union_9__0`: removed
+- `types.Union___0`: removed
+- `types.UpdateObservabilityDestinationRequest__config`: removed
+- `types.Usage__0`: removed
+- `types.Usage__0__cost_details`: removed
+- `types.Usage__0__input_tokens_details`: removed
+- `types.Usage__0__output_tokens_details`: removed
+
+</details>
+
+### Client methods (0 renamed, 0 removed)
+
+None.
+
+{/* end: scripts/ai_generated_migration.py --write */}

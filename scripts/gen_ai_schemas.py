@@ -117,65 +117,10 @@ def _git_show(reference: Path, tag: str, path: str) -> str:
 
 
 OPENAI = Target(
-    "openai",
-    "OpenAI",
-    "FunctionToolCall",
-    "OpenAi",
-    docs_site="https://developers.openai.com",
-    # 4.1.5's regeneration renames or removes thousands of exported names, and its Generated.ts
-    # builds patterns with forms this generator can't read yet ("only new RegExp(...) is
-    # supported"), so the package follows 4.1.4's Generated.ts until 0.7.0 regenerates it.
-    release="4.1.4",
-)
-# Effect fb998b526 (4.1.4, #10505): tool calls without an `id` and stream deltas without an
-# `index` decode. The rest of 4.1.4's regeneration changes the API, so it waits for a minor.
-_INDEX_DESCRIPTION = '{ "description": "Tool call index in the array" }'
-_ID_DESCRIPTION = '{ "description": "Tool call identifier" }'
-_OPENROUTER_PATCHES = (
-    (
-        '  readonly "id"?: string | null\n  readonly "index": number\n',
-        '  readonly "id"?: string | null\n  readonly "index"?: number\n',
-    ),
-    (
-        (
-            f'  "index": Schema.Number.annotate({_INDEX_DESCRIPTION}).check(\n'
-            '    Schema.isInt().annotate({ "expected": "an integer" })\n'
-            "  ),\n"
-        ),
-        (
-            '  "index": Schema.optionalKey(\n'
-            f"    Schema.Number.annotate({_INDEX_DESCRIPTION}).check(\n"
-            '      Schema.isInt().annotate({ "expected": "an integer" })\n'
-            "    )\n"
-            "  ),\n"
-        ),
-    ),
-    (
-        (
-            '  readonly "function": { readonly "arguments": string; readonly "name": string }\n'
-            '  readonly "id": string\n'
-        ),
-        (
-            '  readonly "function": { readonly "arguments": string; readonly "name": string }\n'
-            '  readonly "id"?: string\n'
-        ),
-    ),
-    (
-        f'  "id": Schema.String.annotate({_ID_DESCRIPTION}),\n',
-        f'  "id": Schema.optionalKey(Schema.String.annotate({_ID_DESCRIPTION})),\n',
-    ),
+    "openai", "OpenAI", "FunctionToolCall", "OpenAi", docs_site="https://developers.openai.com"
 )
 OPENROUTER = Target(
-    "openrouter",
-    "OpenRouter",
-    "ChatResult",
-    "OpenRouter",
-    docs_site="https://openrouter.ai",
-    patches=_OPENROUTER_PATCHES,
-    required_in_types=(("ChatToolCall", "id"), ("ChatStreamToolCall", "index")),
-    # 4.1.4's regeneration from a newer spec (#10521) renames or removes hundreds of exported
-    # names, so the package follows 4.1.2's Generated.ts, with later fixes as patches, until 0.7.0.
-    release="4.1.2",
+    "openrouter", "OpenRouter", "ChatResult", "OpenRouter", docs_site="https://openrouter.ai"
 )
 TARGETS = {target.name: target for target in (OPENAI, OPENROUTER)}
 

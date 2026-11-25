@@ -12,7 +12,4 @@ from pyfect.http.body import File as _File
 from pyfect.ai.openai.generated import types as _T
 from pyfect.schema._struct import StructSchema as _StructSchema
 
-from pyfect.ai.openai.generated._schemas_0 import BetaComparisonFilter, BetaCompoundFilter, ComparisonFilter, CompoundFilter
 
-_recursive_CompoundFilter: _StructSchema[_T.CompoundFilter, _t.Never, _t.Never] = _b.struct(_T.CompoundFilter, {"type": _b.literals(["and", "or"]).annotate(description="Type of operation: `and` or `or`."), "filters": _b.array(_b.union(ComparisonFilter, _b.suspend(lambda: CompoundFilter), mode="one_of")).annotate(description="Array of filters to combine. Items can be `ComparisonFilter` or `CompoundFilter`.")}).annotate(title="Compound Filter", description="Combine multiple filters using `and` or `or`.", identifier="CompoundFilter")
-_recursive_BetaCompoundFilter: _StructSchema[_T.BetaCompoundFilter, _t.Never, _t.Never] = _b.struct(_T.BetaCompoundFilter, {"type": _b.literals(["and", "or"]).annotate(description="Type of operation: `and` or `or`."), "filters": _b.array(_b.union(BetaComparisonFilter, _b.suspend(lambda: BetaCompoundFilter), mode="one_of")).annotate(description="Array of filters to combine. Items can be `ComparisonFilter` or `CompoundFilter`.")}).annotate(title="Compound Filter", description="Combine multiple filters using `and` or `or`.", identifier="BetaCompoundFilter")

@@ -37,6 +37,22 @@ def _decode(schema: Any, value: object) -> Any:
     return S.decode_unknown_sync(schema)(value)
 
 
+def test_composed_reasoning_options():
+    """Generated / preserves composed reasoning options"""
+    reasoning = {"effort": "high", "enabled": True}
+    assert _decode(G.ReasoningConfig, reasoning) == reasoning
+
+
+def test_alignment_calls_in_response_error_metadata():
+    """Generated / preserves alignment calls in response error metadata"""
+    metadata = {
+        "alignment": {"calls": [{"call": 1, "outcome": "unavailable", "reason": "evaluator_error"}]}
+    }
+    call = {"call": 1, "outcome": "unavailable", "reason": "evaluator_error"}
+    decoded = _decode(G.OpenResponsesErrorMetadata, metadata)
+    assert decoded == {"alignment": {"calls": (call,)}}
+
+
 @testing.effect
 def test_audio_transcriptions_as_json():
     """Generated / sends audio transcriptions as JSON with structured provider options"""
@@ -107,6 +123,7 @@ def test_nullable_generation_statistics():
         "provider_responses",
         "user_agent",
         "web_search_engine",
+        "workspace_id",
     ]
     response = {
         "data": {
