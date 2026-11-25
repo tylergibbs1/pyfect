@@ -19,7 +19,7 @@ in pyfect, under ``pyfect.ai.<provider>.generated``:
 
 The TypeScript is read with a parser for the subset the generator emits
 (calls, chained methods, object and array literals, strings, numbers,
-``suspend`` thunks and ``new RegExp``); anything else is an error naming
+``suspend`` thunks and ``new [globalThis.]RegExp``); anything else is an error naming
 the declaration, so an Effect update that changes the shape fails loudly
 instead of producing a wrong schema. ``--check`` fails when the files on
 disk differ from what the source gives. The sources are
@@ -404,7 +404,12 @@ class Parser:
         return Thunk(self.expression())
 
     def regexp(self) -> RegExp:
-        if self.next().text != "RegExp":
+        """``new RegExp(...)``, the constructor named bare or as ``globalThis.RegExp``."""
+        constructor = self.next().text
+        if constructor == "globalThis" and self.at("."):
+            self.next()
+            constructor = self.next().text
+        if constructor != "RegExp":
             raise GenerateError("only `new RegExp(...)` is supported")
         self.expect("(")
         args = self.arguments(")")
@@ -468,6 +473,7 @@ _PRIMITIVES = {
     "String": ("String", "str"),
     "Number": ("Number", "float"),
     "Finite": ("Finite", "float"),
+    "Int": ("Int", "int"),
     "Boolean": ("Boolean", "bool"),
     "Null": ("Null", "None"),
     "Unknown": ("Unknown", "object"),
@@ -490,6 +496,7 @@ _CHECKS = {
     "isMaxProperties": "is_max_properties",
     "isPropertyNames": "is_property_names",
     "isMultipleOf": "is_multiple_of",
+    "isUnique": "is_unique",
 }
 
 _GLOBALS = {"Blob": ("_File", "_File")}
@@ -510,7 +517,14 @@ def py_name(name: str) -> str:
 
 
 def literal(node: Node) -> str:
+    """A JSON value: a schema literal, or an annotation's value (``examples`` is an
+    array, a tuple in Python)."""
     match node:
+        case Arr(items):
+            values = [literal(item) for item in items]
+            return f"({values[0]},)" if len(values) == 1 else f"({', '.join(values)})"
+        case Obj(entries):
+            return f"{{{', '.join(f'{json.dumps(k)}: {literal(v)}' for k, v in entries)}}}"
         case Str(value):
             return json.dumps(value, ensure_ascii=False)
         case Num(value):
@@ -743,17 +757,67 @@ def _union(types: Iterator[str]) -> str:
     return " | ".join(seen)
 
 
-_ASCII_CLASSES = {"d": "0-9", "w": "A-Za-z0-9_"}
-"""JavaScript's ``\\d`` and ``\\w`` (ASCII only, where Python's ``str``
-patterns take any Unicode digit or letter), as class contents."""
+type _Ranges = tuple[tuple[int, int], ...]
+
+_JS_CLASSES: dict[str, _Ranges] = {
+    "d": ((0x30, 0x39),),
+    "w": ((0x41, 0x5A), (0x61, 0x7A), (0x30, 0x39), (0x5F, 0x5F)),
+    "s": (
+        (0x09, 0x0D),
+        (0x20, 0x20),
+        (0xA0, 0xA0),
+        (0x1680, 0x1680),
+        (0x2000, 0x200A),
+        (0x2028, 0x2029),
+        (0x202F, 0x202F),
+        (0x205F, 0x205F),
+        (0x3000, 0x3000),
+        (0xFEFF, 0xFEFF),
+    ),
+}
+"""JavaScript's ``\\d``, ``\\w`` and ``\\s`` as code point ranges. ``\\d`` and ``\\w``
+are ASCII only, where Python's ``str`` patterns take any Unicode digit or letter;
+JavaScript's whitespace has U+FEFF and not U+001C-U+001F or U+0085, which Python's has."""
+
+_JS_LINE_ENDS = "[^\\n\\r\\u2028\\u2029]"
+"""JavaScript's ``.`` without the ``s`` flag: any code point but a line terminator (Python's
+``.`` excludes only ``\\n``)."""
+
+_MAX_CODE_POINT = 0x10FFFF
+
+
+def _complement(ranges: _Ranges) -> _Ranges:
+    out: list[tuple[int, int]] = []
+    low = 0
+    for start, end in sorted(ranges):
+        if start > low:
+            out.append((low, start - 1))
+        low = end + 1
+    if low <= _MAX_CODE_POINT:
+        out.append((low, _MAX_CODE_POINT))
+    return tuple(out)
+
+
+def _class_char(code: int) -> str:
+    char = chr(code)
+    if char.isascii() and (char.isalnum() or char == "_"):
+        return char
+    return f"\\u{code:04x}" if code <= 0xFFFF else f"\\U{code:08x}"
+
+
+def _class_contents(ranges: _Ranges) -> str:
+    return "".join(
+        _class_char(start) if start == end else f"{_class_char(start)}-{_class_char(end)}"
+        for start, end in ranges
+    )
 
 
 def _python_regex(source: str) -> str:
     """A JavaScript ``u`` pattern as a Python one: ``$`` (outside a class)
     ends the input, as JavaScript's does, where Python's also matches
-    before a final newline; ``\\d`` / ``\\w`` (and ``\\D`` / ``\\W``
-    outside a class) are spelled as their ASCII classes. Syntax the two
-    read differently fails."""
+    before a final newline; ``.`` excludes every JavaScript line terminator;
+    ``\\d`` / ``\\w`` / ``\\s`` and their negations are spelled as JavaScript's
+    code points, in a class too. Syntax the two read differently fails."""
     if re.search(r"\\[pPkbB]|\(\?<[=!]?[A-Za-z]|\\u\{", source):
         raise GenerateError(f"RegExp {source!r} uses syntax JavaScript reads differently")
     out: list[str] = []
@@ -763,15 +827,13 @@ def _python_regex(source: str) -> str:
         char = source[index]
         if char == "\\":
             escape = source[index + 1 : index + 2]
-            ascii_class = _ASCII_CLASSES.get(escape.lower())
-            if ascii_class is None:
+            ranges = _JS_CLASSES.get(escape.lower())
+            if ranges is None:
                 out.append(source[index : index + 2])
-            elif in_class and escape.isupper():
-                raise GenerateError(f"RegExp {source!r}: \\{escape} inside a class")
             elif in_class:
-                out.append(ascii_class)
+                out.append(_class_contents(_complement(ranges) if escape.isupper() else ranges))
             else:
-                out.append(f"[{'^' if escape.isupper() else ''}{ascii_class}]")
+                out.append(f"[{'^' if escape.isupper() else ''}{_class_contents(ranges)}]")
             index += 2
             continue
         if in_class:
@@ -781,7 +843,7 @@ def _python_regex(source: str) -> str:
         elif char == "$":
             char = r"\Z"
         elif char == ".":
-            raise GenerateError(f"RegExp {source!r}: `.` excludes more line ends in JavaScript")
+            char = _JS_LINE_ENDS
         out.append(char)
         index += 1
     translated = "".join(out)

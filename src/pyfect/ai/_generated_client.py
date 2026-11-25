@@ -33,6 +33,7 @@ from pyfect._core import Effect
 from pyfect.encoding import sse
 from pyfect.errors import TaggedError
 from pyfect.http import request as http_request
+from pyfect.http import url_params
 from pyfect.http.body import FormDataInput
 from pyfect.http.client import HttpClientService
 from pyfect.http.error import HttpClientError, InvalidUrlError, StatusCodeError
@@ -72,7 +73,12 @@ class FormBody:
     payload: FormDataInput
 
 
-type Body = JsonBody | FormBody | None
+@dataclass(frozen=True)
+class UrlParamsBody:
+    payload: url_params.Input
+
+
+type Body = JsonBody | FormBody | UrlParamsBody | None
 
 
 @dataclass
@@ -163,6 +169,11 @@ def form_body(payload: Mapping[str, Any]) -> FormBody:
     return FormBody(cast("FormDataInput", payload))
 
 
+def url_params_body(payload: Mapping[str, Any]) -> UrlParamsBody:
+    """A ``application/x-www-form-urlencoded`` body of a payload's fields."""
+    return UrlParamsBody(cast("url_params.Input", payload))
+
+
 def _unexpected_status(response: HttpClientResponse) -> Effect[Any, HttpClientError]:
     def fail(description: str) -> Effect[Any, HttpClientError]:
         reason = StatusCodeError(response.request, response, None, description)
@@ -211,6 +222,8 @@ class GeneratedClient:
                 return request.body_json_unsafe(payload)
             case FormBody(payload):
                 return request.body_form_data_record(payload)
+            case UrlParamsBody(payload):
+                return request.body_url_params(payload)
             case None:
                 return request
 

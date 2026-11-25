@@ -104,12 +104,21 @@ _URL_PARAMS = re.compile(r"^HttpClientRequest\.setUrlParams\(\{ (?P<entries>[^}]
 _HEADERS = re.compile(r"^HttpClientRequest\.setHeaders\(\{ (?P<entries>[^}]*) \}\), ")
 _BODY = re.compile(
     r"^HttpClientRequest\.(?P<body>bodyJsonUnsafe\(options\.payload\)"
-    r"|bodyFormData(?:Record)?\(options\.payload as any\)), "
+    r"|bodyFormData(?:Record)?\(options\.payload as any\)"
+    r"|bodyUrlParams\(options\.payload as any\)), "
 )
 _JSON = re.compile(
     r"^withResponse\(options\??\.config\)\(HttpClientResponse\.matchStatus\(\{ "
     r"(?P<cases>.*?)orElse: unexpectedStatus \}\)\)\)$"
 )
+_BODY_KINDS = {
+    "bodyJsonUnsafe": "json",
+    "bodyFormData": "form",
+    "bodyFormDataRecord": "form",
+    "bodyUrlParams": "url_params",
+}
+"""Each request body Effect's client sends, as the ``_generated_client`` helper building it
+(``<kind>_body``)."""
 _SSE = re.compile(r"^sseRequest\((?P<schema>\w+)\)\)$")
 _BINARY = re.compile(r"^binaryRequest\)$")
 _PARAM = r"options\??\.params(?:\?\.)?\[\"(?P<inner>[^\"]+)\"\]"
@@ -219,7 +228,7 @@ def _operation(text: str) -> Operation:
         operation.headers = _entries(match.group("entries"), _HEADER_ENTRY, "header")
         rest = rest[match.end() :]
     if match := _BODY.match(rest):
-        operation.body = "json" if match.group("body").startswith("bodyJson") else "form"
+        operation.body = _BODY_KINDS[re.sub(r"\(.*", "", match.group("body"))]
         rest = rest[match.end() :]
     if match := _JSON.match(rest):
         _status_cases(operation, match.group("cases").removesuffix(" ").removesuffix(","))
@@ -266,9 +275,11 @@ _PATH_ARGUMENT = re.compile(
 
 
 def signatures(source: str, target: ClientTarget) -> dict[str, Signature]:
-    start = source.find(f"export interface {target.client_name} {{")
-    if start < 0:
+    interface = rf"^export interface {target.client_name}(?:<[^\n]*>)? \{{$"
+    head = re.search(interface, source, re.MULTILINE)
+    if head is None:
         raise ClientShapeError(f"no interface {target.client_name}")
+    start = head.start()
     end = source.find("\n}\n", start)
     lines = source[start:end].split("\n")[2:]
     found: dict[str, Signature] = {}
@@ -410,20 +421,23 @@ def _arguments(operation: Operation, signature: Signature, include: str | None) 
 
 def _call(operation: Operation, signature: Signature, method: str, *extra: str) -> str:
     params = "params" if signature.params is not None else "None"
-    if signature.payload is None:
-        body = "None"
-    else:
-        body = f"_c.{'json' if operation.body == 'json' else 'form'}_body(payload)"
+    body = "None" if signature.payload is None else f"_c.{operation.body}_body(payload)"
     args = ", ".join([_constant(operation), _path(operation), params, body, *extra])
     return f"        return self.{method}({args})\n"
 
 
 def _success_type(operation: Operation) -> str:
+    """The decoded body's type; a ``void`` status (``() => Effect.void``) adds ``None``,
+    as Effect's ``A | void``."""
     if operation.binary_success:
-        return "bytes"
-    if operation.status_success:
-        return " | ".join(f"_T.{schema}" for _, schema in operation.status_success)
-    return "None" if operation.success is None else f"_T.{operation.success}"
+        types = ["bytes"]
+    elif operation.status_success:
+        types = [f"_T.{schema}" for _, schema in operation.status_success]
+    else:
+        types = [] if operation.success is None else [f"_T.{operation.success}"]
+    if operation.void or not types:
+        types.append("None")
+    return " | ".join(types)
 
 
 def _method(operation: Operation, signature: Signature, types: set[str]) -> str:
@@ -446,9 +460,6 @@ def _method(operation: Operation, signature: Signature, types: set[str]) -> str:
         result = "_Stream[bytes, _HttpClientError]"
         head = f"    def {name}({_arguments(operation, signature, None)}) -> {result}:\n"
         return head + doc + _call(operation, signature, "_binary")
-    has_body = operation.success is not None or operation.status_success or operation.binary_success
-    if has_body and operation.void:
-        raise ClientShapeError(f"{operation.name}: both a success body and a void status")
     success = _success_type(operation)
     errors = "_Errors" if operation.errors else "_PlainErrors"
     plain = _arguments(operation, signature, "include_response: _t.Literal[False] = False")

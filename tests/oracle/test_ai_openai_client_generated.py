@@ -29,7 +29,7 @@ from pyfect.exit import Failure
 from pyfect.http import client as http_client
 from pyfect.http import error as http_error
 from pyfect.http import response as http_response
-from pyfect.http.body import File, FormData
+from pyfect.http.body import Bytes, File, FormData
 from pyfect.http.client import HttpClientService
 from pyfect.http.error import HttpClientError
 from pyfect.http.request import HttpClientRequest
@@ -405,6 +405,27 @@ def test_each_exact_status_has_its_schema():
         client = yield from _client_of(_answer(status, body))
         decoded = yield from client._json(operation, "/x", None, None, False)
         assert decoded == expected
+
+
+@testing.effect
+def test_a_url_params_body_is_form_url_encoded():
+    """``bodyUrlParams`` (OpenRouter 4.1.5's ``createOauthToken``)."""
+    mock = mock_json({})
+    client = yield from _client_of(mock)
+    body = _c.url_params_body({"code": "a b", "grant_type": "authorization_code"})
+    yield from client._json(_c.Operation("POST"), "/x", None, body, False).flip()
+    sent = mock.requests[0].body
+    assert isinstance(sent, Bytes)
+    assert sent.content_type == "application/x-www-form-urlencoded"
+    assert sent.body == b"code=a+b&grant_type=authorization_code"
+
+
+@testing.effect
+def test_a_void_status_beside_a_body_succeeds_with_none():
+    """``"308": () => Effect.void`` next to ``"200": decodeSuccess(...)``."""
+    operation = _c.Operation("GET", status_success={200: S.String}, void=(308,))
+    client = yield from _client_of(_answer(308, ""))
+    assert (yield from client._json(operation, "/x", None, None, False)) is None
 
 
 @testing.effect

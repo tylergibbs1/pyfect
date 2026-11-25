@@ -103,8 +103,8 @@ export const Tree = Schema.Struct({
         "Schema.Mystery(1)",
         "Schema.String.check(1 + 2)",
         'Schema.String.check(Schema.isPattern(new RegExp("^\\\\bx$")))',
-        'Schema.String.check(Schema.isPattern(new RegExp("^[\\\\D]$")))',
-        'Schema.String.check(Schema.isPattern(new RegExp("^a.b$")))',
+        'Schema.String.check(Schema.isPattern(new RegExp("^(?<=a)b$")))',
+        'Schema.String.check(Schema.isPattern(new Intl.RegExp("^a$")))',
     ],
 )
 def test_unknown_shape_names_the_declaration(schema: str):
@@ -152,6 +152,87 @@ def test_digit_and_word_classes_are_ascii():
     for value in ["\u0661\u0662-ab!", "12-\u00e9!", "12-ab1"]:
         with pytest.raises(S.SchemaError):
             decode(value)
+
+
+def _pattern(source: str, flags: str = "u") -> Any:
+    """The decoder of a string checked by ``new globalThis.RegExp(source, flags)``, as
+    Effect 4.1.5's generator writes a pattern."""
+    escaped = source.replace("\\", "\\\\")
+    generated = _load(
+        "export type Name = string\n"
+        "export const Name = Schema.String.check("
+        f'Schema.isPattern(new globalThis.RegExp("{escaped}", "{flags}")))\n'
+    )
+    return S.decode_unknown_sync(generated.Name)
+
+
+def test_a_global_this_regexp_reads_as_new_regexp():
+    """Effect 4.1.5 names the constructor ``globalThis.RegExp`` and passes the ``u`` flag."""
+    decode = _pattern("^[a-z]+$")
+    assert decode("abc") == "abc"
+    with pytest.raises(S.SchemaError, match=r"a string matching the RegExp \^\[a-z\]\+\$"):
+        decode("abc\n")
+
+
+def test_dot_excludes_every_javascript_line_terminator():
+    """JavaScript's ``.`` (without ``s``) excludes ``\\r``, U+2028 and U+2029 too, where
+    Python's excludes only ``\\n``."""
+    decode = _pattern("^a.b$")
+    assert decode("a-b") == "a-b"
+    assert decode("a\U0001f600b") == "a\U0001f600b"
+    for line_end in "\n\r\u2028\u2029":
+        with pytest.raises(S.SchemaError):
+            decode(f"a{line_end}b")
+
+
+def test_whitespace_classes_are_javascripts():
+    """JavaScript's ``\\s`` has U+FEFF and not U+001C or U+0085, which Python's has;
+    ``\\S`` is its complement, in a class too (``[\\s\\S]`` is any code point)."""
+    blank = _pattern("^\\s+$")
+    assert blank("\t \u00a0\ufeff\u3000") == "\t \u00a0\ufeff\u3000"
+    for value in ["\x1c", "\x85"]:
+        with pytest.raises(S.SchemaError):
+            blank(value)
+    visible = _pattern("\\S")
+    assert visible("\x1c") == "\x1c"
+    with pytest.raises(S.SchemaError):
+        visible("\ufeff ")
+    one_line = _pattern("^(?![\\s\\S]*[\\r\\n])[a-z.]+$")
+    assert one_line("a.b") == "a.b"
+    with pytest.raises(S.SchemaError):
+        one_line("a\rb")
+    no_digit = _pattern("^[\\D]+$")
+    assert no_digit("a\U0001f600") == "a\U0001f600"
+    with pytest.raises(S.SchemaError):
+        no_digit("a1")
+
+
+def test_int_is_an_integer_number():
+    """``Schema.Int`` (Effect 4.1.5) is pyfect's ``S.Int``, typed ``int``."""
+    files = gen.generate(
+        "export type Count = number\nexport const Count = Schema.Int\n", _SCHEMAS_ONLY
+    )
+    assert "type Count = int\n" in files["types.py"]
+    decode = S.decode_unknown_sync(_load_files(files).Count)
+    assert decode(3) == 3
+    with pytest.raises(S.SchemaError):
+        decode(1.5)
+
+
+def test_array_annotations_and_unique_items():
+    """An annotation's array (``examples``) is a tuple; ``isUnique`` is ``S.is_unique``."""
+    generated = _load(
+        "export type Tags = ReadonlyArray<string>\n"
+        "export const Tags = Schema.Array(Schema.String).annotate("
+        '{ "examples": [["a", "b"], []], "extra": { "k": [1] } }'
+        ').check(Schema.isUnique().annotate({ "expected": "an array with unique items" }))\n'
+    )
+    assert generated.Tags.ast.annotations["examples"] == (("a", "b"), ())
+    assert generated.Tags.ast.annotations["extra"] == {"k": (1,)}
+    decode = S.decode_unknown_sync(generated.Tags)
+    assert decode(["a", "b"]) == ("a", "b")
+    with pytest.raises(S.SchemaError, match="an array with unique items"):
+        decode(["a", "a"])
 
 
 def test_typed_declaration():
@@ -396,6 +477,48 @@ def test_checked_paths_binary_bodies_and_transformed_streams():
     assert "def download_thing(self, thing_id: str) -> _Stream[bytes, _HttpClientError]:" in text
     assert 'self._sse(_WATCH_THING, _c.encoded_path("/things/{}/events", thing_id)' in text
     assert "    transform_streams = True\n" in text
+    compile(text, "client.py", "exec")
+
+
+_GENERIC_CLIENT = """
+export type Token = { readonly "token": string }
+export const Token = Schema.Struct({ "token": Schema.String })
+export type TokenForm = { readonly "code": string }
+export const TokenForm = Schema.Struct({ "code": Schema.String })
+export interface OperationConfig {}
+export const make = <E, R>(httpClient: HttpClient.HttpClient.With<E, R>): ThingClient<E, R> => {
+  return {
+    httpClient,
+    "createToken": (options: Parameters<ThingClient["createToken"]>[0]) =>
+      HttpClientRequest.post("/token").pipe(
+        HttpClientRequest.bodyUrlParams(options.payload as any),
+        withResponse(options.config)(HttpClientResponse.matchStatus({
+          "200": decodeSuccess(Token),
+          "308": () => Effect.void,
+          orElse: unexpectedStatus
+        }))
+      )
+  }
+}
+
+export interface ThingClient<E = HttpClientError.HttpClientError, R = never> {
+  readonly httpClient: HttpClient.HttpClient.With<E, R>
+  readonly "createToken": {
+    <Config extends OperationConfig | undefined = undefined>(
+      options: { readonly payload: typeof TokenForm.Encoded; readonly config: Config }
+    ): Effect.Effect<WithOptionalResponse<Token | void, Config>, E | HttpClientError, R>
+  }
+}
+"""
+
+
+def test_generic_interfaces_url_encoded_bodies_and_void_alongside_a_body():
+    """Effect 4.1.5's clients: the interface takes the client's error and services, a form
+    can be URL-encoded, and a ``void`` status beside a body gives ``None`` (``Token | void``)."""
+    text = gen.generate(_GENERIC_CLIENT, _THING)["client.py"]
+    assert '_CREATE_TOKEN = _c.Operation("POST", status_success={200: Token}, void=(308, ))' in text
+    assert "-> _Effect[_T.Token | None, _PlainErrors]: ..." in text
+    assert 'self._json(_CREATE_TOKEN, "/token", None, _c.url_params_body(payload)' in text
     compile(text, "client.py", "exec")
 
 
