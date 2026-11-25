@@ -45,8 +45,13 @@ by then, so the program keeps running after the input ends, in Effect as well.
 
 ### Return images and other content blocks
 
-A tool's result is JSON text by default. To answer with an image, audio or a resource
-instead, give the tool a content mapper: `mcp_server.tool_content(Render, chart_blocks)`
+A tool's result is JSON text by default. A tool made with `to_model_output` answers with
+the parts that returns, as the model would see them, and keeps the encoded result as
+`structuredContent`: a text part is text, an image (and from 2025-03-26 an audio clip) given
+as bytes, base64 or a base64 data URL is an image or audio block, a file at an `http(s)` URL
+is a resource link from 2025-06-18, and anything an older revision cannot carry is sent as
+text. To answer with blocks of your own instead, give the tool a content mapper, which
+takes precedence over `to_model_output`: `mcp_server.tool_content(Render, chart_blocks)`
 in the `content=` of `mcp_server.toolkit` or `register_toolkit`. The mapper gets the
 decoded success and returns the call's MCP content blocks, so binary data goes in as
 Base64 text. A mapped tool lists no output schema and sends no `structuredContent`; its

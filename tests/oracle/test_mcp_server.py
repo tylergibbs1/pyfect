@@ -39,6 +39,7 @@ from pyfect.ai import mcp_protocol as P
 from pyfect.ai import mcp_schema as MS
 from pyfect.ai import mcp_server as M
 from pyfect.ai import mcp_test
+from pyfect.ai import prompt as Pr
 from pyfect.ai import tool as T
 from pyfect.ai import toolkit as K
 from pyfect.ai._mcp.core import PromptEntry, ToolEntry
@@ -46,6 +47,7 @@ from pyfect.context import Context
 from pyfect.deferred import Deferred
 from pyfect.errors import Done
 from pyfect.http import request as R
+from pyfect.http import url
 from pyfect.http.client import HttpClientService
 from pyfect.http.response import HttpClientResponse
 from pyfect.queue import Queue
@@ -1504,3 +1506,80 @@ def test_should_answer_a_malformed_line_with_a_parse_error_and_initialize_from_t
     response = json.loads((yield from out.take()))
     assert response["id"] == 1
     assert response["result"] is not None
+
+
+class _Ok(TypedDict):
+    ok: bool
+
+
+_MODEL_OUTPUT_IMAGE = b"\x01\x02\x03"
+_MODEL_OUTPUT_URL = "https://example.com/report.png"
+_MODEL_OUTPUT_TOOL = T.make(
+    "ModelOutputTool",
+    success=S.Struct(_Ok),
+    to_model_output=lambda _: [
+        Pr.TextPart(text="Captured"),
+        Pr.FilePart(media_type="image/png", data=_MODEL_OUTPUT_IMAGE),
+        Pr.FilePart(media_type="audio/wav", file_name="clip.wav", data="BAUG"),
+        Pr.FilePart(media_type="image/png", data=url.parse(_MODEL_OUTPUT_URL)),
+        Pr.FilePart(media_type="application/pdf", file_name="doc.pdf", data=b"\x07\x08\x09"),
+    ],
+)
+_QUOTED_MODEL_OUTPUT_TOOL = T.make(
+    "QuotedModelOutputTool",
+    success=S.String,
+    to_model_output=lambda value: [Pr.TextPart(text=json.dumps(value))],
+)
+_MODEL_OUTPUT_KIT = K.make(_MODEL_OUTPUT_TOOL, _QUOTED_MODEL_OUTPUT_TOOL)
+_MODEL_OUTPUT_LAYER = M.toolkit(_MODEL_OUTPUT_KIT).pipe(
+    fx.provide(
+        _MODEL_OUTPUT_KIT.to_layer(
+            _MODEL_OUTPUT_TOOL.handler(lambda _, __: fx.succeed(_Ok(ok=True))),
+            _QUOTED_MODEL_OUTPUT_TOOL.handler(lambda _, __: fx.succeed("hello")),
+        )
+    )
+)
+
+
+@testing.effect
+def test_uses_to_model_output_parts_as_tool_result_content_while_preserving_structured_content():
+    """McpServer / registerToolkit / uses toModelOutput parts as tool result content while preserving structuredContent"""  # noqa: E501
+    client = yield from mcp_test.make_client(_MODEL_OUTPUT_LAYER, protocols=[P.v2025_06_18])
+
+    result = yield from client.call_tool({"name": "ModelOutputTool", "arguments": {}})
+
+    assert result.get("isError") is False
+    assert result.get("structuredContent") == {"ok": True}
+    assert result["content"] == [
+        {"type": "text", "text": "Captured"},
+        {"type": "image", "data": "AQID", "mimeType": "image/png"},
+        {"type": "audio", "data": "BAUG", "mimeType": "audio/wav"},
+        {
+            "type": "resource_link",
+            "uri": _MODEL_OUTPUT_URL,
+            "name": _MODEL_OUTPUT_URL,
+            "mimeType": "image/png",
+        },
+        {"type": "text", "text": "[application/pdf doc.pdf omitted]"},
+    ]
+
+    quoted = yield from client.call_tool({"name": "QuotedModelOutputTool", "arguments": {}})
+    assert quoted["content"] == [{"type": "text", "text": '"hello"'}]
+
+
+@testing.effect
+def test_downgrades_unsupported_to_model_output_blocks_to_text_on_2024_11_05():
+    """McpServer / registerToolkit / downgrades unsupported toModelOutput blocks to text on 2024-11-05"""  # noqa: E501
+    client = yield from mcp_test.make_client(_MODEL_OUTPUT_LAYER, protocols=[P.v2024_11_05])
+
+    result = yield from client.call_tool({"name": "ModelOutputTool", "arguments": {}})
+
+    assert result.get("isError") is False
+    assert "structuredContent" not in result
+    assert result["content"] == [
+        {"type": "text", "text": "Captured"},
+        {"type": "image", "data": "AQID", "mimeType": "image/png"},
+        {"type": "text", "text": "[audio/wav clip.wav omitted]"},
+        {"type": "text", "text": _MODEL_OUTPUT_URL},
+        {"type": "text", "text": "[application/pdf doc.pdf omitted]"},
+    ]
