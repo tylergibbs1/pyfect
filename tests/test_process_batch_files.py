@@ -117,6 +117,15 @@ def test_the_spawner_refuses_a_batch_file_on_windows(tmp_path: Path, name: str) 
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason=_WINDOWS_ONLY)
+def test_the_spawner_runs_a_batch_file_with_shell_on_windows(tmp_path: Path) -> None:
+    script = tmp_path / "run.cmd"
+    script.write_text("@echo hello\r\n")
+    exit = _run(_string(process.make(f'"{script}"', shell=True)))
+    assert isinstance(exit, Success), exit
+    assert exit.value.strip() == "hello"
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason=_WINDOWS_ONLY)
 def test_a_process_worker_refuses_a_batch_file_on_windows(tmp_path: Path) -> None:
     script = tmp_path / "python.cmd"
     script.write_text("@echo off\r\n")
