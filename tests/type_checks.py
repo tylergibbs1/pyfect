@@ -10797,6 +10797,18 @@ def schema_representation_types() -> None:
     R.to_code_document(R.to_multi_document(document))  # pyright: ignore[reportDeprecated]
     R.make_code("S.String", "str")  # pyright: ignore[reportDeprecated]
     assert_type(codegen.Module().add_schemas({"A": document.representation}).print(), str)
+    # The builder: declarations give DeclarationBindings, imports plain Bindings, which
+    # ``define`` refuses.
+    builder = codegen.Module(["Reserved"])
+    point = builder.declare("Point", scope=builder.scope())
+    assert_type(point, codegen.DeclarationBinding)
+    assert_type(builder.define(point, [codegen.code(point, " = ", 1, [None])]), codegen.Module)
+    assert_type(codegen.import_named("m", "x", type_only=True), codegen.Binding)
+    assert_type(builder.add_import(codegen.NamespaceImport("m", "M")), codegen.Binding)
+    assert_type(builder.finalize([point]), codegen.Finalized)
+    assert_type(builder.finalize().roots, tuple[str, ...])
+    assert_type(codegen.indent(codegen.join(["a", point], "\n")), codegen.Fragment)
+    builder.define(codegen.import_named("m", "x"), [])  # pyright: ignore[reportArgumentType]
     assert_type(S.is_ecma_pattern("^a"), S.Filter[str])
     assert_type(S.is_ecma_pattern("^a", "iu"), S.Filter[str])
     # Without a reviver ``parse_json`` gives JSON; a reviver may return anything.

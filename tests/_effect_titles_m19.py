@@ -12,19 +12,6 @@ TITLES: dict[str, tuple[str, ...]] = {
     "chat/telegram/test/TelegramChat.test.ts": (
         "keeps the secret out of server spans that capture every header, set up as the README says",
     ),
-    "effect/test/Codegen.test.ts": (
-        "can keep accumulating after finalization without changing previous output",
-        "emits only used imports, groups named imports, and promotes type imports",
-        "formats literals, keys, documentation, and indented fragments",
-        "keeps exact names and prevents shadowing along nested scopes",
-        "keeps independently created modules isolated",
-        "preserves recursive schemas and initializes their eager consumers",
-        "rejects eager cycles and distinguishes imports requesting the same name",
-        "renders shared fragments once per finalization",
-        "resolves bindings and dependency order without changing literal text",
-        "shares import symbols across modules and prints without mutating names",
-        "shares names, imports and symbol identities with the rest of the module",
-    ),
     "effect/test/ai/McpServer/LayerHttpRequestScoped.test.ts": (
         "answers an asynchronous tools/call before a scheduler round runs",
     ),
