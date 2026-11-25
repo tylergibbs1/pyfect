@@ -931,6 +931,8 @@ def test_a_websocket_high_water_mark_pauses_the_peer_instead_of_closing_it(
     # 100 bytes stay below the 64 KiB default, so only the configured mark pauses.
     paused = threading.Event()
     checked = threading.Event()
+    # The handler's end closes the socket: it waits until the client has read its state.
+    looked = threading.Event()
     room = _Session._room  # pyright: ignore[reportPrivateUsage]
 
     def spied(session: _Session) -> bool:
@@ -954,6 +956,7 @@ def test_a_websocket_high_water_mark_pauses_the_peer_instead_of_closing_it(
             while len(got) < len(frames):
                 got += [str(chunk) for chunk in (yield from reader.pull)]
             checked.set()
+            yield from effect.blocking(lambda: looked.wait(TIMEOUT))
             return got
 
         got = yield from scoped(run())
@@ -967,7 +970,10 @@ def test_a_websocket_high_water_mark_pauses_the_peer_instead_of_closing_it(
             with _client(at) as ws:
                 for frame in frames:
                     ws.send(frame)
-                return checked.wait(TIMEOUT), ws.protocol.state.name == "OPEN"
+                caught_up = checked.wait(TIMEOUT)
+                state = ws.protocol.state.name
+                looked.set()
+                return caught_up, state == "OPEN"
 
         return (yield from effect.blocking(talk))
 
