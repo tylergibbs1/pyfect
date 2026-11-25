@@ -60,7 +60,7 @@ def own_docstring(cls: type) -> str | None:
         doc = getattr(cls, "__doc__", None)
     if not isinstance(doc, str) or not doc.strip():
         return None
-    is_record = dataclasses.is_dataclass(cls) or hasattr(cls, "_fields")
+    is_record = hasattr(cls, "__dataclass_fields__") or hasattr(cls, "_fields")
     if is_record and "\n" not in doc and doc.startswith(f"{cls.__name__}("):
         return None
     return doc
