@@ -1,0 +1,160 @@
+---
+title: "Structured concurrency in Python, including free-threaded 3.14"
+description: "Structured concurrency in Python with pyfect: fibers, bounded fan-out, timeouts that cancel safely, cleanup that always runs, and what free-threaded 3.14 adds."
+date: "2026-11-24"
+author: "Tyler Gibbs"
+tags: ["python", "structured concurrency", "free-threaded python", "cancellation", "asyncio"]
+---
+
+Structured concurrency in Python means one rule: concurrent work can't outlive the code that
+started it. When a function returns, everything it started has finished, failed, or been
+cancelled, and its cleanup has run. Trio introduced the idea to Python with nurseries, and
+asyncio added `TaskGroup` in 3.11. pyfect, a port of [Effect](https://effect.website) to Python
+(`pip install pyfect-dev`), builds its whole runtime on it.
+
+This post covers how that looks in practice: running work concurrently with a limit, timeouts,
+interruption, finalizers that always run, and resources. It ends with what free-threaded
+Python 3.14 does and doesn't change.
+
+## Fibers
+
+Every pyfect effect runs on a fiber, a lightweight thread managed by pyfect's scheduler. You
+can run a program with `fx.run_blocking`, with no event loop, or inside asyncio with
+`fx.run_async`. The code is the same either way.
+
+`eff.fork()` starts a child fiber and returns at once. The child is tied to its parent: when
+the parent finishes, its children still running are interrupted.
+
+<CodeOutput>
+
+<include meta='title="fibers.py"'>../../snippets/blog/structured-concurrency-python/fibers.py</include>
+
+<include lang="text">../../snippets/blog/structured-concurrency-python/fibers.out</include>
+
+</CodeOutput>
+
+The heartbeat loops forever, and nothing in `handle_request` stops it. It stops anyway, when
+the request is done, and its `on_interrupt` handler runs. A background task that leaks past
+the request that started it, still holding a connection, is a common bug in asyncio code that
+calls `create_task` without keeping track of the task. Here it can't happen by default. When
+you do want a fiber to outlive its parent, `fork_daemon` says so explicitly.
+
+## Running work concurrently with a limit
+
+`fx.for_each(items, f, concurrency=n)` runs `f` on every item, at most `n` at a time, and
+returns the results in input order. `fx.all(a, b, c)` does the same for a fixed set of effects
+and keeps each one's type.
+
+<CodeOutput>
+
+<include meta='title="fan_out.py"'>../../snippets/blog/structured-concurrency-python/fan_out.py</include>
+
+<include lang="text">../../snippets/blog/structured-concurrency-python/fan_out.out</include>
+
+</CodeOutput>
+
+The second run shows what happens on failure. Pages 1, 2 and 3 start. Page 3 fails at 10 ms.
+pyfect interrupts the two fetches still running, waits for their `on_interrupt` handlers, and
+never starts pages 4 to 6. The failure comes back as the typed error `NotFound(page=3)`, not
+as an exception group you have to pick apart.
+
+## Cancel tasks in Python safely: timeouts and interruption
+
+Cancelling work safely has two halves: the work must actually stop, and its cleanup must run
+before the caller moves on. In pyfect, a timeout is an interruption, and `timeout`, `race` and
+`race_all` all wait for the interrupted side to finish cleaning up before they return.
+
+<CodeOutput>
+
+<include meta='title="timeout.py"'>../../snippets/blog/structured-concurrency-python/timeout.py</include>
+
+<include lang="text">../../snippets/blog/structured-concurrency-python/timeout.out</include>
+
+</CodeOutput>
+
+`fx.acquire_release` opens the connection and registers its release on a scope, and
+`fx.scoped` closes that scope when `report` ends. The query hangs, the timeout fires at 50 ms,
+and by the time `run_blocking_exit` returns, the connection is closed. The release function
+gets the `Exit`, so it can tell a clean finish from a failure or an interruption, for example
+to roll back a transaction instead of committing it.
+
+Three rules make this dependable:
+
+- Interruption is not an exception. In asyncio, cancellation is a `CancelledError` raised into
+  your code, and a bare `except:` or a retry loop catching `BaseException` can swallow it. In
+  pyfect, error handlers such as `catch_all` never see an interruption, so a handler can't
+  swallow one by accident.
+- Acquiring a resource can't be interrupted halfway. Either the acquire finished and the
+  release will run, or it never started.
+- Finalizers run in reverse order of acquisition, as they would in nested `with` blocks.
+
+When a few steps must not be interrupted halfway, wrap them in `fx.uninterruptible_mask`: an
+interruption then waits until they are done.
+
+## Resources with `with` blocks or scopes
+
+Not every caller is pyfect code. `fx.managed(eff)` turns a scoped effect into a context
+manager, so plain Python gets the same guarantee:
+
+<CodeOutput>
+
+<include meta='title="managed.py"'>../../snippets/blog/structured-concurrency-python/managed.py</include>
+
+<include lang="text">../../snippets/blog/structured-concurrency-python/managed.out</include>
+
+</CodeOutput>
+
+Inside the block, Ctrl-C or an asyncio cancellation counts as an interruption of the scope,
+and any other exception as a failure, so the release sees the same `Exit` it would get inside
+pyfect. The exception still propagates out of the `with`. The
+[resources guide](/docs/resources) covers scopes, pools, caches and how a layer can own a
+resource for a program's whole life.
+
+## What free-threaded Python 3.14 changes
+
+Free-threaded CPython (the 3.14t build) can run Python code on several threads at once without
+the GIL. It's easy to assume that makes fibers run in parallel. It doesn't, and it's worth
+being precise about why.
+
+All the fibers of one pyfect run take turns on that run's thread, as Effect's fibers take
+turns on Node's one thread. That is a design choice, not a GIL limitation, and it's what makes
+the guarantees above simple to reason about. The [threads guide](/docs/threads) says plainly
+that the free-threaded build is no faster for fiber throughput.
+
+What 3.14t speeds up is work pyfect hands to other threads:
+
+- `fx.blocking(f)` and `fx.try_blocking` run a function on a thread pool. On the GIL build,
+  Python code there takes turns with your run's thread. On 3.14t it runs at the same time.
+  Interrupting the fiber abandons the thread; it can't stop it.
+- `fx.on_thread(eff)` runs a whole effect as a run of its own on a new thread. On 3.14t,
+  several of them use several cores:
+
+<CodeOutput>
+
+<include meta='title="on_thread.py"'>../../snippets/blog/structured-concurrency-python/on_thread.py</include>
+
+<include lang="text">../../snippets/blog/structured-concurrency-python/on_thread.out</include>
+
+</CodeOutput>
+
+Unlike `fx.blocking`, an effect under `on_thread` can be interrupted: interrupting the caller
+interrupts the effect on its own run and waits for its finalizers, so a timeout around it
+still cleans up. The [parallel effects guide](/docs/parallel) has measurements of when it pays
+off and when the cost of a new run outweighs it.
+
+When several runs on different threads share state, pyfect's shared types (`Ref`, `Queue`,
+`Semaphore`, `Deferred`, `Pool` and others) keep each operation atomic across them. On 3.14t
+those threads really do run at the same time, which surfaces races the GIL hides. pyfect's CI
+runs a cross-thread stress test and the runtime's test suites on 3.14t for that reason, and the
+library's extras are chosen so that none of them turns the GIL back on.
+
+So the honest summary: on 3.14t, structured concurrency in pyfect works the same as on the
+regular build, and CPU-heavy work you move to `fx.blocking` or `fx.on_thread` can now use more
+than one core. On the regular build, the way to use more cores is a worker process.
+
+## Where to go next
+
+The [concurrency guide](/docs/concurrency) covers fiber sets, semaphores, queues and races in
+more depth. [Resources and scopes](/docs/resources) covers what you can attach cleanup to, and
+[threads and throughput](/docs/threads) covers what to expect from one run and when to split
+work across threads or processes.

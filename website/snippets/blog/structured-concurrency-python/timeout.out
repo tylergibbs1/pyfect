@@ -1,0 +1,2 @@
+Ok(value=TimeoutException(duration=duration.millis(50), message="Operation timed out after '50ms'"))
+['open', 'querying on conn', 'close after Failure']

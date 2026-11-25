@@ -511,6 +511,7 @@ def test_listed_sleeps_are_snippets():
 
 def test_there_are_guides_and_snippets():
     assert guide_files() and SCRIPTS and TESTS
+    assert any(guide.is_relative_to(GUIDES / "blog") for guide in guide_files())
 
 
 @pytest.mark.parametrize("guide", guide_files(), ids=lambda p: p.name)
