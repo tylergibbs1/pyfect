@@ -8157,6 +8157,55 @@ type AiResults = (
 )
 
 
+def check_ai_tool_set_failure() -> None:
+    weather = ai_tool.make(
+        "Weather",
+        parameters=S.Struct(AiWeatherParams),
+        success=S.Struct(AiWeather),
+        failure=S.String,
+    )
+    clock = ai_tool.make(
+        "Clock", success=S.Int, failure=S.Int, failure_mode="return", dependencies=[AiDb]
+    )
+    # set_failure keeps the tool's kind and mode: its handler raises the new failure in
+    # "error" mode and nothing in "return" mode.
+    assert_type(
+        weather.set_failure(S.Int),
+        ai_tool.Tool[
+            Literal["Weather"], AiWeatherParams, AiWeather, int, int, Never, Literal["error"]
+        ],
+    )
+    assert_type(
+        clock.set_failure(S.String),
+        ai_tool.Tool[Literal["Clock"], dict[str, Never], int, str, Never, AiDb, Literal["return"]],
+    )
+    returned_failure = clock.set_failure(S.String)
+    raised_failure = weather.set_failure(S.Int)
+    _he_never: ai_tool.Tool[Any, Any, Any, Any, Never, Any] = returned_failure
+    _he_never_too: ai_tool.Tool[Any, Any, Any, Any, Never, Any] = raised_failure  # pyright: ignore[reportAssignmentType]
+    _he_str: ai_tool.Tool[Any, Any, Any, Any, str, Any] = raised_failure  # pyright: ignore[reportAssignmentType]
+    dyn = ai_tool.dynamic("Dyn", failure_mode="return")
+    assert_type(
+        dyn.set_failure(S.String),
+        ai_tool.Dynamic[Literal["Dyn"], object, object, str, Never, Never, Literal["return"]],
+    )
+    assert_type(
+        ai_tool.dynamic("Dyn").set_failure(S.String),
+        ai_tool.Dynamic[Literal["Dyn"], object, object, str, str, Never, Literal["error"]],
+    )
+
+    # A tool whose mode is not known raises the new failure, the safe side.
+    def unknown_mode(
+        tool: ai_tool.Tool[Literal["Clock"], dict[str, Never], int, int, Never, AiDb],
+    ) -> None:
+        assert_type(
+            tool.set_failure(S.String),
+            ai_tool.Tool[Literal["Clock"], dict[str, Never], int, str, str, AiDb],
+        )
+
+    unknown_mode(clock)
+
+
 def check_ai_toolkit() -> None:
     weather = ai_tool.make(
         "Weather",
@@ -8169,9 +8218,14 @@ def check_ai_toolkit() -> None:
     )
     assert_type(
         weather,
-        ai_tool.Tool[Literal["Weather"], AiWeatherParams, AiWeather, str, str, Never],
+        ai_tool.Tool[
+            Literal["Weather"], AiWeatherParams, AiWeather, str, str, Never, Literal["error"]
+        ],
     )
-    assert_type(clock, ai_tool.Tool[Literal["Clock"], dict[str, Never], int, int, Never, AiDb])
+    assert_type(
+        clock,
+        ai_tool.Tool[Literal["Clock"], dict[str, Never], int, int, Never, AiDb, Literal["return"]],
+    )
 
     # A handler is checked against its tool's types.
     ok = weather.handler(lambda params, _: fx.succeed(AiWeather(degrees=len(params["city"]))))
@@ -8187,7 +8241,10 @@ def check_ai_toolkit() -> None:
 
     shown = ai_tool.make("Weather", success=S.Struct(AiWeather), to_model_output=degrees_text)
     assert_type(
-        shown, ai_tool.Tool[Literal["Weather"], dict[str, Never], AiWeather, Never, Never, Never]
+        shown,
+        ai_tool.Tool[
+            Literal["Weather"], dict[str, Never], AiWeather, Never, Never, Never, Literal["error"]
+        ],
     )
     ai_tool.make("Clock", success=S.Int, to_model_output=degrees_text)  # pyright: ignore[reportArgumentType]
     ai_tool.make("Clock", success=S.Int, to_model_output=lambda n: [n])  # pyright: ignore[reportArgumentType]
@@ -8970,6 +9027,7 @@ def check_ai_openai(service: openai_client.Service) -> None:
             openai_tool.WebSearchFailure,
             openai_tool.WebSearchFailure,
             Never,
+            Literal["error"],
         ],
     )
     # In "return" mode the handler's failures are results: it raises nothing.
@@ -8982,6 +9040,7 @@ def check_ai_openai(service: openai_client.Service) -> None:
             openai_tool.WebSearchFailure,
             Never,
             Never,
+            Literal["return"],
         ],
     )
     openai_tool.WebSearch(failure_mode="raise")  # pyright: ignore[reportCallIssue, reportArgumentType]
@@ -8993,8 +9052,9 @@ def check_ai_openai(service: openai_client.Service) -> None:
             openai_tool.WebSearchParameters,
             openai_tool.WebSearchSuccess,
             str,
-            Any,
+            str,
             Never,
+            Literal["error"],
         ],
     )
     openai_lm.with_config_override({"use_item_reference": True})  # pyright: ignore[reportArgumentType]
@@ -11757,6 +11817,7 @@ def anthropic_tool_pins() -> None:
             Never,
             Never,
             Never,
+            Literal["error"],
         ],
     )
     assert_type(
@@ -11768,6 +11829,7 @@ def anthropic_tool_pins() -> None:
             Never,
             Never,
             Never,
+            Literal["error"],
         ],
     )
     assert_type(
@@ -11779,12 +11841,15 @@ def anthropic_tool_pins() -> None:
             dict[str, object],
             dict[str, object],
             Never,
+            Literal["error"],
         ],
     )
     # Annotating keeps the tool's type.
     assert_type(
         ai_tool.make("ListContacts").annotate(anthropic_tool.DeferLoading, True),
-        ai_tool.Tool[Literal["ListContacts"], dict[str, Never], None, Never, Never, Never],
+        ai_tool.Tool[
+            Literal["ListContacts"], dict[str, Never], None, Never, Never, Never, Literal["error"]
+        ],
     )
 
 

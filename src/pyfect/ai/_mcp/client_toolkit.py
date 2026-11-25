@@ -44,7 +44,12 @@ type RemoteTool[SS = str, HE = McpClientError, RR = Never] = Tool.Tool[
 (``"complete"``), its failure ``McpClientError``, raised (``HE`` =
 ``McpClientError``, ``failure_mode="error"``) or returned to the model
 (``HE`` = ``Never``, ``"return"``), and ``RR`` what ``transform_tool``
-added to its handler's requirements."""
+added to its handler's requirements. ``toolkit`` passes ``transform_tool`` a
+``ModedRemoteTool``, which also keeps its ``failure_mode``, so ``set_failure`` keeps it."""
+
+type ModedRemoteTool[SS, HE, M] = Tool.Tool[Any, object, SS, McpClientError, HE, Never, M]
+"""A ``RemoteTool`` whose type also keeps its ``failure_mode`` ``M``: what
+``transform_tool`` is given."""
 
 
 class ToolDescriptor(Tag[McpTool], key="effect/ai/McpClient/ToolDescriptor"):
@@ -66,7 +71,8 @@ def toolkit[RR = Never](
     trust_annotations: bool = False,
     timeout: DurationInput | None = None,
     transform_tool: Callable[
-        [RemoteTool[str, McpClientError], McpTool], RemoteTool[str, McpClientError, RR]
+        [ModedRemoteTool[str, McpClientError, Literal["error"]], McpTool],
+        RemoteTool[str, McpClientError, RR],
     ]
     | None = None,
 ) -> Effect[Toolkit.WithHandler[Any, Any, McpClientError, RR], McpClientError]: ...
@@ -80,7 +86,9 @@ def toolkit[RR = Never](
     failure_mode: Literal["return"],
     trust_annotations: bool = False,
     timeout: DurationInput | None = None,
-    transform_tool: Callable[[RemoteTool[str, Never], McpTool], RemoteTool[str, Never, RR]]
+    transform_tool: Callable[
+        [ModedRemoteTool[str, Never, Literal["return"]], McpTool], RemoteTool[str, Never, RR]
+    ]
     | None = None,
 ) -> Effect[Toolkit.WithHandler[Any, Any, Never, RR], McpClientError]: ...
 @overload
@@ -94,7 +102,7 @@ def toolkit[RR = Never](
     trust_annotations: bool = False,
     timeout: DurationInput | None = None,
     transform_tool: Callable[
-        [RemoteTool[CallToolResult, McpClientError], McpTool],
+        [ModedRemoteTool[CallToolResult, McpClientError, Literal["error"]], McpTool],
         RemoteTool[CallToolResult, McpClientError, RR],
     ]
     | None = None,
@@ -110,7 +118,8 @@ def toolkit[RR = Never](
     trust_annotations: bool = False,
     timeout: DurationInput | None = None,
     transform_tool: Callable[
-        [RemoteTool[CallToolResult, Never], McpTool], RemoteTool[CallToolResult, Never, RR]
+        [ModedRemoteTool[CallToolResult, Never, Literal["return"]], McpTool],
+        RemoteTool[CallToolResult, Never, RR],
     ]
     | None = None,
 ) -> Effect[Toolkit.WithHandler[Any, Any, Never, RR], McpClientError]: ...

@@ -887,7 +887,7 @@ class ShortAnswer(TypedDict):
 
 @pytest.mark.parametrize(("origin", "failure_mode"), ORIGIN_CASES)
 @testing.effect
-def test_distinguishes_failures_from_decoding_failures(origin: str, failure_mode: Any):
+def test_distinguishes_failures_from_decoding_failures(origin: str, failure_mode: T.FailureMode):
     """McpServer / registerToolkit / distinguishes ${origin} failures from decoding failures in ${failureMode} mode"""  # noqa: E501
     received: list[str] = []
     reported: list[fx.Cause[object]] = []

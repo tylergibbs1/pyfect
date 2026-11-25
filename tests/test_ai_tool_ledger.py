@@ -334,7 +334,7 @@ def _tool_parts(prompt: P.Prompt) -> list[P.ToolCallPart | P.ToolResultPart]:
 
 
 @pytest.mark.parametrize("mode", ["error", "return"])
-def test_a_recorded_failure_is_replayed_without_running(tmp_path: Path, mode: Any):
+def test_a_recorded_failure_is_replayed_without_running(tmp_path: Path, mode: tool.FailureMode):
     runs: list[int] = []
     failing = tool.make(
         "Pay",

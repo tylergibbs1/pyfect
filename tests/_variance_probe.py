@@ -2215,74 +2215,86 @@ class Fields78(Protocol[T78_0_co, T78_1_co]):
 
 
 def v79_0_out(
-    x: pyfect.ai.tool.Dynamic[Never, Any, Any, Any, Any, Any],
-) -> pyfect.ai.tool.Dynamic[typing.LiteralString, Any, Any, Any, Any, Any]:
+    x: pyfect.ai.tool.Dynamic[Never, Any, Any, Any, Any, Any, Any],
+) -> pyfect.ai.tool.Dynamic[typing.LiteralString, Any, Any, Any, Any, Any, Any]:
     return x
 
 
 def v79_0_in(
-    x: pyfect.ai.tool.Dynamic[typing.LiteralString, Any, Any, Any, Any, Any],
-) -> pyfect.ai.tool.Dynamic[Never, Any, Any, Any, Any, Any]:
+    x: pyfect.ai.tool.Dynamic[typing.LiteralString, Any, Any, Any, Any, Any, Any],
+) -> pyfect.ai.tool.Dynamic[Never, Any, Any, Any, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
 def v79_1_out(
-    x: pyfect.ai.tool.Dynamic[Any, _Sub, Any, Any, Any, Any],
-) -> pyfect.ai.tool.Dynamic[Any, _Super, Any, Any, Any, Any]:
+    x: pyfect.ai.tool.Dynamic[Any, _Sub, Any, Any, Any, Any, Any],
+) -> pyfect.ai.tool.Dynamic[Any, _Super, Any, Any, Any, Any, Any]:
     return x
 
 
 def v79_1_in(
-    x: pyfect.ai.tool.Dynamic[Any, _Super, Any, Any, Any, Any],
-) -> pyfect.ai.tool.Dynamic[Any, _Sub, Any, Any, Any, Any]:
+    x: pyfect.ai.tool.Dynamic[Any, _Super, Any, Any, Any, Any, Any],
+) -> pyfect.ai.tool.Dynamic[Any, _Sub, Any, Any, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
 def v79_2_out(
-    x: pyfect.ai.tool.Dynamic[Any, Any, _Sub, Any, Any, Any],
-) -> pyfect.ai.tool.Dynamic[Any, Any, _Super, Any, Any, Any]:
+    x: pyfect.ai.tool.Dynamic[Any, Any, _Sub, Any, Any, Any, Any],
+) -> pyfect.ai.tool.Dynamic[Any, Any, _Super, Any, Any, Any, Any]:
     return x
 
 
 def v79_2_in(
-    x: pyfect.ai.tool.Dynamic[Any, Any, _Super, Any, Any, Any],
-) -> pyfect.ai.tool.Dynamic[Any, Any, _Sub, Any, Any, Any]:
+    x: pyfect.ai.tool.Dynamic[Any, Any, _Super, Any, Any, Any, Any],
+) -> pyfect.ai.tool.Dynamic[Any, Any, _Sub, Any, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
 def v79_3_out(
-    x: pyfect.ai.tool.Dynamic[Any, Any, Any, _Sub, Any, Any],
-) -> pyfect.ai.tool.Dynamic[Any, Any, Any, _Super, Any, Any]:
+    x: pyfect.ai.tool.Dynamic[Any, Any, Any, _Sub, Any, Any, Any],
+) -> pyfect.ai.tool.Dynamic[Any, Any, Any, _Super, Any, Any, Any]:
     return x
 
 
 def v79_3_in(
-    x: pyfect.ai.tool.Dynamic[Any, Any, Any, _Super, Any, Any],
-) -> pyfect.ai.tool.Dynamic[Any, Any, Any, _Sub, Any, Any]:
+    x: pyfect.ai.tool.Dynamic[Any, Any, Any, _Super, Any, Any, Any],
+) -> pyfect.ai.tool.Dynamic[Any, Any, Any, _Sub, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
 def v79_4_out(
-    x: pyfect.ai.tool.Dynamic[Any, Any, Any, Any, _Sub, Any],
-) -> pyfect.ai.tool.Dynamic[Any, Any, Any, Any, _Super, Any]:
+    x: pyfect.ai.tool.Dynamic[Any, Any, Any, Any, _Sub, Any, Any],
+) -> pyfect.ai.tool.Dynamic[Any, Any, Any, Any, _Super, Any, Any]:
     return x
 
 
 def v79_4_in(
-    x: pyfect.ai.tool.Dynamic[Any, Any, Any, Any, _Super, Any],
-) -> pyfect.ai.tool.Dynamic[Any, Any, Any, Any, _Sub, Any]:
+    x: pyfect.ai.tool.Dynamic[Any, Any, Any, Any, _Super, Any, Any],
+) -> pyfect.ai.tool.Dynamic[Any, Any, Any, Any, _Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
 def v79_5_out(
-    x: pyfect.ai.tool.Dynamic[Any, Any, Any, Any, Any, _Sub],
-) -> pyfect.ai.tool.Dynamic[Any, Any, Any, Any, Any, _Super]:
+    x: pyfect.ai.tool.Dynamic[Any, Any, Any, Any, Any, _Sub, Any],
+) -> pyfect.ai.tool.Dynamic[Any, Any, Any, Any, Any, _Super, Any]:
     return x
 
 
 def v79_5_in(
-    x: pyfect.ai.tool.Dynamic[Any, Any, Any, Any, Any, _Super],
-) -> pyfect.ai.tool.Dynamic[Any, Any, Any, Any, Any, _Sub]:
+    x: pyfect.ai.tool.Dynamic[Any, Any, Any, Any, Any, _Super, Any],
+) -> pyfect.ai.tool.Dynamic[Any, Any, Any, Any, Any, _Sub, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v79_6_out(
+    x: pyfect.ai.tool.Dynamic[Any, Any, Any, Any, Any, Any, _Sub],
+) -> pyfect.ai.tool.Dynamic[Any, Any, Any, Any, Any, Any, _Super]:
+    return x
+
+
+def v79_6_in(
+    x: pyfect.ai.tool.Dynamic[Any, Any, Any, Any, Any, Any, _Super],
+) -> pyfect.ai.tool.Dynamic[Any, Any, Any, Any, Any, Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
@@ -2292,9 +2304,10 @@ T79_2_co = TypeVar("T79_2_co", covariant=True)
 T79_3_co = TypeVar("T79_3_co", covariant=True)
 T79_4_co = TypeVar("T79_4_co", covariant=True)
 T79_5_co = TypeVar("T79_5_co", covariant=True)
+T79_6_co = TypeVar("T79_6_co", covariant=True)
 
 
-class Fields79(Protocol[T79_0_co, T79_1_co, T79_2_co, T79_3_co, T79_4_co, T79_5_co]):
+class Fields79(Protocol[T79_0_co, T79_1_co, T79_2_co, T79_3_co, T79_4_co, T79_5_co, T79_6_co]):
     @property
     def name(self) -> Any: ...
     @property
@@ -2317,7 +2330,9 @@ class Fields79(Protocol[T79_0_co, T79_1_co, T79_2_co, T79_3_co, T79_4_co, T79_5_
     def execution(self) -> pyfect.ai.tool.Execution | None: ...
     @property
     def json_schema(self) -> pyfect.json_schema._model.JsonSchema | None: ...
-    def declared(self) -> tuple[T79_0_co, T79_1_co, T79_2_co, T79_3_co, T79_4_co, T79_5_co]: ...
+    def declared(
+        self,
+    ) -> tuple[T79_0_co, T79_1_co, T79_2_co, T79_3_co, T79_4_co, T79_5_co, T79_6_co]: ...
 
 
 # pyfect.ai.tool.Handler
@@ -2377,74 +2392,86 @@ class Fields81(Protocol[T81_0_contra]):
 
 
 def v82_0_out(
-    x: pyfect.ai.tool.ProviderDefined[Never, Any, Any, Any, Any, Any],
-) -> pyfect.ai.tool.ProviderDefined[typing.LiteralString, Any, Any, Any, Any, Any]:
+    x: pyfect.ai.tool.ProviderDefined[Never, Any, Any, Any, Any, Any, Any],
+) -> pyfect.ai.tool.ProviderDefined[typing.LiteralString, Any, Any, Any, Any, Any, Any]:
     return x
 
 
 def v82_0_in(
-    x: pyfect.ai.tool.ProviderDefined[typing.LiteralString, Any, Any, Any, Any, Any],
-) -> pyfect.ai.tool.ProviderDefined[Never, Any, Any, Any, Any, Any]:
+    x: pyfect.ai.tool.ProviderDefined[typing.LiteralString, Any, Any, Any, Any, Any, Any],
+) -> pyfect.ai.tool.ProviderDefined[Never, Any, Any, Any, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
 def v82_1_out(
-    x: pyfect.ai.tool.ProviderDefined[Any, _Sub, Any, Any, Any, Any],
-) -> pyfect.ai.tool.ProviderDefined[Any, _Super, Any, Any, Any, Any]:
+    x: pyfect.ai.tool.ProviderDefined[Any, _Sub, Any, Any, Any, Any, Any],
+) -> pyfect.ai.tool.ProviderDefined[Any, _Super, Any, Any, Any, Any, Any]:
     return x
 
 
 def v82_1_in(
-    x: pyfect.ai.tool.ProviderDefined[Any, _Super, Any, Any, Any, Any],
-) -> pyfect.ai.tool.ProviderDefined[Any, _Sub, Any, Any, Any, Any]:
+    x: pyfect.ai.tool.ProviderDefined[Any, _Super, Any, Any, Any, Any, Any],
+) -> pyfect.ai.tool.ProviderDefined[Any, _Sub, Any, Any, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
 def v82_2_out(
-    x: pyfect.ai.tool.ProviderDefined[Any, Any, _Sub, Any, Any, Any],
-) -> pyfect.ai.tool.ProviderDefined[Any, Any, _Super, Any, Any, Any]:
+    x: pyfect.ai.tool.ProviderDefined[Any, Any, _Sub, Any, Any, Any, Any],
+) -> pyfect.ai.tool.ProviderDefined[Any, Any, _Super, Any, Any, Any, Any]:
     return x
 
 
 def v82_2_in(
-    x: pyfect.ai.tool.ProviderDefined[Any, Any, _Super, Any, Any, Any],
-) -> pyfect.ai.tool.ProviderDefined[Any, Any, _Sub, Any, Any, Any]:
+    x: pyfect.ai.tool.ProviderDefined[Any, Any, _Super, Any, Any, Any, Any],
+) -> pyfect.ai.tool.ProviderDefined[Any, Any, _Sub, Any, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
 def v82_3_out(
-    x: pyfect.ai.tool.ProviderDefined[Any, Any, Any, _Sub, Any, Any],
-) -> pyfect.ai.tool.ProviderDefined[Any, Any, Any, _Super, Any, Any]:
+    x: pyfect.ai.tool.ProviderDefined[Any, Any, Any, _Sub, Any, Any, Any],
+) -> pyfect.ai.tool.ProviderDefined[Any, Any, Any, _Super, Any, Any, Any]:
     return x
 
 
 def v82_3_in(
-    x: pyfect.ai.tool.ProviderDefined[Any, Any, Any, _Super, Any, Any],
-) -> pyfect.ai.tool.ProviderDefined[Any, Any, Any, _Sub, Any, Any]:
+    x: pyfect.ai.tool.ProviderDefined[Any, Any, Any, _Super, Any, Any, Any],
+) -> pyfect.ai.tool.ProviderDefined[Any, Any, Any, _Sub, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
 def v82_4_out(
-    x: pyfect.ai.tool.ProviderDefined[Any, Any, Any, Any, _Sub, Any],
-) -> pyfect.ai.tool.ProviderDefined[Any, Any, Any, Any, _Super, Any]:
+    x: pyfect.ai.tool.ProviderDefined[Any, Any, Any, Any, _Sub, Any, Any],
+) -> pyfect.ai.tool.ProviderDefined[Any, Any, Any, Any, _Super, Any, Any]:
     return x
 
 
 def v82_4_in(
-    x: pyfect.ai.tool.ProviderDefined[Any, Any, Any, Any, _Super, Any],
-) -> pyfect.ai.tool.ProviderDefined[Any, Any, Any, Any, _Sub, Any]:
+    x: pyfect.ai.tool.ProviderDefined[Any, Any, Any, Any, _Super, Any, Any],
+) -> pyfect.ai.tool.ProviderDefined[Any, Any, Any, Any, _Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
 def v82_5_out(
-    x: pyfect.ai.tool.ProviderDefined[Any, Any, Any, Any, Any, _Sub],
-) -> pyfect.ai.tool.ProviderDefined[Any, Any, Any, Any, Any, _Super]:
+    x: pyfect.ai.tool.ProviderDefined[Any, Any, Any, Any, Any, _Sub, Any],
+) -> pyfect.ai.tool.ProviderDefined[Any, Any, Any, Any, Any, _Super, Any]:
     return x
 
 
 def v82_5_in(
-    x: pyfect.ai.tool.ProviderDefined[Any, Any, Any, Any, Any, _Super],
-) -> pyfect.ai.tool.ProviderDefined[Any, Any, Any, Any, Any, _Sub]:
+    x: pyfect.ai.tool.ProviderDefined[Any, Any, Any, Any, Any, _Super, Any],
+) -> pyfect.ai.tool.ProviderDefined[Any, Any, Any, Any, Any, _Sub, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v82_6_out(
+    x: pyfect.ai.tool.ProviderDefined[Any, Any, Any, Any, Any, Any, _Sub],
+) -> pyfect.ai.tool.ProviderDefined[Any, Any, Any, Any, Any, Any, _Super]:
+    return x
+
+
+def v82_6_in(
+    x: pyfect.ai.tool.ProviderDefined[Any, Any, Any, Any, Any, Any, _Super],
+) -> pyfect.ai.tool.ProviderDefined[Any, Any, Any, Any, Any, Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
@@ -2454,9 +2481,10 @@ T82_2_co = TypeVar("T82_2_co", covariant=True)
 T82_3_co = TypeVar("T82_3_co", covariant=True)
 T82_4_co = TypeVar("T82_4_co", covariant=True)
 T82_5_co = TypeVar("T82_5_co", covariant=True)
+T82_6_co = TypeVar("T82_6_co", covariant=True)
 
 
-class Fields82(Protocol[T82_0_co, T82_1_co, T82_2_co, T82_3_co, T82_4_co, T82_5_co]):
+class Fields82(Protocol[T82_0_co, T82_1_co, T82_2_co, T82_3_co, T82_4_co, T82_5_co, T82_6_co]):
     @property
     def name(self) -> Any: ...
     @property
@@ -2487,7 +2515,9 @@ class Fields82(Protocol[T82_0_co, T82_1_co, T82_2_co, T82_3_co, T82_4_co, T82_5_
     def args_schema(self) -> pyfect.schema.Top: ...
     @property
     def requires_handler(self) -> bool: ...
-    def declared(self) -> tuple[T82_0_co, T82_1_co, T82_2_co, T82_3_co, T82_4_co, T82_5_co]: ...
+    def declared(
+        self,
+    ) -> tuple[T82_0_co, T82_1_co, T82_2_co, T82_3_co, T82_4_co, T82_5_co, T82_6_co]: ...
 
 
 # pyfect.ai.tool.ProviderToolConstructor
@@ -2545,74 +2575,86 @@ def v83_3_in(
 
 
 def v84_0_out(
-    x: pyfect.ai.tool.Tool[Never, Any, Any, Any, Any, Any],
-) -> pyfect.ai.tool.Tool[typing.LiteralString, Any, Any, Any, Any, Any]:
+    x: pyfect.ai.tool.Tool[Never, Any, Any, Any, Any, Any, Any],
+) -> pyfect.ai.tool.Tool[typing.LiteralString, Any, Any, Any, Any, Any, Any]:
     return x
 
 
 def v84_0_in(
-    x: pyfect.ai.tool.Tool[typing.LiteralString, Any, Any, Any, Any, Any],
-) -> pyfect.ai.tool.Tool[Never, Any, Any, Any, Any, Any]:
+    x: pyfect.ai.tool.Tool[typing.LiteralString, Any, Any, Any, Any, Any, Any],
+) -> pyfect.ai.tool.Tool[Never, Any, Any, Any, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
 def v84_1_out(
-    x: pyfect.ai.tool.Tool[Any, _Sub, Any, Any, Any, Any],
-) -> pyfect.ai.tool.Tool[Any, _Super, Any, Any, Any, Any]:
+    x: pyfect.ai.tool.Tool[Any, _Sub, Any, Any, Any, Any, Any],
+) -> pyfect.ai.tool.Tool[Any, _Super, Any, Any, Any, Any, Any]:
     return x
 
 
 def v84_1_in(
-    x: pyfect.ai.tool.Tool[Any, _Super, Any, Any, Any, Any],
-) -> pyfect.ai.tool.Tool[Any, _Sub, Any, Any, Any, Any]:
+    x: pyfect.ai.tool.Tool[Any, _Super, Any, Any, Any, Any, Any],
+) -> pyfect.ai.tool.Tool[Any, _Sub, Any, Any, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
 def v84_2_out(
-    x: pyfect.ai.tool.Tool[Any, Any, _Sub, Any, Any, Any],
-) -> pyfect.ai.tool.Tool[Any, Any, _Super, Any, Any, Any]:
+    x: pyfect.ai.tool.Tool[Any, Any, _Sub, Any, Any, Any, Any],
+) -> pyfect.ai.tool.Tool[Any, Any, _Super, Any, Any, Any, Any]:
     return x
 
 
 def v84_2_in(
-    x: pyfect.ai.tool.Tool[Any, Any, _Super, Any, Any, Any],
-) -> pyfect.ai.tool.Tool[Any, Any, _Sub, Any, Any, Any]:
+    x: pyfect.ai.tool.Tool[Any, Any, _Super, Any, Any, Any, Any],
+) -> pyfect.ai.tool.Tool[Any, Any, _Sub, Any, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
 def v84_3_out(
-    x: pyfect.ai.tool.Tool[Any, Any, Any, _Sub, Any, Any],
-) -> pyfect.ai.tool.Tool[Any, Any, Any, _Super, Any, Any]:
+    x: pyfect.ai.tool.Tool[Any, Any, Any, _Sub, Any, Any, Any],
+) -> pyfect.ai.tool.Tool[Any, Any, Any, _Super, Any, Any, Any]:
     return x
 
 
 def v84_3_in(
-    x: pyfect.ai.tool.Tool[Any, Any, Any, _Super, Any, Any],
-) -> pyfect.ai.tool.Tool[Any, Any, Any, _Sub, Any, Any]:
+    x: pyfect.ai.tool.Tool[Any, Any, Any, _Super, Any, Any, Any],
+) -> pyfect.ai.tool.Tool[Any, Any, Any, _Sub, Any, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
 def v84_4_out(
-    x: pyfect.ai.tool.Tool[Any, Any, Any, Any, _Sub, Any],
-) -> pyfect.ai.tool.Tool[Any, Any, Any, Any, _Super, Any]:
+    x: pyfect.ai.tool.Tool[Any, Any, Any, Any, _Sub, Any, Any],
+) -> pyfect.ai.tool.Tool[Any, Any, Any, Any, _Super, Any, Any]:
     return x
 
 
 def v84_4_in(
-    x: pyfect.ai.tool.Tool[Any, Any, Any, Any, _Super, Any],
-) -> pyfect.ai.tool.Tool[Any, Any, Any, Any, _Sub, Any]:
+    x: pyfect.ai.tool.Tool[Any, Any, Any, Any, _Super, Any, Any],
+) -> pyfect.ai.tool.Tool[Any, Any, Any, Any, _Sub, Any, Any]:
     return x  # pyright: ignore[reportReturnType]
 
 
 def v84_5_out(
-    x: pyfect.ai.tool.Tool[Any, Any, Any, Any, Any, _Sub],
-) -> pyfect.ai.tool.Tool[Any, Any, Any, Any, Any, _Super]:
+    x: pyfect.ai.tool.Tool[Any, Any, Any, Any, Any, _Sub, Any],
+) -> pyfect.ai.tool.Tool[Any, Any, Any, Any, Any, _Super, Any]:
     return x
 
 
 def v84_5_in(
-    x: pyfect.ai.tool.Tool[Any, Any, Any, Any, Any, _Super],
-) -> pyfect.ai.tool.Tool[Any, Any, Any, Any, Any, _Sub]:
+    x: pyfect.ai.tool.Tool[Any, Any, Any, Any, Any, _Super, Any],
+) -> pyfect.ai.tool.Tool[Any, Any, Any, Any, Any, _Sub, Any]:
+    return x  # pyright: ignore[reportReturnType]
+
+
+def v84_6_out(
+    x: pyfect.ai.tool.Tool[Any, Any, Any, Any, Any, Any, _Sub],
+) -> pyfect.ai.tool.Tool[Any, Any, Any, Any, Any, Any, _Super]:
+    return x
+
+
+def v84_6_in(
+    x: pyfect.ai.tool.Tool[Any, Any, Any, Any, Any, Any, _Super],
+) -> pyfect.ai.tool.Tool[Any, Any, Any, Any, Any, Any, _Sub]:
     return x  # pyright: ignore[reportReturnType]
 
 
@@ -2622,9 +2664,10 @@ T84_2_co = TypeVar("T84_2_co", covariant=True)
 T84_3_co = TypeVar("T84_3_co", covariant=True)
 T84_4_co = TypeVar("T84_4_co", covariant=True)
 T84_5_co = TypeVar("T84_5_co", covariant=True)
+T84_6_co = TypeVar("T84_6_co", covariant=True)
 
 
-class Fields84(Protocol[T84_0_co, T84_1_co, T84_2_co, T84_3_co, T84_4_co, T84_5_co]):
+class Fields84(Protocol[T84_0_co, T84_1_co, T84_2_co, T84_3_co, T84_4_co, T84_5_co, T84_6_co]):
     @property
     def name(self) -> T84_0_co: ...
     @property
@@ -2645,7 +2688,9 @@ class Fields84(Protocol[T84_0_co, T84_1_co, T84_2_co, T84_3_co, T84_4_co, T84_5_
     def to_model_output(self) -> pyfect.ai.tool.ToModelOutput | None: ...
     @property
     def execution(self) -> pyfect.ai.tool.Execution | None: ...
-    def declared(self) -> tuple[T84_0_co, T84_1_co, T84_2_co, T84_3_co, T84_4_co, T84_5_co]: ...
+    def declared(
+        self,
+    ) -> tuple[T84_0_co, T84_1_co, T84_2_co, T84_3_co, T84_4_co, T84_5_co, T84_6_co]: ...
 
 
 # pyfect.ai.toolkit.Handlers
