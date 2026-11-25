@@ -403,10 +403,14 @@ def test_a_request_inside_an_activity_is_not_made_an_activity_again():
 def test_a_finished_run_leaves_no_step_counters_behind():
     """The counters are keyed weakly by the run's instance and hold only ints and names, so
     they go with it once the run's effect is done (a plain run: a test effect's runtime keeps
-    its fibers until the test ends)."""
+    its fibers until the test ends). Only this run's counters count: an earlier test on the
+    same worker may still hold a run of its own."""
+    earlier = list(durable._runs)  # pyright: ignore[reportPrivateUsage]
     run = Agent.execute(AgentPayload(turns=2, prompt="go")).pipe(
         fx.provide(agent_layer(memory_engine()))
     )
     found = fx.run_blocking(run)
     gc.collect()
-    assert (found, len(durable._runs)) == ("done", 0)  # pyright: ignore[reportPrivateUsage]
+    runs = durable._runs  # pyright: ignore[reportPrivateUsage]
+    left = [instance for instance in runs if all(instance is not e for e in earlier)]
+    assert (found, left) == ("done", [])
