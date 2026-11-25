@@ -37,6 +37,7 @@ from ._ai_http import (
     mock_json,
     mock_sse,
     sse_response,
+    unexpected,
 )
 
 
@@ -352,6 +353,25 @@ def test_pdf_file_parts():
         {"type": "file", "file": {"file_id": "file-abc123"}},
         {"type": "file", "file": {"file_id": "https://files.example.com/doc.pdf"}},
     ]
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        pytest.param(Url("https://example.com/doc.pdf"), id="URL object"),
+        pytest.param("https://example.com/doc.pdf", id="https://example.com/doc.pdf"),
+        pytest.param("http://example.com/doc.pdf", id="http://example.com/doc.pdf"),
+    ],
+)
+@testing.effect
+def test_rejects_pdf_urls(data: Url | str):
+    """generateText / rejects PDF URLs before sending a request ( )"""
+    content = (Pr.FilePart(media_type="application/pdf", data=data),)
+    error = yield from _provided(
+        lm.generate_text([Pr.UserMessage(content=content)]), unexpected()
+    ).flip()
+    assert isinstance(error, E.AiError)
+    assert isinstance(error.reason, E.InvalidUserInputError)
 
 
 @testing.effect

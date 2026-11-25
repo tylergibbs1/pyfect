@@ -12,9 +12,6 @@ TITLES: dict[str, tuple[str, ...]] = {
     "ai/anthropic/test/AnthropicLanguageModel.test.ts": (
         "passes tool call params with non-JSON types to the Toolkit",
     ),
-    "ai/openai-compat/test/OpenAiLanguageModel.test.ts": (
-        "rejects PDF URLs before sending a request (\x00)",
-    ),
     "ai/openrouter/test/Generated.test.ts": (
         "preserves composed reasoning options",
         "preserves alignment calls in response error metadata",

@@ -14,7 +14,7 @@ from pyfect._url import Url
 from pyfect.ai import _provider as P
 from pyfect.ai import _provider_tools as PT
 from pyfect.ai import prompt as Pr
-from pyfect.ai.ai_error import InvalidRequestError
+from pyfect.ai.ai_error import InvalidRequestError, InvalidUserInputError
 from pyfect.ai.tool import NameMapper
 
 MODULE = "OpenAiLanguageModel"
@@ -64,18 +64,23 @@ def _image(part: Pr.FilePart, prefixes: Sequence[str] | None) -> Block:
     return {"type": "input_image", "image_url": url, "detail": detail}
 
 
-def _pdf(part: Pr.FilePart, index: int, prefixes: Sequence[str] | None) -> Block | None:
-    """A PDF as an uploaded file's id or inline data (bytes, base64 or a
-    data URL). A URL is sent as text, and a URL string is dropped."""
+def _pdf(part: Pr.FilePart, index: int, prefixes: Sequence[str] | None) -> Block:
+    """A PDF as an uploaded file's id or inline data; Chat Completions
+    takes no PDF URL."""
     data = part.data
     if _is_file_id(data, prefixes):
         return {"type": "input_file", "file_id": data}
-    if isinstance(data, Url):
-        return {"type": "input_file", "file_url": data.href}
+    if isinstance(data, Url) or (isinstance(data, str) and _HTTP_URL.match(data)):
+        raise PT.unsupported(
+            MODULE,
+            "prepareMessages",
+            InvalidUserInputError(
+                description="Chat Completions does not support PDF URLs. "
+                "Pass PDF bytes, base64 data, or a configured file ID instead."
+            ),
+        )
     if isinstance(data, bytes):
         file_data = f"data:application/pdf;base64,{_b64(data)}"
-    elif _HTTP_URL.match(data):
-        return None
     elif _DATA_URL.match(data):
         file_data = data
     else:
@@ -95,9 +100,7 @@ def _user_content(message: Pr.UserMessage, prefixes: Sequence[str] | None) -> li
         elif part.media_type.startswith("image/"):
             content.append(_image(part, prefixes))
         elif part.media_type == "application/pdf":
-            pdf = _pdf(part, index, prefixes)
-            if pdf is not None:
-                content.append(pdf)
+            content.append(_pdf(part, index, prefixes))
         else:
             raise PT.unsupported(
                 MODULE,
@@ -124,8 +127,6 @@ def _chat_part(part: Block) -> Block | None:
                 image["detail"] = part["detail"]
             return {"type": "image_url", "image_url": image}
         case _:
-            if "file_url" in part:
-                return {"type": "text", "text": part["file_url"]}
             keys = ("filename", "file_data", "file_id")
             file = {key: part[key] for key in keys if part.get(key) is not None}
             return {"type": "file", "file": file}
