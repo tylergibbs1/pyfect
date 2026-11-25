@@ -627,6 +627,56 @@ def test_a_fiber_running_the_same_stack_on_the_cpu_is_busy_not_blocked(
     assert "pyfect blocked" not in out
 
 
+STARVED_BUSY_FIBER = """
+import os
+import subprocess
+import sys
+import time
+
+import pyfect as fx
+
+
+def spin_on_purpose():
+    return sum(range(10**5))
+
+
+@fx.fn
+def steps():
+    end = time.monotonic() + 1.5
+    while time.monotonic() < end:
+        yield from fx.sync(spin_on_purpose)
+
+
+def test_spins_in_steps_starved():
+    cpu = min(os.sched_getaffinity(0))
+    for task in os.listdir("/proc/self/task"):  # the watchdog's thread too
+        os.sched_setaffinity(int(task), {cpu})
+    # Spinners on the same CPU, inheriting the pin: the steps get a small share of it.
+    spinners = [subprocess.Popen([sys.executable, "-c", "while True: pass"]) for _ in range(20)]
+    try:
+        time.sleep(0.5)
+        fx.run_blocking(steps())
+    finally:
+        for spinner in spinners:
+            spinner.kill()
+            spinner.wait()
+    assert False
+"""
+
+
+@pytest.mark.skipif(
+    not Path("/proc/self/schedstat").exists(), reason="run-queue time is Linux's schedstat"
+)
+def test_a_busy_fiber_the_host_starves_of_cpu_is_busy_not_blocked(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A step that spins on a CPU it must share uses little CPU, as a blocked one does, but
+    it waits in the run queue for the rest: still busy, not blocked."""
+    out = _run(pytester, monkeypatch, STARVED_BUSY_FIBER)
+    assert "pyfect busy " in out, out
+    assert "pyfect blocked" not in out, out
+
+
 BUSY_BETWEEN_GIL_RELEASES = """
 import signal
 import time
