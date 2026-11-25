@@ -9,7 +9,8 @@ for ``await Effect.runPromise(Effect.yieldNow)`` and ``advance(ms)`` for
 Not ported:
 
 - searchParam with schema reads initial query value, searchParam keeps the
-  hash and omits an empty query: ``searchParam`` reads the browser's URL,
+  hash and omits an empty query, searchParam cancels stale writes but
+  preserves observer writes (%s): ``searchParam`` reads the browser's URL,
   which Python has none of.
 - label: it matches the label's source line against a line of the TS
   test file; ``with_label`` records the Python caller instead (covered by

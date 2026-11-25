@@ -313,6 +313,30 @@ def test_delivers_a_persisted_request_sent_while_its_runner_is_down_exactly_once
 
 
 @testing.live(timeout="1 minute")
+def test_replays_a_request_whose_reply_was_fenced_by_a_slow_lock_check(
+    cluster_db: ClusterDatabase,
+):
+    """replays a request whose reply was fenced by a slow lock check"""
+    backend = cluster_db.backend
+
+    def body() -> Body:
+        cluster = yield from make(
+            cluster_db, config={"shards_per_group": 2}, entities=persistence_entity_layer
+        )
+        [runner] = yield from cluster.start(1)
+        yield from cluster.wait_for_stable_assignments()
+        client = yield from cluster.get_client(E)
+        id = f"{backend}-fenced"
+        shard = yield from cluster.shard_of_entity(E, "fence")
+        yield from cluster.hold_shard_lock_check(runner, shard)
+
+        assert (yield from client("fence").persisted(KeyedPayload(id=id))) == f"persisted:{id}"
+        assert count("Persisted", id) == 2
+
+    yield from run(body)
+
+
+@testing.live(timeout="1 minute")
 def test_serves_primary_key_duplicates_from_the_stored_reply(cluster_db: ClusterDatabase):
     """serves primary-key duplicates from the stored reply"""
     backend = cluster_db.backend

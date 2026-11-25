@@ -9,11 +9,11 @@ Coverage counts ported, renamed and §4 exports.
 | Csv | 10 | 10 | 0 | 0 | 0 | 100% |
 | Json5 | 1 | 1 | 0 | 0 | 0 | 100% |
 | Jsonc | 1 | 1 | 0 | 0 | 0 | 100% |
-| Xml | 7 | 7 | 0 | 0 | 0 | 100% |
+| Xml | 8 | 8 | 0 | 0 | 0 | 100% |
 | Tar | 9 | 9 | 0 | 0 | 0 | 100% |
 | Zip | 7 | 7 | 0 | 0 | 0 | 100% |
 | SchemaBinary | 15 | 15 | 0 | 0 | 0 | 100% |
-| **All** | 51 | | | | 0 | 100% |
+| **All** | 52 | | | | 0 | 100% |
 
 ## Toml
 
@@ -59,6 +59,7 @@ Coverage counts ported, renamed and §4 exports.
 | `elements` | ported | `pyfect.encoding.xml.elements` |
 | `encodeString` | ported | `pyfect.encoding.xml.encode_string` |
 | `encode` | ported | `pyfect.encoding.xml.encode` |
+| `toEvents` | ported | `pyfect.encoding.xml.to_events` |
 
 ## Tar
 

@@ -117,7 +117,15 @@ def _git_show(reference: Path, tag: str, path: str) -> str:
 
 
 OPENAI = Target(
-    "openai", "OpenAI", "FunctionToolCall", "OpenAi", docs_site="https://developers.openai.com"
+    "openai",
+    "OpenAI",
+    "FunctionToolCall",
+    "OpenAi",
+    docs_site="https://developers.openai.com",
+    # 4.1.5's regeneration renames or removes thousands of exported names, and its Generated.ts
+    # builds patterns with forms this generator can't read yet ("only new RegExp(...) is
+    # supported"), so the package follows 4.1.4's Generated.ts until 0.7.0 regenerates it.
+    release="4.1.4",
 )
 # Effect fb998b526 (4.1.4, #10505): tool calls without an `id` and stream deltas without an
 # `index` decode. The rest of 4.1.4's regeneration changes the API, so it waits for a minor.

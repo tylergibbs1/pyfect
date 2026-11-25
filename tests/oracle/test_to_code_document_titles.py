@@ -1,4 +1,5 @@
-"""``toCodeDocument.test.ts``, title by title, with the expected code spelled in Python.
+"""``schema/representation/codegen.test.ts`` (``toCodeDocument.test.ts`` until Effect 4.1.5),
+title by title, with the expected code spelled in Python.
 
 Omitted, because Python has no such schema (§4 of docs/PARITY.md):
 
@@ -25,6 +26,7 @@ from pyfect import json_schema as JS
 from pyfect import schema as S
 from pyfect.brand import Brand
 from pyfect.schema import representation as R
+from pyfect.schema.representation._code_document import code_document
 
 _EXPECTED = r'expected="(?:\\.|[^"\\])*"(?:, )?'
 
@@ -37,7 +39,7 @@ def _canonical(text: str) -> str:
 
 
 def _canonical_code(code: R.Code) -> R.Code:
-    return R.make_code(_canonical(code.runtime), code.type)
+    return R.Code(_canonical(code.runtime), code.type)
 
 
 def _artifacts(document: R.CodeDocument) -> tuple[R.Artifact, ...]:
@@ -57,7 +59,7 @@ def _assert_document(
     recursives: dict[str, R.Code] | None = None,
     artifacts: Sequence[R.Artifact] = (),
 ) -> None:
-    out = R.to_code_document(document)
+    out = code_document(document)
     expected = (codes,) if isinstance(codes, R.Code) else tuple(codes)
     assert tuple(_canonical_code(c) for c in out.codes) == expected
     assert tuple(
@@ -87,7 +89,7 @@ def _assert_json_schema(schema: Any, codes: R.Code, **kwargs: Any) -> None:
 
 
 def _code(runtime: str, type: str) -> R.Code:
-    return R.make_code(runtime, type)
+    return R.Code(runtime, type)
 
 
 def _typed_dict(identifier: str, entries: str) -> R.TypedDictArtifact:
@@ -103,7 +105,7 @@ _CAUSE = R.ImportArtifact("from pyfect import cause")
 
 
 def _only_runtime(schema: Any) -> str:
-    return _canonical(R.to_code_document(R.to_representations((schema,))).codes[0].runtime)
+    return _canonical(code_document(R.to_representations((schema,))).codes[0].runtime)
 
 
 # ------------------------------------------------------------------ Declaration
@@ -116,7 +118,7 @@ def test_declaration_without_a_to_code_annotation() -> None:
         pass
 
     with pytest.raises(R.RepresentationError) as raised:
-        R.to_code_document(R.to_representations((S.instance_of(Thing),)))
+        code_document(R.to_representations((S.instance_of(Thing),)))
     assert str(raised.value) == (
         'Missing to_code callback\n  at ["representations"][0]["annotations"]["to_code"]'
     )
@@ -131,7 +133,7 @@ def test_requires_a_to_code_callback_for_a_named_content_declaration() -> None:
     content = S.instance_of(Thing).annotate(identifier="Content")
     document = R.to_representations((S.from_json_string(content),))
     with pytest.raises(R.RepresentationError) as raised:
-        R.to_code_document(document)
+        code_document(document)
     assert str(raised.value) == (
         'Missing to_code callback\n  at ["references"]["Content"]["annotations"]["to_code"]'
     )
@@ -402,7 +404,7 @@ def test_int() -> None:
 def test_number_and_non_canonical_finite_check(schema: Any, runtime: str) -> None:
     """toCodeDocument / Number / Number & non-canonical finite check"""
     if "real number" in runtime:
-        code = R.to_code_document(R.to_representations((schema,))).codes[0]
+        code = code_document(R.to_representations((schema,))).codes[0]
         assert code == _code(runtime, "float")
     else:
         _assert_schema(schema, _code(runtime, "float"))
@@ -579,14 +581,14 @@ def test_omits_brands_from_parts() -> None:
 def test_uses_references_for_branded_parts() -> None:
     """toCodeDocument / TemplateLiteral / uses references for branded parts"""
     part = S.String.pipe(S.from_brand(Brand[str, Any].nominal())).annotate(identifier="Part")
-    code = R.to_code_document(R.to_representations((S.TemplateLiteral(part),))).codes[0]
+    code = code_document(R.to_representations((S.TemplateLiteral(part),))).codes[0]
     assert code == _code("S.TemplateLiteral(Part)", "str")
 
 
 def test_does_not_expand_combinations_of_unions() -> None:
     """toCodeDocument / TemplateLiteral / does not expand combinations of unions"""
     part = S.Literals(["a", "b"])
-    code = R.to_code_document(R.to_representations((S.TemplateLiteral(*[part] * 20),))).codes[0]
+    code = code_document(R.to_representations((S.TemplateLiteral(*[part] * 20),))).codes[0]
     assert code.type == "str"
     assert len(code.runtime) < 500
 
@@ -733,7 +735,7 @@ def test_preserves_a_required_proto_property_in_generated_code() -> None:
         _code("S.Struct(_Struct, __proto__=S.String)", "_Struct"),
         artifacts=[_typed_dict("_Struct", '"__proto__": str')],
     )
-    generated = _run(R.to_code_document(R.to_representations((schema,))))["Schema0"]
+    generated = _run(code_document(R.to_representations((schema,))))["Schema0"]
     assert S.is_(generated)({"__proto__": "value"})
     assert not S.is_(generated)({})
     assert not S.is_(generated)({"__proto__": 123})
@@ -748,7 +750,7 @@ def test_preserves_an_optional_proto_property_in_generated_code() -> None:
         _code("S.Struct(_Struct, __proto__=S.String)", "_Struct"),
         artifacts=[_typed_dict("_Struct", '"__proto__": NotRequired[str]')],
     )
-    generated = _run(R.to_code_document(R.to_representations((schema,))))["Schema0"]
+    generated = _run(code_document(R.to_representations((schema,))))["Schema0"]
     assert S.is_(generated)({})
     assert S.is_(generated)({"__proto__": "value"})
     assert not S.is_(generated)({"__proto__": 123})
@@ -1030,7 +1032,7 @@ def test_preserves_checks_added_by_from_brand() -> None:
     """toCodeDocument / brand / preserves checks added by fromBrand"""
     is_int = Brand[Any, Any].check(S.is_int())
     positive = Brand[Any, Any].check(S.is_greater_than(0))
-    code = R.to_code_document(
+    code = code_document(
         R.to_representations((S.Number.pipe(S.from_brand(is_int)).pipe(S.from_brand(positive)),))
     ).codes[0]
     assert code == _code(
@@ -1069,9 +1071,9 @@ def test_date_checks(check: Any) -> None:
     isLessThanDate, isLessThanOrEqualToDate, isBetweenDate: on ``S.DateTimeUtc``, judged by the
     document the generated code gives back"""
     schema = S.DateTimeUtc.check(check)
-    document = R.to_code_document(R.to_representations((schema,)))
+    document = code_document(R.to_representations((schema,)))
     generated = _run(document)["Schema0"]
-    assert R.to_code_document(R.to_representations((generated,))) == document
+    assert code_document(R.to_representations((generated,))) == document
     assert S.is_(generated)(_EPOCH) == S.is_(schema)(_EPOCH)
     assert S.is_(generated)(_LATER) == S.is_(schema)(_LATER)
 

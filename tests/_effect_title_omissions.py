@@ -15,7 +15,10 @@ import re
 from dataclasses import dataclass
 from fnmatch import fnmatch
 
-from _effect_titles_m18 import M18_REASON, TITLES
+from _effect_titles_m18 import M18_REASON
+from _effect_titles_m18 import TITLES as M18_TITLES
+from _effect_titles_m19 import M19_REASON
+from _effect_titles_m19 import TITLES as M19_TITLES
 
 
 @dataclass(frozen=True)
@@ -56,8 +59,9 @@ NOT_PORTED_HTTP2 = "NOT_PORTED HTTP/2 on Node's server: `http.hypercorn_server` 
 
 OMISSIONS: tuple[Omission, ...] = (
     *(
-        Omission(path, M18_REASON, re.compile("|".join(f"^{re.escape(t)}$" for t in titles)))
-        for path, titles in TITLES.items()
+        Omission(path, reason, re.compile("|".join(f"^{re.escape(t)}$" for t in titles)))
+        for reason, listed in ((M18_REASON, M18_TITLES), (M19_REASON, M19_TITLES))
+        for path, titles in listed.items()
         if titles
     ),
     *_whole(
@@ -255,6 +259,65 @@ OMISSIONS: tuple[Omission, ...] = (
         "section 4 `HttpApiBuilder.handleAll` row: `handle_all` takes `builder.entry` values, "
         "not a record, so there are no inherited properties to ignore",
         r"^ignores inherited handleAll properties$",
+    ),
+    # Effect 4.1.5 (#10704) reads enumerable own symbol keys of a record argument and skips
+    # non-enumerable and inherited ones; a Python mapping has neither.
+    *(
+        _some(path, _SYMBOLS, r"symbol fields|symbol values|symbol entries|non-enumerable")
+        for path in (
+            "effect/test/cli/Command.test.ts",
+            "effect/test/cli/Prompt.test.ts",
+            "effect/test/Config.test.ts",
+            "effect/test/Effect.test.ts",
+            "effect/test/LayerMap.test.ts",
+            "effect/test/Option.test.ts",
+            "effect/test/reactivity/AsyncResult.test.ts",
+            "effect/test/Request.test.ts",
+            "effect/test/Result.test.ts",
+            "effect/test/schema/VariantSchema.test.ts",
+            "effect/test/testing/TestSchema.test.ts",
+        )
+    ),
+    *_whole(
+        "Effect's own UTF-8 decoder for short byte slices, checked against `TextDecoder`; "
+        "Python decodes with `bytes.decode`",
+        "effect/test/internal/Utf8.test.ts",
+    ),
+    _some(
+        "effect/test/cli/Help.test.ts",
+        _JS_RUNTIME + ": `Intl.Segmenter`, built on first use; `display_width` reads `unicodedata`",
+        r"^constructs the segmenter only on the first width calculation$",
+    ),
+    _some(
+        "platform/node/test/NodeHttpServer.test.ts",
+        _NODE_STREAMS + ": the request's `error` listener after an aborted body (Effect #10794)",
+        r"^keeps an error listener on the request after a streamed body is aborted$",
+    ),
+    _some(
+        "chat/discord/test/interactions.test.ts",
+        "Effect's Discord adapter runs its HTTP calls through dfx, the JavaScript Discord library;"
+        " pyfect's port of the behaviour is \"followUp sends one HTTP request on a 429 just before"
+        " 15 minutes, and fails RateLimited\" (Effect 4.1.5 added dfx's layers to the title)",
+        r"^followUp sends one HTTP request through dfx's layers",
+    ),
+    _some(
+        "chat/slack/test/live.test.ts",
+        "runs only against a real Slack workspace, given `SLACK_LIVE_*` tokens CI never sets;"
+        " pyfect checks its Slack adapter against the fake of `tests/_slack_fake.py`",
+        r"^a post or edit stores no token unless allowed|^a stream split inside an allowed token",
+    ),
+    _some(
+        "effect/test/TestClock.test.ts",
+        "section 4: `JSON.stringify` of a context and of a spread copy of the clock, JavaScript's "
+        "object model; a Python context is not JSON and a service is not copied by spreading",
+        r"^serializes a context containing a TestClock$",
+    ),
+    _some(
+        "platform/node/test/RpcServer.test.ts",
+        "pyfect shares the array across processes: a process worker's message carries the "
+        "segment's name, so the child maps the caller's memory and writes into it "
+        "(`test_workers_shared_memory.py`)",
+        r"^a child process rejects a shared array instead of copying it$",
     ),
     # --- Schema: the module docstrings of tests/oracle/test_schema*.py give these groups.
     *_whole(

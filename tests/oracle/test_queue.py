@@ -892,3 +892,17 @@ def test_flush_unsafe_preserves_later_offers_when_the_queue_is_empty():
 
     assert {(yield from first.join()), (yield from second.join())} == {1, 2}
     yield from queue.shutdown()
+
+
+@testing.effect
+def test_the_final_take_delivers_before_a_closing_queue_notifies_its_awaiters():
+    """the final take delivers before a closing queue notifies its awaiters"""
+    queue = yield from fx.Queue[int, fx.Done].bounded(1)
+    worker = yield from queue.take().fork(start_immediately=True)
+    awaiter = (
+        yield from queue.await_done().and_then(worker.interrupt()).fork(start_immediately=True)
+    )
+    yield from queue.offer(41)
+    yield from queue.end()
+    yield from awaiter.join()
+    assert (yield from worker.await_exit()) == fx.Success(41)

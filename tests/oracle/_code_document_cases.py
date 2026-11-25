@@ -9,6 +9,7 @@ from pyfect import schema as S
 from pyfect.hash_map import HashMap
 from pyfect.hash_set import HashSet
 from pyfect.schema import representation as R
+from pyfect.schema.representation._code_document import code_document
 
 
 class Color(enum.Enum):
@@ -228,4 +229,4 @@ def sample_document_representations() -> R.MultiDocument:
 
 
 def sample_document() -> R.CodeDocument:
-    return R.to_code_document(sample_document_representations())
+    return code_document(sample_document_representations())

@@ -22,6 +22,7 @@ from pyfect.crypto import schema as CS
 from pyfect.exit import Exit, Failure
 from pyfect.schema import representation as R
 from pyfect.schema.issue import Forbidden, InvalidValue, Issue
+from pyfect.schema.representation._code_document import code_document
 
 
 def _keys() -> tuple[Any, Any, Any]:
@@ -94,7 +95,7 @@ def test_generated_code_for_a_custom_hash_schema_accepts_the_same_keys():
     schema = CS.SignaturePublicKey(p256_sha512)
     assert S.is_(schema)(key)
 
-    output = R.to_code_document(R.to_representations((schema,)))
+    output = code_document(R.to_representations((schema,)))
     assert R.ImportArtifact("from pyfect.crypto import digest") in output.artifacts
     namespace: dict[str, object] = {"__name__": "generated"}
     exec(R.to_code_module(output), namespace)

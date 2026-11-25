@@ -668,3 +668,71 @@ def test_releases_a_shard_reassigned_while_a_defected_entity_waits_to_restart():
             _termination_sharding(entity_layer, state, entity_termination_timeout=millis(10_000))
         )
     )
+
+
+@testing.effect
+def test_unregisters_during_persistent_lock_failures_despite_successful_empty_probes():
+    """unregisters during persistent lock failures despite successful empty probes"""
+    state = FailoverState()
+    failing = [False]
+    failure = fx.fail(PersistenceError(cause="lock connection failed"))
+
+    def update(storage: RunnerStorageService) -> RunnerStorageService:
+        def acquire(address: RunnerAddress, shard_ids: Iterable[ShardId]) -> fx.Effect[Any, Any]:
+            return fx.suspend(
+                lambda: failure if failing[0] else storage.acquire(address, shard_ids)
+            )
+
+        def refresh(address: RunnerAddress, shard_ids: Iterable[ShardId]) -> fx.Effect[Any, Any]:
+            def run() -> fx.Effect[Any, Any]:
+                shards = list(shard_ids)
+                return failure if failing[0] and shards else storage.refresh(address, shards)
+
+            return fx.suspend(run)
+
+        def release(address: RunnerAddress, shard_id: ShardId) -> fx.Effect[Any, Any]:
+            return fx.suspend(lambda: failure if failing[0] else storage.release(address, shard_id))
+
+        def release_all(address: RunnerAddress) -> fx.Effect[Any, Any]:
+            return fx.suspend(lambda: failure if failing[0] else storage.release_all(address))
+
+        return copy.replace(
+            storage, acquire=acquire, refresh=refresh, release=release, release_all=release_all
+        )
+
+    layer = _sharding_over(
+        failover_storage_layer(state, update),
+        _config(
+            shards_per_group=1,
+            shard_lock_expiration=millis(300),
+            shard_lock_refresh_interval=millis(1000),
+            entity_termination_timeout=millis(0),
+            refresh_assignments_interval=millis(10),
+        ),
+    )
+
+    @fx.gen
+    def body():
+        service = yield from sharding.Sharding()
+        shard_id = shard("default", 1)
+        while not service.has_shard_id(shard_id):
+            yield from testing.adjust("10 millis")
+
+        failing[0] = True
+        yield from testing.adjust("1000 millis")
+        runner_after_expiration = state.runner
+        yield from testing.adjust("1000 millis")
+        runner_while_still_failing = state.runner
+
+        # Clear the fault before asserting so a failure cannot hang scope teardown.
+        failing[0] = False
+        while not service.has_shard_id(shard_id):
+            yield from testing.adjust("10 millis")
+
+        assert runner_after_expiration is None, (
+            "runner must unregister after persistent lock failures"
+        )
+        assert runner_while_still_failing is None, "empty probes must not re-register the runner"
+        assert state.runner is not None, "runner must re-register after lock storage recovers"
+
+    yield from body.pipe(fx.provide(layer))

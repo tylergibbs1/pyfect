@@ -185,6 +185,7 @@ def test_conformance_without_any_capability(rule: str):
 )
 @testing.live
 def test_conformance_rule_without_one_capability(rule: str, off: str):
+    """conformance %s without %s"""
     return run_rule(rule, tuple(c for c in CAPABILITIES if c != off))
 
 
@@ -371,6 +372,8 @@ def test_replies_to_self_only_for_replies_to_the_bot_check_message_rejects_bad_o
 
 @testing.effect
 def test_chat_handler_layer_drops_the_bots_own_messages_unless_deliver_self():
+    """ChatHandler.layer drops the bot's own messages unless deliverSelf"""
+
     @fx.gen
     def program():
         test = yield from ChatTest()

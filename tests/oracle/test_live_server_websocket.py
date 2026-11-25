@@ -33,9 +33,10 @@ import pyfect as fx
 from pyfect import effect
 from pyfect.deferred import Deferred
 from pyfect.exit import Exit, Failure, Success
-from pyfect.http import router, server_response
+from pyfect.http import live_server, router, server_response
 from pyfect.http.live_server import PerMessageDeflate
 from pyfect.http.live_server._exchange import Exchange
+from pyfect.http.live_server._websocket import _Session  # pyright: ignore[reportPrivateUsage]
 from pyfect.http.server_request import HttpServerRequest
 from pyfect.scope import scoped
 from pyfect.socket import SocketCloseError, SocketError, to_stream
@@ -920,3 +921,106 @@ def test_shutdown_ends_an_upgrade_whose_switch_is_still_being_written(
     fx.run_blocking(finished.join())
     [exit] = drained
     assert not (isinstance(exit, Failure) and exit.cause.has_interrupts)
+
+
+def test_a_websocket_high_water_mark_pauses_the_peer_instead_of_closing_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """a websocket highWaterMark pauses the peer instead of closing it"""
+    frames = [str(i % 10) for i in range(100)]
+    # 100 bytes stay below the 64 KiB default, so only the configured mark pauses.
+    paused = threading.Event()
+    checked = threading.Event()
+    room = _Session._room  # pyright: ignore[reportPrivateUsage]
+
+    def spied(session: _Session) -> bool:
+        has_room = room(session)
+        if not has_room:
+            paused.set()
+        return has_room
+
+    monkeypatch.setattr(_Session, "_room", spied)
+
+    @fx.fn
+    def handler():
+        request = yield from HttpServerRequest()
+        sock = yield from request.upgrade
+
+        @fx.fn
+        def run():
+            reader = yield from sock.reader
+            yield from effect.blocking(lambda: paused.wait(TIMEOUT))
+            got: list[str] = []
+            while len(got) < len(frames):
+                got += [str(chunk) for chunk in (yield from reader.pull)]
+            checked.set()
+            return got
+
+        got = yield from scoped(run())
+        return server_response.text(",".join(got))
+
+    @fx.fn
+    def program():
+        at = yield from port
+
+        def talk() -> tuple[bool, bool]:
+            with _client(at) as ws:
+                for frame in frames:
+                    ws.send(frame)
+                return checked.wait(TIMEOUT), ws.protocol.state.name == "OPEN"
+
+        return (yield from effect.blocking(talk))
+
+    assert _routed(handler(), program(), websocket_high_water_mark=1) == (True, True)
+    assert paused.is_set()
+
+
+def test_an_empty_message_counts_as_a_byte_toward_the_high_water_mark(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """As in Effect's ``Socket.fromWebSocket``: empty messages alone fill the buffer."""
+    paused = threading.Event()
+    room = _Session._room  # pyright: ignore[reportPrivateUsage]
+
+    def spied(session: _Session) -> bool:
+        has_room = room(session)
+        if not has_room:
+            paused.set()
+        return has_room
+
+    monkeypatch.setattr(_Session, "_room", spied)
+
+    @fx.fn
+    def handler():
+        request = yield from HttpServerRequest()
+        sock = yield from request.upgrade
+
+        @fx.fn
+        def run():
+            reader = yield from sock.reader
+            yield from effect.blocking(lambda: paused.wait(TIMEOUT))
+            got = 0
+            while got < 3:
+                got += len((yield from reader.pull))
+            return got
+
+        return server_response.text(str((yield from scoped(run()))))
+
+    @fx.fn
+    def program():
+        at = yield from port
+
+        def talk() -> bool:
+            with _client(at) as ws:
+                for _ in range(3):
+                    ws.send(b"")
+                return paused.wait(TIMEOUT)
+
+        return (yield from effect.blocking(talk))
+
+    assert _routed(handler(), program(), websocket_high_water_mark=2) is True
+
+
+def test_a_high_water_mark_below_one_is_refused() -> None:
+    with pytest.raises(ValueError, match="websocket_high_water_mark must be at least 1, got 0"):
+        live_server.make(websocket_high_water_mark=0)

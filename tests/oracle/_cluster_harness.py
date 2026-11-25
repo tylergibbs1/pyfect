@@ -349,6 +349,9 @@ class _RunnerStorageController:
     read of the runners that its reader finished with: the sync loop reads
     again only after acting on the previous read.
 
+    ``held_shard``'s next lock check (a refresh of that shard alone) never
+    returns (Effect's ``holdShardLockCheck``).
+
     ``events`` (pyfect-only) records the shards each acquisition takes.
     While ``failing_refreshes`` (pyfect-only), lock refreshes fail.
     ``after_heartbeat`` (pyfect-only) runs after each refresh that
@@ -360,6 +363,7 @@ class _RunnerStorageController:
         self.sync_paused = Latch(False)
         self.mode: Literal["frozen", "killed", "running"] = "running"
         self.failing_refreshes = False
+        self.held_shard: ShardId | None = None
         self.last_runners: list[Any] = []
         self.synced_runners: frozenset[RunnerAddress] | None = None
         read_once = [False]
@@ -378,6 +382,9 @@ class _RunnerStorageController:
             shards = list(shard_ids)
             if self.failing_refreshes:
                 return fx.fail(PersistenceError(cause=RuntimeError("Lock refresh failed")))
+            if shards == [self.held_shard]:
+                self.held_shard = None
+                return fx.never
             return self._while_frozen(
                 self.refresh_paused, storage.refresh(address, shards), lambda: shards
             )
@@ -944,6 +951,14 @@ class Cluster:
             yield from runner.controller.freeze()
 
         return freeze_
+
+    def hold_shard_lock_check(self, runner: ClusterRunner, shard_id: ShardId) -> fx.Effect[None]:
+        """``runner``'s next lock check of ``shard_id`` alone never returns."""
+
+        def apply() -> None:
+            runner.controller.held_shard = shard_id
+
+        return fx.sync(apply)
 
     def fail_lock_refreshes(
         self, runner: ClusterRunner, *, failing: bool = True

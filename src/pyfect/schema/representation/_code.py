@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from warnings import deprecated
 
 
 @dataclass(frozen=True, slots=True)
@@ -16,8 +17,10 @@ class Code:
     type: str
 
 
+@deprecated("make_code is deprecated and removed in 0.8.0: use Code(runtime, type)")
 def make_code(runtime: str, type: str, /) -> Code:
-    """``Code(runtime, type)`` (Effect's ``makeCode``)."""
+    """Deprecated since 0.6.36 (Effect 4.1.5 removed ``makeCode``); removed
+    in 0.8.0. ``Code(runtime, type)``."""
     return Code(runtime, type)
 
 

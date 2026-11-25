@@ -790,3 +790,70 @@ def test_zip_with_previous_and_next_matches_zipping_with_previous_and_next():
         result1 = yield from source.zip_with_previous_and_next().run_collect()
         result2 = yield from previous.zip(source).zip_flatten(following).run_collect()
         assert result1 == result2
+
+
+@testing.effect
+def test_filter_effect_passes_stream_indices_across_chunks_on_each_execution():
+    """filterEffect - passes stream indices across chunks on each execution"""
+    indices: list[int] = []
+
+    def keep(pair: tuple[str, int]) -> fx.Effect[bool]:
+        indices.append(pair[1])
+        return fx.succeed(pair[1] < 2)
+
+    letters = stream.make("a", "b", "c", "d", "e").rechunk(2)
+    kept = letters.zip_with_index().filter_effect(keep).map(lambda pair: pair[0])
+    for _ in range(2):
+        indices.clear()
+        assert (yield from kept.run_collect()) == ["a", "b"]
+        assert indices == [0, 1, 2, 3, 4]
+
+
+@testing.effect
+def test_flatten_iterable_emits_ordered_chunks_before_propagating_an_upstream_failure():
+    """emits ordered chunks before propagating an upstream failure"""
+    first = [0]
+    values = list(range(1, 4098))
+    chunks: list[tuple[int, ...]] = []
+    iterables: stream.Stream[list[int] | set[int], str] = (
+        stream.make(first, [], set(values)).rechunk(2).concat(stream.fail("boom"))
+    )
+    ex = yield from (
+        iterables.flatten_iterable()
+        .run_for_each_array(lambda chunk: fx.sync(lambda: chunks.append(chunk)))
+        .exit()
+    )
+    assert chunks == [(0,), tuple(values[:4096]), (4097,)]
+    assert ex == fx.exit.fail("boom")
+
+
+@testing.effect
+def test_flatten_iterable_stops_pulling_an_infinite_iterable_early():
+    """stops pulling an infinite iterable early"""
+    pulled = [0]
+    returned = [0]
+
+    def naturals():
+        try:
+            while True:
+                yield pulled[0]
+                pulled[0] += 1
+        finally:
+            returned[0] += 1
+
+    result = yield from stream.make(naturals()).flatten_iterable().take(3).run_collect()
+    assert result == [0, 1, 2]
+    assert pulled[0] <= stream.DEFAULT_CHUNK_SIZE
+    assert returned[0] == 1
+
+
+class _Unused:
+    def __iter__(self) -> Any:
+        raise AssertionError("unexpected iterator request")
+
+
+@testing.effect
+def test_flatten_iterable_does_not_open_the_next_iterator_until_requested():
+    """does not open the next iterator until requested"""
+    iterables: stream.Stream[Any] = stream.make({1}, _Unused())
+    assert (yield from iterables.flatten_iterable().take(1).run_collect()) == [1]

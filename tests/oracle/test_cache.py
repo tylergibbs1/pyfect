@@ -1524,3 +1524,33 @@ def test_persists_synchronous_lookup_defects():
         assert calls[0] == 1
 
     yield from fx.gen(body).pipe(fx.provide(persistence.layer_memory))
+
+
+@pytest.mark.parametrize(
+    "operation",
+    ["get", "refresh"],
+    ids=lambda o: f"{o} expires from lookup completion after the first caller is interrupted",
+)
+@testing.effect
+def test_expires_from_lookup_completion_after_the_first_caller_is_interrupted(operation: str):
+    """%s expires from lookup completion after the first caller is interrupted"""
+    complete = yield from fx.Latch.make()
+    lookups = [0]
+
+    def lookup(_key: str) -> fx.Effect[int]:
+        lookups[0] += 1
+        return complete.wait().as_(lookups[0])
+
+    cache = yield from fx.Cache.make(lookup, capacity=10, time_to_live=seconds(60))
+    asked = cache.get("key") if operation == "get" else cache.refresh("key")
+    first = yield from asked.fork(start_immediately=True)
+    second = yield from cache.get("key").fork(start_immediately=True)
+    yield from first.interrupt()
+    yield from testing.adjust("2 minutes")
+    yield from complete.open()
+    assert (yield from second.join()) == 1
+
+    yield from testing.adjust("30 seconds")
+    assert (yield from cache.get("key")) == 1
+    yield from testing.adjust("31 seconds")
+    assert (yield from cache.get("key")) == 2

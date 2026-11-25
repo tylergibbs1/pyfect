@@ -6,14 +6,14 @@ Coverage counts ported, renamed and §4 exports.
 | Module | Exports | Ported | Renamed | §4 | Missing | Coverage |
 |---|---|---|---|---|---|---|
 | Schema | 409 | 320 | 46 | 43 | 0 | 100% |
-| SchemaAST | 134 | 58 | 8 | 68 | 0 | 100% |
+| SchemaAST | 135 | 58 | 8 | 69 | 0 | 100% |
 | SchemaGetter | 53 | 48 | 0 | 5 | 0 | 100% |
 | SchemaTransformation | 50 | 37 | 5 | 8 | 0 | 100% |
 | SchemaIssue | 21 | 16 | 3 | 2 | 0 | 100% |
 | SchemaParser | 34 | 26 | 0 | 8 | 0 | 100% |
-| SchemaRepresentation | 102 | 90 | 6 | 6 | 0 | 100% |
+| SchemaRepresentation | 100 | 88 | 6 | 6 | 0 | 100% |
 | JsonSchema | 16 | 8 | 8 | 0 | 0 | 100% |
-| **All** | 819 | | | | 0 | 100% |
+| **All** | 818 | | | | 0 | 100% |
 
 ## Schema
 
@@ -505,6 +505,7 @@ Coverage counts ported, renamed and §4 exports.
 | `structWithRest` | ported | `pyfect.schema.ast.struct_with_rest` |
 | `tupleWithRest` | ported | `pyfect.schema.ast.tuple_with_rest` |
 | `mutable` | §4 | not ported (§4: `Schema.mutable`, `mutableKey` / `readonlyKey`) |
+| `toCandidate` | §4 | not public (§4: Effect's `@internal` schema exports) |
 | `collectSentinels` | §4 | not public (§4: Effect's `@internal` schema exports) |
 | `requiresOwnProperty` | §4 | not public (§4: Effect's `@internal` schema exports) |
 | `getCandidateIndex` | §4 | not public (§4: Effect's `@internal` schema exports) |
@@ -837,13 +838,11 @@ Coverage counts ported, renamed and §4 exports.
 | `isBetweenBigIntReviver` | ported | `pyfect.schema.representation.is_between_big_int_reviver` |
 | `JsonReviver` | ported | `pyfect.schema.representation.json_reviver` |
 | `MutableJsonReviver` | ported | `pyfect.schema.representation.mutable_json_reviver` |
-| `makeCode` | ported | `pyfect.schema.representation.make_code` |
 | `toRepresentation` | ported | `pyfect.schema.representation.to_representation` |
 | `toRepresentations` | ported | `pyfect.schema.representation.to_representations` |
 | `toMultiDocument` | ported | `pyfect.schema.representation.to_multi_document` |
 | `toJsonSchemaDocument` | ported | `pyfect.schema.representation.to_json_schema_document` |
 | `toJsonSchemaMultiDocument` | ported | `pyfect.schema.representation.to_json_schema_multi_document` |
-| `toCodeDocument` | ported | `pyfect.schema.representation.to_code_document` |
 | `toJson` | ported | `pyfect.schema.representation.to_json` |
 | `toJsonMultiDocument` | ported | `pyfect.schema.representation.to_json_multi_document` |
 | `fromJson` | ported | `pyfect.schema.representation.from_json` |

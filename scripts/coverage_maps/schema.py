@@ -164,6 +164,7 @@ AST = Module(
                 "unknownToJson",
                 "unknownToStringTree",
                 "requiresOwnProperty",
+                "toCandidate",
             ),
             (INTERNAL, "not public"),
         ),

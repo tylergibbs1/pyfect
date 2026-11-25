@@ -616,6 +616,42 @@ def test_pins_the_primary_connection_for_streams_by_default(pg_server: PgServer)
 
 
 @testing.live
+def test_times_out_a_queued_stream_before_the_transaction_connection_is_released(
+    pg_server: PgServer,
+):
+    """times out a queued stream before the transaction connection is released
+
+    Effect advances a ``TestClock`` past the timeout; this run waits it out on the real clock."""
+
+    def body():
+        sql = yield from pg.PgClient()
+
+        def transaction():
+            started = yield from fx.Deferred[None].make()
+            release = yield from fx.Deferred[None].make()
+            holder = yield from (
+                sql("SELECT 1")
+                .stream.run_for_each(lambda _: started.succeed(None).and_then(release.wait()))
+                .fork()
+            )
+            yield from started.wait()
+            queued = (
+                yield from sql("SELECT 2").stream.run_drain().timeout_option("10 millis").fork()
+            )
+            yield from fx.sleep("50 millis")
+            completed_while_queued = queued.poll_unsafe() is not None
+            yield from release.succeed(None)
+            yield from holder.join()
+            assert (yield from queued.join()) is None
+            assert completed_while_queued, "stream timeout waited for the connection"
+            assert (yield from sql("SELECT 3 AS value")) == [{"value": 3}]
+
+        yield from sql.with_transaction(fx.gen(transaction))
+
+    yield from _with_single(pg_server, body)
+
+
+@testing.live
 def test_serializes_transactions_on_its_single_connection(pg_server: PgServer):
     """serializes transactions on its single connection"""
 

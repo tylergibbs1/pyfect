@@ -8,9 +8,10 @@ runner returning an asyncio future). Durations are seconds rather than
 milliseconds.
 """
 
-from typing import Any
+from typing import Any, Never
 
 import pytest
+from _fork_registration import registers_during_startup
 
 import pyfect as fx
 from pyfect import testing
@@ -269,3 +270,32 @@ def test_make_runtime_promise():
     run = yield from fx.FiberHandle.make_runtime_async()
     result = yield from fx.from_async(lambda: run(fx.succeed("done")))
     assert result == "done"
+
+
+@testing.effect
+def test_run_registers_a_fiber_even_when_it_interrupts_its_forker_during_startup():
+    """run registers a fiber even when it interrupts its forker during startup"""
+    yield from registers_during_startup(
+        lambda work, scope: (
+            fx.FiberHandle[Never, Never]
+            .make()
+            .pipe(fx.scope.provide(scope))
+            .flat_map(lambda container: container.run(work, start_immediately=True))
+        )
+    )
+
+
+@testing.effect
+def test_join_ignores_managed_replacement_interruptions_and_reports_child_errors():
+    """join ignores managed replacement interruptions and reports child errors without closing the handle"""  # noqa: E501
+    handle = yield from fx.FiberHandle[Any, str].make()
+    release = fx.Deferred[None]()
+    worker = yield from handle.run(release.wait(), propagate_interruption=True).uninterruptible()
+    fail = fx.Deferred[None]()
+    yield from handle.run(fail.wait().and_then(fx.fail("fail")))
+    yield from release.succeed(None)
+    assert _interrupted((yield from worker.await_exit()))
+    yield from fail.succeed(None)
+    assert (yield from handle.join().flip()) == "fail"
+    following = yield from handle.run(fx.succeed("next"))
+    assert (yield from following.join()) == "next"

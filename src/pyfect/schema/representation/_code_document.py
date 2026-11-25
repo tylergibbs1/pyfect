@@ -10,6 +10,7 @@ import keyword
 import re
 from collections.abc import Callable, Sequence
 from typing import cast
+from warnings import deprecated
 
 from pyfect.schema.issue import Path
 from pyfect.schema.representation import _model as R
@@ -407,7 +408,17 @@ class _Generator:
         )
 
 
+@deprecated(
+    "to_code_document is deprecated and removed in 0.8.0: use "
+    "codegen.Module().add_schemas(...).print()"
+)
 def to_code_document(document: R.MultiDocument, /) -> CodeDocument:
+    """Deprecated since 0.6.36 (Effect 4.1.5 replaced ``toCodeDocument`` with
+    ``Codegen``); removed in 0.8.0. Use ``codegen.Module``."""
+    return code_document(document)
+
+
+def code_document(document: R.MultiDocument, /) -> CodeDocument:
     """Python source for ``document``'s schemas: an expression and a type for each
     root and each reference, and the artifacts they use. A check or declaration
     pyfect does not know gives its source through a ``to_code`` annotation

@@ -690,6 +690,18 @@ def test_merge_data_last_with_options():
     assert result == [1]
 
 
+@testing.effect
+def test_merge_starts_both_sides_immediately():
+    """starts both sides immediately"""
+    started: set[str] = set()
+
+    def side(name: str) -> Stream[None]:
+        return stream.from_effect(fx.sync(lambda: started.add(name)))
+
+    yield from side("left").merge(side("right")).to_pull().as_void()
+    assert started == {"left", "right"}
+
+
 # --- raceAll --------------------------------------------------------------------
 
 

@@ -10,6 +10,7 @@ from pyfect import json_schema as JS
 from pyfect import schema as S
 from pyfect.result import Ok
 from pyfect.schema import representation as R
+from pyfect.schema.representation._code_document import code_document
 
 
 def imported(schema: dict[str, Any], **options: Any) -> Any:
@@ -68,7 +69,7 @@ def test_generated_code_takes_what_the_imported_schema_takes(schema: Any) -> Non
     schema, when ``S.Literal`` kept ``int`` and ``float`` apart."""
     source = imported(schema)
     namespace: dict[str, Any] = {"__name__": "generated"}
-    exec(R.to_code_module(R.to_code_document(R.to_representations((source,)))), namespace)
+    exec(R.to_code_module(code_document(R.to_representations((source,)))), namespace)
     is_source, is_generated = S.is_(source), S.is_(namespace["Schema0"])
     for value in (1, 1.0, 2, 2.0, True, "a", 2**53, {"t": 1}, {"t": 1.0}, {"t": True}):
         assert is_source(value) == is_generated(value), value

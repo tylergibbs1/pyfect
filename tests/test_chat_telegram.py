@@ -42,6 +42,7 @@ from pyfect.duration import seconds
 from pyfect.exit import is_failure
 from pyfect.http import request as http_request
 from pyfect.http import router
+from pyfect.http.server_request import HttpServerRequest
 from pyfect.redacted import make as redacted
 from pyfect.tracer import NativeSpan, SpanRequest, Tracer
 
@@ -214,10 +215,21 @@ def _webhook_app(recorder: Recorder, **options: Any) -> layer.Layer[Any, Any]:
     )
 
 
-def webhook(recorder: Recorder) -> Effect[Callable[[str, str | None], Effect[int]], Any, Any]:
+def _read_first(http_effect: Effect[Any, Any, Any]) -> Effect[Any, Any, Any]:
+    """Global middleware that reads the whole body before the route runs."""
+    read = HttpServerRequest().flat_map(lambda request: request.bytes_).ignore()
+    return read.and_then(http_effect)
+
+
+def webhook(
+    recorder: Recorder, *, read_first: bool = False
+) -> Effect[Callable[[str, str | None], Effect[int]], Any, Any]:
     @fx.gen
     def make() -> Gen[Callable[[str, str | None], Effect[int]]]:
-        http = yield from router.in_memory_client(_webhook_app(recorder))
+        app = _webhook_app(recorder)
+        if read_first:
+            app = layer.merge(app, router.middleware(_read_first, global_=True))
+        http = yield from router.in_memory_client(app)
 
         def send(body: str, header: str | None = None) -> Effect[int]:
             headers = {} if header is None else {telegram_chat.SECRET_HEADER: header}
@@ -252,6 +264,20 @@ def test_needs_the_secret_then_answers_for_the_body():
         assert (yield from send(json.dumps({"message": {}}), SECRET)) == 400
         assert (yield from send(UPDATE, SECRET)) == 200
         assert len(recorder.events) == 1
+
+    return fx.scoped(program)
+
+
+@testing.effect
+def test_answers_413_for_a_body_that_middleware_read_first_past_the_limit():
+    """answers 413 for a body that middleware read first, past the limit"""
+
+    @fx.gen
+    def program() -> Gen[None]:
+        recorder = Recorder()
+        send = yield from webhook(recorder, read_first=True)
+        assert (yield from send(json.dumps(message_update({"text": "x" * 5000})), SECRET)) == 413
+        assert recorder.events == []
 
     return fx.scoped(program)
 
@@ -321,6 +347,7 @@ def test_keeps_an_ephemeral_message_that_is_not_a_command_from_every_handler():
 
 
 def test_dispatches_only_data_from_telegrams_copy_of_the_keyboard_and_answers_every_click():
+    """dispatches only data from Telegram's copy of the keyboard, and answers every click"""
     api = FakeApi()
     recorder = Recorder()
     # A message Telegram can no longer show the bot comes with date 0.
@@ -475,6 +502,7 @@ def test_interrupts_a_command_at_its_deadline_and_still_counts_it_answered_never
 
 
 def test_gives_an_anonymous_admins_command_the_group_as_its_user():
+    """gives an anonymous admin's command the group as its user"""
     recorder = Recorder()
     # Telegram's stand-in ``from`` for anonymous group admins.
     anonymous = {
@@ -513,6 +541,7 @@ def test_gives_an_animation_one_attachment_not_its_document_copy_too():
 
 
 def test_command_requests_refuses_ids_telegram_cant_register():
+    """commandRequests refuses ids Telegram can't register"""
     good = ci.group(ci.command("deploy", description="Deploy"))
     bad = ci.group(ci.command("ship-it", description="Ship"))
     assert run(telegram_chat.command_requests(good)) == {

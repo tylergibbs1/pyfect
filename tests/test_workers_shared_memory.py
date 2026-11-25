@@ -150,9 +150,9 @@ def _process(_: int) -> WorkerHandle:
 
 
 def test_worker_processes_write_into_the_callers_shared_array() -> None:
-    """Effect's "a child process rejects a shared array instead of copying it" does not
-    hold here: a process worker's message carries the segment's name, so the child maps
-    the parent's memory and its writes land there."""
+    """Where Effect's child process rejects a shared array, pyfect's shares it (an omission in
+    ``_effect_title_omissions.py``): a process worker's message carries the segment's name, so
+    the child maps the parent's memory and its writes land there."""
     assert _fill_on_workers(_process, size=2) == [0, 2, 4, 6]
 
 

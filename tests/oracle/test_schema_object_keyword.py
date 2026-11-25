@@ -15,6 +15,7 @@ from pyfect import config
 from pyfect import schema as S
 from pyfect.exit import Success
 from pyfect.schema import representation as R
+from pyfect.schema.representation._code_document import code_document
 from pyfect.testing import SchemaAsserts
 
 _EXPECTED = "Expected object | array | function"
@@ -136,7 +137,7 @@ def test_keyword_representation(
     assert R.to_json(document) == expected
     assert R.to_json(R.from_json(expected)) == expected
     assert R.to_json(R.to_representation(R.from_representation(document, revivers=()))) == expected
-    code = R.to_code_document(R.to_multi_document(document)).codes[0]
+    code = code_document(R.to_multi_document(document)).codes[0]
     assert (code.runtime, code.type) == (runtime, type)
     assert R.to_json_schema_document(document).schema == json_schema
 
@@ -147,7 +148,7 @@ def test_annotated_keyword_representation(
 ) -> None:
     del tag, json_schema
     document = R.to_representation(schema.annotate(description="a"))
-    code = R.to_code_document(R.to_multi_document(document)).codes[0]
+    code = code_document(R.to_multi_document(document)).codes[0]
     assert (code.runtime, code.type) == (f'{runtime}.annotate(description="a")', type)
 
 

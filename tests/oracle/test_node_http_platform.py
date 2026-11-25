@@ -12,7 +12,7 @@ import pyfect as fx
 from pyfect import effect, layer
 from pyfect.byte_size import ByteSize
 from pyfect.file_system import FileInfo, NoopFileSystem, layer_noop
-from pyfect.http import platform
+from pyfect.http import platform, server_response
 from pyfect.http.file_like import BytesFile
 from pyfect.http.platform import HttpPlatform
 from pyfect.http.server_response import HttpServerResponse
@@ -169,3 +169,11 @@ def test_serves_a_whole_oversized_file_with_an_exact_content_length_and_no_end_o
     assert response.headers["content-length"] == str(OVERSIZED)
     _run(_read(response))
     assert file_system.calls == [("precision.bin", 0, None)]
+
+
+def test_file_web_reads_the_requested_byte_range() -> None:
+    """fileWeb reads the requested byte range"""
+    file = BytesFile("aéz".encode(), "file.txt")
+    response = _run(server_response.file_web(file, offset=1, bytes_to_read=2))
+    assert response.headers["content-length"] == "2"
+    assert _run(_read(response)) == "é"

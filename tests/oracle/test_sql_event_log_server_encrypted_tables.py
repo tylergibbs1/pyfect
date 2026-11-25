@@ -1,6 +1,7 @@
 """Creating the tables of ``pyfect.eventlog.sql_event_log_server_encrypted``
 on the session's SQL Server container (skipped without one), while another
-instance is creating them too.
+instance is creating them too. "opens a store while another instance is creating
+an index" ports that title of ``sql/mssql/test/SqlEventLogServerEncrypted.integration.test.ts``.
 """
 
 from __future__ import annotations
@@ -15,9 +16,11 @@ pytest.importorskip("pytds")
 
 import pyfect as fx
 from pyfect import exit, testing
+from pyfect.crypto import digest
+from pyfect.eventlog import sql_event_log_server_encrypted
 from pyfect.eventlog._sql_server_encrypted import tables
 from pyfect.reactivity import layer as reactivity_layer
-from pyfect.sql import SqlClientService, mssql
+from pyfect.sql import SqlClient, SqlClientService, mssql
 from pyfect.sql.connection import Acquirer, Connection, Row, TransformRows, ValueRow
 from pyfect.sql.error import SqlError
 from pyfect.stream import Stream
@@ -76,6 +79,46 @@ def test_creates_a_table_while_another_instance_is_creating_its_index(
 
         assert outcome == "created"
         yield from sql("DROP TABLE {}", table)
+
+    program = testing.with_live(fx.scoped(fx.gen(body)))
+    testing.run_test(program.pipe(fx.provide(reactivity_layer)).or_die())
+
+
+def test_opens_a_store_while_another_instance_is_creating_an_index(
+    mssql_server: MssqlServer,
+):
+    """opens a store while another instance is creating an index"""
+    prefix = f"indexing_{uuid.uuid4().hex[:12]}"
+
+    def body():
+        sql = yield from mssql.make(mssql_server.config())
+        stores = sql.identifier(f"{prefix}_compaction_stores")
+        yield from sql(
+            "CREATE TABLE {} (scope NVARCHAR(36) PRIMARY KEY, next_sweep_at BIGINT NULL)", stores
+        )
+        # Hold a separate index creation open, as an older instance would.
+        indexing = yield from fx.Deferred[int].make()
+        release = yield from fx.Deferred[None].make()
+
+        def other_instance():
+            index = sql.identifier(f"{prefix}_compaction_stores_i0")
+            yield from sql("CREATE INDEX {} ON {} (next_sweep_at)", index, stores)
+            [row] = yield from sql("SELECT @@SPID AS spid")
+            yield from indexing.succeed(int(str(row["spid"])))
+            yield from release.wait()
+
+        other = yield from sql.with_transaction(fx.gen(other_instance)).fork_scoped()
+        spid = yield from indexing.wait()
+
+        opened = (
+            fx.scoped(sql_event_log_server_encrypted.make_storage(entry_table_prefix=prefix))
+            .pipe(fx.provide_service(SqlClient, sql))
+            .pipe(fx.provide(digest.layer_web_crypto))
+        )
+        outcome = yield from opened.as_("opened").race(_blocked_by(sql, spid))
+        yield from release.succeed(None)
+        yield from other.join()
+        assert outcome == "opened"
 
     program = testing.with_live(fx.scoped(fx.gen(body)))
     testing.run_test(program.pipe(fx.provide(reactivity_layer)).or_die())

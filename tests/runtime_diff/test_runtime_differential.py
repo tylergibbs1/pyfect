@@ -1,4 +1,4 @@
-"""pyfect's runtime answers the checked-in programs as the pinned Effect (4.1.4) does.
+"""pyfect's runtime answers the checked-in programs as the pinned Effect (4.1.5) does.
 
 ``corpus.json`` holds generated cases (program.py: a program and the
 ``MaxOpsBeforeYield`` it runs under) with what effect_interpreter.ts answered for

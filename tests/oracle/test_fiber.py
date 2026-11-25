@@ -11,6 +11,8 @@ Each test's docstring is the Effect test title (Effect's ``Latch.await`` is
 from collections.abc import Callable
 from typing import Any, Never
 
+import pytest
+
 import pyfect as fx
 from pyfect import testing
 from pyfect.tracer import CurrentStackFrame, InterruptorStackTrace, StackFrame, StackTrace
@@ -247,3 +249,29 @@ def test_retains_distinct_target_and_interruptor_stack_frames():
     assert annotations.get_unsafe(StackTrace) is target_frame
     assert annotations.get_unsafe(InterruptorStackTrace) is interruptor_frame
     assert "interruptor-call-site.py:2" in ex.cause.pretty()
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["await", "join", "awaitAll"],
+    ids=lambda n: f"{n} cancellation does not interrupt an independently owned fiber",
+)
+@testing.effect
+def test_cancelling_a_wait_does_not_interrupt_an_independently_owned_fiber(name: str):
+    """\\x00 cancellation does not interrupt an independently owned fiber"""
+    release = fx.Deferred[int]()
+    observed = yield from release.wait().fork()
+    wait: fx.Effect[Any]
+    if name == "await":
+        wait = observed.await_exit()
+    elif name == "join":
+        wait = observed.join()
+    else:
+        wait = fx.Fiber.await_all([observed])
+    waiter = yield from wait.fork(start_immediately=True)
+    yield from waiter.interrupt()
+    ex = yield from waiter.await_exit()
+    assert isinstance(ex, fx.Failure) and ex.cause.has_interrupts
+    assert observed.poll_unsafe() is None
+    yield from release.succeed(42)
+    assert (yield from observed.await_exit()) == fx.Success(42)

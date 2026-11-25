@@ -532,7 +532,7 @@ NUMBER = Module(
 BIG_INT = Module(
     "BigInt",
     "effect/src/BigInt.ts",
-    (),
+    ("pyfect.big_int",),
     pythonic={
         **_rows(ISINSTANCE, {"isBigInt": "`isinstance(x, int)`"}),
         **_rows(
@@ -1013,6 +1013,7 @@ TEXT_DIFF = Module(
             "codePoints": "`list(s)`",
             "apply": "`difflib.restore(delta, 2)`",
             "applyText": "`''.join(difflib.restore(delta, 2))`",
+            "hunks": "`difflib.SequenceMatcher(None, a, b).get_grouped_opcodes(context)`",
             "invert": "`difflib.restore(delta, 1)`",
             "unified": "`difflib.unified_diff(a, b)`",
         },

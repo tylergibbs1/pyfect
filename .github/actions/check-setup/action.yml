@@ -33,14 +33,17 @@ runs:
       with:
         node-version-file: .node-version
 
-    - name: Check out Effect 4.1.4
+    - name: Check out Effect 4.1.5
       if: inputs.tests == 'true'
       shell: bash
       run: |
         git init -q "$PYFECT_EFFECT_REF"
-        # OpenRouter's generated package follows Effect 4.1.2 (`release` in scripts/gen_ai_schemas.py).
+        # OpenRouter's generated package follows Effect 4.1.2 and OpenAI's 4.1.4 (`release` in
+        # scripts/gen_ai_schemas.py).
         git -C "$PYFECT_EFFECT_REF" fetch -q --depth 1 https://github.com/Effect-TS/effect.git 506eef143bcc1750ce58920aac1e45da7265d103
         git -C "$PYFECT_EFFECT_REF" tag effect@4.1.2 FETCH_HEAD
+        git -C "$PYFECT_EFFECT_REF" fetch -q --depth 1 https://github.com/Effect-TS/effect.git 289a53f7b1fc40049219c6e69022db2fb859c356
+        git -C "$PYFECT_EFFECT_REF" tag effect@4.1.4 FETCH_HEAD
         git -C "$PYFECT_EFFECT_REF" fetch -q --depth 1 https://github.com/Effect-TS/effect.git "$EFFECT_COMMIT"
         git -C "$PYFECT_EFFECT_REF" checkout -q FETCH_HEAD
 
