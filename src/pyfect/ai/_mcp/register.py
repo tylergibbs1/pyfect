@@ -302,10 +302,8 @@ def _tool_handler(
     internal_tool_error: Callable[[Cause[object]], Effect[CallToolResult, InvalidParams]],
     mapper: Callable[[Any], Sequence[ContentBlock]] | None,
 ) -> Callable[[JsonObject | None], Effect[CallToolResult, InvalidParams, RequestServices]]:
+    # MCP content is JSON. Failures raised in "error" mode skip the toolkit's encoding.
     encode_failure = _json_encoder(tool, tool.failure_schema)
-    # Successes and returned failures come encoded by the toolkit: only their JSON form is left.
-    encode_returned_failure = _json_encoder(tool, S.to_encoded(cast("Any", tool.failure_schema)))
-    encode_structured = _json_encoder(tool, S.to_encoded(cast("Any", tool.success_schema)))
     is_declared_failure = S.is_(tool.failure_schema)
     void = tool.success_schema is S.Null
     strict = tool.annotations.get_unsafe(Tool.Strict) is True
@@ -353,9 +351,10 @@ def _tool_handler(
             if void and result.encoded_result is None:
                 # An absent result has no structured form.
                 return succeed({"isError": False, "content": []})
-            return encode_structured(result.encoded_result).map(success_result)
+            # The toolkit encodes successes and "return"-mode failures with their JSON codec.
+            return succeed(success_result(result.encoded_result))
         if result.failure_origin == "handler":
-            return encode_returned_failure(result.encoded_result).map(failure_result)
+            return succeed(failure_result(result.encoded_result))
         origin = Context.make(FailureOriginAnnotation, result.failure_origin or "result")
         return fail_cause(Cause((Fail(result.result),)).annotate(origin))
 

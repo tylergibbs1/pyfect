@@ -17,7 +17,8 @@ from __future__ import annotations
 
 # pyright: reportPrivateUsage=false
 from collections.abc import Callable
-from typing import Any, TypedDict
+from datetime import datetime
+from typing import Any, NotRequired, TypedDict
 
 import pytest
 
@@ -282,6 +283,69 @@ def test_preserves_encoded_params_when_enabled():
     assert response.tool_calls[0].params == "21"
     assert response.tool_results[0].result == 42
     assert response.tool_results[0].encoded_result == 42
+
+
+class _Schedule(TypedDict):
+    at: datetime
+
+
+class _Sign(TypedDict):
+    at: NotRequired[datetime]
+
+
+@testing.effect
+def test_validates_locally_handled_provider_defined_params_in_their_json_encoding():
+    """generateText / validates locally handled provider-defined tool parameters in their JSON encoding"""  # noqa: E501
+    toolkit = K.make(
+        T.provider_defined(
+            id="test.schedule",
+            custom_name="Schedule",
+            provider_name="schedule",
+            requires_handler=True,
+            parameters=S.Struct(_Schedule, at=S.DateTimeUtc),
+        )({})
+    )
+    at = {"at": "2026-01-01T00:00:00.000Z"}
+    response = yield from _provided(
+        lm.generate_text([], toolkit=toolkit, disable_tool_call_resolution=True),
+        generate_text=[{"type": "tool-call", "id": "call", "name": "Schedule", "params": at}],
+    )
+    assert response.tool_calls[0].params == at
+
+
+@testing.effect
+def test_validates_tool_parameters_by_tool_kind_when_requests_share_a_schema():
+    """generateText / validates tool parameters by tool kind when requests share a schema
+
+    Effect's ``signature: null`` (valid only in the JSON encoding of an optional string)
+    has no Python form: an optional ``DateTimeUtc``'s text is, in the same way, only its
+    JSON encoding."""
+    parameters = S.Struct(_Sign, at=S.DateTimeUtc)
+    native = K.make(
+        T.provider_defined(
+            id="test.sign", custom_name="Sign", provider_name="sign", parameters=parameters
+        )()
+    )
+    local = K.make(T.make("Sign", parameters=parameters))
+    at = {"at": "2026-01-01T00:00:00.000Z"}
+    responses: list[list[lm.EncodedPart]] = [
+        [
+            {
+                "type": "tool-call",
+                "id": "native",
+                "name": "Sign",
+                "params": {},
+                "providerExecuted": True,
+            }
+        ],
+        [{"type": "tool-call", "id": "local", "name": "Sign", "params": at}],
+    ]
+    model = with_language_model(generate_text=lambda _: responses.pop(0))
+    yield from lm.generate_text([], toolkit=native, disable_tool_call_resolution=True).pipe(model)
+    response = yield from lm.generate_text(
+        [], toolkit=local, disable_tool_call_resolution=True
+    ).pipe(model)
+    assert response.tool_calls[0].params == at
 
 
 @testing.effect

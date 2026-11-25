@@ -168,6 +168,37 @@ def test_does_not_replay_completed_approved_tool():
     yield from fx.gen(body).pipe(fx.provide(kit.to_layer(counter.handler(count))))
 
 
+class _Total(TypedDict):
+    total: int
+
+
+@testing.effect
+def test_exports_tool_results_with_non_json_types_through_export_json():
+    """Chat / exports tool results with non-JSON types through exportJson"""
+    count = T.make("Count", success=S.Struct(_Total, total=S.BigInt))
+    kit = K.make(count)
+
+    def body():
+        chat = yield from C.empty
+        yield from chat.generate_text("Count", toolkit=kit).pipe(
+            with_language_model(
+                generate_text=[
+                    {"type": "tool-call", "id": "count-call", "name": "Count", "params": {}}
+                ]
+            )
+        )
+        restored = yield from C.from_json((yield from chat.export_json))
+        history = yield from restored.history.get()
+        tool_message = next(m for m in history.content if m.role == "tool")
+        assert tool_message.content[0] == P.ToolResultPart(
+            id="count-call", name="Count", is_failure=False, result={"total": "1"}
+        )
+
+    yield from fx.gen(body).pipe(
+        fx.provide(kit.to_layer(count.handler(lambda _, __: fx.succeed(_Total(total=1)))))
+    )
+
+
 _FINISH: Any = {
     "type": "finish",
     "reason": "stop",

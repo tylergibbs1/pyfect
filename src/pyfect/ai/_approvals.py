@@ -151,7 +151,8 @@ def needs_approval(
         result = check(params, context)
         return result if isinstance(result, Effect) else fx.succeed(result)
 
-    decode = cast("Any", S.decode_unknown_effect(tool.parameters_schema))(call.get("params"))
+    json_params = S.to_codec_json(tool.parameters_schema)
+    decode = cast("Any", S.decode_unknown_effect(json_params))(call.get("params"))
     return (
         cast("Effect[object, Any, Any]", decode).flat_map(decide).or_else_succeed(lambda _: False)
     )

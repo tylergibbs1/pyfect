@@ -412,7 +412,9 @@ class _Guarded(WithHandler[Any, Any, Any, Any]):
         if tool_call_id is None:
             return fx.die(ValueError(f'ToolLedger: a call of "{name}" needs a tool_call_id'))
         call = _Call(self, tool, tool_call_id, params, parse)
-        decode = cast("Any", S.decode_unknown_effect(tool.parameters_schema, **parse))
+        decode = cast(
+            "Any", S.decode_unknown_effect(S.to_codec_json(tool.parameters_schema), **parse)
+        )
         checked: Effect[Any, Any] = decode(params).exit()
         # Invalid parameters never reach the handler: no record is needed.
         return checked.flat_map(
@@ -516,7 +518,7 @@ class _Call:
         unknown = ToolOutcomeUnknown(tool_call_id=self.id, tool_name=self.tool.name)
         if self.guarded.on_unknown == "fail":
             return fx.fail(unknown)
-        encoded = S.encode_unknown_sync(ToolOutcomeUnknown)(unknown)
+        encoded = S.encode_unknown_sync(S.to_codec_json(ToolOutcomeUnknown))(unknown)
         return fx.succeed(StreamC.make(HandlerResult(unknown, encoded, True, False, "handler")))
 
     def replay(self, outcome: Outcome) -> Effect[Stream[HandlerResult, Any, Any], Any, Any]:

@@ -19,6 +19,7 @@ Omitted:
 from __future__ import annotations
 
 # pyright: reportPrivateUsage=false
+from datetime import UTC, datetime
 from typing import Any, Literal, NotRequired, TypedDict, cast
 
 import pytest
@@ -125,6 +126,71 @@ def test_decodes_parameters_with_outer_services():
     stream = yield from handlers.handle("Decode", {"n": "1"}).pipe(fx.provide_service(Decoder, 42))
     results = yield from stream.run_collect().pipe(fx.provide_service(Decoder, 1))
     assert results[0].result == 42
+
+
+class _Schedule(TypedDict):
+    at: datetime
+
+
+class _Scheduled(TypedDict):
+    at: datetime
+    count: int
+
+
+_AT = datetime(2026, 1, 1, tzinfo=UTC)
+
+
+@testing.effect
+def test_decodes_parameters_from_their_json_encoding():
+    """User Defined / decodes parameters from their JSON encoding"""
+    tool = T.make("Schedule", parameters=S.Struct(_Schedule, at=S.DateTimeUtc), success=S.Finite)
+    handler = tool.handler(lambda params, _: fx.succeed(params["at"].timestamp() * 1000))
+    results = yield from _handle(
+        K.make(tool), handler, "Schedule", {"at": "2026-01-01T00:00:00.000Z"}
+    )
+    assert results[0].result == 1767225600000
+
+
+@testing.effect
+def test_encodes_results_to_their_json_encoding():
+    """User Defined / encodes results to their JSON encoding"""
+    schedule = T.make("Schedule", success=S.Struct(_Scheduled, at=S.DateTimeUtc, count=S.BigInt))
+    reject = T.make("Reject", failure=S.Struct(_Schedule, at=S.DateTimeUtc), failure_mode="return")
+    toolkit = K.make(schedule, reject)
+    handlers = yield from toolkit.pipe(
+        fx.provide(
+            toolkit.to_layer(
+                schedule.handler(lambda _, __: fx.succeed(_Scheduled(at=_AT, count=1))),
+                reject.handler(lambda _, __: fx.fail(_Schedule(at=_AT))),
+            )
+        )
+    )
+    success = yield from handlers.handle("Schedule", {}).flat_map(lambda s: s.run_collect())
+    failure = yield from handlers.handle("Reject", {}).flat_map(lambda s: s.run_collect())
+    assert success[0].result == {"at": _AT, "count": 1}
+    assert success[0].encoded_result == {"at": "2026-01-01T00:00:00.000Z", "count": "1"}
+    assert failure[0].result == {"at": _AT}
+    assert failure[0].encoded_result == {"at": "2026-01-01T00:00:00.000Z"}
+
+
+@testing.effect
+def test_encodes_a_void_result_to_null():
+    """User Defined / encodes a void result to null"""
+    tool = T.make("Notify")
+    results = yield from _handle(K.make(tool), tool.handler(lambda _, __: fx.void), "Notify")
+    assert results[0].result is None
+    assert results[0].encoded_result is None
+
+
+@testing.effect
+def test_rejects_a_non_json_result_for_a_dynamic_tool_without_a_success_schema():
+    """User Defined / rejects a non-JSON result for a dynamic tool without a success schema"""
+    tool = T.dynamic("Now")
+    error = yield from _handle(
+        K.make(tool), tool.handler(lambda _, __: fx.succeed(_AT)), "Now"
+    ).flip()
+    assert isinstance(error, E.AiError)
+    assert error.reason._tag == "ToolResultEncodingError"
 
 
 @testing.effect

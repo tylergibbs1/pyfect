@@ -124,7 +124,7 @@ def _handler_tag(tool_id: str) -> type[Tag[_Registered]]:
 @dataclass(frozen=True)
 class HandlerResult:
     """One output of a tool call: the result, what the model sees of it
-    (``encoded_result``, or ``model_output`` from the tool's
+    (``encoded_result``, its JSON encoding, or ``model_output`` from the tool's
     ``to_model_output`` for a final success), whether it is a failure (and
     its origin) and whether it is a preliminary progress value."""
 
@@ -169,8 +169,8 @@ class WithHandler(Generic[N_co, RP_co, HE_co, R_co]):
         tool_call_id: str | None = None,
         options: S.ParseOptions | None = None,
     ) -> Effect[Stream[HandlerResult, HE_co | AiError, R_co], AiError, R_co]:
-        """The results of calling the tool ``name`` with ``params`` (as the
-        model sent them, decoded with ``options``): preliminary values, then
+        """The results of calling the tool ``name`` with ``params`` (their JSON
+        encoding, as the model sends them, decoded with ``options``): preliminary values, then
         the final one. Invalid parameters, a handler failure or an invalid
         result fail the stream in ``"error"`` mode and are a failed result in
         ``"return"`` mode."""
@@ -208,11 +208,12 @@ def _handle(
         missing = MissingServiceError(tool.id)
         return annotate.and_then(fx.die(missing))
     registered = cast("_Registered", registered_value)
+    # Results are encoded to JSON, what a model or an MCP client is sent.
     encode_success: Callable[[object], Effect[object, SchemaError]] = cast(
-        "Any", S.encode_unknown_effect(tool.success_schema)
+        "Any", S.encode_unknown_effect(S.to_codec_json(tool.success_schema))
     )
     encode_failure: Callable[[object], Effect[object, SchemaError]] = cast(
-        "Any", S.encode_unknown_effect(failure_result_schema(tool))
+        "Any", S.encode_unknown_effect(S.to_codec_json(failure_result_schema(tool)))
     )
 
     to_model_output = tool.to_model_output
@@ -344,7 +345,8 @@ def _handle(
         return source.map_effect(encode).ensuring(_stop_handler(fiber))
 
     decode = (
-        S.decode_unknown_effect(tool.parameters_schema, **options)(params)
+        # Parameters come as the model sends them: their JSON encoding.
+        S.decode_unknown_effect(S.to_codec_json(tool.parameters_schema), **options)(params)
         .exit()
         .flat_map(
             lambda exit: (

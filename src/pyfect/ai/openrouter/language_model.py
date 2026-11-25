@@ -169,7 +169,7 @@ def _tool_parameters(
 ) -> tuple[P.JsonObject, S.Top | None]:
     """An object or ``anyOf`` schema and the codec of its calls (a dynamic
     tool's own JSON Schema as given, with none). The codec is the
-    transformer's of the parameters' encoded side, so decoding a call never
+    transformer's of the parameters' JSON encoding, so decoding a call never
     runs the application's decoders."""
     if isinstance(tool, T.Dynamic) and tool.json_schema is not None:
         return dict(tool.json_schema), None
@@ -185,7 +185,7 @@ def _tool_parameters(
     if transformer is lm.default_codec_transformer:
         return schema, None
     try:
-        codec = transformer(S.to_encoded(tool.parameters_schema))[0]
+        codec = transformer(S.to_encoded(S.to_codec_json(tool.parameters_schema)))[0]
     except Exception as error:
         raise PT.unsupported_schema(MODULE, error, "prepareTools") from error
     return schema, codec

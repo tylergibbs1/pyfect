@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable, Sequence
 from dataclasses import fields
+from datetime import UTC, datetime
 from typing import Any, Literal, TypedDict
 
 import pytest
@@ -113,6 +114,62 @@ def test_round_trips_returned_ai_error():
     assert isinstance(result.reason, E.RateLimitError)
     assert (result.module, result.method) == (failure.module, failure.method)
     assert decoded.encoded_result == encoded_failure
+
+
+class _Schedule(TypedDict):
+    at: datetime
+
+
+class _Count(TypedDict):
+    count: int
+
+
+@testing.effect
+def test_round_trips_a_toolkit_result_with_a_non_json_encoding():
+    """round trips a Toolkit result with a non-JSON encoding through AllParts JSON"""
+    tool = T.make("Schedule", success=S.Struct(_Schedule, at=S.DateTimeUtc))
+    toolkit = K.make(tool)
+    at = datetime(2026, 1, 1, tzinfo=UTC)
+    results = yield from _handle(
+        toolkit, tool.handler(lambda _, __: fx.succeed(_Schedule(at=at))), tool.name
+    )
+    part = R.tool_result_part(
+        id="tool-123",
+        name=tool.name,
+        is_failure=results[0].is_failure,
+        result=results[0].result,
+        encoded_result=results[0].encoded_result,
+        preliminary=results[0].preliminary,
+    )
+    schema = R.all_parts(toolkit)
+    encoded = yield from S.encode_effect(schema)(part)
+    decoded = yield from S.decode_unknown_effect(schema)(_json(encoded))
+    assert encoded["result"] == {"at": "2026-01-01T00:00:00.000Z"}
+    assert decoded == part
+
+
+@testing.effect
+def test_keeps_the_raw_encoding_for_provider_executed_tool_results():
+    """keeps the raw encoding for provider-executed tool results
+
+    Effect's ``{cursor: undefined}``, which JSON would hold as ``null``, has no Python form
+    (``None`` is both): a ``BigInt`` count, which JSON holds as text, shows the same."""
+    tool = T.provider_defined(
+        id="test.provider_search",
+        custom_name="ProviderSearch",
+        provider_name="provider_search",
+        success=S.Struct(_Count, count=S.BigInt),
+    )()
+    part = R.tool_result_part(
+        id="tool-123",
+        name=tool.name,
+        is_failure=False,
+        result={"count": 1},
+        encoded_result={"count": 1},
+        provider_executed=True,
+    )
+    encoded = yield from S.encode_unknown_effect(R.all_parts(K.make(tool)))(part)
+    assert encoded["result"] == {"count": 1}
 
 
 _PROVIDER_TOOL = T.provider_defined(
