@@ -25,12 +25,13 @@ thread, ticking for the whole session and recording while a test runs, tells the
   (``pyfect._frames``) under the GIL (text: holding frames would keep what a finished step handled
   alive). A thread inside ``Fiber._run`` whose stack has not moved for the threshold, while the
   process used next to no CPU, is a fiber step that blocks with the GIL released (a sync sleep or
-  lock), which the timer dump cannot see. Fibers never block, so that is "pyfect blocked in <frame>"
-  too. With the CPU busy it is "pyfect busy in <frame>": one long step, or identical steps in a
-  loop. A sample taken holding the GIL finds a busy thread where it last released it, not where its
-  CPU goes, so while such a stall lasts (and only then) the busy thread is sampled by a timer on its
-  own CPU clock (``_CpuSamples``); where that cannot be exact (off Linux) the frame is named "near",
-  as approximate.
+  lock), which the timer dump cannot see (on Linux, the thread's own ``schedstat``: neither running
+  nor waiting in the run queue, so a step the host starves of CPU is not taken for one). Fibers
+  never block, so that is "pyfect blocked in <frame>" too. With the CPU busy it is "pyfect busy in
+  <frame>": one long step, or identical steps in a loop. A sample taken holding the GIL finds a busy
+  thread where it last released it, not where its CPU goes, so while such a stall lasts (and only
+  then) the busy thread is sampled by a timer on its own CPU clock (``_CpuSamples``); where that
+  cannot be exact (off Linux) the frame is named "near", as approximate.
 
 A stall is added to the failure output of the test it happened in (a "stall" section), and
 a passing test that stalled gets a ``StallWarning`` naming its longest stall. A
@@ -161,6 +162,18 @@ def _current_threads() -> list[DumpedThread]:
         if frames:
             threads.append(DumpedThread(f"{ident:#018x}", ident == me, tuple(frames)))
     return threads
+
+
+def _cpu_wanted(ident: int) -> float | None:
+    """Seconds the thread ran or waited runnable for a CPU (Linux's ``schedstat``), ``None``
+    where it can't be read. A step that blocks does neither; a busy one the host starves of
+    CPU waits in the run queue."""
+    native = next((t.native_id for t in live_threads("") if t.ident == ident), None)
+    try:
+        ran, waited = Path(f"/proc/self/task/{native}/schedstat").read_text().split()[:2]
+    except (OSError, ValueError):
+        return None
+    return (int(ran) + int(waited)) / 1e9
 
 
 def _samples(text: str) -> list[tuple[Frame, ...]]:
@@ -553,7 +566,7 @@ class Watchdog:
         self._cpu = _CpuSamples()
         self._steal = _Steal()
         self._collections = _Collections()
-        self._seen: dict[str, tuple[tuple[Frame, ...], float, float]] = {}
+        self._seen: dict[str, tuple[tuple[Frame, ...], float, float, float | None]] = {}
         """Per thread in a fiber step: its stack, and the time and process CPU it was first
         seen at."""
         self._reported: dict[tuple[str, float], int] = {}
@@ -789,9 +802,13 @@ class Watchdog:
                 continue
             seen = self._seen.get(ident)
             if seen is None or seen[0] != thread.frames:
-                self._seen[ident] = (thread.frames, now, time.process_time())
+                wanted = _cpu_wanted(int(ident, 16))
+                self._seen[ident] = (thread.frames, now, time.process_time(), wanted)
                 continue
             stuck, cpu = now - seen[1], time.process_time() - seen[2]
+            wanted_now = _cpu_wanted(int(ident, 16))
+            # The thread's own demand where Linux tells it, else the process's CPU.
+            demand = cpu if seen[3] is None or wanted_now is None else wanted_now - seen[3]
             key = (ident, seen[1])
             if stuck < self.threshold:
                 continue
@@ -801,9 +818,9 @@ class Watchdog:
                     self.stalls.append("")
                 self._stacks[key] = _stack(thread.frames)
             where = thread.frames[0]
-            # A blocking call uses next to no CPU; a busy one on a loaded machine may get
-            # well under half of it.
-            if cpu < stuck / 10:
+            # A blocking call neither runs nor waits for a CPU; a busy one on a loaded machine
+            # may get well under half of it, waiting in the run queue for the rest.
+            if demand < stuck / 10:
                 head = f"process stalled {stuck:.1f} s: pyfect blocked in {where}"
             else:
                 # Running, not blocked: one long step, or identical steps in a loop.
