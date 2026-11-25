@@ -261,77 +261,94 @@ class Module:
         return scope
 
     def _ordered(self) -> list[_Declaration]:
-        visiting: set[Binding] = set()
-        visited: set[Binding] = set()
-        ordered: list[_Declaration] = []
-
-        def visit(binding: Binding) -> None:
-            if binding in visited or isinstance(binding, ImportBinding):
-                return
-            if binding in visiting:
-                raise ValueError(f"Cyclic initialization dependency: {binding.preferred_name}")
-            declaration = (
-                self._declarations.get(binding) if isinstance(binding, DeclarationBinding) else None
-            )
-            if declaration is None:
-                raise ValueError(f"Missing definition: {binding.preferred_name}")
-            visiting.add(binding)
-            for dependency in declaration.dependencies:
-                visit(dependency)
-            visiting.discard(binding)
-            visited.add(binding)
-            ordered.append(declaration)
-
+        ordering = _Ordering(self._declarations)
         for binding in self._declarations:
-            visit(binding)
-        return ordered
+            ordering.visit(binding)
+        return ordering.ordered
 
     def _renderer(
         self, names: dict[Binding, str], imports: dict[tuple[str, str, str], UsedImport]
     ) -> Render:
         taken = set(self._reserved) | self._root.names()
-        cache: dict[Binding | Parts | Deferred, str] = {}
+        return _Renderer(names, imports, taken, self._provided).render
 
-        def render(fragment: Fragment) -> str:
-            if isinstance(fragment, str):
-                return fragment
-            previous = cache.get(fragment)
-            if previous is not None:
-                return previous
-            if isinstance(fragment, Parts):
-                value = "".join(map(render, fragment.parts))
-            elif isinstance(fragment, Deferred):
-                value = fragment.render(render)
-            elif isinstance(fragment, ImportBinding):
-                value = self._import_name(fragment, imports, taken)
-                names[fragment] = value
-            else:
-                found = names.get(fragment)
-                if found is None:
-                    raise ValueError("Binding belongs to another module")
-                value = found
-            cache[fragment] = value
-            return value
 
-        return render
+class _Ordering:
+    """Declarations after the ones they read when they run (a depth-first walk)."""
 
-    def _import_name(
+    def __init__(self, declarations: Mapping[DeclarationBinding, _Declaration]) -> None:
+        self._declarations = declarations
+        self._visiting: set[Binding] = set()
+        self._visited: set[Binding] = set()
+        self.ordered: list[_Declaration] = []
+
+    def visit(self, binding: Binding) -> None:
+        if binding in self._visited or isinstance(binding, ImportBinding):
+            return
+        if binding in self._visiting:
+            raise ValueError(f"Cyclic initialization dependency: {binding.preferred_name}")
+        declaration = (
+            self._declarations.get(binding) if isinstance(binding, DeclarationBinding) else None
+        )
+        if declaration is None:
+            raise ValueError(f"Missing definition: {binding.preferred_name}")
+        self._visiting.add(binding)
+        for dependency in declaration.dependencies:
+            self.visit(dependency)
+        self._visiting.discard(binding)
+        self._visited.add(binding)
+        self.ordered.append(declaration)
+
+
+class _Renderer:
+    """Renders fragments with one ``finalize``'s names, each shared fragment once."""
+
+    def __init__(
         self,
-        binding: ImportBinding,
+        names: dict[Binding, str],
         imports: dict[tuple[str, str, str], UsedImport],
         taken: set[str],
-    ) -> str:
+        provided: Mapping[tuple[str, str, str], ImportBinding],
+    ) -> None:
+        self._names = names
+        self._imports = imports
+        self._taken = taken
+        self._provided = provided
+        self._cache: dict[Binding | Parts | Deferred, str] = {}
+
+    def render(self, fragment: Fragment) -> str:
+        if isinstance(fragment, str):
+            return fragment
+        previous = self._cache.get(fragment)
+        if previous is not None:
+            return previous
+        if isinstance(fragment, Parts):
+            value = "".join(map(self.render, fragment.parts))
+        elif isinstance(fragment, Deferred):
+            value = fragment.render(self.render)
+        elif isinstance(fragment, ImportBinding):
+            value = self._import_name(fragment)
+            self._names[fragment] = value
+        else:
+            found = self._names.get(fragment)
+            if found is None:
+                raise ValueError("Binding belongs to another module")
+            value = found
+        self._cache[fragment] = value
+        return value
+
+    def _import_name(self, binding: ImportBinding) -> str:
         request = binding.request
         key = import_key(request)
         provided = self._provided.get(key)
         if provided is not None:
             return provided.request.local
-        used = imports.get(key)
+        used = self._imports.get(key)
         if used is None:
-            local = allocate(request.local, taken.__contains__)
-            taken.add(local)
+            local = allocate(request.local, self._taken.__contains__)
+            self._taken.add(local)
             used = UsedImport(request, local, runtime=False)
-            imports[key] = used
+            self._imports[key] = used
         used.runtime = used.runtime or not request.type_only
         return used.local
 
