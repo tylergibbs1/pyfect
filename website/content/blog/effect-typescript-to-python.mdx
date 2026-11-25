@@ -1,0 +1,199 @@
+---
+title: "Effect in TypeScript to Python: what carries over"
+description: "Coming from Effect TS to Python? How Effect.gen, pipe, Layer, Context services, Schema and Stream map to pyfect, and where Python makes things different."
+date: "2026-11-24"
+author: "Tyler Gibbs"
+tags: ["effect", "effect-ts", "typescript", "python", "pyright"]
+---
+
+If you have written Effect in TypeScript and now work in Python, most of what you know carries
+over. pyfect is a port of [Effect](https://effect.website) v4 to Python
+(`pip install pyfect-dev`, `import pyfect`): the same data types, the same combinators under
+snake_case names, and the same runtime rules for errors, interruption and finalizers. This post
+maps Effect TS concepts to their Python names, then covers what Python changes and the few
+places where pyfect differs from Effect on purpose.
+
+The [introductory post](/blog/effect-for-python) explains what pyfect is for people who have
+never used Effect. This one assumes you have.
+
+## From Effect TS to Python, name by name
+
+Here is a small Effect v4 program: a tagged error, a service, a generator function, a layer,
+and a handler.
+
+```ts title="greet.ts"
+import { Context, Data, Effect, Layer } from "effect"
+
+class UserNotFound extends Data.TaggedError("UserNotFound")<{ readonly id: string }> {}
+
+class Users extends Context.Service<Users, {
+  readonly find: (id: string) => Effect.Effect<string, UserNotFound>
+}>()("Users") {}
+
+const greet = Effect.fn("greet")(function*(id: string) {
+  const users = yield* Users
+  const name = yield* users.find(id)
+  return `Hello, ${name}`
+})
+
+const UsersLive = Layer.succeed(Users, {
+  find: (id) => id === "1" ? Effect.succeed("Ada") : Effect.fail(new UserNotFound({ id }))
+})
+
+const program = (id: string) =>
+  greet(id).pipe(
+    Effect.catchTag("UserNotFound", (e) => Effect.succeed(`no user ${e.id}`)),
+    Effect.provide(UsersLive)
+  )
+
+Effect.runPromise(program("2")).then(console.log)
+```
+
+And the same program in pyfect. pyright checks it in strict mode, and the build runs it:
+
+<CodeOutput>
+
+<include meta='title="greet.py"'>../../snippets/blog/effect-typescript-to-python/greet.py</include>
+
+<include lang="text">../../snippets/blog/effect-typescript-to-python/greet.out</include>
+
+</CodeOutput>
+
+Line by line:
+
+- **`Effect.gen` and `Effect.fn`** become the decorators `@fx.gen` and `@fx.fn`, around a plain
+  generator. `yield*` becomes `yield from`. pyright infers the type from the body, as
+  TypeScript does: `greet` is `Effect[str, UserNotFound, Users]`. Write `yield from`, never a
+  bare `yield`, or pyright loses the types.
+- **Tagged errors** are classes that subclass `fx.TaggedError`. A `@dataclass` gives them fields.
+  You fail by yielding one, `return (yield from UserNotFound(id))`, much as `yield*` on an
+  error fails in Effect. A `raise` inside a generator is a defect, not a typed failure.
+- **Services.** Effect 3's `Context.Tag` is `Context.Service` in v4. pyfect splits it in two:
+  the shape is any class or `Protocol`, and the key is a subclass of `fx.Tag[Shape]`. You read
+  it with `yield from Users()`. `fx.Reference` is the counterpart of `Context.Reference`, a key
+  with a default value.
+- **Layers** are in `pyfect.layer`: `layer.succeed`, `layer.sync`, `layer.effect`, `layer.merge`,
+  and `fx.provide` to provide one. They are memoized within one `provide`, as in Effect.
+- **`catchTag`** takes the error class instead of the `"_tag"` string, or a tuple of classes for
+  several. Matching on classes is what lets pyright remove exactly that class from the type.
+- **Running.** There is no promise to unwrap. `fx.run_blocking` runs an effect on the calling
+  thread with no event loop, `await fx.run_async(eff)` runs it inside asyncio, and `fx.run_main`
+  is `NodeRuntime.runMain`: it handles SIGINT and SIGTERM and exits with a status.
+
+Effect's `Duration` inputs carry over too: `"5 seconds"`, a `timedelta`, or a bare number,
+which is milliseconds as in Effect.
+
+## Why pipe takes one function
+
+The biggest change for a TypeScript user is `pipe`. In Effect you pass several functions to one
+`.pipe(...)`. In pyfect each `.pipe` call takes exactly one, and you chain calls:
+
+<CodeOutput>
+
+<include meta='title="pipe_one.py"'>../../snippets/blog/effect-typescript-to-python/pipe_one.py</include>
+
+<include lang="text">../../snippets/blog/effect-typescript-to-python/pipe_one.out</include>
+
+</CodeOutput>
+
+Without its ignore comment, the marked line is this pyright error, and the build fails if it
+ever stops being one:
+
+```text
+Argument of type "(eff: Effect[int, Never, Never]) -> Effect[str, Never, Never]" cannot be
+assigned to parameter "more" of type "Never" in function "pipe"
+```
+
+The reason is type inference. pyright narrows a generic call correctly for one step, but in a
+multi-step pipe it loses the narrowing after the first function. That matters most for the
+combinators that remove something from a type, `catch_tag`, `provide` and `provide_service`.
+They are also functions for `.pipe`, never methods: as methods, pyright would bind `self` first
+and could quietly remove the wrong thing. Everything else, `map`, `flat_map`, `retry`,
+`timeout`, `fork`, is a method, which reads more like Python.
+
+## Schema and Stream
+
+`pyfect.schema`, imported as `S`, follows Effect's `Schema`: codecs with a decoded and an
+encoded side, checks, classes, tagged unions and JSON Schema output.
+`pyfect.stream` follows `Stream`: pull-based, with backpressure, and the same operators.
+
+<CodeOutput>
+
+<include meta='title="stream_schema.py"'>../../snippets/blog/effect-typescript-to-python/stream_schema.py</include>
+
+<include lang="text">../../snippets/blog/effect-typescript-to-python/stream_schema.out</include>
+
+</CodeOutput>
+
+`Schema.Class<Reading>("Reading")({...})` becomes a subclass of `S.Class` whose annotations are
+its fields: `str` gives `S.String`, `float` gives `S.Number`, and `S.field(schema)` picks another
+schema. The decoders keep Effect's names in snake_case (`decode_unknown_effect`,
+`decode_unknown_sync`, `encode_sync`), and the effect form puts `SchemaError` in the error type,
+as the `assert_type` line shows. Stream operators are methods, with `concurrency=` as a keyword
+where Effect takes an options object. The [schema guide](/docs/schema) and the
+[streams guide](/docs/streams) list what is there.
+
+## What Python changes
+
+Some things have a better Python spelling, and pyfect uses it.
+
+<CodeOutput>
+
+<include meta='title="python_features.py"'>../../snippets/blog/effect-typescript-to-python/python_features.py</include>
+
+<include lang="text">../../snippets/blog/effect-typescript-to-python/python_features.out</include>
+
+</CodeOutput>
+
+**`match` instead of `Exit.match` and `Cause.match`.** `Exit`, `Cause`, its reasons (`Fail`,
+`Die`, `Interrupt`), `Option` and `Result` all take part in Python's structural pattern
+matching, and pyright narrows each case. An `Option` is `Some(value)` or `None`, so it matches
+like any optional value.
+
+**Exception groups.** A cause can hold several errors, such as a failure plus a crashed
+finalizer. `run.unwrap_group(exit)` raises them as one `ExceptionGroup`, so the traceback shows
+each one and `except*` picks them out. The ordinary run functions raise only the first error and
+attach the full cause as a note.
+
+**`with` blocks.** `fx.managed(eff)` turns a scoped effect, such as an `acquire_release`, into a
+context manager. Code that isn't an effect gets the same release guarantee, and the release
+function still receives the `Exit`.
+
+**Threads and free-threading.** Node gives Effect one thread, and pyfect keeps that model for
+fibers: all the fibers of one run take turns on that run's thread. Python has real threads, so
+pyfect adds `fx.blocking` for a blocking call on a thread pool and `fx.on_thread` for a whole
+effect on a new thread. On free-threaded Python 3.14, those can use several cores. The
+[structured concurrency post](/blog/structured-concurrency-python) goes into what that does and
+doesn't change.
+
+**contextvars.** An effect reads its caller's `contextvars`, as Effect's runs follow Node's
+`AsyncLocalStorage`, so a request id set by a web framework is visible inside the effect and its
+forked fibers.
+
+## Where pyfect differs from Effect on purpose
+
+The project's rule is to match Effect's behaviour wherever Python can express it.
+[PARITY.md](https://github.com/tylergibbs1/pyfect/blob/main/docs/PARITY.md) lists every
+difference with its reason. Besides the language mappings above, there are two kinds.
+
+**Security hardening.** About forty places where pyfect keeps a protection that matching Effect
+would remove: request body and header limits, redirect and `Origin` checks, escaping in log
+lines, SSE events and SQL text, session and queue limits. The one you are most likely to meet is
+JSON depth. Every JSON parse in pyfect refuses text nested more than 512 arrays and objects deep,
+with the error that entry point gives malformed JSON. Effect's `JSON.parse` reads any depth, but
+Python code that walks a very deep value recursively, even `==`, raises `RecursionError`. The
+[schema guide](/docs/schema#json-nesting-limit) lists each entry point and what it fails with.
+
+**Effect bugs not copied.** A short list of Effect behaviours that look like bugs, checked under
+Node, which pyfect doesn't reproduce. For example, a `MaxOpsBeforeYield` of 2 or less never
+finishes in Effect; pyfect runs it as 3, the smallest budget that does.
+
+Then there are the gaps. pyfect is alpha and covers about 95% of Effect v4. PARITY.md lists what
+isn't ported yet, row by row, so check it before you rely on a module you know from TypeScript.
+
+## Where to go next
+
+[Effects and generators](/docs/effects) covers running effects and the common mistakes, several
+of which are TypeScript habits that don't carry over. [Services and layers](/docs/services)
+covers tags and layers in depth, and [typed errors](/docs/errors) covers causes, `match` and
+exception groups.

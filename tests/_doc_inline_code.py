@@ -3,9 +3,15 @@
 # pyright: reportUnusedExpression=false
 
 import pyfect as fx
-from pyfect import duration, layer, metric, testing
+from pyfect import duration, layer, metric, schedule, testing
 from pyfect import schema as S
 
+# python-retry-schedules.mdx
+schedule.exponential("10 millis")
+# python-retry-schedules.mdx
+schedule.spaced("50 millis")
+# python-retry-schedules.mdx
+schedule.max(schedule.exponential("10 millis"), schedule.recurs(5))
 # asyncio-apps.mdx
 layer.MemoMap()
 # cluster.mdx

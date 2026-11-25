@@ -31,6 +31,7 @@ class Outbox:
 outbox = Outbox()
 MailLive = layer.succeed(Mail, outbox)
 
-# provide removes Mail from the requirements; run_blocking accepts only Effect[A, E, Never].
+# provide removes Mail from the requirements; run_blocking accepts only Effect[A, Never, Never]:
+# no errors left to handle and no services left to provide.
 fx.run_blocking(welcome("ada@example.com").pipe(fx.provide(MailLive)))
 assert outbox.sent == ["ada@example.com: Welcome!"]
