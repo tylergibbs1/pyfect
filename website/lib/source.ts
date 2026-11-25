@@ -2,10 +2,10 @@ import { llms, loader } from 'fumadocs-core/source';
 import { lucideIconsPlugin } from 'fumadocs-core/source/lucide-icons';
 import { docsRoute } from './shared';
 import { defineDocs } from 'fumadocs-mdx/macro';
-import { applyMdxPreset } from 'fumadocs-mdx/config';
 import { metaSchema, pageSchema } from 'fumadocs-core/source/schema';
 import { createPython } from 'fumadocs-python';
 import { codeThemes } from './code-theme';
+import { mdxOptions } from './mdx-options';
 import { remarkReferenceHeadings } from './reference-headings';
 import { rehypeTableColumns } from './table-columns';
 import { navSections, type NavSection } from './page-tree';
@@ -14,10 +14,9 @@ const docs = defineDocs({
   dir: 'content/docs',
   docs: {
     schema: pageSchema,
-    mdxOptions: applyMdxPreset({
-      rehypeCodeOptions: { themes: codeThemes },
-      rehypePlugins: (plugins) => [rehypeTableColumns, ...plugins],
-    }),
+    mdxOptions,
+    // The sitemap's lastModified: the last commit that changed the page.
+    lastModified: true,
     postprocess: {
       includeProcessedMarkdown: true,
     },

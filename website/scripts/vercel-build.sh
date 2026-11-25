@@ -8,5 +8,12 @@ if ! command -v uv >/dev/null 2>&1; then
   export PATH="$(python3 -m site --user-base)/bin:$PATH"
 fi
 
+# The sitemap dates each guide by the last commit that changed it (app/sitemap.ts), and
+# leaves the dates out in a shallow clone, which Vercel's is.
+if [ "$(git rev-parse --is-shallow-repository 2>/dev/null)" = true ]; then
+  GIT_TERMINAL_PROMPT=0 git fetch --unshallow --quiet ||
+    echo "Could not fetch the git history: the sitemap leaves the guides undated."
+fi
+
 npm run generate:api
 npm run build

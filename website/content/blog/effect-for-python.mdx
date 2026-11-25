@@ -1,0 +1,193 @@
+---
+title: "Effect for Python: typed errors, services and structured concurrency with pyfect"
+description: "What pyfect is: Effect's typed errors, services and structured concurrency in Python, what pyright checks, and how it compares with exceptions and Effect."
+date: 2026-11-24
+author: Tyler Gibbs
+tags: [effect, typed errors, dependency injection, structured concurrency, pyright]
+---
+
+pyfect is a port of [Effect](https://effect.website), the TypeScript library, to Python. It
+follows Effect v4: the same data types, the same combinators under snake_case names, and the
+same runtime rules for errors, interruption and finalizers. This post explains what that buys
+you in Python, shows three short programs, and is honest about where it costs more than plain
+Python and where it falls short of Effect in TypeScript.
+
+Every code sample below is a file in the site's repository that pyright checks in strict mode
+and CI runs on every change, so it matches the library as it is today.
+
+## The idea in one type
+
+A pyfect program is built from values of type `Effect[A, E, R]`. An effect is a description
+of work, not a running coroutine. Its type says three things:
+
+- `A`, the value it succeeds with;
+- `E`, the errors it can fail with;
+- `R`, the services it needs before it can run.
+
+Handling an error removes it from `E`. Providing a service removes it from `R`.
+`fx.run_blocking`, which runs an effect and returns its value, only accepts one whose `E` and
+`R` are both `Never`. (An effect that can still fail runs with `fx.run_blocking_exit`, which
+hands back the failure as a value to inspect.) So "did I handle every failure?" and "did I
+wire up every dependency?" become questions pyright answers before the program starts.
+
+That is the whole pitch. The rest of this post is what it looks like in code.
+
+## Typed errors a caller has to handle
+
+In plain Python, the failures a function can produce are not part of its signature. A
+docstring might say `Raises: UserNotFound`, but nothing checks it, and nothing checks that the
+caller did anything about it. You find out in production, or from a test someone remembered to
+write.
+
+In pyfect, an expected failure is a value. You declare it as a class and yield it from a
+generator to fail:
+
+<include meta='title="typed_errors.py"'>../../snippets/blog/effect-for-python/typed_errors.py</include>
+
+`find_user` is an ordinary generator function wrapped by `fx.fn`. pyright infers its type,
+`Effect[str, UserNotFound]`, from the generator body: the `str` from the `return`, the error
+from the `yield from UserNotFound(...)`. Nobody wrote that type by hand.
+
+`display_name` declares that it returns `fx.Effect[str]`, an effect with no typed errors. That
+promise only type-checks because `catch_tag` handles `UserNotFound` and removes it from the
+type. Delete the `catch_tag` and pyright reports, on the `return` line:
+
+```text
+Type "UserNotFound" is not assignable to type "Never"
+```
+
+The last two functions are the same mistake made twice: returning the unhandled effect where
+no errors are allowed, and passing it straight to `run_blocking`. The `# pyright: ignore`
+comments are there so the snippet still builds, and the project's pyright settings
+(`reportUnnecessaryTypeIgnoreComment`) fail the build if either line ever stops being an
+error. So the claim "pyright catches this" is itself checked.
+
+Two kinds of failure stay apart, as in Effect. A typed error like `UserNotFound` is something
+the caller is expected to deal with. A bug, such as a `KeyError` raised inside your code, is a
+defect: it is not in the type, and `catch_tag` or `catch_all` won't swallow it by accident. The
+[typed errors guide](/docs/errors) covers both, along with `match`, `Exit` values and
+exception groups.
+
+### Compared with exceptions
+
+Exceptions are not wrong, and Python code has done well with them for decades. What they don't
+give you is a checked list. pyright can't tell you that a function raises `UserNotFound`,
+that a refactor added a new failure three calls down, or that a caller forgot one. Some teams
+get part of the way with `Result` types from small libraries; that works until you need
+retries, timeouts or concurrency, which then have to understand those results too.
+
+In pyfect those pieces are built on the same error channel. `retry`, `timeout`, `race` and
+`for_each` all keep the error type accurate, so the guarantee holds through the code that does
+the actual work. The [schedules guide](/docs/schedules) shows retries, including `while_=` to
+retry some errors and not others.
+
+The cost is real. You write generators with `yield from` instead of plain calls, a function's
+inferred type is longer than `-> str`, and the team has to learn a new model. For a 200-line
+script that is a bad trade.
+
+## Services provided by layers
+
+Dependency injection in Python usually means passing objects around by hand, a container
+library that resolves things at run time, or `unittest.mock.patch` in tests. None of those
+let the type checker say "this function needs a user store and you never gave it one."
+
+In pyfect a dependency is a service. You declare a tag for it, ask for it inside an effect,
+and the requirement shows up in the effect's `R` type:
+
+<include meta='title="services.py"'>../../snippets/blog/effect-for-python/services.py</include>
+
+`greet` asks for `Users` with `yield from Users()`, so its type is
+`Effect[str, UserNotFound, Users]`. It knows the shape of the service (the `UserStore`
+protocol) and nothing about where one comes from.
+
+A layer is the recipe for building a service. `layer.succeed` wraps a ready value, which is
+what you want in a test. In production you would use `layer.effect` to open a connection
+pool, read config, and register a finalizer that closes the pool when the program ends.
+Layers can depend on other layers, and within one `fx.provide` each layer is built once,
+however many others need it.
+
+`fx.provide(UsersInMemory)` removes `Users` from the requirements, and only then does
+`run_blocking` accept the effect. `forgot_the_layer` is the case where nobody did, and pyright
+reports that `Users` is not assignable to `Never`.
+
+Testing follows from this. The code under test doesn't change; the test provides a different
+layer. The [services guide](/docs/services) has a section on mocking a service, and the
+[testing guide](/docs/testing) shows the test clock and the pytest plugin.
+
+## Concurrency that cleans up after itself
+
+Effects run on fibers, lightweight threads scheduled by pyfect's own runtime. Fibers form a
+tree: when a parent finishes or fails, its children are interrupted, and their finalizers run
+before the parent returns. Interruption is not an exception your code can catch, so a broad
+handler can't swallow it halfway through.
+
+Here three requests run at once, and one of them fails:
+
+<CodeOutput>
+
+<include meta='title="concurrency.py"'>../../snippets/blog/effect-for-python/concurrency.py</include>
+
+<include lang="text">../../snippets/blog/effect-for-python/concurrency.out</include>
+
+</CodeOutput>
+
+`fx.all` runs the three effects concurrently and keeps each one's type. The "ap" request fails
+after 10 milliseconds with `Unavailable`. `fx.all` then interrupts "eu" and "us", which are
+still sleeping, waits for their `on_interrupt` handlers to finish, and fails with the typed
+error, which `catch_tag` turns into a message. The program finishes well before the one
+second the slow requests would have taken, and the snippet asserts that.
+
+Modern asyncio gets close. `asyncio.TaskGroup`, added in Python 3.11, cancels the other tasks
+when one fails, which is a real improvement over `gather`. The gaps are elsewhere: the failure
+arrives as an `ExceptionGroup` that the type checker knows nothing about, a task created with
+`asyncio.create_task` outside the group can outlive the function that started it, and a bare
+`except:` or `except BaseException:` can catch `CancelledError` and keep going. In pyfect the
+error type survives the concurrency, children can't outlive their parent unless you ask for it
+with `fork_daemon`, and finalizers always run.
+
+pyfect doesn't ask you to leave asyncio. `fx.run_async` runs an effect inside a coroutine and
+`fx.from_async` wraps a coroutine as an effect, so you can adopt it one function at a time in
+an existing app. The [concurrency guide](/docs/concurrency) covers fibers, races, timeouts and
+fiber sets, and [asyncio apps](/docs/asyncio-apps) covers running pyfect inside FastAPI-style
+applications.
+
+## Compared with Effect in TypeScript
+
+If you know Effect, most of pyfect will look familiar. `Effect.gen` with `yield*` becomes a
+generator with `yield from`. `Effect.catchTag` becomes `fx.catch_tag`. Layers, scopes,
+schedules, streams, `Exit` and `Cause` work the way you expect. The project aims to match
+Effect's behaviour wherever Python can express it.
+
+Python's type system is where the differences come from. TypeScript infers more and lets a
+method narrow a type in ways pyright can't, so a few things are spelled differently:
+
+- Combinators that remove something from a type, such as `catch_tag` and `provide`, are
+  functions you pass to `.pipe(...)`, never methods. As methods, pyright would bind `self`
+  first and quietly remove the wrong thing.
+- `.pipe` takes one function per call. A chain of several steps in one `pipe` loses the
+  narrowing after the first.
+- A lambda passed to a curried `catch_all` has an unknown parameter type, so the guides use a
+  small typed `def` there instead.
+
+Effect also has a larger ecosystem, more users and years of production use. pyfect is alpha.
+Its [PARITY.md](https://github.com/tylergibbs1/pyfect/blob/main/docs/PARITY.md) tracks what
+it covers, what differs and why, and today that is about 95% of Effect v4's API, including
+STM, schema, SQL, the HTTP client and server, RPC and the AI modules. If you are choosing a
+library for a team that writes TypeScript, use Effect. If your code is Python, pyfect is how
+you get the same model there.
+
+## When to use it
+
+pyfect fits a service with real failure modes and real dependencies: an API backend, a
+worker that talks to three other systems, a pipeline that must not leak connections when it
+is cancelled. Those are the programs where an unhandled error or a forgotten dependency is
+expensive, and where a type checker catching them early pays for the extra syntax.
+
+It fits less well in a short script, a notebook, or a codebase where the team doesn't use
+pyright. Without a type checker in the loop, most of the guarantees in this post become
+documentation.
+
+To try it, install `pyfect-dev` from PyPI (you import `pyfect`) and set up pyright as the
+[installation guide](/docs/installation) describes, then read
+[effects and generators](/docs/effects). The [API reference](/docs/reference) is generated
+from the code, and the source is on [GitHub](https://github.com/tylergibbs1/pyfect).

@@ -5,7 +5,9 @@ import type { ReactNode } from 'react';
 import { ArrowLeft, ArrowRight } from 'lucide-react';
 import { findNeighbour } from 'fumadocs-core/page-tree';
 import { source, type Page as SourcePage } from '@/lib/source';
-import { getPageImageUrl, getPageMarkdownUrl } from '@/lib/shared';
+import { githubUrl, getPageImageUrl, getPageMarkdownUrl, siteUrl } from '@/lib/shared';
+import { pageMetadata } from '@/lib/metadata';
+import { JsonLd } from '@/components/json-ld';
 import { mdxComponents } from '@/mdx-components';
 import { referenceComponents } from '@/components/reference';
 import { DocsCopyPage } from '@/components/docs-copy-page';
@@ -28,7 +30,7 @@ export default async function Page(props: PageProps<'/docs/[[...slug]]'>) {
     const rendered = await page.data.load();
     const { body, toc } = await rendered.render({ ...mdxComponents, ...referenceComponents });
     return (
-      <DocsPage page={page} toc={toc} description={page.data.description ?? `API reference for ${page.data.title}.`}>
+      <DocsPage page={page} toc={toc} description={describe(page)}>
         {body}
       </DocsPage>
     );
@@ -43,8 +45,40 @@ export default async function Page(props: PageProps<'/docs/[[...slug]]'>) {
       copy={<DocsCopyPage page={raw} markdownUrl={getPageMarkdownUrl(page).url} />}
     >
       <MDX components={mdxComponents} />
+      {page.slugs.length === 0 ? <JsonLd data={projectJsonLd(page.data.description ?? '')} /> : null}
     </DocsPage>
   );
+}
+
+/** Reference pages generated from modules without a docstring have no description of their own. */
+function describe(page: SourcePage): string {
+  return page.data.description ?? `API reference for ${page.data.title}.`;
+}
+
+/** The project, for search engines: on the docs index, where / redirects. */
+function projectJsonLd(description: string) {
+  const project = { name: 'pyfect', description, url: `${siteUrl}/docs` };
+  return {
+    '@context': 'https://schema.org',
+    '@graph': [
+      {
+        '@type': 'SoftwareSourceCode',
+        ...project,
+        codeRepository: githubUrl,
+        programmingLanguage: 'Python',
+        runtimePlatform: 'Python 3.13+',
+        license: 'https://opensource.org/licenses/MIT',
+      },
+      {
+        '@type': 'SoftwareApplication',
+        ...project,
+        applicationCategory: 'DeveloperApplication',
+        operatingSystem: 'Linux, macOS, Windows',
+        offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+        downloadUrl: 'https://pypi.org/project/pyfect-dev/',
+      },
+    ],
+  };
 }
 
 const FRAME_PARSED = 'docs-frame-parsed';
@@ -169,9 +203,32 @@ export async function generateMetadata(props: PageProps<'/docs/[[...slug]]'>): P
   const page = source.getPage(params.slug);
   if (!page) notFound();
 
-  return {
-    title: page.data.title,
-    description: page.data.description,
-    openGraph: { images: getPageImageUrl(page).url },
-  };
+  return pageMetadata({
+    title: metaTitle(page),
+    description: await metaDescription(page),
+    path: page.url,
+    image: getPageImageUrl(page).url,
+  });
+}
+
+/**
+ * The `<title>`. The index is the site's front page, so its title says what pyfect is. A
+ * reference page's own title is a bare name many modules share (`client`, `config`), so its
+ * `<title>` is the dotted path: `pyfect.http.client API reference`.
+ */
+function metaTitle(page: SourcePage): string | { absolute: string } {
+  if (page.slugs.length === 0) return { absolute: 'pyfect: Effect for Python' };
+  if (page.slugs[0] !== 'reference') return page.data.title;
+  if (page.slugs.length === 1) return 'API reference';
+  const path = ['pyfect', ...page.slugs.slice(1, -1), page.data.title].join('.');
+  return { absolute: `${path} API reference` };
+}
+
+/** A reference page's meta description is its docstring's summary line, when it has one. */
+async function metaDescription(page: SourcePage): Promise<string> {
+  if (page.data.description || !('load' in page.data)) return describe(page);
+  const { structuredData } = await page.data.load();
+  // Docstrings are Markdown: a description is plain text.
+  const summary = structuredData.contents[0]?.content.replaceAll('`', '').trim();
+  return summary || describe(page);
 }

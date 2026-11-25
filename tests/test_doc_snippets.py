@@ -1,7 +1,7 @@
 """The guides' Python code runs, and only comes from checked files.
 
-Every Python block in `website/content/docs` is an `<include>` of a file under
-`website/snippets`, which pyright checks and these tests run (the site is built
+Every Python block in `website/content` (the guides and the blog's posts) is an `<include>`
+of a file under `website/snippets`, which pyright checks and these tests run (the site is built
 from `website/` alone, so guides can't include files outside it):
 a snippet asserts its own results, and `test_*.py` snippets are pytest files.
 
@@ -40,7 +40,8 @@ from pyfect.duration import from_input_unsafe
 
 ROOT = Path(__file__).parent.parent
 SNIPPETS = ROOT / "website" / "snippets"
-GUIDES = ROOT / "website" / "content" / "docs"
+# The guides (docs/) and the blog's posts (blog/): both include checked snippets.
+GUIDES = ROOT / "website" / "content"
 
 INCLUDE = re.compile(r"<include[^>]*>\s*([^<]+?)\s*</include>")
 PYTHON_FENCE = re.compile(r"^\s*(```|~~~)\s*(py|python|python3|pycon)\b", re.MULTILINE)
