@@ -45,7 +45,13 @@ from pyfect.rpc.message import (
 )
 from pyfect.rpc.schema import get_stream_schemas
 from pyfect.rpc.serialization import CodecFor
-from pyfect.rpc.server._core import RpcServer, ServerOptions, make_no_serialization, unknown_tag
+from pyfect.rpc.server._core import (
+    OnRequest,
+    RpcServer,
+    ServerOptions,
+    make_no_serialization,
+    unknown_tag,
+)
 from pyfect.rpc.server._protocol import Message, ServerProtocol, ServerProtocolService
 from pyfect.scope import Scope, fork_scoped, scoped
 from pyfect.workers.transferable import Collector, CollectorService, make_collector_unsafe
@@ -157,6 +163,7 @@ class _Serialized:
         "_services",
         "_unknown_exit",
         "server",
+        "wrap_request",
     )
 
     def __init__(
@@ -171,6 +178,7 @@ class _Serialized:
         self._notification_count = 0
         self._encode_defect, self._unknown_exit = _defect_codecs(protocol.codec_for)
         self.server: RpcServer | None = None
+        self.wrap_request: OnRequest | None = None
 
     def _codecs(self, rpc: AnyRpc) -> _Codecs:
         found = self._codec_cache.get(rpc.tag)
@@ -366,7 +374,7 @@ class _Serialized:
                 is_notification=is_notification,
                 discard=is_discard,
             )
-            return self._server().write(client.id, request)
+            return self._server().write(client.id, request, self.wrap_request)
 
         def invalid(error: S.SchemaError) -> Effect[None]:
             if is_notification:
@@ -396,6 +404,7 @@ def make[G: RpcGroup](
         protocol = yield from ServerProtocol()
         services = yield from context()
         state = _Serialized(group, protocol, services)
+        state.wrap_request = resolved.on_request
         server_options = ServerOptions(
             disable_tracing=resolved.disable_tracing,
             disable_span_propagation=not protocol.supports_span_propagation,

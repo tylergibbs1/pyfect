@@ -27,11 +27,12 @@ from pyfect.ai._mcp import (
     projection,
     reverse_policy,
     skills,
+    spans,
     subscriptions,
 )
 from pyfect.ai._mcp.cache_hints import TtlMillis
 from pyfect.ai._mcp.core import McpServerService, RequestOutbound, RequestServices
-from pyfect.ai._mcp.failure import interrupted_failure
+from pyfect.ai._mcp.failure import INTERNAL_ERROR, interrupted_failure
 from pyfect.ai._mcp.http_status import fail_with_http_status
 from pyfect.ai._mcp.input_wire import CONTINUATION_PARAMS, INPUT_REQUESTS, ContinuationParams
 from pyfect.ai._mcp.invoke import RequestRejected, ResourceNotFound, unwrap_rejected
@@ -46,6 +47,7 @@ from pyfect.ai.mcp_schema import (
     HEADER_MISMATCH_ERROR_CODE,
     IMPLEMENTATION,
     INITIALIZE_PARAMS,
+    INTERNAL_ERROR_CODE,
     LIST_PROMPTS,
     LIST_RESOURCE_TEMPLATES,
     LIST_RESOURCES,
@@ -109,7 +111,7 @@ from pyfect.effect import (
     sync,
     with_fiber,
 )
-from pyfect.exit import Success
+from pyfect.exit import Exit, Success
 from pyfect.http.server_request import HttpServerRequest, ServerRequest
 from pyfect.logger import CurrentLogLevel, Severity
 from pyfect.option import Option
@@ -165,6 +167,28 @@ def response(id: RequestId | None, result: Mapping[str, Any]) -> JsonObject:
 
 def error_response(id: RequestId | None, error: McpError) -> JsonObject:
     return {"jsonrpc": "2.0", "id": id, "error": cast("Any", error.to_wire())}
+
+
+def _written(id: RequestId, out: Send) -> spans.Write[Never, Never]:
+    """Writes a response with ``out``; one that fails to write is answered with an
+    internal error instead, recorded on the request's span (Effect's RpcServer sends a
+    defect, which its McpServer answers so), and the request ends with the failure."""
+
+    def write(reply: JsonObject, record_error: spans.RecordError) -> Effect[None]:
+        def failed(cause: Cause[Never]) -> Effect[None]:
+            if cause.has_interrupts:
+                return fail_cause(cause)
+            internal: JsonObject = {
+                "jsonrpc": "2.0",
+                "id": id,
+                "error": cast("Any", INTERNAL_ERROR),
+            }
+            recorded = sync(lambda: record_error(INTERNAL_ERROR_CODE))
+            return out(internal).and_then(recorded).and_then(fail_cause(cause))
+
+        return out(reply).catch_cause(failed)
+
+    return write
 
 
 def _encodable_response(id: RequestId, result: Wire) -> JsonObject:
@@ -348,9 +372,8 @@ class Connection:
         if request is not None:
             if request.method == "initialize":
                 # Answered before the next message, which may rely on it.
-                return self.answer(request.id, request.method, request.params, out).flat_map(
-                    lambda reply: _VOID if reply is None else out(reply)
-                )
+                answered = self.answer(request.id, request.method, request.params, out, write=out)
+                return answered.as_void()
             return self.start(request, out).as_void()
         return self._not_a_request(classified, out)
 
@@ -419,9 +442,9 @@ class Connection:
             self._cancelled.discard(id)
 
         served = (
-            self.answer(id, request.method, request.params, out)
+            self.answer(id, request.method, request.params, out, write=out)
             .pipe(provide_service(RequestLiveness, liveness))
-            .flat_map(lambda reply: _VOID if reply is None else out(reply))
+            .as_void()
             .ensuring(sync(done))
         )
 
@@ -444,9 +467,11 @@ class Connection:
         return suspend(begin)
 
     def answer(
-        self, id: RequestId, method: str, params: JsonObject, out: Send
+        self, id: RequestId, method: str, params: JsonObject, out: Send, write: Send | None = None
     ) -> Effect[JsonObject | None]:
-        """The response to a request (``None`` when it was cancelled)."""
+        """The response to a request (``None`` when it was cancelled), in the request's
+        span; with ``write``, also written in it. A response that fails to write is
+        answered with an internal error instead, as Effect's RpcServer does."""
         version = requested_protocol_version(params)
         stateless = self.registry.find(version) if version is not None else None
         serves_stateless = stateless is not None and stateless.is_stateless
@@ -460,14 +485,6 @@ class Connection:
             answered = fail(_unsupported_version(version, self.registry))
         else:
             answered = self._stateful(method, params, out)
-        # Effect's McpServer is an RpcServer with spanPrefix "McpServer".
-        traced = answered.with_span(
-            f"McpServer.{method}",
-            kind="server",
-            capture_stack_trace=False,
-            attributes={"rpc.system.name": "effect_rpc", "rpc.method": method},
-        )
-        # Effect's RpcServer reports the cause of every failed request.
         legacy_tool_call = method == "tools/call" and not serves_stateless
 
         def failed(cause: Cause[object]) -> Effect[JsonObject]:
@@ -481,8 +498,23 @@ class Connection:
                 on_success=lambda result: _encodable_response(id, result),
             )
 
-        replied: Effect[JsonObject] = traced.with_error_reporting().match_cause_effect(
-            on_failure=failed, on_success=lambda result: succeed(_encodable_response(id, result))
+        def to_reply(exit: Exit[Wire, McpError]) -> Effect[JsonObject]:
+            if isinstance(exit, Success):
+                return succeed(_encodable_response(id, exit.value))
+            return failed(exit.cause)
+
+        def protocol_version() -> str | None:
+            if stateless is not None and serves_stateless:
+                return stateless.protocol_version
+            return None if self.protocol is None else self.protocol.protocol_version
+
+        span = spans.RequestSpan(id, method, params, protocol_version, self.transport)
+        # Effect's RpcServer reports the cause of every failed request.
+        replied = spans.traced(
+            span,
+            answered.with_error_reporting(),
+            to_reply,
+            None if write is None else _written(id, write),
         )
         return replied.exit().map(lambda exit: exit.value if isinstance(exit, Success) else None)
 

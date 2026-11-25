@@ -94,7 +94,7 @@ class ManagerCore:
         if entry.message.annotations.get(WithTransaction):
             storage = self.storage
 
-            def transaction(effect: Effect[Any, Any, Any]) -> Effect[Any, Any, Any]:
+            def transaction(effect: Effect[Any, Any, Any], _: object) -> Effect[Any, Any, Any]:
                 # Interrupts during commit must not hide the outcome from settle.
                 def body(restore: Restore) -> Effect[Any, Any, Any]:
                     current = RequestTransaction()
@@ -118,14 +118,14 @@ class ManagerCore:
         if on_transaction is None:
             return on_caller
         inner = on_transaction
-        return lambda effect: on_caller(inner(effect))
+        return lambda effect, request: on_caller(inner(effect, request), request)
 
 
 def bind_to_caller(caller_scope: CloseableScope) -> OnRequest:
     """Bind each handler fiber, replays too, to its caller's scope before
     its body runs."""
 
-    def bind(effect: Effect[Any, Any, Any]) -> Effect[Any, Any, Any]:
+    def bind(effect: Effect[Any, Any, Any], _: object) -> Effect[Any, Any, Any]:
         def body(fiber: Fiber[Any, Any]) -> Effect[Any, Any, Any]:
             if caller_scope.is_closed:
                 return interrupt()

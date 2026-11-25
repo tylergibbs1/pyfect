@@ -16,11 +16,4 @@ TITLES: dict[str, tuple[str, ...]] = {
         "preserves composed reasoning options",
         "preserves alignment calls in response error metadata",
     ),
-    "effect/test/ai/McpServer/McpServer.test.ts": (
-        "names tool call spans after the tool and does not record arguments by default",
-        "records tool arguments when Toolkit.RecordToolArguments is enabled",
-        "continues the client trace from params._meta.traceparent",
-        "marks a tool result with isError as a tool_error",
-        "records the internal error sent after an error response fails to write",
-    ),
 }

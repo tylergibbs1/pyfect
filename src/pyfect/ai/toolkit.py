@@ -31,6 +31,7 @@ from pyfect import schema as S
 from pyfect._core import Effect
 from pyfect.ai import ai_error as AiErr
 from pyfect.ai._budget import Precounted, tool_call
+from pyfect.ai._tool_arguments import stringify_tool_arguments
 from pyfect.ai.ai_error import AiError
 from pyfect.ai.prompt import ToolModelOutputPart
 from pyfect.ai.response import ToolResultFailure, ToolResultSuccess
@@ -76,6 +77,30 @@ class FailureOriginAnnotation(Reference[FailureOrigin], key="effect/ai/Toolkit/F
     @classmethod
     def default(cls) -> FailureOrigin:
         return "result"
+
+
+class RecordToolArguments(Reference[bool], key="effect/ai/Toolkit/RecordToolArguments"):
+    """Whether a tool call's span records its arguments as ``gen_ai.tool.call.arguments``
+    (off by default: arguments can hold sensitive data). Read by the toolkit and by the
+    MCP server's ``tools/call`` spans."""
+
+    @classmethod
+    def default(cls) -> bool:
+        return False
+
+
+def _annotate_call(name: str, params: object, tool_call_id: str | None) -> Effect[None]:
+    """Names the call on the current span, after the OpenTelemetry GenAI conventions."""
+
+    def annotate(record_arguments: bool) -> Effect[None]:
+        attributes: dict[str, object] = {"gen_ai.tool.name": name}
+        if tool_call_id is not None:
+            attributes["gen_ai.tool.call.id"] = tool_call_id
+        if record_arguments:
+            attributes["gen_ai.tool.call.arguments"] = stringify_tool_arguments(params)
+        return fx.annotate_current_span(attributes)
+
+    return RecordToolArguments().flat_map(annotate)
 
 
 class PreliminaryBuffer(Reference[int | None], key="effect/ai/Toolkit/PreliminaryBuffer"):
@@ -192,7 +217,7 @@ def _handle(
     options: S.ParseOptions,
 ) -> Effect[Stream[HandlerResult, Any, Any], AiError, Any]:
     tool = kit.tools.get(name)
-    annotate = fx.annotate_current_span({"tool": name, "parameters": params})
+    annotate = _annotate_call(name, params, tool_call_id)
     if tool is None:
         error = _make_error(
             name, AiErr.ToolNotFoundError(tool_name=name, available_tools=tuple(kit.tools))
@@ -543,6 +568,7 @@ __all__ = [
     "HandlerResult",
     "Handlers",
     "PreliminaryBuffer",
+    "RecordToolArguments",
     "Toolkit",
     "WithHandler",
     "empty",
