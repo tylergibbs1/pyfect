@@ -11,6 +11,8 @@ A_co = TypeVar("A_co", covariant=True)
 
 @dataclass(frozen=True, slots=True)
 class Some(Generic[A_co]):
+    """A present value in an ``Option``: ``Some(None)`` is a present ``None``, unlike ``None``."""
+
     value: A_co
 
 

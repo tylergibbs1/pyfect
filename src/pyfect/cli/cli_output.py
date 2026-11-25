@@ -28,6 +28,8 @@ from pyfect.option import Some
 
 
 class Formatter(Protocol):
+    """Renders a CLI's help, errors and version as text."""
+
     def format_help_doc(self, doc: HelpDoc) -> str: ...
     def format_cli_error(self, error: CliError) -> str: ...
     def format_error(self, error: CliError) -> str: ...
@@ -37,6 +39,8 @@ class Formatter(Protocol):
 
 @dataclass(frozen=True, slots=True)
 class Help:
+    """CLI output event: show a command's help, because it was asked for or is needed."""
+
     reason: Literal["Requested", "Implicit"]
     command_path: tuple[str, ...]
     help_doc: HelpDoc
@@ -44,6 +48,8 @@ class Help:
 
 @dataclass(frozen=True, slots=True)
 class InvalidInvocation:
+    """CLI output event: the arguments did not parse; show the errors and help."""
+
     command_path: tuple[str, ...]
     help_doc: HelpDoc
     errors: tuple[ParseError, ...]
@@ -51,6 +57,8 @@ class InvalidInvocation:
 
 @dataclass(frozen=True, slots=True)
 class Version:
+    """CLI output event: show the program's name and version."""
+
     name: str
     version: str
 
@@ -59,6 +67,8 @@ type Event = Help | InvalidInvocation | Version
 
 
 class Presenter(Protocol):
+    """Shows a CLI output event: help, a parse failure or the version."""
+
     def present(self, event: Event) -> Effect[None]: ...
 
 

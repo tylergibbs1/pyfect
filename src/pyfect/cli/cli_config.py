@@ -15,6 +15,8 @@ from pyfect.layer import succeed as layer_succeed
 
 @dataclass(frozen=True, slots=True)
 class Settings:
+    """CLI runner settings: the built-in global flags every command gets."""
+
     built_ins: tuple[GlobalFlag, ...] = global_flag.built_ins
 
 

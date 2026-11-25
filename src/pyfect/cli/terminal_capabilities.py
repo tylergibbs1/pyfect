@@ -31,6 +31,8 @@ from pyfect.stdio import Stdio
 
 @dataclass(frozen=True, slots=True)
 class Capabilities:
+    """What the terminal can do: show color, animate and prompt."""
+
     can_color: bool
     can_animate: bool
     can_prompt: bool

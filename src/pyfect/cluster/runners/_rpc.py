@@ -65,16 +65,22 @@ _errors = S.Union(EntityNotAssignedToRunner, MailboxFull, AlreadyProcessingMessa
 
 
 class NotifyPayload(TypedDict):
+    """The payload of a runner ``Notify`` RPC: an envelope and whether it was persisted."""
+
     envelope: envelope_.Partial
     persisted: bool
 
 
 class RequestPayload(TypedDict):
+    """The payload of a runner request RPC: a request and whether it was persisted."""
+
     request: envelope_.PartialRequest
     persisted: bool
 
 
 class EnvelopePayload(TypedDict):
+    """The payload of a runner ``Envelope`` RPC: an ack or interrupt, and if it was persisted."""
+
     envelope: envelope_.AckChunk | envelope_.Interrupt
     persisted: bool
 

@@ -20,6 +20,8 @@ E_co = TypeVar("E_co", covariant=True)
 
 @dataclass(frozen=True, slots=True)
 class Ok(Generic[A_co]):
+    """A ``Result`` that succeeded, with its value."""
+
     value: A_co
 
     def map[B](self, f: Callable[[A_co], B]) -> Ok[B]:
@@ -101,6 +103,8 @@ class Ok(Generic[A_co]):
 
 @dataclass(frozen=True, slots=True)
 class Err(Generic[E_co]):
+    """A ``Result`` that failed, with its typed error."""
+
     error: E_co
 
     def map(self, f: Callable[[Never], object]) -> Err[E_co]:

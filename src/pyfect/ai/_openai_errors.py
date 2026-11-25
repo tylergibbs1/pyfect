@@ -38,6 +38,8 @@ class ErrorMetadata(TypedDict):
 
 
 class RateLimitMetadata(ErrorMetadata):
+    """An OpenAI rate limit's details: the limit, what remains and when it resets."""
+
     limit: str | None
     remaining: int | float | None
     resetRequests: str | None

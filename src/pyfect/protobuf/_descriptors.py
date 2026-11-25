@@ -209,6 +209,8 @@ class EnumDescriptor:
 
 @dataclass(frozen=True, eq=False, repr=False)
 class EnumValueDescriptor:
+    """A resolved protobuf enum value: its name, number and enum."""
+
     name: str
     number: int
     parent: EnumDescriptor
@@ -239,6 +241,8 @@ class ExtensionDescriptor:
 
 @dataclass(eq=False, repr=False)
 class ServiceDescriptor:
+    """A resolved protobuf service: its name, file and methods."""
+
     type_name: str
     name: str
     file: FileDescriptor
@@ -251,6 +255,8 @@ class ServiceDescriptor:
 
 @dataclass(frozen=True, eq=False, repr=False)
 class MethodDescriptor:
+    """A resolved protobuf service method: input and output messages and streaming."""
+
     name: str
     parent: ServiceDescriptor
     input: MessageDescriptor

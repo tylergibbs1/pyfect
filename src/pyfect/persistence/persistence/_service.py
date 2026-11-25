@@ -116,6 +116,8 @@ class PersistenceStore(Protocol):
 
 
 class PersistenceService(Protocol):
+    """The ``Persistence`` service: opens stores that keep results, with a time to live."""
+
     def make(
         self,
         *,

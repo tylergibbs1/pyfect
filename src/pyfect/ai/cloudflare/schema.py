@@ -17,23 +17,31 @@ ENTRY = S.Union(S.String, S.JsonObject, S.Array(S.Json))
 
 
 class ChoiceQuestion(TypedDict):
+    """A Clef question that picks one of several named criteria."""
+
     type: Literal["choice"]
     instructions: Entry
     criteria: Mapping[str, Entry | None]
 
 
 class ScoreQuestion(TypedDict):
+    """A Clef question that scores against a list of levels."""
+
     type: Literal["score"]
     instructions: Entry
     criteria: Sequence[JsonValue]
 
 
 class NoulCriteria(TypedDict):
+    """What a Clef yes-or-no question's false and true answers mean."""
+
     false: JsonValue
     true: JsonValue
 
 
 class NoulQuestion(TypedDict):
+    """A Clef yes-or-no question, answered with a probability."""
+
     type: Literal["noul"]
     instructions: Entry
     criteria: NotRequired[NoulCriteria]
@@ -43,6 +51,8 @@ type Question = ChoiceQuestion | ScoreQuestion | NoulQuestion
 
 
 class Base64Image(TypedDict):
+    """An image in a Clef request, as base64 with its content type."""
+
     content_type: Literal["image/png", "image/jpeg", "image/webp"] | str
     base64: str
 
@@ -52,6 +62,8 @@ type Image = str | Base64Image
 
 
 class DecisionsRequest(TypedDict):
+    """A Clef decisions request: the model, the state, the questions and any images."""
+
     model: Literal["clef", "clef-flash"] | str
     state: JsonValue
     questions: Mapping[str, Question]
@@ -59,6 +71,8 @@ class DecisionsRequest(TypedDict):
 
 
 class ChoiceAnswer(TypedDict):
+    """A Clef answer to a choice question: the choice, its probabilities and confidence."""
+
     type: Literal["choice"]
     choice: str
     probabilities: Mapping[str, float]
@@ -66,6 +80,8 @@ class ChoiceAnswer(TypedDict):
 
 
 class ScoreAnswer(TypedDict):
+    """A Clef answer to a score question: the score, level probabilities and legend."""
+
     type: Literal["score"]
     score: float
     probabilities: Mapping[str, float]
@@ -75,6 +91,8 @@ class ScoreAnswer(TypedDict):
 
 
 class NoulAnswer(TypedDict):
+    """A Clef answer to a yes-or-no question: the probability of yes."""
+
     type: Literal["noul"]
     noul: float
 
@@ -83,11 +101,15 @@ type Answer = ChoiceAnswer | ScoreAnswer | NoulAnswer
 
 
 class Usage(TypedDict):
+    """Clef token usage: input and output tokens."""
+
     input_tokens: int
     output_tokens: int
 
 
 class DecisionsResponse(TypedDict):
+    """A Clef decisions response: the model, an answer per question and token usage."""
+
     model: str
     answers: Mapping[str, Answer]
     usage: Usage

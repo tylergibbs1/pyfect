@@ -18,23 +18,31 @@ ENTRY = S.NullOr(S.Union(S.String, S.JsonObject, S.Array(S.Json)))
 
 
 class ChoiceQuestion(TypedDict):
+    """A System One question that picks one of several named criteria."""
+
     type: Literal["choice"]
     instructions: Entry
     criteria: Mapping[str, Entry]
 
 
 class ScoreQuestion(TypedDict):
+    """A System One question that scores against a list of levels."""
+
     type: Literal["score"]
     instructions: Entry
     criteria: Sequence[Entry]
 
 
 class NoulCriteria(TypedDict):
+    """What a System One yes-or-no question's false and true answers mean."""
+
     false: Entry
     true: Entry
 
 
 class NoulQuestion(TypedDict):
+    """A System One yes-or-no question, answered with a probability."""
+
     type: Literal["noul"]
     instructions: Entry
     criteria: NotRequired[NoulCriteria]
@@ -72,6 +80,8 @@ class SystemOneRequest(TypedDict):
 
 
 class ChoiceAnswer(TypedDict):
+    """A System One answer to a choice question: the choice, probabilities and confidence."""
+
     type: Literal["choice"]
     choice: str
     probabilities: Mapping[str, float]
@@ -79,6 +89,8 @@ class ChoiceAnswer(TypedDict):
 
 
 class ScoreAnswer(TypedDict):
+    """A System One answer to a score question: the score, level probabilities and legend."""
+
     type: Literal["score"]
     score: float
     probabilities: Mapping[str, float]
@@ -88,11 +100,15 @@ class ScoreAnswer(TypedDict):
 
 
 class NoulAnswer(TypedDict):
+    """A System One answer to a yes-or-no question: the probability of yes."""
+
     type: Literal["noul"]
     noul: float
 
 
 class Box(TypedDict):
+    """A bounding box in an image: its top, bottom, left and right edges."""
+
     top: float
     bottom: float
     left: float
@@ -112,23 +128,31 @@ type Answer = ChoiceAnswer | ScoreAnswer | NoulAnswer | BoxAnswer
 
 
 class Usage(TypedDict):
+    """System One token usage: input and output tokens."""
+
     input_tokens: NotRequired[float]
     output_tokens: NotRequired[float]
 
 
 class SystemOneResponse(TypedDict):
+    """A System One response: the model, an answer per question and token usage."""
+
     model: str
     answers: Mapping[str, Answer]
     usage: NotRequired[Usage]
 
 
 class ModelInfo(TypedDict):
+    """A TypeSafe model: its name, description and release date."""
+
     name: str
     description: NotRequired[str]
     release_date: NotRequired[str]
 
 
 class ListModelsResponse(TypedDict):
+    """The reply to TypeSafe's ``/models``: the models it serves."""
+
     models: Sequence[ModelInfo]
 
 

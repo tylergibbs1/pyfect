@@ -66,12 +66,16 @@ type Payload = Mapping[str, Any]
 
 
 class CreateMessage(Protocol):
+    """Sends an Anthropic Messages request and returns the decoded message and HTTP response."""
+
     def __call__(
         self, payload: Payload, params: MessageParams | None = None, /
     ) -> Effect[tuple[W.Message, HttpClientResponse], AiError]: ...
 
 
 class CreateMessageStream(Protocol):
+    """Sends a streaming Anthropic Messages request and returns its stream of events."""
+
     def __call__(
         self, payload: Payload, params: MessageParams | None = None, /
     ) -> Effect[tuple[HttpClientResponse, Stream[W.MessageStreamEvent, AiError]], AiError]: ...

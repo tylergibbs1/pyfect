@@ -29,6 +29,8 @@ class RunResult:
 
 @dataclass(frozen=True, slots=True)
 class BackupMetadata:
+    """Progress of a SQLite backup: total pages and pages still to copy."""
+
     total_pages: int
     remaining_pages: int
 

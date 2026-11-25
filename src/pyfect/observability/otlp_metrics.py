@@ -52,12 +52,16 @@ class _Scope(TypedDict):
 
 
 class ScopeMetrics(TypedDict):
+    """OTLP metrics of one instrumentation scope."""
+
     scope: _Scope
     metrics: list[dict[str, Any]]
     schemaUrl: NotRequired[str]
 
 
 class ResourceMetrics(TypedDict):
+    """OTLP metrics of one resource, grouped by scope."""
+
     resource: Resource
     scopeMetrics: list[ScopeMetrics]
     schemaUrl: NotRequired[str]

@@ -1,4 +1,4 @@
-"""Request bodies (Effect's ``HttpBody``).
+"""Request bodies (Effect's ``HttpBody``): bytes, text, JSON, form data, files and streams.
 
 A body is one of ``Empty``, ``Raw`` (anything the client sends as is),
 ``Bytes`` (bytes with a content type and length), ``FormData`` (a multipart
@@ -34,6 +34,8 @@ from pyfect.stream._base import require_stream
 @final
 @dataclass(frozen=True, slots=True)
 class Empty:
+    """A request body with no content."""
+
     tag: ClassVar[Literal["Empty"]] = "Empty"
     content_type: ClassVar[None] = None
     content_length: ClassVar[None] = None
@@ -196,12 +198,16 @@ EMPTY: Empty = Empty()
 @final
 @dataclass(frozen=True, slots=True)
 class JsonError:
+    """Why a body failed: its value could not be written as JSON."""
+
     tag: ClassVar[Literal["JsonError"]] = "JsonError"
 
 
 @final
 @dataclass(frozen=True, slots=True)
 class SchemaErrorReason:
+    """Why a body failed: its schema could not encode the value."""
+
     issue: Issue
     tag: ClassVar[Literal["SchemaError"]] = "SchemaError"
 

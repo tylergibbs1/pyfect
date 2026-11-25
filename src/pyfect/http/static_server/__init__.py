@@ -52,6 +52,8 @@ class Options(TypedDict):
 
 
 class LayerOptions(Options):
+    """Options of the static file server layer: the directory and the URL prefix."""
+
     prefix: NotRequired[str]
 
 

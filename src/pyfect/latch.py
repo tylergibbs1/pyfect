@@ -1,4 +1,4 @@
-"""``Latch``: a gate fibers wait at until it opens.
+"""``Latch``: a gate fibers wait at until it opens, which can also let waiters through once.
 
 ``open()`` lets every waiter through and keeps the gate open; ``release()``
 lets the current waiters through but leaves it closed; ``close()`` makes
@@ -31,6 +31,8 @@ _VOID: Effect[None] = _Succeed(None)
 
 
 class Latch:
+    """A gate fibers wait at until it opens; it can close again."""
+
     __slots__ = ("_is_open", "_lock", "_scheduled", "_waiters")
 
     def __init__(self, open: bool = False) -> None:

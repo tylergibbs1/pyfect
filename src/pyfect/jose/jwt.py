@@ -106,6 +106,8 @@ H_co = TypeVar("H_co", covariant=True, default=jws.ProtectedHeader)
 
 @dataclass(frozen=True, slots=True)
 class Verified(Generic[A_co, H_co]):
+    """A verified JWT: its claims decoded by their schema, registered claims and header."""
+
     claims: A_co
     registered_claims: RegisteredClaims
     protected_header: H_co
@@ -123,6 +125,8 @@ class VerifiedWithKey(Generic[A_co]):
 
 @dataclass(frozen=True, slots=True)
 class Decrypted(Generic[A_co]):
+    """A decrypted JWT: its claims, registered claims, header and the key used."""
+
     claims: A_co
     registered_claims: RegisteredClaims
     protected_header: jwe.ProtectedHeader
@@ -131,6 +135,8 @@ class Decrypted(Generic[A_co]):
 
 @dataclass(frozen=True, slots=True)
 class Unverified:
+    """A JWT's header and claims read without checking its signature."""
+
     protected_header: jws.ProtectedHeader
     claims: JsonObject
 

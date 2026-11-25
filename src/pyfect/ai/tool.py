@@ -72,6 +72,8 @@ application that sent the request on the ``"client"`` (Effect's ``Tool.Execution
 
 @dataclass(frozen=True)
 class NeedsApprovalContext:
+    """What a tool's approval check sees: the call's id and the conversation so far."""
+
     tool_call_id: str
     messages: Sequence[Message]
 
@@ -260,6 +262,8 @@ EMPTY_PARAMS = S.Record(S.String, S.Never)
 
 
 class ExecutionFailureDict(TypedDict):
+    """Why a tool call did not run: it was denied or interrupted, with a reason."""
+
     type: Literal["execution-denied", "execution-interrupted"]
     reason: str
 
@@ -557,6 +561,8 @@ class Meta(Tag[dict[str, object]], key="effect/ai/Tool/Meta"):
 
 
 class Readonly(Reference[bool], key="effect/ai/Tool/Readonly"):
+    """Tool annotation: whether the tool only reads and changes nothing. ``False`` by default."""
+
     @classmethod
     def default(cls) -> bool:
         return False
@@ -572,18 +578,24 @@ class Destructive(Reference[bool], key="effect/ai/Tool/Destructive"):
 
 
 class Idempotent(Reference[bool], key="effect/ai/Tool/Idempotent"):
+    """Tool annotation: whether calling the tool twice has the same effect as once."""
+
     @classmethod
     def default(cls) -> bool:
         return False
 
 
 class OpenWorld(Reference[bool], key="effect/ai/Tool/OpenWorld"):
+    """Tool annotation: whether the tool reaches systems outside the app. ``True`` by default."""
+
     @classmethod
     def default(cls) -> bool:
         return True
 
 
 class Strict(Reference[bool | None], key="effect/ai/Tool/Strict"):
+    """Tool annotation: whether the provider must keep to the parameter schema exactly."""
+
     @classmethod
     def default(cls) -> bool | None:
         return None

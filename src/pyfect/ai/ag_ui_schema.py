@@ -134,6 +134,8 @@ class TextPart(TypedDict):
 
 
 class ImagePart(TypedDict):
+    """An image in an AG-UI message's content, with its source."""
+
     type: Literal["image"]
     id: NotRequired[str]
     source: PartSource
@@ -141,6 +143,8 @@ class ImagePart(TypedDict):
 
 
 class AudioPart(TypedDict):
+    """An audio clip in an AG-UI message's content, with its source."""
+
     type: Literal["audio"]
     id: NotRequired[str]
     source: PartSource
@@ -148,6 +152,8 @@ class AudioPart(TypedDict):
 
 
 class VideoPart(TypedDict):
+    """A video in an AG-UI message's content, with its source."""
+
     type: Literal["video"]
     id: NotRequired[str]
     source: PartSource
@@ -155,6 +161,8 @@ class VideoPart(TypedDict):
 
 
 class DocumentPart(TypedDict):
+    """A document in an AG-UI message's content, with its source."""
+
     type: Literal["document"]
     id: NotRequired[str]
     source: PartSource
@@ -221,6 +229,8 @@ class SystemMessage(_MessageFields):
 
 
 class ToolCallFunction(TypedDict):
+    """The function an AG-UI tool call names, with its arguments as JSON text."""
+
     name: str
     arguments: str
     """The JSON text of the call's arguments."""
@@ -398,6 +408,8 @@ TEXT_MESSAGE_ROLE = S.Literals("developer", "system", "assistant", "user")
 
 
 class TextMessageStartEvent(_SubagentEvent):
+    """AG-UI event: an assistant text message starts."""
+
     type: Literal["TEXT_MESSAGE_START"]
     messageId: str
     role: NotRequired[TextMessageRole]
@@ -405,17 +417,23 @@ class TextMessageStartEvent(_SubagentEvent):
 
 
 class TextMessageContentEvent(_SubagentEvent):
+    """AG-UI event: the next piece of a text message's content."""
+
     type: Literal["TEXT_MESSAGE_CONTENT"]
     messageId: str
     delta: str
 
 
 class TextMessageEndEvent(_SubagentEvent):
+    """AG-UI event: a text message ends."""
+
     type: Literal["TEXT_MESSAGE_END"]
     messageId: str
 
 
 class TextMessageChunkEvent(_SubagentEvent):
+    """AG-UI event: a text message chunk that starts, continues or ends a message on its own."""
+
     type: Literal["TEXT_MESSAGE_CHUNK"]
     messageId: NotRequired[str]
     role: NotRequired[TextMessageRole]
@@ -427,6 +445,8 @@ class TextMessageChunkEvent(_SubagentEvent):
 
 
 class ToolCallStartEvent(_SubagentEvent):
+    """AG-UI event: a tool call starts, with the tool's name."""
+
     type: Literal["TOOL_CALL_START"]
     toolCallId: str
     toolCallName: str
@@ -434,17 +454,23 @@ class ToolCallStartEvent(_SubagentEvent):
 
 
 class ToolCallArgsEvent(_SubagentEvent):
+    """AG-UI event: the next piece of a tool call's JSON arguments."""
+
     type: Literal["TOOL_CALL_ARGS"]
     toolCallId: str
     delta: str
 
 
 class ToolCallEndEvent(_SubagentEvent):
+    """AG-UI event: a tool call's arguments are complete."""
+
     type: Literal["TOOL_CALL_END"]
     toolCallId: str
 
 
 class ToolCallChunkEvent(_SubagentEvent):
+    """AG-UI event: a tool call chunk that starts, continues or ends a call on its own."""
+
     type: Literal["TOOL_CALL_CHUNK"]
     toolCallId: NotRequired[str]
     toolCallName: NotRequired[str]
@@ -453,6 +479,8 @@ class ToolCallChunkEvent(_SubagentEvent):
 
 
 class ToolCallResultEvent(_SubagentEvent):
+    """AG-UI event: a tool call's result, as a tool message."""
+
     type: Literal["TOOL_CALL_RESULT"]
     messageId: str
     toolCallId: str
@@ -464,17 +492,23 @@ class ToolCallResultEvent(_SubagentEvent):
 
 
 class JsonPatchAdd(TypedDict):
+    """A JSON Patch ``add`` operation in an AG-UI state delta."""
+
     op: Literal["add"]
     path: str
     value: object
 
 
 class JsonPatchRemove(TypedDict):
+    """A JSON Patch ``remove`` operation in an AG-UI state delta."""
+
     op: Literal["remove"]
     path: str
 
 
 class JsonPatchReplace(TypedDict):
+    """A JSON Patch ``replace`` operation in an AG-UI state delta."""
+
     op: Literal["replace"]
     path: str
     value: object
@@ -486,6 +520,8 @@ JsonPatchCopy = TypedDict("JsonPatchCopy", {"op": Literal["copy"], "from": str, 
 
 
 class JsonPatchTest(TypedDict):
+    """A JSON Patch ``test`` operation in an AG-UI state delta."""
+
     op: Literal["test"]
     path: str
     value: object
@@ -512,21 +548,29 @@ JSON_PATCH_OPERATION = S.Union(
 
 
 class StateSnapshotEvent(_SubagentEvent):
+    """AG-UI event: the agent's whole shared state."""
+
     type: Literal["STATE_SNAPSHOT"]
     snapshot: object
 
 
 class StateDeltaEvent(_SubagentEvent):
+    """AG-UI event: a change to the agent's shared state, as JSON Patch operations."""
+
     type: Literal["STATE_DELTA"]
     delta: list[JsonPatchOperation]
 
 
 class MessagesSnapshotEvent(_BaseEvent):
+    """AG-UI event: the conversation's whole message list."""
+
     type: Literal["MESSAGES_SNAPSHOT"]
     messages: list[Message]
 
 
 class ActivitySnapshotEvent(_SubagentEvent):
+    """AG-UI event: an activity message's whole content."""
+
     type: Literal["ACTIVITY_SNAPSHOT"]
     messageId: str
     activityType: str
@@ -535,6 +579,8 @@ class ActivitySnapshotEvent(_SubagentEvent):
 
 
 class ActivityDeltaEvent(_SubagentEvent):
+    """AG-UI event: a change to an activity message, as JSON Patch operations."""
+
     type: Literal["ACTIVITY_DELTA"]
     messageId: str
     activityType: str
@@ -545,12 +591,16 @@ class ActivityDeltaEvent(_SubagentEvent):
 
 
 class RawEvent(_SubagentEvent):
+    """AG-UI event: an event from another system, passed through as it was."""
+
     type: Literal["RAW"]
     event: object
     source: NotRequired[str]
 
 
 class CustomEvent(_SubagentEvent):
+    """AG-UI event: an application-defined event with a name and a value."""
+
     type: Literal["CUSTOM"]
     name: str
     value: object
@@ -560,6 +610,8 @@ class CustomEvent(_SubagentEvent):
 
 
 class RunStartedEvent(_BaseEvent):
+    """AG-UI event: an agent run starts on a thread."""
+
     type: Literal["RUN_STARTED"]
     threadId: str
     runId: str
@@ -585,17 +637,23 @@ INTERRUPT = S.Struct(Interrupt)
 
 
 class SuccessOutcome(TypedDict):
+    """An AG-UI run that finished, with any tool calls still pending."""
+
     type: Literal["success"]
     pendingToolCallIds: NotRequired[list[str]]
 
 
 class InterruptOutcome(TypedDict):
+    """An AG-UI run that stopped to wait on one or more interrupts."""
+
     type: Literal["interrupt"]
     interrupts: list[Interrupt]
     """At least one."""
 
 
 class CancelledOutcome(TypedDict):
+    """An AG-UI run that was cancelled."""
+
     type: Literal["cancelled"]
 
 
@@ -633,6 +691,8 @@ TOKEN_USAGE = S.Struct(
 
 
 class RunFinishedEvent(_BaseEvent):
+    """AG-UI event: an agent run finishes, with its result, outcome and token usage."""
+
     type: Literal["RUN_FINISHED"]
     threadId: str
     runId: str
@@ -642,6 +702,8 @@ class RunFinishedEvent(_BaseEvent):
 
 
 class RunErrorEvent(_BaseEvent):
+    """AG-UI event: an agent run fails, with a message and an optional code."""
+
     type: Literal["RUN_ERROR"]
     message: str
     code: NotRequired[str]
@@ -649,11 +711,15 @@ class RunErrorEvent(_BaseEvent):
 
 
 class StepStartedEvent(_SubagentEvent):
+    """AG-UI event: a named step of the run starts."""
+
     type: Literal["STEP_STARTED"]
     stepName: str
 
 
 class StepFinishedEvent(_SubagentEvent):
+    """AG-UI event: a named step of the run finishes."""
+
     type: Literal["STEP_FINISHED"]
     stepName: str
 
@@ -662,39 +728,53 @@ class StepFinishedEvent(_SubagentEvent):
 
 
 class ReasoningStartEvent(_SubagentEvent):
+    """AG-UI event: the model starts reasoning."""
+
     type: Literal["REASONING_START"]
     messageId: str
 
 
 class ReasoningMessageStartEvent(_SubagentEvent):
+    """AG-UI event: a reasoning message starts."""
+
     type: Literal["REASONING_MESSAGE_START"]
     messageId: str
     role: Literal["reasoning"]
 
 
 class ReasoningMessageContentEvent(_SubagentEvent):
+    """AG-UI event: the next piece of a reasoning message's text."""
+
     type: Literal["REASONING_MESSAGE_CONTENT"]
     messageId: str
     delta: str
 
 
 class ReasoningMessageEndEvent(_SubagentEvent):
+    """AG-UI event: a reasoning message ends."""
+
     type: Literal["REASONING_MESSAGE_END"]
     messageId: str
 
 
 class ReasoningMessageChunkEvent(_SubagentEvent):
+    """AG-UI event: a reasoning message chunk that starts, continues or ends a message."""
+
     type: Literal["REASONING_MESSAGE_CHUNK"]
     messageId: NotRequired[str]
     delta: NotRequired[str]
 
 
 class ReasoningEndEvent(_SubagentEvent):
+    """AG-UI event: the model stops reasoning."""
+
     type: Literal["REASONING_END"]
     messageId: str
 
 
 class ReasoningEncryptedValueEvent(_SubagentEvent):
+    """AG-UI event: encrypted reasoning attached to a tool call or a message."""
+
     type: Literal["REASONING_ENCRYPTED_VALUE"]
     subtype: Literal["tool-call", "message"]
     entityId: str
@@ -705,6 +785,8 @@ class ReasoningEncryptedValueEvent(_SubagentEvent):
 
 
 class SubagentStartedEvent(_BaseEvent):
+    """AG-UI event: a subagent run starts, with what started it."""
+
     type: Literal["SUBAGENT_STARTED"]
     subagentRunId: str
     name: str
@@ -715,15 +797,21 @@ class SubagentStartedEvent(_BaseEvent):
 
 
 class SubagentSuccessOutcome(TypedDict):
+    """A subagent run that finished."""
+
     type: Literal["success"]
 
 
 class SubagentSuspendedOutcome(TypedDict):
+    """A subagent run suspended on interrupts."""
+
     type: Literal["suspended"]
     interruptIds: NotRequired[list[str]]
 
 
 class SubagentFinishedEvent(_BaseEvent):
+    """AG-UI event: a subagent run finishes, with its result and outcome."""
+
     type: Literal["SUBAGENT_FINISHED"]
     subagentRunId: str
     result: NotRequired[object]
@@ -731,6 +819,8 @@ class SubagentFinishedEvent(_BaseEvent):
 
 
 class SubagentErrorEvent(_BaseEvent):
+    """AG-UI event: a subagent run fails, with a message and an optional code."""
+
     type: Literal["SUBAGENT_ERROR"]
     subagentRunId: str
     message: str

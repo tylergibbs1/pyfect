@@ -139,6 +139,8 @@ def encode(hash: PasswordHash) -> str:
 
 
 class PasswordService(Protocol):
+    """Password hashing: hash a password to a PHC string, verify one, and check for a rehash."""
+
     def hash(self, password: str | Redacted[str]) -> Effect[str, CryptoError]:
         """Hashes ``password`` with the configured algorithm, a 16-byte random
         salt and a 32-byte output, returning the PHC string."""

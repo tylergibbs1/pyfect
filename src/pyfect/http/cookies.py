@@ -58,6 +58,8 @@ class CookieOptionsInput(TypedDict, total=False):
 @final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class CookieOptions:
+    """A cookie's attributes: domain, path, expiry, max age, ``Secure``, ``HttpOnly`` and more."""
+
     domain: str | None = None
     expires: datetime | None = None
     max_age: DurationInput | None = None
@@ -107,6 +109,8 @@ type CookiesErrorTag = Literal[
 
 @dataclass(frozen=True, slots=True)
 class CookiesErrorReason:
+    """Why a cookie was rejected: an invalid name, value, domain, path or max age."""
+
     tag: CookiesErrorTag
     cause: object = None
 

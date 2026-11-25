@@ -61,6 +61,8 @@ ProtectedHeaderSchema = S.StructWithRest(S.Struct(ProtectedHeader), S.Record(S.S
 
 @dataclass(frozen=True, slots=True)
 class Decrypted:
+    """A decrypted JWE: its protected header, plaintext and the key that decrypted it."""
+
     protected_header: ProtectedHeader
     plaintext: bytes
     key: DirKey

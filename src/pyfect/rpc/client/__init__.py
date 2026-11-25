@@ -1,4 +1,4 @@
-"""RPC clients (Effect's ``RpcClient``).
+"""RPC clients (Effect's ``RpcClient``): call an RPC group over HTTP, sockets or workers.
 
 ``make(Group)`` is a client of the group over the ``ClientProtocol`` in
 the context: an instance of the group whose RPC attributes call them.

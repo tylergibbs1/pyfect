@@ -39,6 +39,8 @@ type Prefix = Literal["required", "optional"]
 
 
 class IpInterfaceParts[A = IpAddressInput](TypedDict):
+    """An IP address and a prefix length, to build an interface from."""
+
     address: A
     prefix_length: int
 

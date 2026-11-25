@@ -11,20 +11,28 @@ from pyfect.tracer import Span
 
 
 class RequestAttributes(TypedDict, total=False):
+    """OpenAI request span attributes: the service tier asked for."""
+
     service_tier: str | None
 
 
 class ResponseAttributes(TypedDict, total=False):
+    """OpenAI response span attributes: the service tier used and system fingerprint."""
+
     service_tier: str | None
     system_fingerprint: str | None
 
 
 class OpenAiAttributes(TypedDict, total=False):
+    """The ``openai.*`` span attributes of a request and its response."""
+
     request: RequestAttributes | None
     response: ResponseAttributes | None
 
 
 class OpenAiTelemetryAttributeOptions(T.GenAIAttributeOptions, total=False):
+    """GenAI span attributes with OpenAI's own added."""
+
     openai: OpenAiAttributes | None
 
 

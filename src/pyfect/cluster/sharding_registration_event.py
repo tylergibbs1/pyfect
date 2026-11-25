@@ -15,11 +15,15 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True, slots=True)
 class EntityRegistered:
+    """Registration event: an entity type was registered on this runner."""
+
     entity: type[Entity]
 
 
 @dataclass(frozen=True, slots=True)
 class SingletonRegistered:
+    """Registration event: a singleton was registered on this runner."""
+
     address: SingletonAddress
 
 

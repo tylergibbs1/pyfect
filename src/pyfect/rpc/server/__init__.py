@@ -1,4 +1,4 @@
-"""RPC servers (Effect's ``RpcServer``).
+"""RPC servers (Effect's ``RpcServer``): serve a group over HTTP, WebSockets, stdio or workers.
 
 ``layer(Group)`` runs a server of the group over the ``ServerProtocol``
 in the context; ``layer_http(Group, path=...)`` serves it on an

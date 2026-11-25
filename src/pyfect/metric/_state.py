@@ -22,6 +22,8 @@ class CounterState(Generic[N_co]):
 
 @dataclass(frozen=True, slots=True)
 class GaugeState(Generic[N_co]):
+    """A gauge's state: its current value."""
+
     value: N_co
 
 

@@ -1,4 +1,4 @@
-"""Schemas of RPC results (Effect's ``RpcSchema``).
+"""Schemas of RPC results (Effect's ``RpcSchema``): the success schema of a streaming RPC.
 
 ``Stream(success, error)`` is the success schema of a streaming RPC: its
 values are streams of ``success`` items failing with ``error``.

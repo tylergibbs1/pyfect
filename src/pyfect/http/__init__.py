@@ -1,4 +1,4 @@
-"""HTTP (Effect's ``effect/http``).
+"""HTTP clients and servers (Effect's ``effect/http``): requests, routing and middleware.
 
 Client:
 

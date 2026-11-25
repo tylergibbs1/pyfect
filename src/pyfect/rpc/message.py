@@ -119,6 +119,8 @@ type EncodedHeaders = Sequence[tuple[str, str]] | Sequence[Sequence[str]]
 
 
 class RequestEncoded(TypedDict):
+    """An RPC request as JSON: id, procedure tag, payload, headers and trace context."""
+
     _tag: Literal["Request"]
     id: RequestId
     tag: str
@@ -132,28 +134,40 @@ class RequestEncoded(TypedDict):
 
 
 class AckEncoded(TypedDict):
+    """An RPC message as JSON that acknowledges a chunk of a streamed response."""
+
     _tag: Literal["Ack"]
     requestId: RequestId
 
 
 class InterruptEncoded(TypedDict):
+    """An RPC message as JSON that interrupts a request."""
+
     _tag: Literal["Interrupt"]
     requestId: RequestId
 
 
 class Ping(TypedDict):
+    """An RPC message from the client that keeps the connection alive."""
+
     _tag: Literal["Ping"]
 
 
 class EofEncoded(TypedDict):
+    """An RPC message as JSON: the client sends no more requests."""
+
     _tag: Literal["Eof"]
 
 
 class Pong(TypedDict):
+    """An RPC message from the server: the reply to a ping."""
+
     _tag: Literal["Pong"]
 
 
 class ResponseChunkEncoded(TypedDict):
+    """An RPC response as JSON that carries the next values of a stream."""
+
     _tag: Literal["Chunk"]
     requestId: RequestId
     values: Sequence[object]
@@ -169,12 +183,16 @@ class ExitEncoded(TypedDict):
 
 
 class ResponseExitEncoded(TypedDict):
+    """An RPC response as JSON that ends a request with its exit."""
+
     _tag: Literal["Exit"]
     requestId: RequestId
     exit: ExitEncoded
 
 
 class ResponseDefectEncoded(TypedDict):
+    """An RPC response as JSON: a defect not tied to one request."""
+
     _tag: Literal["Defect"]
     defect: object
 

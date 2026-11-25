@@ -44,6 +44,8 @@ class BadRequest(
     identifier="effect/HttpApiError/BadRequest",
     annotations=_annotations("BadRequest", 400),
 ):
+    """HTTP API error that answers 400 Bad Request with an empty body."""
+
     status = 400
     report_ignored = True
 
@@ -55,6 +57,8 @@ class Unauthorized(
     identifier="effect/HttpApiError/Unauthorized",
     annotations=_annotations("Unauthorized", 401),
 ):
+    """HTTP API error that answers 401 Unauthorized with an empty body."""
+
     status = 401
     report_ignored = True
 
@@ -66,6 +70,8 @@ class Forbidden(
     identifier="effect/HttpApiError/Forbidden",
     annotations=_annotations("Forbidden", 403),
 ):
+    """HTTP API error that answers 403 Forbidden with an empty body."""
+
     status = 403
     report_ignored = True
 
@@ -77,6 +83,8 @@ class NotFound(
     identifier="effect/HttpApiError/NotFound",
     annotations=_annotations("NotFound", 404),
 ):
+    """HTTP API error that answers 404 Not Found with an empty body."""
+
     status = 404
     report_ignored = True
 
@@ -88,6 +96,8 @@ class MethodNotAllowed(
     identifier="effect/HttpApiError/MethodNotAllowed",
     annotations=_annotations("MethodNotAllowed", 405),
 ):
+    """HTTP API error that answers 405 Method Not Allowed with an empty body."""
+
     status = 405
     report_ignored = True
 
@@ -99,6 +109,8 @@ class NotAcceptable(
     identifier="effect/HttpApiError/NotAcceptable",
     annotations=_annotations("NotAcceptable", 406),
 ):
+    """HTTP API error that answers 406 Not Acceptable with an empty body."""
+
     status = 406
     report_ignored = True
 
@@ -110,6 +122,8 @@ class RequestTimeout(
     identifier="effect/HttpApiError/RequestTimeout",
     annotations=_annotations("RequestTimeout", 408),
 ):
+    """HTTP API error that answers 408 Request Timeout with an empty body."""
+
     status = 408
     report_ignored = True
 
@@ -121,6 +135,8 @@ class Conflict(
     identifier="effect/HttpApiError/Conflict",
     annotations=_annotations("Conflict", 409),
 ):
+    """HTTP API error that answers 409 Conflict with an empty body."""
+
     status = 409
     report_ignored = True
 
@@ -132,6 +148,8 @@ class Gone(
     identifier="effect/HttpApiError/Gone",
     annotations=_annotations("Gone", 410),
 ):
+    """HTTP API error that answers 410 Gone with an empty body."""
+
     status = 410
     report_ignored = True
 
@@ -143,6 +161,8 @@ class UnprocessableEntity(
     identifier="effect/HttpApiError/UnprocessableEntity",
     annotations=_annotations("UnprocessableEntity", 422),
 ):
+    """HTTP API error that answers 422 Unprocessable Entity with an empty body."""
+
     status = 422
     report_ignored = True
 
@@ -154,6 +174,8 @@ class InternalServerError(
     identifier="effect/HttpApiError/InternalServerError",
     annotations=_annotations("InternalServerError", 500),
 ):
+    """HTTP API error that answers 500 Internal Server Error with an empty body."""
+
     status = 500
 
 
@@ -164,6 +186,8 @@ class NotImplemented(
     identifier="effect/HttpApiError/NotImplemented",
     annotations=_annotations("NotImplemented", 501),
 ):
+    """HTTP API error that answers 501 Not Implemented with an empty body."""
+
     status = 501
 
 
@@ -174,6 +198,8 @@ class ServiceUnavailable(
     identifier="effect/HttpApiError/ServiceUnavailable",
     annotations=_annotations("ServiceUnavailable", 503),
 ):
+    """HTTP API error that answers 503 Service Unavailable with an empty body."""
+
     status = 503
 
 

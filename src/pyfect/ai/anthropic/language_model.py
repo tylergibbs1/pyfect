@@ -75,6 +75,8 @@ type Model = Literal[
 
 
 class OutputConfig(TypedDict, total=False):
+    """Anthropic output options: the effort level to ask the model for."""
+
     effort: Literal["low", "medium", "high", "xhigh", "max"] | None
 
 

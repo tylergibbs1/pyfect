@@ -1,4 +1,4 @@
-"""HTTP methods (Effect's ``HttpMethod``)."""
+"""HTTP methods (Effect's ``HttpMethod``): the method names, and which ones carry a body."""
 
 from __future__ import annotations
 

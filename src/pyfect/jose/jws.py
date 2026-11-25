@@ -69,6 +69,8 @@ ProtectedHeaderSchema = S.StructWithRest(
 
 @dataclass(frozen=True, slots=True)
 class Verified:
+    """A verified JWS: its protected header and payload."""
+
     protected_header: ProtectedHeader
     payload: bytes
 
@@ -84,6 +86,8 @@ class VerifiedWithKey:
 
 @dataclass(frozen=True, slots=True)
 class Parsed:
+    """A JWS split into its parts, not yet verified: header, payload and signature."""
+
     protected_header: ProtectedHeader
     payload: bytes
     signature: bytes

@@ -27,6 +27,8 @@ from pyfect.scope import Scope
 
 
 class PubSub[A = Unsubscripted]:
+    """A hub that delivers each published message to every current subscriber."""
+
     __slots__ = ("_hub",)
 
     def __init__(self, atomic: Atomic[A], strategy: Strategy[A] | StrategyName) -> None:

@@ -11,6 +11,8 @@ from pyfect.http.server_response import HttpServerResponse
 
 
 class AppMiddleware[RM](Protocol):
+    """A configured HTTP middleware: wraps an app, keeping its errors and requirements."""
+
     def __call__[E, R](
         self, app: Effect[HttpServerResponse, E, R], /
     ) -> Effect[HttpServerResponse, E, R | RM]: ...

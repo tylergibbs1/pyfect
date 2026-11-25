@@ -47,6 +47,8 @@ class K8sHttpClient(
 
 @dataclass(frozen=True, slots=True)
 class PodCondition:
+    """A Kubernetes pod condition: its type, status and when it last changed."""
+
     type: str
     status: str
     last_transition_time: str | None
@@ -71,6 +73,8 @@ class PodStatus:
 
 @dataclass(frozen=True, slots=True)
 class Pod:
+    """A Kubernetes pod's status, with whether it is ready or still starting."""
+
     status: PodStatus
 
     @property

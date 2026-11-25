@@ -29,6 +29,8 @@ from pyfect.scope import Scope
 
 
 class CorsOptions(TypedDict, total=False):
+    """CORS settings: allowed origins, methods and headers, exposed headers, max age."""
+
     allowed_origins: AllowedOrigins
     allowed_methods: Sequence[str]
     allowed_headers: Sequence[str]

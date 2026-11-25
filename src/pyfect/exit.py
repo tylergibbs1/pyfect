@@ -25,6 +25,8 @@ E_co = TypeVar("E_co", covariant=True)
 
 @dataclass(frozen=True, slots=True)
 class Success(Generic[A_co]):
+    """An effect's exit when it succeeded, with its value."""
+
     value: A_co
 
     def map[B](self, f: Callable[[A_co], B]) -> Success[B]:
@@ -85,6 +87,8 @@ class Success(Generic[A_co]):
 
 @dataclass(frozen=True, slots=True)
 class Failure(Generic[E_co]):
+    """An effect's exit when it failed, with the cause."""
+
     cause: Cause[E_co]
 
     def map(self, f: Callable[[Never], object]) -> Failure[E_co]:

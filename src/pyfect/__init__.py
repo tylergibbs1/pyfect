@@ -1,4 +1,4 @@
-"""pyfect: Effect for Python.
+"""pyfect: Effect for Python, with typed errors, services, layers, fibers and streams.
 
     import pyfect as fx
 

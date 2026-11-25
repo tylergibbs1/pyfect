@@ -27,6 +27,8 @@ if TYPE_CHECKING:
 
 
 class SubscriptionRef[A = Unsubscripted](LockedRef[A]):
+    """A ref that publishes every value it stores, so fibers can follow its changes."""
+
     __slots__ = ("_pubsub",)
 
     def __init__(self, value: A) -> None:

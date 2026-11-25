@@ -22,6 +22,8 @@ from pyfect.errors import NoSuchElementException
 
 
 class RandomService(Protocol):
+    """A source of pseudo-random integers and floats."""
+
     def next_int_unsafe(self) -> int:
         """A random integer between ``-(2**53 - 1)`` and ``2**53 - 1``, both inclusive."""
         ...
@@ -32,6 +34,8 @@ class RandomService(Protocol):
 
 
 class LiveRandom:
+    """The default random source, on Python's ``random`` module."""
+
     def next_int_unsafe(self) -> int:
         return safe_int_of(random.random())
 
@@ -40,6 +44,8 @@ class LiveRandom:
 
 
 class Random(Reference[RandomService]):
+    """The random source effects draw from: ``LiveRandom`` unless one is provided."""
+
     @classmethod
     def default(cls) -> RandomService:
         return LiveRandom()

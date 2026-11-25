@@ -68,11 +68,15 @@ __all__ = [
 
 
 class SpanStatusStarted(TypedDict):
+    """DevTools span status: started, with its start time."""
+
     _tag: Literal["Started"]
     startTime: int
 
 
 class SpanStatusEnded(TypedDict):
+    """DevTools span status: ended, with its start and end times and exit."""
+
     _tag: Literal["Ended"]
     startTime: int
     endTime: int
@@ -94,6 +98,8 @@ span_status = S.Union(span_status_started, span_status_ended)
 
 
 class ExternalSpan(TypedDict):
+    """A DevTools span from outside the app: its span and trace ids."""
+
     _tag: Literal["ExternalSpan"]
     spanId: str
     traceId: str
@@ -101,6 +107,8 @@ class ExternalSpan(TypedDict):
 
 
 class Span(TypedDict):
+    """A DevTools span: name, ids, attributes, status and parent."""
+
     _tag: Literal["Span"]
     spanId: str
     traceId: str
@@ -130,6 +138,8 @@ parent_span: S.Codec[ParentSpan, Any, Any, Any] = S.Union(span, external_span)
 
 
 class SpanEvent(TypedDict):
+    """An event on a DevTools span: its name, time and attributes."""
+
     _tag: Literal["SpanEvent"]
     traceId: str
     spanId: str
@@ -144,14 +154,20 @@ span_event = S.TaggedStruct(
 
 
 class Ping(TypedDict):
+    """DevTools message: a ping that asks for a pong."""
+
     _tag: Literal["Ping"]
 
 
 class Pong(TypedDict):
+    """DevTools message: the reply to a ping."""
+
     _tag: Literal["Pong"]
 
 
 class MetricsRequest(TypedDict):
+    """DevTools message: ask the app for a snapshot of its metrics."""
+
     _tag: Literal["MetricsRequest"]
 
 
@@ -161,24 +177,34 @@ metrics_request = S.TaggedStruct(MetricsRequest)
 
 
 class MetricLabel(TypedDict):
+    """A label on a DevTools metric: a key and a value."""
+
     key: str
     value: str
 
 
 class CounterState(TypedDict):
+    """A DevTools counter's state: its count and whether it only increases."""
+
     count: float
     incremental: bool
 
 
 class FrequencyState(TypedDict):
+    """A DevTools frequency metric's state: how often each value occurred."""
+
     occurrences: Mapping[str, int]
 
 
 class GaugeState(TypedDict):
+    """A DevTools gauge's state: its current value."""
+
     value: float
 
 
 class HistogramState(TypedDict):
+    """A DevTools histogram's state: its buckets, count, min, max and sum."""
+
     buckets: tuple[tuple[float, int], ...]
     count: int
     min: float
@@ -187,6 +213,8 @@ class HistogramState(TypedDict):
 
 
 class SummaryState(TypedDict):
+    """A DevTools summary's state: its quantiles, count, min, max and sum."""
+
     quantiles: tuple[tuple[float, float | None], ...]
     count: int
     min: float
@@ -195,6 +223,8 @@ class SummaryState(TypedDict):
 
 
 class Counter(TypedDict):
+    """A counter metric in a DevTools snapshot."""
+
     id: str
     type: Literal["Counter"]
     description: str | None
@@ -203,6 +233,8 @@ class Counter(TypedDict):
 
 
 class Frequency(TypedDict):
+    """A frequency metric in a DevTools snapshot."""
+
     id: str
     type: Literal["Frequency"]
     description: str | None
@@ -211,6 +243,8 @@ class Frequency(TypedDict):
 
 
 class Gauge(TypedDict):
+    """A gauge metric in a DevTools snapshot."""
+
     id: str
     type: Literal["Gauge"]
     description: str | None
@@ -219,6 +253,8 @@ class Gauge(TypedDict):
 
 
 class Histogram(TypedDict):
+    """A histogram metric in a DevTools snapshot."""
+
     id: str
     type: Literal["Histogram"]
     description: str | None
@@ -227,6 +263,8 @@ class Histogram(TypedDict):
 
 
 class Summary(TypedDict):
+    """A summary metric in a DevTools snapshot."""
+
     id: str
     type: Literal["Summary"]
     description: str | None
@@ -283,6 +321,8 @@ metric: S.Codec[Metric, Any, Any, Any] = S.Union(counter, frequency, gauge, hist
 
 
 class MetricsSnapshot(TypedDict):
+    """DevTools message: every metric's current state."""
+
     _tag: Literal["MetricsSnapshot"]
     metrics: tuple[Metric, ...]
 

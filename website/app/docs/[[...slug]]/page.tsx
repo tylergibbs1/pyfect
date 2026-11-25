@@ -50,7 +50,7 @@ export default async function Page(props: PageProps<'/docs/[[...slug]]'>) {
   );
 }
 
-/** Reference pages generated from modules without a docstring have no description of their own. */
+/** A reference page has no description of its own when its module or class has no docstring. */
 function describe(page: SourcePage): string {
   return page.data.description ?? `API reference for ${page.data.title}.`;
 }
@@ -224,11 +224,18 @@ function metaTitle(page: SourcePage): string | { absolute: string } {
   return { absolute: `${path} API reference` };
 }
 
-/** A reference page's meta description is its docstring's summary line, when it has one. */
+/**
+ * A reference page's meta description is its docstring's summary line, when it has one. A
+ * generic class's page starts with its signature (`class Queue[A, E = Never]`, from
+ * scripts/generate_api.py), which is no description: the summary is the paragraph after it.
+ */
 async function metaDescription(page: SourcePage): Promise<string> {
   if (page.data.description || !('load' in page.data)) return describe(page);
   const { structuredData } = await page.data.load();
+  const signature = `class ${page.data.title}[`;
   // Docstrings are Markdown: a description is plain text.
-  const summary = structuredData.contents[0]?.content.replaceAll('`', '').trim();
+  const summary = structuredData.contents
+    .map(({ content }) => content.replaceAll('`', '').trim())
+    .find((text) => text && !text.startsWith(signature));
   return summary || describe(page);
 }

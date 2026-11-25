@@ -45,23 +45,33 @@ type WellKnownProviderName = Literal[
 
 
 class ProviderAttributes(TypedDict, total=False):
+    """The ``gen_ai.provider.*`` span attributes: the provider's name."""
+
     name: str | None
 
 
 class OperationAttributes(TypedDict, total=False):
+    """The ``gen_ai.operation.*`` span attributes: the operation's name, such as ``chat``."""
+
     name: str | None
 
 
 class OutputAttributes(TypedDict, total=False):
+    """The ``gen_ai.output.*`` span attributes: the output's type, such as ``text`` or ``json``."""
+
     type: str | None
 
 
 class UsageAttributes(TypedDict, total=False):
+    """The ``gen_ai.usage.*`` span attributes: input and output token counts."""
+
     input_tokens: int | float | None
     output_tokens: int | float | None
 
 
 class RequestAttributes(TypedDict, total=False):
+    """The ``gen_ai.request.*`` span attributes: model, sampling settings, max tokens, seed."""
+
     model: str | None
     temperature: float | None
     top_k: float | None
@@ -75,6 +85,8 @@ class RequestAttributes(TypedDict, total=False):
 
 
 class ResponseAttributes(TypedDict, total=False):
+    """The ``gen_ai.response.*`` span attributes: the response id, model and finish reasons."""
+
     id: str | None
     model: str | None
     finish_reasons: Sequence[str] | None

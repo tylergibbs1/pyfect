@@ -8,12 +8,16 @@ from typing import TypedDict
 
 
 class OpenRouterErrorMetadata(TypedDict):
+    """OpenRouter details on an ``AiError``: the error code, type and request id."""
+
     errorCode: str | int | float | None
     errorType: str | None
     requestId: str | None
 
 
 class OpenRouterRateLimitMetadata(OpenRouterErrorMetadata):
+    """OpenRouter rate limit details: the limit, what remains and when it resets."""
+
     limit: str | None
     remaining: int | float | None
     resetRequests: str | None

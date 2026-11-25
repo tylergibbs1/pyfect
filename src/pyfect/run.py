@@ -1,4 +1,4 @@
-"""Running effects.
+"""Running effects: ``run_blocking``, ``run_async``, ``run_main``, ``run_sync`` and their exits.
 
 - ``run_sync``: as Effect's ``runSync``. Runs what can finish without
   waiting, yields included; an effect that waits (a sleep, ``blocking``, a

@@ -127,17 +127,23 @@ def primary_key_by_address(*, address: EntityAddress, tag: str, id: str) -> str:
 
 
 class ShardIdEncoded(TypedDict):
+    """A shard id as JSON: its group and number."""
+
     group: str
     id: int
 
 
 class AddressEncoded(TypedDict):
+    """An entity address as JSON: shard, entity type and entity id."""
+
     shardId: ShardIdEncoded
     entityType: str
     entityId: str
 
 
 class PartialRequestEncoded(TypedDict):
+    """A request envelope as JSON: the RPC tag, payload, headers and trace ids."""
+
     _tag: Literal["Request"]
     requestId: str
     address: AddressEncoded
@@ -150,6 +156,8 @@ class PartialRequestEncoded(TypedDict):
 
 
 class AckChunkEncoded(TypedDict):
+    """An envelope as JSON that acknowledges a chunk of a streamed reply."""
+
     _tag: Literal["AckChunk"]
     id: str
     address: AddressEncoded
@@ -158,6 +166,8 @@ class AckChunkEncoded(TypedDict):
 
 
 class InterruptEncoded(TypedDict):
+    """An envelope as JSON that interrupts a request."""
+
     _tag: Literal["Interrupt"]
     id: str
     address: AddressEncoded
