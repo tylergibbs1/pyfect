@@ -3,6 +3,7 @@
 // live sitemap once went out with no guide dated, because their dates came from git history
 // that Vercel's clone doesn't have; nothing failed.
 import { readFileSync } from 'node:fs';
+import { prerenderedBody } from './prerendered.mjs';
 
 const next = new URL('../.next/', import.meta.url);
 const failures = [];
@@ -13,7 +14,12 @@ if (root?.destination !== '/docs' || root.statusCode !== 308) {
   failures.push(`/ must redirect to /docs with a 308, not ${JSON.stringify(root)}`);
 }
 
-const sitemap = readFileSync(new URL('server/app/sitemap.xml.body', next), 'utf8');
+const sitemapBody = prerenderedBody('sitemap.xml');
+if (sitemapBody === undefined) {
+  console.error('No prerendered sitemap.xml.body under .next/server: did the sitemap stop being static?');
+  process.exit(1);
+}
+const sitemap = readFileSync(sitemapBody, 'utf8');
 const entries = [...sitemap.matchAll(/<url>([\s\S]*?)<\/url>/g)].map(([, body]) => ({
   loc: body.match(/<loc>(.*?)<\/loc>/)?.[1] ?? '',
   dated: body.includes('<lastmod>'),
