@@ -64,6 +64,8 @@ type Parse[A] = Callable[[ParsedArgs], Parsed[A]]
 
 @dataclass(frozen=True, slots=True)
 class ParamMetadata:
+    """Whether a CLI parameter is optional or variadic, and its count bounds."""
+
     is_optional: bool = False
     is_variadic: bool = False
     variadic_min: int | None = None
@@ -165,6 +167,8 @@ X = TypeVar("X")
 
 @dataclass(frozen=True, eq=False)
 class Mapped(Param[A_co], Generic[X, A_co]):
+    """A CLI parameter whose parsed value goes through a function."""
+
     param: Param[X]
     f: Callable[[X], A_co]
 
@@ -238,6 +242,8 @@ X_co = TypeVar("X_co", covariant=True)
 
 @dataclass(frozen=True, eq=False)
 class Optional(Param[X_co | None], Generic[X_co]):
+    """A CLI parameter that parses to ``None`` when it is absent."""
+
     param: Param[X_co]
 
     kind: Kind = field(init=False)
@@ -268,6 +274,8 @@ class Optional(Param[X_co | None], Generic[X_co]):
 
 @dataclass(frozen=True, eq=False)
 class Variadic(Param[tuple[X_co, ...]], Generic[X_co]):
+    """A CLI parameter that takes several values, between a minimum and a maximum."""
+
     param: Param[X_co]
     min: int | None = None
     max: int | None = None

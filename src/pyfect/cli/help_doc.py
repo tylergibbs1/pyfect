@@ -11,6 +11,8 @@ from pyfect.context import Context
 
 @dataclass(frozen=True, slots=True)
 class FlagDoc:
+    """A flag in a command's help: its name, aliases, type and description."""
+
     name: str
     aliases: tuple[str, ...]
     """With their dashes: ``("-f",)``."""
@@ -21,6 +23,8 @@ class FlagDoc:
 
 @dataclass(frozen=True, slots=True)
 class ArgDoc:
+    """An argument in a command's help: its name, type and description."""
+
     name: str
     type: str
     description: str | None
@@ -30,6 +34,8 @@ class ArgDoc:
 
 @dataclass(frozen=True, slots=True)
 class SubcommandDoc:
+    """A subcommand in its parent's help: its name, alias and description."""
+
     name: str
     alias: str | None
     short_description: str | None
@@ -38,18 +44,24 @@ class SubcommandDoc:
 
 @dataclass(frozen=True, slots=True)
 class SubcommandGroupDoc:
+    """A named group of subcommands in a command's help."""
+
     group: str | None
     commands: tuple[SubcommandDoc, ...]
 
 
 @dataclass(frozen=True, slots=True)
 class ExampleDoc:
+    """An example invocation in a command's help, with what it does."""
+
     command: str
     description: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class HelpDoc:
+    """A command's help as data: usage, flags, arguments, subcommands and examples."""
+
     description: str
     usage: str
     flags: tuple[FlagDoc, ...]

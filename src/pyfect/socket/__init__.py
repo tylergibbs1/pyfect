@@ -1,4 +1,4 @@
-"""Sockets (Effect's ``Socket`` and ``NodeSocket``).
+"""Sockets (Effect's ``Socket`` and ``NodeSocket``): TCP, TLS and WebSocket connections.
 
 A ``SocketService`` has a ``reader`` and a ``writer``, both acquired in a
 scope. Acquiring the reader opens the connection (closed with the scope);

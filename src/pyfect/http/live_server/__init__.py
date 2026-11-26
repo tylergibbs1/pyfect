@@ -68,6 +68,8 @@ from pyfect.socket.server import SocketServerError, SocketServerOpenError
 
 
 class Options(TypedDict):
+    """Options of the live HTTP server: host, port, timeouts and WebSocket settings."""
+
     port: NotRequired[int]
     """0 (the default): any free port."""
     host: NotRequired[str]
@@ -97,6 +99,8 @@ class Options(TypedDict):
 
 
 class TlsOptions(Options):
+    """Options of the live HTTP server over TLS: a certificate and key as well."""
+
     cert: PemInput
     key: Redacted[PemInput] | PemInput
     handshake_timeout: NotRequired[DurationInput]

@@ -47,6 +47,8 @@ if TYPE_CHECKING:
 
 @dataclass(eq=False)
 class SocketServerOpenError(TaggedError):
+    """Socket server error reason: the server could not start listening."""
+
     cause: object
 
     @property
@@ -56,6 +58,8 @@ class SocketServerOpenError(TaggedError):
 
 @dataclass(eq=False)
 class SocketServerUnknownError(TaggedError):
+    """Socket server error reason: an unexpected failure while serving."""
+
     cause: object
 
     @property
@@ -68,6 +72,8 @@ type SocketServerErrorReason = SocketServerOpenError | SocketServerUnknownError
 
 @dataclass(eq=False)
 class SocketServerError(TaggedError):
+    """A socket server failed to open or failed while serving, with the reason."""
+
     reason: SocketServerErrorReason
 
     def __post_init__(self) -> None:

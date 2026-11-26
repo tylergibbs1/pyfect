@@ -72,6 +72,8 @@ _STATUS: Mapping[MultipartErrorTag, int] = {
 
 @dataclass(eq=False)
 class MultipartErrorReason(TaggedError):
+    """Why a multipart body failed: a limit, a parse error or an internal failure."""
+
     tag: MultipartErrorTag
     cause: object = None
 
@@ -117,6 +119,8 @@ def _to_multipart_error(cause: object) -> MultipartError:
 
 @dataclass(frozen=True, slots=True)
 class Field:
+    """A text field of a multipart form, with its content type."""
+
     key: str
     content_type: str
     value: str
@@ -546,6 +550,8 @@ def to_persisted(
 
 
 class Limits(TypedDict, total=False):
+    """Limits on a multipart body: parts, field, file, total and persisted sizes, MIME types."""
+
     max_parts: int | None
     max_field_size: byte_size.Input
     max_file_size: byte_size.Input | None

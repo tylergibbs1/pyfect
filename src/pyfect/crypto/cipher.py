@@ -31,6 +31,8 @@ type Method = Literal["encrypt", "decrypt"]
 
 @dataclass(frozen=True, kw_only=True)
 class Algorithm:
+    """An unauthenticated AES algorithm, in CTR or CBC mode, with its key size."""
+
     name: Literal["aes128Ctr", "aes256Ctr", "aes128Cbc", "aes256Cbc"]
     mode: Literal["AES-CTR", "AES-CBC"]
     key_length: Literal[16, 32]
@@ -55,6 +57,8 @@ def is_key(u: object) -> bool:
 
 
 class CipherService(Protocol):
+    """Unauthenticated AES encryption: generate keys, and encrypt and decrypt with an IV."""
+
     def generate_key[A: Algorithm](self, algorithm: A) -> Effect[Key[A], CryptoError]:
         """A key of random bytes from ``SecureRandom``."""
         ...

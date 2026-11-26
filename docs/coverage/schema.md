@@ -13,7 +13,8 @@ Coverage counts ported, renamed and §4 exports.
 | SchemaParser | 34 | 26 | 0 | 8 | 0 | 100% |
 | SchemaRepresentation | 100 | 88 | 6 | 6 | 0 | 100% |
 | JsonSchema | 16 | 8 | 8 | 0 | 0 | 100% |
-| **All** | 818 | | | | 0 | 100% |
+| Codegen | 11 | 9 | 0 | 2 | 0 | 100% |
+| **All** | 829 | | | | 0 | 100% |
 
 ## Schema
 
@@ -872,3 +873,19 @@ Coverage counts ported, renamed and §4 exports.
 | `sanitizeOpenApiComponentsSchemasKey` | ported | `pyfect.json_schema.sanitize_open_api_components_schemas_key` |
 | `getReferenceKey` | ported | `pyfect.json_schema.get_reference_key` |
 | `rewriteRefs` | ported | `pyfect.json_schema.rewrite_refs` |
+
+## Codegen
+
+| Effect | Status | pyfect |
+|---|---|---|
+| `importNamespace` | ported | `pyfect.codegen.import_namespace` |
+| `importNamed` | ported | `pyfect.codegen.import_named` |
+| `importDefault` | §4 | not ported: Python modules have no default export (§4: `Codegen` builder) |
+| `code` | ported | `pyfect.codegen.code` |
+| `join` | ported | `pyfect.codegen.join` |
+| `deferred` | ported | `pyfect.codegen.deferred` |
+| `indent` | ported | `pyfect.codegen.indent` |
+| `literal` | ported | `pyfect.codegen.literal` |
+| `propertyKey` | §4 | not ported: a dict key is `literal(name)` (§4: `Codegen` builder) |
+| `docComment` | ported | `pyfect.codegen.doc_comment` |
+| `Module` | ported | `pyfect.codegen.Module` |

@@ -312,7 +312,7 @@ class HttpRouterService:
 
 
 class HttpRouter(Tag[HttpRouterService], key="effect/http/HttpRouter"):
-    pass
+    """Tag of the HTTP router that layers add routes to and requests are matched against."""
 
 
 def _make(config: find_my_way.RouterConfig) -> HttpRouterService:

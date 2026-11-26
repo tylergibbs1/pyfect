@@ -55,6 +55,8 @@ def _non_empty_taken[A](items: list[A]) -> tuple[A, *tuple[A, ...]]:
 
 
 class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
+    """A queue fibers offer to and take from, bounded or not, that can end or fail."""
+
     __slots__ = (
         "_capacity",
         "_items",

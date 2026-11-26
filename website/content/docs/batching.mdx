@@ -1,6 +1,6 @@
 ---
 title: Request batching
-description: "Collect lookups made at the same time into one call with Request and RequestResolver."
+description: "Batch lookups made at the same time into one call with Request and RequestResolver to avoid N+1 queries, with per-request failures, batch sizes and caching."
 ---
 
 Code that fetches one thing at a time, such as `get_user(id)` for each order on a page, makes

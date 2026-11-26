@@ -52,6 +52,8 @@ class CliError(TaggedError):
 
 @dataclass(eq=False)
 class UnrecognizedOption(CliError):
+    """CLI error: a flag the command does not know, with suggestions for what was meant."""
+
     option: str
     suggestions: tuple[str, ...] = ()
     command: tuple[str, ...] | None = None
@@ -69,6 +71,8 @@ class UnrecognizedOption(CliError):
 
 @dataclass(eq=False)
 class DuplicateOption(CliError):
+    """CLI error: a subcommand reuses a flag name its parent command already has."""
+
     option: str
     parent_command: str
     child_command: str
@@ -86,6 +90,8 @@ class DuplicateOption(CliError):
 
 @dataclass(eq=False)
 class MissingOption(CliError):
+    """CLI error: a required flag was not given."""
+
     option: str
     tag: ClassVar[Literal["MissingOption"]] = "MissingOption"
 
@@ -96,6 +102,8 @@ class MissingOption(CliError):
 
 @dataclass(eq=False)
 class MissingArgument(CliError):
+    """CLI error: a required positional argument was not given."""
+
     argument: str
     tag: ClassVar[Literal["MissingArgument"]] = "MissingArgument"
 
@@ -106,6 +114,8 @@ class MissingArgument(CliError):
 
 @dataclass(eq=False)
 class UnexpectedArgument(CliError):
+    """CLI error: positional arguments the command does not take."""
+
     arguments: tuple[str, ...]
     tag: ClassVar[Literal["UnexpectedArgument"]] = "UnexpectedArgument"
 
@@ -117,6 +127,8 @@ class UnexpectedArgument(CliError):
 
 @dataclass(eq=False)
 class InvalidValue(CliError):
+    """CLI error: a flag or argument's value is not what it expects."""
+
     option: str
     value: str
     expected: str
@@ -139,6 +151,8 @@ class InvalidValue(CliError):
 
 @dataclass(eq=False)
 class UnknownSubcommand(CliError):
+    """CLI error: a subcommand the command does not have, with suggestions."""
+
     subcommand: str
     suggestions: tuple[str, ...] = ()
     parent: tuple[str, ...] | None = None
@@ -156,6 +170,8 @@ class UnknownSubcommand(CliError):
 
 @dataclass(eq=False)
 class ValidationError(CliError):
+    """CLI error: a value failed validation, with a message saying why."""
+
     detail: str
     tag: ClassVar[Literal["ValidationError"]] = "ValidationError"
 

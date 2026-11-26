@@ -40,16 +40,22 @@ type PlainTypeTag = Literal[
 
 @dataclass(frozen=True, slots=True)
 class PlainType:
+    """A CLI parameter's value type that is a plain kind, such as a string or an integer."""
+
     tag: PlainTypeTag
 
 
 @dataclass(frozen=True, slots=True)
 class ChoiceType:
+    """A CLI parameter's value type that is one of a fixed set of strings."""
+
     values: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
 class PathValueType:
+    """A CLI parameter's value type that is a path to a file, a directory or either."""
+
     path_type: PathType
 
 
@@ -82,12 +88,16 @@ type Scope = Local | Inherited | Global
 
 @dataclass(frozen=True, slots=True)
 class VariadicBounds:
+    """How many values a repeated CLI parameter takes, at least and at most."""
+
     min: int | None
     max: int | None
 
 
 @dataclass(frozen=True, slots=True)
 class Argument:
+    """A positional argument of a command, as data: name, type, fallbacks and bounds."""
+
     name: str
     description: str | None
     type: Type
@@ -106,6 +116,8 @@ class Argument:
 
 @dataclass(frozen=True, slots=True)
 class Flag(Argument):
+    """A flag of a command, as data: aliases, negation and scope as well as its type."""
+
     aliases: tuple[str, ...]
     """Alias names without dashes."""
     hidden: bool
@@ -117,6 +129,8 @@ class Flag(Argument):
 
 @dataclass(frozen=True, slots=True)
 class Subcommand:
+    """A subcommand as listed by its parent: name, alias, group and descriptions."""
+
     name: str
     alias: str | None
     group: str | None
@@ -127,6 +141,8 @@ class Subcommand:
 
 @dataclass(frozen=True, slots=True)
 class Spec:
+    """A command path as data: its flags, arguments, subcommands and examples."""
+
     path: tuple[str, ...]
     name: str
     alias: str | None

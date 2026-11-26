@@ -1,0 +1,2 @@
+Success(value='Hello, Ada')
+Failure(cause=Cause(reasons=(Fail(error=UserNotFound(user_id='3')),)))

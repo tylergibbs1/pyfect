@@ -24,6 +24,8 @@ from pyfect.schema import SchemaError
 
 @runtime_checkable
 class Respondable(Protocol):
+    """A value a server can turn into a response through ``__http_response__``."""
+
     def __http_response__(self) -> Effect[HttpServerResponse, Any]: ...
 
 

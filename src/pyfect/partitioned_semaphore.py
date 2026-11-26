@@ -89,6 +89,8 @@ class _GiveBackOnFailure(Frame):
 
 
 class PartitionedSemaphore[K: Hashable = Hashable]:
+    """A pool of permits shared fairly between keys, so one key cannot take them all."""
+
     __slots__ = (
         "_lock",
         "_partial",

@@ -1,4 +1,4 @@
-"""Layers: recipes for building services.
+"""Layers: recipes that build services, may fail, and may need other services to do it.
 
 ``Layer[ROut, E, RIn]`` builds the services ``ROut``, may fail with ``E``,
 and needs the services ``RIn`` to do it.

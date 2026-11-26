@@ -75,6 +75,8 @@ A_co = TypeVar("A_co", covariant=True)
 
 @dataclass(frozen=True, slots=True)
 class FindResult(Generic[A_co]):
+    """A matched route: its handler, path parameters and query parameters."""
+
     handler: A_co
     params: dict[str, str]
     search_params: dict[str, str | list[str]]

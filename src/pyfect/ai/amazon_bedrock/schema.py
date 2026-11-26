@@ -38,6 +38,8 @@ not fail the response."""
 
 
 class TokenUsage(TypedDict):
+    """Bedrock token counts: input, output, total and prompt cache reads and writes."""
+
     inputTokens: int
     outputTokens: int
     totalTokens: int
@@ -100,10 +102,14 @@ type DocumentFormat = Literal["pdf", "csv", "doc", "docx", "xls", "xlsx", "html"
 
 
 class BytesSource(TypedDict):
+    """Bedrock content given inline as base64 bytes."""
+
     bytes: str
 
 
 class ImageBlock(TypedDict):
+    """A Bedrock image content block: its format and bytes."""
+
     format: ImageFormat
     source: BytesSource
 
@@ -131,6 +137,8 @@ class ContentBlock(TypedDict, total=False):
 
 
 class Message(TypedDict):
+    """A Bedrock Converse message: a user or assistant role and its content blocks."""
+
     role: Literal["user", "assistant"]
     content: Sequence[ContentBlock]
 
@@ -146,6 +154,8 @@ class SystemContentBlock(TypedDict, total=False):
 
 
 class InferenceConfiguration(TypedDict, total=False):
+    """Bedrock inference settings: max tokens, stop sequences, temperature and top-p."""
+
     maxTokens: int
     stopSequences: Sequence[str]
     temperature: float
@@ -153,10 +163,14 @@ class InferenceConfiguration(TypedDict, total=False):
 
 
 class ToolInputSchema(TypedDict):
+    """The JSON Schema of a Bedrock tool's input."""
+
     json: Mapping[str, Any]
 
 
 class ToolSpecification(TypedDict):
+    """A Bedrock tool: its name, description and input schema."""
+
     name: str
     description: NotRequired[str]
     inputSchema: ToolInputSchema
@@ -174,10 +188,14 @@ class _Empty(TypedDict):
 
 
 class AutoToolChoice(TypedDict):
+    """Bedrock tool choice: the model decides whether to call a tool."""
+
     auto: _Empty
 
 
 class AnyToolChoice(TypedDict):
+    """Bedrock tool choice: the model must call some tool."""
+
     any: _Empty
 
 
@@ -186,6 +204,8 @@ class _ToolName(TypedDict):
 
 
 class SpecificToolChoice(TypedDict):
+    """Bedrock tool choice: the model must call the named tool."""
+
     tool: _ToolName
 
 
@@ -194,6 +214,8 @@ type ToolChoice = AutoToolChoice | AnyToolChoice | SpecificToolChoice
 
 
 class ToolConfiguration(TypedDict):
+    """A Bedrock request's tools and how the model may choose among them."""
+
     tools: Sequence[Tool]
     toolChoice: NotRequired[ToolChoice]
 
@@ -211,6 +233,8 @@ class _Structure(TypedDict):
 
 
 class OutputFormat(TypedDict):
+    """A Bedrock structured output format: a JSON Schema the response must match."""
+
     type: Literal["json_schema"]
     structure: _Structure
 
@@ -251,10 +275,14 @@ class ConverseRequest(TypedDict):
 
 
 class ConverseMetrics(TypedDict):
+    """Bedrock Converse metrics: the request's latency in milliseconds."""
+
     latencyMs: float
 
 
 class ConverseOutput(TypedDict):
+    """A Bedrock Converse response's output: the assistant's message."""
+
     message: Message
 
 
@@ -273,15 +301,21 @@ class ConverseResponse(TypedDict):
 
 
 class MessageStartEvent(TypedDict):
+    """Bedrock stream event body: a message starts, with its role."""
+
     role: Literal["user", "assistant"]
 
 
 class ToolUseStart(TypedDict):
+    """The start of a Bedrock tool use block: the call's id and tool name."""
+
     toolUseId: str
     name: str
 
 
 class ContentBlockStart(TypedDict, total=False):
+    """What a streamed Bedrock content block starts with, such as a tool use."""
+
     toolUse: ToolUseStart
 
 
@@ -294,10 +328,14 @@ class ContentBlockStartEvent(TypedDict):
 
 
 class ToolUseDelta(TypedDict):
+    """The next piece of a streamed Bedrock tool call's JSON input."""
+
     input: str
 
 
 class ReasoningContentDelta(TypedDict, total=False):
+    """The next piece of streamed Bedrock reasoning: text, a signature or redacted content."""
+
     text: str
     signature: str
     redactedContent: str
@@ -313,15 +351,21 @@ class ContentBlockDelta(TypedDict, total=False):
 
 
 class ContentBlockDeltaEvent(TypedDict):
+    """Bedrock stream event body: a delta for the content block at an index."""
+
     contentBlockIndex: int
     delta: ContentBlockDelta
 
 
 class ContentBlockStopEvent(TypedDict):
+    """Bedrock stream event body: the content block at an index is complete."""
+
     contentBlockIndex: int
 
 
 class MessageStopEvent(TypedDict):
+    """Bedrock stream event body: the message ends, with its stop reason."""
+
     stopReason: StopReason
 
 
@@ -335,31 +379,43 @@ class ConverseStreamMetadataEvent(TypedDict):
 
 @final
 class MessageStart(TypedDict):
+    """A ConverseStream event that starts a message."""
+
     messageStart: MessageStartEvent
 
 
 @final
 class ContentBlockStartStreamEvent(TypedDict):
+    """A ConverseStream event that starts a content block."""
+
     contentBlockStart: ContentBlockStartEvent
 
 
 @final
 class ContentBlockDeltaStreamEvent(TypedDict):
+    """A ConverseStream event that carries a content block delta."""
+
     contentBlockDelta: ContentBlockDeltaEvent
 
 
 @final
 class ContentBlockStopStreamEvent(TypedDict):
+    """A ConverseStream event that ends a content block."""
+
     contentBlockStop: ContentBlockStopEvent
 
 
 @final
 class MessageStop(TypedDict):
+    """A ConverseStream event that ends a message."""
+
     messageStop: MessageStopEvent
 
 
 @final
 class Metadata(TypedDict):
+    """A ConverseStream event with the response's usage and metrics."""
+
     metadata: ConverseStreamMetadataEvent
 
 

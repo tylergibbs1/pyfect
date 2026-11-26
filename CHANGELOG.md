@@ -1,5 +1,49 @@
 # Changelog
 
+## 0.6.37 (2026-11-26)
+
+### Added
+
+- `pyfect.codegen` gains Effect 4.1.5's `Codegen` builder, writing Python: `Module.declare`,
+  `define`, `scope`, `add_import`, `provide_import`, `add_side_effect`, `add` and `finalize`
+  (and `print` for a module built from declarations), with `code`, `join`, `deferred`,
+  `indent`, `literal`, `doc_comment`, `import_namespace` and `import_named`. A namespace import
+  is `import m as X`, a named one `from m import x`, and a type-only one goes under
+  `if TYPE_CHECKING:`. `importDefault` and `propertyKey` have no Python form; a module holds
+  schemas or declarations, not both.
+
+### Docs
+
+- The site has its first blog posts, each built from checked, runnable snippets: typed errors
+  in Python without exceptions, type-safe dependency injection with services and layers, and
+  structured concurrency in Python, including what free-threaded 3.14 does and doesn't change.
+  The snippet tests now check the blog's posts as they check the guides.
+- Three more blog posts, each built from checked, runnable snippets: Python retries with
+  backoff, timeouts and schedules (compared with tenacity), schema validation with pyfect's
+  Schema compared with pydantic, and what carries over from Effect in TypeScript to Python.
+- The schema guide's JSON Schema section named `to_code_document`, deprecated in 0.6.36; it now
+  points to `codegen.Module`, and a new "Generating Python source" section shows `add_schemas`
+  and the declaration builder.
+- The site has a blog at https://pyfect.dev/blog, with an RSS feed at `/blog/rss.xml`; its first
+  post is "Effect for Python: typed errors, services and structured concurrency with pyfect".
+  Every page now has a canonical URL, Open Graph and Twitter card metadata, and the site serves
+  `sitemap.xml` and `robots.txt`.
+- Every guide's description, which search results show, now says what the page teaches in
+  120 to 160 characters; 43 were shorter or longer. The site's build checks the length, as it
+  does for blog posts.
+- Every public class now has a docstring, so each API reference page has a description of its
+  own: 568 pages said only "API reference for X.", and generic classes' pages showed their
+  `class X[A]` line instead. The twenty vaguest module summaries now say what the module
+  holds. A test fails when a public module or class has no docstring.
+- The sitemap dates every guide again. The dates came from git history, which Vercel's build
+  clone doesn't have, so the live sitemap dated none of them. They now come from
+  `website/lib/page-dates.json`, which records when each guide, or a snippet or diagram it
+  shows, last changed; a test fails when an edit leaves it stale, and the build fails if a
+  guide goes out undated. API reference pages stay undated. `/` now redirects to `/docs`
+  permanently (308).
+- The services guide's first example now says `run_blocking` needs both the errors and the
+  requirements to be `Never`.
+
 ## 0.6.36 (2026-11-24)
 
 ### Added

@@ -6,6 +6,8 @@ from pyfect import schema as S
 
 
 class RunnerAddress(S.Class, identifier="~effect/cluster/RunnerAddress"):
+    """Where a cluster runner listens: a host and a port."""
+
     host: str
     port: int
 

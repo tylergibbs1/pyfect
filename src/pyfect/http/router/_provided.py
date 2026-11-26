@@ -24,7 +24,7 @@ class RouteInfo:
 
 
 class RouteContext(Tag[RouteInfo], key="effect/http/HttpRouter/RouteContext"):
-    pass
+    """Tag of the route a handler is running for: its method, path and parameters."""
 
 
 type Provided = HttpServerRequest | Scope | ParsedSearchParams | RouteContext

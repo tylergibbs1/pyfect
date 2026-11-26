@@ -310,6 +310,8 @@ def to_url_result(request: ServerRequest) -> Result[_url.Url, RequestParseError]
 
 
 class BodyTooLargeError(Exception):
+    """Raised when a request body is larger than the server allows."""
+
     def __init__(self, max_bytes: int) -> None:
         super().__init__(f"Request body exceeds {max_bytes} bytes")
 

@@ -40,6 +40,8 @@ from pyfect.workflow.workflow import Workflow
 
 
 class ResumePayload(TypedDict):
+    """The payload of a workflow resume call: the execution id."""
+
     executionId: str
 
 

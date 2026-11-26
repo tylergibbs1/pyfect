@@ -30,6 +30,8 @@ type Reviver = JsonReviver
 
 
 class HttpIncomingMessage[E](Protocol):
+    """What an incoming HTTP message has: headers and a body read as JSON, text or bytes."""
+
     @property
     def headers(self) -> Headers: ...
     @property

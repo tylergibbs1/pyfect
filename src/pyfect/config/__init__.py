@@ -1,4 +1,4 @@
-"""Typed configuration (Effect's ``Config``).
+"""Typed configuration (Effect's ``Config``): read and decode environment variables and files.
 
 A ``Config[A]`` says which keys to read from the ``CurrentConfigProvider``
 and how to decode them. It is an effect, failing with ``ConfigError``::

@@ -304,6 +304,8 @@ def _next_prerelease(prerelease: tuple[Identifier, ...]) -> tuple[Identifier, ..
 
 
 class Components(TypedDict):
+    """The parts of a semantic version: major, minor, patch, prerelease and build."""
+
     major: int
     minor: int
     patch: int

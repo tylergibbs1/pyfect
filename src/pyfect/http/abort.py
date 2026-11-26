@@ -35,6 +35,8 @@ class _Entry:
 
 @final
 class AbortSignal:
+    """Tells whether a request was aborted, and runs listeners when it is."""
+
     __slots__ = ("_listeners", "_lock", "aborted")
 
     def __init__(self) -> None:
@@ -98,6 +100,8 @@ def _noop() -> None:
 
 @final
 class AbortController:
+    """Aborts a request in flight through its ``signal``."""
+
     __slots__ = ("signal",)
 
     def __init__(self) -> None:

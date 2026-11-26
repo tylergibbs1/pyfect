@@ -194,6 +194,8 @@ class RateAnswer(Generic[L]):
 
 @dataclass(frozen=True)
 class ProbabilityAnswer:
+    """The answer to a probability decision: how likely the statement holds, from 0 to 1."""
+
     probability: float
 
 

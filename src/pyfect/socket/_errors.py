@@ -22,6 +22,8 @@ class CloseEvent:
 
 
 class SocketReadError(S.TaggedError, identifier="effect/socket/Socket/SocketReadError"):
+    """A socket failed while reading, with the cause."""
+
     cause: object = S.field(S.Defect())
 
     @property
@@ -30,6 +32,8 @@ class SocketReadError(S.TaggedError, identifier="effect/socket/Socket/SocketRead
 
 
 class SocketWriteError(S.TaggedError, identifier="effect/socket/Socket/SocketWriteError"):
+    """A socket failed while writing, with the cause."""
+
     cause: object = S.field(S.Defect())
 
     @property

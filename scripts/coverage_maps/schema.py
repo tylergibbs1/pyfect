@@ -321,8 +321,19 @@ JSON_SCHEMA = Module(
     },
 )
 
+CODEGEN_ROW = "`Codegen` builder"
+CODEGEN = Module(
+    "Codegen",
+    "effect/src/Codegen.ts",
+    ("pyfect.codegen",),
+    pythonic={
+        "importDefault": (CODEGEN_ROW, "not ported: Python modules have no default export"),
+        "propertyKey": (CODEGEN_ROW, "not ported: a dict key is `literal(name)`"),
+    },
+)
+
 CLUSTER = Cluster(
     "schema",
     "Schema family",
-    (SCHEMA, AST, GETTER, TRANSFORMATION, ISSUE, PARSER, REPRESENTATION, JSON_SCHEMA),
+    (SCHEMA, AST, GETTER, TRANSFORMATION, ISSUE, PARSER, REPRESENTATION, JSON_SCHEMA, CODEGEN),
 )

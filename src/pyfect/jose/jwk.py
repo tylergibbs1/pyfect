@@ -85,12 +85,16 @@ class _NoPrivateMembers(TypedDict):
 
 
 class RsaPublicJwk(_Metadata, _NoPrivateMembers):
+    """An RSA public key as a JSON Web Key."""
+
     kty: Literal["RSA"]
     n: str
     e: str
 
 
 class EcPublicJwk(_Metadata, _NoPrivateMembers):
+    """An elliptic curve public key on P-256, P-384 or P-521 as a JSON Web Key."""
+
     kty: Literal["EC"]
     crv: Literal["P-256", "P-384", "P-521"]
     x: str
@@ -98,6 +102,8 @@ class EcPublicJwk(_Metadata, _NoPrivateMembers):
 
 
 class OkpPublicJwk(_Metadata, _NoPrivateMembers):
+    """An Ed25519 public key as a JSON Web Key."""
+
     kty: Literal["OKP"]
     crv: Literal["Ed25519"]
     x: str
@@ -107,6 +113,8 @@ type PublicJwk = RsaPublicJwk | EcPublicJwk | OkpPublicJwk
 
 
 class RsaPrivateJwk(_Metadata):
+    """An RSA private key as a JSON Web Key, with its CRT parameters."""
+
     kty: Literal["RSA"]
     n: str
     e: str
@@ -120,6 +128,8 @@ class RsaPrivateJwk(_Metadata):
 
 
 class EcPrivateJwk(_Metadata):
+    """An elliptic curve private key on P-256, P-384 or P-521 as a JSON Web Key."""
+
     kty: Literal["EC"]
     crv: Literal["P-256", "P-384", "P-521"]
     x: str
@@ -128,6 +138,8 @@ class EcPrivateJwk(_Metadata):
 
 
 class OkpPrivateJwk(_Metadata):
+    """An Ed25519 private key as a JSON Web Key."""
+
     kty: Literal["OKP"]
     crv: Literal["Ed25519"]
     x: str
@@ -138,6 +150,8 @@ type PrivateJwk = RsaPrivateJwk | EcPrivateJwk | OkpPrivateJwk
 
 
 class SecretJwk(_Metadata):
+    """A symmetric secret key as a JSON Web Key."""
+
     kty: Literal["oct"]
     k: str
 
@@ -188,6 +202,8 @@ class PublicKey:
 
 @dataclass(frozen=True, slots=True)
 class PrivateKey:
+    """An imported private key for signing JWTs, with its algorithm and key id."""
+
     algorithm: AsymmetricAlgorithm
     kid: str | None
     key: signature.PrivateKey[Any]
@@ -224,6 +240,8 @@ type VerificationKey = PublicKey | HmacKey
 
 @dataclass(frozen=True, slots=True)
 class KeyPair:
+    """A generated JWK pair: the public key and the redacted private key."""
+
     public_key: PublicJwk
     private_key: Redacted[PrivateJwk]
 

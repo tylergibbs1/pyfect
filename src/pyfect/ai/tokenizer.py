@@ -16,6 +16,8 @@ type Tokenize = Callable[[P.Prompt], Effect[Sequence[int], AiError]]
 
 @dataclass(frozen=True)
 class Service:
+    """The ``Tokenizer`` service: count a prompt's tokens, or cut it to fit a token budget."""
+
     _tokenize: Tokenize
 
     def tokenize(self, input: P.RawInput) -> Effect[Sequence[int], AiError]:

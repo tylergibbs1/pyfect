@@ -1,0 +1,7 @@
+Expected string
+  at ["email"]
+Expected number
+  at ["age"]
+welcome, ada@example.com
+400: Expected a value between 13 and 130
+  at ["age"]

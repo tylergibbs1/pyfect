@@ -46,6 +46,8 @@ from pyfect.result import Ok
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class DuplicateEncoded:
+    """A message already stored: the original's id and the last reply it received."""
+
     original_id: Snowflake
     last_received_reply: reply_.Encoded | None
 

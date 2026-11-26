@@ -60,6 +60,8 @@ class RequestOptions(TypedDict, total=False):
 
 
 class ModifyOptions(RequestOptions, total=False):
+    """What ``modify`` can change on a request: method, URL, headers, params and body."""
+
     method: HttpMethod
     url: UrlInput
 
@@ -79,6 +81,8 @@ def _join_segments(first: str, second: str) -> str:
 @final
 @dataclass(frozen=True, slots=True)
 class HttpClientRequest:
+    """An HTTP request for a client to send: method, URL, params, headers and body."""
+
     method: str
     """The method; outside ``HttpMethod`` when converted from a received
     request (``PROPFIND``)."""

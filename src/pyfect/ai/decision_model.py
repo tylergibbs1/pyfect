@@ -87,6 +87,8 @@ type Metadata = Mapping[str, JsonValue]
 
 @dataclass(frozen=True)
 class DecideResponse:
+    """A provider's answers to a decisions request, with token usage, response id and model."""
+
     answers: D.Answers
     usage: DecisionUsage
     id: str | None = None
@@ -98,6 +100,8 @@ class DecideResponse:
 
 @dataclass(frozen=True)
 class DecideSettledResponse:
+    """Each decision's outcome, answered or not, with token usage, response id and model."""
+
     outcomes: D.Outcomes
     usage: DecisionUsage
     id: str | None = None

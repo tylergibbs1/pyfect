@@ -1,4 +1,4 @@
-"""Command-line apps (Effect's ``effect/cli``).
+"""Command-line apps (Effect's ``effect/cli``): typed flags, arguments, subcommands and help.
 
 Declare a command's params as a ``Config`` class of ``Flag`` and
 ``Argument`` attributes, build commands with ``command.make``, and run the

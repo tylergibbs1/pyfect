@@ -1,0 +1,7 @@
+70 left
+only 100 available
+typed error: (Overdrawn(balance=100),)
+defect: (AuditLogDown(),)
+session opened
+using session-1
+session closed after Success

@@ -27,6 +27,8 @@ _BLOCK = S.Record(S.String, S.Unknown)
 
 
 class BashParameters(TypedDict):
+    """Input of Anthropic's bash tool: the command to run, or a restart."""
+
     command: str
     restart: NotRequired[bool]
 
@@ -52,22 +54,30 @@ Bash_20250124 = T.provider_defined(
 
 
 class CodeExecutionProgrammaticToolCall(TypedDict):
+    """A code execution call that runs code which calls tools itself."""
+
     type: Literal["programmatic-tool-call"]
     code: str
 
 
 class CodeExecutionBashCommand(TypedDict):
+    """A code execution call that runs a bash command."""
+
     type: Literal["bash_code_execution"]
     command: str
 
 
 class CodeExecutionTextEditorView(TypedDict):
+    """A code execution call that views a file."""
+
     type: Literal["text_editor_code_execution"]
     command: Literal["view"]
     path: str
 
 
 class CodeExecutionTextEditorCreate(TypedDict):
+    """A code execution call that creates a file."""
+
     type: Literal["text_editor_code_execution"]
     command: Literal["create"]
     path: str
@@ -75,6 +85,8 @@ class CodeExecutionTextEditorCreate(TypedDict):
 
 
 class CodeExecutionTextEditorStrReplace(TypedDict):
+    """A code execution call that replaces a string in a file."""
+
     type: Literal["text_editor_code_execution"]
     command: Literal["str_replace"]
     path: str
@@ -83,6 +95,8 @@ class CodeExecutionTextEditorStrReplace(TypedDict):
 
 
 class CodeExecution_20250825_Parameters(TypedDict):
+    """Input of the 2025-08-25 code execution tool: the code to run."""
+
     code: str
 
 
@@ -120,77 +134,107 @@ type Region = tuple[int, int, int, int]
 
 
 class ComputerUseArgs(TypedDict):
+    """Arguments of Anthropic's computer use tool: the display's size and number."""
+
     displayWidthPx: int
     displayHeightPx: int
     displayNumber: NotRequired[int]
 
 
 class ComputerUse_20251124_Args(ComputerUseArgs):
+    """Arguments of the 2025-11-24 computer use tool, which can also zoom."""
+
     enableZoom: NotRequired[bool]
 
 
 class KeyAction(TypedDict):
+    """Computer use action: press a key or key combination."""
+
     action: Literal["key"]
     text: str
 
 
 class LeftClickAction(TypedDict):
+    """Computer use action: left-click, at a coordinate if given."""
+
     action: Literal["left_click"]
     coordinate: NotRequired[Coordinate]
 
 
 class MouseMoveAction(TypedDict):
+    """Computer use action: move the mouse to a coordinate."""
+
     action: Literal["mouse_move"]
     coordinate: Coordinate
 
 
 class ScreenshotAction(TypedDict):
+    """Computer use action: take a screenshot."""
+
     action: Literal["screenshot"]
 
 
 class TypeAction(TypedDict):
+    """Computer use action: type text."""
+
     action: Literal["type"]
     text: str
 
 
 class DoubleClickAction(TypedDict):
+    """Computer use action: double-click, at a coordinate if given."""
+
     action: Literal["double_click"]
     coordinate: NotRequired[Coordinate]
 
 
 class HoldKeyAction(TypedDict):
+    """Computer use action: hold a key down for a number of seconds."""
+
     action: Literal["hold_key"]
     text: str
     duration: float
 
 
 class LeftClickDragAction(TypedDict):
+    """Computer use action: drag with the left button from one coordinate to another."""
+
     action: Literal["left_click_drag"]
     start_coordinate: Coordinate
     coordinate: Coordinate
 
 
 class LeftMouseDownAction(TypedDict):
+    """Computer use action: press the left mouse button."""
+
     action: Literal["left_mouse_down"]
     coordinate: NotRequired[Coordinate]
 
 
 class LeftMouseUpAction(TypedDict):
+    """Computer use action: release the left mouse button."""
+
     action: Literal["left_mouse_up"]
     coordinate: NotRequired[Coordinate]
 
 
 class MiddleClickAction(TypedDict):
+    """Computer use action: middle-click, at a coordinate if given."""
+
     action: Literal["middle_click"]
     coordinate: NotRequired[Coordinate]
 
 
 class RightClickAction(TypedDict):
+    """Computer use action: right-click, at a coordinate if given."""
+
     action: Literal["right_click"]
     coordinate: NotRequired[Coordinate]
 
 
 class ScrollAction(TypedDict):
+    """Computer use action: scroll in a direction by an amount."""
+
     action: Literal["scroll"]
     coordinate: NotRequired[Coordinate]
     scroll_direction: Literal["up", "down", "left", "right"]
@@ -198,16 +242,22 @@ class ScrollAction(TypedDict):
 
 
 class TripleClickAction(TypedDict):
+    """Computer use action: triple-click, at a coordinate if given."""
+
     action: Literal["triple_click"]
     coordinate: NotRequired[Coordinate]
 
 
 class WaitAction(TypedDict):
+    """Computer use action: wait for a number of seconds."""
+
     action: Literal["wait"]
     duration: float
 
 
 class ZoomAction(TypedDict):
+    """Computer use action: zoom into a region of the screen."""
+
     action: Literal["zoom"]
     region: Region
 
@@ -295,17 +345,23 @@ type ViewRange = tuple[int, int]
 
 
 class MemoryCreateCommand(TypedDict):
+    """Memory tool command: create a file with the given text."""
+
     command: Literal["create"]
     path: str
     file_text: str
 
 
 class MemoryDeleteCommand(TypedDict):
+    """Memory tool command: delete a file."""
+
     command: Literal["delete"]
     path: str
 
 
 class MemoryInsertCommand(TypedDict):
+    """Memory tool command: insert text at a line of a file."""
+
     command: Literal["insert"]
     path: str
     insert_line: int
@@ -313,12 +369,16 @@ class MemoryInsertCommand(TypedDict):
 
 
 class MemoryRenameCommand(TypedDict):
+    """Memory tool command: rename or move a file."""
+
     command: Literal["rename"]
     old_path: str
     new_path: str
 
 
 class StrReplaceCommand(TypedDict):
+    """Text editor command: replace one string in a file with another."""
+
     command: Literal["str_replace"]
     path: str
     old_str: str
@@ -326,6 +386,8 @@ class StrReplaceCommand(TypedDict):
 
 
 class ViewCommand(TypedDict):
+    """Text editor command: view a file or directory, or a range of its lines."""
+
     command: Literal["view"]
     path: str
     view_range: NotRequired[ViewRange]
@@ -360,6 +422,8 @@ Memory_20250818 = T.provider_defined(
 
 
 class CreateCommand(TypedDict):
+    """Text editor command: create a file with the given text."""
+
     command: Literal["create"]
     path: str
     file_text: str
@@ -386,11 +450,15 @@ class InsertTextCommand(TypedDict):
 
 
 class UndoEditCommand(TypedDict):
+    """Text editor command: undo the last edit to a file."""
+
     command: Literal["undo_edit"]
     path: str
 
 
 class TextEditorArgs(TypedDict):
+    """Arguments of Anthropic's text editor tool: how many characters a view may return."""
+
     max_characters: NotRequired[int]
 
 
@@ -448,6 +516,8 @@ TextEditor_20250728 = T.provider_defined(
 
 
 class WebSearchUserLocation(TypedDict):
+    """The user's approximate location for web search: city, region, country, time zone."""
+
     type: Literal["approximate"]
     city: NotRequired[str]
     region: NotRequired[str]
@@ -456,6 +526,8 @@ class WebSearchUserLocation(TypedDict):
 
 
 class WebSearch_20250305_Args(TypedDict, total=False):
+    """Arguments of the web search tool: max uses, allowed or blocked domains, location."""
+
     maxUses: int
     allowedDomains: list[str]
     blockedDomains: list[str]
@@ -463,6 +535,8 @@ class WebSearch_20250305_Args(TypedDict, total=False):
 
 
 class QueryParameters(TypedDict):
+    """Input of Anthropic's web search tool: the query."""
+
     query: str
 
 
@@ -478,10 +552,14 @@ WebSearch_20250305 = T.provider_defined(
 
 
 class WebFetchCitationsConfig(TypedDict):
+    """Whether web fetch results carry citations."""
+
     enabled: bool
 
 
 class WebFetch_20250910_Args(TypedDict, total=False):
+    """Arguments of the web fetch tool: max uses, domains, citations and content size."""
+
     maxUses: int
     allowedDomains: list[str]
     blockedDomains: list[str]
@@ -490,6 +568,8 @@ class WebFetch_20250910_Args(TypedDict, total=False):
 
 
 class WebFetchParameters(TypedDict):
+    """Input of Anthropic's web fetch tool: the URL to fetch."""
+
     url: str
 
 

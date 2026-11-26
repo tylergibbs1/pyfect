@@ -1,4 +1,4 @@
-"""Network addresses (Effect's ``NetAddress``).
+"""Network addresses (Effect's ``NetAddress``): IPv4, IPv6, MAC, socket and Unix addresses.
 
 IP addresses are the standard library's ``ipaddress.IPv4Address`` and
 ``IPv6Address``, parsed strictly (four decimal octets without leading

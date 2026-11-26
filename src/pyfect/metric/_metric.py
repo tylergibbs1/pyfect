@@ -127,6 +127,8 @@ def register_unsafe[S](
 
 @final
 class Registration:
+    """A metric's registration in a registry, which ``remove`` takes out again."""
+
     __slots__ = ("_key", "_metadata", "_registry")
 
     def __init__(self, registry: Registry, key: MetricKey, metadata: Metadata) -> None:

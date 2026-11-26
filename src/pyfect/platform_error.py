@@ -78,56 +78,78 @@ class SystemError(TaggedError):
 
 @dataclass(eq=False)
 class AlreadyExists(SystemError):
+    """Platform error reason: what was to be created already exists."""
+
     tag: ClassVar[SystemErrorTag] = "AlreadyExists"
 
 
 @dataclass(eq=False)
 class BadResource(SystemError):
+    """Platform error reason: the resource cannot be used for this operation."""
+
     tag: ClassVar[SystemErrorTag] = "BadResource"
 
 
 @dataclass(eq=False)
 class Busy(SystemError):
+    """Platform error reason: the resource is busy."""
+
     tag: ClassVar[SystemErrorTag] = "Busy"
 
 
 @dataclass(eq=False)
 class InvalidData(SystemError):
+    """Platform error reason: the data is not valid for the operation."""
+
     tag: ClassVar[SystemErrorTag] = "InvalidData"
 
 
 @dataclass(eq=False)
 class NotFound(SystemError):
+    """Platform error reason: the file or resource does not exist."""
+
     tag: ClassVar[SystemErrorTag] = "NotFound"
 
 
 @dataclass(eq=False)
 class PermissionDenied(SystemError):
+    """Platform error reason: the process may not do this."""
+
     tag: ClassVar[SystemErrorTag] = "PermissionDenied"
 
 
 @dataclass(eq=False)
 class TimedOut(SystemError):
+    """Platform error reason: the operation timed out."""
+
     tag: ClassVar[SystemErrorTag] = "TimedOut"
 
 
 @dataclass(eq=False)
 class UnexpectedEof(SystemError):
+    """Platform error reason: the input ended before the data expected."""
+
     tag: ClassVar[SystemErrorTag] = "UnexpectedEof"
 
 
 @dataclass(eq=False)
 class Unknown(SystemError):
+    """Platform error reason: a failure the platform gives no reason for."""
+
     tag: ClassVar[SystemErrorTag] = "Unknown"
 
 
 @dataclass(eq=False)
 class WouldBlock(SystemError):
+    """Platform error reason: the operation would block."""
+
     tag: ClassVar[SystemErrorTag] = "WouldBlock"
 
 
 @dataclass(eq=False)
 class WriteZero(SystemError):
+    """Platform error reason: a write wrote no bytes."""
+
     tag: ClassVar[SystemErrorTag] = "WriteZero"
 
 

@@ -1,4 +1,4 @@
-"""Typed errors.
+"""Typed errors: ``TaggedError`` for domain failures, and pyfect's own expected errors.
 
 Subclass ``TaggedError`` for domain errors. One with fields must be a
 ``@dataclass(eq=False)`` (plain ``@dataclass`` works too, but pyright then
@@ -71,6 +71,8 @@ def _why(error: BaseException) -> object:
 
 
 class TaggedError(Exception):
+    """Base class of typed errors: the class is the tag that ``catch_tag`` matches."""
+
     exit_code: ClassVar[int] = 1
     error_reported: bool = True
     """``False``: ``run_main`` does not log this error when it ends the

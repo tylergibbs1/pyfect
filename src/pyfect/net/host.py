@@ -1,4 +1,4 @@
-"""Host names and endpoints (Effect's ``Host``).
+"""Host names and endpoints (Effect's ``Host``): IPs, domain names and host-port pairs.
 
 A host is an IP address, a scoped IPv6 literal (``fe80::1%eth0``) or a
 ``DomainName``: lowercase ASCII, internationalized labels converted to
@@ -41,6 +41,8 @@ type HostInput = Host | IpAddressInput
 
 
 class HostPortParts(TypedDict):
+    """A host and a port, to build an endpoint from."""
+
     host: HostInput
     port: int
 

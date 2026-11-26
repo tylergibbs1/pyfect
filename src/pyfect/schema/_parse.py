@@ -56,6 +56,8 @@ class Parser[I, O](Protocol):
 
 
 class Guard[A](Protocol):
+    """A type guard: whether a value is an ``A``, narrowing its type."""
+
     def __call__(self, input: object, /) -> TypeIs[A]: ...
 
 

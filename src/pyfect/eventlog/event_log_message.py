@@ -89,6 +89,8 @@ class Authenticate(S.Class, identifier="effect/eventlog/EventLogRemote/Authentic
 class SingleMessage(
     S.TaggedClass, tag="Single", identifier="effect/eventlog/EventLogRemote/SingleMessage"
 ):
+    """An event log message sent whole, not in chunks."""
+
     data: bytes = S.field(TransferableBytes)
 
 
@@ -257,16 +259,22 @@ def decode_changes_unencrypted(
 
 
 class WriteSinglePayload(TypedDict):
+    """The payload of an event log write sent as one message."""
+
     data: bytes
 
 
 class ChangesPayload(TypedDict):
+    """The payload of an event log ``Changes`` RPC: the store and the sequence to start at."""
+
     public_key: str
     store_id: StoreId
     start_sequence: int
 
 
 class LatestSequencePayload(TypedDict):
+    """The payload of an event log ``LatestSequence`` RPC: the store to ask about."""
+
     public_key: str
     store_id: StoreId
 
@@ -380,17 +388,23 @@ CompactionResultSchema = S.Union(CompactionSnapshot, CompactionNoOp)
 
 
 class CompactionScopePayload(TypedDict):
+    """The payload of a compaction RPC that names a store."""
+
     public_key: str
     store_id: StoreId
 
 
 class CompactionStagePayload(TypedDict):
+    """The payload of a compaction RPC that names a store and a staged compaction."""
+
     public_key: str
     store_id: StoreId
     stage_id: str
 
 
 class CompactionFetchPayload(TypedDict):
+    """The payload of a compaction fetch: which batches of a staged compaction to send."""
+
     public_key: str
     store_id: StoreId
     stage_id: str
@@ -399,6 +413,8 @@ class CompactionFetchPayload(TypedDict):
 
 
 class CompactionPartPayload(TypedDict):
+    """The payload of a compaction upload: one chunk of a staged compaction."""
+
     public_key: str
     store_id: StoreId
     stage_id: str
@@ -406,6 +422,8 @@ class CompactionPartPayload(TypedDict):
 
 
 class CompactionCommitPayload(TypedDict):
+    """The payload of a compaction commit: the staged compaction's result."""
+
     public_key: str
     store_id: StoreId
     stage_id: str

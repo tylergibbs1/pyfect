@@ -148,6 +148,8 @@ W_co = TypeVar("W_co", covariant=True)
 
 @dataclass(frozen=True, slots=True)
 class SetupOptions(Generic[W_co]):
+    """What a worker's setup gets: the worker and the scope it lives in."""
+
     worker: W_co
     scope: CloseableScope
 

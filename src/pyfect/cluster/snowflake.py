@@ -34,6 +34,8 @@ EPOCH_MILLIS = 1_735_689_600_000
 
 @dataclass(frozen=True, slots=True)
 class Parts:
+    """A snowflake id taken apart: its timestamp, machine id and sequence number."""
+
     timestamp: int
     machine_id: MachineId
     sequence: int

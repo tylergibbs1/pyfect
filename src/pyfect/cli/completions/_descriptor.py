@@ -24,11 +24,15 @@ from pyfect.cli.primitive import PathType
 
 @dataclass(frozen=True, slots=True)
 class Choice:
+    """A completion value type: one of a fixed set of strings."""
+
     values: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
 class PathKind:
+    """A completion value type: a path to a file, a directory or either."""
+
     path_type: PathType
 
 
@@ -39,6 +43,8 @@ type ArgumentType = Literal["String", "Int", "Finite", "Date"] | Choice | PathKi
 
 @dataclass(frozen=True, slots=True)
 class FlagDescriptor:
+    """A flag as a completion script sees it: names, value type and whether it repeats."""
+
     name: str
     aliases: tuple[str, ...]
     description: str | None
@@ -52,6 +58,8 @@ class FlagDescriptor:
 
 @dataclass(frozen=True, slots=True)
 class ArgumentDescriptor:
+    """An argument as a completion script sees it: name, type and whether it repeats."""
+
     name: str
     description: str | None
     required: bool
@@ -61,6 +69,8 @@ class ArgumentDescriptor:
 
 @dataclass(frozen=True, slots=True)
 class CommandDescriptor:
+    """A command as a completion script sees it: its flags, arguments and subcommands."""
+
     name: str
     description: str | None
     flags: tuple[FlagDescriptor, ...] = ()

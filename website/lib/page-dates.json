@@ -1,0 +1,242 @@
+{
+  "": {
+    "date": "2026-11-25",
+    "sha256": "be5d178b2d98159813c0217c99ce1d9c9c6bf1e604f972be46722ef1e41deb68"
+  },
+  "ai": {
+    "date": "2026-11-25",
+    "sha256": "ba1c259cdb0d6ac7a3a47a81e4d8fac3de35098f4ce20985427143705091c899"
+  },
+  "ai-budgets": {
+    "date": "2026-11-25",
+    "sha256": "5fa652ff5e9507f40bbb18e852b4afc695c7b12c460836f8fb17c200daa2e8d6"
+  },
+  "ai-durable": {
+    "date": "2026-11-24",
+    "sha256": "762c968c075b24c2ab93fb97844d6c8fc3828de60c737eb2664631f9315d2768"
+  },
+  "ai-interrupt-safe-chat": {
+    "date": "2026-11-25",
+    "sha256": "aa8813a6973f141f7199acffa908408f3ebba633d152ca376ef1b5c525dc5461"
+  },
+  "ai-skills": {
+    "date": "2026-11-25",
+    "sha256": "d1e3295c5da5991c3750a71c5c5297664a02a84d7acc390b0c96ceb774726c1d"
+  },
+  "ai-tool-ledger": {
+    "date": "2026-11-25",
+    "sha256": "7acb77684c08befa434462389c0f0941e2a202630f8d33278a504af0b5704c5a"
+  },
+  "asyncio-apps": {
+    "date": "2026-11-25",
+    "sha256": "ebec4c0842bb18a377860e7d08882d231e5af7c490b009907c96b34327e6c4f7"
+  },
+  "atoms": {
+    "date": "2026-11-25",
+    "sha256": "2ecaa84ccf14c2ab3c076a5b250f20ae48c7555892b27ec49c2a238545d62a64"
+  },
+  "batching": {
+    "date": "2026-11-25",
+    "sha256": "55197cc92abbbd08a581c194e7182ed4054221c722b50d97535014ddbce9c07a"
+  },
+  "chat": {
+    "date": "2026-11-24",
+    "sha256": "b1a1bf79a7e366b5f969d211f53b5a2bc4c5fb1e236504409c34376099d6bc68"
+  },
+  "chat-discord": {
+    "date": "2026-11-24",
+    "sha256": "99d8cc3a7e3a5e9b5751c2bf3cf88894e9fa7591827820e4a2cbfe8fd7357b76"
+  },
+  "chat-slack": {
+    "date": "2026-11-24",
+    "sha256": "a826d5bf78eea8afadca231c016a41a7ccffdd5bee00c7e34d23e384e7483bbe"
+  },
+  "chat-teams": {
+    "date": "2026-11-24",
+    "sha256": "421329f1575c5396c3ff85ac8b20b8c841e67216d27d1e3d4fafed7df7c17ec9"
+  },
+  "chat-telegram": {
+    "date": "2026-11-25",
+    "sha256": "f54acb11d32a2f9a48bb79c7d5e3e2137eb33ab241418049abf4c7497e167629"
+  },
+  "chat-whatsapp": {
+    "date": "2026-11-25",
+    "sha256": "8f52bb6acbf6d623303c168befb215b53b437a21f2f18f67e277da31b7552489"
+  },
+  "cli": {
+    "date": "2026-11-25",
+    "sha256": "2b650522bbd1230fa836abbc75f4a14255e43b490c341cf54f7d6f5b773a1731"
+  },
+  "clickhouse": {
+    "date": "2026-11-10",
+    "sha256": "feca842cec5ad6063ad0134a43d9b97919541ceb0ca95ddee97365f978e20ecd"
+  },
+  "cluster": {
+    "date": "2026-11-25",
+    "sha256": "ce91a501e6716947e2912343745883e1be6e135efc8f4e57445f4a421bac3e88"
+  },
+  "concurrency": {
+    "date": "2026-11-25",
+    "sha256": "3bcec7444d3ab0dcab1a694760a00435f2c11cb5fa991b4e273d41f391a0f10c"
+  },
+  "config": {
+    "date": "2026-11-25",
+    "sha256": "bc043c437ceafddb832f22c602497192e5851f67efed5774bc77cbdc1f650de8"
+  },
+  "crypto": {
+    "date": "2026-11-24",
+    "sha256": "e5fb1d7a9cde09229e1441497197154a1377b9b1416f286d6772cb937fa03e9c"
+  },
+  "data-formats": {
+    "date": "2026-11-24",
+    "sha256": "5df80c378bb6570dcdedc4635e9fbc77549ebdaced1f7def098cf3b5e49a381f"
+  },
+  "devtools": {
+    "date": "2026-11-25",
+    "sha256": "13c97400a7cda8d1b72af4a1af90433ae8f25c7a040d8aa2b8043eff742289f6"
+  },
+  "effects": {
+    "date": "2026-11-25",
+    "sha256": "ba6779ed6c7c839ded66fea709963bf99a88cc490fa7d4da8fec28ed234666a3"
+  },
+  "errors": {
+    "date": "2026-11-25",
+    "sha256": "e81af303146ca172b470847a6b80ce8e833082ba10502ba944456b7ef8a02c75"
+  },
+  "eventlog": {
+    "date": "2026-11-24",
+    "sha256": "e8b6e99cf136b3319f1962a9900a7227db705f7a9127bf4c2faffc3c9c541326"
+  },
+  "eventlog-upgrade": {
+    "date": "2026-11-25",
+    "sha256": "e98d7168af65d94f12810158309718232ad677c53f2fc1a78932b90d9ecd87cf"
+  },
+  "graph": {
+    "date": "2026-11-03",
+    "sha256": "fb2911b177bc67c482eb08a93a3a83b4539989ae5b2d340f559c31b29d7c9f6a"
+  },
+  "graphql": {
+    "date": "2026-11-10",
+    "sha256": "f68d94e118b16b4814daf23aab944ef7573e1d70edd7ade5766d50f901478dde"
+  },
+  "http-api": {
+    "date": "2026-11-25",
+    "sha256": "054d39958d8382a14bbdc7ed446a8061e149c5cf1a44c1879a3eba1a52c30618"
+  },
+  "http-server": {
+    "date": "2026-11-25",
+    "sha256": "1d54c2131419f02f410ba1f5dd9bfe020dba027191739498f81373cbe29433a0"
+  },
+  "installation": {
+    "date": "2026-11-25",
+    "sha256": "54691b5e9b9594e182971aab9fcb2219a789993a39da060978795d5c9e705ed5"
+  },
+  "libsql": {
+    "date": "2026-11-25",
+    "sha256": "3e850a1c6e2d8e20dd485d1086b76bb60ce6c0e02ae053bce376c00b0be8d69c"
+  },
+  "mcp": {
+    "date": "2026-11-25",
+    "sha256": "411af010a36b1c1ab9d14ff901c7ff4809b9ae5f3d1d4df4d426fa6519e48182"
+  },
+  "models": {
+    "date": "2026-11-14",
+    "sha256": "859fdda4d5719f8881460cc78f33893e8608bfd7142747791e42391ac2b04015"
+  },
+  "mssql": {
+    "date": "2026-11-25",
+    "sha256": "46129f2003743f9fc4208beaf3f0b81b46a61cd2809435a2cdd437e869645c31"
+  },
+  "mysql": {
+    "date": "2026-11-25",
+    "sha256": "0852318902007d4016d7868e1739185bd3fab3bbde088d4c25153fe3e0904012"
+  },
+  "observability": {
+    "date": "2026-11-25",
+    "sha256": "2ec190263c123400ef0d474f0fedbbfd1895b7c2bfef1ba635aa21d21b8cc300"
+  },
+  "optics": {
+    "date": "2026-11-25",
+    "sha256": "84ec91d5a911f011b5660520ae0351fee1e8fc5baa143a51814dd41280697ccf"
+  },
+  "parallel": {
+    "date": "2026-11-19",
+    "sha256": "b8b31e3f60d1433260b755fd5fca8997877715eb3da0835221faa5f9a67079f4"
+  },
+  "persistence": {
+    "date": "2026-11-25",
+    "sha256": "6ecb230f45e338abe1527b9d2328540b97bd277415488dea907d5d38623e1b81"
+  },
+  "platform": {
+    "date": "2026-11-25",
+    "sha256": "43b2123ae6d5ed28180d3e681aebf5bc567bc9480712edccb80024d0a78c39ce"
+  },
+  "postgres": {
+    "date": "2026-11-17",
+    "sha256": "0126084f5b7552c63ba861c83006b0a239dcb72dacf0af68c5a23d12c875f47f"
+  },
+  "pydantic-msgspec": {
+    "date": "2026-11-25",
+    "sha256": "c681a987e91542b2f9073671dafc3af434b419f8649f7fb783e023406ac17a13"
+  },
+  "rate-limiting": {
+    "date": "2026-11-25",
+    "sha256": "a419e918ec4761c01301929d93331c1dff75ac745a4e1f20cf3afb3b5fef06a7"
+  },
+  "resources": {
+    "date": "2026-11-25",
+    "sha256": "689c8400a45481f6938ac3c03395f01ddf3355fe30d3766cfc74c5ffece9ab6b"
+  },
+  "rpc": {
+    "date": "2026-11-25",
+    "sha256": "026518d084d1e1164961f1df581e033a480d1846d41ae0aa068f4cafefcaaae7"
+  },
+  "schedules": {
+    "date": "2026-11-25",
+    "sha256": "66ef95661eb5479766a4be07bfbc86145d3b019ea3d9bd22af90194ea748af61"
+  },
+  "schema": {
+    "date": "2026-11-25",
+    "sha256": "3dd978c4640ec57be1d17a9883b3986fe1a5a2e2ec032ef9032d57dc974253ba"
+  },
+  "services": {
+    "date": "2026-11-25",
+    "sha256": "78dafa37b70bf9811cfb52e627fc51095b5046434af55363320f9f9d09eda77b"
+  },
+  "sql": {
+    "date": "2026-11-25",
+    "sha256": "22f36549ac361d0c24bc85e7f32568b855ae5a5e656f2425e23ff7ecf408bd43"
+  },
+  "streams": {
+    "date": "2026-11-25",
+    "sha256": "ab2693df662510f7d6dbc72b4b276cb6b24a609121193eb1bb57fdb285c01a76"
+  },
+  "subinterpreters": {
+    "date": "2026-11-20",
+    "sha256": "abe1102aae70cc812706cbd5ad1e884ee0acf54952bfe0360bdba9d9939fe6ec"
+  },
+  "testing": {
+    "date": "2026-11-25",
+    "sha256": "92367ad88ce3c21427a4be1ab23a012c5cccbfbaabf43dc0c37538ae06463df1"
+  },
+  "testing-explore": {
+    "date": "2026-11-25",
+    "sha256": "62509a70c354164bec8dd868b71242435a7854b657836dc6c36994ab76a55c04"
+  },
+  "threads": {
+    "date": "2026-11-19",
+    "sha256": "639351b8a69f5722aa04d0f64a456efa0c02f7f21166ee791d397784927ed654"
+  },
+  "transactions": {
+    "date": "2026-11-25",
+    "sha256": "88be1a4cb25084fd765e1992e14f02cd2152a60030e78eee91c83662f5242a1b"
+  },
+  "workers": {
+    "date": "2026-11-25",
+    "sha256": "4774a6346f9349f5f754dc0a6e18cd5b30a24ef9f242abcc29bf77c87a5145c7"
+  },
+  "workflows": {
+    "date": "2026-11-18",
+    "sha256": "05740f3de716d257eb675d9f00bcfd90ed4c26c4017274993d3a986382ce9dd4"
+  }
+}

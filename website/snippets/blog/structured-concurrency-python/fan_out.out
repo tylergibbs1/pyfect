@@ -1,0 +1,4 @@
+Success(value=['page 1', 'page 2', 'page 4', 'page 5'])
+page 1 interrupted
+page 2 interrupted
+Ok(value=NotFound(page=3))

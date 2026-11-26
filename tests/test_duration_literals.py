@@ -617,9 +617,9 @@ def test_only_parameters_that_parse_an_input_are_duration_slots() -> None:
     assert {0} <= slots["to_millis"].positions
 
 
-# Prose: the guides, the README and every docstring in `src`. Inline code and docstring
-# examples go through the checks above; the words around them through the patterns below.
-DOCS = (ROOT / "website" / "content" / "docs", ROOT / "README.md")
+# Prose: the guides, the blog's posts, the README and every docstring in `src`. Inline code and
+# docstring examples go through the checks above; the words around them through the patterns below.
+DOCS = (ROOT / "website" / "content", ROOT / "README.md")
 _CODE_SPAN = re.compile(r"``(.+?)``|`([^`\n]+)`")
 _EXAMPLE_LINE = re.compile(r"^ {4,}(?!>>>)(\S.*)$", re.MULTILINE)
 _CALLED_SECONDS = re.compile(r"`{1,2}([A-Za-z_][\w.]*)\(\s*seconds?\s*\)`{1,2}")

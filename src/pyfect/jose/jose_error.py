@@ -101,6 +101,8 @@ class AlgorithmNotAllowed(JoseErrorReason):
 
 @dataclass(eq=False)
 class SignatureVerificationFailed(JoseErrorReason):
+    """JOSE error reason: the signature could not be verified."""
+
     tag: ClassVar[ReasonTag] = "SignatureVerificationFailed"
 
     @property
@@ -110,6 +112,8 @@ class SignatureVerificationFailed(JoseErrorReason):
 
 @dataclass(eq=False)
 class DecryptionFailed(JoseErrorReason):
+    """JOSE error reason: the token could not be decrypted."""
+
     tag: ClassVar[ReasonTag] = "DecryptionFailed"
 
     @property
@@ -119,6 +123,8 @@ class DecryptionFailed(JoseErrorReason):
 
 @dataclass(eq=False)
 class KeyNotFound(JoseErrorReason):
+    """JOSE error reason: no key matches the token's algorithm and key id."""
+
     tag: ClassVar[ReasonTag] = "KeyNotFound"
 
     @property
@@ -128,6 +134,8 @@ class KeyNotFound(JoseErrorReason):
 
 @dataclass(eq=False)
 class AmbiguousKey(JoseErrorReason):
+    """JOSE error reason: more than one key matches the token's algorithm and key id."""
+
     tag: ClassVar[ReasonTag] = "AmbiguousKey"
 
     @property

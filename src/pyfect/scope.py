@@ -275,7 +275,7 @@ def _run_parallel(entries: _Entries, ex: Exit[Any, Any]) -> Effect[None]:
 
 
 class Scope(Tag[CloseableScope]):
-    pass
+    """Tag of the scope resources register their release in, closed when it ends."""
 
 
 def make(strategy: Strategy = "sequential") -> Effect[CloseableScope]:

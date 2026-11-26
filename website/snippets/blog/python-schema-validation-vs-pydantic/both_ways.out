@@ -1,0 +1,4 @@
+Order(id=7, customer='Ada', total=1234, placed_at=datetime.datetime(2026, 11, 24, 9, 30, tzinfo=datetime.timezone.utc), tags=())
+{'id': 7, 'customer': 'Ada', 'total': '12.34', 'placed_at': '2026-11-24T09:30:00.000Z', 'tags': ()}
+Expected a value greater than 0
+  at ["id"]

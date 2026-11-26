@@ -72,6 +72,8 @@ def _define(cls: type[_Wire], identifier: str, *specs: Key | Const) -> None:
 
 @dataclass(frozen=True)
 class TextPart(_Wire):
+    """A response part: generated text."""
+
     type: ClassVar[Literal["text"]] = "text"
     text: str
     metadata: ProviderMetadata = field(default_factory=_metadata)
@@ -79,6 +81,8 @@ class TextPart(_Wire):
 
 @dataclass(frozen=True)
 class TextStartPart(_Wire):
+    """A stream part: a text block starts."""
+
     type: ClassVar[Literal["text-start"]] = "text-start"
     id: str
     metadata: ProviderMetadata = field(default_factory=_metadata)
@@ -86,6 +90,8 @@ class TextStartPart(_Wire):
 
 @dataclass(frozen=True)
 class TextDeltaPart(_Wire):
+    """A stream part: the next piece of a text block."""
+
     type: ClassVar[Literal["text-delta"]] = "text-delta"
     id: str
     delta: str
@@ -94,6 +100,8 @@ class TextDeltaPart(_Wire):
 
 @dataclass(frozen=True)
 class TextEndPart(_Wire):
+    """A stream part: a text block ends."""
+
     type: ClassVar[Literal["text-end"]] = "text-end"
     id: str
     metadata: ProviderMetadata = field(default_factory=_metadata)
@@ -101,6 +109,8 @@ class TextEndPart(_Wire):
 
 @dataclass(frozen=True)
 class ReasoningPart(_Wire):
+    """A response part: the model's reasoning text."""
+
     type: ClassVar[Literal["reasoning"]] = "reasoning"
     text: str
     metadata: ProviderMetadata = field(default_factory=_metadata)
@@ -108,6 +118,8 @@ class ReasoningPart(_Wire):
 
 @dataclass(frozen=True)
 class ReasoningStartPart(_Wire):
+    """A stream part: a reasoning block starts."""
+
     type: ClassVar[Literal["reasoning-start"]] = "reasoning-start"
     id: str
     metadata: ProviderMetadata = field(default_factory=_metadata)
@@ -115,6 +127,8 @@ class ReasoningStartPart(_Wire):
 
 @dataclass(frozen=True)
 class ReasoningDeltaPart(_Wire):
+    """A stream part: the next piece of a reasoning block."""
+
     type: ClassVar[Literal["reasoning-delta"]] = "reasoning-delta"
     id: str
     delta: str
@@ -123,6 +137,8 @@ class ReasoningDeltaPart(_Wire):
 
 @dataclass(frozen=True)
 class ReasoningEndPart(_Wire):
+    """A stream part: a reasoning block ends."""
+
     type: ClassVar[Literal["reasoning-end"]] = "reasoning-end"
     id: str
     metadata: ProviderMetadata = field(default_factory=_metadata)
@@ -130,6 +146,8 @@ class ReasoningEndPart(_Wire):
 
 @dataclass(frozen=True)
 class ToolParamsStartPart(_Wire):
+    """A stream part: a tool call's parameters start, with the tool's name."""
+
     type: ClassVar[Literal["tool-params-start"]] = "tool-params-start"
     id: str
     name: str
@@ -139,6 +157,8 @@ class ToolParamsStartPart(_Wire):
 
 @dataclass(frozen=True)
 class ToolParamsDeltaPart(_Wire):
+    """A stream part: the next piece of a tool call's JSON parameters."""
+
     type: ClassVar[Literal["tool-params-delta"]] = "tool-params-delta"
     id: str
     delta: str
@@ -147,6 +167,8 @@ class ToolParamsDeltaPart(_Wire):
 
 @dataclass(frozen=True)
 class ToolParamsEndPart(_Wire):
+    """A stream part: a tool call's parameters are complete."""
+
     type: ClassVar[Literal["tool-params-end"]] = "tool-params-end"
     id: str
     metadata: ProviderMetadata = field(default_factory=_metadata)
@@ -240,6 +262,8 @@ class ToolApprovalRequestPart(_Wire):
 
 @dataclass(frozen=True)
 class FilePart(_Wire):
+    """A response part: a file the model generated, with its media type."""
+
     type: ClassVar[Literal["file"]] = "file"
     media_type: str
     data: bytes
@@ -248,6 +272,8 @@ class FilePart(_Wire):
 
 @dataclass(frozen=True)
 class DocumentSourcePart(_Wire):
+    """A response part: a document the model cited as a source."""
+
     type: ClassVar[Literal["source"]] = "source"
     source_type: ClassVar[Literal["document"]] = "document"
     id: str
@@ -259,6 +285,8 @@ class DocumentSourcePart(_Wire):
 
 @dataclass(frozen=True)
 class UrlSourcePart(_Wire):
+    """A response part: a web page the model cited as a source."""
+
     type: ClassVar[Literal["source"]] = "source"
     source_type: ClassVar[Literal["url"]] = "url"
     id: str
@@ -269,6 +297,8 @@ class UrlSourcePart(_Wire):
 
 @dataclass(frozen=True)
 class ResponseMetadataPart(_Wire):
+    """A response part: the response's id, model and timestamp."""
+
     type: ClassVar[Literal["response-metadata"]] = "response-metadata"
     id: str | None = None
     model_id: str | None = None
@@ -286,6 +316,8 @@ FINISH_REASON = S.Literals(
 
 @dataclass(frozen=True)
 class InputTokens(_Wire):
+    """Input tokens of a response: total, uncached, and read from or written to the cache."""
+
     uncached: int | None = None
     total: int | None = None
     cache_read: int | None = None
@@ -294,6 +326,8 @@ class InputTokens(_Wire):
 
 @dataclass(frozen=True)
 class OutputTokens(_Wire):
+    """Output tokens of a response: total, text and reasoning."""
+
     total: int | None = None
     text: int | None = None
     reasoning: int | None = None
@@ -309,6 +343,8 @@ class Usage(_Wire):
 
 @dataclass(frozen=True)
 class FinishPart(_Wire):
+    """A response part: why generation finished, with token usage."""
+
     type: ClassVar[Literal["finish"]] = "finish"
     reason: FinishReason
     usage: Usage = field(default_factory=Usage)
@@ -318,6 +354,8 @@ class FinishPart(_Wire):
 
 @dataclass(frozen=True)
 class ErrorPart(_Wire):
+    """A stream part: an error the provider reported mid-stream."""
+
     type: ClassVar[Literal["error"]] = "error"
     error: object
     metadata: ProviderMetadata = field(default_factory=_metadata)

@@ -98,6 +98,8 @@ __all__ = [
 
 @dataclass(eq=False)
 class EventLogServerStoreError(TaggedError):
+    """An event log server's store was not found or its storage failed."""
+
     reason: Literal["NotFound", "PersistenceFailure"]
     public_key: str | None = None
     store_id: StoreId | None = None
@@ -106,6 +108,8 @@ class EventLogServerStoreError(TaggedError):
 
 @dataclass(eq=False)
 class EventLogServerAuthError(TaggedError):
+    """A client was not authorized, or not allowed, to use an event log store."""
+
     reason: Literal["Unauthorized", "Forbidden"]
     public_key: str
     store_id: StoreId | None = None
@@ -147,7 +151,7 @@ class EventLogServerAuthorization(
     Tag[EventLogServerAuthorizationService],
     key="effect/eventlog/EventLogServerUnencrypted/EventLogServerAuthorization",
 ):
-    pass
+    """Tag of the service that decides which clients may read and write which stores."""
 
 
 class StoreMappingService(ABC):
@@ -173,7 +177,7 @@ class StoreMappingService(ABC):
 class StoreMapping(
     Tag[StoreMappingService], key="effect/eventlog/EventLogServerUnencrypted/StoreMapping"
 ):
-    pass
+    """Tag of the service that maps a client's store to the server's store."""
 
 
 def _store_not_found(store_id: StoreId, public_key: str | None) -> EventLogServerStoreError:
@@ -266,7 +270,7 @@ class StorageService(ABC):
 
 
 class Storage(Tag[StorageService], key="effect/eventlog/EventLogServerUnencrypted/Storage"):
-    pass
+    """Tag of the storage an unencrypted event log server keeps entries in."""
 
 
 _EMPTY_PRIVATE_KEY = redacted(bytes(32))
@@ -773,7 +777,7 @@ class EventLogServerUnencryptedService:
 class EventLogServerUnencrypted(
     Tag[EventLogServerUnencryptedService], key="effect/eventlog/EventLogServerUnencrypted"
 ):
-    pass
+    """Tag of an event log server that can read the entries it stores."""
 
 
 def make_write(

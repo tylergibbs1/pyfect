@@ -1,0 +1,181 @@
+---
+title: "Typed errors in Python without exceptions"
+description: "Typed errors in Python that pyright checks: pyfect puts expected failures in the type, so you handle or declare them. Compared with Result types and exceptions."
+date: "2026-11-24"
+author: "Tyler Gibbs"
+tags: ["python", "typed errors", "pyright", "error handling", "result type"]
+---
+
+Python's type system tracks what a function returns, but not how it fails. A function typed
+`-> str` can raise anything, and pyright has no way to tell its callers. This post shows how
+pyfect gives Python typed errors: each expected failure is part of the function's type, and
+pyright makes every caller either handle it or pass it on. If you have searched for a Python
+Result type that works with pyright, this is a different answer to the same problem.
+
+pyfect is a port of [Effect](https://effect.website) to Python (`pip install pyfect-dev`,
+`import pyfect`). The error channel is the part most people notice first, so it is the part
+this post covers.
+
+## The problem with exceptions nothing tracks
+
+Here is ordinary Python. `load_user` raises when a user is missing, and `greeting` calls it:
+
+<CodeOutput>
+
+<include meta='title="exceptions.py"'>../../snippets/blog/typed-errors-in-python/exceptions.py</include>
+
+<include lang="text">../../snippets/blog/typed-errors-in-python/exceptions.out</include>
+
+</CodeOutput>
+
+pyright is happy with this file. `greeting` says it returns a `str`, and it does, until it
+doesn't. The only record that `UserNotFound` exists is the `raise` statement two calls down,
+plus maybe a docstring. Rename the exception, add a second one, or call `greeting` from a new
+place, and nothing points at the code that now needs to change. You find out from a traceback.
+
+That is fine for bugs. A `KeyError` from a typo should crash. It is less fine for failures
+you expect: a missing user, an expired token, a payment the bank declined. Those are part of
+what the function does, and callers need to decide what happens next.
+
+## Errors in the type
+
+In pyfect a function returns an `Effect[A, E]`: a description of work that succeeds with an
+`A` or fails with an `E`. Expected errors are classes that subclass `fx.TaggedError`. Inside a
+generator you fail by yielding the error, the same way you would `yield from` another effect:
+
+<CodeOutput>
+
+<include meta='title="tagged.py"'>../../snippets/blog/typed-errors-in-python/tagged.py</include>
+
+<include lang="text">../../snippets/blog/typed-errors-in-python/tagged.out</include>
+
+</CodeOutput>
+
+Nothing in `greeting` mentions an error, yet its type is
+`Effect[str, UserNotFound | Suspended]`. `@fx.fn` infers the union from every error the body
+yields, including the ones that come up through `yield from load_user(...)`. The
+`assert_type` line is checked by pyright, so the type in that comment is what pyright
+infers, not what I hope it infers.
+
+A failed run gives back a `Failure` holding a `Cause`, and the typed error is in it as a
+value. Nothing was raised.
+
+One habit to learn: write `return (yield from UserNotFound(user_id))`, not
+`raise UserNotFound(user_id)`. A `raise` inside the generator is treated as a defect (a bug):
+the error is not in the type, typed handlers skip it, and pyright can't warn you. The
+[errors guide](/docs/errors) covers the difference.
+
+## Handling one error with catch_tag
+
+`fx.catch_tag(ErrorClass, handler)` handles one error class and removes it from the type.
+Because it removes something, you use it through `.pipe(...)`, not as a method. That isn't
+style: pyright can't infer the removal from a method call, and the curried form is what keeps
+the narrowing correct.
+
+<CodeOutput>
+
+<include meta='title="catch_tag.py"'>../../snippets/blog/typed-errors-in-python/catch_tag.py</include>
+
+<include lang="text">../../snippets/blog/typed-errors-in-python/catch_tag.out</include>
+
+</CodeOutput>
+
+After the first `catch_tag`, the type is `Effect[str, Suspended]`. After the second, it is
+`Effect[str]`, which is shorthand for no errors left. `page` is annotated to return exactly
+that, so if someone later adds a third error to `load_user`, `page` stops type-checking until
+they decide what it should do with it.
+
+There are other handlers: `catch_all` for every typed error at once, `map_error` to turn one
+error into another, `retry` with a schedule, and `.result()` if you want an `Ok` or `Err`
+value to inspect yourself.
+
+## How pyright makes you handle or declare
+
+Every typed error ends one of two ways: something handles it, or the function's type declares
+it. The checked file below shows both rules. Each marked line is a pyright error, and the
+project's build fails if one stops being an error, so these comments can't drift from what
+pyright really reports.
+
+<include meta='title="must_handle.py"'>../../snippets/blog/typed-errors-in-python/must_handle.py</include>
+
+Without the ignore comments, pyright says:
+
+```text
+must_handle.py:26:12 - error: Type "Effect[str, UserNotFound, Never]" is not assignable
+  to return type "Effect[str, Never, Never]"
+    Type "UserNotFound" is not assignable to type "Never" (reportReturnType)
+must_handle.py:30:24 - error: Argument of type "Effect[str, UserNotFound, Never]" cannot
+  be assigned to parameter "eff" of type "Effect[A@run_blocking, Never, Never]"
+    Type "UserNotFound" is not assignable to type "Never" (reportArgumentType)
+```
+
+The first is the "declare" rule. A function that says it returns `Effect[str]` has promised
+callers there is nothing to handle, so returning something that can fail with `UserNotFound`
+is a type error. Widen the annotation to `Effect[str, UserNotFound]` or handle the error.
+
+The second is the "handle" rule at the edge of your program. `fx.run_blocking` turns an effect
+into a plain value, and it only accepts effects with no errors left. If you want to run
+something that can still fail, `fx.run_blocking_exit` gives you the outcome as an `Exit` value
+to look at.
+
+## Wrapping code that raises
+
+Most libraries you call will still raise. `fx.try_` runs a function and turns what it raises
+into a typed error with `catch=`. If `catch` itself raises, that is a defect.
+
+<CodeOutput>
+
+<include meta='title="try_.py"'>../../snippets/blog/typed-errors-in-python/try_.py</include>
+
+<include lang="text">../../snippets/blog/typed-errors-in-python/try_.out</include>
+
+</CodeOutput>
+
+Do this once, at the boundary where the library meets your code. From there inward, the
+failure is a `BadConfig` in the type, not a `json.JSONDecodeError` someone has to remember.
+For blocking calls there is `fx.try_blocking`, which runs on a thread so other work keeps
+going.
+
+## Python exceptions vs Result types vs an error channel
+
+There are three ways to model expected failures in Python today. Each has a real cost.
+
+**Plain exceptions** need no library and every Python developer already reads them. Tracebacks
+are good. The cost is the one this post started with: the type checker can't see them, so
+keeping callers in sync is up to discipline and tests. For scripts and for genuine bugs,
+exceptions are the right tool, and pyfect keeps them for bugs too.
+
+**Result types**, such as `Result` from the [returns](https://github.com/dry-python/returns)
+library, make the error a value: a function returns `Success(value)` or `Failure(error)`, and
+the type says which errors are possible. That gets you most of the type safety. Two things get
+in the way in practice. Chaining with `bind` keeps the error type the same across steps; the
+library's own docs point you to a separate `unify` function when steps fail differently, which
+is where unions of errors get awkward. And several of its typing features rely on a mypy
+plugin, so on pyright you get less of the checking. `returns` also has `@safe` to turn a raising
+function into one returning `Result`, which is close to `fx.try_` above.
+
+**An error channel**, which is what pyfect has, also makes errors values in the type. The
+differences from a Result type:
+
+- You write ordinary-looking code with `yield from` instead of chaining `bind` and `map`, and
+  pyright unions the errors for you, as `greeting` showed.
+- Handlers remove exactly the error they handle (`catch_tag`), so the remaining type is always
+  precise.
+- Expected failures and bugs are kept apart. A `ZeroDivisionError` inside an effect is a
+  defect, which typed handlers don't see, so a bug never gets swallowed by a handler meant for
+  `NotFound`.
+- The same `Effect` type carries the services a function needs and runs concurrently with
+  timeouts and interruption. The errors are one part of a larger model.
+
+The cost is that larger model. You are writing effects, not plain functions, and you need to
+learn `yield from`, `@fx.fn`, and when to use `.pipe`. pyfect needs Python 3.13 or newer, and
+its types are built around pyright's inference in strict mode. For a small script,
+that isn't worth it. For a service where the list of things that can fail keeps growing, it
+usually is.
+
+## Where to go next
+
+The [errors guide](/docs/errors) covers defects, exception groups, and matching on an `Exit`.
+If you have not installed pyfect yet, [installation](/docs/installation) covers the pyright
+settings it expects. The same `Effect` type also tracks the services a function needs, which
+[services and layers](/docs/services) explains.

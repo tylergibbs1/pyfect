@@ -185,6 +185,8 @@ def current_redacted_names() -> tuple[Pattern, ...]:
 
 @dataclass(frozen=True, slots=True)
 class HeaderParseErrorReason:
+    """Why a header value failed to parse: an invalid HTTP date or ``Retry-After``."""
+
     tag: Literal["InvalidHttpDate", "InvalidRetryAfter"]
     input: str
 

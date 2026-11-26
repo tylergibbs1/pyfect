@@ -1,0 +1,5 @@
+open database
+mail to ada@example.com: Welcome!
+Success(value=1)
+Failure(cause=Cause(reasons=(Fail(error=EmailTaken(email='ada@example.com')),)))
+close database

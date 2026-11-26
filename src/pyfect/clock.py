@@ -25,6 +25,8 @@ from pyfect.effect import never
 
 
 class ClockService(Protocol):
+    """A clock: wall-clock and monotonic time, and sleeping."""
+
     def current_time_millis_unsafe(self) -> float:
         """Wall-clock time, milliseconds since the epoch (Effect's
         ``currentTimeMillisUnsafe``), always a ``float``: whole on the live
@@ -84,6 +86,8 @@ class LiveClock:
 
 
 class Clock(Reference[ClockService]):
+    """The clock effects read and sleep on: the live clock unless a test provides another."""
+
     @classmethod
     def default(cls) -> ClockService:
         return LiveClock()

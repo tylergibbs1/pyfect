@@ -61,12 +61,16 @@ __all__ = [
 
 
 class Status(TypedDict):
+    """An OTLP span status: unset, ok or error, with a message."""
+
     code: Literal[0, 1, 2]
     """Unset, Ok or Error."""
     message: NotRequired[str]
 
 
 class Event(TypedDict):
+    """An OTLP span event: its name, time and attributes."""
+
     name: str
     timeUnixNano: str
     droppedAttributesCount: int
@@ -74,6 +78,8 @@ class Event(TypedDict):
 
 
 class Link(TypedDict):
+    """An OTLP span link to another span, with attributes."""
+
     traceId: str
     spanId: str
     attributes: list[KeyValue]
@@ -81,6 +87,8 @@ class Link(TypedDict):
 
 
 class OtlpSpan(TypedDict):
+    """An OTLP span: ids, parent, name, kind, timing, attributes, events, links and status."""
+
     traceId: str
     spanId: str
     parentSpanId: NotRequired[str]
@@ -103,12 +111,16 @@ class _InstrumentationScope(TypedDict):
 
 
 class ScopeSpan(TypedDict):
+    """OTLP spans of one instrumentation scope."""
+
     scope: _InstrumentationScope
     spans: list[OtlpSpan]
     schemaUrl: NotRequired[str]
 
 
 class ResourceSpan(TypedDict):
+    """OTLP spans of one resource, grouped by scope."""
+
     resource: Resource
     scopeSpans: list[ScopeSpan]
     schemaUrl: NotRequired[str]

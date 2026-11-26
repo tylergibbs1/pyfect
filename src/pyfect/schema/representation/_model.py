@@ -79,36 +79,50 @@ class _Node:
 
 @dataclass(frozen=True, slots=True)
 class Null(_Node):
+    """Schema representation of ``null``."""
+
     tag: ClassVar[TypingLiteral["Null"]] = "Null"
 
 
 @dataclass(frozen=True, slots=True)
 class Undefined(_Node):
+    """Schema representation of ``undefined``."""
+
     tag: ClassVar[TypingLiteral["Undefined"]] = "Undefined"
 
 
 @dataclass(frozen=True, slots=True)
 class Void(_Node):
+    """Schema representation of ``void``."""
+
     tag: ClassVar[TypingLiteral["Void"]] = "Void"
 
 
 @dataclass(frozen=True, slots=True)
 class ObjectKeyword(_Node):
+    """Schema representation of any object."""
+
     tag: ClassVar[TypingLiteral["ObjectKeyword"]] = "ObjectKeyword"
 
 
 @dataclass(frozen=True, slots=True)
 class Never(_Node):
+    """Schema representation of a type with no values."""
+
     tag: ClassVar[TypingLiteral["Never"]] = "Never"
 
 
 @dataclass(frozen=True, slots=True)
 class Unknown(_Node):
+    """Schema representation of any value, typed as unknown."""
+
     tag: ClassVar[TypingLiteral["Unknown"]] = "Unknown"
 
 
 @dataclass(frozen=True, slots=True)
 class Any(_Node):
+    """Schema representation of any value, typed as any."""
+
     tag: ClassVar[TypingLiteral["Any"]] = "Any"
 
 
@@ -123,22 +137,30 @@ class Content:
 
 @dataclass(frozen=True, slots=True)
 class String(_Node):
+    """Schema representation of a string, with its content encoding if any."""
+
     content: Content | None = field(default=None, kw_only=True)
     tag: ClassVar[TypingLiteral["String"]] = "String"
 
 
 @dataclass(frozen=True, slots=True)
 class Number(_Node):
+    """Schema representation of a number."""
+
     tag: ClassVar[TypingLiteral["Number"]] = "Number"
 
 
 @dataclass(frozen=True, slots=True)
 class Boolean(_Node):
+    """Schema representation of a boolean."""
+
     tag: ClassVar[TypingLiteral["Boolean"]] = "Boolean"
 
 
 @dataclass(frozen=True, slots=True)
 class BigInt(_Node):
+    """Schema representation of a big integer."""
+
     tag: ClassVar[TypingLiteral["BigInt"]] = "BigInt"
 
 
@@ -160,6 +182,8 @@ class Enum(_Node):
 
 @dataclass(frozen=True, slots=True)
 class TemplateLiteral(_Node):
+    """Schema representation of a template literal string, from its parts."""
+
     parts: tuple[Representation, ...]
     tag: ClassVar[TypingLiteral["TemplateLiteral"]] = "TemplateLiteral"
 
@@ -184,6 +208,8 @@ class Arrays(_Node):
 
 @dataclass(frozen=True, slots=True)
 class PropertySignature:
+    """A property of an object representation: its name, type and whether it is optional."""
+
     name: PropertyName
     type: Representation
     is_optional: bool = False
@@ -192,12 +218,16 @@ class PropertySignature:
 
 @dataclass(frozen=True, slots=True)
 class IndexSignature:
+    """An index signature of an object representation: key type and value type."""
+
     parameter: Representation
     type: Representation
 
 
 @dataclass(frozen=True, slots=True)
 class Objects(_Node):
+    """Schema representation of an object: its properties and index signatures."""
+
     property_signatures: tuple[PropertySignature, ...] = ()
     index_signatures: tuple[IndexSignature, ...] = ()
     tag: ClassVar[TypingLiteral["Objects"]] = "Objects"
@@ -205,6 +235,8 @@ class Objects(_Node):
 
 @dataclass(frozen=True, slots=True)
 class Union(_Node):
+    """Schema representation of a union of types."""
+
     types: tuple[Representation, ...]
     mode: UnionMode = "any_of"
     tag: ClassVar[TypingLiteral["Union"]] = "Union"

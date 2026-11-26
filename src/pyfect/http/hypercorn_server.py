@@ -59,6 +59,8 @@ from pyfect.socket.server import SocketServerError
 
 
 class Options(ListenOptions):
+    """Options of the hypercorn server: listen address, hypercorn config and WebSocket timeout."""
+
     config: NotRequired[Mapping[str, Any]]
     """More ``hypercorn.Config`` attributes (``certfile``, ``keyfile``,
     ``alpn_protocols``, ``h2_max_concurrent_streams``...)."""

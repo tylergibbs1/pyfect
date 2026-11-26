@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { Geist, Geist_Mono } from 'next/font/google';
 import { ThemeProvider } from '@/components/theme-provider';
 import { cn } from '@/lib/cn';
+import { siteUrl } from '@/lib/shared';
 import './global.css';
 
 // Fonts as in shadcn/ui's docs (apps/v4/lib/fonts.ts), but `optional` where shadcn swaps:
@@ -18,6 +19,9 @@ const fontMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
+  // Canonical URLs and Open Graph images resolve against the production domain, not a
+  // preview deployment's.
+  metadataBase: new URL(siteUrl),
   title: { default: 'pyfect', template: '%s - pyfect' },
   description: 'Effect for Python: typed errors, services and structured concurrency.',
 };

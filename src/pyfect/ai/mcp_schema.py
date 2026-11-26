@@ -75,6 +75,8 @@ JSON_OBJECT = S.Record(S.String, S.Json)
 
 
 class JsonRpcRequest(TypedDict):
+    """A JSON-RPC 2.0 request: an id, a method and its params."""
+
     jsonrpc: Literal["2.0"]
     id: RequestId
     method: str
@@ -82,24 +84,32 @@ class JsonRpcRequest(TypedDict):
 
 
 class JsonRpcNotification(TypedDict):
+    """A JSON-RPC 2.0 notification: a method and its params, with no id and no reply."""
+
     jsonrpc: Literal["2.0"]
     method: str
     params: NotRequired[JsonObject]
 
 
 class JsonRpcErrorObject(TypedDict):
+    """The error of a JSON-RPC 2.0 response: a code, a message and optional data."""
+
     code: int
     message: str
     data: NotRequired[JsonValue]
 
 
 class JsonRpcSuccess(TypedDict):
+    """A successful JSON-RPC 2.0 response: the request's id and its result."""
+
     jsonrpc: Literal["2.0"]
     id: RequestId
     result: JsonObject
 
 
 class JsonRpcError(TypedDict):
+    """A failed JSON-RPC 2.0 response: the request's id and the error."""
+
     jsonrpc: Literal["2.0"]
     id: RequestId | None
     error: JsonRpcErrorObject
@@ -143,6 +153,8 @@ REQUEST_META = S.Struct(RequestMeta, _meta=REQUEST_META_OBJECT)
 
 
 class Icon(TypedDict):
+    """An icon for an MCP server, tool, resource or prompt: its URL, type, sizes and theme."""
+
     src: str
     mimeType: NotRequired[str]
     sizes: NotRequired[list[str]]
@@ -167,15 +179,21 @@ IMPLEMENTATION = S.Struct(Implementation)
 
 
 class ListChanged(TypedDict):
+    """An MCP capability that can notify when its list changes."""
+
     listChanged: NotRequired[bool]
 
 
 class ResourcesCapability(TypedDict):
+    """The MCP resources capability: whether subscriptions and list change notices work."""
+
     subscribe: NotRequired[bool]
     listChanged: NotRequired[bool]
 
 
 class ClientCapabilities(TypedDict, total=False):
+    """What an MCP client supports: roots, sampling, elicitation and extensions."""
+
     experimental: dict[str, JsonObject]
     extensions: dict[str, JsonValue]
     roots: ListChanged
@@ -184,6 +202,8 @@ class ClientCapabilities(TypedDict, total=False):
 
 
 class ServerCapabilities(TypedDict, total=False):
+    """What an MCP server supports: tools, resources, prompts, logging and completions."""
+
     experimental: dict[str, JsonObject]
     extensions: dict[str, JsonValue]
     logging: JsonObject
@@ -210,6 +230,8 @@ SERVER_CAPABILITIES = S.Struct(
 
 
 class InitializeParams(TypedDict):
+    """An MCP ``initialize`` request: the protocol version, client capabilities and info."""
+
     protocolVersion: str
     capabilities: ClientCapabilities
     clientInfo: Implementation
@@ -222,6 +244,8 @@ INITIALIZE_PARAMS = S.Struct(
 
 
 class InitializeResult(TypedDict):
+    """The reply to MCP ``initialize``: the protocol version, server capabilities and info."""
+
     protocolVersion: str
     capabilities: ServerCapabilities
     serverInfo: Implementation
@@ -236,6 +260,8 @@ type Role = Literal["user", "assistant"]
 
 
 class Annotations(TypedDict, total=False):
+    """Hints on MCP content: its audience, priority and when it last changed."""
+
     audience: list[Role]
     priority: float
     lastModified: str
@@ -245,6 +271,8 @@ ANNOTATIONS = S.Struct(Annotations)
 
 
 class TextContent(TypedDict):
+    """MCP text content."""
+
     type: Literal["text"]
     text: str
     annotations: NotRequired[Annotations]
@@ -252,6 +280,8 @@ class TextContent(TypedDict):
 
 
 class ImageContent(TypedDict):
+    """MCP image content, as base64 data with its MIME type."""
+
     type: Literal["image"]
     data: str
     mimeType: str
@@ -260,6 +290,8 @@ class ImageContent(TypedDict):
 
 
 class AudioContent(TypedDict):
+    """MCP audio content, as base64 data with its MIME type."""
+
     type: Literal["audio"]
     data: str
     mimeType: str
@@ -268,6 +300,8 @@ class AudioContent(TypedDict):
 
 
 class ResourceLink(TypedDict):
+    """MCP content that links to a resource by URI instead of embedding it."""
+
     type: Literal["resource_link"]
     uri: str
     name: str
@@ -280,6 +314,8 @@ class ResourceLink(TypedDict):
 
 
 class TextResourceContents(TypedDict):
+    """The text contents of an MCP resource."""
+
     uri: str
     text: str
     mimeType: NotRequired[str]
@@ -287,6 +323,8 @@ class TextResourceContents(TypedDict):
 
 
 class BlobResourceContents(TypedDict):
+    """The binary contents of an MCP resource, as base64."""
+
     uri: str
     blob: str
     mimeType: NotRequired[str]
@@ -297,6 +335,8 @@ type ResourceContents = TextResourceContents | BlobResourceContents
 
 
 class EmbeddedResource(TypedDict):
+    """MCP content that embeds a resource's contents."""
+
     type: Literal["resource"]
     resource: ResourceContents
     annotations: NotRequired[Annotations]
@@ -322,6 +362,8 @@ CONTENT_BLOCK = S.Union(
 
 
 class ToolAnnotations(TypedDict, total=False):
+    """Hints about an MCP tool: its title, and if it is read-only, destructive or idempotent."""
+
     title: str
     readOnlyHint: bool
     destructiveHint: bool
@@ -371,6 +413,8 @@ TOOL = S.Struct(
 
 
 class CallToolResult(TypedDict):
+    """The result of an MCP tool call: content blocks, structured content and an error flag."""
+
     content: list[ContentBlock]
     structuredContent: NotRequired[JsonValue]
     isError: NotRequired[bool]
@@ -383,6 +427,8 @@ CALL_TOOL_RESULT = S.Struct(
 
 
 class CallToolParams(TypedDict):
+    """An MCP ``tools/call`` request: the tool's name and its arguments."""
+
     name: str
     arguments: NotRequired[JsonObject]
     _meta: NotRequired[dict[str, JsonValue]]
@@ -394,6 +440,8 @@ CALL_TOOL_PARAMS = S.Struct(CallToolParams, arguments=JSON_OBJECT, _meta=REQUEST
 
 
 class Resource(TypedDict):
+    """An MCP resource a server lists: its URI, name, description and MIME type."""
+
     uri: str
     name: str
     title: NotRequired[str]
@@ -406,6 +454,8 @@ class Resource(TypedDict):
 
 
 class ResourceTemplate(TypedDict):
+    """An MCP resource template: a URI template for a family of resources."""
+
     uriTemplate: str
     name: str
     title: NotRequired[str]
@@ -417,6 +467,8 @@ class ResourceTemplate(TypedDict):
 
 
 class ReadResourceResult(TypedDict):
+    """The reply to MCP ``resources/read``: the resource's contents."""
+
     contents: list[ResourceContents]
     _meta: NotRequired[JsonObject]
 
@@ -429,6 +481,8 @@ READ_RESOURCE_RESULT = S.Struct(ReadResourceResult, contents=S.List(RESOURCE_CON
 
 
 class PromptArgument(TypedDict):
+    """An argument an MCP prompt takes: its name, description and whether it is required."""
+
     name: str
     title: NotRequired[str]
     description: NotRequired[str]
@@ -436,6 +490,8 @@ class PromptArgument(TypedDict):
 
 
 class Prompt(TypedDict):
+    """An MCP prompt a server lists: its name, description and arguments."""
+
     name: str
     title: NotRequired[str]
     description: NotRequired[str]
@@ -445,11 +501,15 @@ class Prompt(TypedDict):
 
 
 class PromptMessage(TypedDict):
+    """A message in an MCP prompt: a role and its content."""
+
     role: Role
     content: ContentBlock
 
 
 class GetPromptResult(TypedDict):
+    """The reply to MCP ``prompts/get``: the prompt's messages."""
+
     messages: list[PromptMessage]
     description: NotRequired[str]
     _meta: NotRequired[JsonObject]
@@ -464,17 +524,23 @@ GET_PROMPT_RESULT = S.Struct(GetPromptResult, messages=S.List(PROMPT_MESSAGE), *
 
 
 class PromptReference(TypedDict):
+    """A reference to an MCP prompt by name, for argument completion."""
+
     type: Literal["ref/prompt"]
     name: str
     title: NotRequired[str]
 
 
 class ResourceTemplateReference(TypedDict):
+    """A reference to an MCP resource template by URI, for argument completion."""
+
     type: Literal["ref/resource"]
     uri: str
 
 
 class CompleteArgument(TypedDict):
+    """The argument being completed in MCP ``completion/complete``: its name and value so far."""
+
     name: str
     value: str
 
@@ -486,6 +552,8 @@ class CompletionContext(TypedDict, total=False):
 
 
 class CompleteParams(TypedDict):
+    """An MCP ``completion/complete`` request: what to complete and the context."""
+
     ref: PromptReference | ResourceTemplateReference
     argument: CompleteArgument
     context: NotRequired[CompletionContext]
@@ -493,12 +561,16 @@ class CompleteParams(TypedDict):
 
 
 class Completion(TypedDict):
+    """MCP completion values, with the total count and whether more exist."""
+
     values: list[str]
     total: NotRequired[int]
     hasMore: NotRequired[bool]
 
 
 class CompleteResult(TypedDict):
+    """The reply to MCP ``completion/complete``."""
+
     completion: Completion
     _meta: NotRequired[JsonObject]
 
@@ -530,12 +602,16 @@ LOGGING_LEVELS: tuple[LoggingLevel, ...] = (
 
 
 class SamplingMessage(TypedDict):
+    """A message in an MCP sampling request: a role and its content."""
+
     role: Role
     content: JsonValue
     _meta: NotRequired[JsonObject]
 
 
 class CreateMessageParams(TypedDict):
+    """An MCP ``sampling/createMessage`` request: messages, max tokens and model hints."""
+
     messages: list[SamplingMessage]
     maxTokens: int
     modelPreferences: NotRequired[JsonObject]
@@ -562,6 +638,8 @@ CREATE_MESSAGE_PARAMS = S.Struct(
 
 
 class CreateMessageResult(TypedDict):
+    """The reply to MCP ``sampling/createMessage``: the model's message and stop reason."""
+
     role: Role
     content: JsonValue
     model: str
@@ -575,12 +653,16 @@ CREATE_MESSAGE_RESULT = S.Struct(CreateMessageResult, content=S.Json, **_META)
 
 
 class Root(TypedDict):
+    """An MCP root: a URI the client lets the server work within."""
+
     uri: str
     name: NotRequired[str]
     _meta: NotRequired[JsonObject]
 
 
 class ListRootsResult(TypedDict):
+    """The reply to MCP ``roots/list``: the client's roots."""
+
     roots: list[Root]
     _meta: NotRequired[JsonObject]
 
@@ -592,6 +674,8 @@ LIST_ROOTS_RESULT = S.Struct(ListRootsResult, roots=S.List(ROOT), **_META)
 
 
 class ElicitationString(TypedDict):
+    """A string field in an MCP elicitation form, with its length limits and format."""
+
     type: Literal["string"]
     title: NotRequired[str]
     description: NotRequired[str]
@@ -602,6 +686,8 @@ class ElicitationString(TypedDict):
 
 
 class ElicitationNumber(TypedDict):
+    """A number field in an MCP elicitation form, with its bounds."""
+
     type: Literal["number", "integer"]
     title: NotRequired[str]
     description: NotRequired[str]
@@ -611,6 +697,8 @@ class ElicitationNumber(TypedDict):
 
 
 class ElicitationBoolean(TypedDict):
+    """A yes-or-no field in an MCP elicitation form."""
+
     type: Literal["boolean"]
     title: NotRequired[str]
     description: NotRequired[str]
@@ -618,6 +706,8 @@ class ElicitationBoolean(TypedDict):
 
 
 class UntitledSingleSelectEnum(TypedDict):
+    """An MCP elicitation field that picks one of a list of values."""
+
     type: Literal["string"]
     enum: list[str]
     title: NotRequired[str]
@@ -626,11 +716,15 @@ class UntitledSingleSelectEnum(TypedDict):
 
 
 class EnumOption(TypedDict):
+    """One option of a titled MCP elicitation enum: its value and title."""
+
     const: str
     title: str
 
 
 class TitledSingleSelectEnum(TypedDict):
+    """An MCP elicitation field that picks one of a list of titled options."""
+
     type: Literal["string"]
     oneOf: list[EnumOption]
     title: NotRequired[str]
@@ -639,6 +733,8 @@ class TitledSingleSelectEnum(TypedDict):
 
 
 class LegacyTitledEnum(TypedDict):
+    """An MCP elicitation enum with titles in ``enumNames``, the older form."""
+
     type: Literal["string"]
     enum: list[str]
     enumNames: list[str]
@@ -657,6 +753,8 @@ class _TitledItems(TypedDict):
 
 
 class UntitledMultiSelectEnum(TypedDict):
+    """An MCP elicitation field that picks several of a list of values."""
+
     type: Literal["array"]
     items: _UntitledItems
     title: NotRequired[str]
@@ -667,6 +765,8 @@ class UntitledMultiSelectEnum(TypedDict):
 
 
 class TitledMultiSelectEnum(TypedDict):
+    """An MCP elicitation field that picks several of a list of titled options."""
+
     type: Literal["array"]
     items: _TitledItems
     title: NotRequired[str]
@@ -702,12 +802,16 @@ before the plain string so their keys survive decoding."""
 
 
 class RequestedSchema(TypedDict):
+    """The form an MCP elicitation asks for: its fields and which are required."""
+
     type: Literal["object"]
     properties: dict[str, PrimitiveSchemaDefinition]
     required: NotRequired[list[str]]
 
 
 class ElicitRequestFormParams(TypedDict):
+    """An MCP form elicitation: a message and the form to fill in."""
+
     message: str
     requestedSchema: RequestedSchema
     mode: NotRequired[Literal["form"]]
@@ -741,6 +845,8 @@ ELICIT_REQUEST_PARAMS: S.Codec[ElicitRequestParams, Any] = S.Union(
 
 
 class ElicitResult(TypedDict):
+    """The reply to an MCP elicitation: accepted with content, declined or cancelled."""
+
     action: Literal["accept", "decline", "cancel"]
     content: NotRequired[dict[str, JsonValue]]
     _meta: NotRequired[JsonObject]
@@ -786,21 +892,29 @@ class _SetLevelParams(TypedDict):
 
 
 class _ListToolsResult(TypedDict):
+    """The reply to MCP ``tools/list``: a page of tools and the next cursor."""
+
     tools: list[Tool]
     nextCursor: NotRequired[str]
 
 
 class _ListResourcesResult(TypedDict):
+    """The reply to MCP ``resources/list``: a page of resources and the next cursor."""
+
     resources: list[Resource]
     nextCursor: NotRequired[str]
 
 
 class _ListResourceTemplatesResult(TypedDict):
+    """The reply to MCP ``resources/templates/list``: a page of templates."""
+
     resourceTemplates: list[ResourceTemplate]
     nextCursor: NotRequired[str]
 
 
 class _ListPromptsResult(TypedDict):
+    """The reply to MCP ``prompts/list``: a page of prompts and the next cursor."""
+
     prompts: list[Prompt]
     nextCursor: NotRequired[str]
 
@@ -891,30 +1005,40 @@ class McpError(TaggedError):
 
 @dataclass(eq=False)
 class ParseError(McpError):
+    """MCP error -32700: the message is not valid JSON."""
+
     _tag: ClassVar[str] = "ParseError"
     CODE: ClassVar[int] = PARSE_ERROR_CODE
 
 
 @dataclass(eq=False)
 class InvalidRequest(McpError):
+    """MCP error -32600: the message is not a valid JSON-RPC request."""
+
     _tag: ClassVar[str] = "InvalidRequest"
     CODE: ClassVar[int] = INVALID_REQUEST_ERROR_CODE
 
 
 @dataclass(eq=False)
 class MethodNotFound(McpError):
+    """MCP error -32601: the server has no such method."""
+
     _tag: ClassVar[str] = "MethodNotFound"
     CODE: ClassVar[int] = METHOD_NOT_FOUND_ERROR_CODE
 
 
 @dataclass(eq=False)
 class InvalidParams(McpError):
+    """MCP error -32602: the method's params are invalid."""
+
     _tag: ClassVar[str] = "InvalidParams"
     CODE: ClassVar[int] = INVALID_PARAMS_ERROR_CODE
 
 
 @dataclass(eq=False)
 class InternalError(McpError):
+    """MCP error -32603: the server failed while handling the request."""
+
     _tag: ClassVar[str] = "InternalError"
     CODE: ClassVar[int] = INTERNAL_ERROR_CODE
 
@@ -979,6 +1103,8 @@ class SubscriptionFilter(TypedDict, total=False):
 
 
 class SubscriptionsListenParams(TypedDict):
+    """An MCP ``subscriptions/listen`` request: which notifications to receive."""
+
     notifications: SubscriptionFilter
     _meta: NotRequired[dict[str, JsonValue]]
 
@@ -997,11 +1123,15 @@ SUBSCRIPTIONS_LISTEN = Method(
 
 
 class RootsInputRequest(TypedDict):
+    """Input a tool call needs from the client: its list of roots."""
+
     method: Literal["roots/list"]
     params: NotRequired[dict[str, JsonValue]]
 
 
 class SamplingInputRequest(TypedDict):
+    """Input a tool call needs from the client: a sampled model message."""
+
     method: Literal["sampling/createMessage"]
     params: CreateMessageParams
 
@@ -1015,6 +1145,8 @@ class InputRequestUrlParams(TypedDict):
 
 
 class ElicitationInputRequest(TypedDict):
+    """Input a tool call needs from the client: the user's answer to an elicitation."""
+
     method: Literal["elicitation/create"]
     params: ElicitRequestFormParams | InputRequestUrlParams
 

@@ -111,6 +111,8 @@ class ShardStore:
 
 
 class ShardStateStoreService(Protocol):
+    """Where a Discord gateway keeps each shard's session, so it can resume after a restart."""
+
     def for_shard(self, shard: tuple[int, int]) -> ShardStore:
         """The store of shard ``(id, count)``."""
         ...
@@ -170,6 +172,8 @@ class WsConnection:
 
 
 class DiscordWsService(Protocol):
+    """Opens the websocket a Discord gateway shard talks over, reconnecting as needed."""
+
     def connect(self, url: str, on_connecting: Effect[None]) -> Effect[WsConnection, Never, Scope]:
         """Connects to ``url`` until the scope closes, running ``on_connecting``
         before each connection, the first and every reconnection."""

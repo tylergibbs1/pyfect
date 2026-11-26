@@ -21,7 +21,8 @@ from pathlib import Path
 import _source
 
 ROOT = Path(__file__).parent.parent
-GUIDES = ROOT / "website" / "content" / "docs"
+# The guides and the blog's posts.
+GUIDES = ROOT / "website" / "content"
 CHECKED = Path(__file__).parent / "_doc_inline_code.py"
 
 MODULES = {

@@ -47,6 +47,8 @@ __all__ = [
 
 
 class LogRecord(TypedDict):
+    """An OTLP log record: severity, time, body, attributes and trace context."""
+
     severityNumber: int
     severityText: str
     timeUnixNano: str
@@ -64,12 +66,16 @@ class _InstrumentationScope(TypedDict):
 
 
 class ScopeLogs(TypedDict):
+    """OTLP log records of one instrumentation scope."""
+
     scope: _InstrumentationScope
     logRecords: list[LogRecord]
     schemaUrl: NotRequired[str]
 
 
 class ResourceLogs(TypedDict):
+    """OTLP log records of one resource, grouped by scope."""
+
     resource: Resource
     scopeLogs: list[ScopeLogs]
     schemaUrl: NotRequired[str]

@@ -21,6 +21,8 @@ from pyfect.effect import sync
 
 @dataclass(frozen=True)
 class PrepareResult:
+    """The previous response's id and the part of the prompt sent after it."""
+
     previous_response_id: str
     prompt: P.Prompt
 
