@@ -8,7 +8,8 @@ from __future__ import annotations
 import ast
 import keyword
 import re
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
+from dataclasses import dataclass
 from typing import cast
 from warnings import deprecated
 
@@ -128,13 +129,19 @@ def _literal_type(value: R.LiteralValue) -> str:
 
 
 class _Generator:
-    def __init__(self, document: R.MultiDocument) -> None:
-        self.document = document
-        self.sorted = topological_sort(document.references)
+    def __init__(
+        self,
+        references: R.References,
+        roots: int,
+        identifiers: Mapping[str, str] | None = None,
+        is_taken: Callable[[str], bool] | None = None,
+    ) -> None:
+        self.references = references
+        self.sorted = topological_sort(references)
         self.artifacts: list[Artifact] = []
-        self.identifiers: dict[str, str] = {}
-        roots = (f"Schema{index}" for index in range(len(document.representations)))
-        self.taken = {name for root in (*_RESERVED, *roots) for name in (root, f"{root}Type")}
+        self.identifiers: dict[str, str] = dict(identifiers or {})
+        self.is_taken = is_taken
+        self.taken = set(reference_names_taken(roots))
         self.union_members: dict[str, tuple[str, ...]] = {}
         self.compiling_recursive = False
         self.explicit_suspends = 0
@@ -155,6 +162,7 @@ class _Generator:
             candidate in self.taken
             or f"{candidate}Type" in self.taken
             or keyword.iskeyword(candidate)
+            or (self.is_taken is not None and self.is_taken(candidate))
         ):
             suffix += 1
             candidate = f"{sanitized}{suffix}"
@@ -228,7 +236,7 @@ class _Generator:
         return Code(runtime, base.type)
 
     def reference(self, node: R.Reference, path: Path) -> Code:
-        if node.ref not in self.document.references:
+        if node.ref not in self.references:
             raise error_with_path(f"Invalid reference {node.ref}", (*path, "ref"))
         identifier = self.identifier(node.ref)
         type = f"{identifier}Type"
@@ -425,7 +433,7 @@ def code_document(document: R.MultiDocument, /) -> CodeDocument:
     (``GeneratedCheck`` / ``GeneratedDeclaration``); without one this raises
     ``RepresentationError``. ``S.Int`` is written ``S.Number.check(S.is_int())``,
     which it is in a document: it then accepts ``1.0`` too."""
-    generator = _Generator(document)
+    generator = _Generator(document.references, len(document.representations))
     sorted = generator.sorted
     for ref, _ in sorted.non_recursives:
         generator.identifier(ref)
@@ -449,6 +457,75 @@ def code_document(document: R.MultiDocument, /) -> CodeDocument:
         CodeReferences(non_recursives, recursives),
         tuple(generator.artifacts),
     )
+
+
+@dataclass(frozen=True, slots=True)
+class SchemaCodes:
+    """What ``code_schemas`` generated: the references it compiled, the roots'
+    code in order and the artifacts they use."""
+
+    references: CodeReferences
+    roots: tuple[Code, ...]
+    artifacts: tuple[Artifact, ...]
+
+
+def code_schemas(
+    roots: Sequence[R.Representation],
+    references: R.References,
+    /,
+    *,
+    identifiers: Mapping[str, str],
+    compile: Collection[str],
+    is_taken: Callable[[str], bool],
+) -> SchemaCodes:
+    """``code_document`` for a ``codegen.Module``: each reference is named by
+    ``identifiers``, only those in ``compile`` are generated, and artifacts get
+    names ``is_taken`` leaves free."""
+    generator = _Generator(references, len(roots), identifiers, is_taken)
+    sorted = generator.sorted
+    non_recursives = tuple(
+        NamedCode(generator.identifier(ref), generator.recur(node, ("references", ref)))
+        for ref, node in sorted.non_recursives
+        if ref in compile
+    )
+    recursives: dict[str, Code] = {}
+    for ref, node in sorted.recursives.items():
+        if ref in compile:
+            generator.compiling_recursive = True
+            recursives[generator.identifier(ref)] = generator.recur(node, ("references", ref))
+            generator.compiling_recursive = False
+    codes = tuple(generator.recur(node, ("representations", i)) for i, node in enumerate(roots))
+    return SchemaCodes(
+        CodeReferences(non_recursives, recursives), codes, tuple(generator.artifacts)
+    )
+
+
+def reference_order(references: R.References, /) -> tuple[str, ...]:
+    """The order ``code_document`` names ``references`` in."""
+    sorted = topological_sort(references)
+    return (*(ref for ref, _ in sorted.non_recursives), *sorted.recursives)
+
+
+def reference_names_taken(roots: int, /) -> frozenset[str]:
+    """The names ``code_document`` keeps from a reference's identifier in a
+    document of ``roots`` roots."""
+    names = (f"Schema{index}" for index in range(roots))
+    return frozenset(name for root in (*_RESERVED, *names) for name in (root, f"{root}Type"))
+
+
+def is_reserved_name(name: str, /) -> bool:
+    """A name generated schema code may not declare: a keyword, or a name its
+    imports bind."""
+    return name in _RESERVED or keyword.iskeyword(name)
+
+
+def fits_module(names: Sequence[str], document: CodeDocument, /) -> bool:
+    """Whether ``to_code_module`` takes ``names`` for ``document``'s roots."""
+    try:
+        _check_root_names(names, document)
+    except ValueError:
+        return False
+    return True
 
 
 def _defined_names(document: CodeDocument) -> set[str]:

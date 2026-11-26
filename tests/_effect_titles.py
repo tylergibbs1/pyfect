@@ -323,3 +323,32 @@ def docstrings(path: Path) -> tuple[str, ...]:
         if isinstance(node, ast.Module | ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef)
         and (doc := ast.get_docstring(node))
     )
+
+
+def effect_files_in(checkout: Path) -> dict[str, Path]:
+    """Effect's test files in ``checkout``, by their path under ``packages``."""
+    packages = checkout / "packages"
+    return {path.relative_to(packages).as_posix(): path for path in effect_test_files(packages)}
+
+
+def porting_modules() -> list[Path]:
+    """pyfect's test modules that may port a title: a module ports nothing unless a docstring
+    names an Effect file (``*.ts``). The omission list's own patterns are strings too; they
+    must not count as ports of a title."""
+    return [
+        path
+        for path in _source.files(_source.TESTS)
+        if path.stem != "_effect_title_omissions" and _source.may_hold(path, ".ts")
+    ]
+
+
+def unported_titles(effect_files: dict[str, Path]) -> dict[str, list[str]]:
+    """Each Effect file's titles that no pyfect test naming that file carries."""
+    ports = read_ports(porting_modules(), effect_files)
+    found: dict[str, list[str]] = {}
+    for relative, path in effect_files.items():
+        own = ports.get(relative, Ports())
+        for title in titles_in_source(path.read_text()):
+            if not is_ported(title, own) and not is_noted_as_omitted(title, own):
+                found.setdefault(relative, []).append(title)
+    return found

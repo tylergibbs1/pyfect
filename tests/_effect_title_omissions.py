@@ -235,14 +235,6 @@ OMISSIONS: tuple[Omission, ...] = (
         r"writable stream rejection|^works$",
     ),
     _some(
-        "effect/test/Codegen.test.ts",
-        "NOT_PORTED Effect's `addSchemas` returns declaration bindings, so a module can mix "
-        "schemas with `declare`/`define`; pyfect's `add_schemas` returns the module (0.6.36), "
-        "and returning bindings is a changed return type, for 0.7.0",
-        r"^(shares names, imports and symbol identities with the rest of the module"
-        r"|preserves recursive schemas and initializes their eager consumers)$",
-    ),
-    _some(
         "effect/test/Result.test.ts",
         "section 4 `Do / bind` row: generator locals, as pyright can't type a growing record",
         r"^(Do|bindTo|bind|let)$",
@@ -404,3 +396,13 @@ def reason_for(path: str, title: str) -> str | None:
         ):
             return omission.reason
     return None
+
+
+def open_title_count(unported: dict[str, list[str]]) -> int:
+    """How many of the unported titles are ``NOT_PORTED``, per occurrence: a file can repeat a
+    title under other ``describe`` blocks. docs/PARITY.md states it (``_parity_counts.py``)."""
+    return sum(
+        (reason_for(path, title) or "").startswith("NOT_PORTED")
+        for path, titles in unported.items()
+        for title in titles
+    )

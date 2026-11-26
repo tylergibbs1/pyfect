@@ -11113,6 +11113,13 @@ def schema_representation_types() -> None:
     R.to_code_document(R.to_multi_document(document))  # pyright: ignore[reportDeprecated]
     R.make_code("S.String", "str")  # pyright: ignore[reportDeprecated]
     assert_type(codegen.Module().add_schemas({"A": document.representation}).print(), str)
+    # ``bindings`` is filled with each schema's DeclarationBinding, which ``define`` reads.
+    schema_bindings: dict[str, codegen.DeclarationBinding] = {}
+    mixed = codegen.Module().add_schemas(
+        {"A": document.representation}, type_only=True, bindings=schema_bindings
+    )
+    assert_type(mixed, codegen.Module)
+    mixed.add_schemas({"B": document.representation}, bindings=[])  # pyright: ignore[reportArgumentType]
     # The builder: declarations give DeclarationBindings, imports plain Bindings, which
     # ``define`` refuses.
     builder = codegen.Module(["Reserved"])

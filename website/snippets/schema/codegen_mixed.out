@@ -1,0 +1,8 @@
+from pyfect import schema as S
+
+type UserType = str
+
+User = S.String
+
+User1 = User
+

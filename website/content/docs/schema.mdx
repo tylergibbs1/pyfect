@@ -262,14 +262,27 @@ keyword, builtin or other declaration, `define` gives it source, and `add` appen
 does; `join`, `indent`, `literal` and `doc_comment` format the rest. The bindings of
 `import_namespace` and `import_named` become `import m as X` and `from m import x` when the
 source uses them, and a type-only one goes under `if TYPE_CHECKING:`. A declaration's
-dependencies are what it reads when the module runs, so `print` writes them first. A module holds
-schemas or declarations, not both.
+dependencies are what it reads when the module runs, so `print` writes them first.
 
 <CodeOutput>
 
 <include meta='title="codegen.py"'>../../snippets/schema/codegen.py</include>
 
 <include lang="text">../../snippets/schema/codegen.out</include>
+
+</CodeOutput>
+
+Schemas and declarations share a module, in either order. Each schema `X` declares `X` for the
+schema and `XType` for its type, so a name declared later gets a suffix, and the schemas'
+imports merge with the rest. `bindings=` collects each schema's binding by the name it was
+given, for declarations that read it; `type_only=True` writes only the types. This is
+Effect's own `addSchemas` example:
+
+<CodeOutput>
+
+<include meta='title="codegen_mixed.py"'>../../snippets/schema/codegen_mixed.py</include>
+
+<include lang="text">../../snippets/schema/codegen_mixed.out</include>
 
 </CodeOutput>
 

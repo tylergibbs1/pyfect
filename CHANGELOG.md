@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.6.38 (2026-11-26)
+
+### Added
+
+- `codegen.Module.add_schemas` no longer refuses a module that also has declarations, in either
+  order, as Effect 4.1.5's `addSchemas` allows: each schema declares its name (`User1` when
+  `User` is taken) and its type's (`UserType`), its imports merge with the module's, and
+  `print` writes declarations after what they read. The new `bindings=` dict gets each schema's
+  binding by the name given, for `define` to read, and `type_only=True` writes only the types.
+  A module of schemas alone prints as before.
+
+### Fixed
+
+- A schema `codegen.Module(reserved).add_schemas` adds no longer takes a name in `reserved`,
+  which the surrounding code owns: `Module(["Client"])` declares the schema `Client` as
+  `Client1`, as `declare` does.
+- `run_sync_exit`, `run_sync` and `ManagedRuntime.run_sync_exit` give an effect that waits
+  `AsyncFiberError` every time. When the background thread finished the fiber the moment the
+  run handed it on, the call returned that late result instead. Standard Schema's `validate`
+  decides between a result and an awaitable the same way.
+
+### Docs
+
+- The schema guide's "Generating Python source" section shows schemas and declarations sharing
+  a module, with Effect's own `addSchemas` example as a checked snippet.
+
 ## 0.6.37 (2026-11-26)
 
 ### Added
