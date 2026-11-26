@@ -24,6 +24,8 @@ from _source import SRC
 
 import pyfect as fx
 from pyfect import layer
+from pyfect.errors import AsyncFiberError
+from pyfect.scheduler import SyncScheduler
 
 # (module, function) allowed to drive a scheduler, and why it leaves none undriven.
 _ALLOWED = {
@@ -124,3 +126,60 @@ def test_a_run_sync_that_gave_up_on_a_wait_goes_on_in_the_background():
     ex = fx.run_sync_exit(fx.sleep("20 millis").and_then(fx.sync(done.set)))
     assert isinstance(ex, fx.Failure)
     assert done.wait(2)
+
+
+_SYNC_RUNS: dict[str, Callable[[fx.Effect[None]], fx.Exit[None, Any]]] = {
+    "run_sync_exit": fx.run_sync_exit,
+    "ManagedRuntime.run_sync_exit": lambda eff: _runtime().run_sync_exit(eff),
+}
+
+
+@pytest.mark.parametrize("run", _SYNC_RUNS.values(), ids=_SYNC_RUNS.keys())
+def test_a_run_sync_decides_its_exit_before_the_background_can_finish_the_fiber(
+    run: Callable[[fx.Effect[None]], fx.Exit[None, Any]], monkeypatch: pytest.MonkeyPatch
+):
+    # The background's thread may finish the fiber the moment the run hands it on; that
+    # must not turn the caller's AsyncFiberError into the late result.
+    finished = threading.Event()
+    adopt = SyncScheduler.adopt
+
+    def adopt_and_let_the_fiber_finish(self: SyncScheduler, into: SyncScheduler) -> None:
+        adopt(self, into)
+        assert finished.wait(2), "the background never resumed the fiber"
+
+    monkeypatch.setattr(SyncScheduler, "adopt", adopt_and_let_the_fiber_finish)
+    ex = run(fx.sleep("1 millis").and_then(fx.sync(finished.set)))
+    assert isinstance(ex, fx.Failure)
+    assert isinstance(ex.cause.defects[0], AsyncFiberError)
+
+
+class _ReadsAfterAdopt(ast.NodeVisitor):
+    def __init__(self) -> None:
+        self.adopt_line: int | None = None
+        self.late_reads: list[int] = []
+
+    def visit_Call(self, node: ast.Call) -> None:
+        if isinstance(node.func, ast.Attribute) and node.func.attr == "adopt":
+            self.adopt_line = node.lineno
+        self.generic_visit(node)
+
+    def visit_Attribute(self, node: ast.Attribute) -> None:
+        if node.attr == "_exit" and self.adopt_line is not None and node.lineno > self.adopt_line:
+            self.late_reads.append(node.lineno)
+        self.generic_visit(node)
+
+
+def test_drivers_read_the_exit_before_handing_the_scheduler_on():
+    # Once adopted, the background's thread runs the fiber: an exit read after that is a
+    # race, not what the run itself came to.
+    late: list[str] = []
+    for path in _source.files(SRC):
+        module = path.relative_to(SRC).as_posix()
+        if not _source.mentions(path, "adopt"):
+            continue
+        for node in ast.walk(_source.tree(path)):
+            if isinstance(node, ast.FunctionDef) and (module, node.name) in _ALLOWED:
+                scan = _ReadsAfterAdopt()
+                scan.visit(node)
+                late += [f"{module}:{line}" for line in scan.late_reads]
+    assert not late, f"reads a fiber's exit after adopt: {late}"

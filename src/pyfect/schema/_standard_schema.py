@@ -265,8 +265,8 @@ def _run[A](effect: Any) -> Result[A] | Awaitable[Result[A]]:
     fiber: Fiber[Result[A], object] = new_root(scheduler, Context.empty())
     fiber._start(effect)  # pyright: ignore[reportPrivateUsage]
     scheduler.flush()
-    scheduler.adopt(BACKGROUND)  # what is left waiting goes on in the background
     done = fiber._exit  # pyright: ignore[reportPrivateUsage]
+    scheduler.adopt(BACKGROUND)  # what is left waiting goes on in the background
     if done is not None:
         return _result(done)
 
