@@ -159,7 +159,10 @@ jobs:
       - name: Build the site
         working-directory: website
         # Next retries a page that takes over a minute (up to three attempts, not configurable):
-        # a retried page is a slow page, so it fails the build here.
+        # a retried page is a slow page, so it fails the build here. The adapter gives the build
+        # the file layout Vercel's adapter gives it (scripts/build-adapter.cjs).
+        env:
+          NEXT_ADAPTER_PATH: ${{ github.workspace }}/website/scripts/build-adapter.cjs
         run: |
           bun run build 2>&1 | tee "$RUNNER_TEMP/build.log"
           ! grep -F "Retrying again shortly" "$RUNNER_TEMP/build.log"
