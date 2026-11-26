@@ -4,8 +4,8 @@
     "sha256": "be5d178b2d98159813c0217c99ce1d9c9c6bf1e604f972be46722ef1e41deb68"
   },
   "ai": {
-    "date": "2026-11-25",
-    "sha256": "ba1c259cdb0d6ac7a3a47a81e4d8fac3de35098f4ce20985427143705091c899"
+    "date": "2026-11-26",
+    "sha256": "a58ac2703f83b30ce8ad0fb23dee416f2357368b1e1e3f4aad45bf242b24b93b"
   },
   "ai-budgets": {
     "date": "2026-11-25",
@@ -19,13 +19,17 @@
     "date": "2026-11-25",
     "sha256": "aa8813a6973f141f7199acffa908408f3ebba633d152ca376ef1b5c525dc5461"
   },
+  "ai-providers-migration": {
+    "date": "2026-11-26",
+    "sha256": "d7a47d6aec26768235091b03d7b0109229703c0f269ccaa087cf50596250738b"
+  },
   "ai-skills": {
     "date": "2026-11-25",
     "sha256": "d1e3295c5da5991c3750a71c5c5297664a02a84d7acc390b0c96ceb774726c1d"
   },
   "ai-tool-ledger": {
-    "date": "2026-11-25",
-    "sha256": "7acb77684c08befa434462389c0f0941e2a202630f8d33278a504af0b5704c5a"
+    "date": "2026-11-26",
+    "sha256": "6ff61b2c3cb73ffaa6e22c38999a39bce4b79aee8d313e07c2c31bab363a2aa2"
   },
   "asyncio-apps": {
     "date": "2026-11-25",
@@ -76,8 +80,8 @@
     "sha256": "ce91a501e6716947e2912343745883e1be6e135efc8f4e57445f4a421bac3e88"
   },
   "concurrency": {
-    "date": "2026-11-25",
-    "sha256": "3bcec7444d3ab0dcab1a694760a00435f2c11cb5fa991b4e273d41f391a0f10c"
+    "date": "2026-11-26",
+    "sha256": "fc713ce902c5ff076a86b0f97d4ddeb76fe8874ffdb76c883be81fcc1fdf30c0"
   },
   "config": {
     "date": "2026-11-25",
@@ -120,12 +124,12 @@
     "sha256": "f68d94e118b16b4814daf23aab944ef7573e1d70edd7ade5766d50f901478dde"
   },
   "http-api": {
-    "date": "2026-11-25",
-    "sha256": "054d39958d8382a14bbdc7ed446a8061e149c5cf1a44c1879a3eba1a52c30618"
+    "date": "2026-11-26",
+    "sha256": "d05e6e29bd78a7a9f5b870f58e01d49299c06aa4f5245940b4f35e497508f609"
   },
   "http-server": {
-    "date": "2026-11-25",
-    "sha256": "1d54c2131419f02f410ba1f5dd9bfe020dba027191739498f81373cbe29433a0"
+    "date": "2026-11-26",
+    "sha256": "e4f5dbd01c56563e4bcee92a84d5b233c9ece292141d77e57d87c7584609c2b4"
   },
   "installation": {
     "date": "2026-11-25",
@@ -136,8 +140,8 @@
     "sha256": "3e850a1c6e2d8e20dd485d1086b76bb60ce6c0e02ae053bce376c00b0be8d69c"
   },
   "mcp": {
-    "date": "2026-11-25",
-    "sha256": "411af010a36b1c1ab9d14ff901c7ff4809b9ae5f3d1d4df4d426fa6519e48182"
+    "date": "2026-11-26",
+    "sha256": "f846b11c1b57b5d27dbc0b2a750d6c5adb4c10652c0c932f6b9b52ff43917869"
   },
   "models": {
     "date": "2026-11-14",
@@ -164,16 +168,16 @@
     "sha256": "b8b31e3f60d1433260b755fd5fca8997877715eb3da0835221faa5f9a67079f4"
   },
   "persistence": {
-    "date": "2026-11-25",
-    "sha256": "6ecb230f45e338abe1527b9d2328540b97bd277415488dea907d5d38623e1b81"
+    "date": "2026-11-26",
+    "sha256": "69b762fcd074af6acfed87692517e3cf3e7cfe8635816a699d9dedc2c02efc1b"
   },
   "platform": {
-    "date": "2026-11-25",
-    "sha256": "43b2123ae6d5ed28180d3e681aebf5bc567bc9480712edccb80024d0a78c39ce"
+    "date": "2026-11-26",
+    "sha256": "0530a4bde1adacca1a203d7cb630b37d5fbef1d5c573f68b0647e5ce418be622"
   },
   "postgres": {
-    "date": "2026-11-17",
-    "sha256": "0126084f5b7552c63ba861c83006b0a239dcb72dacf0af68c5a23d12c875f47f"
+    "date": "2026-11-26",
+    "sha256": "5b7ffacf032f874c00caef7bbc385ee4962307dcaf9a8eb9a9bb8a78a278e1d6"
   },
   "pydantic-msgspec": {
     "date": "2026-11-25",
@@ -196,12 +200,12 @@
     "sha256": "66ef95661eb5479766a4be07bfbc86145d3b019ea3d9bd22af90194ea748af61"
   },
   "schema": {
-    "date": "2026-11-25",
-    "sha256": "3dd978c4640ec57be1d17a9883b3986fe1a5a2e2ec032ef9032d57dc974253ba"
+    "date": "2026-11-26",
+    "sha256": "aa1af244b0eb08e5e7a9cb1c035f9e8ac1b95ef6166489e253233017048fba78"
   },
   "services": {
-    "date": "2026-11-25",
-    "sha256": "78dafa37b70bf9811cfb52e627fc51095b5046434af55363320f9f9d09eda77b"
+    "date": "2026-11-26",
+    "sha256": "55fb2dca55298790f3caf3ecc349fe96b1636da4b30f64cef23b67088008fbf2"
   },
   "sql": {
     "date": "2026-11-25",
@@ -228,12 +232,12 @@
     "sha256": "639351b8a69f5722aa04d0f64a456efa0c02f7f21166ee791d397784927ed654"
   },
   "transactions": {
-    "date": "2026-11-25",
-    "sha256": "88be1a4cb25084fd765e1992e14f02cd2152a60030e78eee91c83662f5242a1b"
+    "date": "2026-11-26",
+    "sha256": "220fc98047149474af4c90918c0be74ab87b5dc8d52ba6fdbc82c47b24465c71"
   },
   "workers": {
-    "date": "2026-11-25",
-    "sha256": "4774a6346f9349f5f754dc0a6e18cd5b30a24ef9f242abcc29bf77c87a5145c7"
+    "date": "2026-11-26",
+    "sha256": "b2861898383e6176b14b9ebcc1ab20b7d0629704e29c0716056765c4f45fb30e"
   },
   "workflows": {
     "date": "2026-11-18",
