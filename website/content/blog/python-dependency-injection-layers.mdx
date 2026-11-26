@@ -90,8 +90,9 @@ the error: the program starts, and the first `yield from Users()` dies with
 `Service not found: Users`. The project's build checks that the ignored line really is a
 pyright error, so this example can't quietly go stale.
 
-The `key="Users"` on the tag only sets the name shown in messages like that one. Without it,
-the message names the class's module and name.
+The `key="Users"` on the tag is its identity, as in Effect: two tags with one key are one
+service. It is also the name shown in messages like that one. Without it, the key is the
+class's module and name, so tags declared in different places stay apart.
 
 ## Testing with fake services
 
