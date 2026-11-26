@@ -1,11 +1,10 @@
 """Python modules built from bindings and code fragments (Effect's ``Codegen``).
 
-``Module`` either collects named schemas (``add_schemas``) and prints them as one
-module, which replaces ``representation.to_code_document`` followed by
-``to_code_module``, or builds a module from declarations: ``declare`` allocates a
-name, ``define`` gives it source made with ``code``, ``join``, ``indent`` and
-``literal``, and the bindings of ``import_namespace`` / ``import_named`` become
-import statements when used. Names are allocated so nothing shadows a keyword, a
+``Module`` builds a module from named schemas (``add_schemas``, which replaces
+``representation.to_code_document`` followed by ``to_code_module``) and declarations:
+``declare`` allocates a name, ``define`` gives it source made with ``code``, ``join``,
+``indent`` and ``literal``, and the bindings of ``import_namespace`` / ``import_named``
+become import statements when used. Names are allocated so nothing shadows a keyword, a
 builtin, a reserved name or another declaration; strings are written unchanged.
 
 Python spellings of Effect's: ES namespace and named imports are ``import m as X``

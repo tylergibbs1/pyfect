@@ -114,10 +114,13 @@ class UsedImport:
     runtime: bool
 
 
-def print_imports(entries: Sequence[UsedImport | str]) -> tuple[str, ...]:
+def print_imports(
+    entries: Sequence[UsedImport | str], *, annotations: bool = False
+) -> tuple[str, ...]:
     """The import statements: side effects (``str``) and runtime imports in order,
     named imports of a module grouped at its first runtime use, then the type-only
-    ones under ``if TYPE_CHECKING:``."""
+    ones under ``if TYPE_CHECKING:``. ``annotations`` writes
+    ``from __future__ import annotations`` first, as type-only imports do."""
     runtime: list[str] = []
     typed: list[str] = []
     groups: dict[str, list[tuple[NamedImport, UsedImport]]] = {}
@@ -147,7 +150,7 @@ def print_imports(entries: Sequence[UsedImport | str]) -> tuple[str, ...]:
             if names:
                 target.append(f"from {request.module} import {', '.join(names)}")
     if not typed:
-        return tuple(runtime)
+        return ("from __future__ import annotations", *runtime) if annotations else tuple(runtime)
     block = "\n".join(f"    {line}" for line in typed)
     return (
         "from __future__ import annotations",

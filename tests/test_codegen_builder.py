@@ -1,5 +1,5 @@
-"""``effect/test/Codegen.test.ts``'s module titles: the ``codegen.Module`` builder,
-with the expected source spelled in Python.
+"""``effect/test/Codegen.test.ts``: the ``codegen.Module`` builder and schemas sharing a
+module with declarations, with the expected source spelled in Python.
 
 Mappings (``pyfect.codegen``'s docstring): a namespace import is ``import m as X``, a
 named one ``from m import x``, a type-only one goes under ``if TYPE_CHECKING:``,
@@ -8,15 +8,27 @@ and ``importDefault`` have no Python counterpart, so their assertions are left o
 Effect reserves ``globalThis`` and declares the keyword ``default``, these use the builtin
 ``float`` and the keyword ``class``.
 
-The two schema titles wait (``tests/_effect_titles_m19.py``): Effect's ``addSchemas``
-returns declaration bindings, pyfect's returns the module.
+pyfect has no symbols, so the schema titles leave out the unique symbol shared between
+schemas; a schema's type is ``XType`` beside its value ``X``, and Effect's ``declare enum``
+is the ``enum.Enum`` the types name. Effect checks the generated modules with ``tsc``;
+``test_generated_schema_modules_type_check`` runs pyright on them.
 """
 
 from __future__ import annotations
 
+import enum
+import json
+import subprocess
+import sys
+from pathlib import Path
+from typing import Any, TypedDict
+
 import pytest
 
+import pyfect as fx
+from pyfect import schema as S
 from pyfect.codegen import (
+    DeclarationBinding,
     Module,
     NamedImport,
     NamespaceImport,
@@ -29,6 +41,8 @@ from pyfect.codegen import (
     join,
     literal,
 )
+from pyfect.option import Some
+from pyfect.schema import representation as R
 
 
 def test_independent_modules() -> None:
@@ -263,17 +277,127 @@ def test_imports_spelled_in_python() -> None:
         NamespaceImport("a.1x", "X")
 
 
-def test_schemas_and_declarations_stay_apart() -> None:
-    """A module holds schemas or declarations; an empty one still refuses to print."""
-    from pyfect import schema as S
-    from pyfect.schema import representation as R
-
-    string = R.to_representation(S.String).representation
-    with pytest.raises(ValueError, match="not both"):
-        Module().add_schemas({"A": string}).declare("B")
-    built = Module()
-    built.add("x = 1")
-    with pytest.raises(ValueError, match="not both"):
-        built.add_schemas({"A": string})
+def test_an_empty_module_refuses_to_print() -> None:
+    """A module with no schema, declaration or appended source has nothing to print."""
     with pytest.raises(ValueError, match="needs at least one schema"):
         Module().print()
+
+
+class _Color(enum.Enum):
+    RED = 1
+    BLUE = 2
+
+
+class _Root(TypedDict):
+    o: fx.Option[str]
+    n: int
+    state: _Color
+
+
+_ROOT = S.Struct(_Root, o=S.Option(S.String), n=S.Int, state=S.Enum(_Color)).annotate(
+    identifier="Root"
+)
+
+
+class _Tree(TypedDict):
+    children: tuple[_Tree, ...]
+
+
+_TREE: Any = S.Struct(_Tree, children=S.Array(S.suspend(lambda: _TREE))).annotate(identifier="Tree")
+
+
+def _run(source: str) -> dict[str, Any]:
+    namespace: dict[str, Any] = {"__name__": "generated"}
+    exec(source, namespace)
+    return namespace
+
+
+def _shared_sources() -> tuple[str, str, dict[str, DeclarationBinding]]:
+    document = R.to_representations((_ROOT, S.Number, S.String))
+    given = {
+        "Root": document.representations[0],
+        "1": document.representations[1],
+        "user-id": document.representations[2],
+    }
+    module = Module()
+    helper = module.declare("Root")
+    module.define(helper, [code(helper, " = 0")])
+    schemas: dict[str, DeclarationBinding] = {}
+    module.add_schemas(given, references=document.references, bindings=schemas)
+    root = schemas["Root"]
+    consumer = module.declare("Consumer")
+    module.define(consumer, [code(consumer, " = ", root)], [root])
+    for name in ("S", "fx"):
+        local = module.declare(name)
+        module.define(local, [code(local, " = 0")])
+    types = Module().add_schemas(given, references=document.references, type_only=True)
+    return module.print(), types.print(), schemas
+
+
+def _recursive_source() -> tuple[str, dict[str, DeclarationBinding]]:
+    document = R.to_representations((S.Array(_TREE), _TREE))
+    schemas: dict[str, DeclarationBinding] = {}
+    module = Module().add_schemas(
+        {"Forest": document.representations[0], "Tree": document.representations[1]},
+        references=document.references,
+        bindings=schemas,
+    )
+    return module.print(), schemas
+
+
+def test_schemas_share_the_module() -> None:
+    """shares names, imports and symbol identities with the rest of the module"""
+    source, type_source, schemas = _shared_sources()
+    root = schemas["Root"]
+    assert root.name == "Root1"
+    generated = _run(source)
+    root_schema = generated[root.name]
+    assert generated["Consumer"] is root_schema
+    assert generated["S"] == 0
+    assert generated["fx"] == 0
+    red = generated["_Enum"](1)
+    value = {"o": Some("ok"), "n": 1, "state": red}
+    assert S.decode_unknown_sync(root_schema)({"o": Some("ok"), "n": 1, "state": 1}) == value
+    assert not S.is_(root_schema)({**value, "n": 1.5})
+    number = generated[schemas["1"].name]
+    string = generated[schemas["user-id"].name]
+    assert (schemas["1"].name, schemas["user-id"].name) == ("_1", "user_id")
+    assert S.is_(number)(42)
+    assert not S.is_(number)("42")
+    assert S.is_(string)("ok")
+    assert not S.is_(string)(42)
+
+    assert "S.Struct" not in type_source
+    assert "enum.Enum(" in type_source
+    assert "TypedDict(" in type_source
+    _run(type_source)
+
+
+def test_recursive_schemas() -> None:
+    """preserves recursive schemas and initializes their eager consumers"""
+    source, schemas = _recursive_source()
+    generated = _run(source)
+    value: dict[str, object] = {"children": [{"children": []}]}
+    decoded = S.decode_unknown_sync(generated[schemas["Forest"].name])([value])
+    assert decoded == ({"children": ({"children": ()},)},)
+    assert not S.is_(generated[schemas["Tree"].name])({"children": [None]})
+
+
+def test_generated_schema_modules_type_check(tmp_path: Path) -> None:
+    """The modules of the two titles above pass pyright (Effect runs ``tsc`` on its own)."""
+    source, type_source, _ = _shared_sources()
+    recursive, _ = _recursive_source()
+    files: list[str] = []
+    for name, text in (("shared", source), ("types", type_source), ("recursive", recursive)):
+        path = tmp_path / f"{name}.py"
+        path.write_text(text)
+        files.append(str(path))
+    run = subprocess.run(
+        [sys.executable, "-m", "pyright", "--outputjson", *files],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=Path(__file__).parent.parent,
+    )
+    diagnostics = json.loads(run.stdout)["generalDiagnostics"]
+    assert [d["message"] for d in diagnostics if d["severity"] == "error"] == []
