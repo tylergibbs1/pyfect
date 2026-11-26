@@ -33,24 +33,26 @@ def _run(source: str) -> dict[str, Any]:
 def test_prints_each_schema_as_a_variable_of_its_name_sharing_references() -> None:
     document = R.to_representations((Point, S.Array(Point)))
     first, second = document.representations
-    module = codegen.Module().add_schemas({"One": first}, references=document.references)
-    source = module.add_schemas({"Many": second}, references=document.references).print()
+    module = codegen.Module()
+    module.add_schemas({"One": first}, references=document.references)
+    module.add_schemas({"Many": second}, references=document.references)
+    source = module.print()
     assert source == R.to_code_module(code_document(document), names=("One", "Many"))
     namespace = _run(source)
     assert S.decode_unknown_sync(namespace["Many"])([{"x": 1}]) == ({"x": 1},)
 
 
 def test_refuses_a_name_added_twice() -> None:
-    module = codegen.Module().add_schemas({"A": R.to_representation(S.String).representation})
+    module = codegen.Module()
+    module.add_schemas({"A": R.to_representation(S.String).representation})
     with pytest.raises(ValueError, match="A schema named 'A' was already added"):
         module.add_schemas({"A": R.to_representation(S.Number).representation})
 
 
 def test_refuses_a_reference_defined_differently() -> None:
     first = R.to_representations((Point,))
-    module = codegen.Module().add_schemas(
-        {"A": first.representations[0]}, references=first.references
-    )
+    module = codegen.Module()
+    module.add_schemas({"A": first.representations[0]}, references=first.references)
     [ref] = first.references
     other = {ref: R.to_representation(S.String).representation}
     with pytest.raises(ValueError, match=f"The reference '{ref}' was already defined differently"):
@@ -72,7 +74,19 @@ def test_the_deprecated_functions_warn_and_still_work() -> None:
     assert made == R.Code("S.String", "str")
     with warnings.catch_warnings():
         warnings.simplefilter("error")
-        codegen.Module().add_schemas({"A": document.representations[0]}).print()
+        module = codegen.Module()
+        module.add_schemas({"A": document.representations[0]})
+        module.print()
+
+
+def test_the_deprecated_bindings_argument_warns_and_still_fills() -> None:
+    bindings: dict[str, DeclarationBinding] = {}
+    module = codegen.Module()
+    string = R.to_representation(S.String).representation
+    with pytest.warns(DeprecationWarning, match=r"removed in 0.8.0: use the mapping add_schemas"):
+        returned = module.add_schemas({"A": string}, bindings=bindings)  # pyright: ignore[reportDeprecated]
+    assert bindings == returned
+    assert bindings["A"].name == "A"
 
 
 code = codegen.code
@@ -156,25 +170,27 @@ def _golden_module() -> codegen.Module:
     )
     accounts, many, maybe = first.representations
     forest, letter, xs, wait = second.representations
-    module = codegen.Module().add_schemas(
+    module = codegen.Module()
+    module.add_schemas(
         {"Account": accounts, "Accounts": many, "Maybe": maybe}, references=first.references
     )
-    return module.add_schemas(
+    module.add_schemas(
         {"Forest": forest, "Letter": letter, "Xs": xs, "Wait": wait},
         references=second.references,
     )
+    return module
 
 
 def test_a_module_of_schemas_prints_as_0_6_37_did() -> None:
+    """``add_schemas`` returns the bindings since 0.7.0; the module prints the same."""
     assert _golden_module().print() == _GOLDEN
 
 
 def test_bindings_name_the_printed_schemas() -> None:
     document = R.to_representations((S.String, S.Number))
-    bindings: dict[str, DeclarationBinding] = {}
-    module = codegen.Module().add_schemas(
-        {"Name": document.representations[0], "filter": document.representations[1]},
-        bindings=bindings,
+    module = codegen.Module()
+    bindings = module.add_schemas(
+        {"Name": document.representations[0], "filter": document.representations[1]}
     )
     assert {name: b.name for name, b in bindings.items()} == {"Name": "Name", "filter": "filter"}
     assert "filter = S.Number" in module.print()
@@ -183,11 +199,9 @@ def test_bindings_name_the_printed_schemas() -> None:
 def test_effects_example_schemas_then_a_declaration() -> None:
     document = R.to_representation(S.String)
     module = codegen.Module()
-    schemas: dict[str, DeclarationBinding] = {}
-    module.add_schemas(
-        {"User": document.representation}, references=document.references, bindings=schemas
-    )
-    user = schemas["User"]
+    schemas = module.add_schemas({"User": document.representation}, references=document.references)
+    user = schemas.get("User")
+    assert user is not None
     alias = module.declare("User")
     source = module.define(alias, [code(alias, " = ", user)], [user]).print()
     assert source == (
@@ -201,8 +215,7 @@ def test_a_declaration_then_schemas() -> None:
     typed = module.declare("S")
     module.define(taken, [code(taken, " = ", typed)], [typed])
     module.define(typed, [code(typed, " = 1")])
-    schemas: dict[str, DeclarationBinding] = {}
-    module.add_schemas({"User": R.to_representation(S.String).representation}, bindings=schemas)
+    schemas = module.add_schemas({"User": R.to_representation(S.String).representation})
     assert schemas["User"].name == "User1"
     source = module.print()
     assert source == (
@@ -237,8 +250,7 @@ def test_schema_and_declaration_imports_merge() -> None:
 def test_a_name_declared_before_the_schemas_reads_them() -> None:
     module = codegen.Module()
     reader = module.declare("reader")
-    schemas: dict[str, DeclarationBinding] = {}
-    module.add_schemas({"Name": R.to_representation(S.String).representation}, bindings=schemas)
+    schemas = module.add_schemas({"Name": R.to_representation(S.String).representation})
     name = schemas["Name"]
     module.define(reader, [code(reader, " = ", name)], [name])
     source = module.print()
@@ -249,12 +261,11 @@ def test_a_name_declared_before_the_schemas_reads_them() -> None:
 
 def test_type_only_writes_the_types() -> None:
     document = R.to_representations((Tree, User))
-    schemas: dict[str, DeclarationBinding] = {}
-    module = codegen.Module().add_schemas(
+    module = codegen.Module()
+    schemas = module.add_schemas(
         {"Forest": document.representations[0], "Account": document.representations[1]},
         references=document.references,
         type_only=True,
-        bindings=schemas,
     )
     source = module.print()
     assert "S." not in source
@@ -270,7 +281,8 @@ def test_type_only_writes_the_types() -> None:
 
 def test_a_reference_shared_with_a_type_only_call_keeps_its_value() -> None:
     document = R.to_representations((User,))
-    module = codegen.Module().add_schemas(
+    module = codegen.Module()
+    module.add_schemas(
         {"Types": document.representations[0]}, references=document.references, type_only=True
     )
     module.add_schemas({"Values": document.representations[0]}, references=document.references)
@@ -281,9 +293,9 @@ def test_a_reference_shared_with_a_type_only_call_keeps_its_value() -> None:
 
 def test_a_schema_that_is_its_own_reference_is_that_reference() -> None:
     document = R.to_representations((User,))
-    schemas: dict[str, DeclarationBinding] = {}
-    module = codegen.Module().add_schemas(
-        {"User": document.representations[0]}, references=document.references, bindings=schemas
+    module = codegen.Module()
+    schemas = module.add_schemas(
+        {"User": document.representations[0]}, references=document.references
     )
     user = schemas["User"]
     assert user.name == "User"
@@ -296,17 +308,16 @@ def test_a_schema_that_is_its_own_reference_is_that_reference() -> None:
 
 def test_an_unprintable_schema_raises_when_printed_with_declarations() -> None:
     representation = R.Declaration()
-    module = codegen.Module().add_schemas({"A": representation})
+    module = codegen.Module()
+    module.add_schemas({"A": representation})
     module.add("x = 1")
     with pytest.raises(R.RepresentationError, match="Missing to_code callback"):
         module.print()
 
 
 def test_a_schema_leaves_the_reserved_names_alone() -> None:
-    schemas: dict[str, DeclarationBinding] = {}
-    module = codegen.Module(["Client"]).add_schemas(
-        {"Client": R.to_representation(S.String).representation}, bindings=schemas
-    )
+    module = codegen.Module(["Client"])
+    schemas = module.add_schemas({"Client": R.to_representation(S.String).representation})
     assert schemas["Client"].name == "Client1"
     assert "Client1 = S.String" in module.print()
 

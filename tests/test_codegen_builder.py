@@ -20,6 +20,7 @@ import enum
 import json
 import subprocess
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, TypedDict
 
@@ -312,7 +313,7 @@ def _run(source: str) -> dict[str, Any]:
     return namespace
 
 
-def _shared_sources() -> tuple[str, str, dict[str, DeclarationBinding]]:
+def _shared_sources() -> tuple[str, str, Mapping[str, DeclarationBinding]]:
     document = R.to_representations((_ROOT, S.Number, S.String))
     given = {
         "Root": document.representations[0],
@@ -322,25 +323,24 @@ def _shared_sources() -> tuple[str, str, dict[str, DeclarationBinding]]:
     module = Module()
     helper = module.declare("Root")
     module.define(helper, [code(helper, " = 0")])
-    schemas: dict[str, DeclarationBinding] = {}
-    module.add_schemas(given, references=document.references, bindings=schemas)
+    schemas = module.add_schemas(given, references=document.references)
     root = schemas["Root"]
     consumer = module.declare("Consumer")
     module.define(consumer, [code(consumer, " = ", root)], [root])
     for name in ("S", "fx"):
         local = module.declare(name)
         module.define(local, [code(local, " = 0")])
-    types = Module().add_schemas(given, references=document.references, type_only=True)
+    types = Module()
+    types.add_schemas(given, references=document.references, type_only=True)
     return module.print(), types.print(), schemas
 
 
-def _recursive_source() -> tuple[str, dict[str, DeclarationBinding]]:
+def _recursive_source() -> tuple[str, Mapping[str, DeclarationBinding]]:
     document = R.to_representations((S.Array(_TREE), _TREE))
-    schemas: dict[str, DeclarationBinding] = {}
-    module = Module().add_schemas(
+    module = Module()
+    schemas = module.add_schemas(
         {"Forest": document.representations[0], "Tree": document.representations[1]},
         references=document.references,
-        bindings=schemas,
     )
     return module.print(), schemas
 

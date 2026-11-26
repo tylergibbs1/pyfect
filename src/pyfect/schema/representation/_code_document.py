@@ -418,7 +418,7 @@ class _Generator:
 
 @deprecated(
     "to_code_document is deprecated and removed in 0.8.0: use "
-    "codegen.Module().add_schemas(...).print()"
+    "codegen.Module: add_schemas(...), then print()"
 )
 def to_code_document(document: R.MultiDocument, /) -> CodeDocument:
     """Deprecated since 0.6.36 (Effect 4.1.5 replaced ``toCodeDocument`` with

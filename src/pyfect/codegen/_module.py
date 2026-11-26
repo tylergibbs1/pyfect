@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Iterable, Mapping, MutableMapping, Sequence
 from dataclasses import dataclass
-from typing import Never, Self, final
+from typing import Never, Self, final, overload
+from warnings import deprecated
 
 from pyfect.codegen._fragment import (
     Binding,
@@ -28,6 +30,11 @@ from pyfect.codegen._names import RESERVED, Scope, allocate, is_identifier
 from pyfect.codegen._schema_source import Batch
 from pyfect.codegen._schemas import ModuleNames, Schemas
 from pyfect.schema.representation._model import References, Representation
+
+_BINDINGS_DEPRECATED = (
+    "add_schemas(bindings=...) is deprecated and removed in 0.8.0: use the mapping "
+    "add_schemas returns"
+)
 
 
 @final
@@ -86,6 +93,26 @@ class Module:
             ModuleNames(self._schema_taken, self._declare_schema, self._side_effect, self._import)
         )
 
+    @overload
+    def add_schemas(
+        self,
+        schemas: Mapping[str, Representation],
+        /,
+        *,
+        references: References | None = None,
+        type_only: bool = False,
+    ) -> Mapping[str, DeclarationBinding]: ...
+    @overload
+    @deprecated(_BINDINGS_DEPRECATED)
+    def add_schemas(
+        self,
+        schemas: Mapping[str, Representation],
+        /,
+        *,
+        references: References | None = None,
+        type_only: bool = False,
+        bindings: MutableMapping[str, DeclarationBinding],
+    ) -> Mapping[str, DeclarationBinding]: ...
     def add_schemas(
         self,
         schemas: Mapping[str, Representation],
@@ -94,20 +121,23 @@ class Module:
         references: References | None = None,
         type_only: bool = False,
         bindings: MutableMapping[str, DeclarationBinding] | None = None,
-    ) -> Self:
+    ) -> Mapping[str, DeclarationBinding]:
         """Declares each schema under its name (with a numeric suffix when that is
         taken), with the definitions it refers to: ``X`` holds the schema and
-        ``XType`` its type. ``type_only`` writes only the types. ``bindings`` gets
-        each schema's binding by the name given (its type's with ``type_only``); a
-        schema that is the reference of its own name is that reference. A name added
-        before, or a reference defined differently before, raises ``ValueError``."""
+        ``XType`` its type. ``type_only`` writes only the types. Returns each
+        schema's binding by the name given (its type's with ``type_only``); a schema
+        that is the reference of its own name is that reference. A name added before,
+        or a reference defined differently before, raises ``ValueError``."""
         batch = self._schemas.add(schemas, references or {}, type_only=type_only)
         self._order.append(batch)
         self._import_order.append(batch)
+        added = {
+            root.name: root.names.alias if type_only else root.names.value for root in batch.roots
+        }
         if bindings is not None:
-            for root in batch.roots:
-                bindings[root.name] = root.names.alias if type_only else root.names.value
-        return self
+            warnings.warn(_BINDINGS_DEPRECATED, DeprecationWarning, stacklevel=2)
+            bindings.update(added)
+        return added
 
     def scope(self, parent: Scope | None = None) -> Scope:
         """A declaration scope nested in ``parent`` (the module's own by default)."""

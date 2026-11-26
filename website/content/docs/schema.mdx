@@ -251,9 +251,9 @@ source (below).
 
 ## Generating Python source
 
-`pyfect.codegen` is Effect's `Codegen`, writing Python. `codegen.Module().add_schemas({...},
-references=...).print()` writes schema representations as one module, a variable for each name
-(it replaces `to_code_document` and `make_code`, deprecated in 0.6.36 since Effect 4.1.5 removed
+`pyfect.codegen` is Effect's `Codegen`, writing Python. `module.add_schemas({...},
+references=...)` adds schema representations to a `codegen.Module`, a variable for each name, and
+`module.print()` writes the module (it replaces `to_code_document` and `make_code`, deprecated in 0.6.36 since Effect 4.1.5 removed
 `toCodeDocument`).
 
 A module can also be built from declarations. `declare` allocates a name that shadows no
@@ -274,7 +274,7 @@ dependencies are what it reads when the module runs, so `print` writes them firs
 
 Schemas and declarations share a module, in either order. Each schema `X` declares `X` for the
 schema and `XType` for its type, so a name declared later gets a suffix, and the schemas'
-imports merge with the rest. `bindings=` collects each schema's binding by the name it was
+imports merge with the rest. `add_schemas` returns each schema's binding by the name it was
 given, for declarations that read it; `type_only=True` writes only the types. This is
 Effect's own `addSchemas` example:
 

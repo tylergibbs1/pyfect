@@ -6,10 +6,9 @@ from pyfect.schema import representation as R
 # Schemas as Python source: each becomes a variable of its name.
 document = R.to_representations((S.String.check(S.is_min_length(3)), S.Int))
 username, age = document.representations
-schemas = codegen.Module().add_schemas(
-    {"Username": username, "Age": age}, references=document.references
-)
-print(schemas.print())
+schema_module = codegen.Module()
+schema_module.add_schemas({"Username": username, "Age": age}, references=document.references)
+print(schema_module.print())
 
 # A module built from declarations: names are allocated, imports written when used.
 module = codegen.Module()

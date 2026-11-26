@@ -11112,14 +11112,13 @@ def schema_representation_types() -> None:
     assert_type(R.to_code_module(code), str)
     R.to_code_document(R.to_multi_document(document))  # pyright: ignore[reportDeprecated]
     R.make_code("S.String", "str")  # pyright: ignore[reportDeprecated]
-    assert_type(codegen.Module().add_schemas({"A": document.representation}).print(), str)
-    # ``bindings`` is filled with each schema's DeclarationBinding, which ``define`` reads.
-    schema_bindings: dict[str, codegen.DeclarationBinding] = {}
-    mixed = codegen.Module().add_schemas(
-        {"A": document.representation}, type_only=True, bindings=schema_bindings
-    )
-    assert_type(mixed, codegen.Module)
-    mixed.add_schemas({"B": document.representation}, bindings=[])  # pyright: ignore[reportArgumentType]
+    # ``add_schemas`` returns each schema's DeclarationBinding, which ``define`` reads;
+    # ``bindings=`` is deprecated.
+    mixed = codegen.Module()
+    added = mixed.add_schemas({"A": document.representation}, type_only=True)
+    assert_type(added, Mapping[str, codegen.DeclarationBinding])
+    mixed.add_schemas({"B": document.representation}, bindings={})  # pyright: ignore[reportDeprecated]
+    mixed.add_schemas({"C": document.representation}).print()  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
     # The builder: declarations give DeclarationBindings, imports plain Bindings, which
     # ``define`` refuses.
     builder = codegen.Module(["Reserved"])
