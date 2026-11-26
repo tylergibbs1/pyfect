@@ -3,8 +3,7 @@
 A schema ``X`` declares two names: ``X`` for its value and ``XType`` for its type alias
 (Python has one namespace where TypeScript has two). The names are allocated when the
 schemas are added; the source is generated the first time the module renders them, so a
-representation that cannot be printed raises there, as ``print`` always did. A module of
-schemas alone prints as one ``to_code_module``, 0.6's layout."""
+representation that cannot be printed raises there, as ``print`` always did."""
 
 from __future__ import annotations
 
@@ -26,17 +25,13 @@ from pyfect.codegen._schema_source import (
 )
 from pyfect.schema.representation._code import EnumArtifact, TypedDictArtifact
 from pyfect.schema.representation._code_document import (
-    code_document,
     code_schemas,
-    fits_module,
     is_reserved_name,
     reference_names_taken,
     reference_order,
     sanitize_identifier,
-    to_code_module,
 )
 from pyfect.schema.representation._model import (
-    MultiDocument,
     Reference,
     References,
     Representation,
@@ -97,20 +92,6 @@ class Schemas:
     def owns(self, binding: DeclarationBinding) -> bool:
         """Whether ``binding`` is a name the schemas declared, which they define."""
         return self._names.get(binding.name) is binding
-
-    def module(self) -> str | None:
-        """The schemas as one ``to_code_module``, or ``None`` when their names need
-        the declarations' layout."""
-        if not self._schemas:
-            return None
-        for batch in self._batches:
-            for root in batch.roots:
-                if batch.type_only or root.reuses or root.names.value.name != root.name:
-                    return None
-        first, *rest = self._schemas.values()
-        document = code_document(MultiDocument((first, *rest), dict(self._references)))
-        names = tuple(self._schemas)
-        return to_code_module(document, names=names) if fits_module(names, document) else None
 
     def declarations(self) -> dict[Batch, list[SchemaDeclaration]]:
         """Each batch's declarations, in the order it defines them."""

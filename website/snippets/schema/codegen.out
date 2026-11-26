@@ -1,11 +1,11 @@
-from __future__ import annotations
-
-
 from pyfect import schema as S
 
 type UsernameType = str
-type AgeType = float
+
 Username = S.String.check(S.is_min_length(3).annotate(expected="a value with a length of at least 3"))
+
+type AgeType = float
+
 Age = S.Number.check(S.is_int().annotate(expected="an integer"))
 
 from dataclasses import dataclass

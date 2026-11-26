@@ -37,7 +37,9 @@ def test_prints_each_schema_as_a_variable_of_its_name_sharing_references() -> No
     module.add_schemas({"One": first}, references=document.references)
     module.add_schemas({"Many": second}, references=document.references)
     source = module.print()
-    assert source == R.to_code_module(code_document(document), names=("One", "Many"))
+    assert source.count("\nPoint = ") == 1
+    assert "\nOne = Point\n" in source
+    assert "\nMany = S.Array(Point)\n" in source
     namespace = _run(source)
     assert S.decode_unknown_sync(namespace["Many"])([{"x": 1}]) == ({"x": 1},)
 
@@ -122,38 +124,56 @@ User = S.Struct(
     tags=S.Record(S.String, S.Int),
 ).annotate(identifier="User")
 
-# pyfect-dev 0.6.37's print of _golden_module(), byte for byte.
+# The print of _golden_module(), byte for byte: Effect's layout, each schema's type
+# alias then its value, imports in the order the schemas ask for them.
 _GOLDEN = (
     "from __future__ import annotations\n"
-    "\n"
+    "from pyfect import schema as S, duration\n"
+    "from typing import NotRequired, TypedDict, Literal, Any\n"
     "import enum\n"
     "import pyfect as fx\n"
     "import re\n"
-    "from typing import Any, Literal, NotRequired, TypedDict\n"
-    "from pyfect import duration\n"
-    "\n"
-    "from pyfect import schema as S\n"
     "\n"
     "type UserType = _Struct\n"
-    "type TreeType = _Struct1\n"
-    "type AccountType = UserType\n"
-    "type AccountsType = tuple[UserType, ...]\n"
-    "type MaybeType = fx.Option[str]\n"
-    "type ForestType = TreeType\n"
-    'type LetterType = Literal["a"] | Literal["b"]\n'
-    "type XsType = str\n"
-    "type WaitType = duration.Duration\n"
+    "\n"
     '_Enum = enum.Enum("_Enum", {"RED": "red", "BLUE": "blue"})\n'
+    "\n"
     '_Struct = TypedDict("_Struct", {"name": str, "nickname": NotRequired[str], "color": _Enum, "tags": dict[str, float]})\n'  # noqa: E501
-    '_Struct1 = TypedDict("_Struct1", {"value": float, "children": tuple[TreeType, ...]})\n'
+    "\n"
     'User = S.Struct(_Struct, name=S.String.check(S.is_min_length(1).annotate(expected="a value with a length of at least 1")), nickname=S.String, color=S.Enum(_Enum), tags=S.Record(S.String, S.Number.check(S.is_int().annotate(expected="an integer")))).annotate(identifier="User")\n'  # noqa: E501
-    'Tree: S.Bottom[TreeType, Any, Any, Any] = S.Struct(_Struct1, value=S.Number, children=S.Array(S.suspend(lambda: Tree))).annotate(identifier="Tree")\n'  # noqa: E501
+    "\n"
+    "type AccountType = UserType\n"
+    "\n"
     "Account = User\n"
+    "\n"
+    "type AccountsType = tuple[UserType, ...]\n"
+    "\n"
     "Accounts = S.Array(User)\n"
+    "\n"
+    "type MaybeType = fx.Option[str]\n"
+    "\n"
     'Maybe = S.Option(S.String).annotate(expected="Option")\n'
+    "\n"
+    "type TreeType = _Struct1\n"
+    "\n"
+    '_Struct1 = TypedDict("_Struct1", {"value": float, "children": tuple[TreeType, ...]})\n'
+    "\n"
+    'Tree: S.Bottom[TreeType, Any, Any, Any] = S.Struct(_Struct1, value=S.Number, children=S.Array(S.suspend(lambda: Tree))).annotate(identifier="Tree")\n'  # noqa: E501
+    "\n"
+    "type ForestType = TreeType\n"
+    "\n"
     "Forest = Tree\n"
+    "\n"
+    'type LetterType = Literal["a"] | Literal["b"]\n'
+    "\n"
     'Letter = S.Literals(["a", "b"])\n'
+    "\n"
+    "type XsType = str\n"
+    "\n"
     'Xs = S.String.check(S.is_pattern(re.compile("^x+$", 32)).annotate(expected="a string matching the RegExp ^x+$"))\n'  # noqa: E501
+    "\n"
+    "type WaitType = duration.Duration\n"
+    "\n"
     'Wait = S.Duration.annotate(expected="Duration")\n'
 )
 
@@ -181,8 +201,9 @@ def _golden_module() -> codegen.Module:
     return module
 
 
-def test_a_module_of_schemas_prints_as_0_6_37_did() -> None:
-    """``add_schemas`` returns the bindings since 0.7.0; the module prints the same."""
+def test_a_module_of_schemas_prints_each_type_next_to_its_schema() -> None:
+    """Since 0.7.0 a module of schemas alone prints as a mixed one does (0.6 put every
+    type alias first)."""
     assert _golden_module().print() == _GOLDEN
 
 

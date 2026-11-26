@@ -519,15 +519,6 @@ def is_reserved_name(name: str, /) -> bool:
     return name in _RESERVED or keyword.iskeyword(name)
 
 
-def fits_module(names: Sequence[str], document: CodeDocument, /) -> bool:
-    """Whether ``to_code_module`` takes ``names`` for ``document``'s roots."""
-    try:
-        _check_root_names(names, document)
-    except ValueError:
-        return False
-    return True
-
-
 def _defined_names(document: CodeDocument) -> set[str]:
     references = document.references
     identifiers = [named.identifier for named in references.non_recursives]

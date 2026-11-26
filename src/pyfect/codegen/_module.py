@@ -263,12 +263,8 @@ class Module:
     def print(self) -> str:
         """The module's source: imports, declarations in dependency order, then what
         ``add`` appended. Run it, or check it with pyright."""
-        if not self._building:
-            schemas = self._schemas.module()
-            if schemas is not None:
-                return schemas
-            if not self._schemas.declared():
-                _empty()
+        if not self._building and not self._schemas.declared():
+            _empty()
         output = self.finalize()
         parts = [
             "\n".join(output.imports),
@@ -282,7 +278,7 @@ class Module:
 
     def _schema_taken(self, name: str) -> bool:
         """Whether a schema cannot declare ``name``. Schemas may shadow builtins,
-        as ``to_code_module``'s always could."""
+        as `to_code_module`'s always could."""
         return name in self._given_reserved or self._root.taken_by(name) is not None
 
     def _declare_schema(self, name: str) -> DeclarationBinding:

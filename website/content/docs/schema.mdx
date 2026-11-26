@@ -252,8 +252,8 @@ source (below).
 ## Generating Python source
 
 `pyfect.codegen` is Effect's `Codegen`, writing Python. `module.add_schemas({...},
-references=...)` adds schema representations to a `codegen.Module`, a variable for each name, and
-`module.print()` writes the module (it replaces `to_code_document` and `make_code`, deprecated in 0.6.36 since Effect 4.1.5 removed
+references=...)` adds schema representations to a `codegen.Module`, a variable for each name with
+its type alias just before it, and `module.print()` writes the module (it replaces `to_code_document` and `make_code`, deprecated in 0.6.36 since Effect 4.1.5 removed
 `toCodeDocument`).
 
 A module can also be built from declarations. `declare` allocates a name that shadows no
