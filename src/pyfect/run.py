@@ -87,12 +87,14 @@ def run_sync_exit[A, E](eff: Effect[A, E, Any], *, context: Context[Any] = _EMPT
 def flush_exit[A, E](scheduler: SyncOnlyScheduler, fiber: Fiber[A, E]) -> Exit[A, E]:
     """What ``fiber`` comes to without waiting on anything. What it left
     waiting goes on in the background (``SyncScheduler.adopt``), as an Effect
-    fiber that ``runSync`` gave up on does."""
+    fiber that ``runSync`` gave up on does. The exit is read before that
+    handover: from then on the background's thread may finish the fiber."""
     try:
         scheduler.flush_as(fiber)
+        done = fiber._exit
     finally:
         scheduler.adopt(BACKGROUND)
-    return exit_die(AsyncFiberError(fiber=fiber)) if fiber._exit is None else fiber._exit
+    return exit_die(AsyncFiberError(fiber=fiber)) if done is None else done
 
 
 @overload
@@ -163,13 +165,13 @@ def drive[A, E](scheduler: SyncScheduler, fiber: Fiber[A, E]) -> Exit[A, E]:
     Effect's always-alive scheduler: forks, lookups others wait on, timers."""
     try:
         scheduler.run_until(lambda: fiber._exit is not None)
+        ex = fiber._exit
     except KeyboardInterrupt:
         fiber.interrupt_as_unsafe(None)
         scheduler.run_until(lambda: fiber._exit is not None)
         raise
     finally:
         scheduler.adopt(BACKGROUND)
-    ex = fiber._exit
     assert ex is not None
     return ex
 
