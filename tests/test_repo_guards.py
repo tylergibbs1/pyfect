@@ -79,11 +79,17 @@ def _imports(tree: ast.Module) -> tuple[frozenset[str], set[str]]:
     return frozenset(source_files), scanning
 
 
+def _runs_as_script(node: ast.stmt) -> bool:
+    """``if __name__ == "__main__":``, which an import doesn't run."""
+    return isinstance(node, ast.If) and ast.unparse(node.test) == "__name__ == '__main__'"
+
+
 def _definitions(tree: ast.Module) -> list[tuple[str, Sequence[ast.AST]]]:
     """Each module-level name (methods as ``Class::name``) with the code that defines it.
     A function's decorators are left out: a test parametrized over the files checks each
     file on its own, so it fails only for the file a change touched. Code run at import
-    other than a definition is ``<module>``, which every test depends on."""
+    other than a definition is ``<module>``, which every test depends on; a helper's
+    ``if __name__ == "__main__":`` block is not run at import."""
     found: list[tuple[str, Sequence[ast.AST]]] = []
     for node in tree.body:
         if isinstance(node, _Function):
@@ -97,7 +103,7 @@ def _definitions(tree: ast.Module) -> list[tuple[str, Sequence[ast.AST]]]:
         elif isinstance(node, ast.Assign | ast.AnnAssign | ast.AugAssign):
             targets = node.targets if isinstance(node, ast.Assign) else [node.target]
             found += [(name, [node]) for name in _names(targets)]
-        elif not isinstance(node, ast.Import | ast.ImportFrom):
+        elif not isinstance(node, ast.Import | ast.ImportFrom) and not _runs_as_script(node):
             found.append(("<module>", [node]))
     return found
 
@@ -229,6 +235,15 @@ def test_a_scan_is_found_through_constants_helpers_and_fixtures(tmp_path: Path) 
         "def test_helper():\n    module_names()\n"
         "def test_unrelated():\n    pass\n"
     ) == ["test_helper"]
+    assert (
+        scans(
+            "import _source\n"
+            "def main():\n    _source.files(_source.SRC)\n"
+            "def test_script_entry_point_is_not_import():\n    pass\n"
+            "if __name__ == '__main__':\n    main()\n"
+        )
+        == []
+    )
     assert (
         scans(
             "import _source, pytest\n"

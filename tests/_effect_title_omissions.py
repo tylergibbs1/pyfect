@@ -398,3 +398,13 @@ def reason_for(path: str, title: str) -> str | None:
         ):
             return omission.reason
     return None
+
+
+def open_title_count(unported: dict[str, list[str]]) -> int:
+    """How many of the unported titles are ``NOT_PORTED``, per occurrence: a file can repeat a
+    title under other ``describe`` blocks. docs/PARITY.md states it (``_parity_counts.py``)."""
+    return sum(
+        (reason_for(path, title) or "").startswith("NOT_PORTED")
+        for path, titles in unported.items()
+        for title in titles
+    )

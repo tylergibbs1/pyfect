@@ -13,54 +13,57 @@ fails here, so the table can't drift from what it claims.
 from __future__ import annotations
 
 import re
-from collections import Counter
-from pathlib import Path
 
 import pytest
-
-_PARITY = Path(__file__).parent.parent / "docs" / "PARITY.md"
-_CELL = re.compile(r"(?<!\\)\|")
+from _parity_counts import PARITY, WRITE, BadRow, Row, rewrite, section_four
 
 
-def _rows() -> list[list[str]]:
-    text = _PARITY.read_text()
-    start = text.index("## 4. Pythonic decisions")
-    section = text[start : text.index("\n## 5.", start)]
-    lines = [line for line in section.splitlines() if line.startswith("|")]
-    return [[cell.strip() for cell in _CELL.split(line)[1:-1]] for line in lines[2:]]
+def _rows() -> list[Row]:
+    return section_four(PARITY.read_text())
 
 
 def test_section_four_has_rows() -> None:
     assert len(_rows()) > 400
 
 
-def test_every_row_has_four_cells() -> None:
-    assert [row[0] for row in _rows() if len(row) != 4] == []
+def test_a_row_split_by_an_unescaped_bar_is_named_with_its_line() -> None:
+    """A ``|`` in a backticked cell still ends the cell, so the row has a cell too many."""
+    text = (
+        "## 4. Pythonic decisions\n\n| Feature | Mapping | Why | Class |\n|---|---|---|---|\n"
+        "| `Option` | `fx.Option` | same | a |\n"
+        "| `A | B` unions | `A \\| B` | same | a |\n\n## 5. Open\n"
+    )
+    with pytest.raises(BadRow) as raised:
+        section_four(text)
+    assert str(raised.value) == (
+        "docs/PARITY.md:6: the §4 row '`A' has 5 cells, not 4. A `|` inside a cell, "
+        "backticked or not, ends the cell: write it `\\|`."
+    )
 
 
 def test_every_row_has_a_valid_class() -> None:
     valid = re.compile(r"a|b: .{10,}|c done|c kept: .{10,}|c open: .{5,}")
-    assert [row[0] for row in _rows() if not valid.fullmatch(row[-1])] == []
+    assert [row.feature for row in _rows() if not valid.fullmatch(row.kind)] == []
 
 
-def _class_counts() -> Counter[str]:
-    return Counter(row[-1].split(":")[0] for row in _rows())
+def test_the_recorded_counts_are_the_tables() -> None:
+    """§4's class counts and §5's row counts per decision. Hand-carried counts drifted once
+    (76 open rows, when 74 were)."""
+    stale = rewrite(PARITY.read_text(), open_titles=None).stale
+    assert not stale, f"docs/PARITY.md: {stale}; run `{WRITE}`"
 
 
-def test_the_recorded_class_counts_are_the_tables() -> None:
-    """Hand-carried counts drifted once (76 open rows, when 74 were)."""
-    found = re.search(
-        r"Counts after the merge: a (\d+), b (\d+), c done (\d+), c kept (\d+), c open (\d+)",
-        _PARITY.read_text(),
+def test_a_rewrite_puts_back_every_count_it_keeps() -> None:
+    text = PARITY.read_text()
+    wrong = re.sub(r"(Counts after the merge: [^\n]*?c open )\d+", r"\g<1>999", text)
+    wrong = re.sub(
+        r"\((\d+) §4 rows, `c kept: Effect bug", r"(999 §4 rows, `c kept: Effect bug", wrong
     )
-    assert found is not None
-    counts = _class_counts()
-    assert tuple(map(int, found.groups())) == (
-        counts["a"],
-        counts["b"],
-        counts["c done"],
-        counts["c kept"],
-        counts["c open"],
+    wrong = re.sub(r"\d+ titles NOT_PORTED, all open", "999 titles NOT_PORTED, all open", wrong)
+    done = rewrite(wrong, open_titles=7)
+    assert len(done.stale) == 3, done.stale
+    assert done.text == re.sub(
+        r"\d+ titles NOT_PORTED, all open", "7 titles NOT_PORTED, all open", text
     )
 
 
@@ -69,15 +72,16 @@ def test_the_recorded_class_counts_are_the_tables() -> None:
     ["c kept: security hardening, decided by the user", "c kept: Effect bug, decided by the user"],
 )
 def test_section_five_states_how_many_rows_each_decision_covers(reason: str) -> None:
-    text = _PARITY.read_text()
+    text = PARITY.read_text()
     section = text[text.index("\n## 5.") : text.index("\n## 6.")]
-    count = sum(row[-1].startswith(reason) for row in _rows())
-    assert f"({count} §4 rows, `{reason}`)" in section
+    assert re.search(rf"\(\d+ §4 rows, `{re.escape(reason)}`\)", section)
 
 
 def test_a_class_b_row_names_its_own_reason() -> None:
     """A generic reason says nothing about what Python lacks."""
     generic = {"pythonic", "not ported", "python", "language limit", "cannot express"}
     assert [
-        row[0] for row in _rows() if row[-1].startswith("b: ") and row[-1][3:].lower() in generic
+        row.feature
+        for row in _rows()
+        if row.kind.startswith("b: ") and row.kind[3:].lower() in generic
     ] == []
