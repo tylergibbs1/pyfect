@@ -70,12 +70,15 @@ jobs:
           - extra: mysql
             packages: asyncmy
             tests: tests/test_mysql_*.py tests/test_sql_mysql_*.py tests/oracle/test_mysql_*.py
+            images: mysql busybox
           - extra: mssql
             packages: python-tds pyopenssl
             tests: tests/test_mssql_*.py tests/oracle/test_mssql_*.py
+            images: mssql busybox
           - extra: redis
             packages: redis
             tests: tests/oracle/test_redis*.py
+            images: redis
         include:
           # The newest release on the newest Python, the oldest allowed on the oldest.
           - resolution: highest
@@ -98,9 +101,11 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: ./.github/actions/container-images
+      - if: matrix.driver.images
+        uses: ./.github/actions/container-images
         with:
           mode: load
+          images: ${{ matrix.driver.images }}
 
       - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
 

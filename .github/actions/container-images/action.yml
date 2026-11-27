@@ -4,12 +4,19 @@ description: >
   digest), cached as archives under a key made from that file. `save` (one job per workflow
   run) pulls each image once when the key is new and caches the archives; a failed pull fails
   that job once, naming the image, and nothing retries. `load` restores them, failing on a
-  miss, and sets PYFECT_IMAGE_ARCHIVES so the tests load their images and never pull
-  (tests/_container_images.py).
+  miss, loads the images `images` names and waits for the disk to write them, all before the
+  job's tests start, then sets PYFECT_IMAGES_PRELOADED: a test never loads or pulls an image
+  (tests/_container_images.py). Loading one while tests ran wrote GBs to the disk they read,
+  and a subprocess's imports waited on it until its test timed out (run 45937052191).
 inputs:
   mode:
     description: "`save` or `load`."
     required: true
+  images:
+    description: >
+      `load` only: the images the job's tests run, `all` or keys of tests/container_images.json,
+      space-separated.
+    required: false
 runs:
   using: composite
   steps:
@@ -47,7 +54,11 @@ runs:
         key: container-images-${{ hashFiles('tests/container_images.json', 'tests/_container_images.py') }}
         fail-on-cache-miss: true
 
-    - name: Tell the tests where they are
+    - name: Load the images before the tests
       if: inputs.mode == 'load'
       shell: bash
-      run: echo "PYFECT_IMAGE_ARCHIVES=$GITHUB_WORKSPACE/.images" >> "$GITHUB_ENV"
+      env:
+        IMAGES: ${{ inputs.images }}
+      run: |
+        python3 tests/_container_images.py load .images "$IMAGES"
+        echo "PYFECT_IMAGES_PRELOADED=$IMAGES" >> "$GITHUB_ENV"
