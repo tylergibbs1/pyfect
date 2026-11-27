@@ -20,14 +20,6 @@ def make_client(
     ).pipe(fx.provide(reactivity.layer))
 
 
-def make_unsynced_client(
-    directory: Path, **config: Any
-) -> fx.Effect[sqlite.SqliteClientService, Any, fx.Scope]:
-    """``make_client`` whose commits skip fsync, for tests of logic rather than durability:
-    a runner's slow disk flush would otherwise outlast their timeouts."""
-    return make_client(directory, **config).tap(lambda client: client("PRAGMA synchronous = OFF"))
-
-
 def make_memory_client(**config: Any) -> fx.Effect[sqlite.SqliteClientService, Any, fx.Scope]:
     return sqlite.make(sqlite.SqliteClientConfig(filename=":memory:", **config)).pipe(
         fx.provide(reactivity.layer)

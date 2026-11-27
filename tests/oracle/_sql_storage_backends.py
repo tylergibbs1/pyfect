@@ -21,7 +21,7 @@ from pyfect.cluster import sql_message_storage as SqlMessageStorage
 from pyfect.cluster.message_storage import EncodedStorage, MessageStorageService
 from pyfect.sql.client import SqlClient, SqlClientService
 
-from ._sqlite import make_client, make_unsynced_client
+from ._sqlite import make_client
 
 
 def fresh_prefix(name: str) -> str:
@@ -77,14 +77,10 @@ def mysql(server: Any) -> fx.Effect[SqlClientService, Any, fx.Scope]:
 BACKENDS = ("sqlite", "pg", "mysql", "mssql")
 
 
-def make_backend(
-    request: pytest.FixtureRequest, tmp_path: Path, *, sqlite_fsync: bool = True
-) -> Backend:
-    """The backend of a fixture parametrized over ``BACKENDS``. ``sqlite_fsync=False``: the
-    SQLite file's commits skip fsync."""
+def make_backend(request: pytest.FixtureRequest, tmp_path: Path) -> Backend:
+    """The backend of a fixture parametrized over ``BACKENDS``."""
     if request.param == "sqlite":
-        maker = make_client if sqlite_fsync else make_unsynced_client
-        return Backend("sqlite", lambda: maker(tmp_path), "cluster")
+        return Backend("sqlite", lambda: make_client(tmp_path), "cluster")
     if request.param == "mssql":
         pytest.importorskip("pytds")
         server = request.getfixturevalue("mssql_server")

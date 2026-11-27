@@ -69,11 +69,12 @@ def backend(request: pytest.FixtureRequest, tmp_path: Path) -> Backend:
     return make_backend(request, tmp_path)
 
 
+@pytest.mark.sqlite_fsync
 @pytest.mark.parametrize("backend", ["sqlite"], indirect=True)
 @testing.live
 def test_the_sqlite_backend_keeps_the_default_sync(backend: Backend):
-    """One storage suite runs on a SQLite file with the default sync, so that path stays
-    covered while the retention tests skip fsync."""
+    """The SQLite backend opens with the default sync; other tests skip fsync
+    (tests/_sqlite_sync.py)."""
 
     def body() -> Generator[fx.Effect[Any, Any, Any], Any]:
         sql = yield from backend.client()
