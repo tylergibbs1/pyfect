@@ -1,1 +1,0 @@
-- The development version is 0.7.0, so Changed and Removed fragments are accepted on this branch.

@@ -1,5 +1,355 @@
 # Changelog
 
+## 0.7.0 (2026-11-27)
+
+### Changed
+
+- `AbortSignal.add_listener` runs its listener as a WHATWG `AbortSignal` does, as in Effect:
+  never on a signal that already fired, once for a listener added twice, and not when it is
+  removed or added during the abort. Before, it ran at once on a fired signal and ran every
+  add. A program that adds cleanup that must run even after the abort uses `on_abort`, which
+  runs it at once on a fired signal.
+- `pyfect.ai.openai.generated` and `pyfect.ai.openrouter.generated` (schemas, `types` and
+  generated clients) follow Effect 4.1.5's `Generated.ts`; OpenAI followed 4.1.4's and
+  OpenRouter 4.1.2's. OpenAI keeps every name. OpenRouter renames 34 schemas (with their types)
+  and 150 nested types, removes 208 schemas (187 of them Effect's numbered names such as
+  `Objects_17`) and 514 nested types, and adds 1,173 schemas and 85 client methods. Integer
+  fields are typed `int` instead of `float`, and OpenRouter's `ChatToolCall.id` and
+  `ChatStreamToolCall.index` are `NotRequired` (read them with `.get(...)`). The full list,
+  old name → new name, is on [AI providers in 0.7.0](https://pyfect.dev/docs/ai-providers-migration),
+  made by `scripts/ai_generated_migration.py`; for example `CompletedEvent` →
+  `StreamEventsResponseCompleted` and `BaseRefusalDeltaEvent` → `RefusalDeltaEvent`.
+  `openrouter.language_model.ConfigService` takes 4.1.5's request options (`deferred_tools`,
+  the new plugins and service tiers).
+- Schema: a check in a field's `Annotated` metadata that can't check the field's type
+  (`Annotated[int, S.is_min_length(1)]`, a number check on a `str`) raises `TypeError` where
+  the class (or `S.Struct` of a `TypedDict`) is defined, naming the field and the check, as
+  Effect's compiler rejects it. It used to define and fail only when a value reached the check,
+  so a field with a default, in a union, optional or in a container could carry it unnoticed;
+  such a class no longer defines. Give the field a check that fits its type (a length check
+  belongs on a string, list or tuple), or move it to the member it fits
+  (`Annotated[str, S.is_min_length(1)] | int`). A check on a type it can't try at definition (a
+  declaration such as `bytes`, a class) still names the field when it raises on a value.
+- `uvicorn_server` and `hypercorn_server`: a request that arrives while no app is served (the
+  app's layers still building) is answered at once with the same
+  `503 Service Unavailable` as `live_server` (`retry-after: 1`, `cache-control: no-store`,
+  body `service unavailable`); a WebSocket upgrade gets that 503 too. This matches Effect's
+  `NodeHttpServer` since 4.1.5 ([Effect-TS/effect#10786](https://github.com/Effect-TS/effect/pull/10786)).
+  Before, the server held such a request until an app was served and then answered it with
+  the app, or with an empty 503 if the server closed first. What to do instead: start `serve`
+  before clients connect (the usual `server.serve(app).pipe(layer.provide(uvicorn_server.layer(...)))`
+  does), have readiness checks request a route rather than wait for the port (a check that
+  counted only an empty 503 as starting must now count any 503 as not ready), and have
+  clients retry a 503.
+- `Command.with_handler` keeps the command's error type, as Effect 4.1.4's `withHandler` does
+  (Effect-TS/effect#10376): the errors of a handler it replaces, and of `validate` checks, stay
+  in the result type. A command annotated with a narrower error type must widen the
+  annotation, or pass the final handler to `command.make` instead.
+- `codegen.Module.add_schemas` returns the schemas' bindings (a `Mapping[str, DeclarationBinding]`
+  by the names given), as Effect's `addSchemas` returns its `ReadonlyMap`, instead of the module.
+  Instead of `m.add_schemas(...).print()`, write `m.add_schemas(...)` and then `m.print()`;
+  instead of chaining two calls, call `add_schemas` on the module twice.
+- `codegen.Module.print` lays out a module of schemas alone as Effect's `Codegen` does, and as a
+  module mixing schemas and declarations already did: each schema's `type` alias just before its
+  value, and the imports in the order the schemas use them, `from pyfect import schema as S`
+  first. 0.6 put every type alias first and imported `typing` before `pyfect`. The generated code
+  means the same; to migrate, regenerate checked-in generated modules and commit them.
+- HttpApi: `HttpApiEndpoint` has two more trailing type parameters, the outermost middleware
+  and what the middleware inside it still need. An explicit annotation written with the old
+  ten parameters no longer accepts an endpoint whose inner middleware needs a service, as in
+  `endpoint.middleware(NeedsSession).middleware(ProvidesSession)` (pyright reports the
+  assignment). Leave the annotation off and let pyright infer the endpoint, or add the two
+  parameters; other endpoints are unchanged.
+- `rpc.worker.layer_initial_message` takes a `build` that cannot fail, as Effect's does. This
+  can break type checking: passing a `build` that can fail is now a type error. Handle its
+  failure first, for example with `.or_die()` on the effect `build` returns, or recover from
+  it inside `build`.
+- `live_server`: a request that arrives while no `serve` is attached is answered at once with
+  `503 Service Unavailable` (`retry-after: 1`, `cache-control: no-store`, body
+  `service unavailable`), as Effect's `NodeHttpServer` does since 4.1.5. Before, the server
+  held the connection until a `serve` started and then answered with the app, and held it
+  forever if no `serve` ever started. Connections are now served from the moment the server
+  listens, and each request goes to the app attached when it arrives, so a keep-alive
+  connection answered with 503 is served by the app once `serve` starts. Start `serve` before
+  clients connect (the usual `server.serve(app).pipe(layer.provide(live_server.layer(...)))`
+  does), or have clients retry a 503 (Effect #10786).
+- `McpClient` makes no spans of its own, as Effect 4.1.5's `McpClient` makes none (its
+  functions are `Effect.fnUntraced` and it has no `withSpan`;
+  [ai/McpClient.ts](https://github.com/Effect-TS/effect/blob/effect%404.1.5/packages/effect/src/ai/McpClient.ts)).
+  pyfect wrapped each request in a client span `McpClient.<method>` with `rpc.system.name`,
+  `rpc.method` and `tool`. The server's span still joins the caller's trace through the HTTP
+  client's propagated context, and now sits under the HTTP client's `POST` span. What to do
+  instead: find a tool call by the server's span (`tools/call <tool>`, with
+  `mcp.method.name` and `gen_ai.tool.name`), or wrap the client call in your own span
+  (`client.call_tool(tool, args).with_span("call add")`).
+- `McpServer` traces each request with a span that follows the OpenTelemetry MCP semantic
+  conventions, as in Effect 4.1.4 (Effect-TS/effect#10304). The span was
+  `McpServer.<method>` with `rpc.system.name` and `rpc.method`; it is now named `<method>`
+  or `<method> <target>` (`tools/call get_weather`, `prompts/get <name>`) and carries
+  `mcp.method.name`, `mcp.protocol.version`, `jsonrpc.request.id`, `mcp.session.id` (HTTP),
+  `network.transport` and `gen_ai.*` attributes. A W3C `traceparent` in `params._meta`
+  continues the client's trace (the transport's span is linked). It ends once the response
+  is written: an error response sets `rpc.status_code`, and `error.type` unless the request
+  was at fault (parse error, invalid request or params, unknown method or resource), and a
+  `tools/call` result with `isError` sets `error.type` to `tool_error`. A response that
+  fails to write is answered with an internal error (-32603), as Effect's RpcServer does. A
+  toolkit's `handle` names the call on the current span with `gen_ai.tool.name` and
+  `gen_ai.tool.call.id` instead of `tool` and `parameters`, and records no arguments. What
+  to do instead: dashboards and queries that filtered on `McpServer.*` span names or the
+  `tool`, `parameters`, `rpc.method` attributes filter on the span name `tools/call <tool>`,
+  `mcp.method.name` and `gen_ai.tool.name`; to keep recording arguments, provide
+  `toolkit.RecordToolArguments` as `True` (`fx.provide_service(K.RecordToolArguments, True)`
+  or `layer.succeed`), which records them as `gen_ai.tool.call.arguments`.
+- The stdio `McpClient` and `McpServer` read their peer's output as Effect frames it
+  (NDJSON): only newline-terminated lines are messages. Text left without a final newline
+  when the peer's output closes was read as one last message in 0.6.x. The client now drops
+  it and the call fails with `TransportError` "MCP server closed stdout"; the server drops
+  such a last request. Both end a line at `\n` only (a `\r` before it is dropped), no longer
+  at a lone `\r`. A peer should end every message with `\n`, as the MCP stdio transport
+  requires.
+- `mcp_server.toolkit` and `register_toolkit` send a tool's `to_model_output` parts as a
+  successful call's `content`, keeping the encoded result as `structuredContent`, as in
+  Effect 4.1.5 (Effect-TS/effect#10740). Text parts are text blocks; an `image/*` (and from
+  2025-03-26 an `audio/*`) file given as bytes, base64 or a base64 data URL is an image or
+  audio block; a file at an `http(s)` URL is a `resource_link` from 2025-06-18, else its URL as
+  text; any other file is `tool_model_output_to_text`'s placeholder. A string result keeps no
+  `structuredContent` before 2026-07-28. Before, MCP ignored `to_model_output` and sent the
+  result's JSON text. What to do instead: a client that read the JSON text of such a tool's
+  `content` reads `structuredContent`; to keep sending the JSON text, make the tool without
+  `to_model_output` for MCP, or give it a content mapper (`mcp_server.tool_content`), which
+  takes precedence.
+- `message_storage.DeletesProcessed` is gone: `MessageStorage` requires `delete_processed`, as
+  Effect 4.1.4 requires `deleteProcessed` (Effect-TS/effect#10267), so `EncodedStorage` and
+  `StorageBase` declare it. A custom storage without it no longer type-checks, where its
+  `delete_processed` used to fail with a `PersistenceError`: implement
+  `delete_processed(*, entity_type, completed_before, limit)` on it (return `fx.succeed(0)` to
+  keep every request, as the noop storage does), and drop any `DeletesProcessed` import or
+  `isinstance` check, since every storage now has the method.
+- `multipart.to_persisted` (`request.multipart`, HttpApi's `as_multipart`) writes at most 100
+  files (`multipart.MaxPersistedFiles`) and 100 MiB (`multipart.MaxPersistedSize`) to its
+  temporary directory by default; past a limit the read fails with a `MultipartError`,
+  `TooManyParts` or `BodyTooLarge` (a 413). Before, every file part became a temporary file,
+  so one request inside the body limit could create a great many of them. Effect has no such
+  limits; pyfect differs on purpose. A form that needs more raises the limits, or removes them
+  with `None`: `effect.provide_service(multipart.MaxPersistedFiles, ...)`,
+  `multipart.limits_context(max_persisted_files=..., max_persisted_size=...)`, or the same
+  keywords on `as_multipart`. `limits_context` and the HttpApi multipart keywords now also take
+  `None` for `max_parts`, `max_file_size` and `max_total_size`.
+- SQL `PersistedQueue` on MySQL: the `id` and `queue_name` columns are text again,
+  `VARCHAR(255)` as in Effect, in `utf8mb4_0900_bin` so ids and queue names still compare
+  exactly (case, accents and trailing spaces count). `0003_exact_ids` (0.6.4) had made them
+  `VARBINARY(1020)`, so a pyfect from before 0.6.4 sharing the table, during a rolling upgrade
+  or after a downgrade, handed its handlers `meta.id == "b'job'"`, breaking idempotency keys.
+  The MySQL-only migration `0005_exact_text_ids` converts the table on start and keeps its
+  rows (`0004` is PostgreSQL's `widen_sequence`). An `offer` whose id or queue name has more
+  than 255 characters now fails with a `PersistedQueueError`, where up to 1020 bytes fitted:
+  shorten such ids, or hash them to a fixed length, before offering. A table already holding
+  a longer one stops the migration with an error giving how many rows: delete or shorten
+  those rows, then start again.
+- `openai_compat`: a PDF given as a URL (a `Url`, or an `http(s)://` string) fails with an
+  `InvalidUserInputError` before any request, as in Effect 4.1.4 (Effect-TS/effect#10514): Chat
+  Completions takes no PDF URL. A `Url` was sent as text and a URL string was dropped. Pass the
+  PDF's bytes, base64 data or an uploaded file's id instead.
+- `observability.otlp_metrics` exports a metric without a declared unit with an empty unit
+  instead of `"1"`, as in Effect 4.1.4 (Effect-TS/effect#10385). Prometheus-compatible
+  backends stop adding `_ratio` to such gauge names (`app_build_info_ratio` becomes
+  `app_build_info`); give the metric `attributes={"unit": "1"}` to keep the old name.
+- OTLP and OpenTelemetry spans that succeed, or fail without a reportable error, keep the
+  status Unset instead of being set to Ok, as in Effect 4.1.4 (Effect-TS/effect#10440);
+  `otel.tracer` no longer overwrites a status the application set on the span in those cases.
+  Queries and dashboards that filter on Ok should also match Unset.
+- PostgreSQL: an anonymous record (`ROW(1, 'a')`, `(a, b)`) and a `record[]` read with typed
+  fields, as in Effect-TS/effect#10716: `SELECT ROW(1, 'a', NULL, ROW(true, ARRAY[1, 2]))`
+  gives `(1, "a", None, (True, [1, 2]))`, where every field was a `str` (`('1', 'a', None,
+  '(t,"{1,2}")')`). A record's text has no field types, so such a statement now asks for
+  binary results; the first time a session runs a statement, it asks PostgreSQL for the
+  statement's column types (one round trip more, once). A field whose type has no binary
+  loader reads as UTF-8 text, so enums and `xml` stay strings, but one with a binary layout
+  (`point`, `regclass`, a named composite) is now a `SqlError` naming its type OID: cast that
+  field to `text` in the query, or register a binary loader for it in `types`. Code that
+  parsed the strings reads the values directly instead. A statement keeps text results, and
+  string fields, when another of its columns reads differently in binary (`regclass`,
+  `float4`, or a type `types` gives only a text loader).
+- `rpc.server.ServerOptions` takes `on_request`, which `make` and the layers over a protocol
+  use to wrap the effect running each decoded request (its middleware and handler, and the
+  response write when the handler returns its result directly), as Effect's `RpcServer.make`
+  `onRequest` does. The callback is given the request as well, so the `on_request` of
+  `RpcServer.write` takes `(effect, request)` where it took `(effect)`. What to do instead:
+  a callback passed to `write` takes a second parameter, the `Request`, and may ignore it.
+- `schedule.to_step`, `to_step_with_metadata` and `to_step_with_sleep` hand back Effect's steps
+  instead of `Continue` / `Stop`: they succeed with `(output, delay)`, with the step's
+  `Metadata`, and with the output after the sleep, and fail with `Done(output)` when the
+  schedule stops (`schedule.MetadataStep` names the second's step, and `StepFn` is the `Pull`
+  form). Unpack `output, delay = yield from step(now, input)` where you read `.output` and
+  `.delay`, and handle the end with `pyfect.pull.match_effect(..., on_done=...)` (or
+  `catch_done`) where you checked `isinstance(decision, Stop)`.
+- Schema: a schema class field whose default is not a value of its schema's type
+  (`n: int | None = S.field(S.Int, default=None)`, which pyright accepts because a schema is
+  covariant, as Effect's `Codec` is) raises `TypeError` where the class is defined, naming the
+  field, as Effect's compiler rejects such a constructor default. It used to define and fail
+  each time the class was built without that field. Give the field a schema that takes the
+  default (`S.NullOr(S.Int)`, or `S.Union(S.Int, S.Undefined)` to leave the key out while it
+  is `None`) or a default of its type. The default's checks still run at construction, and a
+  schema naming a class defined further down is still checked on first use.
+- Schema: a schema class whose field annotation has no schema (`value: complex`) raises
+  `TypeError` where the class is defined, naming the field (`Unsupported.value: No schema for
+  the annotation ...`), instead of on first use. A module that defines such a class without
+  ever using it no longer imports: give the field its schema with `S.field(...)`. An
+  annotation naming something not defined yet (the class itself, a class further down) is
+  still derived on first use.
+- `problem_details.optional_member`, `problem_details.fixed_member`,
+  `S.override_to_codec_iso(...)`, `schema_binary.field_id(...)` and the `http_api` status
+  annotation were typed as needing `Any` services; they now keep the services (and encoded
+  type) of the schema they wrap, as Effect's do. `rpc.worker.make_initial_message`,
+  `layer_initial_message` and `initial_message` now need the services their codec's encoding
+  (or decoding) needs. This can break type checking where those services were never
+  provided: provide them (the code failed at run time without them).
+- `SourceRequest(upgrade=...)` takes a callback of `(request, headers)` instead of
+  `(headers)`: the request upgrading (the one built or a modified copy), as Effect passes
+  `this` to `upgradeWith`. The live server's upgrade no longer refers to the request it
+  belongs to, so a served upgrade request is freed once answered. A custom server that builds
+  `SourceRequest` with `upgrade=` adds a first parameter for the request (ignore it if
+  unused).
+- A tag's key is its identity, as in Effect (whose `Context` maps key strings to services):
+  two tag classes declared with the same `key=` are now one service, so providing either
+  satisfies both and the later provision replaces the earlier, where they used to be two
+  services that only shared a display name. pyright still sees two classes, so read and
+  provide such a service through one of them. Tags without `key=` keep their distinct default
+  keys (module and qualified name). Declaring a tag class with a key another declaration
+  already holds warns with `pyfect.context.DuplicateTagKeyWarning`, naming both (`HttpApiGroup`s
+  sharing an identifier are one service too, without the warning). To keep two such tags
+  apart, give them different keys, for example prefixed with your package (`key="myapp/Mail"`).
+- `take_all` on `Queue` / `Dequeue`, `TxQueue` / `TxDequeue` and `PubSub` subscriptions
+  returns a non-empty tuple (`tuple[A, *tuple[A, ...]]`), as Effect's `NonEmptyArray`, where it
+  returned a `list` typed `list` or `Sequence`. Code that mutates the result, or annotates it
+  as `list`, should copy it with `list(...)`; code that indexes it or iterates over it is
+  unchanged, and `items[0]` is now typed as present.
+- A `ThreadWorker` and its parent hand each other copies of their messages, not the objects
+  themselves, as a `ProcessWorker` does and as Effect's `postMessage` structured-clones
+  them: a change made after `send` no longer reaches the other side (and on free-threaded
+  Python the two sides no longer race on one object). Each message is copied by a pickle
+  round trip when it is sent, so a message that can't be pickled fails `send`, and one that
+  can't be unpickled is a `WorkerReceiveError`. Code that relied on sharing an object with a
+  thread worker sends what changed as a new message instead, or passes the object in `send`'s
+  transfer list (`send(message, [obj])`), which moves it to the thread worker uncopied; a
+  message holding unpicklable values (locks, open files, lambdas) sends a picklable
+  description of them instead.
+- `S.to_type` (and every schema built on a decoded side) runs the checks it promotes from the
+  encoded side before the decoded side's own checks, as Effect 4.1.4 does
+  (Effect-TS/effect#10453), so a value failing both reports the encoded check's failure, and
+  the decoded checks' annotations (a `title`) win. Code matching on which check's message is
+  reported should expect the encoded one; to keep a decoded check first, put it on the
+  encoded side too.
+- AI tools speak JSON at both ends, as in Effect 4.1.4 (Effect-TS/effect#10332,
+  Effect-TS/effect#10362). A toolkit decodes a call's parameters with the JSON codec of the
+  tool's parameters schema, and a result's `encoded_result` is the JSON encoding of its
+  success or failure schema: a `DateTimeUtc` is ISO text and a `BigInt` a string of digits,
+  where it was the plain encoding (a `datetime`, an `int`). So a tool whose parameters are
+  not plain JSON, a `DateTimeUtc` field say, now works when a model calls it (Anthropic,
+  OpenAI and OpenRouter hand the toolkit the parameters' JSON form, and `needs_approval`
+  decodes them the same way), and a dynamic tool without a `success` schema fails with
+  `ToolResultEncodingError` when its handler returns a value JSON has no form for.
+  `response.all_parts(toolkit)` encodes a locally handled tool's results with the same JSON
+  codec; a provider-executed tool's keep the provider's payload. What to do instead: a
+  direct `WithHandler.handle(name, params)` caller passes the parameters' JSON encoding
+  (`S.encode_unknown_sync(S.to_codec_json(tool.parameters_schema))(params)`), and code that
+  read `encoded_result` expecting the plain encoding decodes it with
+  `S.to_codec_json(tool.success_schema)`. A dynamic tool whose handler returns such values
+  declares a `success` schema. The tool ledger and `ai.durable` store the JSON encoding too,
+  so a record of such a result written by 0.6.x no longer decodes: finish those runs on
+  0.6.x before upgrading, or clear their records.
+- `tool_ledger.guard` inside a workflow reads only the call's `<execution id>/<tool_call_id>`
+  record: records written by 0.6.22 and earlier under the bare `tool_call_id` are no longer
+  read, and the extra lookup each guarded call in a workflow made for them is gone. What to
+  do instead: let workflows still in flight from 0.6.22 finish on 0.6.x before upgrading, or
+  clear their ledger records (`DELETE FROM effect_ai_tool_ledger WHERE id NOT LIKE '%/%'` in
+  the default table, once no guarded call outside a workflow will be replayed); otherwise
+  their tool calls run again. A bare-id record cannot be moved to its scoped key, since it
+  does not record which execution wrote it.
+- `Tool`, `ProviderDefined` and `Dynamic` carry their `failure_mode` as a seventh type
+  parameter (`Literal["error"]` or `Literal["return"]`; it defaults to `FailureMode`, so a
+  six-argument `Tool[...]` annotation still means a tool of either mode), and `set_failure`
+  keeps it, as Effect's `Tool.setFailure` does. `set_failure` gives back the same kind of
+  tool (a `Dynamic` stays `Dynamic`; so do its `set_success` and `add_dependency`) whose
+  handler error is the new failure in `"error"` mode and `Never` in `"return"` mode; it was
+  `Any`, so code that mishandled that error type-checked and now does not. What to do
+  instead: handle or declare the failure the toolkit now reports for an `"error"`-mode tool,
+  and in an exact annotation of a tool's type (`assert_type`, a variable's declared type)
+  add the mode, as in `Tool[N, P, S, F, F, R, Literal["error"]]`. `mcp_client.toolkit` gives
+  `transform_tool` the new `mcp_client.ModedRemoteTool[S, HE, M]`, a `RemoteTool` that keeps
+  its mode, so a `transform_tool` that calls `set_failure` on a `"return"`-mode tool
+  annotates its parameter `ModedRemoteTool[str, Never, Literal["return"]]` (one annotated
+  `RemoteTool` is still accepted). A `failure_mode` argument typed `Any` now leaves the
+  tool's type unknown; type it `tool.FailureMode`.
+- A toolkit's tool handler starts as soon as its call is handled, not in a later scheduler
+  round, and its last result reaches the stream once it exits, as in Effect 4.1.5. So an MCP
+  `tools/call` with a toolkit is answered without waiting a round. One effect you can see:
+  `stream_text(...).take(n)` now starts the handlers of the tool calls the model sent, even
+  ones the stream stops before. It used to start none. To keep a handler from running, stop
+  the stream before its tool call, or leave the tool out of the toolkit.
+- `transferable.schema(codec, f)` was typed as needing `Any` services; it now keeps the
+  services `codec` needs, as Effect's does, and `getter_add_all` is typed as needing none.
+  This can fail type checking where a schema's services were never provided: provide them
+  (with `fx.provide` or `fx.provide_service` around the encode or decode), since the code
+  failed at run time without them.
+- On Windows the process spawner refuses a `.bat` or `.cmd` file (any case, and ignoring the
+  trailing dots and spaces Windows drops) unless the command sets `shell`, as Node, and so
+  Effect, has since CVE-2024-27980: `cmd.exe` parses a batch file's arguments again, so an
+  argument could run another command. The spawn dies with `OSError(EINVAL)`, Node's
+  `spawn EINVAL`, where it used to run the file; a `ProcessWorker` whose `executable` is a
+  batch file raises it from `start`. To run a batch file, pass the whole script as the command
+  with `shell=True`, quoting any value in it for `cmd.exe` yourself, or call the program the
+  batch file wraps directly. A guard requires every place pyfect starts a process to go
+  through the check.
+
+### Deprecated
+
+- `codegen.Module.add_schemas(bindings=...)` warns and is removed in 0.8.0: use the mapping
+  `add_schemas` returns, `schemas = m.add_schemas(...)`.
+
+### Removed
+
+- HttpApi: `client[Group]` (`Client.__getitem__`), deprecated and typed to reject every group.
+  Use `http_api.get_group(client, Group)`, which pyright types as the group you name.
+- HttpApi: `handlers.handle_all`'s mapping form (`handle_all({"getUser": get_user})`) and
+  `builder.HandleAllEntry`, deprecated since 0.6.23. A mapping's key can't name its endpoint,
+  so it could not type the handler or the endpoint's own middleware; a mapping is now a
+  `TypeError` when the group's layer is built. Pass one `builder.entry(endpoint)(handler)`
+  per endpoint, `handle_all(builder.entry(Users.get_user)(get_user), ...)`, and give
+  `uninterruptible=True` to `builder.entry` instead of `HandleAllEntry`.
+- `LegacyStoreNeedsMigration.automatic`, deprecated in 0.6.9. Read `.state` instead: `automatic`
+  was `state != "unconfirmed"`, and `state` (`"pending"`, `"unconfirmed"`, `"ambiguous"` or
+  `"unbound"`) says why the server left the store's legacy batches where they are.
+- `schedule.Continue`, `schedule.Stop` and `schedule.Decision`, deprecated in 0.6.5. A schedule
+  step is Effect's `Pull`: a step given to `schedule.from_step` or `from_step_with_metadata`
+  returns `fx.succeed((output, delay))` to recur and `pyfect.cause.done(output)` to stop, where
+  it returned `Continue(output, delay)` and `Stop(output)`.
+- `pyfect.socket.ws.make_server` and `pyfect.socket.ws.layer_server`, deprecated since 0.6.2.
+  Use `pyfect.socket.server.make_web_socket` and `pyfect.socket.server.layer_web_socket`,
+  which take the same arguments (Effect's `NodeSocketServer.makeWebSocket` and
+  `layerWebSocket`).
+
+### Fixed
+
+- AI providers' generated schemas: a pattern's `\s` and `\S` match JavaScript's whitespace
+  (U+FEFF is whitespace; U+001C-U+001F and U+0085 are not), as Effect's do, where they used
+  Python's. OpenAI's `LiveCallReferRequest.target_uri` accepted a value of only U+FEFF.
+- HttpApi: a group layer no longer requires a service that an outer middleware provides to
+  an inner one, as Effect's `ApplyServices` types it. With
+  `endpoint.middleware(Inner).middleware(Outer)`, `Outer` wraps `Inner`, so what `Outer`
+  provides is taken off what `Inner` needs, at each step of a longer chain too; a group's
+  middleware wraps an endpoint's own, so `handle` now also takes what it provides off the
+  endpoint middleware's needs, as `handle_all(builder.entry(...))` already did. Both layers
+  served such requests without the service. `HttpApiEndpoint` gains two trailing type
+  parameters, the outermost middleware and what those inside it need (leave them out), and
+  `builder.EntrySlot` two more; `endpoint.middleware` reads as an `AddMiddleware`.
+
+### Docs
+
+- HttpApi Security: the middleware's third type parameter (what it needs), a middleware
+  function reading a service that the group's layer provides, the order middleware wrap in,
+  and an endpoint's own `middleware(...)` registered with `handle_all(builder.entry(...))`.
+
 ## 0.6.38 (2026-11-26)
 
 ### Added
