@@ -242,7 +242,9 @@ def _socket(ws: AsgiWebSocket, scope: Scope) -> SocketService:
     )
 
 
-async def _send_response(send: Send, scope: Scope, response: WebResponse) -> None:
+async def send_web_socket_denial(send: Send, scope: Scope, response: WebResponse) -> None:
+    """Answer a WebSocket upgrade with ``response`` (the ``websocket.http.response``
+    extension), or close it where the engine lacks the extension."""
     if "websocket.http.response" not in scope.get("extensions", {}):
         await send({"type": "websocket.close", "code": 1008})
         return
@@ -293,7 +295,7 @@ async def serve_websocket(
         return
     url = _scope.url(scope, _scope.header_lines(scope))
     if url is None:
-        await _send_response(send, scope, WebResponse(status=400))
+        await send_web_socket_denial(send, scope, WebResponse(status=400))
         return
     ws = AsgiWebSocket(receive, send)
 
@@ -305,7 +307,7 @@ async def serve_websocket(
 
         def body(fiber: Fiber[Any, Any]) -> Effect[object, Never]:
             web = response_to_web(response, context=fiber._context)
-            return from_async(lambda: _send_response(send, scope, web))
+            return from_async(lambda: send_web_socket_denial(send, scope, web))
 
         return _WithFiber(body)
 

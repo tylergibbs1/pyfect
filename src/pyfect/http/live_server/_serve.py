@@ -17,6 +17,7 @@ from pyfect._fiber import Fiber
 from pyfect.duration import Duration, millis
 from pyfect.effect import gen, succeed, sync, void
 from pyfect.http._authority import LOCALHOST, absolute_url
+from pyfect.http._unavailable import UNAVAILABLE
 from pyfect.http.headers import Headers
 from pyfect.http.live_server._exchange import MAX_DRAIN_BYTES, Exchange
 from pyfect.http.live_server._head import HeadError, RequestHead, parse_head
@@ -27,7 +28,6 @@ from pyfect.http.live_server._upgrade import upgrade
 from pyfect.http.live_server._ws_deflate import WebSocketConfig
 from pyfect.http.server_error import CLIENT_ABORT_ANNOTATION
 from pyfect.http.server_request import RequestProtocol, ServerRequest, SourceRequest
-from pyfect.http.server_response import raw
 from pyfect.option import Option
 from pyfect.socket._connection import Connection
 from pyfect.socket._errors import SocketError
@@ -40,12 +40,6 @@ CLOSE_GRACE_PERIOD = millis(500)
 before it is torn down (so the response is not lost to a reset)."""
 
 type Handle = Callable[[SourceRequest, Exchange], Effect[None]]
-
-_UNAVAILABLE = raw(
-    "service unavailable",
-    status=503,
-    headers={"cache-control": "no-store", "retry-after": "1"},
-)
 
 
 class Handlers:
@@ -62,7 +56,7 @@ class Handlers:
         attached = self._attached
         if attached:
             return attached[0](request, exchange)
-        return exchange.respond(request, _UNAVAILABLE).ignore()
+        return exchange.respond(request, UNAVAILABLE).ignore()
 
     def attach(self, handle: Handle) -> None:
         self._attached = (*self._attached, handle)

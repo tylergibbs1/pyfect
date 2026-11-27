@@ -10,8 +10,9 @@ and never stopped (a fiber a request forks into a longer-lived set runs on
 it, and must still be able to finish once the server is gone); each
 request runs on its own fiber on that loop, through ``pyfect.http.asgi``
 (streamed bodies, client aborts, WebSocket upgrades). A request that arrives
-before an app is served (while the app's layers are still being built)
-waits for it, as with ``NodeHttpServer``. When the serving scope closes, uvicorn
+before an app is served (while the app's layers are still being built) is
+answered at once with ``503 service unavailable`` (``retry-after: 1``), as
+``NodeHttpServer`` and ``live_server`` answer it. When the serving scope closes, uvicorn
 stops accepting and gives requests in flight ``graceful_shutdown_timeout``;
 then their fibers are interrupted and streamed bodies end where they are
 (ASGI cannot abort a started response quietly, so it ends complete).

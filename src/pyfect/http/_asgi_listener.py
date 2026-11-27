@@ -23,11 +23,16 @@ from pyfect.duration import Duration, from_input_unsafe, zero
 from pyfect.duration import Input as DurationInput
 from pyfect.effect import fail, succeed, suspend, sync
 from pyfect.exit import Exit
+from pyfect.http._unavailable import UNAVAILABLE
+from pyfect.http.asgi._http import encode_headers
 from pyfect.http.asgi._serve import AsgiHandler
 from pyfect.http.asgi._types import Receive, Scope, Send
+from pyfect.http.asgi._web_socket import send_web_socket_denial
 from pyfect.http.live_server._listener import ABORT_GRACE_PERIOD
 from pyfect.http.server import HttpApp, HttpServerService, Middleware
 from pyfect.http.server import make as make_server
+from pyfect.http.web import WebResponse
+from pyfect.http.wire import to_wire
 from pyfect.net.net_address import inet_address_from_native_unsafe
 from pyfect.run import run_fork
 from pyfect.scope import CloseableScope, acquire_release
@@ -74,39 +79,21 @@ def _bind(host: str | None, port: int) -> socket.socket:
 
 class Dispatch:
     """The ASGI app the engine runs: the served app's handler. A request that
-    arrives while no app is served waits for one, as a request reaching
-    ``NodeHttpServer`` before ``serve`` adds its ``request`` listener stays
-    pending: the socket is bound before the app's layers are built, so an
-    open port does not mean the app is ready. Once the server closes
-    (``close``), no app will come: the requests still waiting, and any later
-    one without an app, get an empty 503 at once, so shutdown never waits for
-    them. (Node's ``server.close`` would wait for such a connection for ever.)"""
+    arrives while no app is served is answered at once with ``live_server``'s
+    503, as ``NodeHttpServer`` answers one that arrives before ``serve`` adds
+    its ``request`` listener (Effect #10786): the socket is bound before the
+    app's layers are built, so an open port does not mean the app is ready."""
 
-    __slots__ = ("_closed", "_current", "_lock", "_waiting")
+    __slots__ = ("_current", "_lock")
 
     def __init__(self) -> None:
         self._current: AsgiHandler | None = None
-        self._closed = False
         self._lock = threading.Lock()
-        self._waiting: set[tuple[asyncio.AbstractEventLoop, asyncio.Future[None]]] = set()
 
     def install(self, handler: AsgiHandler) -> None:
-        """Serve ``handler``, waking the requests waiting for an app."""
+        """Serve ``handler``."""
         with self._lock:
             self._current = handler
-        self._wake_all()
-
-    def close(self) -> None:
-        """The server is closing: release the requests waiting for an app."""
-        with self._lock:
-            self._closed = True
-        self._wake_all()
-
-    def _wake_all(self) -> None:
-        with self._lock:
-            waiting, self._waiting = self._waiting, set()
-        for loop, waiter in waiting:
-            loop.call_soon_threadsafe(_wake, waiter)
 
     def remove(self, handler: AsgiHandler) -> None:
         """Stop serving ``handler``, unless another app replaced it."""
@@ -114,48 +101,31 @@ class Dispatch:
             if self._current is handler:
                 self._current = None
 
-    async def _handler(self) -> AsgiHandler | None:
-        """The app's handler once there is one; ``None`` once closed."""
-        loop = asyncio.get_running_loop()
-        while True:
-            with self._lock:
-                if self._current is not None:
-                    return self._current
-                if self._closed:
-                    return None
-                waiter = (loop, loop.create_future())
-                self._waiting.add(waiter)
-            try:
-                await waiter[1]
-            finally:
-                with self._lock:
-                    self._waiting.discard(waiter)
-
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         handler = self._current
-        if handler is None:
-            if scope["type"] not in ("http", "websocket"):
-                return  # hypercorn's lifespan: unsupported, so it goes on
-            handler = await self._handler()
-        if handler is None:
-            await _unavailable(scope, send)
-            return
-        await handler(scope, receive, send)
+        if handler is not None:
+            await handler(scope, receive, send)
+        elif scope["type"] in ("http", "websocket"):
+            await _unavailable(scope, receive, send)
+        # Else hypercorn's lifespan: unsupported, so it goes on.
 
 
-async def _unavailable(scope: Scope, send: Send) -> None:
-    """The answer to a request no app will serve: the server is closing."""
-    if scope["type"] == "http":
-        headers = [(b"connection", b"close"), (b"content-length", b"0")]
-        await send({"type": "http.response.start", "status": 503, "headers": headers})
-        await send({"type": "http.response.body", "body": b""})
-    else:
-        await send({"type": "websocket.close", "code": 1001})
+_UNAVAILABLE = to_wire(UNAVAILABLE)
 
 
-def _wake(waiter: asyncio.Future[None]) -> None:
-    if not waiter.done():
-        waiter.set_result(None)
+async def _unavailable(scope: Scope, receive: Receive, send: Send) -> None:
+    body = _UNAVAILABLE.body
+    assert isinstance(body, bytes)
+    if scope["type"] == "websocket":
+        # Node hands an upgrade no ``upgrade`` listener takes to the ``request``
+        # listeners: the client gets the same 503.
+        await receive()  # websocket.connect
+        response = WebResponse(body, status=_UNAVAILABLE.status, headers=_UNAVAILABLE.headers)
+        await send_web_socket_denial(send, scope, response)
+        return
+    headers = encode_headers(_UNAVAILABLE.headers)
+    await send({"type": "http.response.start", "status": _UNAVAILABLE.status, "headers": headers})
+    await send({"type": "http.response.body", "body": body})
 
 
 _ASGI = LoopBridge("pyfect-asgi")
@@ -333,7 +303,7 @@ def make_listener(
             return make_server(serve=_serve(dispatch, running), address=address)
 
         def stop(running: Running, _exit: object) -> Effect[None]:
-            return sync(dispatch.close).and_then(running.stop())
+            return running.stop()
 
         return acquire_release(suspend(start), stop).map(service)
 
