@@ -329,19 +329,6 @@ class McpClient(Tag[McpClientService], key="effect/ai/McpClient"):
     """The MCP client a program uses."""
 
 
-def _traced[A](
-    request: Effect[A, McpClientError], method: str, tool: McpTool | None
-) -> Effect[A, McpClientError]:
-    """``request`` in a client span naming its method and tool (the server's
-    is ``McpServer.<method>``, as Effect's)."""
-    attributes: dict[str, object] = {"rpc.system.name": "jsonrpc", "rpc.method": method}
-    if tool is not None:
-        attributes["tool"] = tool["name"]
-    return request.with_span(
-        f"McpClient.{method}", kind="client", capture_stack_trace=False, attributes=attributes
-    )
-
-
 def _optional_seconds(timeout: DurationInput | None) -> Duration | None:
     return None if timeout is None else from_input_unsafe(timeout)
 
@@ -452,7 +439,7 @@ def make(  # noqa: PLR0915
                     )
                 return succeed(body)
 
-            return _traced(transport.request(message, tool).flat_map(answered), method, tool)
+            return transport.request(message, tool).flat_map(answered)
 
         def deadline(
             effect: Effect[Any, McpClientError], operation: str, duration: Duration | None

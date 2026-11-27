@@ -123,12 +123,12 @@ descriptor stays on the tool as `mcp_client.ToolDescriptor`.
 
 </CodeOutput>
 
-Each request is a span on both sides: `McpClient.tools/call` on the client, with a `tool`
-attribute, and on the server a span that follows the OpenTelemetry MCP semantic
+The server traces each request with a span that follows the OpenTelemetry MCP semantic
 conventions, named for the method and the tool (`tools/call add`), with
 `mcp.method.name`, `gen_ai.tool.name` and `mcp.session.id`. It continues the client's trace
 from `params._meta.traceparent` when the client sends one, else the trace of the HTTP
-request that carries it. A tool's arguments are recorded (`gen_ai.tool.call.arguments`)
+request that carries it. The client makes no spans of its own, as in Effect, so over HTTP the
+server's span sits under the HTTP client's `POST` span, in the caller's trace. A tool's arguments are recorded (`gen_ai.tool.call.arguments`)
 only with `toolkit.RecordToolArguments` set to `True`, as they can hold sensitive data. An
 error response records its code (`rpc.status_code`, `error.type`), and a tool result with
 `isError` sets `error.type` to `tool_error`.

@@ -2,7 +2,8 @@
 semantic conventions: each request is a server span named after its method, with the tool
 appended for ``tools/call`` (``tools/call add``), carrying ``mcp.method.name`` and
 ``gen_ai.tool.name`` but not the arguments. Effect's ``McpClient`` makes no spans of its
-own; pyfect's makes the matching client span ``McpClient.<method>``, naming the tool."""
+own (4.1.5: no ``withSpan``, its functions ``fnUntraced``), nor does pyfect's: the server's
+span joins the caller's trace through the HTTP client's propagated context, under its POST."""
 
 from __future__ import annotations
 
@@ -33,7 +34,7 @@ def called(spans: list[NativeSpan], name: str) -> list[NativeSpan]:
 
 
 @pytest.mark.parametrize("protocol", PROTOCOLS, ids=lambda p: p.protocol_version)
-def test_each_request_is_a_client_span_and_a_server_span_naming_the_method_and_tool(
+def test_the_server_span_sits_under_the_http_post_in_the_callers_trace(
     protocol: C.ClientProtocol,
 ):
     tracer, spans = recording()
@@ -44,19 +45,22 @@ def test_each_request_is_a_client_span_and_a_server_span_naming_the_method_and_t
         tool = yield from find_tool(client, "add")
         return (yield from client.call_tool(tool, {"a": 1, "b": 2}))
 
-    program: Any = fx.scoped(session).pipe(fx.provide_service(CurrentTracer, tracer))
+    traced: Any = fx.scoped(session).with_span("caller")
+    program: Any = traced.pipe(fx.provide_service(CurrentTracer, tracer))
     result = fx.run_blocking(program.timeout("10 seconds").or_die())
     assert result.get("structuredContent") == {"total": 3}
 
-    [client] = called(spans, "McpClient.tools/call")
-    assert client.kind == "client"
-    assert client.attributes["rpc.method"] == "tools/call"
-    assert client.attributes["tool"] == "add"
+    assert not [span.name for span in spans if span.name.startswith("McpClient")]
+    [caller] = called(spans, "caller")
     [server] = called(spans, "tools/call add")
     assert server.kind == "server"
     assert server.attributes["mcp.method.name"] == "tools/call"
     assert server.attributes["gen_ai.tool.name"] == "add"
     assert "gen_ai.tool.call.arguments" not in server.attributes
-    # The server's span is in the client's trace, below the HTTP request.
-    assert server.trace_id == client.trace_id
-    assert called(spans, "McpClient.tools/list") and called(spans, "tools/list")
+    assert server.trace_id == caller.trace_id
+    assert server.parent is not None
+    [post] = [span for span in spans if span.span_id == server.parent.span_id]
+    assert post.kind == "client"
+    assert post.attributes["http.request.method"] == "POST"
+    assert post.parent is caller
+    assert called(spans, "tools/list")
