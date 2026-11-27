@@ -6,5 +6,6 @@
   Before, the server held such a request until an app was served and then answered it with
   the app, or with an empty 503 if the server closed first. What to do instead: start `serve`
   before clients connect (the usual `server.serve(app).pipe(layer.provide(uvicorn_server.layer(...)))`
-  does), have readiness checks request a route rather than wait for the port, and have
+  does), have readiness checks request a route rather than wait for the port (a check that
+  counted only an empty 503 as starting must now count any 503 as not ready), and have
   clients retry a 503.
