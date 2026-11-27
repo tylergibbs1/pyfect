@@ -419,8 +419,8 @@ class Service:
         deferred: bool = False,
     ) -> Callable[[Sequence[EncodedPart]], Effect[list[Any], SchemaError | AiError]]:
         """Decodes a response's parts; ``deferred`` also takes calls to
-        tools outside ``kit``, which otherwise fail with
-        ``ToolNotFoundError`` before the parts are decoded."""
+        tools outside ``kit``, which otherwise fail this decode (a
+        ``SchemaError``, as in Effect's strict ``Response.Part(toolkit)``)."""
         tools = () if kit is None else tuple(kit.tools.values())
         key = (encoded, stream, deferred)
         cached = self._decoders.get(key)
