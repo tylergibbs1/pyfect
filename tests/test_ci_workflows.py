@@ -641,8 +641,10 @@ def test_the_image_scan_finds_a_named_key_and_a_literal_image(tmp_path: Path):
 
 def test_the_server_tests_load_the_cached_images_and_never_pull():
     """One job per workflow pulls each pinned image once and caches the archives; every job
-    that runs server tests restores them under the same key, made from the pins, and fails on
-    a miss (.github/actions/container-images)."""
+    that runs server tests restores them under the same key, made from the pins, fails on a
+    miss, and loads the images it names before its tests start (.github/actions/container-images).
+    The tests loaded each image when one first needed it, writing GBs to the disk while other
+    tests ran: a subprocess's imports waited on it until its test timed out (run 45937052191)."""
     action = (ROOT / ".github" / "actions" / "container-images" / "action.yml").read_text(
         encoding="utf-8"
     )
@@ -653,20 +655,32 @@ def test_the_server_tests_load_the_cached_images_and_never_pull():
     assert action.count(key) == 2, "save and load must use one key, made from the pins"
     assert "lookup-only: true" in action and "fail-on-cache-miss: true" in action
     assert "run: python3 tests/_container_images.py save .images" in action
-    assert 'echo "PYFECT_IMAGE_ARCHIVES=$GITHUB_WORKSPACE/.images"' in action
+    assert 'python3 tests/_container_images.py load .images "$IMAGES"' in action
+    assert 'echo "PYFECT_IMAGES_PRELOADED=$IMAGES" >> "$GITHUB_ENV"' in action
     save = "uses: ./.github/actions/container-images\n        with:\n          mode: save"
-    load = "uses: ./.github/actions/container-images\n        with:\n          mode: load"
-    for workflow, saver, runners in (
-        ("ci.yml", "images", ["test"]),
-        ("drivers.yml", "images", ["driver"]),
-        ("soak-nightly.yml", "images", ["cluster"]),
-        ("flakes-nightly.yml", "images", ["suite"]),
-        ("docs.yml", "images", ["snippets"]),
+    load = re.compile(
+        r"uses: \./\.github/actions/container-images\n        with:\n          mode: load\n"
+        r"          images: (?P<images>.+)\n"
+    )
+    for workflow, saver, runner, images in (
+        ("ci.yml", "images", "test", ["all"]),
+        ("drivers.yml", "images", "driver", ["mysql busybox", "mssql busybox", "redis"]),
+        ("soak-nightly.yml", "images", "cluster", ["all"]),
+        ("flakes-nightly.yml", "images", "suite", ["all"]),
+        ("docs.yml", "images", "snippets", ["mysql mssql clickhouse"]),
     ):
         assert save in _job(workflow, saver), f"{workflow}'s {saver} job saves no images"
-        for runner in runners:
-            job = _job(workflow, runner)
-            assert f"needs: {saver}" in job and load in job, f"{workflow}'s {runner} job"
+        job = _job(workflow, runner)
+        loaded = load.search(job)
+        assert f"needs: {saver}" in job and loaded, f"{workflow}'s {runner} job loads no images"
+        tests = _PYTEST_RUN.search(job)
+        assert tests and loaded.end() < tests.start(), f"{workflow}'s {runner} job: load first"
+        if loaded["images"] == "${{ matrix.driver.images }}":
+            assert re.findall(r"(?m)^ {12}images: (.+)$", job) == images, workflow
+        else:
+            assert [loaded["images"]] == images, workflow
+        for named in images:
+            _container_images.named(named)  # each names cached images
     for workflow in WORKFLOWS.glob("*.yml"):
         assert "docker pull" not in workflow.read_text(encoding="utf-8"), workflow.name
 

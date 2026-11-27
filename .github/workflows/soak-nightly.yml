@@ -68,6 +68,7 @@ jobs:
       - uses: ./.github/actions/container-images
         with:
           mode: load
+          images: all
 
       - uses: ./.github/actions/check-setup
         with:

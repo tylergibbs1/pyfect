@@ -99,6 +99,14 @@ def test_values_round_trip_through_a_local_file(tmp_path: Path):
 
 
 @testing.effect
+def test_a_local_file_commits_without_waiting_for_the_disk(tmp_path: Path):
+    """(pyfect) the local file's commits skip fsync: a runner's slow disk flush once held
+    the round trip's eleven autocommits past its 5 s timeout (tests/_sqlite_sync.py)"""
+    sql = yield from _client(f"file:{tmp_path / 'sync.db'}")
+    assert (yield from sql("PRAGMA synchronous")) == [{"synchronous": 0}]
+
+
+@testing.effect
 def test_values_round_trip_through_a_remote_server(libsql_server: LibsqlServer):
     """(pyfect) values round trip through a remote server"""
     yield from _round_trip(libsql_server.url)
